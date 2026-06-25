@@ -32,7 +32,7 @@ export class JwtAuthGuard implements CanActivate {
 
     let claims: BackendClaims;
     try {
-      const { payload } = await jwtVerify(token, new TextEncoder().encode(secret));
+      const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] });
       claims = payload as unknown as BackendClaims;
     } catch {
       throw new UnauthorizedException("Unauthorized");

@@ -42,4 +42,16 @@ describe("JwtAuthGuard", () => {
     (reflector.getAllAndOverride as jest.Mock).mockReturnValue(true);
     await expect(guard.canActivate(ctxWith({}))).resolves.toBe(true);
   });
+
+  it("rejects a token signed with a non-HS256 algorithm", async () => {
+    const { SignJWT } = await import("jose");
+    const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
+    const token = await new SignJWT({ sub: "u", orgId: "o" })
+      .setProtectedHeader({ alg: "HS512" })
+      .setExpirationTime("10m")
+      .sign(new TextEncoder().encode(secret));
+    await expect(
+      guard.canActivate(ctxWith({ authorization: `Bearer ${token}` })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 });
