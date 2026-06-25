@@ -7,11 +7,22 @@ import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { TargetsModule } from "./modules/targets/targets.module";
+import { CsatModule } from "./modules/csat/csat.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
 @Module({
-  imports: [ConfigModule, DrizzleModule, CacheModule, AuditModule, RateLimitModule, LeadsModule, ContactsModule, TargetsModule],
+  imports: [
+    ConfigModule,
+    DrizzleModule,
+    CacheModule,
+    AuditModule,
+    RateLimitModule,
+    LeadsModule,
+    ContactsModule,
+    TargetsModule,
+    CsatModule,
+  ],
   controllers: [HealthController, MeController],
 })
 export class AppModule {}
