@@ -1,10 +1,13 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "./config/config.module";
 import { DrizzleModule } from "./db/drizzle.module";
+import { CacheModule } from "./common/cache/cache.module";
+import { AuditModule } from "./common/audit/audit.module";
 import { HealthController } from "./health/health.controller";
+import { MeController } from "./me/me.controller";
 
 @Module({
-  imports: [ConfigModule, DrizzleModule],
-  controllers: [HealthController],
+  imports: [ConfigModule, DrizzleModule, CacheModule, AuditModule],
+  controllers: [HealthController, MeController],
 })
 export class AppModule {}
