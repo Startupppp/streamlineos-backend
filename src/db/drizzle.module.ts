@@ -1,4 +1,4 @@
-import { Global, Module, type OnApplicationShutdown } from "@nestjs/common";
+import { Global, Inject, Module, type OnApplicationShutdown } from "@nestjs/common";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { DRIZZLE } from "./drizzle.constants";
@@ -44,5 +44,11 @@ function normalizeDatabaseUrl(url: string): string {
   exports: [DRIZZLE],
 })
 export class DrizzleModule implements OnApplicationShutdown {
-  async onApplicationShutdown(): Promise<void> {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db & { __client: ReturnType<typeof postgres> },
+  ) {}
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.db.__client.end({ timeout: 5 });
+  }
 }
