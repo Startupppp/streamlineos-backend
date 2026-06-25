@@ -1,4 +1,4 @@
-import { cpSync, rmSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, rmSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const WEB_SCHEMA = resolve(process.cwd(), "..", "Streamlineos", "lib", "db", "schema");
@@ -10,10 +10,11 @@ if (!existsSync(WEB_SCHEMA)) {
   process.exit(1);
 }
 
-function listFiles(dir, base = dir) {
+function listTsFiles(dir, base = dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
-    return e.isDirectory() ? listFiles(p, base) : [p.slice(base.length + 1)];
+    if (e.isDirectory()) return listTsFiles(p, base);
+    return e.name.endsWith(".ts") ? [p.slice(base.length + 1)] : [];
   });
 }
 
@@ -22,8 +23,8 @@ if (check) {
     console.error("[sync-schema] dest missing; run `pnpm sync:schema`");
     process.exit(1);
   }
-  const src = listFiles(WEB_SCHEMA).sort();
-  const dst = listFiles(DEST).sort();
+  const src = listTsFiles(WEB_SCHEMA).sort();
+  const dst = listTsFiles(DEST).sort();
   let drift = JSON.stringify(src) !== JSON.stringify(dst);
   for (const f of src) {
     if (!drift && readFileSync(join(WEB_SCHEMA, f), "utf8") !== readFileSync(join(DEST, f), "utf8")) {
@@ -37,6 +38,9 @@ if (check) {
   console.log("[sync-schema] schema in sync.");
 } else {
   rmSync(DEST, { recursive: true, force: true });
-  cpSync(WEB_SCHEMA, DEST, { recursive: true });
-  console.log(`[sync-schema] copied ${WEB_SCHEMA} -> ${DEST}`);
+  cpSync(WEB_SCHEMA, DEST, {
+    recursive: true,
+    filter: (srcPath) => statSync(srcPath).isDirectory() || srcPath.endsWith(".ts"),
+  });
+  console.log(`[sync-schema] copied *.ts from ${WEB_SCHEMA} -> ${DEST}`);
 }
