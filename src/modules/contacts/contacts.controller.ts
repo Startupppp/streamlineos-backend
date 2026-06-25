@@ -14,8 +14,6 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -33,12 +31,11 @@ import {
 } from "./dto/contact.schemas";
 
 @Controller("contacts")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard)
 export class ContactsController {
   constructor(private readonly contacts: ContactsService) {}
 
   @Get()
-  @CheckAbility("read", "crm:contacts")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -47,7 +44,6 @@ export class ContactsController {
   }
 
   @Post()
-  @CheckAbility("create", "crm:contacts")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -56,7 +52,6 @@ export class ContactsController {
   }
 
   @Get("search")
-  @CheckAbility("read", "crm:contacts")
   search(
     @Query(new ZodValidationPipe(searchSchema)) query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
@@ -65,7 +60,6 @@ export class ContactsController {
   }
 
   @Get(":contactId")
-  @CheckAbility("read", "crm:contacts")
   async get(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -76,7 +70,6 @@ export class ContactsController {
   }
 
   @Patch(":contactId")
-  @CheckAbility("update", "crm:contacts")
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -88,7 +81,6 @@ export class ContactsController {
   }
 
   @Delete(":contactId")
-  @CheckAbility("delete", "crm:contacts")
   remove(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -97,7 +89,6 @@ export class ContactsController {
   }
 
   @Get(":contactId/vcard")
-  @CheckAbility("read", "crm:contacts")
   async vcard(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
