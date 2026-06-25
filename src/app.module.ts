@@ -6,11 +6,12 @@ import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
+import { TargetsModule } from "./modules/targets/targets.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
 @Module({
-  imports: [ConfigModule, DrizzleModule, CacheModule, AuditModule, RateLimitModule, LeadsModule, ContactsModule],
+  imports: [ConfigModule, DrizzleModule, CacheModule, AuditModule, RateLimitModule, LeadsModule, ContactsModule, TargetsModule],
   controllers: [HealthController, MeController],
 })
 export class AppModule {}
