@@ -47,5 +47,6 @@ describe("/me (e2e)", () => {
       .get("/me/protected")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, userId: "user_1" });
   });
 });
