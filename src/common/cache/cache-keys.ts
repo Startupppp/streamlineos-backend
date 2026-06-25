@@ -14,6 +14,8 @@ export const CACHE_KEYS = {
   leadsList: (orgId: string, hash: string) => `leads:list:${orgId}:${hash}`,
   leadDetail: (orgId: string, id: number) => `leads:detail:${orgId}:${id}`,
 
+  contactsList: (orgId: string, hash: string) => `crm:contacts:list:${orgId}:${hash}`,
+
   projectsList: (orgId: string) => `projects:list:${orgId}`,
   projectLabels: (orgId: string) => `projects:labels:${orgId}`,
   orgMembers: (orgId: string) => `org:members:${orgId}`,
