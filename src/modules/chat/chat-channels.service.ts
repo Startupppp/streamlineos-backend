@@ -1,0 +1,266 @@
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { and, count, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import {
+  chatChannels,
+  chatChannelMembers,
+  chatMessages,
+  users,
+} from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
+import type { CreateChannelInput, UpdateChannelInput } from "./dto/chat.schemas";
+
+@Injectable()
+export class ChatChannelsService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private async assertMember(channelId: number, userId: string) {
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
+    });
+    if (!member) throw new ForbiddenException("You are not a member of this channel");
+    return member;
+  }
+
+  async getMyChannels(userId: string, orgId: string) {
+    try {
+      const memberships = await this.db
+        .select({ channelId: chatChannelMembers.channelId })
+        .from(chatChannelMembers)
+        .where(eq(chatChannelMembers.userId, userId));
+
+      if (memberships.length === 0) return [];
+
+      const channelIds = memberships.map((m) => m.channelId);
+
+      const channels = await this.db.query.chatChannels.findMany({
+        where: and(
+          eq(chatChannels.orgId, orgId),
+          inArray(chatChannels.id, channelIds),
+          eq(chatChannels.isArchived, false),
+        ),
+        orderBy: [desc(chatChannels.lastMessageAt)],
+        with: {
+          members: {
+            with: { user: { columns: { id: true, name: true, image: true } } },
+          },
+        },
+      });
+
+      const unreadRows = await this.db
+        .select({ channelId: chatMessages.channelId, count: count() })
+        .from(chatMessages)
+        .innerJoin(
+          chatChannelMembers,
+          and(
+            eq(chatChannelMembers.channelId, chatMessages.channelId),
+            eq(chatChannelMembers.userId, userId),
+          ),
+        )
+        .where(
+          and(
+            inArray(chatMessages.channelId, channelIds),
+            ne(chatMessages.senderId, userId),
+            eq(chatMessages.isDeleted, false),
+            gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
+          ),
+        )
+        .groupBy(chatMessages.channelId);
+
+      const unreadMap = new Map(unreadRows.map((r) => [r.channelId, r.count]));
+
+      const lastMessageRows = await this.db
+        .selectDistinctOn([chatMessages.channelId], {
+          channelId: chatMessages.channelId,
+          content: chatMessages.content,
+          senderName: users.name,
+          createdAt: chatMessages.createdAt,
+        })
+        .from(chatMessages)
+        .leftJoin(users, eq(users.id, chatMessages.senderId))
+        .where(
+          and(inArray(chatMessages.channelId, channelIds), eq(chatMessages.isDeleted, false)),
+        )
+        .orderBy(chatMessages.channelId, desc(chatMessages.createdAt));
+
+      const lastMsgMap = new Map(
+        lastMessageRows.map((r) => [
+          r.channelId,
+          { content: r.content, senderName: r.senderName, createdAt: r.createdAt },
+        ]),
+      );
+
+      return channels.map((ch) => ({
+        ...ch,
+        unreadCount: unreadMap.get(ch.id) ?? 0,
+        lastMessage: lastMsgMap.get(ch.id) ?? null,
+      }));
+    } catch (error) {
+      logger.error("[chat.getMyChannels]", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return [];
+    }
+  }
+
+  async getChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      with: {
+        members: {
+          with: {
+            user: { columns: { id: true, name: true, image: true, email: true, role: true } },
+          },
+        },
+      },
+    });
+
+    return channel ?? null;
+  }
+
+  async listMembers(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+
+    return this.db.query.chatChannelMembers.findMany({
+      where: eq(chatChannelMembers.channelId, channelId),
+      with: {
+        user: {
+          columns: { id: true, name: true, image: true, email: true, role: true },
+        },
+      },
+    });
+  }
+
+  async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
+    if (body.type === "DIRECT") {
+      const { targetUserId } = body;
+
+      const myMemberships = await this.db
+        .select({ channelId: chatChannelMembers.channelId })
+        .from(chatChannelMembers)
+        .where(eq(chatChannelMembers.userId, userId));
+
+      if (myMemberships.length > 0) {
+        const channelIds = myMemberships.map((c) => c.channelId);
+        const existingDMs = await this.db.query.chatChannels.findMany({
+          where: and(
+            inArray(chatChannels.id, channelIds),
+            eq(chatChannels.type, "DIRECT"),
+            eq(chatChannels.orgId, orgId),
+          ),
+          with: { members: true },
+        });
+
+        const dmChannel = existingDMs.find(
+          (ch) => ch.members.length === 2 && ch.members.some((m) => m.userId === targetUserId),
+        );
+
+        if (dmChannel) return { channel: dmChannel, created: false };
+      }
+
+      const [targetUser, currentUser] = await Promise.all([
+        this.db.query.users.findFirst({
+          where: eq(users.id, targetUserId),
+          columns: { name: true },
+        }),
+        this.db.query.users.findFirst({
+          where: eq(users.id, userId),
+          columns: { name: true },
+        }),
+      ]);
+
+      const channel = await this.db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(chatChannels)
+          .values({
+            orgId,
+            name: `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
+            type: "DIRECT",
+            createdBy: userId,
+          })
+          .returning();
+
+        await tx.insert(chatChannelMembers).values([
+          { channelId: created.id, userId, role: "MEMBER" },
+          { channelId: created.id, userId: targetUserId, role: "MEMBER" },
+        ]);
+
+        return created;
+      });
+
+      return { channel, created: true };
+    }
+
+    const { name, description, avatarUrl, memberIds } = body;
+    const allMembers = [...new Set([userId, ...memberIds])];
+
+    const channel = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(chatChannels)
+        .values({
+          orgId,
+          name,
+          type: "GROUP",
+          description,
+          avatarUrl,
+          createdBy: userId,
+        })
+        .returning();
+
+      await tx.insert(chatChannelMembers).values(
+        allMembers.map((uid) => ({
+          channelId: created.id,
+          userId: uid,
+          role: uid === userId ? "ADMIN" : "MEMBER",
+        })),
+      );
+
+      return created;
+    });
+
+    return { channel, created: true };
+  }
+
+  async updateChannel(channelId: number, userId: string, body: UpdateChannelInput) {
+    const membership = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
+    });
+
+    if (!membership) throw new ForbiddenException("You are not a member of this channel");
+    if (membership.role !== "ADMIN") {
+      throw new ForbiddenException("Only channel admins can update channel details");
+    }
+
+    const updateData: Partial<typeof chatChannels.$inferInsert> = { updatedAt: new Date() };
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.avatarUrl !== undefined) updateData.avatarUrl = body.avatarUrl;
+
+    await this.db.update(chatChannels).set(updateData).where(eq(chatChannels.id, channelId));
+
+    return { ok: true };
+  }
+
+  async markRead(channelId: number, userId: string) {
+    await this.db
+      .update(chatChannelMembers)
+      .set({ lastReadAt: new Date() })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+
+    return { ok: true };
+  }
+}

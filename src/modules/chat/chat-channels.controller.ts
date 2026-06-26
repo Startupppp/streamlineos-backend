@@ -1,0 +1,105 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
+import type { Response } from "express";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { ChatChannelsService } from "./chat-channels.service";
+import { ChatTypingService } from "./chat-typing.service";
+import {
+  createChannelSchema,
+  updateChannelSchema,
+  type CreateChannelInput,
+  type UpdateChannelInput,
+} from "./dto/chat.schemas";
+
+@Controller("chat/channels")
+@UseGuards(JwtAuthGuard)
+export class ChatChannelsController {
+  constructor(
+    private readonly channels: ChatChannelsService,
+    private readonly typing: ChatTypingService,
+  ) {}
+
+  @Get()
+  list(@CurrentUser() u: CurrentUserContext) {
+    return this.channels.getMyChannels(u.userId, u.orgId);
+  }
+
+  @Post()
+  async create(
+    @Body(new ZodValidationPipe(createChannelSchema)) body: CreateChannelInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { channel, created } = await this.channels.createChannel(u.orgId, u.userId, body);
+    res.status(created ? 201 : 200);
+    return channel;
+  }
+
+  @Get(":channelId")
+  async getOne(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const channel = await this.channels.getChannel(channelId, u.userId);
+    if (!channel) throw new NotFoundException("Channel not found");
+    return channel;
+  }
+
+  @Patch(":channelId")
+  update(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.updateChannel(channelId, u.userId, body);
+  }
+
+  @Get(":channelId/members")
+  members(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.listMembers(channelId, u.userId);
+  }
+
+  @Post(":channelId/read")
+  @HttpCode(200)
+  read(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.markRead(channelId, u.userId);
+  }
+
+  @Post(":channelId/typing")
+  @HttpCode(200)
+  async setTyping(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.typing.setTyping(channelId, u.userId);
+    return { ok: true };
+  }
+
+  @Get(":channelId/typing")
+  getTyping(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.typing.getTyping(channelId, u.userId);
+  }
+}

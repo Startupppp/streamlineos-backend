@@ -38,6 +38,8 @@ import { BranchesModule } from "./modules/branches/branches.module";
 import { ProjectsExecutionModule } from "./modules/projects-execution/projects-execution.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
+import { AccountingModule } from "./modules/accounting/accounting.module";
+import { ChatModule } from "./modules/chat/chat.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -82,6 +84,8 @@ import { MeController } from "./me/me.controller";
     ProjectsExecutionModule,
     ProjectsModule,
     SupportModule,
+    AccountingModule,
+    ChatModule,
   ],
   controllers: [HealthController, MeController],
 })

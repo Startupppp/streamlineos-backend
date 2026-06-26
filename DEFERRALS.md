@@ -50,3 +50,7 @@ future batch that owns unblocking it.
 | /support/kb/articles/:articleId/reindex | POST | per-article `reindexArticle` embedding generation (`kb-rag`) | kb-rag |
 | /support/kb/articles/:articleId/index-status | GET | KB embedding index status (`kb-rag`) | kb-rag |
 | /support/kb/articles/:articleId/attachments/:attachmentId | GET, DELETE | `getFileUrl`/`deleteFile` R2 object storage (`@/lib/storage`) presign + cleanup; GET (download presign) not ported and DELETE skips the R2 object delete; both routes also skip `reindexArticleSafe` (`kb-rag`) | object-storage-r2 |
+
+## b7 (accounting, chat, invoices)
+
+No integration-gated routes. All side effects are in-DB: accounting ledger / journal posting, invoice + payment writes, chat messages, and DB-backed chat presence. Chat typing uses optional Redis (degrades gracefully when unconfigured), which is not a deferral.
