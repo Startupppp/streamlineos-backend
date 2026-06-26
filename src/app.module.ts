@@ -26,6 +26,11 @@ import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { CareersModule } from "./modules/careers/careers.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { WebhooksModule } from "./modules/webhooks/webhooks.module";
+import { ClientsModule } from "./modules/clients/clients.module";
+import { CrmModule } from "./modules/crm/crm.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { PublicModule } from "./modules/public/public.module";
+import { RbacModule } from "./modules/rbac/rbac.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -58,6 +63,11 @@ import { MeController } from "./me/me.controller";
     CareersModule,
     OnboardingModule,
     WebhooksModule,
+    ClientsModule,
+    CrmModule,
+    DashboardModule,
+    PublicModule,
+    RbacModule,
   ],
   controllers: [HealthController, MeController],
 })
