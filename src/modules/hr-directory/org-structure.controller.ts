@@ -1,0 +1,49 @@
+import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { OrgStructureService } from "./org-structure.service";
+import { CelebrationsService } from "./celebrations.service";
+import { headcountSchema, type HeadcountInput } from "./dto/hr-directory.schemas";
+
+@Controller("hr")
+@UseGuards(JwtAuthGuard)
+export class OrgStructureController {
+  constructor(
+    private readonly orgStructure: OrgStructureService,
+    private readonly celebrations: CelebrationsService,
+  ) {}
+
+  @Get("directory")
+  directory(@CurrentUser() u: CurrentUserContext) {
+    return this.orgStructure.getDirectory(u.orgId);
+  }
+
+  @Get("celebrations")
+  celebrationsList(@CurrentUser() u: CurrentUserContext) {
+    return this.celebrations.getCelebrations(u.orgId);
+  }
+
+  @Get("org-chart")
+  orgChart(@CurrentUser() u: CurrentUserContext) {
+    return this.orgStructure.getOrgChart(u.orgId);
+  }
+
+  @Get("headcount")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "hr:headcount")
+  headcount(
+    @Query(new ZodValidationPipe(headcountSchema)) query: HeadcountInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgStructure.getHeadcount(u.orgId, query);
+  }
+
+  @Get("teams/:teamId")
+  team(@Param("teamId", ParseIntPipe) teamId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.orgStructure.getTeam(u.orgId, teamId);
+  }
+}

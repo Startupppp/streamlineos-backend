@@ -1,0 +1,39 @@
+import { Body, Controller, Get, Post, Query, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { HrCompetenciesService } from "./hr-competencies.service";
+import {
+  createSkillSchema,
+  skillListQuerySchema,
+  type CreateSkillInput,
+  type SkillListQuery,
+} from "./dto/competencies.schemas";
+
+@Controller("hr/skills")
+@UseGuards(JwtAuthGuard)
+export class HrSkillsController {
+  constructor(private readonly competencies: HrCompetenciesService) {}
+
+  @Get()
+  list(
+    @Query(new ZodValidationPipe(skillListQuerySchema)) query: SkillListQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.competencies.listSkills(u.orgId, query);
+  }
+
+  @Post()
+  async create(
+    @Body(new ZodValidationPipe(createSkillSchema)) body: CreateSkillInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const targetUserId = body.userId ?? u.userId;
+    const result = await this.competencies.createSkill(u.orgId, targetUserId, body);
+    res.status(result.created ? 201 : 200);
+    return result.data;
+  }
+}

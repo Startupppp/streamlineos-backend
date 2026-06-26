@@ -40,6 +40,9 @@ import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
 import { AccountingModule } from "./modules/accounting/accounting.module";
 import { ChatModule } from "./modules/chat/chat.module";
+import { HrConfigModule } from "./modules/hr-config/hr-config.module";
+import { HrTimeModule } from "./modules/hr-time/hr-time.module";
+import { HrDirectoryModule } from "./modules/hr-directory/hr-directory.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -86,6 +89,9 @@ import { MeController } from "./me/me.controller";
     SupportModule,
     AccountingModule,
     ChatModule,
+    HrConfigModule,
+    HrTimeModule,
+    HrDirectoryModule,
   ],
   controllers: [HealthController, MeController],
 })

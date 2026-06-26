@@ -1,0 +1,185 @@
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { timesheets, users } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { AuditService } from "../../common/audit/audit.service";
+import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { formatDateOnly, getTodayString } from "./date.helpers";
+import type {
+  ExportWorkLogsQuery,
+  ListWorkLogsQuery,
+  PostWorkLogInput,
+} from "./dto/work-logs.schemas";
+
+@Injectable()
+export class WorkLogsService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
+
+  async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
+    const isAdmin = defineAbilityFor(u).can("manage", "hr:attendance");
+
+    if (query.userId && query.userId !== u.userId && !isAdmin) {
+      throw new ForbiddenException("Not authorized to view other users' work logs.");
+    }
+
+    return this.getWorkLogs(
+      u.orgId,
+      u.userId,
+      query.year,
+      query.quarter,
+      query.userId,
+      query.month,
+      query.dateFrom,
+      query.dateTo,
+    );
+  }
+
+  private async getWorkLogs(
+    orgId: string,
+    userId: string,
+    year: number,
+    quarter: number,
+    filterUserId?: string,
+    month?: number,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    const targetUserId = filterUserId || userId;
+
+    const startMonth = (quarter - 1) * 3;
+    const quarterStart = formatDateOnly(new Date(year, startMonth, 1));
+    const quarterEnd = formatDateOnly(new Date(year, startMonth + 3, 0));
+
+    const effectiveFrom = dateFrom && dateFrom >= quarterStart ? dateFrom : quarterStart;
+    const effectiveTo = dateTo && dateTo <= quarterEnd ? dateTo : quarterEnd;
+
+    const conditions: SQL[] = [
+      eq(timesheets.orgId, orgId),
+      eq(timesheets.userId, targetUserId),
+      isNull(timesheets.ticketId),
+      gte(timesheets.date, effectiveFrom),
+      lte(timesheets.date, effectiveTo),
+    ];
+
+    if (month !== undefined) {
+      conditions.push(sql`EXTRACT(MONTH FROM ${timesheets.date}) = ${month + 1}`);
+      conditions.push(sql`EXTRACT(YEAR FROM ${timesheets.date}) = ${year}`);
+    }
+
+    const logs = await this.db.query.timesheets.findMany({
+      where: and(...conditions),
+      orderBy: [asc(timesheets.date)],
+    });
+
+    const seenDates = new Set<string>();
+    return logs
+      .map((l) => ({ ...l, date: String(l.date).slice(0, 10) }))
+      .filter((l) => {
+        if (seenDates.has(l.date)) return false;
+        seenDates.add(l.date);
+        return true;
+      });
+  }
+
+  async create(orgId: string, userId: string, body: PostWorkLogInput) {
+    const dateStr = formatDateOnly(body.date);
+    const todayStr = getTodayString();
+    if (dateStr !== todayStr) {
+      throw new ForbiddenException("Work logs can only be created or updated for today.");
+    }
+
+    const normalizedDescription = body.description
+      ? body.description.replace(/(^\s*\w|[.!?]\s+\w)/g, (c) => c.toUpperCase())
+      : body.description;
+
+    const workLink = body.workLink || null;
+
+    const [upserted] = await this.db
+      .insert(timesheets)
+      .values({
+        orgId,
+        userId,
+        date: dateStr,
+        description: normalizedDescription,
+        hours: body.hours?.toString() || "0",
+        workLink,
+        status: "APPROVED",
+      })
+      .onConflictDoUpdate({
+        target: [timesheets.orgId, timesheets.userId, timesheets.date],
+        targetWhere: sql`ticket_id IS NULL`,
+        set: {
+          description: normalizedDescription,
+          hours: body.hours ? body.hours.toString() : sql`${timesheets.hours}`,
+          workLink,
+          status: "APPROVED",
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    return upserted;
+  }
+
+  async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {
+    const isAdmin = defineAbilityFor(u).can("manage", "hr:attendance");
+
+    const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
+
+    if (!isAdmin) {
+      conditions.push(eq(timesheets.userId, u.userId));
+    } else if (query.userId) {
+      conditions.push(eq(timesheets.userId, query.userId));
+    }
+
+    if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
+    if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
+
+    const data = await this.db
+      .select({
+        date: timesheets.date,
+        hours: timesheets.hours,
+        description: timesheets.description,
+        status: timesheets.status,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(timesheets)
+      .leftJoin(users, eq(timesheets.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(timesheets.date);
+
+    const headers = ["Date", "Employee", "Email", "Hours", "Description", "Status"];
+    const rows = data.map((r) => [
+      r.date,
+      r.userName || "",
+      r.userEmail || "",
+      r.hours || "0",
+      r.description || "",
+      r.status || "PENDING",
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    this.audit.log({
+      action: "worklog.exported",
+      userId: u.userId,
+      orgId: u.orgId,
+      metadata: {
+        format: "csv",
+        recordCount: rows.length,
+        startDate: query.startDate ?? null,
+        endDate: query.endDate ?? null,
+      },
+    });
+
+    return csv;
+  }
+}

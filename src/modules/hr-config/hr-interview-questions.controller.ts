@@ -1,0 +1,79 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { HrInterviewQuestionsService } from "./hr-interview-questions.service";
+import {
+  createInterviewQuestionSchema,
+  interviewQuestionListQuerySchema,
+  updateInterviewQuestionSchema,
+  type CreateInterviewQuestionInput,
+  type InterviewQuestionListQuery,
+  type UpdateInterviewQuestionInput,
+} from "./dto/interview-questions.schemas";
+
+@Controller("hr/interview-questions")
+@UseGuards(JwtAuthGuard)
+export class HrInterviewQuestionsController {
+  constructor(private readonly interviewQuestions: HrInterviewQuestionsService) {}
+
+  @Get()
+  list(
+    @Query(new ZodValidationPipe(interviewQuestionListQuerySchema)) query: InterviewQuestionListQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.interviewQuestions.list(u.orgId, query);
+  }
+
+  @Post()
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:employees")
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createInterviewQuestionSchema)) body: CreateInterviewQuestionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.interviewQuestions.create(u.orgId, u.userId, body);
+  }
+
+  @Patch(":questionId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:employees")
+  async update(
+    @Param("questionId", ParseIntPipe) questionId: number,
+    @Body(new ZodValidationPipe(updateInterviewQuestionSchema)) body: UpdateInterviewQuestionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const existing = await this.interviewQuestions.getById(u.orgId, questionId);
+    if (!existing) throw new NotFoundException("Question not found");
+    return this.interviewQuestions.update(u.orgId, questionId, body);
+  }
+
+  @Delete(":questionId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:employees")
+  async remove(
+    @Param("questionId", ParseIntPipe) questionId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const existing = await this.interviewQuestions.getById(u.orgId, questionId);
+    if (!existing) throw new NotFoundException("Question not found");
+    return this.interviewQuestions.softDelete(u.orgId, questionId);
+  }
+}

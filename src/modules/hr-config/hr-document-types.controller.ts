@@ -1,0 +1,85 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { HrDocumentTypesService } from "./hr-document-types.service";
+import {
+  createDocumentTypeSchema,
+  updateDocumentTypeSchema,
+  type CreateDocumentTypeInput,
+  type UpdateDocumentTypeInput,
+} from "./dto/document-types.schemas";
+
+@Controller("hr/document-types")
+@UseGuards(JwtAuthGuard)
+export class HrDocumentTypesController {
+  constructor(private readonly documentTypes: HrDocumentTypesService) {}
+
+  @Get()
+  list(@CurrentUser() u: CurrentUserContext) {
+    const isAdmin = defineAbilityFor(u).can("manage", "hr:documents");
+    return this.documentTypes.list(u.orgId, isAdmin);
+  }
+
+  @Post()
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:documents")
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createDocumentTypeSchema)) body: CreateDocumentTypeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.documentTypes.create(u.orgId, body);
+  }
+
+  @Get(":documentTypeId")
+  async getOne(
+    @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const row = await this.documentTypes.getById(u.orgId, documentTypeId);
+    if (!row) throw new NotFoundException("Document type not found.");
+    return row;
+  }
+
+  @Patch(":documentTypeId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:documents")
+  async update(
+    @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
+    @Body(new ZodValidationPipe(updateDocumentTypeSchema)) body: UpdateDocumentTypeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const existing = await this.documentTypes.getById(u.orgId, documentTypeId);
+    if (!existing) throw new NotFoundException("Document type not found.");
+    return this.documentTypes.update(u.orgId, documentTypeId, body);
+  }
+
+  @Delete(":documentTypeId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:documents")
+  async remove(
+    @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const existing = await this.documentTypes.getById(u.orgId, documentTypeId);
+    if (!existing) throw new NotFoundException("Document type not found.");
+    return this.documentTypes.softDelete(u.orgId, documentTypeId);
+  }
+}

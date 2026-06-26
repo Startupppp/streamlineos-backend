@@ -54,3 +54,7 @@ future batch that owns unblocking it.
 ## b7 (accounting, chat, invoices)
 
 No integration-gated routes. All side effects are in-DB: accounting ledger / journal posting, invoice + payment writes, chat messages, and DB-backed chat presence. Chat typing uses optional Redis (degrades gracefully when unconfigured), which is not a deferral.
+
+## hra (hr-config, hr-time, hr-directory)
+
+No integration-gated routes. All side effects are in-DB: departments / holidays / leave-blackout / document types & templates / email-template records / salary structures / career ladders / learning paths / skills / certifications / interview questions / handbook / notification-preference flags (hr-config); leave, attendance, WFH and work-log writes (hr-time); employee, org-structure, team-event, asset and background-verification writes (hr-directory). The `/hr/employees/:employeeId/profile-pdf` and `/hr/work-logs/export` routes generate their output in-process and stream it directly (no R2). `smsEnabled` is a stored preference flag (no SMS send) and the background-verification `provider` is a stored string (no external vendor call). `users` is read-only here (no users-table writes).
