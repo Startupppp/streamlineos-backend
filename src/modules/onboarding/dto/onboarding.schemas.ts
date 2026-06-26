@@ -12,6 +12,15 @@ export const personalDetailsSchema = z.object({
   skills: z.array(z.string()).or(z.string()).optional(),
 });
 
+export const bankDetailsSchema = z.object({
+  accountHolder: z.string().min(1),
+  bankName: z.string().min(1),
+  accountNumber: z.string().min(8).max(18),
+  ifsc: z.string().length(11),
+  branch: z.string().optional(),
+  taxId: z.string().optional(),
+});
+
 export const templateStepSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -30,4 +39,5 @@ export const createTemplateSchema = z.object({
 
 export type InitiateInput = z.infer<typeof initiateSchema>;
 export type PersonalDetailsInput = z.infer<typeof personalDetailsSchema>;
+export type BankDetailsInput = z.infer<typeof bankDetailsSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;

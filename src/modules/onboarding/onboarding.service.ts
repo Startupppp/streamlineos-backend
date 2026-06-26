@@ -16,10 +16,12 @@ import { type Db } from "../../db/drizzle.module";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
+  BankDetailsInput,
   CreateTemplateInput,
   InitiateInput,
   PersonalDetailsInput,
 } from "./dto/onboarding.schemas";
+import { encrypt, encryptBankDetails } from "./crypto.helpers";
 
 type DefaultTask = {
   title: string;
@@ -297,6 +299,26 @@ export class OnboardingService {
       .where(eq(users.id, userId));
 
     await this.upsertOnboardingStep(userId, orgId, "Personal Details");
+
+    return { success: true };
+  }
+
+  async saveBankDetails(orgId: string, userId: string, input: BankDetailsInput) {
+    await this.db
+      .update(users)
+      .set({
+        bankDetails: encryptBankDetails({
+          accountNumber: input.accountNumber,
+          bankName: input.bankName,
+          branch: input.branch ?? "",
+          ifsc: input.ifsc,
+          accountHolder: input.accountHolder,
+        }),
+        ...(input.taxId ? { taxId: encrypt(input.taxId) } : {}),
+      })
+      .where(eq(users.id, userId));
+
+    await this.upsertOnboardingStep(userId, orgId, "Bank Details");
 
     return { success: true };
   }

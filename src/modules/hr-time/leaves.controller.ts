@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeavesService } from "./leaves.service";
+import { LeavesPageService } from "./leaves-page.service";
 import {
   compOffSchema,
   leaveAnalyticsQuerySchema,
@@ -33,7 +34,15 @@ import {
 @Controller("hr/leaves")
 @UseGuards(JwtAuthGuard)
 export class LeavesController {
-  constructor(private readonly leaves: LeavesService) {}
+  constructor(
+    private readonly leaves: LeavesService,
+    private readonly leavesPage: LeavesPageService,
+  ) {}
+
+  @Get()
+  pageData(@CurrentUser() u: CurrentUserContext) {
+    return this.leavesPage.pageData(u.orgId, u.userId);
+  }
 
   @Get("balance")
   balance(@CurrentUser() u: CurrentUserContext) {

@@ -9,13 +9,17 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvoicesWriteService } from "./invoices-write.service";
 import {
+  createInvoiceSchema,
   recordPaymentSchema,
   updateInvoiceSchema,
+  type CreateInvoiceInput,
   type RecordPaymentInput,
   type UpdateInvoiceInput,
 } from "./dto/invoice-write.schemas";
@@ -28,6 +32,18 @@ function todayIso(): string {
 @UseGuards(JwtAuthGuard)
 export class InvoicesWriteController {
   constructor(private readonly invoicesWrite: InvoicesWriteService) {}
+
+  @Post()
+  @HttpCode(201)
+  @UseGuards(AbilityGuard)
+  @CheckAbility("create", "accounting")
+  async create(
+    @Body(new ZodValidationPipe(createInvoiceSchema)) body: CreateInvoiceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const { invoice } = await this.invoicesWrite.createInvoice(u.orgId, u.userId, body);
+    return invoice;
+  }
 
   @Post("recurring/run")
   @HttpCode(200)

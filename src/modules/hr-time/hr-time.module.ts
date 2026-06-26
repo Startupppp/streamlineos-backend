@@ -4,6 +4,7 @@ import { AttendanceController } from "./attendance.controller";
 import { WfhController } from "./wfh.controller";
 import { WorkLogsController } from "./work-logs.controller";
 import { LeavesService } from "./leaves.service";
+import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
 import { WfhService } from "./wfh.service";
 import { WorkLogsService } from "./work-logs.service";
@@ -16,6 +17,6 @@ import { WorkLogsService } from "./work-logs.service";
     WfhController,
     WorkLogsController,
   ],
-  providers: [LeavesService, AttendanceService, WfhService, WorkLogsService],
+  providers: [LeavesService, LeavesPageService, AttendanceService, WfhService, WorkLogsService],
 })
 export class HrTimeModule {}

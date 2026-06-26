@@ -24,9 +24,11 @@ import {
   isInitiateUserNotFound,
 } from "./onboarding.service";
 import {
+  bankDetailsSchema,
   createTemplateSchema,
   initiateSchema,
   personalDetailsSchema,
+  type BankDetailsInput,
   type CreateTemplateInput,
   type InitiateInput,
   type PersonalDetailsInput,
@@ -87,6 +89,14 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.savePersonalDetails(u.orgId, u.userId, body);
+  }
+
+  @Patch("bank-details")
+  saveBankDetails(
+    @Body(new ZodValidationPipe(bankDetailsSchema)) body: BankDetailsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.onboarding.saveBankDetails(u.orgId, u.userId, body);
   }
 
   @Post("submit")
