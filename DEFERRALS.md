@@ -40,7 +40,6 @@ future batch that owns unblocking it.
 | /projects/:projectId | PATCH | `sendProjectAssignmentEmail` on manager (re)assignment — email provider integration (in-app data is written) | notifications-email |
 | /projects/:projectId/tickets | POST | `sendTicketAssignmentEmail` to new assignees — email provider integration (in-app assignment notifications are ported) | notifications-email |
 | /projects/:projectId/tickets/:ticketId/comments | POST | mention emails via `processCommentMentions` — email provider integration (in-app mention notifications are ported) | notifications-email |
-| /projects/:projectId/budget | GET, PATCH | billable-cost rollup over `timesheets` + member `hourlyRate`; endpoint not yet ported (cost aggregation owned by projects-execution) | projects-execution |
 
 ## support
 

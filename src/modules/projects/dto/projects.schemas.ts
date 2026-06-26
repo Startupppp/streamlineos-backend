@@ -38,6 +38,10 @@ export const updateProjectSchema = z.object({
   reassignments: z.record(z.string(), z.string()).optional(),
 });
 
+export const updateBudgetSchema = z.object({
+  budget: z.number().min(0),
+});
+
 export const fromDealSchema = z.object({
   dealId: z.number().int().positive(),
   name: z.string().min(1),
@@ -266,6 +270,7 @@ export const updateChangelogSchema = z.object({
 export type ListProjectsInput = z.infer<typeof listProjectsSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>;
 export type FromDealInput = z.infer<typeof fromDealSchema>;
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;

@@ -76,6 +76,8 @@ describe("Projects auth/RBAC (e2e)", () => {
     ["get", "/projects/1/reports/critical-path"],
     ["get", "/projects/1/reports/velocity"],
     ["post", "/projects/1/reports/snapshot"],
+    ["get", "/projects/1/budget"],
+    ["patch", "/projects/1/budget"],
     ["get", "/projects/templates"],
     ["post", "/projects/templates"],
     ["delete", "/projects/templates/1"],
