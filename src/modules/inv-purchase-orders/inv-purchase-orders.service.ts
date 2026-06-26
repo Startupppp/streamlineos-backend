@@ -295,14 +295,14 @@ export class InvPurchaseOrdersService {
         lines: [
           {
             accountCode: "1300",
-            debit: totalValue.toFixed(4),
-            credit: null,
+            debit: totalValue,
+            credit: 0,
             description: `Inventory received - ${grnNumber}`,
           },
           {
             accountCode: "2000",
-            debit: null,
-            credit: totalValue.toFixed(4),
+            debit: 0,
+            credit: totalValue,
             description: `AP - PO ${po.poNumber}`,
           },
         ],

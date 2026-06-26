@@ -23,7 +23,7 @@ export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 export const adjustmentLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   locationId: z.number().int().positive(),
-  quantityChange: z.number().nonzero(),
+  quantityChange: z.number().refine((v) => v !== 0, { message: "must not be zero" }),
   notes: z.string().max(500).optional(),
 });
 

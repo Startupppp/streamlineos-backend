@@ -1,7 +1,8 @@
 import { SetMetadata } from "@nestjs/common";
 
 export type AbilityVerb =
-  | "create" | "read" | "update" | "delete" | "manage" | "approve" | "generate" | "view";
+  | "create" | "read" | "update" | "delete" | "manage" | "approve" | "generate" | "view"
+  | "receive" | "confirm" | "ship" | "invoice" | "adjust" | "transfer";
 
 export type AbilitySubject = string;
 

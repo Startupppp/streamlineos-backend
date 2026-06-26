@@ -23,7 +23,7 @@ export const createProductSchema = z.object({
   maxStockLevel: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
   hasVariants: z.boolean().default(false),
   imageUrl: z.string().url().optional(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
@@ -36,7 +36,7 @@ export const createVariantSchema = z.object({
   barcode: z.string().trim().max(100).optional(),
   costPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
   sellingPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  attributeValues: z.record(z.string()).default({}),
+  attributeValues: z.record(z.string(), z.string()).default({}),
 });
 export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 

@@ -291,14 +291,14 @@ export class InvSalesOrdersService {
         lines: [
           {
             accountCode: "5000",
-            debit: cogsTotal.toFixed(4),
-            credit: null,
+            debit: cogsTotal,
+            credit: 0,
             description: `COGS - SO-${soId}`,
           },
           {
             accountCode: "1300",
-            debit: null,
-            credit: cogsTotal.toFixed(4),
+            debit: 0,
+            credit: cogsTotal,
             description: `Inventory deducted - SO-${soId}`,
           },
         ],
@@ -333,7 +333,7 @@ export class InvSalesOrdersService {
     const lineItems = so.lines.map((l) => ({
       description: l.productVariant.product.name,
       quantity: parseFloat(l.quantity),
-      unitPrice: parseFloat(l.unitPrice),
+      rate: parseFloat(l.unitPrice),
       amount: parseFloat(l.amount),
     }));
 
@@ -372,14 +372,14 @@ export class InvSalesOrdersService {
       lines: [
         {
           accountCode: "1200",
-          debit: so.total,
-          credit: null,
+          debit: Number(so.total),
+          credit: 0,
           description: `AR - ${invoiceNumber}`,
         },
         {
           accountCode: "4000",
-          debit: null,
-          credit: so.total,
+          debit: 0,
+          credit: Number(so.total),
           description: `Sales Revenue - ${so.soNumber}`,
         },
       ],

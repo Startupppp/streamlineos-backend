@@ -42,6 +42,10 @@ export class CacheService {
     }
   }
 
+  async del(key: string): Promise<void> {
+    return this.invalidate(key);
+  }
+
   async invalidatePattern(pattern: string): Promise<void> {
     if (!this.redis) return;
     try {
