@@ -22,6 +22,10 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { SettingsModule } from "./modules/settings/settings.module";
+import { InvoicesModule } from "./modules/invoices/invoices.module";
+import { CareersModule } from "./modules/careers/careers.module";
+import { OnboardingModule } from "./modules/onboarding/onboarding.module";
+import { WebhooksModule } from "./modules/webhooks/webhooks.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -50,6 +54,10 @@ import { MeController } from "./me/me.controller";
     SalesModule,
     CalendarModule,
     SettingsModule,
+    InvoicesModule,
+    CareersModule,
+    OnboardingModule,
+    WebhooksModule,
   ],
   controllers: [HealthController, MeController],
 })
