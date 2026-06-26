@@ -66,7 +66,12 @@ export class DashboardController {
     @Body(new ZodValidationPipe(createAnnouncementSchema)) body: CreateAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.announcements.createAnnouncement(u.orgId, u.userId, u.role, body);
+    const result = await this.announcements.createAnnouncement(
+      u.orgId,
+      u.userId,
+      this.toActor(u),
+      body,
+    );
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }
@@ -76,7 +81,7 @@ export class DashboardController {
     @Query(new ZodValidationPipe(deleteAnnouncementSchema)) query: DeleteAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.announcements.deleteAnnouncement(u.orgId, u.role, query.id);
+    const result = await this.announcements.deleteAnnouncement(u.orgId, this.toActor(u), query.id);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }
@@ -88,14 +93,14 @@ export class DashboardController {
 
   @Get("branch-overview")
   async branchOverview(@CurrentUser() u: CurrentUserContext) {
-    const result = await this.crm.getBranchOverview(u.orgId, u.role);
+    const result = await this.crm.getBranchOverview(u.orgId, this.toActor(u));
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }
 
   @Get("executive")
   async executive(@CurrentUser() u: CurrentUserContext) {
-    const result = await this.crm.getExecutiveDashboard(u.orgId, u.role);
+    const result = await this.crm.getExecutiveDashboard(u.orgId, this.toActor(u));
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }

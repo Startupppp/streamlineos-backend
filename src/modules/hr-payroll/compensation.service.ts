@@ -106,7 +106,7 @@ export class CompensationService {
               and(
                 eq(payrolls.orgId, orgId),
                 eq(payrolls.month, currentMonth),
-                sql`${payrolls.status} IN ('APPROVED', 'SUBMITTED')`,
+                sql`${payrolls.status} IN ('APPROVED', 'PENDING_APPROVAL')`,
               ),
             ),
           this.db
@@ -122,7 +122,7 @@ export class CompensationService {
                     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
                   })(),
                 ),
-                sql`${payrolls.status} IN ('APPROVED', 'SUBMITTED')`,
+                sql`${payrolls.status} IN ('APPROVED', 'PENDING_APPROVAL')`,
               ),
             ),
         ]);

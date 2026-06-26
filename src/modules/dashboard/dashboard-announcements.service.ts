@@ -55,10 +55,10 @@ export class DashboardAnnouncementsService {
   async createAnnouncement(
     orgId: string,
     authorId: string,
-    role: string,
+    actor: DashboardActor,
     input: CreateAnnouncementInput,
   ) {
-    if (!canManageAnnouncements(role)) {
+    if (!canManageAnnouncements(actor)) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
@@ -77,8 +77,8 @@ export class DashboardAnnouncementsService {
     return row;
   }
 
-  async deleteAnnouncement(orgId: string, role: string, id: number) {
-    if (!canManageAnnouncements(role)) {
+  async deleteAnnouncement(orgId: string, actor: DashboardActor, id: number) {
+    if (!canManageAnnouncements(actor)) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
