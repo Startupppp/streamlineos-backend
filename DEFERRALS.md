@@ -32,3 +32,22 @@ future batch that owns unblocking it.
 | Route | Method | Blocking integration | Owning future batch |
 | --- | --- | --- | --- |
 | /branches | POST | writes `users.branchId` when a manager is supplied (user record mutation) | users-sessions |
+
+## projects
+
+| Route | Method | Blocking integration | Owning future batch |
+| --- | --- | --- | --- |
+| /projects/:projectId | PATCH | `sendProjectAssignmentEmail` on manager (re)assignment — email provider integration (in-app data is written) | notifications-email |
+| /projects/:projectId/tickets | POST | `sendTicketAssignmentEmail` to new assignees — email provider integration (in-app assignment notifications are ported) | notifications-email |
+| /projects/:projectId/tickets/:ticketId/comments | POST | mention emails via `processCommentMentions` — email provider integration (in-app mention notifications are ported) | notifications-email |
+| /projects/:projectId/budget | GET, PATCH | billable-cost rollup over `timesheets` + member `hourlyRate`; endpoint not yet ported (cost aggregation owned by projects-execution) | projects-execution |
+
+## support
+
+| Route | Method | Blocking integration | Owning future batch |
+| --- | --- | --- | --- |
+| /support/kb/ask | POST | `answerQuestion` semantic Q&A over pgvector embeddings (`kb-rag`) — embeddings/OpenAI provider not extracted | kb-rag |
+| /support/kb/reindex-all | POST | bulk `reindexArticle` embedding generation (`kb-rag`) | kb-rag |
+| /support/kb/articles/:articleId/reindex | POST | per-article `reindexArticle` embedding generation (`kb-rag`) | kb-rag |
+| /support/kb/articles/:articleId/index-status | GET | KB embedding index status (`kb-rag`) | kb-rag |
+| /support/kb/articles/:articleId/attachments/:attachmentId | GET, DELETE | `getFileUrl`/`deleteFile` R2 object storage (`@/lib/storage`) presign + cleanup; GET (download presign) not ported and DELETE skips the R2 object delete; both routes also skip `reindexArticleSafe` (`kb-rag`) | object-storage-r2 |

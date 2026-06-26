@@ -35,6 +35,9 @@ import { DealsModule } from "./modules/deals/deals.module";
 import { OrgModule } from "./modules/org/org.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { BranchesModule } from "./modules/branches/branches.module";
+import { ProjectsExecutionModule } from "./modules/projects-execution/projects-execution.module";
+import { ProjectsModule } from "./modules/projects/projects.module";
+import { SupportModule } from "./modules/support/support.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -76,6 +79,9 @@ import { MeController } from "./me/me.controller";
     OrgModule,
     OrganizationModule,
     BranchesModule,
+    ProjectsExecutionModule,
+    ProjectsModule,
+    SupportModule,
   ],
   controllers: [HealthController, MeController],
 })

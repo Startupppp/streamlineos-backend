@@ -99,7 +99,6 @@ export class DealsService {
   async updateDeal(orgId: string, userId: string, dealId: number, input: UpdateDealInput): Promise<UpdateDealOutcome> {
     const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
     let stageChanged = false;
-    let newStage: UpdateDealInput["stage"];
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
@@ -125,7 +124,6 @@ export class DealsService {
 
       if (existing && existing.stage !== input.stage) {
         stageChanged = true;
-        newStage = input.stage;
         await this.db.insert(dealActivities).values({
           orgId,
           dealId,
@@ -174,7 +172,7 @@ export class DealsService {
       orgId,
       targetId: String(dealId),
       targetType: "deal",
-      metadata: { changedFields: Object.keys(input), newStage },
+      metadata: { changedFields: Object.keys(input), newStage: input.stage },
     });
 
     return { ok: true, deal: updated, stageChanged };
