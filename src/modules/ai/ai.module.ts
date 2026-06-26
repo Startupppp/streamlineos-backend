@@ -1,0 +1,34 @@
+import { Module } from "@nestjs/common";
+import { CrmAiController } from "./controllers/crm-ai.controller";
+import { HrAiController } from "./controllers/hr-ai.controller";
+import { KbRagController } from "./controllers/kb-rag.controller";
+import { ChatAssistantController } from "./controllers/chat-assistant.controller";
+import { LlmService } from "./providers/llm.service";
+import { EmbeddingsService } from "./providers/embeddings.service";
+import { CrmScoringService } from "./services/crm-scoring.service";
+import { CrmContentService } from "./services/crm-content.service";
+import { CrmBriefService } from "./services/crm-brief.service";
+import { CrmTasksService } from "./services/crm-tasks.service";
+import { HrAiService } from "./services/hr-ai.service";
+import { KbRagService } from "./services/kb-rag.service";
+import { ChatAssistantService } from "./services/chat-assistant.service";
+import { AiUsageService } from "./services/ai-usage.service";
+import { OrgFeaturesService } from "./services/org-features.service";
+
+@Module({
+  controllers: [CrmAiController, HrAiController, KbRagController, ChatAssistantController],
+  providers: [
+    LlmService,
+    EmbeddingsService,
+    CrmScoringService,
+    CrmContentService,
+    CrmBriefService,
+    CrmTasksService,
+    HrAiService,
+    KbRagService,
+    ChatAssistantService,
+    AiUsageService,
+    OrgFeaturesService,
+  ],
+})
+export class AiModule {}

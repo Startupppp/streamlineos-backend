@@ -58,6 +58,13 @@ import { InvVendorsModule } from "./modules/inv-vendors/inv-vendors.module";
 import { InvPurchaseOrdersModule } from "./modules/inv-purchase-orders/inv-purchase-orders.module";
 import { InvSalesOrdersModule } from "./modules/inv-sales-orders/inv-sales-orders.module";
 import { InvReportsModule } from "./modules/inv-reports/inv-reports.module";
+import { EmailModule } from "./modules/email/email.module";
+import { AiModule } from "./modules/ai/ai.module";
+import { StorageModule } from "./modules/storage/storage.module";
+import { BillingModule } from "./modules/billing/billing.module";
+import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
+import { RealtimeModule } from "./modules/realtime/realtime.module";
+import { AutomationModule } from "./modules/automation/automation.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -122,6 +129,13 @@ import { MeController } from "./me/me.controller";
     InvPurchaseOrdersModule,
     InvSalesOrdersModule,
     InvReportsModule,
+    EmailModule,
+    AiModule,
+    StorageModule,
+    BillingModule,
+    GoogleCalendarModule,
+    RealtimeModule,
+    AutomationModule,
   ],
   controllers: [HealthController, MeController],
 })

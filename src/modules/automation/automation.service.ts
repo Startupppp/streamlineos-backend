@@ -1,0 +1,304 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHmac } from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  automationRules,
+  automationRuns,
+  automationTriggerEnum,
+  organizationMembers,
+  tasks,
+  webhookEndpoints,
+  webhookLogs,
+  type AutomationAction,
+  type AutomationCondition,
+} from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { AutomationEmailService } from "./automation-email.service";
+import { evaluateConditions, type EventPayload } from "./automation.evaluator";
+
+export type AutomationTrigger = (typeof automationTriggerEnum.enumValues)[number];
+
+interface RuleDefinition {
+  id: number;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+}
+
+export interface ActionResult {
+  type: AutomationAction["type"];
+  ok: boolean;
+  error?: string;
+}
+
+export interface EvaluationResult {
+  matched: boolean;
+  actionResults: ActionResult[];
+}
+
+const WEBHOOK_TIMEOUT_MS = 10_000;
+
+@Injectable()
+export class AutomationService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly notifications: NotificationsService,
+    private readonly email: AutomationEmailService,
+  ) {}
+
+  private async notifyMembers(
+    orgId: string,
+    roles: string[] | null,
+    content: { title: string; message: string; link?: string },
+  ): Promise<void> {
+    const members = await this.db
+      .select({ userId: organizationMembers.userId, role: organizationMembers.role })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
+
+    const targets = roles ? members.filter((member) => roles.includes(member.role)) : members;
+    if (targets.length === 0) return;
+
+    await Promise.all(
+      targets.map((member) =>
+        this.notifications.create({
+          orgId,
+          userId: member.userId,
+          title: content.title,
+          message: content.message,
+          link: content.link,
+        }),
+      ),
+    );
+  }
+
+  private async dispatchWebhook(
+    orgId: string,
+    eventName: string,
+    payload: EventPayload,
+  ): Promise<void> {
+    const endpoints = await this.db.query.webhookEndpoints.findMany({
+      where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
+    });
+
+    const active = endpoints.filter((endpoint) => {
+      const events = endpoint.events;
+      return events.length === 0 || events.includes(eventName) || events.includes("*");
+    });
+    if (active.length === 0) return;
+
+    const results = await Promise.allSettled(
+      active.map((endpoint) => this.deliverWebhook(endpoint, orgId, eventName, payload)),
+    );
+
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed > 0) throw new Error(`Webhook delivery failed for ${failed}/${active.length} endpoint(s)`);
+  }
+
+  private async deliverWebhook(
+    endpoint: { id: number; url: string; secret: string },
+    orgId: string,
+    eventName: string,
+    payload: EventPayload,
+  ): Promise<void> {
+    const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
+    const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
+
+    let statusCode: number | null = null;
+    let responseBody: string | null = null;
+    let success = false;
+
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-StreamlineOS-Signature": `sha256=${signature}`,
+          "X-Webhook-Event": eventName,
+        },
+        body,
+        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+      });
+      statusCode = response.status;
+      responseBody = await response.text().catch(() => null);
+      success = response.ok;
+    } catch (error) {
+      responseBody = error instanceof Error ? error.message : "Request failed";
+    }
+
+    await this.db.insert(webhookLogs).values({
+      endpointId: endpoint.id,
+      orgId,
+      event: eventName,
+      payload,
+      statusCode,
+      responseBody: responseBody?.slice(0, 2000) ?? null,
+      success,
+    });
+
+    if (!success) throw new Error(`Webhook delivery failed: ${statusCode ?? "no response"}`);
+  }
+
+  private async executeAction(
+    orgId: string,
+    action: AutomationAction,
+    payload: EventPayload,
+  ): Promise<ActionResult> {
+    try {
+      switch (action.type) {
+        case "notify_roles": {
+          await this.notifyMembers(orgId, action.config.roles, {
+            title: action.config.title,
+            message: action.config.message,
+            link: action.config.link,
+          });
+          return { type: action.type, ok: true };
+        }
+        case "notify_all": {
+          await this.notifyMembers(orgId, null, {
+            title: action.config.title,
+            message: action.config.message,
+            link: action.config.link,
+          });
+          return { type: action.type, ok: true };
+        }
+        case "email": {
+          await this.email.send({
+            to: action.config.to,
+            subject: action.config.subject,
+            html: action.config.body,
+          });
+          return { type: action.type, ok: true };
+        }
+        case "create_task": {
+          const dueDate =
+            typeof action.config.dueInDays === "number"
+              ? new Date(Date.now() + action.config.dueInDays * 24 * 60 * 60 * 1000)
+              : null;
+          await this.db.insert(tasks).values({
+            orgId,
+            title: action.config.title,
+            assigneeId: action.config.assigneeId ?? null,
+            dueDate,
+          });
+          return { type: action.type, ok: true };
+        }
+        case "webhook": {
+          await this.dispatchWebhook(orgId, action.config.event, payload);
+          return { type: action.type, ok: true };
+        }
+        default:
+          return { type: "webhook", ok: false, error: "Unknown action type" };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Action execution failed";
+      return { type: action.type, ok: false, error: message };
+    }
+  }
+
+  async runRule(orgId: string, rule: RuleDefinition, payload: EventPayload): Promise<EvaluationResult> {
+    const matched = evaluateConditions(rule.conditions, payload);
+    if (!matched) return { matched: false, actionResults: [] };
+
+    const actionResults: ActionResult[] = [];
+    for (const action of rule.actions) {
+      actionResults.push(await this.executeAction(orgId, action, payload));
+    }
+    return { matched: true, actionResults };
+  }
+
+  async runAutomationsForEvent(
+    orgId: string,
+    triggerEvent: AutomationTrigger,
+    payload: EventPayload,
+  ): Promise<void> {
+    try {
+      const rules = await this.db.query.automationRules.findMany({
+        where: and(
+          eq(automationRules.orgId, orgId),
+          eq(automationRules.triggerEvent, triggerEvent),
+          eq(automationRules.isEnabled, true),
+        ),
+        columns: { id: true, conditions: true, actions: true },
+      });
+      if (rules.length === 0) return;
+
+      for (const rule of rules) {
+        try {
+          const { matched, actionResults } = await this.runRule(orgId, rule, payload);
+
+          if (!matched) {
+            await this.db.insert(automationRuns).values({
+              orgId,
+              ruleId: rule.id,
+              triggerEvent,
+              status: "skipped",
+              payload,
+            });
+            continue;
+          }
+
+          const failures = actionResults.filter((result) => !result.ok);
+          await this.db
+            .update(automationRules)
+            .set({ runCount: sql`${automationRules.runCount} + 1`, lastRunAt: new Date() })
+            .where(eq(automationRules.id, rule.id));
+
+          await this.db.insert(automationRuns).values({
+            orgId,
+            ruleId: rule.id,
+            triggerEvent,
+            status: failures.length === 0 ? "success" : "failed",
+            payload,
+            result: { actionResults },
+            error:
+              failures.length > 0
+                ? failures.map((failure) => `${failure.type}: ${failure.error}`).join("; ")
+                : null,
+          });
+        } catch (error) {
+          logger.error("automation rule execution failed", { orgId, ruleId: rule.id, triggerEvent, error });
+        }
+      }
+    } catch (error) {
+      logger.error("runAutomationsForEvent failed", { orgId, triggerEvent, error });
+    }
+  }
+
+  async testRule(orgId: string, ruleId: number, payload: EventPayload) {
+    const rule = await this.db.query.automationRules.findFirst({
+      where: and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)),
+      columns: { id: true, triggerEvent: true, conditions: true, actions: true },
+    });
+    if (!rule) throw new NotFoundException("Automation not found");
+
+    const { matched, actionResults } = await this.runRule(
+      orgId,
+      { id: rule.id, conditions: rule.conditions, actions: rule.actions },
+      payload,
+    );
+
+    const failures = actionResults.filter((result) => !result.ok);
+    const status = !matched ? "skipped" : failures.length === 0 ? "success" : "failed";
+
+    const [run] = await this.db
+      .insert(automationRuns)
+      .values({
+        orgId,
+        ruleId: rule.id,
+        triggerEvent: rule.triggerEvent,
+        status,
+        payload,
+        result: { matched, actionResults, test: true },
+        error:
+          failures.length > 0
+            ? failures.map((failure) => `${failure.type}: ${failure.error}`).join("; ")
+            : null,
+      })
+      .returning({ id: automationRuns.id });
+
+    return { runId: run.id, matched, status, actionResults };
+  }
+}
