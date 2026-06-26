@@ -51,6 +51,13 @@ import { IntegrationsGitModule } from "./modules/integrations-git/integrations-g
 import { CronModule } from "./modules/cron/cron.module";
 import { HrRecruitmentModule } from "./modules/hr-recruitment/hr-recruitment.module";
 import { HrInterviewsModule } from "./modules/hr-interviews/hr-interviews.module";
+import { InvProductsModule } from "./modules/inv-products/inv-products.module";
+import { InvWarehousesModule } from "./modules/inv-warehouses/inv-warehouses.module";
+import { InvStockModule } from "./modules/inv-stock/inv-stock.module";
+import { InvVendorsModule } from "./modules/inv-vendors/inv-vendors.module";
+import { InvPurchaseOrdersModule } from "./modules/inv-purchase-orders/inv-purchase-orders.module";
+import { InvSalesOrdersModule } from "./modules/inv-sales-orders/inv-sales-orders.module";
+import { InvReportsModule } from "./modules/inv-reports/inv-reports.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -108,6 +115,13 @@ import { MeController } from "./me/me.controller";
     CronModule,
     HrRecruitmentModule,
     HrInterviewsModule,
+    InvProductsModule,
+    InvWarehousesModule,
+    InvStockModule,
+    InvVendorsModule,
+    InvPurchaseOrdersModule,
+    InvSalesOrdersModule,
+    InvReportsModule,
   ],
   controllers: [HealthController, MeController],
 })
