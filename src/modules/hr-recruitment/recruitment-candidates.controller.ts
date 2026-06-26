@@ -1,0 +1,171 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
+import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
+import { RECRUITMENT_ADMIN_ROLES, RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
+import {
+  bgvStatusSchema,
+  bulkImportSchema,
+  bulkRejectSchema,
+  candidateListSchema,
+  createApplicationSchema,
+  createCandidateSchema,
+  importSchema,
+  slaResetSchema,
+  stageSchema,
+  updateCandidateSchema,
+  type BgvStatusInput,
+  type BulkImportInput,
+  type BulkRejectInput,
+  type CandidateListInput,
+  type CreateApplicationInput,
+  type CreateCandidateInput,
+  type ImportInput,
+  type SlaResetInput,
+  type StageInput,
+  type UpdateCandidateInput,
+} from "./dto/candidates.schemas";
+
+@Controller("hr/recruitment/candidates")
+@UseGuards(JwtAuthGuard, AbilityGuard)
+export class RecruitmentCandidatesController {
+  constructor(
+    private readonly candidates: RecruitmentCandidatesService,
+    private readonly ops: RecruitmentCandidateOpsService,
+  ) {}
+
+  @Get()
+  list(
+    @Query(new ZodValidationPipe(candidateListSchema)) query: CandidateListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.list(u.orgId, query);
+  }
+
+  @Post()
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createCandidateSchema)) body: CreateCandidateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.create(u.orgId, body);
+  }
+
+  @Post("bulk-import")
+  @HttpCode(201)
+  bulkImport(
+    @Body(new ZodValidationPipe(bulkImportSchema)) body: BulkImportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    return this.ops.bulkImport(u.orgId, body);
+  }
+
+  @Post("import")
+  @HttpCode(201)
+  @CheckAbility("manage", "hr:employees")
+  importCandidates(
+    @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.importCandidates(u.orgId, body);
+  }
+
+  @Post("bulk-reject")
+  bulkReject(
+    @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden: HR/Admin role required");
+    return this.ops.bulkReject(u.orgId, u.userId, body);
+  }
+
+  @Get(":candidateId")
+  getOne(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.getDetail(u.orgId, candidateId);
+  }
+
+  @Patch(":candidateId")
+  update(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(updateCandidateSchema)) body: UpdateCandidateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.update(u.orgId, candidateId, body);
+  }
+
+  @Delete(":candidateId")
+  remove(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.remove(u.orgId, candidateId);
+  }
+
+  @Patch(":candidateId/stage")
+  moveStage(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(stageSchema)) body: StageInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.moveStage(u.orgId, u.userId, candidateId, body);
+  }
+
+  @Get(":candidateId/sla")
+  getSla(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.getSla(u.orgId, candidateId);
+  }
+
+  @Patch(":candidateId/sla")
+  resetSla(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(slaResetSchema)) body: SlaResetInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.resetSla(u.orgId, candidateId, body);
+  }
+
+  @Post(":candidateId/applications")
+  @HttpCode(201)
+  createApplication(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(createApplicationSchema)) body: CreateApplicationInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.createApplication(u.orgId, candidateId, body);
+  }
+
+  @Patch(":candidateId/bgv-status")
+  updateBgvStatus(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(bgvStatusSchema)) body: BgvStatusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden: HR role required");
+    return this.ops.updateBgvStatus(u.orgId, candidateId, body);
+  }
+}

@@ -49,6 +49,8 @@ import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
 import { SearchModule } from "./modules/search/search.module";
 import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
 import { CronModule } from "./modules/cron/cron.module";
+import { HrRecruitmentModule } from "./modules/hr-recruitment/hr-recruitment.module";
+import { HrInterviewsModule } from "./modules/hr-interviews/hr-interviews.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -104,6 +106,8 @@ import { MeController } from "./me/me.controller";
     SearchModule,
     IntegrationsGitModule,
     CronModule,
+    HrRecruitmentModule,
+    HrInterviewsModule,
   ],
   controllers: [HealthController, MeController],
 })
