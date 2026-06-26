@@ -1,0 +1,149 @@
+import { Test } from "@nestjs/testing";
+import { INestApplication } from "@nestjs/common";
+import request from "supertest";
+import { AppModule } from "../../app.module";
+import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
+import { signToken } from "../../../test/helpers/sign-token";
+
+describe("Leads extended routes auth/RBAC (e2e)", () => {
+  let app: INestApplication;
+  beforeAll(async () => {
+    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
+    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+  });
+  afterAll(async () => app.close());
+
+  type Method = "get" | "post" | "patch" | "delete";
+
+  function callRoute(method: Method, path: string): request.Test {
+    const agent = request(app.getHttpServer());
+    switch (method) {
+      case "get":
+        return agent.get(path);
+      case "post":
+        return agent.post(path);
+      case "patch":
+        return agent.patch(path);
+      case "delete":
+        return agent.delete(path);
+    }
+  }
+
+  const protectedRoutes: ReadonlyArray<[Method, string]> = [
+    ["get", "/leads/analytics"],
+    ["get", "/leads/dashboard-metrics"],
+    ["get", "/leads/source-report"],
+    ["get", "/leads/sales-leaderboard"],
+    ["get", "/leads/sales-team-capacity"],
+    ["get", "/leads/sla-alerts"],
+    ["get", "/leads/follow-ups"],
+    ["get", "/leads/unverified"],
+    ["get", "/leads/duplicates"],
+    ["get", "/leads/check-duplicates"],
+    ["get", "/leads/export"],
+    ["get", "/leads/1/activities"],
+    ["get", "/leads/1/timeline"],
+    ["get", "/leads/1/score-explanation"],
+    ["get", "/leads/import/1"],
+    ["post", "/leads/1/activities"],
+    ["patch", "/leads/1/custom-data"],
+    ["patch", "/leads/1/status"],
+    ["patch", "/leads/1/verify"],
+    ["patch", "/leads/1/reject"],
+    ["patch", "/leads/1/self-assign"],
+    ["patch", "/leads/1/assign"],
+    ["post", "/leads/1/merge"],
+    ["patch", "/leads/bulk"],
+    ["delete", "/leads/bulk"],
+    ["post", "/leads/merge"],
+    ["post", "/leads/import"],
+    ["post", "/leads/distribute"],
+  ];
+
+  it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
+    const res = await callRoute(method, path);
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Unauthorized" });
+  });
+
+  it("403 on GET /leads/unverified without crm:leads read", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/leads/unverified")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "read", subject: "crm:leads" });
+  });
+
+  it("403 on PATCH /leads/bulk without crm:leads update", async () => {
+    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .patch("/leads/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ leadIds: [1], update: {} });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "update", subject: "crm:leads" });
+  });
+
+  it("403 on DELETE /leads/bulk without crm:leads delete", async () => {
+    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .delete("/leads/bulk")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ leadIds: [1] });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "delete", subject: "crm:leads" });
+  });
+
+  it("403 on POST /leads/import without crm:leads create", async () => {
+    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post("/leads/import")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ leads: [{ name: "x" }] });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "create", subject: "crm:leads" });
+  });
+
+  it("403 on POST /leads/merge for a non-manager role (role-string gate)", async () => {
+    const token = await signToken({ role: "SALES" });
+    const res = await request(app.getHttpServer())
+      .post("/leads/merge")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ winnerId: 1, loserId: 2 });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Forbidden: Manager or Admin role required" });
+  });
+
+  it("403 on POST /leads/distribute for a non CEO/HR role (role-string gate)", async () => {
+    const token = await signToken({ role: "SALES" });
+    const res = await request(app.getHttpServer())
+      .post("/leads/distribute")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ leadIds: [1] });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Only CEO or HR can distribute leads" });
+  });
+
+  const authOnlyGetRoutes: ReadonlyArray<string> = [
+    "/leads/analytics",
+    "/leads/dashboard-metrics",
+    "/leads/sales-leaderboard",
+    "/leads/sla-alerts",
+    "/leads/follow-ups",
+  ];
+
+  it.each(authOnlyGetRoutes)(
+    "does NOT enforce an ability gate on GET %s (auth-only)",
+    async (path) => {
+      const token = await signToken({ permissions: [], enabledModules: [] });
+      const res = await request(app.getHttpServer()).get(path).set("Authorization", `Bearer ${token}`);
+      expect(res.status).not.toBe(401);
+      expect(res.status).not.toBe(403);
+    },
+  );
+});

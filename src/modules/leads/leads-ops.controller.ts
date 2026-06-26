@@ -1,0 +1,131 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { LeadsOpsService } from "./leads-ops.service";
+import {
+  bulkDeleteSchema,
+  bulkUpdateSchema,
+  distributeSchema,
+  importSchema,
+  topMergeSchema,
+  type BulkDeleteInput,
+  type BulkUpdateInput,
+  type DistributeInput,
+  type ImportInput,
+  type TopMergeInput,
+} from "./dto/lead-mutations.schemas";
+
+const MERGE_ROLES = ["CEO", "ADMIN", "HR", "SALES_MANAGER"];
+const DISTRIBUTE_ROLES = ["CEO", "HR"];
+
+@Controller("leads")
+@UseGuards(JwtAuthGuard)
+export class LeadsOpsController {
+  constructor(private readonly ops: LeadsOpsService) {}
+
+  @Get("import/:batchId")
+  async getImportBatch(
+    @Param("batchId", ParseIntPipe) batchId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const batch = await this.ops.getImportBatch(u.orgId, batchId);
+    if (!batch) throw new NotFoundException("Batch not found");
+    return batch;
+  }
+
+  @Patch("bulk")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("update", "crm:leads")
+  bulkUpdate(
+    @Body(new ZodValidationPipe(bulkUpdateSchema)) body: BulkUpdateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.bulkUpdate(u.orgId, u.userId, body);
+  }
+
+  @Delete("bulk")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("delete", "crm:leads")
+  bulkDelete(
+    @Body(new ZodValidationPipe(bulkDeleteSchema)) body: BulkDeleteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.bulkDelete(u.orgId, body);
+  }
+
+  @Post("merge")
+  @HttpCode(200)
+  async mergeLeads(
+    @Body(new ZodValidationPipe(topMergeSchema)) body: TopMergeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!MERGE_ROLES.includes(u.role)) {
+      throw new ForbiddenException("Forbidden: Manager or Admin role required");
+    }
+    const result = await this.ops.mergeLeads(u.orgId, u.userId, body);
+    if (!result.ok) {
+      if (result.reason === "self") {
+        throw new BadRequestException("Cannot merge a lead with itself");
+      }
+      if (result.reason === "winner_not_found") {
+        throw new NotFoundException("Winner lead not found");
+      }
+      throw new NotFoundException("Loser lead not found");
+    }
+    return { merged: true, winner: result.winner };
+  }
+
+  @Post("import")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("create", "crm:leads")
+  @HttpCode(201)
+  importLeads(
+    @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ops.importLeads(u.orgId, u.userId, body);
+  }
+
+  @Post("distribute")
+  @HttpCode(200)
+  async distribute(
+    @Body(new ZodValidationPipe(distributeSchema)) body: DistributeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!DISTRIBUTE_ROLES.includes(u.role)) {
+      throw new ForbiddenException("Only CEO or HR can distribute leads");
+    }
+    const result = await this.ops.distribute(u.orgId, u.userId, body);
+    if (!result.ok) {
+      if (result.reason === "no_members") {
+        throw new BadRequestException("No organization members found");
+      }
+      if (result.reason === "no_sales") {
+        throw new BadRequestException("No active sales team members found.");
+      }
+      if (result.reason === "all_on_leave") {
+        throw new BadRequestException("All sales team members are on leave today.");
+      }
+      throw new NotFoundException("No valid leads found to distribute");
+    }
+    return result.data;
+  }
+}
