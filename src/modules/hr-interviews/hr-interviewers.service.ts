@@ -11,7 +11,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { endOfDay, startOfDay, subDays } from "./date.util";
 
-interface BusyBlock {
+export interface BusyBlock {
   start: string;
   end: string;
   title: string;
