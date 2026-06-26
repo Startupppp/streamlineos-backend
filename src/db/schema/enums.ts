@@ -94,3 +94,12 @@ export const blogPostStatusEnum = pgEnum("blog_post_status", ["draft", "publishe
 
 export const accountTypeEnum = pgEnum("account_type", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
 export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "POSTED", "VOID"]);
+
+export const invProductStatusEnum = pgEnum("inv_product_status", ["ACTIVE", "INACTIVE", "DISCONTINUED"]);
+export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]);
+export const invTxnTypeEnum = pgEnum("inv_txn_type", ["PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT", "RETURN_IN", "RETURN_OUT", "GRN"]);
+export const invPoStatusEnum = pgEnum("inv_po_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CLOSED", "CANCELLED"]);
+export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "SHIPPED", "INVOICED", "CANCELLED"]);
+export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);
+export const invLocationTypeEnum = pgEnum("inv_location_type", ["ZONE", "AISLE", "RACK", "BIN"]);
+export const invGrnQualityEnum = pgEnum("inv_grn_quality", ["ACCEPTED", "REJECTED"]);
