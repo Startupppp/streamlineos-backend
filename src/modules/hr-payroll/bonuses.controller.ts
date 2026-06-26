@@ -1,0 +1,73 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { BonusesService } from "./bonuses.service";
+import {
+  createBonusSchema,
+  patchBonusSchema,
+  type CreateBonusInput,
+  type PatchBonusInput,
+} from "./dto/payroll.schemas";
+
+@Controller("hr/bonuses")
+@UseGuards(JwtAuthGuard)
+export class BonusesController {
+  constructor(private readonly bonuses: BonusesService) {}
+
+  @Get()
+  list(@CurrentUser() u: CurrentUserContext) {
+    const ability = defineAbilityFor({
+      isPlatformAdmin: u.isPlatformAdmin,
+      isOrgOwner: u.isOrgOwner,
+      permissions: u.permissions,
+      enabledModules: u.enabledModules,
+    });
+    const isAdmin = ability.can("approve", "hr:payroll");
+    return this.bonuses.listBonuses(u.orgId, u.userId, isAdmin);
+  }
+
+  @Post()
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:bonuses")
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createBonusSchema)) body: CreateBonusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.bonuses.createBonus(u.orgId, body);
+  }
+
+  @Patch(":bonusId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:bonuses")
+  async update(
+    @Param("bonusId", ParseIntPipe) bonusId: number,
+    @Body(new ZodValidationPipe(patchBonusSchema)) body: PatchBonusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.bonuses.updateBonus(u.orgId, u.userId, bonusId, body);
+    if (!result.ok) {
+      if (result.reason === "not_found") throw new NotFoundException("Bonus not found.");
+      if (result.reason === "already_paid") throw new BadRequestException("Bonus has already been paid.");
+      throw new BadRequestException("Cannot mark a rejected bonus as paid.");
+    }
+    return result.bonus;
+  }
+}

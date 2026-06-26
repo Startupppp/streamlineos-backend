@@ -1,0 +1,153 @@
+import { z } from "zod";
+
+export const generatePayrollSchema = z.object({
+  month: z.string().optional(),
+});
+export type GeneratePayrollInput = z.infer<typeof generatePayrollSchema>;
+
+export const generateSinglePayrollSchema = z.object({
+  userId: z.string(),
+  month: z.string(),
+  lopDays: z.number().min(0).optional(),
+  halfDays: z.number().min(0).optional(),
+  otherDeductions: z.number().min(0).optional(),
+  bonus: z.number().min(0).optional(),
+  overtimeType: z.enum(["days", "hours"]).optional(),
+  overtimeDays: z.number().min(0).optional(),
+  overtimeHours: z.number().min(0).optional(),
+  overtimeAmount: z.number().min(0).optional(),
+});
+export type GenerateSinglePayrollInput = z.infer<typeof generateSinglePayrollSchema>;
+
+export const allPayrollsQuerySchema = z.object({
+  month: z.string().optional(),
+  year: z.string().optional(),
+});
+export type AllPayrollsQueryInput = z.infer<typeof allPayrollsQuerySchema>;
+
+export const payrollReportsQuerySchema = z.object({
+  year: z.string().optional(),
+  type: z.string().optional(),
+});
+export type PayrollReportsQueryInput = z.infer<typeof payrollReportsQuerySchema>;
+
+export const payslipsQuerySchema = z.object({
+  userId: z.string().optional(),
+});
+export type PayslipsQueryInput = z.infer<typeof payslipsQuerySchema>;
+
+export const createBonusSchema = z.object({
+  userId: z.string().min(1),
+  type: z.enum(["PERFORMANCE", "FESTIVAL", "REFERRAL", "SPOT", "ANNUAL"]),
+  amount: z.preprocess(
+    (val) => {
+      const n = typeof val === "string" ? parseFloat(val) : val;
+      return typeof n === "number" && isFinite(n) ? n : NaN;
+    },
+    z
+      .number()
+      .positive("Amount must be positive")
+      .multipleOf(0.01, "Amount must have at most 2 decimal places"),
+  ),
+  reason: z
+    .string()
+    .max(500, "Reason must be at most 500 characters")
+    .refine((v) => !v || v.trim().length >= 3, "Reason must be at least 3 characters")
+    .refine((v) => !v || !/^[\s\W]+$/.test(v.trim()), "Reason cannot consist of only special characters")
+    .optional(),
+  month: z.string().optional(),
+});
+export type CreateBonusInput = z.infer<typeof createBonusSchema>;
+
+export const patchBonusSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "PAID"]),
+});
+export type PatchBonusInput = z.infer<typeof patchBonusSchema>;
+
+export const createLoanSchema = z.object({
+  amount: z
+    .number()
+    .min(1000, "Loan amount must be at least ₹1,000")
+    .max(10000000, "Loan amount cannot exceed ₹1,00,00,000"),
+  reason: z.string().min(1, "Reason is required").max(500),
+  totalEmis: z.number().int().min(1, "At least 1 EMI required").max(360, "Maximum 360 EMIs"),
+  userId: z.string().optional(),
+});
+export type CreateLoanInput = z.infer<typeof createLoanSchema>;
+
+export const updateLoanSchema = z.object({
+  status: z.enum(["APPROVED", "ACTIVE", "REPAID", "REJECTED"]).optional(),
+  paidEmis: z.number().int().min(0).optional(),
+});
+export type UpdateLoanInput = z.infer<typeof updateLoanSchema>;
+
+export const incentivesQuerySchema = z.object({
+  status: z.string().optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).optional(),
+});
+export type IncentivesQueryInput = z.infer<typeof incentivesQuerySchema>;
+
+export const createIncentiveConfigSchema = z.object({
+  incentiveRate: z.preprocess(
+    (val) => (typeof val === "string" ? parseFloat(val) : val),
+    z
+      .number({ message: "Incentive rate must be a number" })
+      .positive({ message: "Incentive rate must be positive" })
+      .max(100, { message: "Incentive rate cannot exceed 100%" })
+      .multipleOf(0.01, { message: "Incentive rate can have at most 2 decimal places" })
+      .transform((n) => n.toFixed(2)),
+  ),
+});
+export type CreateIncentiveConfigInput = z.infer<typeof createIncentiveConfigSchema>;
+
+export const approveIncentiveSchema = z.object({
+  approvedAmount: z.string(),
+  notes: z.string().optional(),
+});
+export type ApproveIncentiveInput = z.infer<typeof approveIncentiveSchema>;
+
+export const createReimbursementSchema = z.object({
+  category: z.string().min(1).max(100),
+  amount: z
+    .number()
+    .min(1, "Amount must be at least ₹1")
+    .max(999999, "Amount cannot exceed ₹9,99,999")
+    .multipleOf(0.01, "Amount must have at most 2 decimal places"),
+  description: z.string().max(1000).optional(),
+  receiptUrl: z.string().url("Enter a valid URL (e.g. https://example.com)").optional().or(z.literal("")),
+});
+export type CreateReimbursementInput = z.infer<typeof createReimbursementSchema>;
+
+export const createFnfSchema = z.object({
+  userId: z.string().min(1),
+  resignationId: z.number().int().positive().optional(),
+  basicDues: z.number().min(0).optional(),
+  leaveEncashment: z.number().min(0).optional(),
+  bonusDue: z.number().min(0).optional(),
+  deductions: z.number().min(0).optional(),
+  loanRecovery: z.number().min(0).optional(),
+  notes: z.string().max(500).optional(),
+});
+export type CreateFnfInput = z.infer<typeof createFnfSchema>;
+
+export const patchFnfSchema = z.object({
+  status: z.enum(["PENDING_APPROVAL", "APPROVED", "PAID"]),
+  notes: z.string().optional(),
+});
+export type PatchFnfInput = z.infer<typeof patchFnfSchema>;
+
+export const accountingExportSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  format: z.enum(["TALLY_XML", "QUICKBOOKS_CSV", "JSON"]).optional().default("JSON"),
+});
+export type AccountingExportInput = z.infer<typeof accountingExportSchema>;
+
+export const taxCalcSchema = z.object({
+  annualCtc: z.number().positive(),
+  basicPercentage: z.number().min(0).max(100).optional().default(50),
+  hraPercentage: z.number().min(0).max(100).optional().default(40),
+  regime: z.enum(["OLD", "NEW"]).optional().default("NEW"),
+  pfOptOut: z.boolean().optional().default(false),
+});
+export type TaxCalcInput = z.infer<typeof taxCalcSchema>;

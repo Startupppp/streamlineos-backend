@@ -43,6 +43,9 @@ import { ChatModule } from "./modules/chat/chat.module";
 import { HrConfigModule } from "./modules/hr-config/hr-config.module";
 import { HrTimeModule } from "./modules/hr-time/hr-time.module";
 import { HrDirectoryModule } from "./modules/hr-directory/hr-directory.module";
+import { HrPerformanceModule } from "./modules/hr-performance/hr-performance.module";
+import { HrPayrollModule } from "./modules/hr-payroll/hr-payroll.module";
+import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -92,6 +95,9 @@ import { MeController } from "./me/me.controller";
     HrConfigModule,
     HrTimeModule,
     HrDirectoryModule,
+    HrPerformanceModule,
+    HrPayrollModule,
+    HrLifecycleModule,
   ],
   controllers: [HealthController, MeController],
 })
