@@ -67,6 +67,21 @@ export const CACHE_KEYS = {
 
   branchesList: (orgId: string) => `branches:list:${orgId}`,
   rolesList2: (orgId: string) => `roles:list:${orgId}`,
+
+  invProductsList: (orgId: string, hash: string) => `inv:products:list:${orgId}:${hash}`,
+  invProductDetail: (orgId: string, id: number) => `inv:products:detail:${orgId}:${id}`,
+  invStockLevels: (orgId: string, hash: string) => `inv:stock:levels:${orgId}:${hash}`,
+  invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
+  invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
+  invWarehousesList: (orgId: string) => `inv:warehouses:${orgId}`,
+  invWarehouseDetail: (orgId: string, id: number) => `inv:warehouses:detail:${orgId}:${id}`,
+  invVendorsList: (orgId: string, hash: string) => `inv:vendors:list:${orgId}:${hash}`,
+  invPoList: (orgId: string, hash: string) => `inv:po:list:${orgId}:${hash}`,
+  invPoDetail: (orgId: string, id: number) => `inv:po:detail:${orgId}:${id}`,
+  invSoList: (orgId: string, hash: string) => `inv:so:list:${orgId}:${hash}`,
+  invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
+  invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
+  invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
 } as const;
 
 export const CACHE_TTL = {

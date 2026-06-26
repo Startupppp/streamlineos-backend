@@ -14,3 +14,4 @@ export * from "./platform";
 export * from "./accounting";
 export * from "./support";
 export * from "./automation";
+export * from "./inventory";
