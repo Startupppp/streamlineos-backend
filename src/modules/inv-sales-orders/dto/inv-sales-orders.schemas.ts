@@ -1,0 +1,35 @@
+import { z } from "zod";
+
+export const listSoSchema = z.object({
+  status: z.enum(["DRAFT", "CONFIRMED", "SHIPPED", "INVOICED", "CANCELLED"]).optional(),
+  clientId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ListSoInput = z.infer<typeof listSoSchema>;
+
+export const soLineSchema = z.object({
+  productVariantId: z.number().int().positive(),
+  quantity: z.number().positive(),
+  unitPrice: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  taxRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
+  lineOrder: z.number().int().min(0).default(0),
+});
+
+export const createSoSchema = z.object({
+  clientId: z.number().int().positive().optional(),
+  orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  shippingAddress: z.string().max(500).optional(),
+  warehouseId: z.number().int().positive().optional(),
+  currency: z.string().length(3).default("INR"),
+  notes: z.string().max(2000).optional(),
+  lines: z.array(soLineSchema).min(1),
+});
+export type CreateSoInput = z.infer<typeof createSoSchema>;
+
+export const shipSoSchema = z.object({
+  shipDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().max(500).optional(),
+});
+export type ShipSoInput = z.infer<typeof shipSoSchema>;
