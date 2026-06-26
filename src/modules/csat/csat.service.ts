@@ -4,8 +4,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { csatResponses, csatSurveys } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { CacheService } from "../../common/cache/cache.service";
-import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateInput,
   PatchInput,
@@ -16,11 +14,7 @@ const DEFAULT_QUESTION = "How satisfied are you with our service?";
 
 @Injectable()
 export class CsatService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-    private readonly audit: AuditService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listSurveys(orgId: string) {
     const surveys = await this.db.query.csatSurveys.findMany({
@@ -58,15 +52,6 @@ export class CsatService {
       })
       .returning();
 
-    this.audit.log({
-      action: "csat.survey.created",
-      userId,
-      orgId,
-      targetId: String(survey.id),
-      targetType: "csat_survey",
-      metadata: { title: survey.title, clientId: survey.clientId },
-    });
-
     return survey;
   }
 
@@ -80,12 +65,7 @@ export class CsatService {
     });
   }
 
-  async updateSurvey(
-    orgId: string,
-    userId: string,
-    surveyId: number,
-    input: PatchInput,
-  ) {
+  async updateSurvey(orgId: string, surveyId: number, input: PatchInput) {
     const existing = await this.db.query.csatSurveys.findFirst({
       where: and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)),
       columns: { id: true },
@@ -109,19 +89,10 @@ export class CsatService {
       .where(eq(csatSurveys.id, surveyId))
       .returning();
 
-    this.audit.log({
-      action: "csat.survey.updated",
-      userId,
-      orgId,
-      targetId: String(surveyId),
-      targetType: "csat_survey",
-      metadata: { changedFields: Object.keys(input) },
-    });
-
     return updated;
   }
 
-  async deleteSurvey(orgId: string, userId: string, surveyId: number) {
+  async deleteSurvey(orgId: string, surveyId: number) {
     const existing = await this.db.query.csatSurveys.findFirst({
       where: and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)),
       columns: { id: true },
@@ -129,14 +100,6 @@ export class CsatService {
     if (!existing) return null;
 
     await this.db.delete(csatSurveys).where(eq(csatSurveys.id, surveyId));
-
-    this.audit.log({
-      action: "csat.survey.deleted",
-      userId,
-      orgId,
-      targetId: String(surveyId),
-      targetType: "csat_survey",
-    });
 
     return { success: true };
   }

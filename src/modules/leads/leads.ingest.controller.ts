@@ -1,8 +1,7 @@
-import { BadRequestException, Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, HttpException, HttpStatus, Post, UseGuards } from "@nestjs/common";
 import { ApiKeyGuard } from "../../common/auth/api-key.guard";
 import { ApiKey, type ApiKeyContext } from "../../common/auth/api-key.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { ingestSchema, type IngestInput } from "./dto/lead.schemas";
+import { ingestSchema } from "./dto/lead.schemas";
 import { LeadsService } from "./leads.service";
 
 @Controller("leads/ingest")
@@ -12,9 +11,20 @@ export class LeadsIngestController {
 
   @Post()
   @HttpCode(201)
-  async ingest(@Body(new ZodValidationPipe(ingestSchema)) body: IngestInput, @ApiKey() key: ApiKeyContext) {
+  async ingest(@Body() rawBody: unknown, @ApiKey() key: ApiKeyContext) {
+    const parsed = ingestSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new HttpException(
+        parsed.error.issues[0]?.message ?? "Invalid request body",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+    const body = parsed.data;
     if (!body.name && !body.email && !body.phone) {
-      throw new BadRequestException("At least one of name, email, or phone is required");
+      throw new HttpException(
+        "At least one of name, email, or phone is required",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
     return this.leads.ingestCreate(key.orgId, body);
   }

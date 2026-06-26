@@ -1,7 +1,7 @@
 import { cpSync, rmSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const WEB_SCHEMA = resolve(process.cwd(), "..", "Streamlineos", "lib", "db", "schema");
+const WEB_SCHEMA = resolve(process.cwd(), "..", "frontend", "lib", "db", "schema");
 const DEST = resolve(process.cwd(), "src", "db", "schema");
 const check = process.argv.includes("--check");
 

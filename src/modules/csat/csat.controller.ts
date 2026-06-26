@@ -69,7 +69,7 @@ export class CsatController {
     @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.csat.updateSurvey(u.orgId, u.userId, surveyId, body);
+    const updated = await this.csat.updateSurvey(u.orgId, surveyId, body);
     if (!updated) throw new NotFoundException("Survey not found");
     return updated;
   }
@@ -79,7 +79,7 @@ export class CsatController {
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.csat.deleteSurvey(u.orgId, u.userId, surveyId);
+    const result = await this.csat.deleteSurvey(u.orgId, surveyId);
     if (!result) throw new NotFoundException("Survey not found");
     return result;
   }
