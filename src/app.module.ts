@@ -13,6 +13,15 @@ import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { GoalsModule } from "./modules/goals/goals.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
+import { PlatformModule } from "./modules/platform/platform.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { PushModule } from "./modules/push/push.module";
+import { QuotesModule } from "./modules/quotes/quotes.module";
+import { CustomerExecutiveModule } from "./modules/customer-executive/customer-executive.module";
+import { ReportsModule } from "./modules/reports/reports.module";
+import { SalesModule } from "./modules/sales/sales.module";
+import { CalendarModule } from "./modules/calendar/calendar.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -32,6 +41,15 @@ import { MeController } from "./me/me.controller";
     GoalsModule,
     ExpensesModule,
     TasksModule,
+    PlatformModule,
+    NotificationsModule,
+    PushModule,
+    QuotesModule,
+    CustomerExecutiveModule,
+    ReportsModule,
+    SalesModule,
+    CalendarModule,
+    SettingsModule,
   ],
   controllers: [HealthController, MeController],
 })

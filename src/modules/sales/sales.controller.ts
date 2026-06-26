@@ -1,0 +1,279 @@
+import {
+  BadRequestException,
+  Body,
+  ConflictException,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { subMonths } from "./date.helpers";
+import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
+import { SalesDashboardService, type DateRange } from "./sales-dashboard.service";
+import { SalesAnalyticsService, isRepNotFound } from "./sales-analytics.service";
+import {
+  commissionRuleCreateSchema,
+  commissionListSchema,
+  commissionUpdateSchema,
+  quotaListSchema,
+  quotaCreateSchema,
+  playbookCreateSchema,
+  playbookUpdateSchema,
+  dashboardRangeSchema,
+  leaderboardSchema,
+  agingSchema,
+  cohortSchema,
+  revenueVsGoalSchema,
+  repFilterSchema,
+  repComparisonSchema,
+  type CommissionRuleCreateInput,
+  type CommissionListInput,
+  type CommissionUpdateInput,
+  type QuotaListInput,
+  type QuotaCreateInput,
+  type PlaybookCreateInput,
+  type PlaybookUpdateInput,
+  type DashboardRangeInput,
+  type LeaderboardInput,
+  type AgingInput,
+  type CohortInput,
+  type RevenueVsGoalInput,
+  type RepFilterInput,
+  type RepComparisonInput,
+} from "./dto/sales.schemas";
+
+function toRange(input: { from?: string; to?: string }): DateRange {
+  return {
+    from: input.from ? new Date(input.from) : undefined,
+    to: input.to ? new Date(input.to) : undefined,
+  };
+}
+
+@Controller("sales")
+@UseGuards(JwtAuthGuard)
+export class SalesController {
+  constructor(
+    private readonly sales: SalesService,
+    private readonly dashboard: SalesDashboardService,
+    private readonly analytics: SalesAnalyticsService,
+  ) {}
+
+  @Get("commission-rules")
+  listCommissionRules(@CurrentUser() u: CurrentUserContext) {
+    const ability = defineAbilityFor(u);
+    if (!ability.can("view", "sales")) {
+      throw new ForbiddenException("You do not have access to commission rules");
+    }
+    return this.sales.listCommissionRules(u.orgId);
+  }
+
+  @Post("commission-rules")
+  @HttpCode(201)
+  createCommissionRule(
+    @Body(new ZodValidationPipe(commissionRuleCreateSchema)) body: CommissionRuleCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const ability = defineAbilityFor(u);
+    if (!ability.can("manage", "settings")) {
+      throw new ForbiddenException("Only admins can create commission rules");
+    }
+    return this.sales.createCommissionRule(u.orgId, body);
+  }
+
+  @Get("commissions")
+  listCommissions(
+    @Query(new ZodValidationPipe(commissionListSchema)) query: CommissionListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.sales.listCommissions(u.orgId, query);
+  }
+
+  @Patch("commissions/:commissionId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "sales")
+  async updateCommission(
+    @Param("commissionId", ParseIntPipe) commissionId: number,
+    @Body(new ZodValidationPipe(commissionUpdateSchema)) body: CommissionUpdateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.sales.updateCommission(u.orgId, commissionId, body.status);
+    if (isNotFound(result)) throw new NotFoundException("Commission not found");
+    if (isConflict(result)) throw new ConflictException(result.message);
+    return result;
+  }
+
+  @Get("quotas")
+  listQuotas(
+    @Query(new ZodValidationPipe(quotaListSchema)) query: QuotaListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.sales.listQuotas(u.orgId, query);
+  }
+
+  @Post("quotas")
+  @HttpCode(201)
+  async createQuota(
+    @Body(new ZodValidationPipe(quotaCreateSchema)) body: QuotaCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.sales.createQuota(u.orgId, u.role, u.userId, body);
+    if (isForbidden(result)) throw new ForbiddenException(result.message);
+    return result;
+  }
+
+  @Get("playbook")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("view", "sales")
+  listPlaybook(@CurrentUser() u: CurrentUserContext) {
+    return this.sales.listPlaybook(u.orgId);
+  }
+
+  @Post("playbook")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "sales")
+  @HttpCode(201)
+  createPlaybookEntry(
+    @Body(new ZodValidationPipe(playbookCreateSchema)) body: PlaybookCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.sales.createPlaybookEntry(u.orgId, u.userId, body);
+  }
+
+  @Patch("playbook/:entryId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "sales")
+  async updatePlaybookEntry(
+    @Param("entryId", ParseIntPipe) entryId: number,
+    @Body(new ZodValidationPipe(playbookUpdateSchema)) body: PlaybookUpdateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const updated = await this.sales.updatePlaybookEntry(u.orgId, entryId, body);
+    if (!updated) throw new NotFoundException("Playbook entry not found");
+    return updated;
+  }
+
+  @Delete("playbook/:entryId")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "sales")
+  async removePlaybookEntry(
+    @Param("entryId", ParseIntPipe) entryId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.sales.removePlaybookEntry(u.orgId, entryId);
+    if (!result) throw new NotFoundException("Playbook entry not found");
+    return result;
+  }
+
+  @Get("dashboard/kpis")
+  dashboardKpis(
+    @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const repId = query.repId ? Number(query.repId) : undefined;
+    return this.dashboard.getKpis(u.orgId, toRange(query), repId);
+  }
+
+  @Get("dashboard/funnel")
+  dashboardFunnel(
+    @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const repId = query.repId ? Number(query.repId) : undefined;
+    return this.dashboard.getFunnel(u.orgId, toRange(query), repId);
+  }
+
+  @Get("dashboard/leaderboard")
+  dashboardLeaderboard(
+    @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.dashboard.getLeaderboard(u.orgId, toRange(query));
+  }
+
+  @Get("dashboard/revenue-vs-goal")
+  dashboardRevenueVsGoal(
+    @Query(new ZodValidationPipe(revenueVsGoalSchema)) query: RevenueVsGoalInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const yearNum = query.year ?? new Date().getFullYear();
+    return this.dashboard.getRevenueVsGoal(u.orgId, yearNum);
+  }
+
+  @Get("dashboard/velocity")
+  dashboardVelocity(
+    @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.dashboard.getVelocity(u.orgId, toRange(query));
+  }
+
+  @Get("dashboard/aging")
+  dashboardAging(
+    @Query(new ZodValidationPipe(agingSchema)) query: AgingInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.dashboard.getAging(u.orgId, query.threshold ?? 14);
+  }
+
+  @Get("dashboard/cohort")
+  dashboardCohort(
+    @Query(new ZodValidationPipe(cohortSchema)) query: CohortInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.analytics.getCohort(u.orgId, query.months);
+  }
+
+  @Get("dashboard/cycle-length")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "crm:deals")
+  dashboardCycleLength(
+    @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.analytics.getCycleLength(u.orgId, query.repId);
+  }
+
+  @Get("dashboard/lost-analysis")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "crm:deals")
+  dashboardLostAnalysis(
+    @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.analytics.getLostAnalysis(u.orgId, query.repId);
+  }
+
+  @Get("dashboard/rep-comparison")
+  async dashboardRepComparison(
+    @Query(new ZodValidationPipe(repComparisonSchema)) query: RepComparisonInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const rep1Id = Number(query.rep1);
+    const rep2Id = Number(query.rep2);
+    if (!Number.isFinite(rep1Id) || !Number.isFinite(rep2Id)) {
+      throw new BadRequestException("Invalid rep IDs");
+    }
+
+    const from = query.from ? new Date(query.from) : subMonths(new Date(), 6);
+    const to = query.to ? new Date(query.to) : new Date();
+
+    const result = await this.analytics.getRepComparison(u.orgId, rep1Id, rep2Id, from, to);
+    if (isRepNotFound(result)) throw new NotFoundException("One or both reps not found");
+    return result;
+  }
+}

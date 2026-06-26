@@ -1,0 +1,157 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Query,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
+import type { Response } from "express";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { CalendarService } from "./calendar.service";
+import {
+  createEventSchema,
+  exportSchema,
+  listEventsSchema,
+  rsvpSchema,
+  updateEventSchema,
+  type CreateEventInput,
+  type ExportInput,
+  type ListEventsInput,
+  type RsvpInput,
+  type UpdateEventInput,
+} from "./dto/calendar.schemas";
+
+function pad(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
+}
+
+function formatDate(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatDatetime(date: Date): string {
+  return `${formatDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function csvEscape(value: string): string {
+  if (value.includes('"') || value.includes(",") || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+@Controller("calendar")
+@UseGuards(JwtAuthGuard)
+export class CalendarController {
+  constructor(private readonly calendar: CalendarService) {}
+
+  @Get("events")
+  getEvents(
+    @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendar.getEvents(
+      u.orgId,
+      u.userId,
+      new Date(query.start),
+      new Date(query.end),
+    );
+  }
+
+  @Post("events")
+  @HttpCode(201)
+  createEvent(
+    @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendar.createEvent(u.orgId, u.userId, body);
+  }
+
+  @Put("events/:eventId")
+  async updateEvent(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const event = await this.calendar.updateEvent(u.orgId, u.userId, eventId, body);
+    if (!event) throw new NotFoundException("Event not found or not authorized");
+    return event;
+  }
+
+  @Delete("events/:eventId")
+  removeEvent(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendar.deleteEvent(u.orgId, u.userId, eventId);
+  }
+
+  @Post("events/:eventId/rsvp")
+  @HttpCode(200)
+  async rsvp(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const attendee = await this.calendar.rsvp(u.orgId, u.userId, eventId, body);
+    if (!attendee) throw new NotFoundException("Event not found");
+    return attendee;
+  }
+
+  @Get("events/:eventId/rsvp")
+  async listAttendees(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const attendees = await this.calendar.listAttendees(u.orgId, eventId);
+    if (!attendees) throw new NotFoundException("Event not found");
+    return attendees;
+  }
+
+  @Get("export")
+  async exportEvents(
+    @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ) {
+    const fromDate = new Date(query.from);
+    const toDate = new Date(query.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      throw new BadRequestException("Invalid date format: use YYYY-MM-DD");
+    }
+
+    const events = await this.calendar.exportEvents(u.orgId, fromDate, toDate);
+
+    const headers = ["Title", "Start", "End", "All Day", "Category", "Location", "Description", "Color"];
+    const rows = events.map((event) => [
+      csvEscape(event.title),
+      csvEscape(formatDatetime(event.startDate)),
+      csvEscape(formatDatetime(event.endDate)),
+      event.allDay ? "Yes" : "No",
+      csvEscape(event.category ?? ""),
+      csvEscape(event.location ?? ""),
+      csvEscape(event.description ?? ""),
+      csvEscape(event.color ?? ""),
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const filename = `calendar-${formatDate(fromDate)}-to-${formatDate(toDate)}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(csvContent);
+  }
+}
