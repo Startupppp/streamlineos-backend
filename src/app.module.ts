@@ -46,6 +46,8 @@ import { HrDirectoryModule } from "./modules/hr-directory/hr-directory.module";
 import { HrPerformanceModule } from "./modules/hr-performance/hr-performance.module";
 import { HrPayrollModule } from "./modules/hr-payroll/hr-payroll.module";
 import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
+import { SearchModule } from "./modules/search/search.module";
+import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -98,6 +100,8 @@ import { MeController } from "./me/me.controller";
     HrPerformanceModule,
     HrPayrollModule,
     HrLifecycleModule,
+    SearchModule,
+    IntegrationsGitModule,
   ],
   controllers: [HealthController, MeController],
 })
