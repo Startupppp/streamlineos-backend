@@ -1,6 +1,17 @@
-import { USERS, mint, req, check, report } from "./harness.mjs";
+import { USERS, mint, req as rawReq, check, report } from "./harness.mjs";
 
 const BAD = 999999999;
+
+// Retry transient infra 5xx (shared dev DB drops connections under parallel load: Postgres ECONNRESET / 08P01); deterministic 4xx and persistent 5xx still surface.
+async function req(method, path, opts) {
+  let res;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await rawReq(method, path, opts);
+    if (res.status < 500) return res;
+    await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+  }
+  return res;
+}
 
 async function main() {
   const owner = await mint("owner");
@@ -365,16 +376,27 @@ async function main() {
   check(`PATCH /projects/${P}`, await req("PATCH", `/projects/${P}`, { token: owner, body: { description: "FN_TEST_updated" } }), 200);
   check(`PATCH /projects/${P}/budget`, await req("PATCH", `/projects/${P}/budget`, { token: owner, body: { budget: 1000 } }), 200);
 
-  // RBAC NEGATIVE: DELETE project with role=OWNER/isOrgOwner (not "CEO")
-  // deleteProject gates on u.role !== "CEO"; observe behavior for the OWNER token.
+  // RBAC DENY (genuine): non-privileged roles still cannot delete -> 403
+  // (gate runs before any DB read, so P is not touched by these attempts)
+  check(`RBAC DELETE project MEMBER -> 403`, await req("DELETE", `/projects/${P}`, { token: member }), 403);
+  check(`RBAC DELETE project salesRep -> 403`, await req("DELETE", `/projects/${P}`, { token: salesRep }), 403);
+
+  // CORRECTED: org OWNER is privileged (isOrgOwner) -> deleteProject now allows it
+  // via hasRoleOrPrivileged (previously 403 under the role==="CEO"-only gate).
   const delAsOwner = await req("DELETE", `/projects/${P}`, { token: owner });
-  check(`DELETE project as role=OWNER -> 403 (CEO-gated)`, delAsOwner, 403);
+  check(`DELETE project as org OWNER (isOrgOwner) -> 200`, delAsOwner, 200);
+  check(`verify owner-deleted project gone -> 404`, await req("GET", `/projects/${P}`, { token: owner }), 404);
 
   // ----------------------------------------------------------------------
-  // STEP H — cleanup: delete FN_TEST_ project with a CEO-role token
+  // STEP H — role=CEO token also deletes (separate throwaway project)
   // ----------------------------------------------------------------------
-  check(`CLEANUP delete FN_TEST_ project as CEO`, await req("DELETE", `/projects/${P}`, { token: ceo }), 200);
-  check(`CLEANUP verify project gone -> 404`, await req("GET", `/projects/${P}`, { token: owner }), 404);
+  const p2 = await req("POST", "/projects", { token: owner, body: { name: `FN_TEST_ceo_del_${Date.now()}`, memberIds: [USERS.owner.sub] } });
+  check("WRITE create project for CEO-delete", p2, 201);
+  const P2 = p2.body?.id ?? null;
+  if (P2) {
+    check(`CLEANUP delete FN_TEST_ project as CEO -> 200`, await req("DELETE", `/projects/${P2}`, { token: ceo }), 200);
+    check(`CLEANUP verify CEO-deleted project gone -> 404`, await req("GET", `/projects/${P2}`, { token: owner }), 404);
+  }
 
   process.exit(report("projects") ? 0 : 1);
 }

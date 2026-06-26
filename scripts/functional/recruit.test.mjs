@@ -8,9 +8,9 @@ import { mint, req, check, report } from "./harness.mjs";
 //   - @CheckAbility("manage","hr:employees") via AbilityGuard (jobs create/update/delete, candidate import, offer-letter)
 //   - inline role-string gates: RECRUITMENT_ADMIN_ROLES=[CEO,HR,ADMIN], MANAGER_ROLES=[+HR_MANAGER],
 //     OFFER_ROLES=[CEO,ADMIN,HR,BRANCH_HR]; offer submit=HR|ADMIN, offer approve/reject=CEO
-// Happy-path token = org-owner elevated to role CEO: isOrgOwner=true satisfies AbilityGuard ("manage all")
-// AND role CEO satisfies the ADMIN/MANAGER/OFFER role-string gates. A literal OWNER-role token would be
-// 403 on the role-string gates (OWNER is not whitelisted) -- noted, not a defect.
+// Happy-path token = the literal org OWNER (role OWNER, isOrgOwner=true). hasRoleOrPrivileged now
+// honors isOrgOwner/isPlatformAdmin, so OWNER passes every role-string gate AND the AbilityGuard
+// ("manage all") even though OWNER is not in any whitelist -- this is the corrected behavior.
 
 const NO = undefined;
 let boss, hr, member, sales;
@@ -18,25 +18,29 @@ let boss, hr, member, sales;
 const seen = new Set();
 async function call(method, path, opts, pattern) {
   seen.add(`${method} ${pattern ?? path}`);
+  await new Promise((r) => setTimeout(r, 15)); // pace requests; dist server degrades under unthrottled bursts
   return req(method, path, opts);
 }
 const ok = (cond, want = 200) => ({ status: cond ? want : 0 });
 
 async function run() {
-  boss = await mint("owner", { role: "CEO" }); // isOrgOwner + CEO -> passes ability + all role gates
-  hr = await mint("owner", { role: "HR" }); //   for offer submit-for-approval (HR|ADMIN only)
+  boss = await mint("owner"); //                 literal OWNER: isOrgOwner=true passes ability + all role gates
+  hr = await mint("owner", { role: "HR" }); //   HR + isOrgOwner -> offer submit-for-approval path
   member = await mint("member"); //              role MEMBER, not owner -> RBAC negative
   sales = await mint("salesRep"); //             role SALES_REP -> RBAC negative
 
   const BOGUS = 99999999; // non-existent numeric id
   let candidateId = 1; // seeded org has 3 candidates (ids start at 1)
 
-  // ---- discover a real candidate id from the working list endpoint ----
+  // ---- pick a stable seeded candidate; purge stale FN_TEST_ leftovers so discovery stays hermetic ----
   {
     const r = await call("GET", "/hr/recruitment/candidates", { token: boss });
     check("GET candidates (owner happy)", r, 200);
     const arr = Array.isArray(r.body) ? r.body : (r.body?.data ?? []);
-    if (arr[0]?.id) candidateId = arr[0].id;
+    const isFnTest = (c) => typeof c?.firstName === "string" && c.firstName.startsWith("FN_TEST_");
+    for (const c of arr) if (isFnTest(c) && c.id) await req("DELETE", `/hr/recruitment/candidates/${c.id}`, { token: boss });
+    const seeded = arr.find((c) => c?.id && !isFnTest(c));
+    if (seeded?.id) candidateId = seeded.id;
     const rm = await call("GET", "/hr/recruitment/candidates", { token: member });
     check("GET candidates (member, auth-only not over-gated)", rm, 200);
     const rn = await call("GET", "/hr/recruitment/candidates", { token: NO });
@@ -56,7 +60,7 @@ async function run() {
     });
     check("POST candidates (create FN_TEST_ -> 201)", cr, 201);
     const newId = cr.body?.id;
-    // verify via list (detail endpoint is broken, see bug below)
+    // verify via list
     const list = await call("GET", "/hr/recruitment/candidates", { token: boss });
     const present = Array.isArray(list.body) && list.body.some((c) => c.id === newId);
     check("verify created candidate present in list", ok(present), 200);
@@ -66,7 +70,7 @@ async function run() {
   }
   // DELETE non-existent -> 404
   check("DELETE candidates/:id (non-existent -> 404)", await call("DELETE", `/hr/recruitment/candidates/${BOGUS}`, { token: boss }, "DELETE /hr/recruitment/candidates/:id"), 404);
-  // GET detail  (CORRECT contract = 200 for real / 404 for missing). Backend returns 500 -> defect.
+  // GET detail  (200 for real / 404 for missing) -- recruitment tables now present, detail resolves
   check("GET candidates/:id (real id, expect 200)", await call("GET", `/hr/recruitment/candidates/${candidateId}`, { token: boss }, "GET /hr/recruitment/candidates/:id"), 200);
   check("GET candidates/:id (non-existent, expect 404)", await call("GET", `/hr/recruitment/candidates/${BOGUS}`, { token: boss }, "GET /hr/recruitment/candidates/:id"), 404);
   check("GET candidates/:id (non-numeric -> 400 ParseIntPipe)", await call("GET", "/hr/recruitment/candidates/abc", { token: boss }, "GET /hr/recruitment/candidates/:id"), 400);
@@ -229,6 +233,9 @@ async function run() {
   // =====================================================================
   check("GET interviewers/availability (no token -> 401)", await call("GET", "/hr/recruitment/interviewers/availability", { token: NO }), 401);
   check("GET interviewers/availability (owner happy)", await call("GET", `/hr/recruitment/interviewers/availability?date=2026-06-26&interviewerIds=${USERS_owner()}`, { token: boss }, "GET /hr/recruitment/interviewers/availability"), 200);
+  // KNOWN BACKEND BUG: 500. interviewerPerformance() embeds a raw JS Date in a drizzle sql`` template
+  // (hr-interviewers.service.ts ~L142,L188); postgres.js rejects it ("Received an instance of Date").
+  // Correct contract is 200; assertion left at 200 so the defect stays visible. Fix: use gte() or .toISOString().
   check("GET interviewer-performance (owner happy, expect 200)", await call("GET", "/hr/recruitment/interviewer-performance", { token: boss }), 200);
   check("GET booking-links (owner happy)", await call("GET", "/hr/recruitment/booking-links", { token: boss }), 200);
   check("PATCH booking-links/:id (member role -> 403)", await call("PATCH", "/hr/recruitment/booking-links/1", { token: member }, "PATCH /hr/recruitment/booking-links/:id"), 403);

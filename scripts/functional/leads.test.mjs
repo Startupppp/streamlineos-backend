@@ -117,10 +117,11 @@ async function main() {
   // Inline role-string gates (merge/distribute). member -> 403.
   check("RBAC POST /leads/merge member -> 403", await req("POST", "/leads/merge", { token: member, body: { winnerId: 1, loserId: 2 } }), 403);
   check("RBAC POST /leads/distribute member -> 403", await req("POST", "/leads/distribute", { token: member, body: { leadIds: [1] } }), 403);
-  // NOTE (recorded as a bug): the org OWNER role is NOT in MERGE_ROLES/DISTRIBUTE_ROLES,
-  // so the org owner is also denied (403) on these two endpoints.
-  check("OBSERVED POST /leads/merge owner -> 403 (OWNER excluded from gate)", await req("POST", "/leads/merge", { token: owner, body: { winnerId: 1, loserId: 2 } }), 403);
-  check("OBSERVED POST /leads/distribute owner -> 403 (OWNER excluded from gate)", await req("POST", "/leads/distribute", { token: owner, body: { leadIds: [1] } }), 403);
+  // FIXED: hasRoleOrPrivileged now honors isOrgOwner — org OWNER passes the gate (not 403); bogus ids keep it non-destructive.
+  check("POST /leads/merge owner passes gate -> 404 (not 403)", await req("POST", "/leads/merge", { token: owner, body: { winnerId: NX, loserId: NX2 } }), 404);
+  check("POST /leads/distribute owner passes gate -> 400|404 (not 403)", await req("POST", "/leads/distribute", { token: owner, body: { leadIds: [NX] } }), [400, 404]);
+  // isPlatformAdmin likewise bypasses the inline gate (not 403).
+  check("POST /leads/merge platform passes gate -> 404 (not 403)", await req("POST", "/leads/merge", { token: await mint("platform"), body: { winnerId: NX, loserId: NX2 } }), 404);
 
   // Role-gate PASS + non-destructive paths.
   // CEO self-merge short-circuits (winnerId===loserId) before any DB write -> 400.

@@ -123,10 +123,13 @@ async function main() {
   check("GET /clients/:id 400 non-numeric", await req("GET", `/clients/${NOTNUM}`, { token: owner }), 400);
   check("GET /clients/:id/activities owner", await req("GET", `/clients/${FAKE}/activities`, { token: owner }), 200);
   check("GET /clients/:id/timeline 404", await req("GET", `/clients/${FAKE}/timeline`, { token: owner }), 404);
-  // RBAC negatives (role-string gated writes)
+  // RBAC negatives (role-string gated writes) — member is correctly denied
   check("PATCH /clients/renewals/:id member RBAC", await req("PATCH", `/clients/renewals/${FAKE}`, { token: member, body: { renewalStage: "renewed" } }), 403);
   check("POST /clients/:id/activities member RBAC", await req("POST", `/clients/${FAKE}/activities`, { token: member, body: { activityType: "call", title: "x" } }), 403);
   check("POST /clients/onboarding/templates member RBAC", await req("POST", "/clients/onboarding/templates", { token: member, body: { name: "FN_TEST" } }), 403);
+  // CORRECTED: org OWNER now passes role-string gates via hasRoleOrPrivileged (was 403 pre-fix) -> falls through to 404 on FAKE id
+  check("PATCH /clients/renewals/:id owner passes gate (was 403) -> 404", await req("PATCH", `/clients/renewals/${FAKE}`, { token: owner, body: { renewalStage: "renewed" } }), 404);
+  check("POST /clients/:id/activities owner passes gate (was 403) -> 404", await req("POST", `/clients/${FAKE}/activities`, { token: owner, body: { activityType: "call", title: "FN_TEST" } }), 404);
   check("POST /clients/opportunities 400 empty body", await req("POST", "/clients/opportunities", { token: owner, body: {} }), 400);
   check("POST /clients/opportunities 404 bad client", await req("POST", "/clients/opportunities", { token: owner, body: { clientId: FAKE, title: "FN_TEST_opp" } }), 404);
   check("PATCH /clients/opportunities/:id 404", await req("PATCH", `/clients/opportunities/${FAKE}`, { token: owner, body: { stage: "won" } }), 404);

@@ -110,8 +110,9 @@ const run = async () => {
   check("GET /branches/:id non-existent 404", await req("GET", "/branches/" + FAKE_ID, { token: owner }), 404);
   check("GET /branches/:id non-numeric 400", await req("GET", "/branches/abc", { token: owner }), 400);
 
-  // PATCH/DELETE branches are role-gated to ["HR","CEO"] — OWNER is NOT in that set,
-  // so every test user (incl. owner) is 403. Assert RBAC negative; skip real mutation.
+  // PATCH/DELETE branches are role-gated to ["HR","CEO"]; OWNER now passes via
+  // hasRoleOrPrivileged, but member stays 403. Assert the member deny; skip owner
+  // mutation to avoid altering real branch rows.
   check("PATCH /branches/:id member role-gate 403", await req("PATCH", "/branches/" + (firstBranchId ?? 1), { token: member, body: { name: "FN_TEST_branch" } }), 403);
   check("PATCH /branches/:id non-numeric 400", await req("PATCH", "/branches/abc", { token: owner, body: { name: "x" } }), 400);
   check("DELETE /branches/:id member role-gate 403", await req("DELETE", "/branches/" + (firstBranchId ?? 1), { token: member }), 403);
@@ -190,12 +191,12 @@ const run = async () => {
   // pending-approvals: owner can approve hr:leaves -> 200; member -> 403.
   check("GET /dashboard/pending-approvals owner", await req("GET", "/dashboard/pending-approvals", { token: owner }), 200);
   check("GET /dashboard/pending-approvals member 403", await req("GET", "/dashboard/pending-approvals", { token: member }), 403);
-  // branch-overview: requires CEO/HR/ADMIN — OWNER excluded -> 403 (see notes).
-  check("GET /dashboard/branch-overview owner (role-gated, OWNER excluded) 403", await req("GET", "/dashboard/branch-overview", { token: owner }), 403);
+  // branch-overview: inline role gate now honors isOrgOwner via hasRoleOrPrivileged — OWNER allowed -> 200; member still 403.
+  check("GET /dashboard/branch-overview owner (privileged via isOrgOwner) 200", await req("GET", "/dashboard/branch-overview", { token: owner }), 200);
   check("GET /dashboard/branch-overview member 403", await req("GET", "/dashboard/branch-overview", { token: member }), 403);
   // member can read an open dashboard GET (not over-gated).
   check("GET /dashboard/stats member (auth-only)", await req("GET", "/dashboard/stats", { token: member }), 200);
-  // announcements write: role-gated to CEO/HR/ADMIN -> owner & member both 403; skip persist.
+  // announcements write: role-gated to CEO/HR/ADMIN; member stays 403 (owner now passes via privileged); skip persist.
   check("POST /dashboard/announcements member role-gate 403", await req("POST", "/dashboard/announcements", { token: member, body: { content: "FN_TEST_announce" } }), 403);
   check("DELETE /dashboard/announcements member role-gate 403", await req("DELETE", "/dashboard/announcements?id=1", { token: member }), 403);
 
@@ -350,14 +351,12 @@ const run = async () => {
   check("GET /public/kb?org=ORG", await req("GET", "/public/kb?org=" + ORG), 200);
   check("GET /public/kb missing-org 400", await req("GET", "/public/kb"), 400);
   check("GET /public/kb/:slug?org=ORG non-existent 404", await req("GET", "/public/kb/fn-test-missing?org=" + ORG), 404);
-  // BUG (schema drift): the next assertions expect 404 but the backend currently
-  // returns 500. db.query reads select columns that do not exist in the live DB:
-  //   candidate_applications.tracking_token, candidate_offers.acceptance_token /
-  //   acceptance_token_expires_at, job_postings.hiring_flow_id / is_internal.
-  // These are real defects — every input (incl. valid tokens) 500s.
-  check("GET /public/application-status/:token fake 404 [BUG: 500 schema-drift]", await req("GET", "/public/application-status/fn-test-fake-token"), 404);
-  check("GET /public/offer/:token fake 404 [BUG: 500 schema-drift]", await req("GET", "/public/offer/fn-test-fake-token"), 404);
-  check("PATCH /public/offer/:token/respond valid-body fake 404 [BUG: 500 schema-drift]", await req("PATCH", "/public/offer/fn-test-fake-token/respond", { body: { action: "decline" } }), 404);
+  // FIXED: recruitment/hiring tables now exist in the live DB. These formerly 500'd
+  // on schema drift (missing tracking_token / acceptance_token / hiring_flow_id /
+  // is_internal columns); they now correctly resolve a missing token to 404.
+  check("GET /public/application-status/:token fake 404", await req("GET", "/public/application-status/fn-test-fake-token"), 404);
+  check("GET /public/offer/:token fake 404", await req("GET", "/public/offer/fn-test-fake-token"), 404);
+  check("PATCH /public/offer/:token/respond valid-body fake 404", await req("PATCH", "/public/offer/fn-test-fake-token/respond", { body: { action: "decline" } }), 404);
   check("GET /public/interview-booking/:token fake 404", await req("GET", "/public/interview-booking/fn-test-fake-token"), 404);
   check("GET /public/lead-form/:token fake 404", await req("GET", "/public/lead-form/fn-test-fake-token"), 404);
   check("GET /public/nps/:token fake 404", await req("GET", "/public/nps/fn-test-fake-token"), 404);
@@ -365,7 +364,7 @@ const run = async () => {
   if (orgSlug) {
     const jobsRes = await req("GET", "/public/careers/" + orgSlug + "/jobs");
     check("GET /public/careers/:slug/jobs real-slug 200", jobsRes, 200);
-    check("GET /public/careers/:slug/jobs/:id non-existent 404 [BUG: 500 schema-drift]", await req("GET", "/public/careers/" + orgSlug + "/jobs/" + FAKE_ID), 404);
+    check("GET /public/careers/:slug/jobs/:id non-existent 404", await req("GET", "/public/careers/" + orgSlug + "/jobs/" + FAKE_ID), 404);
     check("GET /public/careers/:slug/jobs/:id non-numeric 400", await req("GET", "/public/careers/" + orgSlug + "/jobs/abc"), 400);
   }
   check("GET /public/careers/:slug/jobs fake-slug 404", await req("GET", "/public/careers/fn-test-missing-org/jobs"), 404);

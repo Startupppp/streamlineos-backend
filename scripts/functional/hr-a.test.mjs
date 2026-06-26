@@ -30,17 +30,19 @@ const run = async () => {
   // auth-only at controller, but member token still allowed (200) for page reads
   check("GET /hr/leaves member (not over-gated)", await G("/hr/leaves", member), 200);
   check("GET /hr/leaves/balance member", await G("/hr/leaves/balance", member), 200);
-  // analytics: internal role whitelist (CEO/ADMIN/HR/...) — OWNER role excluded => 403
-  check("GET /hr/leaves/analytics owner (role-gated)", await G("/hr/leaves/analytics", owner), 403);
+  // analytics: role whitelist (CEO/ADMIN/HR/...) excludes OWNER role, but hasRoleOrPrivileged
+  // honors isOrgOwner => owner now PASSES (200); MEMBER (no role, not privileged) => 403
+  check("GET /hr/leaves/analytics owner (privileged override)", await G("/hr/leaves/analytics", owner), 200);
   check("GET /hr/leaves/analytics member", await G("/hr/leaves/analytics", member), 403);
   // team: member is neither admin nor manager => 403
   check("GET /hr/leaves/team member 403", await G("/hr/leaves/team", member), 403);
 
-  // POST comp-off: internal role whitelist excludes OWNER & MEMBER => 403 (no mutation; throws pre-insert)
+  // POST comp-off: role whitelist excludes OWNER & MEMBER, but hasRoleOrPrivileged honors
+  // isOrgOwner => owner now PASSES the gate and credits comp-off (201); MEMBER still 403
   check(
-    "POST /hr/leaves/comp-off owner (role-gated, no mutation)",
+    "POST /hr/leaves/comp-off owner (privileged override) 201",
     await P("/hr/leaves/comp-off", { userId: ownerId, days: 1, reason: TAG }, owner),
-    403,
+    201,
   );
   check(
     "POST /hr/leaves/comp-off member 403",

@@ -40,18 +40,39 @@ export async function mint(who, overrides = {}) {
     .sign(key);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function req(method, path, { token, body } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  let parsed = null;
-  const text = await res.text();
-  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
-  return { status: res.status, body: parsed };
+  // Retry only idempotent GETs on transient transport resets (ECONNRESET) or
+  // transient 5xx from the Neon serverless pooler. A deterministic backend 500
+  // fails every attempt and is still surfaced; only flaky drops recover.
+  const idempotent = method === "GET";
+  const maxAttempts = idempotent ? 4 : 1;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      let parsed = null;
+      const text = await res.text();
+      try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+      if (idempotent && res.status >= 500 && attempt < maxAttempts) {
+        await sleep(150 * attempt);
+        continue;
+      }
+      return { status: res.status, body: parsed };
+    } catch (e) {
+      lastErr = e;
+      if (idempotent && attempt < maxAttempts) { await sleep(150 * attempt); continue; }
+      throw e;
+    }
+  }
+  throw lastErr;
 }
 
 let pass = 0, fail = 0;

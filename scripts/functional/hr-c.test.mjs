@@ -5,10 +5,10 @@ import { mint, req, check, report } from "./harness.mjs";
 // Notes on guard semantics discovered from source:
 //  - Owner token: isOrgOwner=true => CASL "manage all" => passes every @CheckAbility.
 //  - ModuleGuard checks enabledModules (NOT abilities): owner needs "hr" enabled or -> 404 MODULE_DISABLED.
-//  - Several routes use inline ROLE-STRING allowlists that EXCLUDE the literal "OWNER" role
-//    (salary-bands / compliance / export => CEO|ADMIN|HR|BRANCH_HR; termination create/submit => HR|CEO;
-//     ceo-review => CEO). For those we use an owner token with role overridden to a permitted role to
-//     exercise the happy path, and document the OWNER-exclusion as a note.
+//  - Several routes use inline ROLE-STRING gates (salary-bands / compliance / export => CEO|ADMIN|HR|BRANCH_HR;
+//    termination create/submit => HR|CEO; ceo-review => CEO). These now go through hasRoleOrPrivileged,
+//    so isOrgOwner/isPlatformAdmin PASS regardless of the literal role string. A plain owner token
+//    (isOrgOwner=true) therefore passes these gates; only the role check itself decides for non-privileged users.
 //  - Writes here have NO delete/undo endpoint, so we never persist a valid row:
 //    valid-body writes are only sent with LOW-PRIV tokens (denied before the service runs) and
 //    authorized writes are only sent with MALFORMED bodies (Zod 400 before the service runs).
@@ -124,17 +124,14 @@ async function main() {
   // member requesting ANOTHER user's payslips -> 403
   check("GET /hr/payslips other-user member -> 403", await req("GET", "/hr/payslips?userId=a723ac2d-0b0a-4f24-a3ae-f4605af20bbb", { token: member }), 403);
 
-  // KNOWN BACKEND DEFECT: compensation.service.getPayrollSummary filters
-  //   `status IN ('APPROVED','SUBMITTED')` but payroll_status enum is
-  //   ["DRAFT","PENDING_APPROVAL","APPROVED","PAID"] (no "SUBMITTED").
-  //   Postgres raises `invalid input value for enum payroll_status: "SUBMITTED"`
-  //   => deterministic 500 for ALL orgs. Expectation kept at 200 to surface the defect.
+  // payroll-summary: compensation.service.getPayrollSummary now filters a VALID enum
+  //   `status IN ('APPROVED','PENDING_APPROVAL')` (was the invalid "SUBMITTED" that 500'd) -> 200.
   check("GET /hr/dashboard/payroll-summary owner", await req("GET", "/hr/dashboard/payroll-summary", { token: owner }), 200);
   check("GET /hr/dashboard/payroll-summary RBAC member -> 403", await req("GET", "/hr/dashboard/payroll-summary", { token: member }), 403);
 
-  // salary-bands: inline role allowlist (CEO|ADMIN|HR|BRANCH_HR). owner role "OWNER" excluded.
+  // salary-bands: inline role gate (CEO|ADMIN|HR|BRANCH_HR) via hasRoleOrPrivileged.
   check("GET /hr/dashboard/salary-bands ownerHr(role=HR) -> 200", await req("GET", "/hr/dashboard/salary-bands", { token: ownerHr }), 200);
-  check("GET /hr/dashboard/salary-bands plain owner(role=OWNER) -> 403 (allowlist excludes OWNER)", await req("GET", "/hr/dashboard/salary-bands", { token: owner }), 403);
+  check("GET /hr/dashboard/salary-bands plain owner(isOrgOwner) -> 200 (hasRoleOrPrivileged)", await req("GET", "/hr/dashboard/salary-bands", { token: owner }), 200);
   check("GET /hr/dashboard/salary-bands RBAC member -> 403", await req("GET", "/hr/dashboard/salary-bands", { token: member }), 403);
 
   check("GET /hr/analytics/compensation owner", await req("GET", "/hr/analytics/compensation", { token: owner }), 200);
@@ -254,9 +251,9 @@ async function main() {
   check("GET /hr/dashboard/headcount-trends owner", await req("GET", "/hr/dashboard/headcount-trends", { token: owner }), 200);
   check("GET /hr/dashboard/time-to-fill owner", await req("GET", "/hr/dashboard/time-to-fill", { token: owner }), 200);
   check("GET /hr/dashboard/attendance-analytics owner", await req("GET", "/hr/dashboard/attendance-analytics", { token: owner }), 200);
-  // compliance: inline role allowlist (incl. BRANCH_MANAGER); OWNER excluded -> ownerHr 200, owner 403.
+  // compliance: inline role gate (incl. BRANCH_MANAGER) via hasRoleOrPrivileged -> ownerHr 200, owner 200, member 403.
   check("GET /hr/dashboard/compliance ownerHr(role=HR) -> 200", await req("GET", "/hr/dashboard/compliance", { token: ownerHr }), 200);
-  check("GET /hr/dashboard/compliance plain owner(role=OWNER) -> 403 (allowlist excludes OWNER)", await req("GET", "/hr/dashboard/compliance", { token: owner }), 403);
+  check("GET /hr/dashboard/compliance plain owner(isOrgOwner) -> 200 (hasRoleOrPrivileged)", await req("GET", "/hr/dashboard/compliance", { token: owner }), 200);
   check("GET /hr/dashboard/compliance RBAC member -> 403", await req("GET", "/hr/dashboard/compliance", { token: member }), 403);
   // export: inline role allowlist (CEO|ADMIN|HR|BRANCH_HR), CSV response.
   check("GET /hr/dashboard/export ownerHr(role=HR) -> 200", await req("GET", "/hr/dashboard/export", { token: ownerHr }), 200);
@@ -289,10 +286,11 @@ async function main() {
   check("GET /hr/termination/:id RBAC member -> 403", await req("GET", `/hr/termination/${BOGUS}`, { token: member }), 403);
   check("GET /hr/termination/:id non-numeric -> 400", await req("GET", "/hr/termination/abc", { token: owner }), 400);
 
-  // create: role HR|CEO only (NOT ability). member valid body -> 403; owner(OWNER) malformed -> 400.
+  // create: role HR|CEO via hasRoleOrPrivileged. member valid body -> 403; owner(isOrgOwner) passes gate.
   const validTermBody = { userId: "00000000-0000-0000-0000-000000000000", reasons: ["Performance Issues"], effectiveDate: "2099-01-01" };
   check("POST /hr/termination RBAC member -> 403", await req("POST", "/hr/termination", { token: member, body: validTermBody }), 403);
-  check("POST /hr/termination plain owner(role=OWNER) -> 403 (only HR|CEO)", await req("POST", "/hr/termination", { token: owner, body: validTermBody }), 403);
+  // plain owner passes the HR|CEO gate (isOrgOwner) then fails the employee lookup -> 404 (no row persisted).
+  check("POST /hr/termination plain owner(isOrgOwner) passes gate -> 404 nonexistent employee", await req("POST", "/hr/termination", { token: owner, body: validTermBody }), 404);
   check("POST /hr/termination malformed -> 400", await req("POST", "/hr/termination", { token: ownerHr, body: {} }), 400);
   // ownerHr(role HR) valid body for a non-existent employee -> 404 (passes role gate, fails employee lookup; no real row persisted)
   check("POST /hr/termination ownerHr nonexistent employee -> 404", await req("POST", "/hr/termination", { token: ownerHr, body: validTermBody }), 404);
@@ -301,9 +299,9 @@ async function main() {
   check("PATCH /hr/termination/:id/submit RBAC member -> 403", await req("PATCH", `/hr/termination/${BOGUS}/submit`, { token: member }), 403);
   check("PATCH /hr/termination/:id/submit ownerHr bogus -> 404", await req("PATCH", `/hr/termination/${BOGUS}/submit`, { token: ownerHr }), 404);
 
-  // ceo-review: role CEO only. member -> 403; ownerHr(role HR) -> 403; ownerCeo bogus -> 404.
+  // ceo-review: role CEO via hasRoleOrPrivileged. member -> 403; ownerHr(isOrgOwner) passes gate -> 404 bogus; ownerCeo bogus -> 404.
   check("PATCH /hr/termination/:id/ceo-review RBAC member -> 403", await req("PATCH", `/hr/termination/${BOGUS}/ceo-review`, { token: member, body: { decision: "approve" } }), 403);
-  check("PATCH /hr/termination/:id/ceo-review ownerHr(role HR) -> 403 (CEO only)", await req("PATCH", `/hr/termination/${BOGUS}/ceo-review`, { token: ownerHr, body: { decision: "approve" } }), 403);
+  check("PATCH /hr/termination/:id/ceo-review ownerHr(isOrgOwner) passes CEO gate -> 404 bogus", await req("PATCH", `/hr/termination/${BOGUS}/ceo-review`, { token: ownerHr, body: { decision: "approve" } }), 404);
   check("PATCH /hr/termination/:id/ceo-review ownerCeo bogus -> 404", await req("PATCH", `/hr/termination/${BOGUS}/ceo-review`, { token: ownerCeo, body: { decision: "approve" } }), 404);
 }
 

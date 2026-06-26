@@ -139,7 +139,7 @@ export class HrInterviewersService {
         and(
           eq(interviews.orgId, orgId),
           isNotNull(interviewScorecards.submittedAt),
-          sql`${interviews.scheduledAt} >= ${since}`,
+          gte(interviews.scheduledAt, since),
         ),
       );
 
@@ -185,7 +185,7 @@ export class HrInterviewersService {
         and(
           eq(interviews.orgId, orgId),
           isNotNull(interviews.interviewerId),
-          sql`${interviews.scheduledAt} >= ${since}`,
+          gte(interviews.scheduledAt, since),
         ),
       )
       .groupBy(interviews.interviewerId);

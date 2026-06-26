@@ -95,9 +95,9 @@ for (const g of ownerGets) {
 // Employee detail / sub-routes (owner)
 await hit(`GET owner reports-to-me`, "GET", `/hr/employees/${empId}/reports-to-me`, { token: owner }, 200, "/hr/employees/:id/reports-to-me");
 await hit(`GET owner manager-scorecard`, "GET", `/hr/employees/${empId}/manager-scorecard`, { token: owner }, 200, "/hr/employees/:id/manager-scorecard");
-// profile-pdf is gated to role-strings CEO/HR/ADMIN/HR_MANAGER -> hrManager allowed, OWNER excluded by design
+// profile-pdf is gated via hasRoleOrPrivileged(CEO/HR/ADMIN/HR_MANAGER): hrManager allowed by role, OWNER now allowed via isOrgOwner
 await hit(`GET hrManager profile-pdf`, "GET", `/hr/employees/${empId}/profile-pdf`, { token: hrManager }, 200, "/hr/employees/:id/profile-pdf");
-await hit(`RBAC owner profile-pdf excluded-by-role-list`, "GET", `/hr/employees/${empId}/profile-pdf`, { token: owner }, 403, "/hr/employees/:id/profile-pdf");
+await hit(`RBAC owner profile-pdf allowed-via-isOrgOwner`, "GET", `/hr/employees/${empId}/profile-pdf`, { token: owner }, 200, "/hr/employees/:id/profile-pdf");
 
 // teams detail (owner) if we have a real department id
 if (deptId != null) {
