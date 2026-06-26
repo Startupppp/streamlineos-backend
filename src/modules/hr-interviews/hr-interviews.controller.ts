@@ -14,6 +14,7 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewsService } from "./hr-interviews.service";
 import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
@@ -34,7 +35,7 @@ export class HrInterviewsController {
     @Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.interviews.upsertSla(u.orgId, body);
@@ -50,7 +51,7 @@ export class HrInterviewsController {
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     const result = await this.interviews.scorecardSummary(u.orgId, interviewId);

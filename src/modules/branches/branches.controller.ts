@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BranchesService } from "./branches.service";
 import { updateBranchSchema, type UpdateBranchInput } from "./dto/branches.schemas";
@@ -45,7 +46,7 @@ export class BranchesController {
     @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!MANAGE_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, MANAGE_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     const updated = await this.branches.update(u.orgId, branchId, body);
@@ -58,7 +59,7 @@ export class BranchesController {
     @Param("branchId", ParseIntPipe) branchId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!MANAGE_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, MANAGE_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     const deleted = await this.branches.remove(u.orgId, branchId);

@@ -49,7 +49,16 @@ export class TargetsController {
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.targets.create(u.orgId, { role: u.role, callerId: u.userId }, body);
+    const result = await this.targets.create(
+      u.orgId,
+      {
+        role: u.role,
+        callerId: u.userId,
+        isOrgOwner: u.isOrgOwner,
+        isPlatformAdmin: u.isPlatformAdmin,
+      },
+      body,
+    );
     if (isForbidden(result)) {
       if (result.status === 400) throw new BadRequestException(result.message);
       throw new ForbiddenException(result.message);
@@ -86,7 +95,13 @@ export class TargetsController {
   ) {
     const result = await this.targets.update(
       u.orgId,
-      { role: u.role, callerId: u.userId, branchId: u.branchId },
+      {
+        role: u.role,
+        callerId: u.userId,
+        branchId: u.branchId,
+        isOrgOwner: u.isOrgOwner,
+        isPlatformAdmin: u.isPlatformAdmin,
+      },
       targetId,
       body,
     );
@@ -102,7 +117,13 @@ export class TargetsController {
   ) {
     const result = await this.targets.remove(
       u.orgId,
-      { role: u.role, callerId: u.userId, branchId: u.branchId },
+      {
+        role: u.role,
+        callerId: u.userId,
+        branchId: u.branchId,
+        isOrgOwner: u.isOrgOwner,
+        isPlatformAdmin: u.isPlatformAdmin,
+      },
       targetId,
     );
     if (isNotFound(result)) throw new NotFoundException("Target not found");

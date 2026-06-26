@@ -13,6 +13,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
@@ -81,7 +82,7 @@ export class PayrollReportsController {
 
   @Get("dashboard/salary-bands")
   salaryBands(@CurrentUser() u: CurrentUserContext) {
-    if (!SALARY_BAND_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, SALARY_BAND_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.compensation.getSalaryBands(u.orgId);

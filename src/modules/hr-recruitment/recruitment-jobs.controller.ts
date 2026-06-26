@@ -17,6 +17,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentJobsService } from "./recruitment-jobs.service";
 import { RECRUITMENT_ADMIN_ROLES, RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
@@ -91,7 +92,7 @@ export class RecruitmentJobsController {
     @Body(new ZodValidationPipe(publishJobSchema)) body: PublishJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
     return this.jobs.publish(u.orgId, jobId, body);
   }
 
@@ -110,7 +111,7 @@ export class RecruitmentJobsController {
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
     return this.jobs.assignRecruiter(u.orgId, u.userId, jobId, body);
   }
 
@@ -120,7 +121,7 @@ export class RecruitmentJobsController {
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
     return this.jobs.removeRecruiter(jobId, body);
   }
 

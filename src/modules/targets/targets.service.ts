@@ -7,6 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { isBranchScoped, getBranchUserIds, type BranchContext } from "../leads/branch-filter";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ADMIN_ROLES } from "./roles.constants";
 import type { CreateInput, ListInput, UpdateInput } from "./dto/target.schemas";
 
@@ -34,12 +35,16 @@ export function isNotFound(value: unknown): value is TargetNotFound {
 interface CreateContext {
   role: string;
   callerId: string;
+  isOrgOwner: boolean;
+  isPlatformAdmin: boolean;
 }
 
 interface ManageContext {
   role: string;
   callerId: string;
   branchId: number | null;
+  isOrgOwner: boolean;
+  isPlatformAdmin: boolean;
 }
 
 @Injectable()
@@ -135,7 +140,7 @@ export class TargetsService {
       return { error: "forbidden", message: "At least one user is required", status: 400 } as TargetsForbidden;
     }
 
-    if (!ADMIN_ROLES.includes(ctx.role) && ctx.role !== "BRANCH_MANAGER") {
+    if (!hasRoleOrPrivileged(ctx, ADMIN_ROLES) && ctx.role !== "BRANCH_MANAGER") {
       const targetUsers = await this.db
         .select({ id: users.id, reportingTo: users.reportingTo })
         .from(users)
@@ -217,7 +222,7 @@ export class TargetsService {
       }
     }
 
-    const canManage = await this.assertCanManage(ctx.role, ctx.callerId, [existing.userId]);
+    const canManage = await this.assertCanManage(ctx, ctx.callerId, [existing.userId]);
     if (!canManage) {
       return {
         error: "forbidden",
@@ -292,7 +297,7 @@ export class TargetsService {
       }
     }
 
-    const canManage = await this.assertCanManage(ctx.role, ctx.callerId, [existing.userId]);
+    const canManage = await this.assertCanManage(ctx, ctx.callerId, [existing.userId]);
     if (!canManage) {
       return {
         error: "forbidden",
@@ -315,8 +320,12 @@ export class TargetsService {
     return { success: true };
   }
 
-  private async assertCanManage(callerRole: string, callerId: string, userIds: string[]) {
-    if (ADMIN_ROLES.includes(callerRole)) return true;
+  private async assertCanManage(
+    caller: { isOrgOwner: boolean; isPlatformAdmin: boolean; role: string },
+    callerId: string,
+    userIds: string[],
+  ) {
+    if (hasRoleOrPrivileged(caller, ADMIN_ROLES)) return true;
     const targetUsers = await this.db
       .select({ id: users.id, reportingTo: users.reportingTo })
       .from(users)

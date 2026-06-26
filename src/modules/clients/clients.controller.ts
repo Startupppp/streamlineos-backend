@@ -18,6 +18,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
@@ -113,7 +114,7 @@ export class ClientsController {
     @Body(new ZodValidationPipe(updateRenewalSchema)) body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RENEWAL_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RENEWAL_ROLES)) {
       throw new ForbiddenException("Insufficient permissions to update renewal stage");
     }
     const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
@@ -245,7 +246,7 @@ export class ClientsController {
     @Body(new ZodValidationPipe(createActivitySchema)) body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!ACTIVITY_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, ACTIVITY_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);

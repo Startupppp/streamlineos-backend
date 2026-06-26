@@ -15,6 +15,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { BranchContext } from "../leads/branch-filter";
 import { EmployeesService } from "./employees.service";
@@ -123,7 +124,7 @@ export class EmployeesController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    if (!PROFILE_PDF_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, PROFILE_PDF_ROLES)) throw new ForbiddenException("Forbidden");
 
     const employee = await this.employees.getEmployee(u.orgId, employeeId);
     if (!employee) throw new NotFoundException("Employee not found");

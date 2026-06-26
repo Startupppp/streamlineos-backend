@@ -14,6 +14,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrOffersService } from "./hr-offers.service";
@@ -45,7 +46,7 @@ export class HrOffersController {
     @Body(new ZodValidationPipe(createOfferTemplateSchema)) body: CreateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.createTemplate(u.orgId, u.userId, body);
@@ -57,7 +58,7 @@ export class HrOffersController {
     @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.updateTemplate(u.orgId, templateId, body);
@@ -68,7 +69,7 @@ export class HrOffersController {
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.deleteTemplate(u.orgId, templateId);

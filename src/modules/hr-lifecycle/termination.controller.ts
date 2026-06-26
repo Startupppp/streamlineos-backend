@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TerminationService } from "./termination.service";
 import { userCan } from "./ability.helper";
@@ -29,7 +30,7 @@ export class TerminationController {
   constructor(private readonly termination: TerminationService) {}
 
   private assertManageAccess(u: CurrentUserContext): void {
-    if (u.role !== "HR" && u.role !== "CEO" && !userCan(u, "manage", "hr:employees")) {
+    if (!hasRoleOrPrivileged(u, ["HR", "CEO"]) && !userCan(u, "manage", "hr:employees")) {
       throw new ForbiddenException("Forbidden");
     }
   }
@@ -46,7 +47,7 @@ export class TerminationController {
     @Body(new ZodValidationPipe(terminationCreateSchema)) body: TerminationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.role !== "HR" && u.role !== "CEO") {
+    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
       throw new ForbiddenException("Only HR or CEO can initiate terminations.");
     }
     return this.termination.create(u.orgId, u.userId, u.role, body);
@@ -66,7 +67,7 @@ export class TerminationController {
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.role !== "HR" && u.role !== "CEO") {
+    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
       throw new ForbiddenException("Only HR can submit for CEO approval.");
     }
     return this.termination.submit(u.orgId, u.userId, terminationId);
@@ -78,7 +79,7 @@ export class TerminationController {
     @Body(new ZodValidationPipe(terminationReviewSchema)) body: TerminationReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.role !== "CEO") {
+    if (!hasRoleOrPrivileged(u, ["CEO"])) {
       throw new ForbiddenException("Only CEO can review terminations.");
     }
     return this.termination.ceoReview(u.orgId, u.userId, terminationId, body);

@@ -20,6 +20,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { queryAiUsage } from "./ai-usage.query";
 import { ALL_ROLES, PERMISSIONS } from "./permissions.constants";
 import {
@@ -442,7 +443,7 @@ export class SettingsService {
       throw new BadRequestException(`Invalid role. Valid roles: ${ALL_ROLES.join(", ")}`);
     }
 
-    if (targetUserId === u.userId && u.role !== "OWNER") {
+    if (targetUserId === u.userId && !hasRoleOrPrivileged(u, ["OWNER"])) {
       throw new ForbiddenException("You cannot change your own role");
     }
 

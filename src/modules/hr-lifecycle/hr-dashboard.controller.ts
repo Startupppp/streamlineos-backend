@@ -5,6 +5,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { decrypt } from "./crypto.helpers";
@@ -77,13 +78,13 @@ export class HrDashboardController {
 
   @Get("compliance")
   compliance(@CurrentUser() u: CurrentUserContext) {
-    if (!u.role || !COMPLIANCE_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, COMPLIANCE_ROLES)) throw new ForbiddenException("Forbidden");
     return this.dashboard.compliance(u.orgId);
   }
 
   @Get("export")
   async export(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    if (!u.role || !EXPORT_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, EXPORT_ROLES)) throw new ForbiddenException("Forbidden");
 
     const rows = await this.reports.exportRows(u.orgId);
 

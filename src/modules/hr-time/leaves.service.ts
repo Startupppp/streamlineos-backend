@@ -19,6 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type { CompOffInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 
 const UNPAID_LEAVE_NAME = "Unpaid Leave";
@@ -182,8 +183,7 @@ export class LeavesService {
   }
 
   analytics(u: CurrentUserContext, year: number) {
-    const role = u.role;
-    if (!ANALYTICS_ROLES.includes(role)) {
+    if (!hasRoleOrPrivileged(u, ANALYTICS_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -421,7 +421,7 @@ export class LeavesService {
   }
 
   async compOff(u: CurrentUserContext, input: CompOffInput) {
-    if (!ANALYTICS_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, ANALYTICS_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
 

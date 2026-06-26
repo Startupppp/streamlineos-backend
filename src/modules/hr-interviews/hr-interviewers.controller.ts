@@ -12,6 +12,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { HrInterviewersService } from "./hr-interviewers.service";
 import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
 
@@ -48,7 +49,7 @@ export class HrInterviewersController {
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
       throw new ForbiddenException("Forbidden");
     }
     const result = await this.interviewers.cancelBookingLink(u.orgId, linkId);

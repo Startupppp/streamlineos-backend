@@ -26,6 +26,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type {
   CreateProjectInput,
   FromDealInput,
@@ -445,7 +446,7 @@ export class ProjectsService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (u.role !== "CEO") {
+    if (!hasRoleOrPrivileged(u, ["CEO"])) {
       throw new ForbiddenException("Only organization owners can delete projects");
     }
     const orgId = u.orgId;

@@ -131,7 +131,7 @@ export class SalesController {
     @Body(new ZodValidationPipe(quotaCreateSchema)) body: QuotaCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sales.createQuota(u.orgId, u.role, u.userId, body);
+    const result = await this.sales.createQuota(u.orgId, u, u.userId, body);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }

@@ -17,6 +17,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
@@ -75,7 +76,7 @@ export class RecruitmentCandidatesController {
     @Body(new ZodValidationPipe(bulkImportSchema)) body: BulkImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
     return this.ops.bulkImport(u.orgId, body);
   }
 
@@ -94,7 +95,7 @@ export class RecruitmentCandidatesController {
     @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_MANAGER_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden: HR/Admin role required");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden: HR/Admin role required");
     return this.ops.bulkReject(u.orgId, u.userId, body);
   }
 
@@ -165,7 +166,7 @@ export class RecruitmentCandidatesController {
     @Body(new ZodValidationPipe(bgvStatusSchema)) body: BgvStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!RECRUITMENT_ADMIN_ROLES.includes(u.role)) throw new ForbiddenException("Forbidden: HR role required");
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden: HR role required");
     return this.ops.updateBgvStatus(u.orgId, candidateId, body);
   }
 }

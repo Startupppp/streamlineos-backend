@@ -5,11 +5,12 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { type DashboardForbidden } from "./dashboard.errors";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
+import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
 import { type CreateAnnouncementInput } from "./dto/dashboard.schemas";
 
-function canManageAnnouncements(role: string): boolean {
-  return role === "CEO" || role === "HR" || role === "ADMIN";
+function canManageAnnouncements(actor: DashboardActor): boolean {
+  return hasRoleOrPrivileged(actor, ["CEO", "HR", "ADMIN"]);
 }
 
 @Injectable()

@@ -18,6 +18,7 @@ import { AbilityGuard } from "../../common/rbac/ability.guard";
 import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeadsOpsService } from "./leads-ops.service";
 import {
@@ -77,7 +78,7 @@ export class LeadsOpsController {
     @Body(new ZodValidationPipe(topMergeSchema)) body: TopMergeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!MERGE_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, MERGE_ROLES)) {
       throw new ForbiddenException("Forbidden: Manager or Admin role required");
     }
     const result = await this.ops.mergeLeads(u.orgId, u.userId, body);
@@ -110,7 +111,7 @@ export class LeadsOpsController {
     @Body(new ZodValidationPipe(distributeSchema)) body: DistributeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!DISTRIBUTE_ROLES.includes(u.role)) {
+    if (!hasRoleOrPrivileged(u, DISTRIBUTE_ROLES)) {
       throw new ForbiddenException("Only CEO or HR can distribute leads");
     }
     const result = await this.ops.distribute(u.orgId, u.userId, body);
