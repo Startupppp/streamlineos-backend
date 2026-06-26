@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -24,10 +25,12 @@ import {
   listDealsSchema,
   logActivitySchema,
   patchCustomDataSchema,
+  updateDealSchema,
   type CreateDealInput,
   type ListDealsInput,
   type LogActivityInput,
   type PatchCustomDataInput,
+  type UpdateDealInput,
 } from "./dto/deals.schemas";
 
 @Controller("deals")
@@ -90,6 +93,22 @@ export class DealsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.updateCustomData(u.orgId, dealId, body);
+  }
+
+  @Patch(":dealId")
+  async updateDeal(
+    @Param("dealId", ParseIntPipe) dealId: number,
+    @Body(new ZodValidationPipe(updateDealSchema)) body: UpdateDealInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.deals.updateDeal(u.orgId, u.userId, dealId, body);
+    if (!result.ok) {
+      if (result.reason === "version_conflict") {
+        throw new ConflictException("Conflict: deal was updated by another request. Please refresh.");
+      }
+      throw new NotFoundException("Deal not found");
+    }
+    return result.deal;
   }
 
   @Get(":dealId")

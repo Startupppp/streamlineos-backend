@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const dealStageSchema = z.enum(["LEAD", "CONTACTED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"]);
+export const dealStageSchema = z.enum(["LEAD", "CONTACTED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"]);
 
 export const listDealsSchema = z.object({
   stage: dealStageSchema.optional(),
@@ -23,6 +23,35 @@ export const createDealSchema = z.object({
   leadId: z.number().optional(),
   clientId: z.number().optional(),
 });
+
+export const updateDealSchema = z.object({
+  name: z.string().min(1).optional(),
+  value: z.coerce.number().min(0).optional(),
+  stage: dealStageSchema.optional(),
+  probability: z.number().min(0).max(100).optional(),
+  contactPerson: z.string().optional(),
+  contactEmail: z.string().optional(),
+  contactPhone: z.string().optional(),
+  assignedToId: z.string().optional(),
+  expectedCloseDate: z.string().nullable().optional(),
+  actualCloseDate: z.string().nullable().optional(),
+  lostReason: z.string().optional(),
+  notes: z.string().optional(),
+  version: z.string().datetime().optional(),
+});
+
+export const resolveApprovalSchema = z.object({
+  approvalId: z.number().int().positive(),
+  action: z.enum(["approve", "reject"]),
+  rejectionReason: z.string().optional(),
+});
+
+export const requestApprovalSchema = z.object({
+  dealId: z.number().int().positive(),
+  requestedStage: dealStageSchema,
+});
+
+export const submitApprovalSchema = z.union([resolveApprovalSchema, requestApprovalSchema]);
 
 export const logActivitySchema = z.object({
   type: z.enum(["call", "email", "meeting", "note", "document"]),
@@ -73,6 +102,11 @@ export const updateMeetingSchema = z.object({
 
 export type ListDealsInput = z.infer<typeof listDealsSchema>;
 export type CreateDealInput = z.infer<typeof createDealSchema>;
+export type UpdateDealInput = z.infer<typeof updateDealSchema>;
+export type ResolveApprovalInput = z.infer<typeof resolveApprovalSchema>;
+export type RequestApprovalInput = z.infer<typeof requestApprovalSchema>;
+export type SubmitApprovalInput = z.infer<typeof submitApprovalSchema>;
+export type DealStage = z.infer<typeof dealStageSchema>;
 export type LogActivityInput = z.infer<typeof logActivitySchema>;
 export type PatchCustomDataInput = z.infer<typeof patchCustomDataSchema>;
 export type CreateApprovalRuleInput = z.infer<typeof createApprovalRuleSchema>;

@@ -43,6 +43,7 @@ describe("Deals auth/RBAC (e2e)", () => {
     ["get", "/deals/approval-rules"],
     ["post", "/deals/approval-rules"],
     ["get", "/deals/approvals"],
+    ["post", "/deals/approvals"],
     ["post", "/deals/1/clone"],
     ["get", "/deals/1/activities"],
     ["post", "/deals/1/activities"],
@@ -52,6 +53,7 @@ describe("Deals auth/RBAC (e2e)", () => {
     ["patch", "/deals/1/meetings/1"],
     ["delete", "/deals/1/meetings/1"],
     ["get", "/deals/1"],
+    ["patch", "/deals/1"],
     ["delete", "/deals/1"],
   ];
 
@@ -80,6 +82,16 @@ describe("Deals auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer()).delete("/deals/1").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb: "delete", subject: "crm:deals" });
+  });
+
+  it("403 on POST /deals/approvals resolve without manage settings", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post("/deals/approvals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ approvalId: 1, action: "approve" });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Only admins can resolve approvals" });
   });
 
   const authOnlyGetRoutes: ReadonlyArray<string> = [

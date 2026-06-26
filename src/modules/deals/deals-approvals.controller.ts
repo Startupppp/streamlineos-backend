@@ -6,8 +6,10 @@ import {
   HttpCode,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -17,8 +19,10 @@ import { DealsApprovalsService } from "./deals-approvals.service";
 import {
   approvalsListSchema,
   createApprovalRuleSchema,
+  submitApprovalSchema,
   type ApprovalsListInput,
   type CreateApprovalRuleInput,
+  type SubmitApprovalInput,
 } from "./dto/deals.schemas";
 
 @Controller("deals")
@@ -50,5 +54,26 @@ export class DealsApprovalsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.listApprovals(u.orgId, query);
+  }
+
+  @Post("approvals")
+  async submitApproval(
+    @Body(new ZodValidationPipe(submitApprovalSchema)) body: SubmitApprovalInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if ("approvalId" in body) {
+      const ability = defineAbilityFor(u);
+      if (!ability.can("manage", "settings")) {
+        throw new ForbiddenException("Only admins can resolve approvals");
+      }
+      const updated = await this.approvals.resolveApproval(u.orgId, u.userId, body);
+      res.status(200);
+      return updated;
+    }
+
+    const outcome = await this.approvals.requestApproval(u.orgId, u.userId, body);
+    res.status(outcome.created ? 201 : 200);
+    return outcome.body;
   }
 }

@@ -7,8 +7,10 @@ import { DealsService } from "./deals.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [
     DealsAnalyticsController,
     DealsApprovalsController,

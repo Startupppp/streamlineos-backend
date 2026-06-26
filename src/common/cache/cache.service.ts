@@ -24,6 +24,15 @@ export class CacheService {
     return data;
   }
 
+  async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.set(key, value, { ex: ttlSeconds });
+    } catch {
+      return;
+    }
+  }
+
   async invalidate(key: string): Promise<void> {
     if (!this.redis) return;
     try {

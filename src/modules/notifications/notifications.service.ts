@@ -7,12 +7,39 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInput } from "./dto/notification.schemas";
 
+export interface CreateNotificationInput {
+  orgId: string;
+  userId: string;
+  type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
+  title: string;
+  message: string;
+  link?: string;
+  metadata?: Record<string, unknown>;
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
   ) {}
+
+  async create(input: CreateNotificationInput) {
+    const [notification] = await this.db
+      .insert(notifications)
+      .values({
+        orgId: input.orgId,
+        userId: input.userId,
+        type: input.type ?? "INFO",
+        title: input.title,
+        message: input.message,
+        link: input.link,
+        metadata: input.metadata,
+      })
+      .returning();
+
+    return notification;
+  }
 
   list(orgId: string, userId: string, filters: ListInput) {
     const key = `notifications:list:${userId}:${orgId}:${filters.unreadOnly ? "unread" : "all"}:${filters.limit}`;

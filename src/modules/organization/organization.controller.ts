@@ -8,6 +8,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -24,9 +25,11 @@ import {
   cancelInvitationSchema,
   createOrganizationSchema,
   listMembersSchema,
+  updateOrgSettingsSchema,
   type CancelInvitationInput,
   type CreateOrganizationInput,
   type ListMembersInput,
+  type UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
 
 @Controller("organization")
@@ -96,5 +99,17 @@ export class OrganizationController {
     const settings = await this.organization.getSettings(u.orgId);
     if (!settings) throw new NotFoundException("Organization not found");
     return settings;
+  }
+
+  @Patch("settings")
+  updateSettings(
+    @Body(new ZodValidationPipe(updateOrgSettingsSchema)) body: UpdateOrgSettingsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const ability = defineAbilityFor(u);
+    if (!ability.can("manage", "settings")) {
+      throw new ForbiddenException("Forbidden");
+    }
+    return this.organization.updateSettings(u.orgId, u.userId, body);
   }
 }

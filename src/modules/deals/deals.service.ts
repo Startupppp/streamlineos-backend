@@ -6,7 +6,13 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput } from "./dto/deals.schemas";
+import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
+
+type DealRow = typeof deals.$inferSelect;
+
+export type UpdateDealOutcome =
+  | { ok: true; deal: DealRow; stageChanged: boolean }
+  | { ok: false; reason: "version_conflict" | "not_found" };
 
 @Injectable()
 export class DealsService {
@@ -88,6 +94,90 @@ export class DealsService {
     }
 
     return deal;
+  }
+
+  async updateDeal(orgId: string, userId: string, dealId: number, input: UpdateDealInput): Promise<UpdateDealOutcome> {
+    const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
+    let stageChanged = false;
+    let newStage: UpdateDealInput["stage"];
+
+    if (input.stage !== undefined) {
+      const existing = await this.db.query.deals.findFirst({
+        where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+        columns: { stage: true, updatedAt: true },
+      });
+
+      if (input.version && existing?.updatedAt) {
+        const clientVersion = new Date(input.version).getTime();
+        const serverVersion = new Date(existing.updatedAt).getTime();
+        if (clientVersion < serverVersion) {
+          return { ok: false, reason: "version_conflict" };
+        }
+      }
+
+      if (input.stage === "WON") {
+        updateData.actualCloseDate = new Date().toISOString().split("T")[0];
+        updateData.probability = 100;
+      } else if (input.stage === "LOST") {
+        updateData.actualCloseDate = new Date().toISOString().split("T")[0];
+        updateData.probability = 0;
+      }
+
+      if (existing && existing.stage !== input.stage) {
+        stageChanged = true;
+        newStage = input.stage;
+        await this.db.insert(dealActivities).values({
+          orgId,
+          dealId,
+          type: "stage_change",
+          previousValue: existing.stage,
+          newValue: input.stage,
+          subject: `Stage changed from ${existing.stage} to ${input.stage}`,
+          userId,
+        });
+      }
+    }
+
+    if (input.name !== undefined) updateData.name = input.name;
+    if (input.value !== undefined) updateData.value = String(input.value);
+    if (input.stage !== undefined) updateData.stage = input.stage;
+    if (input.probability !== undefined) updateData.probability = input.probability;
+    if (input.contactPerson !== undefined) updateData.contactPerson = input.contactPerson;
+    if (input.contactEmail !== undefined) updateData.contactEmail = input.contactEmail;
+    if (input.contactPhone !== undefined) updateData.contactPhone = input.contactPhone;
+    if (input.assignedToId !== undefined) updateData.assignedToId = input.assignedToId;
+    if (input.expectedCloseDate !== undefined) updateData.expectedCloseDate = input.expectedCloseDate;
+    if (input.actualCloseDate !== undefined) updateData.actualCloseDate = input.actualCloseDate;
+    if (input.lostReason !== undefined) updateData.lostReason = input.lostReason;
+    if (input.notes !== undefined) updateData.notes = input.notes;
+
+    const [updated] = await this.db
+      .update(deals)
+      .set(updateData)
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+      .returning();
+
+    if (!updated) return { ok: false, reason: "not_found" };
+
+    const invalidations: Array<Promise<void>> = [
+      this.cache.invalidatePattern(`deals:list:${orgId}:*`),
+      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
+    ];
+    if (stageChanged) {
+      invalidations.push(this.cache.invalidate(CACHE_KEYS.salesKpis(orgId)));
+    }
+    await Promise.all(invalidations);
+
+    this.audit.log({
+      action: stageChanged ? "deal.stage_changed" : "deal.updated",
+      userId,
+      orgId,
+      targetId: String(dealId),
+      targetType: "deal",
+      metadata: { changedFields: Object.keys(input), newStage },
+    });
+
+    return { ok: true, deal: updated, stageChanged };
   }
 
   getDeal(orgId: string, dealId: number) {

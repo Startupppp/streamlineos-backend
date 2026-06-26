@@ -5,13 +5,31 @@ import { organizations, organizationMembers, invitations, users } from "../../db
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import type { CreateOrganizationInput, ListMembersInput } from "./dto/organization.schemas";
+import { CacheService } from "../../common/cache/cache.service";
+import type {
+  CreateOrganizationInput,
+  ListMembersInput,
+  UpdateOrgSettingsInput,
+} from "./dto/organization.schemas";
+
+type OrgSettingsUpdate = {
+  name?: string;
+  slug?: string;
+  logo?: string | null;
+  timezone?: string;
+  currency?: string;
+  fiscalYearStart?: number;
+  mfaEnforced?: boolean;
+  allowedEmailDomains?: string[];
+  settings?: Record<string, unknown>;
+};
 
 @Injectable()
 export class OrganizationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
 
   async listUserOrganizations(userId: string) {
@@ -202,6 +220,84 @@ export class OrganizationService {
       orgId,
       targetId: memberUserId,
       targetType: "user",
+    });
+
+    return { success: true };
+  }
+
+  async updateSettings(orgId: string, actorUserId: string, input: UpdateOrgSettingsInput) {
+    if (input.slug) {
+      const existing = await this.db.query.organizations.findFirst({
+        where: and(eq(organizations.slug, input.slug), eq(organizations.id, orgId)),
+      });
+      if (!existing) {
+        const slugTaken = await this.db.query.organizations.findFirst({
+          where: eq(organizations.slug, input.slug),
+        });
+        if (slugTaken) throw new ConflictException("Slug already in use");
+      }
+    }
+
+    const updateData: OrgSettingsUpdate = {};
+
+    if (input.name) updateData.name = input.name;
+    if (input.slug) updateData.slug = input.slug;
+    if (input.timezone !== undefined) updateData.timezone = input.timezone;
+    if (input.currency !== undefined) updateData.currency = input.currency;
+    if (input.fiscalYearStart !== undefined) updateData.fiscalYearStart = input.fiscalYearStart;
+    if (input.logo !== undefined) updateData.logo = input.logo;
+    if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
+    if (input.allowedEmailDomains !== undefined) updateData.allowedEmailDomains = input.allowedEmailDomains;
+
+    const hasSettingsUpdate =
+      input.directoryPublic !== undefined ||
+      input.primaryColor !== undefined ||
+      input.loginBgUrl !== undefined ||
+      input.ipAllowlist !== undefined;
+
+    if (hasSettingsUpdate) {
+      const currentOrg = await this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+      });
+      const currentSettings: Record<string, unknown> = currentOrg?.settings ?? {};
+
+      if (input.directoryPublic !== undefined) currentSettings.directoryPublic = input.directoryPublic;
+      if (input.primaryColor !== undefined) {
+        if (input.primaryColor === null) {
+          delete currentSettings.primaryColor;
+        } else {
+          currentSettings.primaryColor = input.primaryColor;
+        }
+      }
+      if (input.loginBgUrl !== undefined) {
+        if (input.loginBgUrl === null) {
+          delete currentSettings.loginBgUrl;
+        } else {
+          currentSettings.loginBgUrl = input.loginBgUrl;
+        }
+      }
+      if (input.ipAllowlist !== undefined) {
+        currentSettings.ipAllowlist = input.ipAllowlist;
+        if (input.ipAllowlist.length === 0) {
+          await this.cache.invalidate(`org:ip-allowlist:${orgId}`);
+        } else {
+          await this.cache.set(`org:ip-allowlist:${orgId}`, JSON.stringify(input.ipAllowlist), 3600);
+        }
+      }
+      updateData.settings = currentSettings;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId));
+    }
+
+    this.audit.log({
+      action: "settings.updated",
+      userId: actorUserId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+      metadata: updateData,
     });
 
     return { success: true };

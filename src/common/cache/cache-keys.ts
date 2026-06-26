@@ -25,6 +25,7 @@ export const CACHE_KEYS = {
     `tickets:list:${orgId}:${projectId}:${hash}`,
 
   salesDashboard: (orgId: string) => `sales:dashboard:${orgId}`,
+  salesKpis: (orgId: string) => `sales:kpis:${orgId}:::`,
   ceDashboard: (orgId: string) => `ce:dashboard:${orgId}`,
   supportDashboard: (orgId: string) => `support:dashboard:${orgId}`,
 
