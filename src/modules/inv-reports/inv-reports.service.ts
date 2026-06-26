@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   invStockLevels,
   invStockTransactions,
@@ -134,10 +134,10 @@ export class InvReportsService {
   getMovementsReport(orgId: string, fromDate?: string, toDate?: string) {
     const conditions = [eq(invStockTransactions.orgId, orgId)];
     if (fromDate) {
-      conditions.push(sql`${invStockTransactions.createdAt} >= ${new Date(fromDate)}`);
+      conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
     }
     if (toDate) {
-      conditions.push(sql`${invStockTransactions.createdAt} <= ${new Date(toDate)}`);
+      conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
     }
 
     return this.db.query.invStockTransactions.findMany({
