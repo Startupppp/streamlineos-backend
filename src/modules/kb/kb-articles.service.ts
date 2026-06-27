@@ -84,12 +84,12 @@ export class KbArticlesService {
   }
 
   async get(user: CurrentUserContext, articleId: number) {
-    await this.access.assertArticleViewable(user, articleId);
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
       with: { category: { columns: { id: true, name: true, slug: true } } },
     });
     if (!article) throw new NotFoundException("Article not found");
+    await this.access.assertCanViewArticle(user, article);
     return article;
   }
 
@@ -138,6 +138,7 @@ export class KbArticlesService {
   }
 
   async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput) {
+    await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
@@ -182,7 +183,9 @@ export class KbArticlesService {
     });
   }
 
-  async archive(orgId: string, articleId: number) {
+  async archive(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleEditable(user, articleId);
+    const orgId = user.orgId;
     const [updated] = await this.db
       .update(kbArticles)
       .set({ status: "archived", archivedAt: new Date() })
@@ -193,6 +196,7 @@ export class KbArticlesService {
   }
 
   async publish(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     return this.db.transaction(async (tx) => {
       const current = await tx.query.kbArticles.findFirst({
@@ -213,6 +217,7 @@ export class KbArticlesService {
   }
 
   async unpublish(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleEditable(user, articleId);
     const [updated] = await this.db
       .update(kbArticles)
       .set({ status: "draft" })
@@ -222,7 +227,9 @@ export class KbArticlesService {
     return updated;
   }
 
-  async verify(orgId: string, userId: string, articleId: number, input: VerifyArticleInput) {
+  async verify(user: CurrentUserContext, articleId: number, input: VerifyArticleInput) {
+    await this.access.assertArticleEditable(user, articleId);
+    const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
       columns: { reviewIntervalDays: true },
@@ -240,29 +247,28 @@ export class KbArticlesService {
     return updated;
   }
 
-  async vote(orgId: string, articleId: number, input: VoteArticleInput, userId: string) {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
+  async vote(user: CurrentUserContext, articleId: number, input: VoteArticleInput) {
+    await this.access.assertArticleViewable(user, articleId);
+    const orgId = user.orgId;
 
-    await this.db.insert(kbArticleFeedback).values({
-      orgId,
-      articleId,
-      helpful: input.helpful,
-      comment: input.comment ?? null,
-      visitorId: userId,
-    });
+    await this.db.transaction(async (tx) => {
+      await tx.insert(kbArticleFeedback).values({
+        orgId,
+        articleId,
+        helpful: input.helpful,
+        comment: input.comment ?? null,
+        visitorId: user.userId,
+      });
 
-    await this.db
-      .update(kbArticles)
-      .set(
-        input.helpful
-          ? { helpfulCount: sql`${kbArticles.helpfulCount} + 1` }
-          : { notHelpfulCount: sql`${kbArticles.notHelpfulCount} + 1` },
-      )
-      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)));
+      await tx
+        .update(kbArticles)
+        .set(
+          input.helpful
+            ? { helpfulCount: sql`${kbArticles.helpfulCount} + 1` }
+            : { notHelpfulCount: sql`${kbArticles.notHelpfulCount} + 1` },
+        )
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)));
+    });
 
     return { success: true };
   }
@@ -276,6 +282,7 @@ export class KbArticlesService {
   }
 
   async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number) {
+    await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     return this.db.transaction(async (tx) => {
       const version = await tx.query.kbArticleVersions.findFirst({
@@ -289,7 +296,12 @@ export class KbArticlesService {
 
       const [updated] = await tx
         .update(kbArticles)
-        .set({ title: version.title, content: version.content, excerpt: version.excerpt })
+        .set({
+          title: version.title,
+          content: version.content,
+          excerpt: version.excerpt,
+          contentText: this.extractPlainText(version.content),
+        })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Article not found");
@@ -297,6 +309,23 @@ export class KbArticlesService {
       await this.snapshot(tx, orgId, updated, user.userId, `Restored v${versionNumber}`);
       return updated;
     });
+  }
+
+  private extractPlainText(content: string): string {
+    const parts: string[] = [];
+    const walk = (node: unknown): void => {
+      if (typeof node !== "object" || node === null) return;
+      if ("text" in node && typeof node.text === "string") parts.push(node.text);
+      if ("content" in node && Array.isArray(node.content)) {
+        for (const child of node.content) walk(child);
+      }
+    };
+    try {
+      walk(JSON.parse(content));
+    } catch {
+      return content;
+    }
+    return parts.join(" ");
   }
 
   private async uniqueArticleSlug(orgId: string, base: string, excludeId?: number): Promise<string> {

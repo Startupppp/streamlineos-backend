@@ -10,7 +10,7 @@ export class KbService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(input: KbListInput) {
-    const { org, categoryId, search } = input;
+    const { org, categoryId, search, page, pageSize } = input;
 
     const categories = await this.db
       .select({
@@ -55,7 +55,9 @@ export class KbService {
       .from(kbArticles)
       .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
       .where(and(...conditions))
-      .orderBy(desc(kbArticles.publishedAt));
+      .orderBy(desc(kbArticles.publishedAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
 
     return { categories, articles };
   }
@@ -121,14 +123,23 @@ export class KbService {
 
     if (!article) throw new NotFoundException("Article not found");
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(kbArticleFeedback).values({
-        orgId: org,
-        articleId: article.id,
-        helpful,
-        comment: comment ?? null,
-        visitorId: visitorId ?? null,
-      });
+    const recorded = await this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(kbArticleFeedback)
+        .values({
+          orgId: org,
+          articleId: article.id,
+          helpful,
+          comment: comment ?? null,
+          visitorId: visitorId ?? null,
+        })
+        .onConflictDoNothing({
+          target: [kbArticleFeedback.orgId, kbArticleFeedback.articleId, kbArticleFeedback.visitorId],
+        })
+        .returning({ id: kbArticleFeedback.id });
+
+      if (inserted.length === 0) return false;
+
       await tx
         .update(kbArticles)
         .set(
@@ -137,8 +148,9 @@ export class KbService {
             : { notHelpfulCount: sql`${kbArticles.notHelpfulCount} + 1` },
         )
         .where(eq(kbArticles.id, article.id));
+      return true;
     });
 
-    return { success: true };
+    return { success: true, recorded };
   }
 }

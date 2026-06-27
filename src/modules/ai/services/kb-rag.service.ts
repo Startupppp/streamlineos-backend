@@ -1,8 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { kbArticleAttachments, kbArticleChunks, kbArticles, kbSpaces } from "../../../db/schema";
+import {
+  kbArticleAttachments,
+  kbArticleChunks,
+  kbArticles,
+  kbSpaces,
+  tenantAiCredits,
+  tenantAiCreditTransactions,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { EmbeddingsService } from "../providers/embeddings.service";
@@ -18,6 +25,12 @@ export interface KbAnswerSource {
   attachmentId: number | null;
   attachmentName: string | null;
   similarity: number;
+}
+
+export interface KbAnswer {
+  answer: string;
+  sources: KbAnswerSource[];
+  hasContext: boolean;
 }
 
 interface KbSearchResult {
@@ -128,7 +141,62 @@ export class KbRagService {
     throw new Error("No AI provider configured");
   }
 
-  async answerQuestion(opts: AnswerOptions) {
+  private async hasPublishedPublicArticles(orgId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: kbArticles.id })
+      .from(kbArticles)
+      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
+      .where(
+        and(
+          eq(kbArticles.orgId, orgId),
+          eq(kbArticles.status, "published"),
+          eq(kbArticles.visibility, "public"),
+          inArray(kbSpaces.audience, ["public", "mixed"]),
+          isNull(kbSpaces.deletedAt),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
+  }
+
+  private async consumeCredit(orgId: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(tenantAiCredits)
+        .set({ balance: sql`${tenantAiCredits.balance} - 1` })
+        .where(and(eq(tenantAiCredits.orgId, orgId), gte(tenantAiCredits.balance, 1)))
+        .returning({ balance: tenantAiCredits.balance });
+      if (!row) return false;
+      await tx.insert(tenantAiCreditTransactions).values({
+        orgId,
+        delta: -1,
+        balanceAfter: row.balance,
+        reason: "public_kb_ask",
+        feature: "kb_rag_public",
+      });
+      return true;
+    });
+  }
+
+  private async refundCredit(orgId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(tenantAiCredits)
+        .set({ balance: sql`${tenantAiCredits.balance} + 1` })
+        .where(eq(tenantAiCredits.orgId, orgId))
+        .returning({ balance: tenantAiCredits.balance });
+      if (!row) return;
+      await tx.insert(tenantAiCreditTransactions).values({
+        orgId,
+        delta: 1,
+        balanceAfter: row.balance,
+        reason: "public_kb_ask_refund",
+        feature: "kb_rag_public",
+      });
+    });
+  }
+
+  private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
     const results = await this.searchChunks(opts);
 
     if (results.length === 0) {
@@ -161,5 +229,34 @@ export class KbRagService {
       sources: this.dedupeSources(results),
       hasContext: true,
     };
+  }
+
+  async answerQuestion(opts: AnswerOptions): Promise<KbAnswer> {
+    if (!opts.publicOnly) return this.runAnswer(opts);
+
+    const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
+    if (!hasArticles) {
+      return {
+        answer: "I couldn't find anything related to that in the knowledge base yet.",
+        sources: [],
+        hasContext: false,
+      };
+    }
+
+    const consumed = await this.consumeCredit(opts.orgId);
+    if (!consumed) {
+      return {
+        answer: "The AI assistant isn't available right now. Please try again later.",
+        sources: [],
+        hasContext: false,
+      };
+    }
+
+    try {
+      return await this.runAnswer(opts);
+    } catch (err) {
+      await this.refundCredit(opts.orgId);
+      throw err;
+    }
   }
 }

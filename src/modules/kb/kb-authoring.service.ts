@@ -2,7 +2,6 @@ import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbEventsService } from "./kb-events.service";
 import { LlmService } from "../ai/providers/llm.service";
-import { InsufficientCreditsException } from "./kb.errors";
 import type { DraftInput, ImproveInput, SummarizeInput, TranslateInput } from "./dto/kb-authoring.schemas";
 
 const COST = 1;
@@ -25,11 +24,14 @@ export class KbAuthoringService {
     if (!this.llm.isConfigured()) {
       throw new ServiceUnavailableException("AI assistant is not available");
     }
-    if (!(await this.credits.hasCredits(orgId, COST))) {
-      throw new InsufficientCreditsException();
-    }
-    const content = await this.llm.invokeText({ model: "fast", temperature: 0.4, system, user });
     await this.credits.consume(orgId, COST, { reason: `kb_${feature}`, feature, actorId: userId });
+    let content: string;
+    try {
+      content = await this.llm.invokeText({ model: "fast", temperature: 0.4, system, user });
+    } catch (error) {
+      await this.credits.grant(orgId, COST, { reason: `kb_${feature}_refund`, feature, actorId: userId });
+      throw error;
+    }
     await this.events.record(orgId, "ai_answer", { actorId: userId, metadata: { feature } });
     return { content };
   }

@@ -50,7 +50,11 @@ export class KbCategoriesService {
     const slug = kbSlugify(input.name);
     if (!slug) throw new BadRequestException("Invalid name");
     const existing = await this.db.query.kbCategories.findFirst({
-      where: and(eq(kbCategories.orgId, user.orgId), eq(kbCategories.slug, slug)),
+      where: and(
+        eq(kbCategories.orgId, user.orgId),
+        eq(kbCategories.spaceId, spaceId),
+        eq(kbCategories.slug, slug),
+      ),
       columns: { id: true },
     });
     if (existing) throw new ConflictException("A collection with this name already exists");
@@ -115,6 +119,7 @@ export class KbCategoriesService {
       const clash = await this.db.query.kbCategories.findFirst({
         where: and(
           eq(kbCategories.orgId, user.orgId),
+          eq(kbCategories.spaceId, current.spaceId ?? -1),
           eq(kbCategories.slug, slug),
           ne(kbCategories.id, categoryId),
         ),

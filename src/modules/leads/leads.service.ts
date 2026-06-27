@@ -10,6 +10,7 @@ import {
   lte,
   or,
   inArray,
+  type SQL,
 } from "drizzle-orm";
 import {
   leads,
@@ -28,6 +29,8 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   evaluateAssignmentRules,
   recalculateLeadScore,
@@ -40,9 +43,18 @@ import type {
   IngestInput,
 } from "./dto/lead.schemas";
 
-type ListFilters = ListInput & { role?: string; userId?: string; branch?: BranchContext };
-type BoardOpts = { role?: string; userId?: string; branch?: BranchContext; limitPerStatus?: number };
-type StatsFilters = { dateFrom?: string; dateTo?: string; role?: string; userId?: string; branch?: BranchContext };
+type ListFilters = ListInput & { role?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
+type BoardOpts = { role?: string; userId?: string; branch?: BranchContext; limitPerStatus?: number; scope?: DataScope };
+type StatsFilters = { dateFrom?: string; dateTo?: string; role?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
+
+function pushLeadsViewScope(
+  where: SQL[],
+  scope: DataScope | undefined,
+  userId: string | undefined,
+): void {
+  if (!scope || !userId) return;
+  where.push(applyScope(scope, userId, { ownerColumn: leads.assignedToId }));
+}
 
 export type AssigneeNotMember = { error: "assignee_not_member" };
 
@@ -100,6 +112,7 @@ export class LeadsService {
     if (filters?.role === "SALES" && filters.userId) {
       where.push(eq(leads.assignedToId, filters.userId));
     }
+    pushLeadsViewScope(where, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));
     if (filters?.priority) where.push(eq(leads.priority, filters.priority));
     if (filters?.source) where.push(eq(leads.source, filters.source));
@@ -193,6 +206,8 @@ export class LeadsService {
       }
     }
 
+    pushLeadsViewScope(filters, opts?.scope, opts?.userId);
+
     const statusCount = 6;
     const cap = (opts?.limitPerStatus ?? 50) * statusCount;
     const allLeads = await this.db.query.leads.findMany({
@@ -235,6 +250,7 @@ export class LeadsService {
     if (filters?.role === "SALES" && filters.userId) {
       statsFilters.push(eq(leads.assignedToId, filters.userId));
     }
+    pushLeadsViewScope(statsFilters, filters?.scope, filters?.userId);
 
     if (filters?.dateFrom) {
       statsFilters.push(gte(leads.createdAt, new Date(filters.dateFrom)));

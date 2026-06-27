@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleChunks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -35,15 +35,14 @@ export class KbSearchService {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
     }
 
-    const term = `%${input.q}%`;
-    const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
+    const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, user.orgId),
+      inArray(kbArticles.spaceId, ids),
+      ne(kbArticles.status, "archived"),
+      this.keywordMatch(input.q, tsquery),
+    ];
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
-    const match = or(
-      ilike(kbArticles.title, term),
-      ilike(kbArticles.excerpt, term),
-      ilike(kbArticles.contentText, term),
-    );
-    if (match) conditions.push(match);
     const where = and(...conditions);
 
     const [totalRow] = await this.db
@@ -66,7 +65,7 @@ export class KbSearchService {
       })
       .from(kbArticles)
       .where(where)
-      .orderBy(desc(kbArticles.updatedAt))
+      .orderBy(desc(this.keywordRank(tsquery)), desc(kbArticles.updatedAt))
       .limit(input.pageSize)
       .offset((input.page - 1) * input.pageSize);
 
@@ -94,23 +93,31 @@ export class KbSearchService {
     user: CurrentUserContext,
     query: string,
     limit: number,
+    spaceId?: number,
   ): Promise<RetrievedArticle[]> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) return [];
 
-    const tokens = this.tokenize(query);
-    if (tokens.length === 0) return [];
+    const q = query.trim();
+    if (!q) return [];
 
     const pool = Math.max(limit * 3, limit);
-    const lists: number[][] = [await this.keywordCandidates(user.orgId, ids, tokens, pool)];
+    const lists: number[][] = [await this.keywordCandidates(user.orgId, ids, q, pool, spaceId)];
 
     if (this.embeddings.isConfigured()) {
-      const vectorIds = await this.vectorCandidates(user.orgId, ids, query, pool);
+      const vectorIds = await this.vectorCandidates(user.orgId, ids, q, pool, spaceId);
       if (vectorIds.length > 0) lists.push(vectorIds);
     }
 
     const fused = this.fuse(lists).slice(0, limit);
     if (fused.length === 0) return [];
+
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, user.orgId),
+      inArray(kbArticles.id, fused),
+      eq(kbArticles.status, "published"),
+    ];
+    if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
     const rows = await this.db
       .select({
@@ -121,7 +128,7 @@ export class KbSearchService {
         contentText: kbArticles.contentText,
       })
       .from(kbArticles)
-      .where(and(eq(kbArticles.orgId, user.orgId), inArray(kbArticles.id, fused)));
+      .where(and(...conditions));
 
     const order = new Map(fused.map((id, index) => [id, index]));
     return rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
@@ -130,18 +137,24 @@ export class KbSearchService {
   private async keywordCandidates(
     orgId: string,
     spaceIds: number[],
-    tokens: string[],
+    query: string,
     pool: number,
+    spaceId?: number,
   ): Promise<number[]> {
-    const conditions: SQL[] = [eq(kbArticles.orgId, orgId), inArray(kbArticles.spaceId, spaceIds)];
-    const match = this.keywordMatch(tokens);
-    if (match) conditions.push(match);
+    const tsquery = sql`websearch_to_tsquery('english', ${query})`;
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, orgId),
+      inArray(kbArticles.spaceId, spaceIds),
+      eq(kbArticles.status, "published"),
+      this.keywordMatch(query, tsquery),
+    ];
+    if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
     const rows = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)
       .where(and(...conditions))
-      .orderBy(desc(this.keywordRank(tokens)), desc(kbArticles.updatedAt))
+      .orderBy(desc(this.keywordRank(tsquery)), desc(kbArticles.updatedAt))
       .limit(pool);
     return rows.map((row) => row.id);
   }
@@ -151,15 +164,23 @@ export class KbSearchService {
     spaceIds: number[],
     query: string,
     pool: number,
+    spaceId?: number,
   ): Promise<number[]> {
     try {
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const conditions: SQL[] = [
+        eq(kbArticleChunks.orgId, orgId),
+        inArray(kbArticles.spaceId, spaceIds),
+        eq(kbArticles.status, "published"),
+      ];
+      if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
+
       const rows = await this.db
         .select({ articleId: kbArticleChunks.articleId })
         .from(kbArticleChunks)
         .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-        .where(and(eq(kbArticleChunks.orgId, orgId), inArray(kbArticles.spaceId, spaceIds)))
+        .where(and(...conditions))
         .orderBy(distance)
         .limit(pool * 4);
 
@@ -177,37 +198,13 @@ export class KbSearchService {
     }
   }
 
-  private keywordMatch(tokens: string[]): SQL | undefined {
-    const clauses = tokens
-      .map((token) => {
-        const term = `%${token}%`;
-        return or(
-          ilike(kbArticles.title, term),
-          ilike(kbArticles.excerpt, term),
-          ilike(kbArticles.contentText, term),
-        );
-      })
-      .filter((clause): clause is SQL => Boolean(clause));
-    return clauses.length > 0 ? or(...clauses) : undefined;
+  private keywordMatch(query: string, tsquery: SQL): SQL {
+    const term = `%${query}%`;
+    return sql`(fts @@ ${tsquery} or (numnode(${tsquery}) = 0 and (${kbArticles.title} ilike ${term} or ${kbArticles.excerpt} ilike ${term} or ${kbArticles.contentText} ilike ${term})))`;
   }
 
-  private keywordRank(tokens: string[]): SQL<number> {
-    const parts = tokens.map((token) => {
-      const term = `%${token}%`;
-      return sql`(case when ${kbArticles.title} ilike ${term} then 3 else 0 end + case when ${kbArticles.excerpt} ilike ${term} then 2 else 0 end + case when ${kbArticles.contentText} ilike ${term} then 1 else 0 end)`;
-    });
-    return sql<number>`(${sql.join(parts, sql` + `)})`;
-  }
-
-  private tokenize(query: string): string[] {
-    const tokens = query
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((token) => token.length >= 3);
-    const unique = [...new Set(tokens)].slice(0, 10);
-    if (unique.length > 0) return unique;
-    const fallback = query.trim().toLowerCase();
-    return fallback ? [fallback] : [];
+  private keywordRank(tsquery: SQL): SQL<number> {
+    return sql<number>`ts_rank(fts, ${tsquery})`;
   }
 
   private fuse(lists: number[][]): number[] {

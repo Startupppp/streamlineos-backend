@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
@@ -30,20 +30,32 @@ export class KbAccessService {
 
     if (this.isAdmin(user)) return spaces.map((s) => s.id);
 
-    const members = await this.db
-      .select({ spaceId: kbSpaceMembers.spaceId, userId: kbSpaceMembers.userId, role: kbSpaceMembers.role })
+    const grantedRows = await this.db
+      .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
+      .from(kbSpaceMembers)
+      .where(
+        and(
+          eq(kbSpaceMembers.orgId, user.orgId),
+          or(eq(kbSpaceMembers.userId, user.userId), eq(kbSpaceMembers.role, user.role)),
+        ),
+      );
+
+    const restrictedRows = await this.db
+      .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
       .from(kbSpaceMembers)
       .where(eq(kbSpaceMembers.orgId, user.orgId));
 
-    const restricted = new Set(members.map((m) => m.spaceId));
-    const granted = new Set(
-      members
-        .filter((m) => m.userId === user.userId || (m.role !== null && m.role === user.role))
-        .map((m) => m.spaceId),
-    );
+    const granted = new Set(grantedRows.map((m) => m.spaceId));
+    const restricted = new Set(restrictedRows.map((m) => m.spaceId));
 
     return spaces
-      .filter((s) => s.audience === "public" || granted.has(s.id) || !restricted.has(s.id))
+      .filter(
+        (s) =>
+          s.audience === "public" ||
+          s.audience === "mixed" ||
+          granted.has(s.id) ||
+          !restricted.has(s.id),
+      )
       .map((s) => s.id);
   }
 
@@ -52,9 +64,52 @@ export class KbAccessService {
     if (!ids.includes(spaceId)) throw new NotFoundException("Space not found");
   }
 
-  async assertArticleViewable(user: CurrentUserContext, articleId: number) {
+  async assertCanViewArticle(
+    user: CurrentUserContext,
+    row: { id: number; orgId: string; spaceId: number | null },
+  ): Promise<void> {
+    if (this.isAdmin(user)) return;
+
+    if (row.spaceId !== null) {
+      const accessible = await this.getAccessibleSpaceIds(user);
+      if (!accessible.includes(row.spaceId)) {
+        throw new NotFoundException("Article not found");
+      }
+    }
+
+    const restrictions = await this.db
+      .select({ userId: kbArticleRestrictions.userId, role: kbArticleRestrictions.role })
+      .from(kbArticleRestrictions)
+      .where(
+        and(
+          eq(kbArticleRestrictions.articleId, row.id),
+          eq(kbArticleRestrictions.level, "view"),
+        ),
+      );
+    if (restrictions.length > 0) {
+      const allowed = restrictions.some(
+        (r) => r.userId === user.userId || (r.role !== null && r.role === user.role),
+      );
+      if (!allowed) throw new NotFoundException("Article not found");
+    }
+  }
+
+  async assertArticleViewable(user: CurrentUserContext, articleId: number): Promise<void> {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
+      columns: { id: true, orgId: true, spaceId: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+    await this.assertCanViewArticle(user, article);
+  }
+
+  async assertArticleEditable(
+    user: CurrentUserContext,
+    articleId: number,
+  ): Promise<{ id: number; orgId: string; spaceId: number | null }> {
+    const article = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
+      columns: { id: true, orgId: true, spaceId: true },
     });
     if (!article) throw new NotFoundException("Article not found");
     if (this.isAdmin(user)) return article;
@@ -72,7 +127,7 @@ export class KbAccessService {
       .where(
         and(
           eq(kbArticleRestrictions.articleId, articleId),
-          eq(kbArticleRestrictions.level, "view"),
+          eq(kbArticleRestrictions.level, "edit"),
         ),
       );
     if (restrictions.length > 0) {

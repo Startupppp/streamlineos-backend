@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -45,7 +45,7 @@ function resolveLimit(raw: string | undefined, fallback: number): number {
 }
 
 @Controller("leads")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsDetailController {
   constructor(
     private readonly detail: LeadsDetailService,
@@ -53,6 +53,7 @@ export class LeadsDetailController {
   ) {}
 
   @Get(":leadId/activities")
+  @RequirePermission("crm:leads:view")
   getActivities(
     @Param("leadId", ParseIntPipe) leadId: number,
     @Query("limit") limit: string | undefined,
@@ -62,6 +63,7 @@ export class LeadsDetailController {
   }
 
   @Post(":leadId/activities")
+  @RequirePermission("crm:leads:update")
   @HttpCode(201)
   addActivity(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -72,6 +74,7 @@ export class LeadsDetailController {
   }
 
   @Get(":leadId/timeline")
+  @RequirePermission("crm:leads:view")
   getTimeline(
     @Param("leadId", ParseIntPipe) leadId: number,
     @Query("limit") limit: string | undefined,

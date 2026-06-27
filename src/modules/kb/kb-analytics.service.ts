@@ -3,15 +3,11 @@ import { and, desc, eq, gte, isNotNull, lte, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { KbAccessService } from "./kb-access.service";
 import type { RangeInput } from "./dto/kb-analytics.schemas";
 
 @Injectable()
 export class KbAnalyticsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: KbAccessService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async overview(orgId: string, range: RangeInput) {
     const eventConditions: SQL[] = [eq(kbEvents.orgId, orgId)];

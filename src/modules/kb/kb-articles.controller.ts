@@ -76,7 +76,7 @@ export class KbArticlesController {
   @Delete("articles/:articleId")
   @CheckAbility("delete", "kb:articles")
   remove(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.articles.archive(u.orgId, articleId);
+    return this.articles.archive(u, articleId);
   }
 
   @Post("articles/:articleId/publish")
@@ -98,7 +98,7 @@ export class KbArticlesController {
     @Body(new ZodValidationPipe(verifyArticleSchema)) body: VerifyArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.articles.verify(u.orgId, u.userId, articleId, body);
+    return this.articles.verify(u, articleId, body);
   }
 
   @Post("articles/:articleId/vote")
@@ -108,7 +108,7 @@ export class KbArticlesController {
     @Body(new ZodValidationPipe(voteArticleSchema)) body: VoteArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.articles.vote(u.orgId, articleId, body, u.userId);
+    return this.articles.vote(u, articleId, body);
   }
 
   @Post("articles/:articleId/view")

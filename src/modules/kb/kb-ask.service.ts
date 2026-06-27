@@ -1,7 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
-import { KbAccessService } from "./kb-access.service";
+import { Injectable } from "@nestjs/common";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -23,8 +20,6 @@ const ASK_SYSTEM_PROMPT =
 @Injectable()
 export class KbAskService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: KbAccessService,
     private readonly credits: KbCreditsService,
     private readonly events: KbEventsService,
     private readonly llm: LlmService,
@@ -40,7 +35,12 @@ export class KbAskService {
       throw new InsufficientCreditsException();
     }
 
-    const top = await this.search.retrieveTopArticles(user, input.question, MAX_CONTEXT_ARTICLES);
+    const top = await this.search.retrieveTopArticles(
+      user,
+      input.question,
+      MAX_CONTEXT_ARTICLES,
+      input.spaceId,
+    );
     if (top.length === 0) {
       return {
         answer:
@@ -54,18 +54,28 @@ export class KbAskService {
       .map((article, index) => `[${index + 1}] ${article.title}\n${(article.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
       .join("\n\n---\n\n");
 
-    const answer = await this.llm.invokeText({
-      model: "fast",
-      temperature: 0.2,
-      system: ASK_SYSTEM_PROMPT,
-      user: `Question: ${input.question}\n\nContext:\n${context}`,
-    });
-
     await this.credits.consume(user.orgId, ASK_COST, {
       reason: "kb_ask",
       feature: "ask",
       actorId: user.userId,
     });
+
+    let answer: string;
+    try {
+      answer = await this.llm.invokeText({
+        model: "fast",
+        temperature: 0.2,
+        system: ASK_SYSTEM_PROMPT,
+        user: `Question: ${input.question}\n\nContext:\n${context}`,
+      });
+    } catch (error) {
+      await this.credits.grant(user.orgId, ASK_COST, {
+        reason: "kb_ask_refund",
+        feature: "ask",
+        actorId: user.userId,
+      });
+      throw error;
+    }
 
     await this.events.record(user.orgId, "ai_answer", {
       actorId: user.userId,

@@ -9,7 +9,9 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentService } from "./recruitment.service";
@@ -41,6 +43,13 @@ import {
   type RoadmapQueryInput,
   type RoadmapVoteInput,
 } from "./dto/public.schemas";
+
+function clientIp(req: Request): string | undefined {
+  const forwarded = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const candidate = raw?.split(",")[0]?.trim() || req.ip;
+  return candidate ? candidate.slice(0, 100) : undefined;
+}
 
 @Public()
 @Controller("public")
@@ -184,7 +193,9 @@ export class PublicController {
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(orgQuerySchema)) query: OrgQueryInput,
     @Body(new ZodValidationPipe(kbFeedbackSchema)) body: KbFeedbackInput,
+    @Req() req: Request,
   ) {
-    return this.kb.submitFeedback(slug, query.org, body);
+    const visitorId = body.visitorId ?? clientIp(req);
+    return this.kb.submitFeedback(slug, query.org, { ...body, visitorId });
   }
 }

@@ -13,12 +13,14 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeadsService, isAssigneeNotMember } from "./leads.service";
+import { resolveLeadsViewScope } from "./leads-scope";
 import {
   createSchema,
   listSchema,
@@ -29,18 +31,23 @@ import {
 } from "./dto/lead.schemas";
 
 @Controller("leads")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsController {
-  constructor(private readonly leads: LeadsService) {}
+  constructor(
+    private readonly leads: LeadsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  @CheckAbility("read", "crm:leads")
-  list(
+  @RequirePermission("crm:leads:view")
+  async list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const scope = await resolveLeadsViewScope(this.access, u);
     return this.leads.listLeads(u.orgId, {
       ...filters,
+      scope,
       role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
@@ -48,7 +55,7 @@ export class LeadsController {
   }
 
   @Post()
-  @CheckAbility("create", "crm:leads")
+  @RequirePermission("crm:leads:create")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -61,8 +68,11 @@ export class LeadsController {
   }
 
   @Get("board")
-  getBoard(@CurrentUser() u: CurrentUserContext) {
+  @RequirePermission("crm:leads:view")
+  async getBoard(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveLeadsViewScope(this.access, u);
     return this.leads.getBoard(u.orgId, {
+      scope,
       role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
@@ -70,14 +80,17 @@ export class LeadsController {
   }
 
   @Get("stats")
-  getStats(
+  @RequirePermission("crm:leads:view")
+  async getStats(
     @Query("dateFrom") dateFrom: string | undefined,
     @Query("dateTo") dateTo: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const scope = await resolveLeadsViewScope(this.access, u);
     return this.leads.getStats(u.orgId, {
       dateFrom,
       dateTo,
+      scope,
       role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
@@ -85,6 +98,7 @@ export class LeadsController {
   }
 
   @Get(":leadId")
+  @RequirePermission("crm:leads:view")
   async get(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     const lead = await this.leads.getLead(u.orgId, leadId);
     if (!lead) throw new NotFoundException("Lead not found");
@@ -92,6 +106,7 @@ export class LeadsController {
   }
 
   @Patch(":leadId")
+  @RequirePermission("crm:leads:update")
   async update(
     @Param("leadId", ParseIntPipe) leadId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -103,7 +118,7 @@ export class LeadsController {
   }
 
   @Delete(":leadId")
-  @CheckAbility("delete", "crm:leads")
+  @RequirePermission("crm:leads:delete")
   remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     return this.leads.remove(u.orgId, u.userId, leadId);
   }
