@@ -8,6 +8,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
 type DealRow = typeof deals.$inferSelect;
@@ -24,6 +25,7 @@ export class DealsService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly webhooksDispatch: WebhooksDispatchService,
   ) {}
 
   private async maybeCreateNegotiationChannel(orgId: string, userId: string, dealId: number): Promise<void> {
@@ -253,6 +255,15 @@ export class DealsService {
       targetType: "deal",
       metadata: { changedFields: Object.keys(input), newStage: input.stage },
     });
+
+    if (input.stage === "WON") {
+      this.webhooksDispatch.dispatch(orgId, "deal.won", {
+        id: updated.id,
+        name: updated.name,
+        value: updated.value,
+        assignedToId: updated.assignedToId,
+      });
+    }
 
     if (stageChanged && previousStage && input.stage) {
       const newStage = input.stage;

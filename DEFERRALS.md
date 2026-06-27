@@ -14,7 +14,7 @@ future batch that owns unblocking it.
 | --- | --- | --- | --- |
 | /deals/:dealId (NEGOTIATION side effect) | PATCH | `maybeCreateNegotiationChannel` writes `chat_channels` / `chat_channel_members` — chat module not yet extracted; stays event-bridged | chat |
 | /deals/:dealId (stage-change email) | PATCH | `sendDealStageChangeEmail` (`sendStageChangeNotification`) — email provider integration | notifications-email |
-| /deals/:dealId (WON webhook) | PATCH | inngest `dispatchWebhook("deal.won")` — outbound webhook / inngest dispatch | webhooks-inngest |
+| /deals/:dealId (WON webhook) | PATCH | ~~inngest `dispatchWebhook("deal.won")`~~ — IMPLEMENTED via `WebhooksDispatchService` (see outbound-webhook section) | DONE |
 | /deals/:dealId (automation) | PATCH | `runAutomationsForEvent("deal.stage_changed")` — automation engine | automation-engine |
 
 ## organization
@@ -76,5 +76,33 @@ The integration modules that previously blocked the deferred routes above have l
 | google-calendar | 3 | Google Calendar REST (OAuth token passthrough); no extra npm dep | interview-scheduling calendar invites |
 | realtime | 1 | `ably` (token auth) + `web-push` (VAPID push) | live presence / push fan-out |
 | automation | 1 | automation rule engine; sends via its own `AutomationEmailService` (Resend/SendGrid) and injected `NotificationsService` | automation-engine row under deals (`runAutomationsForEvent`) |
+| webhooks-dispatch | 3 | `WebhooksDispatchService` — fire-and-forget HMAC-signed outbound delivery to org `webhook_endpoints`, logged to `webhook_logs` (node `crypto` + global `fetch`; no new dep) | outbound `dispatchWebhook` rows: `deal.won` (deals), `lead.created` (leads), `leave.approved` (hr-time) |
 
 Wiring notes: `email`, `storage` are `@Global` (their services are app-wide); `realtime` exports `AblyService`/`WebPushService`; `automation` imports `NotificationsModule` for `NotificationsService` and uses its own email sender (no dependency on `EmailModule`). All seven modules are registered in `src/app.module.ts`. Four service return types (`ChannelResult`, `TaskSuggestion`/`WorkloadAnalysis`, `KbAnswerSource`, `ActionResult`) were exported so controllers can name them (TS4053).
+
+## outbound webhook dispatch (implemented)
+
+`WebhooksModule` now provides and exports `WebhooksDispatchService.dispatch(orgId, eventName, payload)` — a fire-and-forget public method that mirrors the frontend `dispatchWebhook` (`inngest webhook/dispatch` → `webhook-dispatcher`): it reads active `webhook_endpoints` for the org, keeps endpoints whose `events` array is empty / includes the event / includes `"*"`, POSTs `{ event, data, timestamp }` with an HMAC-SHA256 `X-StreamlineOS-Signature` (10s timeout), and logs each attempt to `webhook_logs`. All errors are swallowed internally so a delivery failure never affects the caller's response (the caller does not await it).
+
+Wired outbound `dispatchWebhook` events (route on backend → fired post-commit, matching the frontend trigger + payload):
+
+| Event | Route | Module / call site | Trigger | Payload |
+| --- | --- | --- | --- | --- |
+| `deal.won` | PATCH /deals/:dealId | deals → `DealsService.updateDeal` | `input.stage === "WON"` | `{ id, name, value, assignedToId }` |
+| `lead.created` | POST /leads | leads → `LeadsService.create` | after insert succeeds | `{ id, name, email, source, assignedToId }` |
+| `leave.approved` | PATCH /hr/leaves/:leaveId/approve | hr-time → `LeavesWriteService.updateStatus` | `PENDING → APPROVED` | `{ leaveId, userId, startDate, endDate, leaveTypeId }` |
+
+Not wired — `employee.hired` (POST /hr/employees/onboard): the onboard write-path itself is **not yet ported** to the backend (hr-directory `EmployeesService` has no `onboard` method), so there is no backend call site. Re-add this `dispatch("employee.hired", { userId, email, firstName, lastName, joiningDate })` when that route is ported.
+
+## still-deferred: inngest async-function jobs (need a queue)
+
+These are direct `inngest.send("hr/...")` triggers for **async cross-domain jobs** (scheduled reminders, fan-out follow-ups), not outbound registered-endpoint webhooks. They have no NestJS equivalent yet — re-enabling them needs a backend job queue / scheduler (BullMQ/cron) with the corresponding worker. Left deferred:
+
+| Inngest event | Origin route | Purpose |
+| --- | --- | --- |
+| `hr/employee.onboarded` | POST /hr/employees/onboard | onboarding follow-up job (route also unported) |
+| `hr/resignation.submitted` | POST /hr/exit | resignation workflow fan-out |
+| `hr/resignation.ceo_approved` | PATCH /hr/exit/:resignationId/ceo-review | post-CEO-approval workflow |
+| `hr/offer.deadline.reminder` | POST /hr/recruitment/candidates/:id/rollout-documents | scheduled offer-deadline reminder |
+| `hr/interview.no_show` | PATCH /hr/recruitment/interviews/:interviewId | no-show follow-up |
+| `hr/interview.scorecard.submitted` | POST /hr/recruitment/interviews/:interviewId/scorecard | drives candidate-feedback-email |

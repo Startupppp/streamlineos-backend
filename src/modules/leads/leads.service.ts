@@ -26,6 +26,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import {
   evaluateAssignmentRules,
@@ -62,6 +63,7 @@ export class LeadsService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly webhooksDispatch: WebhooksDispatchService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -385,6 +387,14 @@ export class LeadsService {
         assignedToId: newLead.assignedToId,
       })
       .catch(() => undefined);
+
+    this.webhooksDispatch.dispatch(orgId, "lead.created", {
+      id: newLead.id,
+      name: newLead.name,
+      email: newLead.email,
+      source: newLead.source,
+      assignedToId: newLead.assignedToId,
+    });
 
     return newLead;
   }

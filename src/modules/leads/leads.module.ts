@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
+import { WebhooksModule } from "../webhooks/webhooks.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -14,7 +15,7 @@ import { LeadStatusService } from "./lead-status.service";
 import { LeadsOpsService } from "./leads-ops.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,

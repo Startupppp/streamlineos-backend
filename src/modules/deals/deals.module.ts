@@ -9,9 +9,10 @@ import { DealsApprovalsService } from "./deals-approvals.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
+import { WebhooksModule } from "../webhooks/webhooks.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule],
   controllers: [
     DealsAnalyticsController,
     DealsApprovalsController,

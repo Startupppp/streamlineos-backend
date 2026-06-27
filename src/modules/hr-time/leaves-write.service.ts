@@ -20,6 +20,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { formatDateOnly } from "./date.helpers";
 import type { CreateLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 
@@ -39,6 +40,7 @@ export class LeavesWriteService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly webhooksDispatch: WebhooksDispatchService,
   ) {}
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {
@@ -217,6 +219,16 @@ export class LeavesWriteService {
 
     if (existing.status === "PENDING" && (body.status === "APPROVED" || body.status === "REJECTED")) {
       void this.dispatchLeaveDecision(u, leaveId, existing, body.status, body.rejectionReason ?? null);
+    }
+
+    if (existing.status === "PENDING" && body.status === "APPROVED") {
+      this.webhooksDispatch.dispatch(u.orgId, "leave.approved", {
+        leaveId,
+        userId: existing.userId,
+        startDate: existing.startDate,
+        endDate: existing.endDate,
+        leaveTypeId: existing.leaveTypeId,
+      });
     }
 
     return { ok: true as const };
