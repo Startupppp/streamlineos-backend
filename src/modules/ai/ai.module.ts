@@ -30,5 +30,6 @@ import { OrgFeaturesService } from "./services/org-features.service";
     AiUsageService,
     OrgFeaturesService,
   ],
+  exports: [LlmService, EmbeddingsService],
 })
 export class AiModule {}
