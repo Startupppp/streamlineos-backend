@@ -14,36 +14,36 @@ export const registerSchema = z.object({
   email: z.string().email("Valid email required"),
   password: passwordSchema,
   companyName: z.string().min(1, "Company name is required"),
-});
+}).strict();
 
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   rememberMe: z.boolean().optional().default(false),
   fingerprint: z.string().optional(),
-});
+}).strict();
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email(),
-});
+}).strict();
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1),
   newPassword: passwordSchema,
-});
+}).strict();
 
 export const verifyEmailSchema = z.object({
   token: z.string().min(1),
-});
+}).strict();
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: passwordSchema,
-});
+}).strict();
 
 export const resendVerificationSchema = z.object({
   email: z.string().email(),
-});
+}).strict();
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

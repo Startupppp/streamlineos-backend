@@ -4,6 +4,8 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -16,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
 import { SessionService } from "./session.service";
 import { DeviceService } from "./device.service";
@@ -55,24 +58,47 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly sessionService: SessionService,
     private readonly deviceService: DeviceService,
+    private readonly rateLimit: RateLimitService,
   ) {}
+
+  private getIp(req: { ip?: string; headers: Record<string, string> }): string {
+    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+  }
+
+  private async enforceRateLimit(
+    tier: string,
+    identifier: string,
+  ): Promise<void> {
+    const result = await this.rateLimit.check(tier, identifier);
+    if (!result.allowed) {
+      throw new HttpException(
+        { error_code: "RATE_LIMITED", retryAfter: result.retryAfterSecs },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   @Post("register")
   @Public()
   @HttpCode(201)
-  register(@Body(new ZodValidationPipe(registerSchema)) body: RegisterInput) {
+  async register(
+    @Body(new ZodValidationPipe(registerSchema)) body: RegisterInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:register", this.getIp(req));
     return this.authService.register(body);
   }
 
   @Post("login")
   @Public()
   @HttpCode(200)
-  login(
+  async login(
     @Body(new ZodValidationPipe(loginSchema)) body: LoginInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
+    await this.enforceRateLimit("auth:login", this.getIp(req));
     return this.authService.login(body, {
-      ipAddress: req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip,
+      ipAddress: this.getIp(req),
       userAgent: req.headers["user-agent"],
       fingerprint: body.fingerprint,
     });
@@ -93,7 +119,11 @@ export class AuthController {
   @Post("forgot-password")
   @Public()
   @HttpCode(200)
-  forgotPassword(@Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput) {
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:forgot-password", this.getIp(req));
     return this.authService.forgotPassword(body).then(() => ({ message: "If an account exists, a reset email has been sent" }));
   }
 
@@ -107,14 +137,22 @@ export class AuthController {
   @Post("verify-email")
   @Public()
   @HttpCode(200)
-  verifyEmail(@Body(new ZodValidationPipe(verifyEmailSchema)) body: VerifyEmailInput) {
+  async verifyEmail(
+    @Body(new ZodValidationPipe(verifyEmailSchema)) body: VerifyEmailInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:verify-email", this.getIp(req));
     return this.authService.verifyEmail(body).then(() => ({ message: "Email verified successfully" }));
   }
 
   @Post("resend-verification")
   @Public()
   @HttpCode(200)
-  resendVerification(@Body(new ZodValidationPipe(resendVerificationSchema)) body: { email: string }) {
+  async resendVerification(
+    @Body(new ZodValidationPipe(resendVerificationSchema)) body: { email: string },
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
     return this.authService.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
   }
 

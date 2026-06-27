@@ -4,8 +4,10 @@ import { AuthController } from "./auth.controller";
 import { PasswordService } from "./password.service";
 import { SessionService } from "./session.service";
 import { DeviceService } from "./device.service";
+import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
 
 @Module({
+  imports: [RateLimitModule],
   controllers: [AuthController],
   providers: [AuthService, PasswordService, SessionService, DeviceService],
   exports: [AuthService, PasswordService, SessionService, DeviceService],
