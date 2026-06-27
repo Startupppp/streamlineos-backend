@@ -1,7 +1,36 @@
 import { z } from "zod";
-import { TERMINATION_REASONS, TERMINATION_REASON_OTHER } from "../hr-separation.constants";
+import { TERMINATION_REASONS, TERMINATION_REASON_OTHER, RESIGNATION_REASONS } from "../hr-separation.constants";
 
 const VALID_REASONS: readonly string[] = TERMINATION_REASONS;
+
+export const resignationCreateSchema = z.object({
+  reason: z.string().min(50, "Detailed reason must be at least 50 characters").max(2000),
+  reasonCategory: z.enum(RESIGNATION_REASONS),
+  lastWorkingDate: z.string().min(1, "Last working date is required"),
+  noticePeriodDays: z.number().int().min(0).max(180).optional().default(30),
+  willingForExitInterview: z.boolean().optional().default(true),
+  companyFeedback: z.string().max(2000).optional(),
+  resignationLetterUrl: z.string().url("Must be a valid URL").optional(),
+});
+
+export const resignationUpdateSchema = z.object({
+  status: z
+    .enum([
+      "SUBMITTED", "PENDING_HR", "HR_APPROVED", "CEO_APPROVED",
+      "IN_PROGRESS", "APPROVED", "WITHDRAWN", "COMPLETED", "REJECTED",
+    ])
+    .optional(),
+  remarks: z.string().max(2000).optional(),
+  exitInterviewNotes: z.string().max(5000).optional(),
+  exitInterviewDate: z.string().optional(),
+  feedback: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
+  checklistItems: z.array(z.string().min(1)).optional(),
+});
+
+export const resignationCeoReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  remarks: z.string().optional(),
+});
 
 export const alumniListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -66,6 +95,9 @@ export const attendanceAnalyticsQuerySchema = z.object({
   month: z.coerce.number().int().optional(),
 });
 
+export type ResignationCreateInput = z.infer<typeof resignationCreateSchema>;
+export type ResignationUpdateInput = z.infer<typeof resignationUpdateSchema>;
+export type ResignationCeoReviewInput = z.infer<typeof resignationCeoReviewSchema>;
 export type AlumniListInput = z.infer<typeof alumniListSchema>;
 export type AlumniCreateInput = z.infer<typeof alumniCreateSchema>;
 export type ExperienceLetterInput = z.infer<typeof experienceLetterSchema>;

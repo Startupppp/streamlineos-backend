@@ -108,6 +108,35 @@ export class PayrollsController {
     return { success: true };
   }
 
+  @Patch(":payrollId/approve")
+  @UseGuards(ModuleGuard, AbilityGuard)
+  @RequireModule("hr")
+  @CheckAbility("approve", "hr:payroll")
+  async approve(
+    @Param("payrollId", ParseIntPipe) payrollId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.payrollStatus.approve(u.orgId, u.userId, payrollId);
+    if (!result.ok) throw new NotFoundException("Payroll not found.");
+    return { success: true };
+  }
+
+  @Patch(":payrollId/paid")
+  @UseGuards(ModuleGuard, AbilityGuard)
+  @RequireModule("hr")
+  @CheckAbility("manage", "hr:payrolls")
+  async markPaid(
+    @Param("payrollId", ParseIntPipe) payrollId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.payrollStatus.markPaid(u.orgId, u.userId, payrollId);
+    if (!result.ok) {
+      if (result.reason === "not_found") throw new NotFoundException("Payroll not found.");
+      throw new BadRequestException("Payroll must be approved before marking as paid.");
+    }
+    return { success: true };
+  }
+
   @Get(":payrollId/download")
   async download(
     @Param("payrollId", ParseIntPipe) payrollId: number,

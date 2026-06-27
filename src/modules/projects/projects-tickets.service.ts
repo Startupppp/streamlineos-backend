@@ -11,6 +11,7 @@ import {
   ticketTypeEnum,
   ticketWatchers,
   timesheets,
+  users,
   workItemRelations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -19,6 +20,7 @@ import { logger } from "../../common/logger/logger.service";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationsService } from "../notifications/notifications.service";
+import { EmailService } from "../email/email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import type {
   BulkUpdateInput,
@@ -47,8 +49,17 @@ export class ProjectsTicketsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
+    private readonly email: EmailService,
     private readonly activity: ProjectsActivityService,
   ) {}
+
+  private async resolveActorName(actorId: string): Promise<string> {
+    const actor = await this.db.query.users.findFirst({
+      where: eq(users.id, actorId),
+      columns: { name: true },
+    });
+    return actor?.name ?? "Team Member";
+  }
 
   private async checkProjectAccess(u: CurrentUserContext, projectId: number): Promise<boolean> {
     if (defineAbilityFor(u).can("manage", "projects")) return true;
@@ -266,6 +277,10 @@ export class ProjectsTicketsService {
 
     await this.syncAssignees(ticketId, actingUserId, input);
     await this.notifyNewAssignees(orgId, ticketId, actingUserId, input);
+
+    if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
+      void this.notifyStatusReview(ticketId, actingUserId, input.status).catch(() => undefined);
+    }
 
     return { updated: true };
   }

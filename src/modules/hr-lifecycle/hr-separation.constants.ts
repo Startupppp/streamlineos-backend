@@ -18,3 +18,21 @@ export const TERMINATION_REASONS = [
 export const TERMINATION_REASON_OTHER = "Other";
 
 export type TerminationReason = (typeof TERMINATION_REASONS)[number];
+
+export const RESIGNATION_REASONS = [
+  "Career growth opportunities",
+  "Higher education or further studies",
+  "Better salary or benefits",
+  "Relocation (family/personal reasons)",
+  "Work-life balance issues",
+  "Change in career path",
+  "Health reasons",
+  "Personal commitments",
+  "Job dissatisfaction",
+  "Starting own business",
+  "Other",
+] as const;
+
+export const RESIGNATION_REASON_OTHER = "Other";
+
+export type ResignationReason = (typeof RESIGNATION_REASONS)[number];

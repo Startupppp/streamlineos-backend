@@ -20,9 +20,8 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import type { CompOffInput, UpdateLeaveInput } from "./dto/leaves.schemas";
+import type { CompOffInput } from "./dto/leaves.schemas";
 
-const UNPAID_LEAVE_NAME = "Unpaid Leave";
 const COMP_OFF_LEAVE_NAME = "Compensatory Off";
 const TEAM_LEAVES_CAP = 500;
 const ANALYTICS_ROLES = ["CEO", "ADMIN", "HR", "BRANCH_HR", "BRANCH_MANAGER"];
@@ -347,77 +346,6 @@ export class LeavesService {
       leaveType: r.leaveTypeId ? (leaveTypeMap.get(r.leaveTypeId) ?? "Leave") : "Leave",
       status: r.status ?? "PENDING",
     }));
-  }
-
-  async updateStatus(u: CurrentUserContext, leaveId: number, body: UpdateLeaveInput) {
-    if (!defineAbilityFor(u).can("approve", "hr:leaves")) {
-      throw new ForbiddenException("Only admins can approve or reject leave requests.");
-    }
-
-    const existing = await this.db.query.leaveRequests.findFirst({
-      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
-    });
-
-    if (!existing) return { ok: false as const, reason: "not_found" as const };
-    if (existing.userId === u.userId) {
-      throw new ForbiddenException("You cannot approve or reject your own leave request.");
-    }
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(leaveRequests)
-        .set({
-          status: body.status,
-          approverId: body.status !== "PENDING" ? u.userId : existing.approverId,
-          rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
-        })
-        .where(eq(leaveRequests.id, leaveId));
-
-      if (body.status === "PENDING" && existing.status === "APPROVED" && existing.leaveTypeId) {
-        const leaveType = await tx.query.leaveTypes.findFirst({
-          where: eq(leaveTypes.id, existing.leaveTypeId),
-          columns: { name: true },
-        });
-
-        if (leaveType?.name !== UNPAID_LEAVE_NAME) {
-          const start = new Date(existing.startDate);
-          const end = new Date(existing.endDate);
-          let diffDays = existing.isHalfDay ? 0.5 : 0;
-          if (!existing.isHalfDay) {
-            const cursor = new Date(start);
-            while (cursor <= end) {
-              const day = cursor.getDay();
-              if (day !== 0 && day !== 6) diffDays++;
-              cursor.setDate(cursor.getDate() + 1);
-            }
-          }
-
-          const balanceRecord = await tx.query.leaveBalances.findFirst({
-            where: and(
-              eq(leaveBalances.userId, existing.userId),
-              eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
-              eq(leaveBalances.year, new Date().getFullYear()),
-            ),
-          });
-
-          if (balanceRecord) {
-            const prevLopDays = Number(existing.lopDays ?? 0);
-            const paidDays = diffDays - prevLopDays;
-            const restored = Number(balanceRecord.balance) + paidDays;
-            await tx
-              .update(leaveBalances)
-              .set({ balance: restored.toString() })
-              .where(eq(leaveBalances.id, balanceRecord.id));
-            await tx
-              .update(leaveRequests)
-              .set({ lopDays: "0" })
-              .where(eq(leaveRequests.id, leaveId));
-          }
-        }
-      }
-    });
-
-    return { ok: true as const };
   }
 
   async compOff(u: CurrentUserContext, input: CompOffInput) {

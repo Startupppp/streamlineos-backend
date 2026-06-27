@@ -119,6 +119,12 @@ export const createReimbursementSchema = z.object({
 });
 export type CreateReimbursementInput = z.infer<typeof createReimbursementSchema>;
 
+export const patchReimbursementSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "PAID"]),
+  rejectionReason: z.string().max(500).optional(),
+});
+export type PatchReimbursementInput = z.infer<typeof patchReimbursementSchema>;
+
 export const createFnfSchema = z.object({
   userId: z.string().min(1),
   resignationId: z.number().int().positive().optional(),

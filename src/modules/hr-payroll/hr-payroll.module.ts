@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AutomationModule } from "../automation/automation.module";
 import { PayrollsController } from "./payrolls.controller";
 import { PayrollReportsController } from "./payroll-reports.controller";
 import { BonusesController } from "./bonuses.controller";
@@ -7,6 +8,7 @@ import { IncentivesController } from "./incentives.controller";
 import { ReimbursementsController } from "./reimbursements.controller";
 import { FnfController } from "./fnf.controller";
 import { PayrollsService } from "./payrolls.service";
+import { PayrollStatusService } from "./payrolls-status.service";
 import { CompensationService } from "./compensation.service";
 import { BonusesService } from "./bonuses.service";
 import { LoansService } from "./loans.service";
@@ -15,6 +17,7 @@ import { ReimbursementsService } from "./reimbursements.service";
 import { FnfService } from "./fnf.service";
 
 @Module({
+  imports: [AutomationModule],
   controllers: [
     PayrollsController,
     PayrollReportsController,
@@ -26,6 +29,7 @@ import { FnfService } from "./fnf.service";
   ],
   providers: [
     PayrollsService,
+    PayrollStatusService,
     CompensationService,
     BonusesService,
     LoansService,

@@ -22,6 +22,35 @@ export const updateLeaveSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
+export const createLeaveSchema = z
+  .object({
+    leaveTypeId: z.number(),
+    startDate: z.string(),
+    endDate: z.string(),
+    reason: z.preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z
+        .string()
+        .trim()
+        .min(10, "Reason must be at least 10 characters")
+        .max(500, "Reason must be at most 500 characters")
+        .optional(),
+    ),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional().default("MEDIUM"),
+    approverId: z.string().optional(),
+    attachmentUrl: z.string().optional(),
+    isHalfDay: z.boolean().optional().default(false),
+    halfDayPeriod: z.enum(["AM", "PM"]).optional(),
+  })
+  .refine((d) => d.endDate >= d.startDate, {
+    message: "End date must be on or after start date",
+    path: ["endDate"],
+  })
+  .refine((d) => !d.isHalfDay || d.startDate === d.endDate, {
+    message: "Half-day leave cannot span multiple dates",
+    path: ["endDate"],
+  });
+
 export const compOffSchema = z.object({
   userId: z.string().min(1),
   days: z.number().positive().max(30),
@@ -31,4 +60,5 @@ export const compOffSchema = z.object({
 export type LeaveAnalyticsQuery = z.infer<typeof leaveAnalyticsQuerySchema>;
 export type LeaveCalendarQuery = z.infer<typeof leaveCalendarQuerySchema>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
+export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
 export type CompOffInput = z.infer<typeof compOffSchema>;

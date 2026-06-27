@@ -6,10 +6,20 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
-import { candidateApplications, candidateSlaTracking, candidates } from "../../db/schema";
+import {
+  candidateApplications,
+  candidateSlaTracking,
+  candidates,
+  jobPostings,
+  organizations,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
+import { getCandidateRejectionEmail } from "./recruitment-emails.util";
 import type {
   BgvStatusInput,
   BulkImportInput,
@@ -24,6 +34,8 @@ export class RecruitmentCandidateOpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
   ) {}
 
   async bulkImport(orgId: string, input: BulkImportInput) {

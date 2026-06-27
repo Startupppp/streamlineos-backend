@@ -24,6 +24,8 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { logger } from "../../common/logger/logger.service";
+import { EmailService } from "../email/email.service";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -53,7 +55,43 @@ export class ProjectsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
   ) {}
+
+  private async notifyProjectMembers(
+    orgId: string,
+    creatorUserId: string,
+    memberIds: string[],
+    projectName: string,
+    projectKey: string,
+    projectId: number,
+  ): Promise<void> {
+    const ids = Array.from(new Set([...memberIds, creatorUserId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name, firstName: users.firstName })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const creator = people.find((p) => p.id === creatorUserId);
+    const assignedBy = creator?.name || creator?.firstName || undefined;
+
+    for (const memberId of memberIds) {
+      const member = people.find((p) => p.id === memberId);
+      if (!member?.email) continue;
+      try {
+        await this.email.sendProjectAssignmentEmail(
+          member.email,
+          member.name || member.firstName || "Team Member",
+          projectName,
+          projectKey,
+          projectId,
+          assignedBy,
+        );
+      } catch (error) {
+        logger.error("Failed to send project assignment email", { error });
+      }
+    }
+  }
 
   listProjects(u: CurrentUserContext, input: ListProjectsInput) {
     const isOwnerOrAdmin = defineAbilityFor(u).can("manage", "projects");
@@ -240,6 +278,15 @@ export class ProjectsService {
       await this.db.insert(projectMembers).values(
         input.memberIds.map((userId) => ({ projectId: project.id, userId, role: "CONTRIBUTOR" })),
       );
+
+      void this.notifyProjectMembers(
+        orgId,
+        creatorUserId,
+        input.memberIds,
+        input.name,
+        projectKey,
+        project.id,
+      ).catch(() => undefined);
     }
 
     this.audit.log({

@@ -12,6 +12,7 @@ import {
   candidates,
   interviews,
   organizationMembers,
+  organizations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -19,6 +20,9 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
+import { getCandidateRejectionEmail } from "./recruitment-emails.util";
 import type {
   CandidateListInput,
   CreateCandidateInput,
@@ -61,6 +65,8 @@ export class RecruitmentCandidatesService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
   ) {}
 
   list(orgId: string, input: CandidateListInput) {
@@ -202,6 +208,16 @@ export class RecruitmentCandidatesService {
         link: `/hr/recruitment/candidates/${candidateId}`,
         metadata: { candidateId, stage: "REJECTED" },
       });
+
+      const emailTarget = input.email ?? existing.email;
+      if (emailTarget) {
+        void this.dispatchRejectionEmail(
+          orgId,
+          candidateId,
+          `${existing.firstName} ${existing.lastName}`,
+          emailTarget,
+        ).catch(() => undefined);
+      }
     }
 
     return { success: true };
@@ -274,6 +290,15 @@ export class RecruitmentCandidatesService {
         link: `/hr/recruitment/candidates/${candidateId}`,
         metadata: { candidateId, stage: newStage },
       });
+
+      if (existing.email) {
+        void this.dispatchRejectionEmail(
+          orgId,
+          candidateId,
+          `${existing.firstName} ${existing.lastName}`,
+          existing.email,
+        ).catch(() => undefined);
+      }
     }
 
     await this.db
@@ -292,7 +317,44 @@ export class RecruitmentCandidatesService {
         set: { enteredAt: new Date(), breachedAt: null, status: "ON_TRACK", updatedAt: new Date() },
       });
 
+    void this.automation
+      .runAutomationsForEvent(orgId, "candidate.stage_changed", {
+        candidateId,
+        candidateName: `${existing.firstName} ${existing.lastName}`,
+        candidateEmail: existing.email ?? "",
+        previousStatus: existing.status,
+        newStatus: newStage,
+      })
+      .catch(() => undefined);
+
     return { id: updated.id, stage: updated.status, changed: true };
+  }
+
+  private async dispatchRejectionEmail(
+    orgId: string,
+    candidateId: number,
+    candidateName: string,
+    email: string,
+  ): Promise<void> {
+    const [latestApp, org] = await Promise.all([
+      this.db.query.candidateApplications.findFirst({
+        where: eq(candidateApplications.candidateId, candidateId),
+        with: { jobPosting: { columns: { title: true } } },
+        orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+      }),
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true },
+      }),
+    ]);
+
+    const { subject, html } = getCandidateRejectionEmail({
+      candidateName,
+      jobTitle: latestApp?.jobPosting?.title ?? "the position",
+      companyName: org?.name ?? "our company",
+    });
+
+    await this.email.sendEmail({ to: email, subject, html });
   }
 
   private async notifyByRoles(orgId: string, roles: string[], opts: RoleNotification) {
