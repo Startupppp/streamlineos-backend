@@ -42,6 +42,16 @@ export class SessionService {
         eq(userSessions.isRevoked, false),
         or(isNull(userSessions.expiresAt), gt(userSessions.expiresAt, now)),
       ),
+      columns: {
+        id: true,
+        userId: true,
+        userAgent: true,
+        ipAddress: true,
+        deviceId: true,
+        lastActive: true,
+        expiresAt: true,
+        createdAt: true,
+      },
       orderBy: (t, { desc }) => [desc(t.lastActive)],
     });
   }
