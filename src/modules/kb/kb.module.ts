@@ -1,0 +1,24 @@
+import { Module } from "@nestjs/common";
+import { KbCreditsService } from "./kb-credits.service";
+import { KbAccessService } from "./kb-access.service";
+import { KbEventsService } from "./kb-events.service";
+import { KbSpacesService } from "./kb-spaces.service";
+import { KbCategoriesService } from "./kb-categories.service";
+import { KbArticlesService } from "./kb-articles.service";
+import { KbSpacesController } from "./kb-spaces.controller";
+import { KbCategoriesController } from "./kb-categories.controller";
+import { KbArticlesController } from "./kb-articles.controller";
+
+@Module({
+  controllers: [KbSpacesController, KbCategoriesController, KbArticlesController],
+  providers: [
+    KbCreditsService,
+    KbAccessService,
+    KbEventsService,
+    KbSpacesService,
+    KbCategoriesService,
+    KbArticlesService,
+  ],
+  exports: [KbCreditsService, KbAccessService, KbEventsService],
+})
+export class KbModule {}

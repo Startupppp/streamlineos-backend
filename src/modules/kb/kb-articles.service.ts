@@ -1,0 +1,334 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { kbArticles, kbArticleFeedback, kbArticleVersions } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { KbAccessService } from "./kb-access.service";
+import { kbSlugify } from "./kb.util";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type {
+  CreateArticleInput,
+  ListArticlesInput,
+  UpdateArticleInput,
+  VerifyArticleInput,
+  VoteArticleInput,
+} from "./dto/kb.schemas";
+
+type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
+
+@Injectable()
+export class KbArticlesService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: KbAccessService,
+  ) {}
+
+  async list(user: CurrentUserContext, query: ListArticlesInput) {
+    const ids = await this.access.getAccessibleSpaceIds(user);
+    if (ids.length === 0) {
+      return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
+    }
+
+    const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
+    if (query.spaceId) conditions.push(eq(kbArticles.spaceId, query.spaceId));
+    if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
+    if (query.status) conditions.push(eq(kbArticles.status, query.status));
+    if (query.search) {
+      const term = `%${query.search}%`;
+      const match = or(ilike(kbArticles.title, term), ilike(kbArticles.excerpt, term));
+      if (match) conditions.push(match);
+    }
+
+    const where = and(...conditions);
+
+    const [totalRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbArticles)
+      .where(where);
+    const total = totalRow?.count ?? 0;
+
+    const items = await this.db
+      .select({
+        id: kbArticles.id,
+        spaceId: kbArticles.spaceId,
+        categoryId: kbArticles.categoryId,
+        title: kbArticles.title,
+        slug: kbArticles.slug,
+        excerpt: kbArticles.excerpt,
+        status: kbArticles.status,
+        visibility: kbArticles.visibility,
+        tags: kbArticles.tags,
+        ownerId: kbArticles.ownerId,
+        helpfulCount: kbArticles.helpfulCount,
+        notHelpfulCount: kbArticles.notHelpfulCount,
+        lastVerifiedAt: kbArticles.lastVerifiedAt,
+        updatedAt: kbArticles.updatedAt,
+      })
+      .from(kbArticles)
+      .where(where)
+      .orderBy(desc(kbArticles.updatedAt))
+      .limit(query.pageSize)
+      .offset((query.page - 1) * query.pageSize);
+
+    return {
+      items,
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+      totalPages: Math.ceil(total / query.pageSize),
+    };
+  }
+
+  async get(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleViewable(user, articleId);
+    const article = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
+      with: { category: { columns: { id: true, name: true, slug: true } } },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+    return article;
+  }
+
+  async create(user: CurrentUserContext, input: CreateArticleInput) {
+    const orgId = user.orgId;
+    await this.access.assertSpaceAccessible(user, input.spaceId);
+    const slug = await this.uniqueArticleSlug(orgId, input.title);
+
+    return this.db.transaction(async (tx) => {
+      const [article] = await tx
+        .insert(kbArticles)
+        .values({
+          orgId,
+          spaceId: input.spaceId,
+          categoryId: input.categoryId ?? null,
+          title: input.title,
+          slug,
+          excerpt: input.excerpt ?? null,
+          content: input.content ?? "",
+          contentText: input.contentText ?? "",
+          status: input.status,
+          visibility: input.visibility,
+          authorId: user.userId,
+          ownerId: user.userId,
+          tags: input.tags ?? null,
+          seoTitle: input.seoTitle ?? null,
+          seoDescription: input.seoDescription ?? null,
+          reviewIntervalDays: input.reviewIntervalDays ?? null,
+          publishedAt: input.status === "published" ? new Date() : null,
+        })
+        .returning();
+
+      await this.snapshot(tx, orgId, article, user.userId);
+      return article;
+    });
+  }
+
+  async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput) {
+    const orgId = user.orgId;
+    const current = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+    });
+    if (!current) throw new NotFoundException("Article not found");
+
+    const values: Partial<typeof kbArticles.$inferInsert> = {};
+    if (input.categoryId !== undefined) values.categoryId = input.categoryId;
+    if (input.excerpt !== undefined) values.excerpt = input.excerpt;
+    if (input.content !== undefined) values.content = input.content;
+    if (input.contentText !== undefined) values.contentText = input.contentText;
+    if (input.visibility !== undefined) values.visibility = input.visibility;
+    if (input.tags !== undefined) values.tags = input.tags;
+    if (input.seoTitle !== undefined) values.seoTitle = input.seoTitle;
+    if (input.seoDescription !== undefined) values.seoDescription = input.seoDescription;
+    if (input.reviewIntervalDays !== undefined) values.reviewIntervalDays = input.reviewIntervalDays;
+
+    if (input.title !== undefined) {
+      values.title = input.title;
+      values.slug = await this.uniqueArticleSlug(orgId, input.title, articleId);
+    }
+    if (input.status !== undefined) {
+      values.status = input.status;
+      if (input.status === "published" && !current.publishedAt) values.publishedAt = new Date();
+    }
+
+    const titleChanged = input.title !== undefined && input.title !== current.title;
+    const contentChanged = input.content !== undefined && input.content !== current.content;
+
+    if (Object.keys(values).length === 0) return current;
+
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(kbArticles)
+        .set(values)
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .returning();
+      if (titleChanged || contentChanged) {
+        await this.snapshot(tx, orgId, updated, user.userId, input.changeSummary);
+      }
+      return updated;
+    });
+  }
+
+  async archive(orgId: string, articleId: number) {
+    const [updated] = await this.db
+      .update(kbArticles)
+      .set({ status: "archived", archivedAt: new Date() })
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Article not found");
+    return updated;
+  }
+
+  async publish(user: CurrentUserContext, articleId: number) {
+    const orgId = user.orgId;
+    return this.db.transaction(async (tx) => {
+      const current = await tx.query.kbArticles.findFirst({
+        where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+        columns: { publishedAt: true },
+      });
+      if (!current) throw new NotFoundException("Article not found");
+
+      const [updated] = await tx
+        .update(kbArticles)
+        .set({ status: "published", publishedAt: current.publishedAt ?? new Date() })
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .returning();
+
+      await this.snapshot(tx, orgId, updated, user.userId);
+      return updated;
+    });
+  }
+
+  async unpublish(user: CurrentUserContext, articleId: number) {
+    const [updated] = await this.db
+      .update(kbArticles)
+      .set({ status: "draft" })
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Article not found");
+    return updated;
+  }
+
+  async verify(orgId: string, userId: string, articleId: number, input: VerifyArticleInput) {
+    const current = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { reviewIntervalDays: true },
+    });
+    if (!current) throw new NotFoundException("Article not found");
+
+    const [updated] = await this.db
+      .update(kbArticles)
+      .set({
+        lastVerifiedAt: new Date(),
+        reviewIntervalDays: input.reviewIntervalDays ?? current.reviewIntervalDays,
+      })
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async vote(orgId: string, articleId: number, input: VoteArticleInput, userId: string) {
+    const article = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+
+    await this.db.insert(kbArticleFeedback).values({
+      orgId,
+      articleId,
+      helpful: input.helpful,
+      comment: input.comment ?? null,
+      visitorId: userId,
+    });
+
+    await this.db
+      .update(kbArticles)
+      .set(
+        input.helpful
+          ? { helpfulCount: sql`${kbArticles.helpfulCount} + 1` }
+          : { notHelpfulCount: sql`${kbArticles.notHelpfulCount} + 1` },
+      )
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)));
+
+    return { success: true };
+  }
+
+  async listVersions(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleViewable(user, articleId);
+    return this.db.query.kbArticleVersions.findMany({
+      where: and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, user.orgId)),
+      orderBy: [desc(kbArticleVersions.versionNumber)],
+    });
+  }
+
+  async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number) {
+    const orgId = user.orgId;
+    return this.db.transaction(async (tx) => {
+      const version = await tx.query.kbArticleVersions.findFirst({
+        where: and(
+          eq(kbArticleVersions.articleId, articleId),
+          eq(kbArticleVersions.versionNumber, versionNumber),
+          eq(kbArticleVersions.orgId, orgId),
+        ),
+      });
+      if (!version) throw new NotFoundException("Version not found");
+
+      const [updated] = await tx
+        .update(kbArticles)
+        .set({ title: version.title, content: version.content, excerpt: version.excerpt })
+        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Article not found");
+
+      await this.snapshot(tx, orgId, updated, user.userId, `Restored v${versionNumber}`);
+      return updated;
+    });
+  }
+
+  private async uniqueArticleSlug(orgId: string, base: string, excludeId?: number): Promise<string> {
+    const root = kbSlugify(base) || "article";
+    let slug = root;
+    let suffix = 1;
+    while (true) {
+      const conditions: SQL[] = [eq(kbArticles.orgId, orgId), eq(kbArticles.slug, slug)];
+      if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
+      const existing = await this.db.query.kbArticles.findFirst({
+        where: and(...conditions),
+        columns: { id: true },
+      });
+      if (!existing) return slug;
+      suffix += 1;
+      slug = `${root}-${suffix}`;
+    }
+  }
+
+  private async nextVersionNumber(tx: KbTransaction, orgId: string, articleId: number): Promise<number> {
+    const [row] = await tx
+      .select({ max: sql<number>`coalesce(max(${kbArticleVersions.versionNumber}), 0)::int` })
+      .from(kbArticleVersions)
+      .where(and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, orgId)));
+    return (row?.max ?? 0) + 1;
+  }
+
+  private async snapshot(
+    tx: KbTransaction,
+    orgId: string,
+    article: SnapshotSource,
+    userId: string,
+    changeSummary?: string,
+  ): Promise<void> {
+    const versionNumber = await this.nextVersionNumber(tx, orgId, article.id);
+    await tx.insert(kbArticleVersions).values({
+      orgId,
+      articleId: article.id,
+      versionNumber,
+      title: article.title,
+      content: article.content,
+      excerpt: article.excerpt,
+      changeSummary: changeSummary ?? null,
+      authorId: userId,
+    });
+  }
+}
