@@ -3,6 +3,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { RbacService } from "./rbac.service";
 import {
   assignRolePermissionSchema,
@@ -12,7 +14,7 @@ import {
 } from "./dto/rbac.schemas";
 
 @Controller("rbac")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RbacController {
   constructor(private readonly rbac: RbacService) {}
 
@@ -22,6 +24,7 @@ export class RbacController {
   }
 
   @Get("role-permissions")
+  @RequirePermission("settings:rbac:manage")
   getRolePermissions(
     @Query(new ZodValidationPipe(rolePermissionsQuerySchema)) query: RolePermissionsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -31,6 +34,7 @@ export class RbacController {
 
   @Post("role-permissions")
   @HttpCode(200)
+  @RequirePermission("settings:rbac:manage")
   assignRolePermission(
     @Body(new ZodValidationPipe(assignRolePermissionSchema)) body: AssignRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,

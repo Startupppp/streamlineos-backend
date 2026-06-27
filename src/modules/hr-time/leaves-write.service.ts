@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from "@nestjs/common";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import {
@@ -21,8 +22,14 @@ import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { formatDateOnly } from "./date.helpers";
-import type { CreateLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
+import type {
+  ApproveLeaveInput,
+  CreateLeaveInput,
+  RejectLeaveInput,
+  UpdateLeaveInput,
+} from "./dto/leaves.schemas";
 
 const UNPAID_LEAVE_NAME = "Unpaid Leave";
 
@@ -41,6 +48,7 @@ export class LeavesWriteService {
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {
@@ -232,6 +240,161 @@ export class LeavesWriteService {
     }
 
     return { ok: true as const };
+  }
+
+  async approve(u: CurrentUserContext, leaveId: number, body: ApproveLeaveInput) {
+    const existing = await this.db.query.leaveRequests.findFirst({
+      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
+    });
+
+    if (!existing) throw new NotFoundException("Leave request not found.");
+    if (existing.status !== "PENDING") {
+      throw new BadRequestException(`Cannot approve a request with status: ${existing.status}.`);
+    }
+    if (existing.userId === u.userId) {
+      throw new ForbiddenException("You cannot approve your own leave request.");
+    }
+
+    const comment = body.comment;
+    let lopDaysApplied = 0;
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(leaveRequests)
+        .set({ status: "APPROVED", approverId: u.userId, managerComment: comment ?? null })
+        .where(eq(leaveRequests.id, leaveId));
+
+      if (!existing.leaveTypeId) return;
+
+      const leaveType = await tx.query.leaveTypes.findFirst({
+        where: eq(leaveTypes.id, existing.leaveTypeId),
+        columns: { name: true },
+      });
+      if (leaveType?.name === UNPAID_LEAVE_NAME) return;
+
+      const diffDays = this.countLeaveDays(existing.startDate, existing.endDate, existing.isHalfDay);
+
+      const balanceRecord = await tx.query.leaveBalances.findFirst({
+        where: and(
+          eq(leaveBalances.userId, existing.userId),
+          eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
+          eq(leaveBalances.year, new Date().getFullYear()),
+        ),
+      });
+      if (!balanceRecord) return;
+
+      const available = Number(balanceRecord.balance);
+      const lopDays = available <= 0 ? diffDays : Math.max(0, diffDays - available);
+      const paidDays = diffDays - lopDays;
+      const newBal = Math.max(0, available - paidDays);
+      lopDaysApplied = lopDays;
+
+      await tx
+        .update(leaveRequests)
+        .set({ lopDays: lopDays.toString() })
+        .where(eq(leaveRequests.id, leaveId));
+      await tx
+        .update(leaveBalances)
+        .set({ balance: newBal.toString() })
+        .where(eq(leaveBalances.id, balanceRecord.id));
+    });
+
+    const lopNote =
+      lopDaysApplied > 0
+        ? ` Note: ${lopDaysApplied} day(s) will be Loss of Pay (LOP) due to insufficient balance.`
+        : "";
+    const commentNote = comment ? ` Manager note: "${comment}"` : "";
+
+    await this.notifications.create({
+      orgId: u.orgId,
+      userId: existing.userId,
+      type: "SUCCESS",
+      title: "Leave Approved",
+      message: `Your leave request has been approved.${lopNote}${commentNote}`,
+      link: "/hr/leaves",
+    });
+
+    this.audit.log({
+      action: "hr.leave_approved",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(leaveId),
+      targetType: "leave_request",
+      metadata: { comment, lopDaysApplied },
+    });
+
+    void this.dispatchLeaveDecision(u, leaveId, existing, "APPROVED", null);
+
+    this.webhooksDispatch.dispatch(u.orgId, "leave.approved", {
+      leaveId,
+      userId: existing.userId,
+      startDate: existing.startDate,
+      endDate: existing.endDate,
+      leaveTypeId: existing.leaveTypeId,
+    });
+
+    return { success: true };
+  }
+
+  async reject(u: CurrentUserContext, leaveId: number, body: RejectLeaveInput) {
+    const existing = await this.db.query.leaveRequests.findFirst({
+      where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
+    });
+
+    if (!existing) throw new NotFoundException("Leave request not found.");
+    if (existing.status !== "PENDING") {
+      throw new BadRequestException(`Cannot reject a request with status: ${existing.status}.`);
+    }
+    if (existing.userId === u.userId) {
+      throw new ForbiddenException("You cannot reject your own leave request.");
+    }
+
+    const { reason, comment } = body;
+
+    await this.db
+      .update(leaveRequests)
+      .set({
+        status: "REJECTED",
+        approverId: u.userId,
+        rejectionReason: reason,
+        managerComment: comment ?? null,
+      })
+      .where(eq(leaveRequests.id, leaveId));
+
+    await this.notifications.create({
+      orgId: u.orgId,
+      userId: existing.userId,
+      type: "ERROR",
+      title: "Leave Rejected",
+      message: `Your leave request has been rejected. Reason: ${reason}${comment ? ` — "${comment}"` : ""}`,
+      link: "/hr/leaves",
+    });
+
+    this.audit.log({
+      action: "hr.leave_rejected",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(leaveId),
+      targetType: "leave_request",
+      metadata: { reason, comment },
+    });
+
+    void this.dispatchLeaveDecision(u, leaveId, existing, "REJECTED", reason);
+
+    return { success: true };
+  }
+
+  private countLeaveDays(startDate: string, endDate: string, isHalfDay: boolean): number {
+    if (isHalfDay) return 0.5;
+    let diffDays = 0;
+    const cursor = new Date(startDate);
+    const end = new Date(endDate);
+    while (cursor <= end) {
+      const day = cursor.getDay();
+      if (day !== 0 && day !== 6) diffDays++;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return diffDays;
   }
 
   private async dispatchLeaveRequested(

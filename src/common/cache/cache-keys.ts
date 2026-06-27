@@ -10,6 +10,10 @@ export const CACHE_KEYS = {
   rolePermissions: (orgId: string, role: string) => `org:roles:${orgId}:${role}`,
   rolesList: (orgId: string) => `org:roles:${orgId}`,
 
+  accessVersion: (orgId: string) => `access:version:${orgId}`,
+  accessPerms: (orgId: string, userId: string, version: number) =>
+    `access:perms:${orgId}:${userId}:v${version}`,
+
   leadsCount: (orgId: string) => `leads:count:${orgId}`,
   leadsList: (orgId: string, hash: string) => `leads:list:${orgId}:${hash}`,
   leadDetail: (orgId: string, id: number) => `leads:detail:${orgId}:${id}`,

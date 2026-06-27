@@ -3,6 +3,7 @@
 export * from "./enums";
 
 export * from "./auth";
+export * from "./access";
 
 export * from "./projects";
 export * from "./hr";

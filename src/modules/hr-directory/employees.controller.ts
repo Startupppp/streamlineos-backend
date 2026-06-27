@@ -1,10 +1,14 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
+  Patch,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -19,6 +23,7 @@ import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { BranchContext } from "../leads/branch-filter";
 import { EmployeesService } from "./employees.service";
+import { EmployeeMutationsService } from "./employee-mutations.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { userCan } from "./ability.helpers";
@@ -27,9 +32,13 @@ import {
   availabilitySchema,
   findExpertSchema,
   listEmployeesSchema,
+  onboardEmployeeSchema,
+  updateEmployeeSchema,
   type AvailabilityInput,
   type FindExpertInput,
   type ListEmployeesInput,
+  type OnboardEmployeeInput,
+  type UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
 
 const PROFILE_PDF_ROLES = ["CEO", "HR", "ADMIN", "HR_MANAGER"];
@@ -39,9 +48,21 @@ const PROFILE_PDF_ROLES = ["CEO", "HR", "ADMIN", "HR_MANAGER"];
 export class EmployeesController {
   constructor(
     private readonly employees: EmployeesService,
+    private readonly mutations: EmployeeMutationsService,
     private readonly celebrations: CelebrationsService,
     private readonly skills: EmployeeSkillsService,
   ) {}
+
+  @Post("onboard")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:employees")
+  @HttpCode(201)
+  onboard(
+    @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.onboardEmployee(u, body);
+  }
 
   @Get()
   @UseGuards(AbilityGuard)
@@ -133,5 +154,24 @@ export class EmployeesController {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="employee-profile-${employeeId}.html"`);
     res.send(html);
+  }
+
+  @Get(":employeeId")
+  async getEmployeeDetail(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const employee = await this.mutations.getEmployeeDetail(u.orgId, employeeId);
+    if (!employee) throw new NotFoundException("Employee not found.");
+    return employee;
+  }
+
+  @Patch(":employeeId")
+  updateEmployee(
+    @Param("employeeId") employeeId: string,
+    @Body(new ZodValidationPipe(updateEmployeeSchema)) body: UpdateEmployeeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.updateEmployee(u, employeeId, body);
   }
 }

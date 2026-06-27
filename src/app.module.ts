@@ -31,6 +31,7 @@ import { CrmModule } from "./modules/crm/crm.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { PublicModule } from "./modules/public/public.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
+import { AccessModule } from "./modules/access/access.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { OrgModule } from "./modules/org/org.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
@@ -103,6 +104,7 @@ import { MeController } from "./me/me.controller";
     DashboardModule,
     PublicModule,
     RbacModule,
+    AccessModule,
     DealsModule,
     OrgModule,
     OrganizationModule,

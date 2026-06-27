@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -22,15 +23,19 @@ import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesPageService } from "./leaves-page.service";
 import {
+  approveLeaveSchema,
   compOffSchema,
   createLeaveSchema,
   leaveAnalyticsQuerySchema,
   leaveCalendarQuerySchema,
+  rejectLeaveSchema,
   updateLeaveSchema,
+  type ApproveLeaveInput,
   type CompOffInput,
   type CreateLeaveInput,
   type LeaveAnalyticsQuery,
   type LeaveCalendarQuery,
+  type RejectLeaveInput,
   type UpdateLeaveInput,
 } from "./dto/leaves.schemas";
 
@@ -102,6 +107,28 @@ export class LeavesController {
     const result = await this.leavesWrite.cancel(u, leaveId);
     if (!result.ok) throw new NotFoundException("Leave request not found.");
     return { success: true };
+  }
+
+  @Put(":leaveId/approve")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("approve", "hr:leaves")
+  approve(
+    @Param("leaveId", ParseIntPipe) leaveId: number,
+    @Body(new ZodValidationPipe(approveLeaveSchema)) body: ApproveLeaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leavesWrite.approve(u, leaveId, body);
+  }
+
+  @Put(":leaveId/reject")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("approve", "hr:leaves")
+  reject(
+    @Param("leaveId", ParseIntPipe) leaveId: number,
+    @Body(new ZodValidationPipe(rejectLeaveSchema)) body: RejectLeaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leavesWrite.reject(u, leaveId, body);
   }
 
   @Patch(":leaveId")

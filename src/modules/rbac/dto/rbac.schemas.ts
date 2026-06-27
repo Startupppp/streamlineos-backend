@@ -35,8 +35,34 @@ export const cloneTemplateSchema = z.object({
     .optional(),
 });
 
+export const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
+
+export const setRolePermissionsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(120),
+        scope: dataScopeSchema.default("all"),
+      }),
+    )
+    .max(500),
+});
+
+export const roleMemberSchema = z.discriminatedUnion("principalType", [
+  z.object({
+    principalType: z.literal("user"),
+    principalId: z.string().min(1).max(255),
+  }),
+  z.object({
+    principalType: z.literal("department"),
+    principalId: z.number().int().positive(),
+  }),
+]);
+
 export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;
+export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
+export type RoleMemberInput = z.infer<typeof roleMemberSchema>;

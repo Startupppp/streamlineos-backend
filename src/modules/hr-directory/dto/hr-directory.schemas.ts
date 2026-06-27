@@ -153,6 +153,93 @@ export const updateBgvSchema = z.object({
   notes: z.string().max(1000).optional(),
 });
 
+const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
+
+export const updateEmployeeSchema = z.object({
+  name: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  designation: z.string().optional(),
+  departmentId: z.number().optional(),
+  phone: z.string().optional(),
+  image: z.string().optional(),
+  isActive: z.boolean().optional(),
+  hasDashboardAccess: z.boolean().optional(),
+  role: z.string().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  experienceYears: z.preprocess(
+    (val) => (val === undefined || val === null ? undefined : Number(val)),
+    z.number().min(0, "Experience cannot be negative").max(60, "Experience cannot exceed 60 years").optional(),
+  ),
+  taxId: z.string().optional(),
+  monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
+  bankDetails: z
+    .object({
+      accountNumber: z.string().optional(),
+      bankName: z.string().optional(),
+      branch: z.string().optional(),
+      ifsc: z.string().optional(),
+      accountHolder: z.string().optional(),
+    })
+    .optional(),
+  skills: z.array(z.string()).optional(),
+  bio: z.string().max(500).optional(),
+  linkedinUrl: z.string().url().optional().or(z.literal("")),
+  twitterUrl: z.string().url().optional().or(z.literal("")),
+  githubUrl: z.string().url().optional().or(z.literal("")),
+  websiteUrl: z.string().url().optional().or(z.literal("")),
+  joiningDate: z.string().optional(),
+  reportingTo: z.string().nullable().optional(),
+});
+
+export const onboardEmployeeSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string(),
+  phone: z.string().optional(),
+  whatsappSameAsPhone: z.boolean().optional(),
+  whatsappNumber: z.string().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  password: z.string().optional(),
+  designation: z.string(),
+  departmentId: z.number().optional(),
+  role: z.string().optional(),
+  employeeId: z.string().optional(),
+  joiningDate: z.string().optional(),
+  dateOfBirth: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val) return true;
+      const dob = new Date(val);
+      return !isNaN(dob.getTime()) && dob < new Date();
+    }, "Date of birth cannot be in the future")
+    .refine((val) => {
+      if (!val) return true;
+      const dob = new Date(val);
+      return !isNaN(dob.getTime()) && Date.now() - dob.getTime() >= MIN_AGE_MS;
+    }, "Employee must be at least 16 years old"),
+  skills: z.string().optional(),
+  experienceYears: z.preprocess(
+    (val) => (val === undefined || val === null ? undefined : Number(val)),
+    z.number().min(0, "Experience cannot be negative").max(60, "Experience cannot exceed 60 years").optional(),
+  ),
+  taxId: z.string().optional(),
+  monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
+  bankDetails: z
+    .object({
+      accountNumber: z.string().optional(),
+      bankName: z.string().optional(),
+      branch: z.string().optional(),
+      ifsc: z.string().optional(),
+      accountHolder: z.string().optional(),
+      pfUanNumber: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
+export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;

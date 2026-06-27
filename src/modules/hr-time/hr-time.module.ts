@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { LeaveCalendarController, LeavesController } from "./leaves.controller";
 import { AttendanceController } from "./attendance.controller";
 import { WfhController } from "./wfh.controller";
@@ -13,7 +14,7 @@ import { WfhService } from "./wfh.service";
 import { WorkLogsService } from "./work-logs.service";
 
 @Module({
-  imports: [AutomationModule, WebhooksModule],
+  imports: [AutomationModule, WebhooksModule, NotificationsModule],
   controllers: [
     LeavesController,
     LeaveCalendarController,

@@ -7,33 +7,42 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { RolesService } from "./roles.service";
 import {
   cloneTemplateSchema,
   createRoleSchema,
+  roleMemberSchema,
+  setRolePermissionsSchema,
   updateRoleSchema,
   type CloneTemplateInput,
   type CreateRoleInput,
+  type RoleMemberInput,
+  type SetRolePermissionsInput,
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
 
 @Controller("roles")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RolesController {
   constructor(private readonly roles: RolesService) {}
 
   @Get()
+  @RequirePermission("settings:rbac:manage")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.roles.getRoles(u.orgId);
   }
 
   @Post()
+  @RequirePermission("settings:rbac:manage")
   create(
     @Body(new ZodValidationPipe(createRoleSchema)) body: CreateRoleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +56,7 @@ export class RolesController {
   }
 
   @Post("templates")
+  @RequirePermission("settings:rbac:manage")
   cloneTemplate(
     @Body(new ZodValidationPipe(cloneTemplateSchema)) body: CloneTemplateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -55,11 +65,13 @@ export class RolesController {
   }
 
   @Get(":roleId")
+  @RequirePermission("settings:rbac:manage")
   get(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));
   }
 
   @Patch(":roleId")
+  @RequirePermission("settings:rbac:manage")
   update(
     @Param("roleId") roleId: string,
     @Body(new ZodValidationPipe(updateRoleSchema)) body: UpdateRoleInput,
@@ -69,8 +81,51 @@ export class RolesController {
   }
 
   @Delete(":roleId")
+  @RequirePermission("settings:rbac:manage")
   remove(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.deleteRole(u, this.parseRoleId(roleId));
+  }
+
+  @Get(":roleId/permissions")
+  @RequirePermission("settings:rbac:manage")
+  getPermissions(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.roles.getRolePermissions(u.orgId, this.parseRoleId(roleId));
+  }
+
+  @Put(":roleId/permissions")
+  @RequirePermission("settings:rbac:manage")
+  setPermissions(
+    @Param("roleId") roleId: string,
+    @Body(new ZodValidationPipe(setRolePermissionsSchema)) body: SetRolePermissionsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.setRolePermissions(u, this.parseRoleId(roleId), body);
+  }
+
+  @Get(":roleId/members")
+  @RequirePermission("settings:rbac:manage")
+  getMembers(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.roles.getRoleMembers(u.orgId, this.parseRoleId(roleId));
+  }
+
+  @Post(":roleId/members")
+  @RequirePermission("settings:rbac:manage")
+  addMember(
+    @Param("roleId") roleId: string,
+    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.addRoleMember(u, this.parseRoleId(roleId), body);
+  }
+
+  @Delete(":roleId/members")
+  @RequirePermission("settings:rbac:manage")
+  removeMember(
+    @Param("roleId") roleId: string,
+    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roles.removeRoleMember(u, this.parseRoleId(roleId), body);
   }
 
   private parseRoleId(raw: string): number {

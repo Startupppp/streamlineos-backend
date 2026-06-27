@@ -22,6 +22,17 @@ export const updateLeaveSchema = z.object({
   rejectionReason: z.string().optional(),
 });
 
+export const approveLeaveSchema = z.object({
+  comment: z.string().optional(),
+  forceApprove: z.boolean().optional(),
+  justification: z.string().optional(),
+});
+
+export const rejectLeaveSchema = z.object({
+  reason: z.string().min(1, "Rejection reason is required."),
+  comment: z.string().optional(),
+});
+
 export const createLeaveSchema = z
   .object({
     leaveTypeId: z.number(),
@@ -60,5 +71,7 @@ export const compOffSchema = z.object({
 export type LeaveAnalyticsQuery = z.infer<typeof leaveAnalyticsQuerySchema>;
 export type LeaveCalendarQuery = z.infer<typeof leaveCalendarQuerySchema>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
+export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
+export type RejectLeaveInput = z.infer<typeof rejectLeaveSchema>;
 export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
 export type CompOffInput = z.infer<typeof compOffSchema>;

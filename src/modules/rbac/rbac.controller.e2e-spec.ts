@@ -17,7 +17,7 @@ describe("Rbac auth (e2e)", () => {
   });
   afterAll(async () => app.close());
 
-  type Method = "get" | "post" | "patch" | "delete";
+  type Method = "get" | "post" | "patch" | "put" | "delete";
 
   function callRoute(method: Method, path: string): request.Test {
     const agent = request(app.getHttpServer());
@@ -28,6 +28,8 @@ describe("Rbac auth (e2e)", () => {
         return agent.post(path);
       case "patch":
         return agent.patch(path);
+      case "put":
+        return agent.put(path);
       case "delete":
         return agent.delete(path);
     }
@@ -45,6 +47,11 @@ describe("Rbac auth (e2e)", () => {
     ["get", "/roles/1"],
     ["patch", "/roles/1"],
     ["delete", "/roles/1"],
+    ["get", "/roles/1/permissions"],
+    ["put", "/roles/1/permissions"],
+    ["get", "/roles/1/members"],
+    ["post", "/roles/1/members"],
+    ["delete", "/roles/1/members"],
   ];
 
   it.each(authedRoutes)("401 on %s %s without a token", async (method, path) => {

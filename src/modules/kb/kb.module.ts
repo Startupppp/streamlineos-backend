@@ -10,6 +10,7 @@ import { KbSearchService } from "./kb-search.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbMembersService } from "./kb-members.service";
+import { KbAuthoringService } from "./kb-authoring.service";
 import { KbSpacesController } from "./kb-spaces.controller";
 import { KbCategoriesController } from "./kb-categories.controller";
 import { KbArticlesController } from "./kb-articles.controller";
@@ -17,6 +18,7 @@ import { KbSearchController } from "./kb-search.controller";
 import { KbAskController } from "./kb-ask.controller";
 import { KbAnalyticsController } from "./kb-analytics.controller";
 import { KbMembersController } from "./kb-members.controller";
+import { KbAuthoringController } from "./kb-authoring.controller";
 
 @Module({
   imports: [AiModule],
@@ -28,6 +30,7 @@ import { KbMembersController } from "./kb-members.controller";
     KbAskController,
     KbAnalyticsController,
     KbMembersController,
+    KbAuthoringController,
   ],
   providers: [
     KbCreditsService,
@@ -40,6 +43,7 @@ import { KbMembersController } from "./kb-members.controller";
     KbAskService,
     KbAnalyticsService,
     KbMembersService,
+    KbAuthoringService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService],
 })
