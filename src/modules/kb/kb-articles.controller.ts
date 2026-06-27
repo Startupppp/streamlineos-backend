@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -108,6 +109,13 @@ export class KbArticlesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.articles.vote(u.orgId, articleId, body, u.userId);
+  }
+
+  @Post("articles/:articleId/view")
+  @HttpCode(200)
+  @CheckAbility("view", "kb:articles")
+  recordView(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.articles.recordView(u, articleId);
   }
 
   @Get("articles/:articleId/versions")

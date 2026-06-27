@@ -4,6 +4,7 @@ import { kbArticles, kbArticleFeedback, kbArticleVersions } from "../../db/schem
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
+import { KbEventsService } from "./kb-events.service";
 import { kbSlugify } from "./kb.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
@@ -23,6 +24,7 @@ export class KbArticlesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
+    private readonly events: KbEventsService,
   ) {}
 
   async list(user: CurrentUserContext, query: ListArticlesInput) {
@@ -89,6 +91,16 @@ export class KbArticlesService {
     });
     if (!article) throw new NotFoundException("Article not found");
     return article;
+  }
+
+  async recordView(user: CurrentUserContext, articleId: number) {
+    await this.access.assertArticleViewable(user, articleId);
+    await this.db
+      .update(kbArticles)
+      .set({ views: sql`${kbArticles.views} + 1` })
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)));
+    await this.events.record(user.orgId, "view", { actorId: user.userId, articleId });
+    return { success: true };
   }
 
   async create(user: CurrentUserContext, input: CreateArticleInput) {
