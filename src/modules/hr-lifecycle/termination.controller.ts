@@ -53,6 +53,29 @@ export class TerminationController {
     return this.termination.create(u.orgId, u.userId, u.role, body);
   }
 
+  @Post(":terminationId/send-email")
+  @HttpCode(200)
+  sendEmail(
+    @Param("terminationId", ParseIntPipe) terminationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
+      throw new ForbiddenException("Only HR can send termination emails.");
+    }
+    return this.termination.sendEmail(u.orgId, u.userId, terminationId);
+  }
+
+  @Patch(":terminationId/complete")
+  complete(
+    @Param("terminationId", ParseIntPipe) terminationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
+      throw new ForbiddenException("Only HR can complete terminations.");
+    }
+    return this.termination.complete(u.orgId, u.userId, terminationId);
+  }
+
   @Get(":terminationId/letter")
   getLetter(
     @Param("terminationId", ParseIntPipe) terminationId: number,

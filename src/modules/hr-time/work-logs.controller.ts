@@ -1,6 +1,8 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -8,9 +10,11 @@ import { WorkLogsService } from "./work-logs.service";
 import {
   exportWorkLogsQuerySchema,
   listWorkLogsQuerySchema,
+  patchWorkLogStatusSchema,
   postWorkLogSchema,
   type ExportWorkLogsQuery,
   type ListWorkLogsQuery,
+  type PatchWorkLogStatusInput,
   type PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 
@@ -34,6 +38,16 @@ export class WorkLogsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workLogs.create(u.orgId, u.userId, body);
+  }
+
+  @Patch("status")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:attendance")
+  updateStatus(
+    @Body(new ZodValidationPipe(patchWorkLogStatusSchema)) body: PatchWorkLogStatusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workLogs.updateStatus(u, body);
   }
 
   @Get("export")

@@ -300,6 +300,29 @@ export class PerformanceReviewsService {
     return { success: true };
   }
 
+  listReviews(
+    orgId: string,
+    userId: string,
+    isAdmin: boolean,
+    filters: { userId?: string; cycleId?: number; limit?: number; offset?: number },
+  ) {
+    const conditions = [eq(performanceReviews.orgId, orgId)];
+    if (filters.userId) conditions.push(eq(performanceReviews.userId, filters.userId));
+    else if (!isAdmin) conditions.push(eq(performanceReviews.userId, userId));
+    if (filters.cycleId) conditions.push(eq(performanceReviews.cycleId, filters.cycleId));
+
+    const limit = Math.min(filters.limit ?? 50, 100);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    return this.db.query.performanceReviews.findMany({
+      where: and(...conditions),
+      with: { user: true, reviewer: true, cycle: true },
+      orderBy: [desc(performanceReviews.createdAt)],
+      limit,
+      offset,
+    });
+  }
+
   async getReview(orgId: string, reviewId: number) {
     const review = await this.db.query.performanceReviews.findFirst({
       where: and(eq(performanceReviews.id, reviewId), eq(performanceReviews.orgId, orgId)),
@@ -359,6 +382,13 @@ export class PerformanceReviewsService {
       .where(eq(performanceReviews.id, reviewId));
 
     return { success: true };
+  }
+
+  listCycles(orgId: string) {
+    return this.db.query.reviewCycles.findMany({
+      where: eq(reviewCycles.orgId, orgId),
+      orderBy: [desc(reviewCycles.createdAt)],
+    });
   }
 
   async getCycle(orgId: string, cycleId: number) {

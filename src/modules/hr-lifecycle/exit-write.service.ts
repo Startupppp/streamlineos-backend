@@ -24,6 +24,7 @@ import type {
   ResignationCreateInput,
   ResignationUpdateInput,
   ResignationCeoReviewInput,
+  ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
 
 export interface ExitActor {
@@ -193,6 +194,37 @@ export class ExitWriteService {
         })),
       );
     }
+
+    return { success: true };
+  }
+
+  async hrReview(orgId: string, actorUserId: string, resignationId: number, input: ResignationHrReviewInput) {
+    if (input.decision === "reject" && !input.remarks) {
+      throw new BadRequestException("Remarks required for rejection.");
+    }
+
+    const record = await this.db.query.resignations.findFirst({
+      where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
+    });
+    if (!record) throw new NotFoundException("Resignation not found.");
+    if (record.status !== "PENDING_HR" && record.status !== "SUBMITTED") {
+      throw new BadRequestException("Resignation is not pending HR review.");
+    }
+
+    const approved = input.decision === "approve";
+
+    await this.db
+      .update(resignations)
+      .set({
+        status: approved ? "HR_APPROVED" : "REJECTED",
+        hrReviewedBy: actorUserId,
+        hrReviewedAt: new Date(),
+        hrRemarks: input.remarks ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(resignations.id, resignationId));
+
+    if (approved) this.resignationJobs.notifyHrApproved(orgId, record.userId);
 
     return { success: true };
   }

@@ -188,6 +188,26 @@ export class PerformanceController {
     return this.reviewsService.updatePip(u.orgId, pipId, body);
   }
 
+  @Get("reviews")
+  listReviews(
+    @Query("userId") userId: string | undefined,
+    @Query("cycleId") cycleId: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const isAdmin = canManagePerformance(u);
+    if (userId && userId !== u.userId && !isAdmin) {
+      throw new ForbiddenException("Not authorized.");
+    }
+    return this.reviewsService.listReviews(u.orgId, u.userId, isAdmin, {
+      userId,
+      cycleId: cycleId ? Number(cycleId) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+      offset: offset !== undefined ? Number(offset) : undefined,
+    });
+  }
+
   @Post("reviews")
   @HttpCode(201)
   createReview(
@@ -221,6 +241,11 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateReview(u.orgId, reviewId, body);
+  }
+
+  @Get("cycles")
+  listCycles(@CurrentUser() u: CurrentUserContext) {
+    return this.reviewsService.listCycles(u.orgId);
   }
 
   @Post("cycles")

@@ -22,10 +22,12 @@ import {
   resignationCreateSchema,
   resignationUpdateSchema,
   resignationCeoReviewSchema,
+  resignationHrReviewSchema,
   type ExperienceLetterInput,
   type ResignationCreateInput,
   type ResignationUpdateInput,
   type ResignationCeoReviewInput,
+  type ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
 
 @Controller("hr/exit")
@@ -35,6 +37,11 @@ export class ExitController {
     private readonly exit: ExitService,
     private readonly exitWrite: ExitWriteService,
   ) {}
+
+  @Get()
+  list(@CurrentUser() u: CurrentUserContext) {
+    return this.exit.list(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"));
+  }
 
   @Post()
   @HttpCode(201)
@@ -46,6 +53,19 @@ export class ExitController {
       throw new ForbiddenException("CEO users cannot submit a resignation through this system.");
     }
     return this.exitWrite.create(u.orgId, u.userId, body);
+  }
+
+  @Patch(":resignationId/hr-review")
+  hrReview(
+    @Param("resignationId", ParseIntPipe) resignationId: number,
+    @Body(new ZodValidationPipe(resignationHrReviewSchema)) body: ResignationHrReviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!userCan(u, "manage", "hr:exit")) throw new ForbiddenException("Forbidden");
+    if (u.role !== "HR" && u.role !== "CEO") {
+      throw new ForbiddenException("Only HR can perform HR review.");
+    }
+    return this.exitWrite.hrReview(u.orgId, u.userId, resignationId, body);
   }
 
   @Patch(":resignationId/ceo-review")
@@ -112,5 +132,13 @@ export class ExitController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exit.withdraw(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
+  }
+
+  @Get(":resignationId")
+  getDetail(
+    @Param("resignationId", ParseIntPipe) resignationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exit.getDetail(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
   }
 }

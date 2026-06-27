@@ -14,6 +14,16 @@ export class HrHolidaysService {
     private readonly email: EmailService,
   ) {}
 
+  listByYear(orgId: string, year: number) {
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+
+    return this.db.query.holidays.findMany({
+      where: and(eq(holidays.orgId, orgId), gte(holidays.date, startDate), lte(holidays.date, endDate)),
+      orderBy: [asc(holidays.date)],
+    });
+  }
+
   calendar(orgId: string, year: number, month: number) {
     const mm = String(month).padStart(2, "0");
     const startDate = `${year}-${mm}-01`;

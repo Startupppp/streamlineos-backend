@@ -22,6 +22,13 @@ export const exportWorkLogsQuerySchema = z.object({
   userId: z.string().optional(),
 });
 
+export const patchWorkLogStatusSchema = z.object({
+  id: z.number(),
+  status: z.enum(["APPROVED", "REJECTED"]),
+  rejectionReason: z.string().optional(),
+});
+
 export type ListWorkLogsQuery = z.infer<typeof listWorkLogsQuerySchema>;
 export type PostWorkLogInput = z.infer<typeof postWorkLogSchema>;
 export type ExportWorkLogsQuery = z.infer<typeof exportWorkLogsQuerySchema>;
+export type PatchWorkLogStatusInput = z.infer<typeof patchWorkLogStatusSchema>;

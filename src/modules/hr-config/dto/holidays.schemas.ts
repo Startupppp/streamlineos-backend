@@ -5,6 +5,10 @@ export const holidayCalendarQuerySchema = z.object({
   month: z.coerce.number().int().catch(0),
 });
 
+export const holidayListQuerySchema = z.object({
+  year: z.coerce.number().int().catch(0),
+});
+
 export const updateHolidaySchema = z.object({
   name: z
     .string()
@@ -32,5 +36,6 @@ export const createHolidaySchema = z.object({
 });
 
 export type HolidayCalendarQuery = z.infer<typeof holidayCalendarQuerySchema>;
+export type HolidayListQuery = z.infer<typeof holidayListQuerySchema>;
 export type UpdateHolidayInput = z.infer<typeof updateHolidaySchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

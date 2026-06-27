@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import {
   resignations,
   users,
@@ -23,9 +23,103 @@ export interface ProgressStep {
   remarks?: string;
 }
 
+interface TimelineRecord {
+  status: string | null;
+  createdAt: Date | null;
+  hrReviewedAt: Date | null;
+  hrRemarks: string | null;
+  ceoReviewedAt: Date | null;
+  ceoRemarks: string | null;
+  hrReviewer?: { name: string | null } | null;
+  ceoReviewer?: { name: string | null } | null;
+}
+
+export interface TimelineStep {
+  label: string;
+  status: StepStatus;
+  actor: string | null;
+  timestamp: Date | null;
+  remarks: string | null;
+}
+
 @Injectable()
 export class ExitService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  list(orgId: string, userId: string, isAdmin: boolean) {
+    const conditions = [eq(resignations.orgId, orgId)];
+    if (!isAdmin) conditions.push(eq(resignations.userId, userId));
+    return this.db.query.resignations.findMany({
+      where: and(...conditions),
+      with: { user: true, checklists: true, hrReviewer: true, ceoReviewer: true },
+      orderBy: [desc(resignations.createdAt)],
+    });
+  }
+
+  async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+    const data = await this.db.query.resignations.findFirst({
+      where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
+      with: { user: true, checklists: true, hrReviewer: true, ceoReviewer: true },
+    });
+    if (!data) throw new NotFoundException("Resignation not found.");
+
+    if (!isAdmin && data.userId !== userId) {
+      throw new ForbiddenException("Forbidden");
+    }
+
+    return { ...data, progress: this.buildTimeline(data) };
+  }
+
+  private buildTimeline(record: TimelineRecord): TimelineStep[] {
+    return [
+      { label: "Submitted", status: "completed", actor: null, timestamp: record.createdAt, remarks: null },
+      {
+        label: "HR Review",
+        status: this.stepStatus(record, "HR"),
+        actor: record.hrReviewer?.name ?? null,
+        timestamp: record.hrReviewedAt,
+        remarks: record.hrRemarks,
+      },
+      {
+        label: "CEO Review",
+        status: this.stepStatus(record, "CEO"),
+        actor: record.ceoReviewer?.name ?? null,
+        timestamp: record.ceoReviewedAt,
+        remarks: record.ceoRemarks,
+      },
+      {
+        label: "Exit Process",
+        status: ["IN_PROGRESS", "COMPLETED"].includes(record.status ?? "") ? "completed" : "pending",
+        actor: null,
+        timestamp: null,
+        remarks: null,
+      },
+      {
+        label: "Completed",
+        status: record.status === "COMPLETED" ? "completed" : "pending",
+        actor: null,
+        timestamp: null,
+        remarks: null,
+      },
+    ];
+  }
+
+  private stepStatus(record: TimelineRecord, reviewer: "HR" | "CEO"): StepStatus {
+    const status = record.status ?? "";
+    if (status === "REJECTED") {
+      if (reviewer === "HR" && record.hrReviewedAt && !record.ceoReviewedAt) return "rejected";
+      if (reviewer === "CEO" && record.ceoReviewedAt) return "rejected";
+    }
+    if (reviewer === "HR") {
+      if (["HR_APPROVED", "CEO_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
+      if (["PENDING_HR", "SUBMITTED"].includes(status)) return "active";
+    }
+    if (reviewer === "CEO") {
+      if (["CEO_APPROVED", "IN_PROGRESS", "COMPLETED"].includes(status)) return "completed";
+      if (status === "HR_APPROVED") return "active";
+    }
+    return "pending";
+  }
 
   async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
     const resignation = await this.db.query.resignations.findFirst({

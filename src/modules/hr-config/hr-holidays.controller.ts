@@ -23,9 +23,11 @@ import { HrHolidaysService } from "./hr-holidays.service";
 import {
   createHolidaySchema,
   holidayCalendarQuerySchema,
+  holidayListQuerySchema,
   updateHolidaySchema,
   type CreateHolidayInput,
   type HolidayCalendarQuery,
+  type HolidayListQuery,
   type UpdateHolidayInput,
 } from "./dto/holidays.schemas";
 
@@ -33,6 +35,15 @@ import {
 @UseGuards(JwtAuthGuard)
 export class HrHolidaysController {
   constructor(private readonly holidays: HrHolidaysService) {}
+
+  @Get()
+  list(
+    @Query(new ZodValidationPipe(holidayListQuerySchema)) query: HolidayListQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const year = query.year || new Date().getFullYear();
+    return this.holidays.listByYear(u.orgId, year);
+  }
 
   @Get("calendar")
   calendar(

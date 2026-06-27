@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { timesheets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -10,6 +10,7 @@ import { formatDateOnly, getTodayString } from "./date.helpers";
 import type {
   ExportWorkLogsQuery,
   ListWorkLogsQuery,
+  PatchWorkLogStatusInput,
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 
@@ -124,6 +125,27 @@ export class WorkLogsService {
       .returning();
 
     return upserted;
+  }
+
+  async updateStatus(u: CurrentUserContext, body: PatchWorkLogStatusInput) {
+    const existing = await this.db.query.timesheets.findFirst({
+      where: and(eq(timesheets.id, body.id), eq(timesheets.orgId, u.orgId)),
+    });
+
+    if (!existing) throw new NotFoundException("Work log not found.");
+
+    const [updated] = await this.db
+      .update(timesheets)
+      .set({
+        status: body.status,
+        approvedBy: u.userId,
+        approvedAt: new Date(),
+        rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
+      })
+      .where(eq(timesheets.id, body.id))
+      .returning();
+
+    return updated;
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {

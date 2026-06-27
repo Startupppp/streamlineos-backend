@@ -32,6 +32,11 @@ export const resignationCeoReviewSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const resignationHrReviewSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  remarks: z.string().optional(),
+});
+
 export const alumniListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
@@ -98,6 +103,7 @@ export const attendanceAnalyticsQuerySchema = z.object({
 export type ResignationCreateInput = z.infer<typeof resignationCreateSchema>;
 export type ResignationUpdateInput = z.infer<typeof resignationUpdateSchema>;
 export type ResignationCeoReviewInput = z.infer<typeof resignationCeoReviewSchema>;
+export type ResignationHrReviewInput = z.infer<typeof resignationHrReviewSchema>;
 export type AlumniListInput = z.infer<typeof alumniListSchema>;
 export type AlumniCreateInput = z.infer<typeof alumniCreateSchema>;
 export type ExperienceLetterInput = z.infer<typeof experienceLetterSchema>;

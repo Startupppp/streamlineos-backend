@@ -1,9 +1,26 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, notInArray } from "drizzle-orm";
-import { terminations, users, organizations, organizationMembers } from "../../db/schema";
+import {
+  terminations,
+  users,
+  organizations,
+  organizationMembers,
+  fnfSettlements,
+  assetReturns,
+  assets,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
 import { formatDdMmmYyyy } from "./date.helpers";
 import { generateTerminationLetterHtml } from "./letters";
 import type { TerminationCreateInput, TerminationReviewInput } from "./dto/hr-lifecycle.schemas";
@@ -13,6 +30,8 @@ export class TerminationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
   ) {}
 
   list(orgId: string) {
@@ -229,5 +248,154 @@ export class TerminationService {
     });
 
     return { html: letterHtml };
+  }
+
+  async sendEmail(orgId: string, actorUserId: string, terminationId: number) {
+    const existing = await this.db.query.terminations.findFirst({
+      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
+      with: { user: true },
+    });
+    if (!existing) throw new NotFoundException("Termination not found.");
+    if (existing.status !== "APPROVED") {
+      throw new BadRequestException("Termination must be CEO-approved before sending.");
+    }
+    if (existing.emailSentAt && existing.emailStatus === "sent") {
+      throw new ConflictException("Termination email has already been sent.");
+    }
+
+    const employee = existing.user;
+    if (!employee?.email) throw new BadRequestException("Employee email not found.");
+
+    const actor = await this.db.query.users.findFirst({
+      where: eq(users.id, actorUserId),
+      columns: { name: true },
+    });
+
+    const effectiveDateFormatted = existing.effectiveDate ? formatDdMmmYyyy(existing.effectiveDate) : "N/A";
+
+    try {
+      await this.email.sendTerminationEmail(
+        employee.email,
+        employee.name ?? "Employee",
+        employee.designation ?? "N/A",
+        effectiveDateFormatted,
+        actor?.name ?? "HR",
+        existing.reasons?.join(", ") ?? "",
+      );
+
+      await this.db
+        .update(terminations)
+        .set({ status: "SENT", emailSentAt: new Date(), emailStatus: "sent", updatedAt: new Date() })
+        .where(eq(terminations.id, terminationId));
+
+      this.audit.log({
+        action: "TERMINATION_EMAIL_SENT",
+        userId: actorUserId,
+        orgId,
+        targetId: String(terminationId),
+        targetType: "termination",
+        metadata: {
+          employeeId: existing.userId,
+          employeeName: employee.name,
+          employeeEmail: employee.email,
+          pdfAttached: false,
+        },
+      });
+
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown email error";
+
+      await this.db
+        .update(terminations)
+        .set({ emailStatus: `failed: ${errorMessage}`, updatedAt: new Date() })
+        .where(eq(terminations.id, terminationId));
+
+      this.audit.log({
+        action: "TERMINATION_EMAIL_FAILED",
+        userId: actorUserId,
+        orgId,
+        targetId: String(terminationId),
+        targetType: "termination",
+        metadata: { employeeId: existing.userId, error: errorMessage },
+      });
+
+      throw new InternalServerErrorException(`Failed to send email: ${errorMessage}`);
+    }
+  }
+
+  async complete(orgId: string, actorUserId: string, terminationId: number) {
+    const existing = await this.db.query.terminations.findFirst({
+      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
+    });
+    if (!existing) throw new NotFoundException("Termination not found.");
+    if (existing.status !== "SENT") throw new BadRequestException("Termination letter must be sent first.");
+
+    await this.db
+      .update(terminations)
+      .set({ status: "COMPLETED", updatedAt: new Date() })
+      .where(eq(terminations.id, terminationId));
+
+    await this.db.update(users).set({ isActive: false }).where(eq(users.id, existing.userId));
+
+    await this.db
+      .insert(fnfSettlements)
+      .values({ orgId, userId: existing.userId, status: "DRAFT" })
+      .onConflictDoNothing();
+
+    const assignedAssets = await this.db.query.assets.findMany({
+      where: and(
+        eq(assets.orgId, orgId),
+        eq(assets.assignedTo, existing.userId),
+        eq(assets.status, "ASSIGNED"),
+      ),
+    });
+
+    if (assignedAssets.length > 0) {
+      await this.db.insert(assetReturns).values(
+        assignedAssets.map((asset) => ({
+          orgId,
+          userId: existing.userId,
+          assetId: asset.id,
+          assetName: asset.name,
+          status: "PENDING",
+        })),
+      );
+    }
+
+    this.dispatchEmployeeTerminated(orgId, terminationId, existing.userId);
+
+    this.audit.log({
+      action: "TERMINATION_COMPLETED",
+      userId: actorUserId,
+      orgId,
+      targetId: String(terminationId),
+      targetType: "termination",
+      metadata: {
+        employeeId: existing.userId,
+        userDeactivated: true,
+        fnfInitiated: true,
+        assetsToReturn: assignedAssets.length,
+      },
+    });
+
+    return { success: true };
+  }
+
+  private dispatchEmployeeTerminated(orgId: string, terminationId: number, employeeId: string): void {
+    void (async () => {
+      const employee = await this.db.query.users.findFirst({
+        where: eq(users.id, employeeId),
+        columns: { name: true },
+      });
+      await this.automation.runAutomationsForEvent(orgId, "employee.terminated", {
+        terminationId,
+        userId: employeeId,
+        employeeName: employee?.name ?? "Employee",
+        effectiveDate: new Date().toISOString(),
+        reasons: [],
+        noticePeriodWaived: false,
+      });
+    })().catch(() => undefined);
   }
 }
