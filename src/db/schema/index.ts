@@ -14,6 +14,6 @@ export * from "./blog";
 export * from "./platform";
 export * from "./accounting";
 export * from "./support";
-export * from "./kb";
+export * from "./kb/index";
 export * from "./automation";
 export * from "./inventory";
