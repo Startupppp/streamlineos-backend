@@ -19,11 +19,16 @@ import {
   users,
   organizationMembers,
 } from "../../db/schema";
-import { DRIZZLE } from "../../db/drizzle.constants";
+import type {
+  AnalyticsQuery,
+  FollowUpsQuery,
+} from "./dto/lead-reports.schemas";
 import { type Db } from "../../db/drizzle.module";
-import { CacheService } from "../../common/cache/cache.service";
+import { applyScope } from "../access/apply-scope";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { DataScope } from "../access/access.types";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import type { AnalyticsQuery, FollowUpsQuery } from "./dto/lead-reports.schemas";
+import { CacheService } from "../../common/cache/cache.service";
 
 @Injectable()
 export class LeadsReportsService {
@@ -32,10 +37,22 @@ export class LeadsReportsService {
     private readonly cache: CacheService,
   ) {}
 
-  async getLeadAnalytics(orgId: string, filters: AnalyticsQuery) {
+  async getLeadAnalytics(
+    orgId: string,
+    filters: AnalyticsQuery,
+    viewScope?: { scope: DataScope; userId: string },
+  ) {
     const f = [eq(leads.orgId, orgId)];
-    if (filters.dateFrom) f.push(gte(leads.createdAt, new Date(filters.dateFrom)));
-    if (filters.dateTo) f.push(lte(leads.createdAt, new Date(filters.dateTo + "T23:59:59")));
+    if (viewScope)
+      f.push(
+        applyScope(viewScope.scope, viewScope.userId, {
+          ownerColumn: leads.assignedToId,
+        }),
+      );
+    if (filters.dateFrom)
+      f.push(gte(leads.createdAt, new Date(filters.dateFrom)));
+    if (filters.dateTo)
+      f.push(lte(leads.createdAt, new Date(filters.dateTo + "T23:59:59")));
 
     const allLeadsData = await this.db.query.leads.findMany({
       where: and(...f),
@@ -50,8 +67,11 @@ export class LeadsReportsService {
     });
 
     const totalLeads = allLeadsData.length;
-    const converted = allLeadsData.filter((l) => l.status === "CONVERTED").length;
-    const conversionRate = totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
+    const converted = allLeadsData.filter(
+      (l) => l.status === "CONVERTED",
+    ).length;
+    const conversionRate =
+      totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -66,16 +86,27 @@ export class LeadsReportsService {
       columns: { id: true, status: true },
     });
     const prevTotal = prevPeriodLeads.length;
-    const prevConverted = prevPeriodLeads.filter((l) => l.status === "CONVERTED").length;
-    const prevConversionRate = prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
+    const prevConverted = prevPeriodLeads.filter(
+      (l) => l.status === "CONVERTED",
+    ).length;
+    const prevConversionRate =
+      prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
 
     const wonDeals = await this.db.query.deals.findMany({
       where: and(eq(deals.orgId, orgId), eq(deals.stage, "WON")),
       columns: { value: true, createdAt: true },
     });
-    const totalRevenue = wonDeals.reduce((sum, d) => sum + Number(d.value ?? 0), 0);
+    const totalRevenue = wonDeals.reduce(
+      (sum, d) => sum + Number(d.value ?? 0),
+      0,
+    );
 
-    const conversionBySource: { source: string; total: number; converted: number; rate: number }[] = [];
+    const conversionBySource: {
+      source: string;
+      total: number;
+      converted: number;
+      rate: number;
+    }[] = [];
     const sourceMap = new Map<string, { total: number; converted: number }>();
     for (const l of allLeadsData) {
       const src = l.source ?? "other";
@@ -89,7 +120,8 @@ export class LeadsReportsService {
         source: source.replace(/_/g, " "),
         total: data.total,
         converted: data.converted,
-        rate: data.total > 0 ? Math.round((data.converted / data.total) * 100) : 0,
+        rate:
+          data.total > 0 ? Math.round((data.converted / data.total) * 100) : 0,
       });
     }
 
@@ -102,7 +134,9 @@ export class LeadsReportsService {
       const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
       monthMap.set(key, (monthMap.get(key) ?? 0) + Number(d.value ?? 0));
     }
-    const sortedMonths = [...monthMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-6);
+    const sortedMonths = [...monthMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-6);
     for (const [month, revenue] of sortedMonths) {
       monthlyRevenue.push({ month, revenue });
     }
@@ -111,10 +145,13 @@ export class LeadsReportsService {
       where: eq(organizationMembers.orgId, orgId),
       with: { user: { columns: { id: true, name: true, role: true } } },
     });
-    const salesUsers = orgMembers.filter((m) => m.user.role === "SALES").map((m) => m.user);
+    const salesUsers = orgMembers
+      .filter((m) => m.user.role === "SALES")
+      .map((m) => m.user);
     const assignMap = new Map<string, number>();
     for (const l of allLeadsData) {
-      if (l.assignedToId) assignMap.set(l.assignedToId, (assignMap.get(l.assignedToId) ?? 0) + 1);
+      if (l.assignedToId)
+        assignMap.set(l.assignedToId, (assignMap.get(l.assignedToId) ?? 0) + 1);
     }
     const assignmentDistribution = salesUsers.map((u) => ({
       userId: u.id,
@@ -182,7 +219,10 @@ export class LeadsReportsService {
       inPersonMeetings: (byType["meeting"] ?? 0) + (byType["site_visit"] ?? 0),
       followUpDue: followUpCount,
       totalLeads,
-      conversionRate: totalLeads > 0 ? Math.round((activeClients / totalLeads) * 1000) / 10 : 0,
+      conversionRate:
+        totalLeads > 0
+          ? Math.round((activeClients / totalLeads) * 1000) / 10
+          : 0,
     };
   }
 
@@ -208,7 +248,8 @@ export class LeadsReportsService {
           source: r.source,
           count: r.count,
           converted: r.converted,
-          conversionRate: r.count > 0 ? Math.round((r.converted / r.count) * 100) : 0,
+          conversionRate:
+            r.count > 0 ? Math.round((r.converted / r.count) * 100) : 0,
           totalValue: r.totalValue,
         }));
 
@@ -222,7 +263,12 @@ export class LeadsReportsService {
     const [allLeads, allActivities] = await Promise.all([
       this.db.query.leads.findMany({
         where: eq(leads.orgId, orgId),
-        columns: { id: true, status: true, assignedToId: true, potentialValue: true },
+        columns: {
+          id: true,
+          status: true,
+          assignedToId: true,
+          potentialValue: true,
+        },
       }),
       this.db.query.leadActivities.findMany({
         where: eq(leadActivities.orgId, orgId),
@@ -264,7 +310,8 @@ export class LeadsReportsService {
     for (const activity of allActivities) {
       const entry = userMap.get(activity.userId) || emptyStats();
       if (activity.type === "call") entry.totalCalls++;
-      if (activity.type === "meeting" || activity.type === "site_visit") entry.totalMeetings++;
+      if (activity.type === "meeting" || activity.type === "site_visit")
+        entry.totalMeetings++;
       if (activity.type === "email") entry.totalEmails++;
       userMap.set(activity.userId, entry);
     }
@@ -302,9 +349,13 @@ export class LeadsReportsService {
   async getSalesTeamCapacity(orgId: string) {
     const salesMembers = await this.db.query.organizationMembers.findMany({
       where: eq(organizationMembers.orgId, orgId),
-      with: { user: { columns: { id: true, name: true, image: true, role: true } } },
+      with: {
+        user: { columns: { id: true, name: true, image: true, role: true } },
+      },
     });
-    const salesUsers = salesMembers.filter((m) => m.user.role === "SALES").map((m) => m.user);
+    const salesUsers = salesMembers
+      .filter((m) => m.user.role === "SALES")
+      .map((m) => m.user);
 
     const activeLeadsList = await this.db.query.leads.findMany({
       where: and(
@@ -317,7 +368,8 @@ export class LeadsReportsService {
 
     const countMap = new Map<string, number>();
     for (const l of activeLeadsList) {
-      if (l.assignedToId) countMap.set(l.assignedToId, (countMap.get(l.assignedToId) || 0) + 1);
+      if (l.assignedToId)
+        countMap.set(l.assignedToId, (countMap.get(l.assignedToId) || 0) + 1);
     }
 
     return salesUsers.map((u) => ({
@@ -328,7 +380,10 @@ export class LeadsReportsService {
     }));
   }
 
-  async getLeadSlaAlerts(orgId: string, opts: { role?: string; userId?: string }) {
+  async getLeadSlaAlerts(
+    orgId: string,
+    opts: { role?: string; userId?: string },
+  ) {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -362,7 +417,9 @@ export class LeadsReportsService {
           : now;
 
       if (updatedAt < twentyFourHoursAgo) {
-        const hoursSince = Math.round((now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60));
+        const hoursSince = Math.round(
+          (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60),
+        );
         slaBreached.push({
           leadId: lead.id,
           leadName: lead.name,

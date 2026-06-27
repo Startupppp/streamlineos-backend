@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -38,11 +38,12 @@ const MERGE_ROLES = ["CEO", "ADMIN", "HR", "SALES_MANAGER"];
 const DISTRIBUTE_ROLES = ["CEO", "HR"];
 
 @Controller("leads")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsOpsController {
   constructor(private readonly ops: LeadsOpsService) {}
 
   @Get("import/:batchId")
+  @RequirePermission("crm:leads:view")
   async getImportBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,8 +54,7 @@ export class LeadsOpsController {
   }
 
   @Patch("bulk")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("update", "crm:leads")
+  @RequirePermission("crm:leads:update")
   bulkUpdate(
     @Body(new ZodValidationPipe(bulkUpdateSchema)) body: BulkUpdateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,8 +63,7 @@ export class LeadsOpsController {
   }
 
   @Delete("bulk")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("delete", "crm:leads")
+  @RequirePermission("crm:leads:delete")
   bulkDelete(
     @Body(new ZodValidationPipe(bulkDeleteSchema)) body: BulkDeleteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -95,8 +94,7 @@ export class LeadsOpsController {
   }
 
   @Post("import")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "crm:leads")
+  @RequirePermission("crm:leads:create")
   @HttpCode(201)
   importLeads(
     @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
