@@ -7,6 +7,7 @@ import { ProjectsBudgetController } from "./projects-budget.controller";
 import { ProjectsTemplatesController } from "./projects-templates.controller";
 import { ProjectsRoadmapController } from "./projects-roadmap.controller";
 import { ProjectsService } from "./projects.service";
+import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
@@ -29,6 +30,7 @@ import { ProjectsRoadmapService } from "./projects-roadmap.service";
   ],
   providers: [
     ProjectsService,
+    ProjectsEmailService,
     ProjectsMembersService,
     ProjectsTicketsService,
     ProjectsTicketSubresourcesService,
