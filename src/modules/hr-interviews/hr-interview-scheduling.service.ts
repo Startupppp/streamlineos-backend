@@ -89,6 +89,14 @@ export class HrInterviewSchedulingService {
     return interview;
   }
 
+  async deleteInterview(orgId: string, interviewId: number) {
+    await this.db
+      .delete(interviews)
+      .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)));
+    await this.cache.invalidatePattern(`hr:interviews:list:${orgId}:*`);
+    return { success: true };
+  }
+
   async scheduleInterview(orgId: string, userId: string, input: ScheduleInterviewInput) {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, input.candidateId), eq(candidates.orgId, orgId)),

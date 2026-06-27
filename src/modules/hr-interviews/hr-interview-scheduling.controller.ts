@@ -1,14 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
+  Get,
   HttpCode,
   Param,
   ParseIntPipe,
   Patch,
   Post,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -74,6 +78,24 @@ export class HrInterviewSchedulingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.results.updateInterview(u.orgId, interviewId, body);
+  }
+
+  @Delete(":interviewId")
+  remove(
+    @Param("interviewId", ParseIntPipe) interviewId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scheduling.deleteInterview(u.orgId, interviewId);
+  }
+
+  @Get(":interviewId/scorecard")
+  async getScorecard(
+    @Param("interviewId", ParseIntPipe) interviewId: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ) {
+    const scorecard = await this.results.getScorecard(u.orgId, u.userId, interviewId);
+    res.json(scorecard);
   }
 
   @Post(":interviewId/scorecard")

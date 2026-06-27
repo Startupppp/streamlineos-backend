@@ -55,6 +55,23 @@ export class HrInterviewResultsService {
     return { success: true };
   }
 
+  async getScorecard(orgId: string, userId: string, interviewId: number) {
+    const interview = await this.db.query.interviews.findFirst({
+      where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!interview) throw new NotFoundException("Interview not found.");
+
+    const scorecard = await this.db.query.interviewScorecards.findFirst({
+      where: and(
+        eq(interviewScorecards.interviewId, interviewId),
+        eq(interviewScorecards.interviewerId, userId),
+      ),
+    });
+
+    return scorecard ?? null;
+  }
+
   async submitScorecard(orgId: string, userId: string, interviewId: number, input: SubmitScorecardInput) {
     const interview = await this.db.query.interviews.findFirst({
       where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
