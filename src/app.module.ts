@@ -67,6 +67,7 @@ import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
+import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -140,6 +141,7 @@ import { MeController } from "./me/me.controller";
     AutomationModule,
     AuthModule,
     FeatureFlagsModule,
+    OrgHierarchyModule,
   ],
   controllers: [HealthController, MeController],
 })
