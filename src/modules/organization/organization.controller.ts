@@ -24,11 +24,17 @@ import { OrganizationService } from "./organization.service";
 import {
   cancelInvitationSchema,
   createOrganizationSchema,
+  inviteMemberSchema,
   listMembersSchema,
+  securitySettingsSchema,
+  updateMemberRoleSchema,
   updateOrgSettingsSchema,
   type CancelInvitationInput,
   type CreateOrganizationInput,
+  type InviteMemberInput,
   type ListMembersInput,
+  type SecuritySettingsInput,
+  type UpdateMemberRoleInput,
   type UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
 
@@ -65,6 +71,26 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.listMembers(u.orgId, query);
+  }
+
+  @Post("members")
+  @HttpCode(201)
+  @CheckAbility("manage", "settings")
+  inviteMember(
+    @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.inviteMember(u.orgId, u.userId, body);
+  }
+
+  @Patch("members/:memberId")
+  @CheckAbility("manage", "all")
+  updateMemberRole(
+    @Param("memberId") memberId: string,
+    @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.updateMemberRole(u.orgId, u.userId, memberId, body.role);
   }
 
   @Delete("members/:memberId")
@@ -111,5 +137,14 @@ export class OrganizationController {
       throw new ForbiddenException("Forbidden");
     }
     return this.organization.updateSettings(u.orgId, u.userId, body);
+  }
+
+  @Patch("security")
+  @CheckAbility("manage", "settings")
+  updateSecuritySettings(
+    @Body(new ZodValidationPipe(securitySettingsSchema)) body: SecuritySettingsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.updateSecuritySettings(u.orgId, u.userId, body);
   }
 }

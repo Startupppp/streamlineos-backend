@@ -23,6 +23,11 @@ export class BillingController {
     return this.billing.getSubscription(u.orgId);
   }
 
+  @Get("razorpay")
+  getRazorpaySubscription(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.getSubscription(u.orgId);
+  }
+
   @Post("razorpay")
   @HttpCode(200)
   @CheckAbility("manage", "settings")

@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -16,7 +17,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BranchesService } from "./branches.service";
-import { updateBranchSchema, type UpdateBranchInput } from "./dto/branches.schemas";
+import {
+  createBranchSchema,
+  updateBranchSchema,
+  type CreateBranchInput,
+  type UpdateBranchInput,
+} from "./dto/branches.schemas";
 
 const MANAGE_ROLES = ["HR", "CEO"];
 
@@ -38,6 +44,17 @@ export class BranchesController {
     const branch = await this.branches.getOne(u.orgId, branchId);
     if (!branch) throw new NotFoundException("Branch not found");
     return branch;
+  }
+
+  @Post()
+  async create(
+    @Body(new ZodValidationPipe(createBranchSchema)) body: CreateBranchInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, MANAGE_ROLES)) {
+      throw new ForbiddenException("Only HR/CEO can create branches");
+    }
+    return this.branches.create(u.orgId, body);
   }
 
   @Patch(":branchId")

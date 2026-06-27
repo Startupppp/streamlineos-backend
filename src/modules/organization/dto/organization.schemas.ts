@@ -42,7 +42,25 @@ export const updateOrgSettingsSchema = z.object({
   ipAllowlist: z.array(z.string().min(1)).optional(),
 });
 
+export const securitySettingsSchema = z.object({
+  mfaEnforced: z.boolean().optional(),
+  passwordExpiryDays: z.number().int().min(30).max(365).nullable().optional(),
+  allowedEmailDomains: z.array(z.string().min(1)).optional(),
+});
+
+export const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  role: z.string().min(1),
+});
+
+export const updateMemberRoleSchema = z.object({
+  role: z.string().min(1),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type CancelInvitationInput = z.infer<typeof cancelInvitationSchema>;
 export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
+export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
+export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;

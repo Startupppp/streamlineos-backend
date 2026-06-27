@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { UpdateBranchInput } from "./dto/branches.schemas";
+import type { CreateBranchInput, UpdateBranchInput } from "./dto/branches.schemas";
 
 @Injectable()
 export class BranchesService {
@@ -46,6 +46,30 @@ export class BranchesService {
     });
 
     return { ...branch, employees };
+  }
+
+  async create(orgId: string, input: CreateBranchInput) {
+    const branch = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(branches)
+        .values({ orgId, ...input })
+        .returning();
+      if (input.branchManagerId) {
+        await tx
+          .update(users)
+          .set({ branchId: created.id })
+          .where(eq(users.id, input.branchManagerId));
+      }
+      if (input.branchHrId) {
+        await tx
+          .update(users)
+          .set({ branchId: created.id })
+          .where(eq(users.id, input.branchHrId));
+      }
+      return created;
+    });
+    await this.cache.invalidate(CACHE_KEYS.branchesList(orgId));
+    return branch;
   }
 
   async update(orgId: string, id: number, input: UpdateBranchInput) {
