@@ -162,10 +162,11 @@ export class InvPurchaseOrdersService {
     if (!po) throw new NotFoundException("Purchase order not found");
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be sent");
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(invPurchaseOrders)
+    const sent = await this.db.transaction(async (tx) => {
+      const [row] = await tx.update(invPurchaseOrders)
         .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-        .where(eq(invPurchaseOrders.id, poId));
+        .where(eq(invPurchaseOrders.id, poId))
+        .returning();
 
       for (const line of po.lines) {
         const locationId = po.warehouseId ?? 1;
@@ -182,10 +183,13 @@ export class InvPurchaseOrdersService {
           },
         });
       }
+
+      return row;
     });
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
     await this.cache.invalidatePattern(`inv:po:list:${orgId}:*`);
+    return sent;
   }
 
   async receiveGoods(orgId: string, poId: number, userId: string, data: CreateGrnInput) {
@@ -313,5 +317,13 @@ export class InvPurchaseOrdersService {
     await this.cache.invalidatePattern(`inv:po:list:${orgId}:*`);
     await this.cache.del(CACHE_KEYS.invStockSummary(orgId));
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
+
+    return this.db.query.invGrns.findFirst({
+      where: eq(invGrns.id, grnId),
+      with: {
+        lines: true,
+        creator: { columns: { id: true, name: true } },
+      },
+    });
   }
 }

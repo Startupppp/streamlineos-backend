@@ -52,14 +52,24 @@ export class InvVendorsService {
     return vendor;
   }
 
+  private async nextVendorCode(orgId: string): Promise<string> {
+    const rows = await this.db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(invVendors)
+      .where(eq(invVendors.orgId, orgId));
+    const cnt = rows[0]?.cnt ?? 0;
+    return `VND-${String(cnt + 1).padStart(4, "0")}`;
+  }
+
   async createVendor(orgId: string, userId: string, data: CreateVendorInput) {
+    const code = data.code ?? (await this.nextVendorCode(orgId));
     const existing = await this.db.query.invVendors.findFirst({
-      where: and(eq(invVendors.orgId, orgId), eq(invVendors.code, data.code)),
+      where: and(eq(invVendors.orgId, orgId), eq(invVendors.code, code)),
       columns: { id: true },
     });
     if (existing) throw new ConflictException("A vendor with this code already exists");
 
-    const [vendor] = await this.db.insert(invVendors).values({ orgId, createdBy: userId, ...data }).returning();
+    const [vendor] = await this.db.insert(invVendors).values({ orgId, createdBy: userId, ...data, code }).returning();
     await this.cache.invalidatePattern(`inv:vendors:list:${orgId}:*`);
     return vendor;
   }

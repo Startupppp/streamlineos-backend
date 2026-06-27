@@ -55,3 +55,11 @@ export const createUomSchema = z.object({
   abbreviation: z.string().trim().min(1).max(20),
 });
 export type CreateUomInput = z.infer<typeof createUomSchema>;
+
+export const listVariantsSchema = z.object({
+  activeOnly: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
+});
+export type ListVariantsInput = z.infer<typeof listVariantsSchema>;

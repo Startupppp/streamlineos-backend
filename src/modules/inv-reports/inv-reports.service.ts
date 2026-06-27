@@ -64,6 +64,7 @@ export class InvReportsService {
           limit: 10,
           with: {
             productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
+            location: { columns: { id: true, name: true } },
             creator: { columns: { id: true, name: true } },
           },
         });
@@ -148,7 +149,10 @@ export class InvReportsService {
         productVariant: {
           with: { product: { columns: { id: true, name: true, sku: true } } },
         },
-        location: { columns: { id: true, name: true, code: true } },
+        location: {
+          columns: { id: true, name: true, code: true },
+          with: { warehouse: { columns: { id: true, name: true } } },
+        },
         creator: { columns: { id: true, name: true } },
       },
     });

@@ -8,9 +8,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvProductsService } from "./inv-products.service";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
-  createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema,
+  createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,
   type ListProductsInput, type CreateProductInput, type UpdateProductInput,
-  type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput,
+  type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput, type ListVariantsInput,
 } from "./dto/inv-products.schemas";
 
 @Controller("inventory/products")
@@ -60,6 +60,16 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.createUom(u.orgId, body);
+  }
+
+  @Get("variants")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "inventory:products")
+  listVariants(
+    @Query(new ZodValidationPipe(listVariantsSchema)) filters: ListVariantsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.listVariants(u.orgId, filters.activeOnly);
   }
 
   @Get(":productId")

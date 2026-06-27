@@ -7,8 +7,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvStockService } from "./inv-stock.service";
 import {
-  listStockLevelsSchema, listTransactionsSchema, createAdjustmentSchema, createTransferSchema, completeTransferSchema,
-  type ListStockLevelsInput, type ListTransactionsInput, type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput,
+  listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema, createTransferSchema, completeTransferSchema,
+  type ListStockLevelsInput, type ListTransactionsInput, type ListAdjustmentsInput, type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput,
 } from "./dto/inv-stock.schemas";
 
 @Controller("inventory/stock")
@@ -34,6 +34,16 @@ export class InvStockController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stock.listTransactions(u.orgId, filters);
+  }
+
+  @Get("adjustments")
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "inventory:stock")
+  listAdjustments(
+    @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.stock.listAdjustments(u.orgId, filters);
   }
 
   @Post("adjustments")

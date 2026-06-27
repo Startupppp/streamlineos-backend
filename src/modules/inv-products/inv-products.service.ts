@@ -1,5 +1,5 @@
 import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, eq, ilike, or, desc, sql } from "drizzle-orm";
+import { and, eq, ilike, or, asc, desc, sql } from "drizzle-orm";
 import { invProducts, invProductVariants, invCategories, invUom } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -149,6 +149,25 @@ export class InvProductsService {
       .returning();
     if (!updated) throw new NotFoundException("Variant not found");
     return updated;
+  }
+
+  listVariants(orgId: string, activeOnly: boolean) {
+    const conditions = [eq(invProductVariants.orgId, orgId)];
+    if (activeOnly) conditions.push(eq(invProductVariants.isActive, true));
+    return this.db
+      .select({
+        id: invProductVariants.id,
+        productId: invProductVariants.productId,
+        productName: invProducts.name,
+        name: invProductVariants.name,
+        sku: invProductVariants.sku,
+        costPrice: invProductVariants.costPrice,
+        isActive: invProductVariants.isActive,
+      })
+      .from(invProductVariants)
+      .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+      .where(and(...conditions))
+      .orderBy(asc(invProducts.name), asc(invProductVariants.name));
   }
 
   listCategories(orgId: string) {

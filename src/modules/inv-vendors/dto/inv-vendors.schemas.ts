@@ -10,7 +10,7 @@ export type ListVendorsInput = z.infer<typeof listVendorsSchema>;
 
 export const createVendorSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  code: z.string().trim().min(1).max(50),
+  code: z.string().trim().min(1).max(50).optional(),
   clientId: z.number().int().positive().optional(),
   email: z.string().email().optional(),
   phone: z.string().trim().max(30).optional(),

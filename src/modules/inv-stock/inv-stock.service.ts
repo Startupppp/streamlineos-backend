@@ -8,7 +8,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListStockLevelsInput, ListTransactionsInput, CreateAdjustmentInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
+import type { ListStockLevelsInput, ListTransactionsInput, ListAdjustmentsInput, CreateAdjustmentInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
 
 function nextRefNumber(prefix: string): string {
   const now = new Date();
@@ -71,6 +71,27 @@ export class InvStockService {
         },
       }),
       this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(and(...conditions)),
+    ]);
+
+    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+  }
+
+  async listAdjustments(orgId: string, filters: ListAdjustmentsInput) {
+    const { page, limit } = filters;
+    const offset = (page - 1) * limit;
+
+    const [items, countResult] = await Promise.all([
+      this.db.query.invStockAdjustments.findMany({
+        where: eq(invStockAdjustments.orgId, orgId),
+        orderBy: [desc(invStockAdjustments.createdAt)],
+        limit,
+        offset,
+        with: {
+          creator: { columns: { id: true, name: true } },
+          lines: { columns: { id: true } },
+        },
+      }),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(eq(invStockAdjustments.orgId, orgId)),
     ]);
 
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };

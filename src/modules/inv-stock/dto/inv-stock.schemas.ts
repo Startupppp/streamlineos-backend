@@ -20,6 +20,12 @@ export const listTransactionsSchema = z.object({
 });
 export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 
+export const listAdjustmentsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ListAdjustmentsInput = z.infer<typeof listAdjustmentsSchema>;
+
 export const adjustmentLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   locationId: z.number().int().positive(),
