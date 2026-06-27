@@ -3,6 +3,7 @@
 export * from "./enums";
 
 export * from "./auth";
+export * from "./access";
 
 export * from "./projects";
 export * from "./hr";
@@ -13,5 +14,7 @@ export * from "./blog";
 export * from "./platform";
 export * from "./accounting";
 export * from "./support";
+export * from "./kb/index";
 export * from "./automation";
 export * from "./inventory";
+export * from "./feature-flags";

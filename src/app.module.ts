@@ -65,6 +65,8 @@ import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -136,6 +138,8 @@ import { MeController } from "./me/me.controller";
     GoogleCalendarModule,
     RealtimeModule,
     AutomationModule,
+    AuthModule,
+    FeatureFlagsModule,
   ],
   controllers: [HealthController, MeController],
 })
