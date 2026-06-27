@@ -364,6 +364,33 @@ export class AuthService {
     void this.email.sendVerificationEmail(normalizedEmail, token).catch(() => {});
   }
 
+  async getLoginHistory(
+    userId: string,
+    query: { success?: boolean; from?: Date; to?: Date; page?: number; limit?: number },
+  ) {
+    const { and, desc, eq, gte, lte, sql: drizzleSql } = await import("drizzle-orm");
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 20, 100);
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(loginHistory.userId, userId)];
+    if (query.success !== undefined) conditions.push(eq(loginHistory.success, query.success));
+    if (query.from) conditions.push(gte(loginHistory.createdAt, query.from));
+    if (query.to) conditions.push(lte(loginHistory.createdAt, query.to));
+
+    const [data, countResult] = await Promise.all([
+      this.db.query.loginHistory.findMany({
+        where: and(...conditions),
+        orderBy: [desc(loginHistory.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ count: drizzleSql<number>`count(*)::int` }).from(loginHistory).where(and(...conditions)),
+    ]);
+
+    return { data, total: countResult[0]?.count ?? 0, page, limit };
+  }
+
   private async logLoginEvent(
     userId: string | null,
     orgId: string | null,
