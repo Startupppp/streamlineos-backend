@@ -7,6 +7,7 @@ import {
   leadTasks,
   leadEmails,
   leadScoringRules,
+  notifications,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -14,6 +15,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { LeadNotificationAiService } from "./lead-notification-ai.service";
 import type {
   AssignInput,
   CustomDataInput,
@@ -35,6 +37,7 @@ export class LeadsDetailService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
+    private readonly notificationAi: LeadNotificationAiService,
   ) {}
 
   private async sendAssignmentEmail(actorId: string, lead: LeadRow): Promise<void> {
@@ -283,7 +286,7 @@ export class LeadsDetailService {
       },
     });
 
-    await this.notifications.create({
+    const notification = await this.notifications.create({
       orgId,
       userId: input.assignedToId,
       type: "INFO",
@@ -294,7 +297,50 @@ export class LeadsDetailService {
 
     void this.sendAssignmentEmail(userId, updated).catch(() => undefined);
 
+    if (notification) {
+      void this.enrichAssignmentNotification(
+        orgId,
+        notification.id,
+        input.assignedToId,
+        updated,
+      ).catch(() => undefined);
+    }
+
     return updated;
+  }
+
+  private async enrichAssignmentNotification(
+    orgId: string,
+    notificationId: number,
+    recipientId: string,
+    lead: LeadRow,
+  ): Promise<void> {
+    const result = await this.notificationAi.generateSmartNotification({
+      event: "LEAD_ASSIGNED",
+      defaultTitle: "Lead Assigned to You",
+      defaultMessage: `You have been assigned lead: ${lead.name}`,
+      context: {
+        leadName: lead.name,
+        priority: lead.priority ?? undefined,
+        source: lead.source ?? undefined,
+        company: lead.company ?? undefined,
+        potentialValue: lead.potentialValue ?? undefined,
+        notes: lead.notes ?? undefined,
+      },
+    });
+
+    if (!result.enriched) return;
+
+    await this.db
+      .update(notifications)
+      .set({ title: result.title, message: result.message })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.orgId, orgId),
+          eq(notifications.userId, recipientId),
+        ),
+      );
   }
 
   async mergeLoser(orgId: string, keepLeadId: number, mergeLeadId: number): Promise<MergeLoserResult> {

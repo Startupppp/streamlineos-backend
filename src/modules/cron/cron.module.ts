@@ -4,6 +4,7 @@ import { CronAttendanceService } from "./cron-attendance.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronHolidayService } from "./cron-holiday.service";
+import { CronRecruitmentService } from "./cron-recruitment.service";
 
 @Module({
   controllers: [CronController],
@@ -12,6 +13,7 @@ import { CronHolidayService } from "./cron-holiday.service";
     CronLeaveService,
     CronNotificationsService,
     CronHolidayService,
+    CronRecruitmentService,
   ],
 })
 export class CronModule {}

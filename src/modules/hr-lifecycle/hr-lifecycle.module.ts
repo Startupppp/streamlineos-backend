@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { ExitController } from "./exit.controller";
 import { TerminationController } from "./termination.controller";
 import { AlumniController } from "./alumni.controller";
@@ -14,9 +15,10 @@ import { HrAnalyticsService } from "./hr-analytics.service";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { OnboardingViewsService } from "./onboarding-views.service";
+import { ResignationJobsService } from "./resignation-jobs.service";
 
 @Module({
-  imports: [AutomationModule],
+  imports: [AutomationModule, NotificationsModule],
   controllers: [
     ExitController,
     TerminationController,
@@ -34,6 +36,7 @@ import { OnboardingViewsService } from "./onboarding-views.service";
     HrDashboardService,
     HrDashboardReportsService,
     OnboardingViewsService,
+    ResignationJobsService,
   ],
 })
 export class HrLifecycleModule {}

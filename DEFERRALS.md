@@ -94,15 +94,23 @@ Wired outbound `dispatchWebhook` events (route on backend → fired post-commit,
 
 Not wired — `employee.hired` (POST /hr/employees/onboard): the onboard write-path itself is **not yet ported** to the backend (hr-directory `EmployeesService` has no `onboard` method), so there is no backend call site. Re-add this `dispatch("employee.hired", { userId, email, firstName, lastName, joiningDate })` when that route is ported.
 
-## still-deferred: inngest async-function jobs (need a queue)
+## inngest async-function jobs — now implemented
 
-These are direct `inngest.send("hr/...")` triggers for **async cross-domain jobs** (scheduled reminders, fan-out follow-ups), not outbound registered-endpoint webhooks. They have no NestJS equivalent yet — re-enabling them needs a backend job queue / scheduler (BullMQ/cron) with the corresponding worker. Left deferred:
+The async cross-domain HR jobs that previously had no NestJS equivalent now land without an external queue. Immediate fan-outs run fire-and-forget in-process (`void task().catch(...)` so a job failure never affects the caller's response); scheduled jobs are exposed as cron-secret-gated `/cron/*` routes (same pattern as the existing attendance/leave/holiday crons) for an external scheduler to invoke. AI enrichments degrade gracefully when `OPENAI_API_KEY` is unset (return the plain fallback).
+
+| Former inngest event | Origin route | Implementation |
+| --- | --- | --- |
+| `hr/resignation.submitted` | POST /hr/exit | `ResignationJobsService.notifyResignationSubmitted` (fan-out to CEO/HR) — called from `ExitWriteService.create` |
+| `hr/resignation.hr_approved` | PATCH /hr/exit/:resignationId (status=HR_APPROVED) | `ResignationJobsService.notifyHrApproved` (fan-out to CEO) — called from `ExitWriteService.update` HR-approval path |
+| `hr/resignation.ceo_approved` | PATCH /hr/exit/:resignationId/ceo-review | `ResignationJobsService.notifyCeoDecision` (notifies employee) — called from `ExitWriteService` CEO-review path |
+| `hr/offer.deadline.reminder` | (scheduled) | `CronRecruitmentService.sendOfferDeadlineReminders` via GET/POST `/cron/offer-deadline-reminders` — emails candidates whose offer `validUntil` is tomorrow |
+| `hr/interview.no_show` | (scheduled) | `CronRecruitmentService.processInterviewNoShows` via GET/POST `/cron/interview-no-shows` — flags `NO_SHOW`, creates HR follow-up task + notifications, emails candidate to reschedule |
+| `hr/interview.scorecard.submitted` | POST /hr/recruitment/interviews/:interviewId/scorecard | `HrInterviewResultsService.sendCandidateFeedbackEmail` (fire-and-forget candidate-feedback email) |
+
+Lead-assignment notifications are additionally enriched by `LeadNotificationAiService.generateSmartNotification` (`LEAD_ASSIGNED` event): `LeadsDetailService` writes the plain in-app notification first, then asynchronously rewrites its title/message with the AI-generated copy when configured.
+
+## still-deferred: inngest async-function jobs (need a queue)
 
 | Inngest event | Origin route | Purpose |
 | --- | --- | --- |
 | `hr/employee.onboarded` | POST /hr/employees/onboard | onboarding follow-up job (route also unported) |
-| `hr/resignation.submitted` | POST /hr/exit | resignation workflow fan-out |
-| `hr/resignation.ceo_approved` | PATCH /hr/exit/:resignationId/ceo-review | post-CEO-approval workflow |
-| `hr/offer.deadline.reminder` | POST /hr/recruitment/candidates/:id/rollout-documents | scheduled offer-deadline reminder |
-| `hr/interview.no_show` | PATCH /hr/recruitment/interviews/:interviewId | no-show follow-up |
-| `hr/interview.scorecard.submitted` | POST /hr/recruitment/interviews/:interviewId/scorecard | drives candidate-feedback-email |

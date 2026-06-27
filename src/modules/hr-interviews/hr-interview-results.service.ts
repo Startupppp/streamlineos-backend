@@ -1,9 +1,12 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { candidates, interviewScorecards, interviews, users } from "../../db/schema";
+import { candidates, interviewScorecards, interviews, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { EmailService } from "../email/email.service";
+import { logger } from "../../common/logger/logger.service";
+import { getCandidateFeedbackEmail } from "./interview-emails.util";
 import type { SubmitScorecardInput, UpdateInterviewInput } from "./dto/interview-scheduling.schemas";
 
 @Injectable()
@@ -11,6 +14,7 @@ export class HrInterviewResultsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
+    private readonly email: EmailService,
   ) {}
 
   async updateInterview(orgId: string, interviewId: number, input: UpdateInterviewInput) {
@@ -109,7 +113,47 @@ export class HrInterviewResultsService {
       input.recommendation,
     ).catch(() => undefined);
 
+    void this.sendCandidateFeedbackEmail(orgId, interviewId, interview.candidateId).catch(
+      () => undefined,
+    );
+
     return scorecard;
+  }
+
+  private async sendCandidateFeedbackEmail(
+    orgId: string,
+    interviewId: number,
+    candidateId: number,
+  ): Promise<void> {
+    const [interview, candidate, org] = await Promise.all([
+      this.db.query.interviews.findFirst({
+        where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
+        columns: { scheduledAt: true },
+      }),
+      this.db.query.candidates.findFirst({
+        where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+        columns: { firstName: true, lastName: true, email: true },
+      }),
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true },
+      }),
+    ]);
+
+    if (!interview || !candidate?.email) return;
+
+    const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
+    const { subject, html } = getCandidateFeedbackEmail({
+      candidateName,
+      orgName: org?.name ?? "StreamlineOS",
+      scheduledAt: interview.scheduledAt,
+    });
+
+    try {
+      await this.email.sendEmail({ to: candidate.email, subject, html });
+    } catch (error) {
+      logger.error("Failed to send candidate feedback email", { interviewId, error });
+    }
   }
 
   private async dispatchCompletedAutomation(

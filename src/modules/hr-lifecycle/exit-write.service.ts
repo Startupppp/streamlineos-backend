@@ -18,6 +18,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { ResignationJobsService } from "./resignation-jobs.service";
 import { formatDdMmmYyyy } from "./date.helpers";
 import type {
   ResignationCreateInput,
@@ -37,6 +38,7 @@ export class ExitWriteService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly resignationJobs: ResignationJobsService,
   ) {}
 
   async create(orgId: string, actorUserId: string, input: ResignationCreateInput) {
@@ -69,6 +71,7 @@ export class ExitWriteService {
       .returning();
 
     this.dispatchResignationSubmitted(orgId, actorUserId, resignation.id, input);
+    this.resignationJobs.notifyResignationSubmitted(orgId, actorUserId);
 
     return resignation;
   }
@@ -96,6 +99,7 @@ export class ExitWriteService {
           updatedAt: new Date(),
         })
         .where(eq(resignations.id, resignationId));
+      this.resignationJobs.notifyHrApproved(orgId, existing.userId);
       return { success: true };
     }
 
@@ -216,6 +220,8 @@ export class ExitWriteService {
         updatedAt: new Date(),
       })
       .where(eq(resignations.id, resignationId));
+
+    this.resignationJobs.notifyCeoDecision(orgId, record.userId, approved);
 
     if (approved) {
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);

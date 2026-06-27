@@ -114,3 +114,49 @@ export function getBookingConfirmationEmail(
   const body = `<p>${name} has scheduled their interview for <strong>${slot}</strong>.</p>`;
   return { subject: `Interview Self-Scheduled: ${name}`, html: wrap("Interview Self-Scheduled", body) };
 }
+
+function feedbackRatingButton(label: string, color: string, ratingLabel: string): string {
+  const href = `mailto:hr@streamlineos.app?subject=Interview Feedback — ${ratingLabel}&body=Hi, I would rate my experience as ${ratingLabel}. (Add your feedback here)`;
+  return `<td style="padding:4px"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${color};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px">${label}</a></td>`;
+}
+
+export function getCandidateFeedbackEmail(params: {
+  candidateName: string;
+  orgName: string;
+  scheduledAt: Date;
+}): { subject: string; html: string } {
+  const name = escapeHtml(params.candidateName);
+  const company = escapeHtml(params.orgName);
+  const dateStr = escapeHtml(
+    params.scheduledAt.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "long",
+      timeStyle: "short",
+    }),
+  );
+
+  const body = `
+    <p>Dear ${name},</p>
+    <p>Thank you for taking the time to interview for a position at <strong>${company}</strong> on <strong>${dateStr}</strong>.</p>
+    <p>We value your perspective and would love to hear about your experience. Your feedback helps us continuously improve our hiring process.</p>
+    <div style="background:#f8f9fa;border-left:4px solid #bd882c;padding:16px;margin:20px 0;border-radius:4px">
+      <p style="margin:0;font-weight:600;color:#0f2b7f">How would you rate your interview experience?</p>
+      <p style="margin:8px 0 0;font-size:13px;color:#6b7280">Was the process clear and respectful? Did you feel heard? Any suggestions?</p>
+    </div>
+    <div style="text-align:center;margin:24px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>
+        ${feedbackRatingButton("😊 Excellent", "#22c55e", "Excellent")}
+        ${feedbackRatingButton("🙂 Good", "#3b82f6", "Good")}
+        ${feedbackRatingButton("😐 Could be better", "#f59e0b", "Needs Improvement")}
+      </tr></table>
+    </div>
+    <p style="font-size:13px;color:#6b7280">You can also reply to this email directly with any comments or suggestions. We read every response.</p>
+    <p>Thank you again for your time, and we wish you the very best in your career journey.</p>
+    <p>Warm regards,<br/><strong>${company} Recruitment Team</strong></p>
+  `;
+
+  return {
+    subject: `How was your interview experience at ${params.orgName}?`,
+    html: wrap("Thank you for interviewing with us", body),
+  };
+}

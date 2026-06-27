@@ -13,6 +13,7 @@ import { LeadsExportsService } from "./leads-exports.service";
 import { LeadsDetailService } from "./leads-detail.service";
 import { LeadStatusService } from "./lead-status.service";
 import { LeadsOpsService } from "./leads-ops.service";
+import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
   imports: [NotificationsModule, AutomationModule, WebhooksModule],
@@ -30,6 +31,7 @@ import { LeadsOpsService } from "./leads-ops.service";
     LeadsDetailService,
     LeadStatusService,
     LeadsOpsService,
+    LeadNotificationAiService,
   ],
 })
 export class LeadsModule {}

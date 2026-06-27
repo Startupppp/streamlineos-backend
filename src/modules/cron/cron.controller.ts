@@ -13,6 +13,7 @@ import { CronAttendanceService } from "./cron-attendance.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronHolidayService } from "./cron-holiday.service";
+import { CronRecruitmentService } from "./cron-recruitment.service";
 
 @Public()
 @Controller("cron")
@@ -22,6 +23,7 @@ export class CronController {
     private readonly leave: CronLeaveService,
     private readonly notifications: CronNotificationsService,
     private readonly holiday: CronHolidayService,
+    private readonly recruitment: CronRecruitmentService,
   ) {}
 
   @Get("auto-checkout")
@@ -66,6 +68,28 @@ export class CronController {
   @HttpCode(200)
   postHolidayNotifications(@Headers("authorization") authorization?: string) {
     return this.runHolidayNotifications(authorization);
+  }
+
+  @Get("offer-deadline-reminders")
+  getOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
+    return this.runOfferDeadlineReminders(authorization);
+  }
+
+  @Post("offer-deadline-reminders")
+  @HttpCode(200)
+  postOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
+    return this.runOfferDeadlineReminders(authorization);
+  }
+
+  @Get("interview-no-shows")
+  getInterviewNoShows(@Headers("authorization") authorization?: string) {
+    return this.runInterviewNoShows(authorization);
+  }
+
+  @Post("interview-no-shows")
+  @HttpCode(200)
+  postInterviewNoShows(@Headers("authorization") authorization?: string) {
+    return this.runInterviewNoShows(authorization);
   }
 
   private async runAutoCheckout(authorization?: string) {
@@ -120,6 +144,36 @@ export class CronController {
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
       logger.error("Holiday notification cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runOfferDeadlineReminders(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.recruitment.sendOfferDeadlineReminders();
+      return {
+        success: true,
+        message: `Sent ${result.remindedCount} offer deadline reminders`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Offer deadline reminder cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runInterviewNoShows(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.recruitment.processInterviewNoShows();
+      return {
+        success: true,
+        message: `Processed ${result.processedCount} interview no-shows`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Interview no-show cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
