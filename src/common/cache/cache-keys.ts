@@ -82,6 +82,9 @@ export const CACHE_KEYS = {
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
   invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
+
+  featureFlags: () => "feature-flags:all",
+  featureFlagsOrg: (orgId: string) => `feature-flags:org:${orgId}`,
 } as const;
 
 export const CACHE_TTL = {

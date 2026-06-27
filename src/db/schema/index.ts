@@ -17,3 +17,4 @@ export * from "./support";
 export * from "./kb/index";
 export * from "./automation";
 export * from "./inventory";
+export * from "./feature-flags";
