@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Put,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -18,12 +19,25 @@ import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewsService } from "./hr-interviews.service";
 import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
-import { upsertSlaSchema, type UpsertSlaInput } from "./dto/hr-interviews.schemas";
+import {
+  interviewListSchema,
+  upsertSlaSchema,
+  type InterviewListInput,
+  type UpsertSlaInput,
+} from "./dto/hr-interviews.schemas";
 
 @Controller("hr/recruitment/interviews")
 @UseGuards(JwtAuthGuard)
 export class HrInterviewsController {
   constructor(private readonly interviews: HrInterviewsService) {}
+
+  @Get()
+  list(
+    @Query(new ZodValidationPipe(interviewListSchema)) query: InterviewListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.interviews.list(u.orgId, query);
+  }
 
   @Get("slas")
   listSlas(@CurrentUser() u: CurrentUserContext) {

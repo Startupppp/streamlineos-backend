@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   calibrationSessions,
   candidateDocuments,
@@ -19,6 +19,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { EmailService } from "../email/email.service";
+import { appUrl } from "../email/app-url";
 import { substituteVariables } from "./document-variables.util";
 import type {
   AddVaultDocumentInput,
@@ -26,6 +28,7 @@ import type {
   CreateReferenceCheckInput,
   CreateReferralInput,
   GenerateDocumentInput,
+  RolloutDocumentsInput,
   UpdateCalibrationInput,
   UpdateReferenceCheckInput,
   UpdateReferralInput,
@@ -40,7 +43,10 @@ const ALLOWED_EXTENSIONS = /\.(pdf|docx|doc)$/i;
 
 @Injectable()
 export class RecruitmentCandidateRecordsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+  ) {}
 
   listCalibration(orgId: string, candidateId: number) {
     return this.db
@@ -283,6 +289,133 @@ export class RecruitmentCandidateRecordsService {
       .catch(() => undefined);
 
     return { htmlContent: doc.htmlContent, title: doc.title };
+  }
+
+  async listRolloutDocuments(orgId: string, candidateId: number) {
+    await this.ensureCandidate(orgId, candidateId, "Candidate not found");
+    return this.db
+      .select({
+        id: candidateDocuments.id,
+        templateId: candidateDocuments.templateId,
+        templateTitle: documentTemplates.title,
+        title: candidateDocuments.title,
+        status: candidateDocuments.status,
+        sentAt: candidateDocuments.sentAt,
+        viewedAt: candidateDocuments.viewedAt,
+        signedAt: candidateDocuments.signedAt,
+        declinedAt: candidateDocuments.declinedAt,
+        createdAt: candidateDocuments.createdAt,
+        createdBy: candidateDocuments.createdBy,
+      })
+      .from(candidateDocuments)
+      .leftJoin(documentTemplates, eq(candidateDocuments.templateId, documentTemplates.id))
+      .where(eq(candidateDocuments.candidateId, candidateId))
+      .orderBy(desc(candidateDocuments.createdAt));
+  }
+
+  async generateRolloutDocuments(
+    orgId: string,
+    userId: string,
+    candidateId: number,
+    input: RolloutDocumentsInput,
+  ) {
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      columns: { id: true, firstName: true, lastName: true, email: true },
+    });
+    if (!candidate) throw new NotFoundException("Candidate not found");
+
+    const templates = await this.db
+      .select()
+      .from(documentTemplates)
+      .where(
+        and(
+          inArray(documentTemplates.id, input.templateIds),
+          eq(documentTemplates.orgId, orgId),
+          eq(documentTemplates.isActive, true),
+        ),
+      );
+    if (templates.length === 0) {
+      throw new NotFoundException("No active templates found for the provided IDs");
+    }
+
+    const missingTemplateIds = input.templateIds.filter((id) => !templates.find((t) => t.id === id));
+    if (missingTemplateIds.length > 0) {
+      throw new NotFoundException(`Templates not found or inactive: IDs ${missingTemplateIds.join(", ")}`);
+    }
+
+    const generatedDocs: (typeof candidateDocuments.$inferSelect)[] = [];
+    const missingVarErrors: string[] = [];
+
+    for (const template of templates) {
+      const { result, missing } = substituteVariables(template.htmlContent, input.variables);
+      if (missing.length > 0) {
+        missingVarErrors.push(`"${template.title}": missing ${missing.join(", ")}`);
+        continue;
+      }
+      const [doc] = await this.db
+        .insert(candidateDocuments)
+        .values({
+          candidateId,
+          orgId,
+          templateId: template.id,
+          title: template.title,
+          htmlContent: result,
+          status: "GENERATED",
+          createdBy: userId,
+          ...(input.acceptanceDeadline && { acceptanceDeadline: new Date(input.acceptanceDeadline) }),
+        })
+        .returning();
+      if (doc) generatedDocs.push(doc);
+    }
+
+    if (missingVarErrors.length > 0) {
+      throw new BadRequestException(`Variable substitution failed for: ${missingVarErrors.join("; ")}`);
+    }
+
+    if (input.sendEmail && generatedDocs.length > 0 && candidate.email) {
+      const candidateName = `${candidate.firstName} ${candidate.lastName}`;
+      const documentLinks = generatedDocs
+        .map(
+          (doc) =>
+            `<li><a href="${appUrl}/api/hr/recruitment/candidates/${candidateId}/documents/${doc.id}/view" style="color:#bd882c">${doc.title}</a></li>`,
+        )
+        .join("\n");
+      const emailHtml = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+          <h2 style="color:#0f2b7f">Your Documents Are Ready</h2>
+          <p>Dear ${candidateName},</p>
+          <p>The following document(s) have been prepared for you as part of your application process:</p>
+          <ul style="margin:16px 0;padding-left:24px">
+            ${documentLinks}
+          </ul>
+          <p>Please review and sign the documents at your earliest convenience.</p>
+          <p style="color:#666;font-size:12px;margin-top:32px">
+            This is an automated message from StreamlineOS HR system.
+          </p>
+        </div>
+      `;
+      try {
+        await this.email.sendEmail({
+          to: candidate.email,
+          subject: "Your Documents Are Ready — Please Review",
+          html: emailHtml,
+        });
+        const docIds = generatedDocs.map((d) => d.id);
+        await this.db
+          .update(candidateDocuments)
+          .set({ status: "SENT", sentAt: new Date() })
+          .where(inArray(candidateDocuments.id, docIds));
+        for (const doc of generatedDocs) {
+          doc.status = "SENT";
+          doc.sentAt = new Date();
+        }
+      } catch {
+        void 0;
+      }
+    }
+
+    return { documents: generatedDocs, count: generatedDocs.length };
   }
 
   async listVault(orgId: string, candidateId: number) {

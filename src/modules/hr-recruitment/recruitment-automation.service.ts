@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadGatewayException,
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, max, sql } from "drizzle-orm";
 import {
   candidateMessages,
@@ -7,20 +13,27 @@ import {
   emailSequenceSteps,
   emailSequences,
   pipelineAutomations,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { EmailService } from "../email/email.service";
 import type {
   CreateAutomationInput,
   CreateSequenceInput,
   EnrollSequenceInput,
+  MessageListInput,
+  SendMessageInput,
   UpdateAutomationInput,
   UpdateSequenceInput,
 } from "./dto/automation.schemas";
 
 @Injectable()
 export class RecruitmentAutomationService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+  ) {}
 
   listAutomations(orgId: string) {
     return this.db.query.pipelineAutomations.findMany({
@@ -86,6 +99,70 @@ export class RecruitmentAutomationService {
       .where(eq(candidateMessages.id, messageId))
       .returning();
     return updated;
+  }
+
+  listMessages(orgId: string, query: MessageListInput) {
+    const conditions = [eq(candidateMessages.orgId, orgId)];
+    if (query.candidateId) conditions.push(eq(candidateMessages.candidateId, query.candidateId));
+
+    return this.db
+      .select({
+        id: candidateMessages.id,
+        candidateId: candidateMessages.candidateId,
+        direction: candidateMessages.direction,
+        channel: candidateMessages.channel,
+        subject: candidateMessages.subject,
+        body: candidateMessages.body,
+        sentBy: candidateMessages.sentBy,
+        sentAt: candidateMessages.sentAt,
+        readAt: candidateMessages.readAt,
+        externalId: candidateMessages.externalId,
+        senderName: users.name,
+        candidateFirstName: candidates.firstName,
+        candidateLastName: candidates.lastName,
+        candidateEmail: candidates.email,
+      })
+      .from(candidateMessages)
+      .leftJoin(users, eq(candidateMessages.sentBy, users.id))
+      .leftJoin(candidates, eq(candidateMessages.candidateId, candidates.id))
+      .where(and(...conditions))
+      .orderBy(desc(candidateMessages.sentAt))
+      .limit(query.limit);
+  }
+
+  async sendMessage(orgId: string, userId: string, input: SendMessageInput) {
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, input.candidateId), eq(candidates.orgId, orgId)),
+      columns: { id: true, firstName: true, lastName: true, email: true },
+    });
+    if (!candidate) throw new NotFoundException("Candidate not found");
+
+    if (input.channel === "EMAIL") {
+      try {
+        await this.email.sendEmail({
+          to: candidate.email,
+          subject: input.subject ?? "Message from your recruiter",
+          html: `<p>${input.body.replace(/\n/g, "<br>")}</p>`,
+        });
+      } catch {
+        throw new BadGatewayException("Failed to send email");
+      }
+    }
+
+    const [message] = await this.db
+      .insert(candidateMessages)
+      .values({
+        orgId,
+        candidateId: input.candidateId,
+        direction: "OUTBOUND",
+        channel: input.channel,
+        subject: input.subject,
+        body: input.body,
+        sentBy: userId,
+      })
+      .returning();
+
+    return message;
   }
 
   listMessageThreads(orgId: string) {

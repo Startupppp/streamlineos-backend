@@ -10,8 +10,11 @@ import {
   Patch,
   Post,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -19,13 +22,15 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
-import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
+import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
+import { RECRUITMENT_ADMIN_ROLES, RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   addVaultDocumentSchema,
   createCalibrationSchema,
   createReferenceCheckSchema,
   createReferralSchema,
   generateDocumentSchema,
+  rolloutDocumentsSchema,
   updateCalibrationSchema,
   updateReferenceCheckSchema,
   updateReferralSchema,
@@ -34,6 +39,7 @@ import {
   type CreateReferenceCheckInput,
   type CreateReferralInput,
   type GenerateDocumentInput,
+  type RolloutDocumentsInput,
   type UpdateCalibrationInput,
   type UpdateReferenceCheckInput,
   type UpdateReferralInput,
@@ -42,7 +48,61 @@ import {
 @Controller("hr/recruitment/candidates/:candidateId")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentCandidateRecordsController {
-  constructor(private readonly records: RecruitmentCandidateRecordsService) {}
+  constructor(
+    private readonly records: RecruitmentCandidateRecordsService,
+    private readonly ai: RecruitmentCandidateAiService,
+  ) {}
+
+  @Post("ai-score")
+  aiScore(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    return this.ai.aiScore(u.orgId, candidateId);
+  }
+
+  @Post("composite-score")
+  compositeScore(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    return this.ai.compositeScore(u.orgId, candidateId);
+  }
+
+  @Post("resume-parse")
+  @UseInterceptors(FileInterceptor("file"))
+  resumeParse(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: unknown,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
+    return this.ai.parseResume(u.orgId, candidateId, file, body);
+  }
+
+  @Get("rollout-documents")
+  listRolloutDocuments(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.records.listRolloutDocuments(u.orgId, candidateId);
+  }
+
+  @Post("rollout-documents")
+  @HttpCode(201)
+  generateRolloutDocuments(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(rolloutDocumentsSchema)) body: RolloutDocumentsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+      throw new ForbiddenException("Forbidden: HR/Admin role required");
+    }
+    return this.records.generateRolloutDocuments(u.orgId, u.userId, candidateId, body);
+  }
 
   @Get("calibration")
   listCalibration(

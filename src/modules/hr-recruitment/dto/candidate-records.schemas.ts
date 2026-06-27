@@ -65,6 +65,14 @@ export const generateDocumentSchema = z.object({
 });
 export type GenerateDocumentInput = z.infer<typeof generateDocumentSchema>;
 
+export const rolloutDocumentsSchema = z.object({
+  templateIds: z.array(z.number().int().positive()).min(1, "Select at least one template"),
+  variables: z.record(z.string(), z.string()).default({}),
+  sendEmail: z.boolean().default(true),
+  acceptanceDeadline: z.string().datetime({ offset: true }).optional(),
+});
+export type RolloutDocumentsInput = z.infer<typeof rolloutDocumentsSchema>;
+
 const VAULT_DOCUMENT_TYPES = ["AADHAR", "PAN", "PASSPORT", "CERTIFICATE", "OFFER_LETTER", "OTHER"] as const;
 
 export const addVaultDocumentSchema = z.object({

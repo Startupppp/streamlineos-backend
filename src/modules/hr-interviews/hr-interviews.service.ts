@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import {
   candidateSlaTracking,
   candidates,
@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildInterviewIcs } from "./ics.util";
-import type { UpsertSlaInput } from "./dto/hr-interviews.schemas";
+import type { InterviewListInput, UpsertSlaInput } from "./dto/hr-interviews.schemas";
 
 interface MonthStage {
   total: number;
@@ -22,6 +22,19 @@ interface MonthStage {
 @Injectable()
 export class HrInterviewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  list(orgId: string, query: InterviewListInput) {
+    const conditions = [eq(interviews.orgId, orgId)];
+    if (query.candidateId) conditions.push(eq(interviews.candidateId, query.candidateId));
+    if (query.upcoming === "true") conditions.push(gte(interviews.scheduledAt, new Date()));
+
+    return this.db.query.interviews.findMany({
+      where: and(...conditions),
+      with: { candidate: true, interviewer: true },
+      orderBy: [desc(interviews.scheduledAt)],
+      limit: query.limit,
+    });
+  }
 
   listSlas(orgId: string) {
     return this.db.query.interviewSlas.findMany({

@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -22,11 +23,15 @@ import {
   createAutomationSchema,
   createSequenceSchema,
   enrollSequenceSchema,
+  messageListSchema,
+  sendMessageSchema,
   updateAutomationSchema,
   updateSequenceSchema,
   type CreateAutomationInput,
   type CreateSequenceInput,
   type EnrollSequenceInput,
+  type MessageListInput,
+  type SendMessageInput,
   type UpdateAutomationInput,
   type UpdateSequenceInput,
 } from "./dto/automation.schemas";
@@ -71,6 +76,23 @@ export class RecruitmentAutomationController {
     if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
       throw new ForbiddenException("Forbidden");
     return this.automation.deleteAutomation(u.orgId, automationId);
+  }
+
+  @Get("messages")
+  listMessages(
+    @Query(new ZodValidationPipe(messageListSchema)) query: MessageListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automation.listMessages(u.orgId, query);
+  }
+
+  @Post("messages")
+  @HttpCode(201)
+  sendMessage(
+    @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automation.sendMessage(u.orgId, u.userId, body);
   }
 
   @Get("messages/threads")

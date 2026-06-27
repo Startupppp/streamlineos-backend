@@ -76,3 +76,17 @@ export const enrollSequenceSchema = z.object({
   candidateIds: z.array(z.number().int().positive()).min(1).max(100),
 });
 export type EnrollSequenceInput = z.infer<typeof enrollSequenceSchema>;
+
+export const messageListSchema = z.object({
+  candidateId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type MessageListInput = z.infer<typeof messageListSchema>;
+
+export const sendMessageSchema = z.object({
+  candidateId: z.number().int().positive(),
+  channel: z.enum(["EMAIL", "WHATSAPP", "IN_APP"]).default("EMAIL"),
+  subject: z.string().max(500).optional(),
+  body: z.string().min(1).max(10_000),
+});
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;

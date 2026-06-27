@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
+import { AiModule } from "../ai/ai.module";
 import { RecruitmentCandidatesController } from "./recruitment-candidates.controller";
 import { RecruitmentPipelineController } from "./recruitment-pipeline.controller";
 import { RecruitmentCandidateRecordsController } from "./recruitment-candidate-records.controller";
@@ -18,9 +19,10 @@ import { RecruitmentJobsService } from "./recruitment-jobs.service";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
+import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule],
+  imports: [NotificationsModule, AutomationModule, AiModule],
   controllers: [
     RecruitmentCandidatesController,
     RecruitmentPipelineController,
@@ -41,6 +43,7 @@ import { RecruitmentAutomationService } from "./recruitment-automation.service";
     RecruitmentRecruitersService,
     RecruitmentSourcingService,
     RecruitmentAutomationService,
+    RecruitmentCandidateAiService,
   ],
 })
 export class HrRecruitmentModule {}
