@@ -18,3 +18,4 @@ export * from "./kb/index";
 export * from "./automation";
 export * from "./inventory";
 export * from "./feature-flags";
+export * from "./organization";
