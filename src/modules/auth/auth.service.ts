@@ -146,6 +146,7 @@ export class AuthService {
     deviceId: string;
     isNewDevice: boolean;
     forceChangePassword: boolean;
+    daysUntilExpiry?: number;
   }> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
@@ -197,6 +198,31 @@ export class AuthService {
     });
     const orgId = membership?.orgId ?? "";
 
+    let daysUntilExpiry: number | undefined;
+    if (orgId) {
+      const sub = await this.db.query.subscriptions.findFirst({
+        where: eq(subscriptions.orgId, orgId),
+        columns: { status: true, trialEndsAt: true, currentPeriodEnd: true },
+      });
+      if (sub) {
+        const isExpired =
+          sub.status === "EXPIRED" ||
+          sub.status === "CANCELLED" ||
+          (sub.status === "TRIAL" && sub.trialEndsAt != null && new Date(sub.trialEndsAt) < new Date());
+
+        if (isExpired) {
+          await this.logLoginEvent(user.id, orgId, "login.failure", false, "SUBSCRIPTION_INACTIVE", context);
+          throw new UnauthorizedException("SUBSCRIPTION_INACTIVE");
+        }
+
+        const expiryDate = sub.status === "TRIAL" ? sub.trialEndsAt : sub.currentPeriodEnd;
+        if (expiryDate) {
+          const days = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / 86_400_000);
+          if (days < 14) daysUntilExpiry = Math.max(0, days);
+        }
+      }
+    }
+
     const device = await this.deviceService.findOrCreate({
       userId: user.id,
       fingerprint: context.fingerprint ?? context.userAgent ?? "unknown",
@@ -231,6 +257,7 @@ export class AuthService {
       deviceId: device.id,
       isNewDevice: !device.trusted,
       forceChangePassword: user.isPasswordChangeRequired ?? false,
+      ...(daysUntilExpiry !== undefined && { daysUntilExpiry }),
     };
   }
 
