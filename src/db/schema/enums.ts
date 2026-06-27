@@ -82,6 +82,10 @@ export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "SENT", "PAI
 export const supportTicketStatusEnum = pgEnum("support_ticket_status", ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 export const supportTicketPriorityEnum = pgEnum("support_ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
 
+export const kbAudienceEnum = pgEnum("kb_audience", ["internal", "public", "mixed"]);
+export const kbSpaceRoleEnum = pgEnum("kb_space_role", ["viewer", "commenter", "editor", "publisher", "admin"]);
+export const kbTranslationStatusEnum = pgEnum("kb_translation_status", ["draft", "in_progress", "translated", "published", "outdated"]);
+
 export const quoteStatusEnum = pgEnum("quote_status", ["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["TRIAL", "ACTIVE", "PAST_DUE", "CANCELLED", "EXPIRED"]);
 export const subscriptionPlanEnum = pgEnum("subscription_plan", ["STARTER", "PROFESSIONAL", "ENTERPRISE"]);
