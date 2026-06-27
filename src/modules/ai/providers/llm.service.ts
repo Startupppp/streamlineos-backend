@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ChatOpenAI } from "@langchain/openai";
 import type { z } from "zod";
 
@@ -64,16 +64,30 @@ export class LlmService {
     return tier === "standard" ? this.getStandardModel() : this.getFastModel();
   }
 
+  private async run<R>(fn: () => Promise<R>): Promise<R> {
+    try {
+      return await fn();
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      if (message.includes("api key") || message.includes("401") || message.includes("authentication")) {
+        throw new ServiceUnavailableException("AI provider is not configured correctly");
+      }
+      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+    }
+  }
+
   async invokeStructured<T extends z.ZodTypeAny>(opts: InvokeOptions<T>): Promise<z.infer<T>> {
     const structured = this.modelFor(opts.model).withStructuredOutput(opts.schema, {
       name: opts.schemaName,
       method: "jsonSchema",
       strict: true,
     });
-    const result = await structured.invoke([
-      { role: "system", content: opts.system },
-      { role: "user", content: opts.user },
-    ]);
+    const result = await this.run(() =>
+      structured.invoke([
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ]),
+    );
     return opts.schema.parse(result);
   }
 
@@ -89,19 +103,23 @@ export class LlmService {
           })
         : this.modelFor(opts.model);
 
-    const result = await model.invoke([
-      { role: "system", content: opts.system },
-      { role: "user", content: opts.user },
-    ]);
+    const result = await this.run(() =>
+      model.invoke([
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ]),
+    );
 
     return typeof result.content === "string" ? result.content : JSON.stringify(result.content);
   }
 
   async invokeJson<T>(opts: JsonOptions): Promise<T> {
-    const result = await this.modelFor(opts.model).invoke([
-      { role: "system", content: `${opts.system}\n\nRespond with valid JSON only.` },
-      { role: "user", content: opts.user },
-    ]);
+    const result = await this.run(() =>
+      this.modelFor(opts.model).invoke([
+        { role: "system", content: `${opts.system}\n\nRespond with valid JSON only.` },
+        { role: "user", content: opts.user },
+      ]),
+    );
     const text = typeof result.content === "string" ? result.content : "";
     const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
     return JSON.parse(cleaned) as T;
