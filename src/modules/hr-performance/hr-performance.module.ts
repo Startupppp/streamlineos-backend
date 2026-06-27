@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AutomationModule } from "../automation/automation.module";
 import { PerformanceController } from "./performance.controller";
 import { EngagementController } from "./engagement.controller";
 import { DocumentsController } from "./documents.controller";
@@ -10,6 +11,7 @@ import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
 
 @Module({
+  imports: [AutomationModule],
   controllers: [PerformanceController, EngagementController, DocumentsController],
   providers: [
     PerformanceGoalsService,

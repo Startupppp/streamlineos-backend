@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   departmentMembers,
@@ -13,6 +13,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { EmailService } from "../email/email.service";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
@@ -20,6 +21,7 @@ import type {
   CreateTemplateInput,
   InitiateInput,
   PersonalDetailsInput,
+  UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 import { encrypt, encryptBankDetails } from "./crypto.helpers";
 
@@ -60,7 +62,10 @@ export function isInitiateAlreadyDone(
 
 @Injectable()
 export class OnboardingService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+  ) {}
 
   async getProgressSummary(orgId: string) {
     const rows = await this.db
@@ -370,6 +375,86 @@ export class OnboardingService {
       .from(onboardingTasks)
       .where(and(eq(onboardingTasks.userId, userId), eq(onboardingTasks.orgId, u.orgId)))
       .orderBy(onboardingTasks.createdAt);
+  }
+
+  async updateTask(u: CurrentUserContext, taskId: number, input: UpdateTaskInput) {
+    const [task] = await this.db
+      .select()
+      .from(onboardingTasks)
+      .where(and(eq(onboardingTasks.id, taskId), eq(onboardingTasks.orgId, u.orgId)));
+
+    if (!task) throw new NotFoundException("Task not found");
+
+    const ability = defineAbilityFor({
+      isPlatformAdmin: u.isPlatformAdmin,
+      isOrgOwner: u.isOrgOwner,
+      permissions: u.permissions,
+      enabledModules: u.enabledModules,
+    });
+    const isAdmin = ability.can("manage", "hr:employees");
+
+    if (!isAdmin && task.userId !== u.userId) {
+      throw new ForbiddenException("Forbidden");
+    }
+
+    const now = new Date();
+    await this.db
+      .update(onboardingTasks)
+      .set({
+        status: input.status,
+        completedAt: input.status === "COMPLETED" ? now : null,
+        completedBy: input.status === "COMPLETED" ? u.userId : null,
+      })
+      .where(eq(onboardingTasks.id, taskId));
+
+    if (input.status === "COMPLETED") {
+      this.dispatchOnboardingComplete(u.orgId, task.userId);
+    }
+
+    return { success: true };
+  }
+
+  private dispatchOnboardingComplete(orgId: string, employeeUserId: string): void {
+    void (async () => {
+      const pending = await this.db
+        .select({ id: onboardingTasks.id })
+        .from(onboardingTasks)
+        .where(
+          and(
+            eq(onboardingTasks.userId, employeeUserId),
+            eq(onboardingTasks.orgId, orgId),
+            eq(onboardingTasks.status, "PENDING"),
+          ),
+        );
+      if (pending.length > 0) return;
+
+      const employee = await this.db.query.users.findFirst({
+        where: eq(users.id, employeeUserId),
+        columns: { email: true, name: true },
+      });
+
+      if (employee?.email) {
+        await this.email.sendOnboardingCompleteEmployeeEmail(employee.email, employee.name ?? "Team Member");
+      }
+
+      const hrMembers = await this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
+      if (hrMembers.length === 0) return;
+
+      const hrUsers = await this.db
+        .select({ email: users.email, name: users.name })
+        .from(users)
+        .where(inArray(users.id, hrMembers.map((m) => m.userId)));
+
+      const recipients = hrUsers.filter((m): m is { email: string; name: string | null } => Boolean(m.email));
+      await Promise.all(
+        recipients.map((m) =>
+          this.email.sendOnboardingCompleteHrEmail(m.email, m.name ?? "HR", employee?.name ?? "Employee"),
+        ),
+      );
+    })().catch(() => undefined);
   }
 
   private async upsertOnboardingStep(userId: string, orgId: string, stepName: string) {

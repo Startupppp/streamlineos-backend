@@ -48,9 +48,46 @@ export const createCategorySchema = z.object({
   budgetPeriod: z.enum(["MONTHLY", "YEARLY"]).optional().default("MONTHLY"),
 });
 
+const AMOUNT = z
+  .number()
+  .positive("Amount must be greater than 0")
+  .max(999_999_999.99, "Amount cannot exceed 999,999,999.99");
+
+export const createExpenseSchema = z.object({
+  category: z.string(),
+  categoryId: z.number().int().optional(),
+  amount: AMOUNT,
+  description: z.string().optional(),
+  receiptUrl: z.string().optional(),
+  receiptFileName: z.string().optional(),
+  merchant: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  projectId: z.number().int().optional(),
+  expenseDate: z.string(),
+});
+
+export const updateExpenseStatusSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "PAID"]),
+  rejectionReason: z.string().optional(),
+});
+
+export const updateExpenseDetailsSchema = z.object({
+  category: z.string().optional(),
+  amount: AMOUNT.optional(),
+  description: z.string().optional(),
+  merchant: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  expenseDate: z.string().optional(),
+  receiptUrl: z.string().optional(),
+  receiptFileName: z.string().optional(),
+});
+
 export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
 export type ReportInput = z.infer<typeof reportSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
+export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
+export type UpdateExpenseStatusInput = z.infer<typeof updateExpenseStatusSchema>;
+export type UpdateExpenseDetailsInput = z.infer<typeof updateExpenseDetailsSchema>;

@@ -76,6 +76,14 @@ export const createTemplateSchema = z.object({
   isDefault: z.boolean().optional().default(false),
 });
 
+export const updateClientStatusSchema = z.object({
+  status: z.enum(["ACCOUNT_OPENING", "QUERIES", "PLAN_SELECTED", "INVESTED"]),
+  investmentAmount: z.string().optional(),
+  planName: z.string().optional(),
+  investmentDate: z.string().optional(),
+  transactionRef: z.string().optional(),
+});
+
 export type ListAccountsInput = z.infer<typeof listAccountsSchema>;
 export type HealthQueryInput = z.infer<typeof healthQuerySchema>;
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
@@ -87,3 +95,4 @@ export type OnboardingItemsListInput = z.infer<typeof onboardingItemsListSchema>
 export type CreateOnboardingItemInput = z.infer<typeof createOnboardingItemSchema>;
 export type PatchOnboardingItemInput = z.infer<typeof patchOnboardingItemSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
+export type UpdateClientStatusInput = z.infer<typeof updateClientStatusSchema>;

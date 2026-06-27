@@ -37,7 +37,12 @@ export const createTemplateSchema = z.object({
   steps: z.array(templateStepSchema).default([]),
 });
 
+export const updateTaskSchema = z.object({
+  status: z.enum(["COMPLETED", "PENDING"]),
+});
+
 export type InitiateInput = z.infer<typeof initiateSchema>;
 export type PersonalDetailsInput = z.infer<typeof personalDetailsSchema>;
 export type BankDetailsInput = z.infer<typeof bankDetailsSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;

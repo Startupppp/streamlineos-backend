@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { candidateOffers, candidates } from "../../db/schema";
+import { candidateApplications, candidateOffers, candidates } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { AutomationService } from "../automation/automation.service";
 import type {
   CreateOfferInput,
   UpdateOfferInput,
@@ -10,7 +11,10 @@ import type {
 
 @Injectable()
 export class RecruitmentOffersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly automation: AutomationService,
+  ) {}
 
   async listOffers(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
@@ -121,7 +125,85 @@ export class RecruitmentOffersService {
       .set(updateData)
       .where(eq(candidateOffers.id, offerId))
       .returning();
+
+    if (
+      input.offerStatus === "SENT" ||
+      input.offerStatus === "ACCEPTED" ||
+      input.offerStatus === "DECLINED"
+    ) {
+      void this.dispatchOfferAutomation(orgId, candidateId, offerId, input.offerStatus, existing.offerStatus, {
+        offeredSalary: updated.offeredSalary,
+        joiningDate: updated.joiningDate,
+        validUntil: updated.validUntil,
+      }).catch(() => undefined);
+    }
+
     return updated;
+  }
+
+  private async dispatchOfferAutomation(
+    orgId: string,
+    candidateId: number,
+    offerId: number,
+    newStatus: "SENT" | "ACCEPTED" | "DECLINED",
+    previousStatus: string,
+    offer: { offeredSalary: string | null; joiningDate: string | null; validUntil: string | null },
+  ): Promise<void> {
+    const [candidate, latestApp] = await Promise.all([
+      this.db.query.candidates.findFirst({
+        where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+        columns: { firstName: true, lastName: true, email: true },
+      }),
+      this.db.query.candidateApplications.findFirst({
+        where: eq(candidateApplications.candidateId, candidateId),
+        with: { jobPosting: { columns: { title: true } } },
+        orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+      }),
+    ]);
+
+    const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : "";
+    const candidateEmail = candidate?.email ?? "";
+    const jobTitle = latestApp?.jobPosting?.title ?? "";
+    const respondedAt = new Date().toISOString();
+
+    if (newStatus === "SENT") {
+      if (previousStatus === "SENT") return;
+      await this.automation.runAutomationsForEvent(orgId, "offer.sent", {
+        offerId,
+        candidateId,
+        candidateName,
+        candidateEmail,
+        jobTitle,
+        offeredSalary: offer.offeredSalary ?? "",
+        joiningDate: offer.joiningDate ?? null,
+        validUntil: offer.validUntil ?? null,
+        sentAt: respondedAt,
+      });
+      return;
+    }
+
+    if (newStatus === "ACCEPTED") {
+      await this.automation.runAutomationsForEvent(orgId, "offer.accepted", {
+        offerId,
+        candidateId,
+        candidateName,
+        candidateEmail,
+        jobTitle,
+        decision: "ACCEPTED",
+        respondedAt,
+      });
+      return;
+    }
+
+    await this.automation.runAutomationsForEvent(orgId, "offer.rejected", {
+      offerId,
+      candidateId,
+      candidateName,
+      candidateEmail,
+      jobTitle,
+      decision: "REJECTED",
+      respondedAt,
+    });
   }
 
   async deleteOffer(orgId: string, candidateId: number, offerId: number) {

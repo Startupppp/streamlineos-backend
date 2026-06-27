@@ -17,12 +17,15 @@ import {
   leadActivities,
   notifications,
   organizationMembers,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import {
   evaluateAssignmentRules,
@@ -57,7 +60,33 @@ export class LeadsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
   ) {}
+
+  private async sendLeadAssignedNotification(
+    actorId: string,
+    lead: { assignedToId: string; name: string; source: string; priority: string },
+  ): Promise<void> {
+    const ids = Array.from(new Set([lead.assignedToId, actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const rep = people.find((p) => p.id === lead.assignedToId);
+    if (!rep?.email) return;
+
+    const actor = people.find((p) => p.id === actorId);
+    await this.email.sendLeadAssignedEmail(
+      rep.email,
+      rep.name ?? "Team Member",
+      lead.name,
+      lead.source,
+      lead.priority,
+      actor?.name ?? "Manager",
+    );
+  }
 
   async listLeads(orgId: string, filters?: ListFilters) {
     const where = [eq(leads.orgId, orgId)];
@@ -337,6 +366,25 @@ export class LeadsService {
       targetType: "lead",
       metadata: { name: newLead.name, source: newLead.source, assignedToId: newLead.assignedToId },
     });
+
+    if (newLead.assignedToId) {
+      void this.sendLeadAssignedNotification(userId, {
+        assignedToId: newLead.assignedToId,
+        name: newLead.name,
+        source: newLead.source,
+        priority: newLead.priority,
+      }).catch(() => undefined);
+    }
+
+    void this.automation
+      .runAutomationsForEvent(orgId, "lead.created", {
+        id: newLead.id,
+        name: newLead.name,
+        email: newLead.email,
+        source: newLead.source,
+        assignedToId: newLead.assignedToId,
+      })
+      .catch(() => undefined);
 
     return newLead;
   }

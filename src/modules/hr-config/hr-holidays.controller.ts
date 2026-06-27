@@ -1,12 +1,15 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -18,8 +21,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHolidaysService } from "./hr-holidays.service";
 import {
+  createHolidaySchema,
   holidayCalendarQuerySchema,
   updateHolidaySchema,
+  type CreateHolidayInput,
   type HolidayCalendarQuery,
   type UpdateHolidayInput,
 } from "./dto/holidays.schemas";
@@ -37,6 +42,21 @@ export class HrHolidaysController {
     const year = query.year || new Date().getFullYear();
     const month = query.month || new Date().getMonth() + 1;
     return this.holidays.calendar(u.orgId, year, month);
+  }
+
+  @Post()
+  @UseGuards(AbilityGuard)
+  @CheckAbility("manage", "hr:attendance")
+  @HttpCode(201)
+  async create(
+    @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.holidays.create(u.orgId, body);
+    if (!result.ok) {
+      throw new ConflictException("A holiday with this name or date already exists.");
+    }
+    return { success: true };
   }
 
   @Patch(":holidayId")

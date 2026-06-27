@@ -88,6 +88,56 @@ export const patchDeviceSchema = z.object({
   returnDate: z.string().optional(),
 });
 
+export const createAssetSchema = z.object({
+  name: z
+    .string()
+    .min(2, "Asset name must be at least 2 characters")
+    .max(100, "Asset name is too long")
+    .refine((v) => v === v.trim(), "Asset name must not have leading or trailing spaces")
+    .refine((v) => !/\s{2,}/.test(v), "Asset name cannot have consecutive spaces")
+    .refine((v) => /[a-zA-Z]/.test(v), "Asset name must contain at least one letter")
+    .refine((v) => !/^[\d\s]+$/.test(v), "Asset name cannot be numeric only")
+    .refine(
+      (v) => !/[!@#$%^&*()\-_=+\[\]{};:'",.<>?/\\|`~]{2,}/.test(v),
+      "Asset name cannot contain multiple consecutive special characters",
+    ),
+  type: z.string().min(1, "Type is required"),
+  brand: z
+    .string()
+    .min(1, "Brand is required")
+    .max(100, "Brand is too long")
+    .refine((v) => /[a-zA-Z]/.test(v.trim()), "Brand must contain at least one letter"),
+  model: z.string().min(1, "Model is required").max(100, "Model is too long"),
+  serialNumber: z
+    .string()
+    .min(3, "Serial number must be at least 3 characters")
+    .max(100, "Serial number is too long")
+    .refine((v) => /[a-zA-Z0-9]/.test(v.trim()), "Serial number must contain alphanumeric characters"),
+  purchaseDate: z.string().optional(),
+  purchaseCost: z.number().optional(),
+  location: z.string().optional(),
+  notes: z.string().max(500).optional(),
+});
+
+export const assignAssetSchema = z.object({
+  assetId: z.number(),
+  assignedTo: z.string().nullable(),
+});
+
+export const patchAssetSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  type: z.string().min(1).optional(),
+  brand: z.string().min(1).max(100).optional(),
+  model: z.string().min(1).max(100).optional(),
+  serialNumber: z.string().min(3).max(100).optional(),
+  assignedTo: z.string().nullable().optional(),
+  status: z.enum(["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]).optional(),
+  purchaseDate: z.string().optional(),
+  purchaseCost: z.number().optional(),
+  location: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 export const createBgvSchema = z.object({
   userId: z.string().min(1),
   type: z.string().min(1, "Verification type is required"),
@@ -114,3 +164,6 @@ export type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
 export type PatchDeviceInput = z.infer<typeof patchDeviceSchema>;
 export type CreateBgvInput = z.infer<typeof createBgvSchema>;
 export type UpdateBgvInput = z.infer<typeof updateBgvSchema>;
+export type CreateAssetInput = z.infer<typeof createAssetSchema>;
+export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
+export type PatchAssetInput = z.infer<typeof patchAssetSchema>;

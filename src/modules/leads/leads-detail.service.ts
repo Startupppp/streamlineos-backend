@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   leads,
   leadActivities,
@@ -7,10 +7,12 @@ import {
   leadTasks,
   leadEmails,
   leadScoringRules,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import type {
   AssignInput,
@@ -32,7 +34,30 @@ export class LeadsDetailService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly email: EmailService,
   ) {}
+
+  private async sendAssignmentEmail(actorId: string, lead: LeadRow): Promise<void> {
+    if (!lead.assignedToId) return;
+    const ids = Array.from(new Set([lead.assignedToId, actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const assignee = people.find((p) => p.id === lead.assignedToId);
+    if (!assignee?.email) return;
+
+    const assigner = people.find((p) => p.id === actorId);
+    await this.email.sendLeadAssignedEmail(
+      assignee.email,
+      assignee.name ?? "Team Member",
+      lead.name,
+      lead.source,
+      lead.priority,
+      assigner?.name ?? "A manager",
+    );
+  }
 
   getActivities(orgId: string, leadId: number, limit: number) {
     return this.db.query.leadActivities.findMany({
@@ -266,6 +291,8 @@ export class LeadsDetailService {
       message: `You have been assigned lead: ${updated.name}`,
       link: `/crm/leads/${updated.id}`,
     });
+
+    void this.sendAssignmentEmail(userId, updated).catch(() => undefined);
 
     return updated;
   }

@@ -7,15 +7,22 @@ import {
 import { and, desc, eq, gte, or } from "drizzle-orm";
 import {
   oneOnOneMeetings,
+  organizationMembers,
   performanceImprovementPlans,
   performanceReviews,
   reviewCycles,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
 import type {
   CreateOneOnOneInput,
+  CreatePerformanceReviewInput,
   CreatePipInput,
+  CreateReviewCycleInput,
   UpdateOneOnOneInput,
   UpdatePerformanceReviewInput,
   UpdatePipInput,
@@ -24,7 +31,132 @@ import type {
 
 @Injectable()
 export class PerformanceReviewsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
+  ) {}
+
+  async createReview(orgId: string, actorId: string, input: CreatePerformanceReviewInput) {
+    const targetMember = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, input.userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { id: true },
+    });
+    if (!targetMember) throw new NotFoundException("Employee not found in your organization.");
+
+    if (input.cycleId) {
+      const duplicate = await this.db.query.performanceReviews.findFirst({
+        where: and(
+          eq(performanceReviews.orgId, orgId),
+          eq(performanceReviews.userId, input.userId),
+          eq(performanceReviews.cycleId, input.cycleId),
+        ),
+        columns: { id: true },
+      });
+      if (duplicate) {
+        throw new ConflictException("A review for this employee already exists in the selected cycle.");
+      }
+    } else {
+      const adHocDuplicate = await this.db.query.performanceReviews.findFirst({
+        where: and(
+          eq(performanceReviews.orgId, orgId),
+          eq(performanceReviews.userId, input.userId),
+          eq(performanceReviews.periodStart, input.periodStart),
+          eq(performanceReviews.periodEnd, input.periodEnd),
+        ),
+        columns: { id: true },
+      });
+      if (adHocDuplicate) {
+        throw new ConflictException("A review for this employee with the same period already exists.");
+      }
+    }
+
+    const reviewerId = input.reviewerId ?? actorId;
+    const [review] = await this.db
+      .insert(performanceReviews)
+      .values({
+        orgId,
+        userId: input.userId,
+        reviewerId,
+        cycleId: input.cycleId,
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd,
+        ratings: input.ratings,
+        strengths: input.strengths,
+        improvements: input.improvements,
+        overallRating: input.overallRating?.toString(),
+        comments: input.comments,
+        status: "DRAFT",
+      })
+      .returning();
+
+    void this.notifyReviewAssigned(input.userId, reviewerId, input.periodStart, input.periodEnd);
+
+    return review;
+  }
+
+  async createCycle(orgId: string, actorId: string, input: CreateReviewCycleInput) {
+    const existing = await this.db.query.reviewCycles.findFirst({
+      where: and(eq(reviewCycles.orgId, orgId), eq(reviewCycles.name, input.name)),
+      columns: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(`A review cycle named "${input.name}" already exists.`);
+    }
+
+    const [cycle] = await this.db
+      .insert(reviewCycles)
+      .values({
+        orgId,
+        name: input.name,
+        type: input.type,
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd,
+        deadline: input.deadline,
+        description: input.description,
+        status: "DRAFT",
+        createdBy: actorId,
+      })
+      .returning();
+
+    void this.automation.runAutomationsForEvent(orgId, "performance.review_cycle_started", {
+      cycleId: cycle.id,
+      cycleName: cycle.name,
+      startDate: cycle.periodStart,
+      endDate: cycle.periodEnd,
+      reviewerCount: 0,
+    });
+
+    return cycle;
+  }
+
+  private async notifyReviewAssigned(
+    employeeId: string,
+    reviewerId: string,
+    periodStart: string,
+    periodEnd: string,
+  ): Promise<void> {
+    try {
+      const [employee, reviewer] = await Promise.all([
+        this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { email: true, name: true } }),
+        this.db.query.users.findFirst({ where: eq(users.id, reviewerId), columns: { name: true } }),
+      ]);
+      if (employee?.email) {
+        await this.email.sendReviewAssignedEmail(
+          employee.email,
+          employee.name ?? "Employee",
+          reviewer?.name ?? "Manager",
+          periodStart,
+          periodEnd,
+        );
+      }
+    } catch (error) {
+      logger.error("Failed to send review assigned email", { employeeId, error });
+    }
+  }
 
   async listOneOnOnes(orgId: string, userId: string, upcoming: boolean) {
     const conditions = [

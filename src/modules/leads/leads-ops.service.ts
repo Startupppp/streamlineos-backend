@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
+import { EmailService } from "../email/email.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,
@@ -22,6 +23,13 @@ import type {
 } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
+
+function resolveAppUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
 type OverrideField = keyof TopMergeInput["overrides"];
 
 export type MergeLeadsResult =
@@ -37,7 +45,41 @@ export class LeadsOpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
   ) {}
+
+  private async sendDistributionEmails(
+    actorId: string,
+    salesPeople: { id: string; name: string | null; email: string | null }[],
+    assignments: Map<string, LeadRow[]>,
+  ): Promise<void> {
+    const actor = await this.db.query.users.findFirst({
+      where: eq(users.id, actorId),
+      columns: { name: true },
+    });
+    const assignerName = actor?.name || "A manager";
+    const baseUrl = resolveAppUrl();
+
+    for (const sp of salesPeople) {
+      const assignedLeads = assignments.get(sp.id) ?? [];
+      if (assignedLeads.length === 0 || !sp.email) continue;
+      const leadRows = assignedLeads
+        .map(
+          (l) =>
+            `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${l.name}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${l.company || "N/A"}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;">${l.status}</td></tr>`,
+        )
+        .join("");
+      try {
+        await this.email.sendEmail({
+          to: sp.email,
+          subject: `${assignedLeads.length} New Lead${assignedLeads.length > 1 ? "s" : ""} Assigned — StreamlineOS`,
+          html: `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;"><div style="background:linear-gradient(135deg,#0f2b7f,#1e40af);padding:24px;text-align:center;border-radius:10px 10px 0 0;"><h1 style="color:#bd882c;margin:0;font-size:22px;">StreamlineOS</h1></div><div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;"><h2 style="color:#1e40af;margin-top:0;">New Leads Assigned to You</h2><p>Hi <strong>${sp.name || "Team Member"}</strong>,</p><p><strong>${assignerName}</strong> has distributed <strong>${assignedLeads.length}</strong> lead${assignedLeads.length > 1 ? "s" : ""} to you:</p><table style="width:100%;border-collapse:collapse;margin:16px 0;"><tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Company</th><th style="padding:8px;text-align:left;">Status</th></tr>${leadRows}</table><div style="text-align:center;margin:24px 0;"><a href="${baseUrl}/crm/leads" style="background:#0f2b7f;color:#bd882c;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:bold;">View Leads</a></div></div></body></html>`,
+        });
+      } catch (error) {
+        logger.error("Failed to send lead distribution email", { salesPersonId: sp.id, error });
+      }
+    }
+  }
 
   getImportBatch(orgId: string, batchId: number) {
     return this.db.query.leadImportBatches.findFirst({
@@ -409,6 +451,8 @@ export class LeadsOpsService {
         .set({ assignedToId: salesPersonId, assignedById: userId, assignedAt: now, updatedAt: now })
         .where(and(inArray(leads.id, leadIds), eq(leads.orgId, orgId)));
     }
+
+    void this.sendDistributionEmails(userId, salesPeople, assignments).catch(() => undefined);
 
     return {
       ok: true,

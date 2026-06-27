@@ -36,6 +36,7 @@ import {
   createOnboardingItemSchema,
   patchOnboardingItemSchema,
   createTemplateSchema,
+  updateClientStatusSchema,
   type ListAccountsInput,
   type HealthQueryInput,
   type CreateActivityInput,
@@ -47,10 +48,12 @@ import {
   type CreateOnboardingItemInput,
   type PatchOnboardingItemInput,
   type CreateTemplateInput,
+  type UpdateClientStatusInput,
 } from "./dto/clients.schemas";
 
 const ACTIVITY_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO"];
 const RENEWAL_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO", "SALES"];
+const CLIENT_STATUS_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO"];
 
 @Controller("clients")
 @UseGuards(JwtAuthGuard)
@@ -229,6 +232,20 @@ export class ClientsController {
       throw new ForbiddenException("You can only view your own converted clients");
     }
     return account;
+  }
+
+  @Patch(":clientId")
+  async updateClientStatus(
+    @Param("clientId", ParseIntPipe) clientId: number,
+    @Body(new ZodValidationPipe(updateClientStatusSchema)) body: UpdateClientStatusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!CLIENT_STATUS_ROLES.includes(u.role)) {
+      throw new ForbiddenException("Only CRM team can update client status");
+    }
+    const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
+    if (!updated) throw new NotFoundException("Client account not found");
+    return updated;
   }
 
   @Get(":clientId/activities")

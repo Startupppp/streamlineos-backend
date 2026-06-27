@@ -119,6 +119,55 @@ export const updatePipSchema = z.object({
   hrRepId: z.string().nullable().optional(),
 });
 
+export const createReviewCycleSchema = z
+  .object({
+    name: z
+      .string()
+      .min(3, "Cycle name must be at least 3 characters")
+      .max(100, "Cycle name must be at most 100 characters")
+      .refine((v) => /[a-zA-Z0-9]/.test(v), "Cycle name must contain at least one letter or number")
+      .refine((v) => !/\s{2,}/.test(v), "Cycle name cannot have consecutive spaces"),
+    type: z.enum(["QUARTERLY", "HALF_YEARLY", "ANNUAL", "CUSTOM"]).optional().default("QUARTERLY"),
+    periodStart: z.string().min(1, "Start date is required"),
+    periodEnd: z.string().min(1, "End date is required"),
+    deadline: z.string().optional(),
+    description: z.string().max(500).optional(),
+  })
+  .refine((d) => new Date(d.periodEnd) > new Date(d.periodStart), {
+    message: "Period end must be after period start",
+    path: ["periodEnd"],
+  })
+  .refine((d) => !d.deadline || new Date(d.deadline) >= new Date(d.periodEnd), {
+    message: "Submission deadline must be on or after period end",
+    path: ["deadline"],
+  });
+
+export const createPerformanceReviewSchema = z
+  .object({
+    userId: z.string().min(1, "Employee is required"),
+    reviewerId: z.string().optional(),
+    cycleId: z.number().int().positive().optional(),
+    periodStart: z.string().min(1, "Start date is required"),
+    periodEnd: z.string().min(1, "End date is required"),
+    ratings: z
+      .array(
+        z.object({
+          category: z.string().min(1),
+          score: z.number().min(0).max(10),
+          comment: z.string().optional(),
+        }),
+      )
+      .optional(),
+    strengths: z.string().max(2000).optional(),
+    improvements: z.string().max(2000).optional(),
+    overallRating: z.number().min(0).max(10).optional(),
+    comments: z.string().max(2000).optional(),
+  })
+  .refine((d) => new Date(d.periodEnd) > new Date(d.periodStart), {
+    message: "Review end date must be after start date",
+    path: ["periodEnd"],
+  });
+
 export const updatePerformanceReviewSchema = z.object({
   ratings: z
     .array(
@@ -160,3 +209,5 @@ export type CreatePipInput = z.infer<typeof createPipSchema>;
 export type UpdatePipInput = z.infer<typeof updatePipSchema>;
 export type UpdatePerformanceReviewInput = z.infer<typeof updatePerformanceReviewSchema>;
 export type UpdateReviewCycleInput = z.infer<typeof updateReviewCycleSchema>;
+export type CreateReviewCycleInput = z.infer<typeof createReviewCycleSchema>;
+export type CreatePerformanceReviewInput = z.infer<typeof createPerformanceReviewSchema>;

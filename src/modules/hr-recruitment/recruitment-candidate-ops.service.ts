@@ -142,7 +142,37 @@ export class RecruitmentCandidateOpsService {
       });
     }
 
-    return { rejected: toReject.length, alreadyRejected, emailsSent: 0 };
+    let emailsSent = 0;
+    if (input.sendRejectionEmail) {
+      const [org, actor] = await Promise.all([
+        this.db.query.organizations.findFirst({
+          where: eq(organizations.id, orgId),
+          columns: { name: true },
+        }),
+        this.db.query.users.findFirst({
+          where: eq(users.id, userId),
+          columns: { name: true },
+        }),
+      ]);
+      const companyName = org?.name ?? "our company";
+      const senderName = actor?.name ?? undefined;
+
+      const recipients = toReject.filter((c) => Boolean(c.email));
+      const results = await Promise.allSettled(
+        recipients.map((c) => {
+          const { subject, html } = getCandidateRejectionEmail({
+            candidateName: `${c.firstName} ${c.lastName}`,
+            jobTitle: "the position",
+            companyName,
+            senderName,
+          });
+          return this.email.sendEmail({ to: c.email, subject, html });
+        }),
+      );
+      emailsSent = results.filter((r) => r.status === "fulfilled").length;
+    }
+
+    return { rejected: toReject.length, alreadyRejected, emailsSent };
   }
 
   async getSla(orgId: string, candidateId: number) {
@@ -175,7 +205,11 @@ export class RecruitmentCandidateOpsService {
   }
 
   async createApplication(orgId: string, candidateId: number, input: CreateApplicationInput) {
-    await this.ensureCandidate(orgId, candidateId);
+    const candidate = await this.db.query.candidates.findFirst({
+      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+      columns: { id: true, firstName: true, lastName: true, email: true, source: true },
+    });
+    if (!candidate) throw new NotFoundException("Candidate not found.");
     if (!input.jobPostingId) throw new BadRequestException("jobPostingId is required.");
 
     const existingApplication = await this.db.query.candidateApplications.findFirst({
@@ -201,7 +235,35 @@ export class RecruitmentCandidateOpsService {
       })
       .returning();
 
+    const jobPostingId = input.jobPostingId;
+    void this.dispatchApplicationAutomation(orgId, candidateId, candidate, jobPostingId, application.appliedAt).catch(
+      () => undefined,
+    );
+
     return application;
+  }
+
+  private async dispatchApplicationAutomation(
+    orgId: string,
+    candidateId: number,
+    candidate: { firstName: string; lastName: string; email: string; source: string },
+    jobPostingId: number,
+    appliedAt: Date | null,
+  ): Promise<void> {
+    const job = await this.db.query.jobPostings.findFirst({
+      where: eq(jobPostings.id, jobPostingId),
+      columns: { title: true },
+    });
+
+    await this.automation.runAutomationsForEvent(orgId, "candidate.application_created", {
+      candidateId,
+      candidateName: `${candidate.firstName} ${candidate.lastName}`,
+      candidateEmail: candidate.email ?? "",
+      jobPostingId,
+      jobTitle: job?.title ?? "",
+      source: candidate.source ?? "DIRECT",
+      appliedAt: (appliedAt ?? new Date()).toISOString(),
+    });
   }
 
   async updateBgvStatus(orgId: string, candidateId: number, input: BgvStatusInput) {
@@ -222,6 +284,17 @@ export class RecruitmentCandidateOpsService {
     }
 
     await this.db.update(candidates).set(updateFields).where(eq(candidates.id, candidateId));
+
+    void this.automation
+      .runAutomationsForEvent(orgId, "candidate.bgv_status_changed", {
+        candidateId,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateEmail: candidate.email ?? "",
+        previousBgvStatus: candidate.bgvStatus ?? "NOT_INITIATED",
+        newBgvStatus: input.bgvStatus,
+        bgvAgency: input.bgvAgency ?? null,
+      })
+      .catch(() => undefined);
 
     return this.db.query.candidates.findFirst({ where: eq(candidates.id, candidateId) });
   }

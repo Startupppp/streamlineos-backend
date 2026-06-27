@@ -19,13 +19,16 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LeavesService } from "./leaves.service";
+import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesPageService } from "./leaves-page.service";
 import {
   compOffSchema,
+  createLeaveSchema,
   leaveAnalyticsQuerySchema,
   leaveCalendarQuerySchema,
   updateLeaveSchema,
   type CompOffInput,
+  type CreateLeaveInput,
   type LeaveAnalyticsQuery,
   type LeaveCalendarQuery,
   type UpdateLeaveInput,
@@ -36,6 +39,7 @@ import {
 export class LeavesController {
   constructor(
     private readonly leaves: LeavesService,
+    private readonly leavesWrite: LeavesWriteService,
     private readonly leavesPage: LeavesPageService,
   ) {}
 
@@ -72,6 +76,15 @@ export class LeavesController {
     return this.leaves.analytics(u, query.year ?? new Date().getFullYear());
   }
 
+  @Post()
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createLeaveSchema)) body: CreateLeaveInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leavesWrite.create(u, body);
+  }
+
   @Post("comp-off")
   @HttpCode(201)
   compOff(
@@ -81,13 +94,23 @@ export class LeavesController {
     return this.leaves.compOff(u, body);
   }
 
+  @Patch(":leaveId/cancel")
+  async cancel(
+    @Param("leaveId", ParseIntPipe) leaveId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.leavesWrite.cancel(u, leaveId);
+    if (!result.ok) throw new NotFoundException("Leave request not found.");
+    return { success: true };
+  }
+
   @Patch(":leaveId")
   async update(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.leaves.updateStatus(u, leaveId, body);
+    const result = await this.leavesWrite.updateStatus(u, leaveId, body);
     if (!result.ok) throw new NotFoundException("Leave request not found.");
     return { success: true };
   }

@@ -24,7 +24,9 @@ import {
   createGoalSchema,
   createKeyResultSchema,
   createOneOnOneSchema,
+  createPerformanceReviewSchema,
   createPipSchema,
+  createReviewCycleSchema,
   updateGoalCollectionSchema,
   updateGoalItemSchema,
   updateKeyResultSchema,
@@ -35,7 +37,9 @@ import {
   type CreateGoalInput,
   type CreateKeyResultInput,
   type CreateOneOnOneInput,
+  type CreatePerformanceReviewInput,
   type CreatePipInput,
+  type CreateReviewCycleInput,
   type UpdateGoalCollectionInput,
   type UpdateGoalItemInput,
   type UpdateKeyResultInput,
@@ -184,6 +188,16 @@ export class PerformanceController {
     return this.reviewsService.updatePip(u.orgId, pipId, body);
   }
 
+  @Post("reviews")
+  @HttpCode(201)
+  createReview(
+    @Body(new ZodValidationPipe(createPerformanceReviewSchema)) body: CreatePerformanceReviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create reviews.");
+    return this.reviewsService.createReview(u.orgId, u.userId, body);
+  }
+
   @Get("reviews/:reviewId")
   getReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
@@ -207,6 +221,16 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateReview(u.orgId, reviewId, body);
+  }
+
+  @Post("cycles")
+  @HttpCode(201)
+  createCycle(
+    @Body(new ZodValidationPipe(createReviewCycleSchema)) body: CreateReviewCycleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create review cycles.");
+    return this.reviewsService.createCycle(u.orgId, u.userId, body);
   }
 
   @Get("cycles/:cycleId")

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { AutomationModule } from "../automation/automation.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -13,7 +14,7 @@ import { LeadStatusService } from "./lead-status.service";
 import { LeadsOpsService } from "./leads-ops.service";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, AutomationModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,

@@ -6,6 +6,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Res,
@@ -28,10 +29,12 @@ import {
   createTemplateSchema,
   initiateSchema,
   personalDetailsSchema,
+  updateTaskSchema,
   type BankDetailsInput,
   type CreateTemplateInput,
   type InitiateInput,
   type PersonalDetailsInput,
+  type UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 
 @Controller("onboarding")
@@ -102,6 +105,15 @@ export class OnboardingController {
   @Post("submit")
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);
+  }
+
+  @Patch("tasks/:taskId")
+  updateTask(
+    @Param("taskId", ParseIntPipe) taskId: number,
+    @Body(new ZodValidationPipe(updateTaskSchema)) body: UpdateTaskInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.onboarding.updateTask(u, taskId, body);
   }
 
   @Get(":userId")

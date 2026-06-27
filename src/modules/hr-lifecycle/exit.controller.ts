@@ -15,13 +15,62 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ExitService } from "./exit.service";
+import { ExitWriteService } from "./exit-write.service";
 import { userCan } from "./ability.helper";
-import { experienceLetterSchema, type ExperienceLetterInput } from "./dto/hr-lifecycle.schemas";
+import {
+  experienceLetterSchema,
+  resignationCreateSchema,
+  resignationUpdateSchema,
+  resignationCeoReviewSchema,
+  type ExperienceLetterInput,
+  type ResignationCreateInput,
+  type ResignationUpdateInput,
+  type ResignationCeoReviewInput,
+} from "./dto/hr-lifecycle.schemas";
 
 @Controller("hr/exit")
 @UseGuards(JwtAuthGuard)
 export class ExitController {
-  constructor(private readonly exit: ExitService) {}
+  constructor(
+    private readonly exit: ExitService,
+    private readonly exitWrite: ExitWriteService,
+  ) {}
+
+  @Post()
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(resignationCreateSchema)) body: ResignationCreateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (userCan(u, "manage", "all")) {
+      throw new ForbiddenException("CEO users cannot submit a resignation through this system.");
+    }
+    return this.exitWrite.create(u.orgId, u.userId, body);
+  }
+
+  @Patch(":resignationId/ceo-review")
+  ceoReview(
+    @Param("resignationId", ParseIntPipe) resignationId: number,
+    @Body(new ZodValidationPipe(resignationCeoReviewSchema)) body: ResignationCeoReviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (u.role !== "CEO") throw new ForbiddenException("Only CEO can perform CEO review.");
+    return this.exitWrite.ceoReview(u.orgId, u.userId, resignationId, body);
+  }
+
+  @Patch(":resignationId")
+  update(
+    @Param("resignationId", ParseIntPipe) resignationId: number,
+    @Body(new ZodValidationPipe(resignationUpdateSchema)) body: ResignationUpdateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exitWrite.update(
+      u.orgId,
+      { userId: u.userId, role: u.role, isApprover: userCan(u, "approve", "hr:leaves") },
+      resignationId,
+      body,
+    );
+  }
 
   @Get("analytics")
   getAnalytics(@CurrentUser() u: CurrentUserContext) {

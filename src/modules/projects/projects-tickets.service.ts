@@ -325,8 +325,11 @@ export class ProjectsTicketsService {
 
     const ticketData = await this.db.query.tickets.findFirst({
       where: eq(tickets.id, ticketId),
-      columns: { title: true, projectId: true },
+      columns: { title: true, projectId: true, type: true, priority: true },
+      with: { project: { columns: { name: true } } },
     });
+
+    const actorName = await this.resolveActorName(actingUserId);
 
     for (const userId of notifyIds) {
       if (userId === actingUserId) continue;
@@ -341,6 +344,80 @@ export class ProjectsTicketsService {
         });
       } catch (error) {
         logger.error("Failed to create ticket assignment notification", { error });
+      }
+
+      if (!ticketData?.projectId) continue;
+      const projectId = ticketData.projectId;
+      void (async () => {
+        const assignee = await this.db.query.users.findFirst({
+          where: eq(users.id, userId),
+          columns: { email: true, name: true },
+        });
+        if (!assignee?.email) return;
+        await this.email.sendTicketAssignmentEmail(
+          assignee.email,
+          assignee.name ?? "Team Member",
+          ticketData.title ?? `#${ticketId}`,
+          ticketData.type ?? "TASK",
+          ticketData.priority ?? "MEDIUM",
+          ticketData.project?.name ?? "Project",
+          projectId,
+          ticketId,
+          actorName,
+        );
+      })().catch(() => undefined);
+    }
+  }
+
+  private async notifyStatusReview(
+    ticketId: number,
+    actingUserId: string,
+    status: "IN_REVIEW" | "CHANGES_REQUESTED",
+  ): Promise<void> {
+    const ticketData = await this.db.query.tickets.findFirst({
+      where: eq(tickets.id, ticketId),
+      columns: { title: true, projectId: true, type: true, assigneeId: true, reporterId: true },
+      with: { project: { columns: { name: true } } },
+    });
+    if (!ticketData?.projectId) return;
+
+    const projectId = ticketData.projectId;
+    const actorName = await this.resolveActorName(actingUserId);
+
+    if (status === "IN_REVIEW" && ticketData.reporterId) {
+      const reviewer = await this.db.query.users.findFirst({
+        where: eq(users.id, ticketData.reporterId),
+        columns: { email: true, name: true },
+      });
+      if (reviewer?.email) {
+        await this.email.sendTicketReviewRequestEmail(
+          reviewer.email,
+          reviewer.name ?? "Reviewer",
+          ticketData.title ?? `#${ticketId}`,
+          ticketData.type ?? "TASK",
+          ticketData.project?.name ?? "Project",
+          projectId,
+          ticketId,
+          actorName,
+        );
+      }
+    }
+
+    if (status === "CHANGES_REQUESTED" && ticketData.assigneeId) {
+      const assignee = await this.db.query.users.findFirst({
+        where: eq(users.id, ticketData.assigneeId),
+        columns: { email: true, name: true },
+      });
+      if (assignee?.email) {
+        await this.email.sendTicketChangesRequestedEmail(
+          assignee.email,
+          assignee.name ?? "Team Member",
+          ticketData.title ?? `#${ticketId}`,
+          ticketData.project?.name ?? "Project",
+          projectId,
+          ticketId,
+          actorName,
+        );
       }
     }
   }

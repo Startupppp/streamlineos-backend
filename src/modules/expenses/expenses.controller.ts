@@ -1,12 +1,16 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   ForbiddenException,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -18,11 +22,14 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ExpensesService } from "./expenses.service";
+import { ExpensesWriteService } from "./expenses-write.service";
 import {
+  createExpenseSchema,
   exportSchema,
   listSchema,
   pageDataSchema,
   reportSchema,
+  type CreateExpenseInput,
   type ExportInput,
   type ListInput,
   type PageDataInput,
@@ -53,7 +60,10 @@ const EXPORT_HEADERS = [
 @Controller("hr/expenses")
 @UseGuards(JwtAuthGuard)
 export class ExpensesController {
-  constructor(private readonly expenses: ExpensesService) {}
+  constructor(
+    private readonly expenses: ExpensesService,
+    private readonly expensesWrite: ExpensesWriteService,
+  ) {}
 
   @Get()
   list(
@@ -61,6 +71,24 @@ export class ExpensesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expenses.list(u.orgId, u.userId, canApprove(u), filters);
+  }
+
+  @Post()
+  @HttpCode(201)
+  create(
+    @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.expensesWrite.create(u.orgId, u.userId, canApprove(u), body);
+  }
+
+  @Patch(":expenseId")
+  update(
+    @Param("expenseId", ParseIntPipe) expenseId: number,
+    @Body() body: unknown,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.expensesWrite.update(u, canApprove(u), expenseId, body);
   }
 
   @Get("page-data")
