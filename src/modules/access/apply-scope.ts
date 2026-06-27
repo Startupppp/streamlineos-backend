@@ -1,0 +1,27 @@
+import { eq, inArray, sql, type SQL } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
+import type { DataScope } from "./access.types";
+
+interface ScopeColumns {
+  ownerColumn: PgColumn;
+  teamColumn?: PgColumn;
+  teamIds?: string[];
+}
+
+export function applyScope(scope: DataScope, userId: string, cols: ScopeColumns): SQL {
+  switch (scope) {
+    case "all":
+      return sql`true`;
+    case "own":
+      return eq(cols.ownerColumn, userId);
+    case "team": {
+      const byOwner = eq(cols.ownerColumn, userId);
+      if (cols.teamColumn && cols.teamIds && cols.teamIds.length > 0) {
+        return sql`(${byOwner} OR ${inArray(cols.teamColumn, cols.teamIds)})`;
+      }
+      return byOwner;
+    }
+    case "none":
+      return sql`false`;
+  }
+}

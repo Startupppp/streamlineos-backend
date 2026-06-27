@@ -3,6 +3,7 @@ export interface Permission {
   resource: string;
   action: string;
   description: string;
+  scopable?: boolean;
 }
 
 const HR_PERMISSIONS: Permission[] = [
@@ -34,11 +35,11 @@ const HR_PERMISSIONS: Permission[] = [
 ];
 
 const CRM_PERMISSIONS: Permission[] = [
-  { name: "crm:leads:view", resource: "crm:leads", action: "view", description: "View CRM leads" },
+  { name: "crm:leads:view", resource: "crm:leads", action: "view", description: "View CRM leads", scopable: true },
   { name: "crm:leads:create", resource: "crm:leads", action: "create", description: "Create CRM leads" },
-  { name: "crm:leads:update", resource: "crm:leads", action: "update", description: "Update CRM leads" },
+  { name: "crm:leads:update", resource: "crm:leads", action: "update", description: "Update CRM leads", scopable: true },
   { name: "crm:leads:assign", resource: "crm:leads", action: "assign", description: "Assign CRM leads" },
-  { name: "crm:leads:delete", resource: "crm:leads", action: "delete", description: "Delete CRM leads" },
+  { name: "crm:leads:delete", resource: "crm:leads", action: "delete", description: "Delete CRM leads", scopable: true },
   { name: "crm:targets:view", resource: "crm:targets", action: "view", description: "View targets" },
   { name: "crm:targets:manage", resource: "crm:targets", action: "manage", description: "Manage targets" },
   { name: "crm:reports:view", resource: "crm:reports", action: "view", description: "View CRM reports" },
@@ -118,6 +119,12 @@ export const PERMISSIONS: Permission[] = [
   ...SHARED_PERMISSIONS,
   ...SUPPORT_PERMISSIONS,
 ];
+
+const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));
+
+export function isScopable(key: string): boolean {
+  return SCOPABLE_PERMISSIONS.has(key);
+}
 
 const EMPLOYEE_SELF_SERVICE = [
   "self:attendance",

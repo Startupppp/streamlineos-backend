@@ -16,11 +16,18 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions.constants";
 import type { AccessSnapshot, DataScope } from "./access.types";
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+
+function isMissingRelationError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ("code" in error && error.code === "42P01") return true;
+  return "message" in error && typeof error.message === "string" && error.message.includes("does not exist");
+}
 
 export function broadest(a: DataScope, b: DataScope): DataScope {
   return SCOPE_RANK[a] >= SCOPE_RANK[b] ? a : b;
@@ -45,17 +52,41 @@ function allCatalogScopes(): Record<string, DataScope> {
 
 @Injectable()
 export class AccessService {
+  private missingAccessTablesLogged = false;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
   ) {}
 
-  async getPermissionsVersion(orgId: string): Promise<number> {
-    const row = await this.db.query.accessVersions.findFirst({
-      where: eq(accessVersions.orgId, orgId),
-      columns: { permissionsVersion: true },
+  private noteMissingAccessTables(error: unknown): void {
+    if (this.missingAccessTablesLogged) return;
+    this.missingAccessTablesLogged = true;
+    logger.warn("access: rbac tables missing, falling back to legacy resolution", {
+      error: error instanceof Error ? error.message : String(error),
     });
+  }
+
+  private async safeAccessTableRead<T>(read: () => PromiseLike<T>, fallback: T): Promise<T> {
+    try {
+      return await read();
+    } catch (error: unknown) {
+      if (!isMissingRelationError(error)) throw error;
+      this.noteMissingAccessTables(error);
+      return fallback;
+    }
+  }
+
+  async getPermissionsVersion(orgId: string): Promise<number> {
+    const row = await this.safeAccessTableRead(
+      () =>
+        this.db.query.accessVersions.findFirst({
+          where: eq(accessVersions.orgId, orgId),
+          columns: { permissionsVersion: true },
+        }),
+      undefined,
+    );
     return row?.permissionsVersion ?? 1;
   }
 
@@ -123,10 +154,14 @@ export class AccessService {
     });
     if (owner?.isOwner) return allCatalogScopes();
 
-    const directRows = await this.db
-      .select({ roleId: userRoles.roleId })
-      .from(userRoles)
-      .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, userId)));
+    const directRows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({ roleId: userRoles.roleId })
+          .from(userRoles)
+          .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, userId))),
+      [],
+    );
     const hasDirectRoles = directRows.length > 0;
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
@@ -138,16 +173,20 @@ export class AccessService {
     const departmentIds = deptRows.map((row) => row.departmentId);
 
     if (departmentIds.length > 0) {
-      const groupRows = await this.db
-        .select({ roleId: groupRoles.roleId })
-        .from(groupRoles)
-        .where(
-          and(
-            eq(groupRoles.orgId, orgId),
-            eq(groupRoles.groupType, "department"),
-            inArray(groupRoles.groupId, departmentIds),
-          ),
-        );
+      const groupRows = await this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ roleId: groupRoles.roleId })
+            .from(groupRoles)
+            .where(
+              and(
+                eq(groupRoles.orgId, orgId),
+                eq(groupRoles.groupType, "department"),
+                inArray(groupRoles.groupId, departmentIds),
+              ),
+            ),
+        [],
+      );
       for (const row of groupRows) roleIds.add(row.roleId);
     }
 
@@ -182,16 +221,23 @@ export class AccessService {
         .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)));
       const roleById = new Map(roleRecords.map((record) => [record.id, record]));
 
-      const grantRows = await this.db
-        .select({
-          roleId: rolePermissionGrants.roleId,
-          permissionKey: rolePermissionGrants.permissionKey,
-          scope: rolePermissionGrants.scope,
-        })
-        .from(rolePermissionGrants)
-        .where(
-          and(eq(rolePermissionGrants.orgId, orgId), inArray(rolePermissionGrants.roleId, roleIdList)),
-        );
+      const grantRows = await this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({
+              roleId: rolePermissionGrants.roleId,
+              permissionKey: rolePermissionGrants.permissionKey,
+              scope: rolePermissionGrants.scope,
+            })
+            .from(rolePermissionGrants)
+            .where(
+              and(
+                eq(rolePermissionGrants.orgId, orgId),
+                inArray(rolePermissionGrants.roleId, roleIdList),
+              ),
+            ),
+        [],
+      );
       const grantsByRole = new Map<number, { permissionKey: string; scope: DataScope }[]>();
       for (const grant of grantRows) {
         const list = grantsByRole.get(grant.roleId) ?? [];
