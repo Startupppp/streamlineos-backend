@@ -17,6 +17,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -25,11 +27,13 @@ import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
 import {
   createExpenseSchema,
+  emailReportSchema,
   exportSchema,
   listSchema,
   pageDataSchema,
   reportSchema,
   type CreateExpenseInput,
+  type EmailReportInput,
   type ExportInput,
   type ListInput,
   type PageDataInput,
@@ -89,6 +93,20 @@ export class ExpensesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expensesWrite.update(u, canApprove(u), expenseId, body);
+  }
+
+  @Post("email-report")
+  @HttpCode(200)
+  @UseGuards(AbilityGuard)
+  @CheckAbility("read", "hr:expenses")
+  emailReport(
+    @Body(new ZodValidationPipe(emailReportSchema)) body: EmailReportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!canApprove(u)) {
+      throw new BadRequestException("Only HR and CEO can send expense reports");
+    }
+    return this.expensesWrite.emailReport(u.orgId, u.userId, true, body);
   }
 
   @Get("page-data")

@@ -19,6 +19,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { formatDdMmmYyyy } from "./date.helpers";
@@ -30,6 +31,7 @@ export class TerminationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
   ) {}
@@ -363,6 +365,8 @@ export class TerminationService {
       );
     }
 
+    await this.invalidateHrDashboardCache(orgId);
+
     this.dispatchEmployeeTerminated(orgId, terminationId, existing.userId);
 
     this.audit.log({
@@ -380,6 +384,15 @@ export class TerminationService {
     });
 
     return { success: true };
+  }
+
+  private async invalidateHrDashboardCache(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidate(`hr:analytics:${orgId}`),
+      this.cache.invalidate(`hr:dashboard:metrics:${orgId}`),
+      this.cache.invalidate(`hr:dashboard:headcount-trends:${orgId}`),
+      this.cache.invalidate(`hr:celebrations:${orgId}`),
+    ]);
   }
 
   private dispatchEmployeeTerminated(orgId: string, terminationId: number, employeeId: string): void {

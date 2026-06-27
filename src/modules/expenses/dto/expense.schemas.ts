@@ -41,6 +41,25 @@ export const exportSchema = z.object({
   endDate: z.string().optional(),
 });
 
+export const emailReportFiltersSchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  month: z.string().optional(),
+  categoryId: z.number().int().optional(),
+  category: z.string().max(100).optional(),
+  status: z.union([z.string(), z.array(z.string())]).optional(),
+  userId: z.string().optional(),
+  paymentMethod: z.string().max(100).optional(),
+  minAmount: z.number().nonnegative().optional(),
+  maxAmount: z.number().nonnegative().optional(),
+  search: z.string().max(200).optional(),
+});
+
+export const emailReportSchema = z.object({
+  filters: emailReportFiltersSchema,
+  sendTo: z.enum(["CEO", "HR", "BOTH"]).default("BOTH"),
+});
+
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
@@ -87,6 +106,8 @@ export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
 export type ReportInput = z.infer<typeof reportSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;
+export type EmailReportFilters = z.infer<typeof emailReportFiltersSchema>;
+export type EmailReportInput = z.infer<typeof emailReportSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type UpdateExpenseStatusInput = z.infer<typeof updateExpenseStatusSchema>;

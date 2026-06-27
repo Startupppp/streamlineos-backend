@@ -6,9 +6,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { expenses, organizationMembers, users } from "../../db/schema";
+import { expenses, organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -20,9 +20,27 @@ import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
   type CreateExpenseInput,
+  type EmailReportFilters,
+  type EmailReportInput,
+  type ExpenseStatus,
 } from "./dto/expense.schemas";
 
 const statusProbeSchema = z.object({ status: z.string().min(1) });
+
+const EXPENSE_STATUS_VALUES: readonly ExpenseStatus[] = ["PENDING", "APPROVED", "REJECTED", "PAID"];
+
+function isExpenseStatus(value: string): value is ExpenseStatus {
+  return (EXPENSE_STATUS_VALUES as readonly string[]).includes(value);
+}
+
+function formatReportAmount(value: number | string): string {
+  const num = Number(value);
+  if (Number.isNaN(num)) return "0.00";
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+}
 
 function formatDateOnly(value: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -176,6 +194,147 @@ export class ExpensesWriteService {
     void this.dispatchExpenseDecision(u, expenseId, body.status, body.rejectionReason ?? null);
 
     await this.cache.invalidatePattern(`hr:expenses:${u.orgId}:*`);
+    return { success: true };
+  }
+
+  private buildReportConditions(
+    filters: EmailReportFilters,
+    orgId: string,
+    isAdmin: boolean,
+    userId: string,
+  ) {
+    const conditions = [eq(expenses.orgId, orgId)];
+
+    if (!isAdmin) {
+      conditions.push(eq(expenses.userId, userId));
+    } else if (filters.userId) {
+      conditions.push(eq(expenses.userId, filters.userId));
+    }
+
+    if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
+    if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
+    if (filters.month) {
+      const [year, month] = filters.month.split("-");
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      conditions.push(gte(expenses.expenseDate, `${year}-${month}-01`));
+      conditions.push(lte(expenses.expenseDate, `${year}-${month}-${lastDay.toString().padStart(2, "0")}`));
+    }
+    if (filters.categoryId) conditions.push(eq(expenses.categoryId, filters.categoryId));
+    if (filters.category) conditions.push(eq(expenses.category, filters.category));
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        const valid = filters.status.filter(isExpenseStatus);
+        if (valid.length > 0 && !filters.status.includes("all")) {
+          conditions.push(inArray(expenses.status, valid));
+        }
+      } else if (filters.status !== "all" && isExpenseStatus(filters.status)) {
+        conditions.push(eq(expenses.status, filters.status));
+      }
+    }
+    if (filters.minAmount !== undefined && filters.minAmount > 0) {
+      conditions.push(gte(sql`CAST(${expenses.amount} AS DECIMAL)`, filters.minAmount));
+    }
+    if (filters.maxAmount !== undefined && filters.maxAmount > 0) {
+      conditions.push(lte(sql`CAST(${expenses.amount} AS DECIMAL)`, filters.maxAmount));
+    }
+    if (filters.paymentMethod && filters.paymentMethod !== "all") {
+      conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
+    }
+    if (filters.search?.trim()) {
+      const term = `%${filters.search.trim().toLowerCase()}%`;
+      conditions.push(
+        or(
+          like(sql`LOWER(${expenses.description})`, term),
+          like(sql`LOWER(${expenses.category})`, term),
+          like(sql`LOWER(${expenses.merchant})`, term),
+        )!,
+      );
+    }
+
+    return conditions;
+  }
+
+  async emailReport(orgId: string, userId: string, isAdmin: boolean, body: EmailReportInput) {
+    const conditions = this.buildReportConditions(body.filters, orgId, isAdmin, userId);
+
+    const [expenseList, statsRow] = await Promise.all([
+      this.db.query.expenses.findMany({
+        where: and(...conditions),
+        with: { user: true },
+        orderBy: [desc(expenses.expenseDate)],
+      }),
+      this.db
+        .select({
+          totalAmount: sql<number>`COALESCE(SUM(CAST(${expenses.amount} AS DECIMAL)), 0)`,
+          totalCount: sql<number>`COUNT(*)`,
+        })
+        .from(expenses)
+        .where(and(...conditions)),
+    ]);
+
+    if (expenseList.length === 0) {
+      throw new BadRequestException("No expenses found for the selected filters");
+    }
+
+    const members = await this.db.query.organizationMembers.findMany({
+      where: eq(organizationMembers.orgId, orgId),
+      with: { user: true },
+    });
+
+    const recipientEmails = members
+      .filter((m) => {
+        if (body.sendTo === "CEO") return m.role === "CEO";
+        if (body.sendTo === "HR") return m.role === "HR";
+        return m.role === "CEO" || m.role === "HR";
+      })
+      .map((m) => m.user?.email)
+      .filter((email): email is string => !!email);
+
+    if (recipientEmails.length === 0) {
+      throw new BadRequestException("No CEO/HR email addresses found");
+    }
+
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { name: true },
+    });
+
+    const { startDate, endDate } = body.filters;
+    const periodLabel =
+      startDate && endDate
+        ? `${startDate} to ${endDate}`
+        : startDate
+          ? `From ${startDate}`
+          : "All Time";
+
+    const rows = expenseList.map((e) => ({
+      date: e.expenseDate,
+      employeeName:
+        `${e.user?.firstName ?? ""} ${e.user?.lastName ?? ""}`.trim() || "Unknown",
+      category: e.category,
+      amount: formatReportAmount(e.amount),
+      currency: "INR",
+      status: e.status ?? "PENDING",
+    }));
+
+    const stats = statsRow[0];
+    const summary = {
+      totalAmount: formatReportAmount(stats?.totalAmount ?? 0),
+      totalCount: Number(stats?.totalCount) || 0,
+      pendingCount: expenseList.filter((e) => e.status === "PENDING").length,
+      approvedCount: expenseList.filter((e) => e.status === "APPROVED").length,
+      paidCount: expenseList.filter((e) => e.status === "PAID").length,
+      rejectedCount: expenseList.filter((e) => e.status === "REJECTED").length,
+    };
+
+    await this.email.sendMonthlyExpenseReportEmail(
+      periodLabel,
+      org?.name ?? "StreamlineOS",
+      rows,
+      summary,
+      recipientEmails,
+    );
+
     return { success: true };
   }
 
