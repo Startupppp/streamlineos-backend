@@ -173,7 +173,7 @@ async function main() {
     console.log("  NOTE: no lead id from GET /leads — real LLM call skipped.");
   } else {
     const real = await req("POST", "/ai/score-lead", { token: pro, body: { leadId } });
-    check(`REAL POST /ai/score-lead (leadId=${leadId}) -> 200|500(upstream)`, real, [200, 500]);
+    check(`REAL POST /ai/score-lead (leadId=${leadId}) -> 200|503(upstream)`, real, [200, 503]);
     const b = real.body ?? {};
     if (real.status === 200) {
       const ok =
@@ -186,8 +186,8 @@ async function main() {
       if (ok) console.log(`  REAL score-lead -> score=${b.score} strengths=${b.strengths.length} reasoning="${String(b.reasoning).slice(0, 60)}..."`);
       else console.log("  REAL score-lead unexpected 200 body:", JSON.stringify(real.body)?.slice(0, 300));
     } else {
-      // 500: must be the generic upstream-failure envelope, not a logic error leaking detail.
-      shapeOk("REAL score-lead 500 is the generic upstream envelope (OpenAI key rejected)", typeof b.error === "string");
+      // 503: graceful upstream-unavailable envelope (invalid key mapped to ServiceUnavailable).
+      shapeOk("REAL score-lead 503 is the graceful upstream envelope (OpenAI key rejected)", typeof b.error === "string");
       console.log("  NOTE: configured OPENAI_API_KEY is rejected by OpenAI (invalid_api_key) — real");
       console.log("        LLM happy-path is BLOCKED BY CREDENTIALS, not code. Route wiring + DB lookup OK.");
     }
