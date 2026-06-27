@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, sql } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import {
   loginHistory,
@@ -16,6 +16,7 @@ import {
   roles,
   subscriptions,
   users,
+  userSessions,
   verificationTokens,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -27,7 +28,7 @@ import { EmailService } from "../email/email.service";
 import { PasswordService } from "./password.service";
 import { DeviceService } from "./device.service";
 import { SessionService } from "./session.service";
-import { addDays, addHours } from "date-fns";
+import { addDays, addHours, subDays } from "date-fns";
 import type {
   LoginInput,
   RegisterInput,
@@ -389,6 +390,47 @@ export class AuthService {
     ]);
 
     return { data, total: countResult[0]?.count ?? 0, page, limit };
+  }
+
+  async getAuditAnalytics() {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = subDays(now, 7);
+
+    const [loginsTodayResult, failedLoginsResult, activeSessionsResult, passwordResetsResult] =
+      await Promise.all([
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(loginHistory)
+          .where(and(eq(loginHistory.success, true), gte(loginHistory.createdAt, startOfToday))),
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(loginHistory)
+          .where(and(eq(loginHistory.success, false), gte(loginHistory.createdAt, sevenDaysAgo))),
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(userSessions)
+          .where(
+            and(eq(userSessions.isRevoked, false), gt(userSessions.expiresAt, now)),
+          ),
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(loginHistory)
+          .where(
+            and(
+              eq(loginHistory.event, "auth.password_reset_requested"),
+              gte(loginHistory.createdAt, sevenDaysAgo),
+            ),
+          ),
+      ]);
+
+    return {
+      loginsToday: loginsTodayResult[0]?.count ?? 0,
+      failedLoginsLast7Days: failedLoginsResult[0]?.count ?? 0,
+      activeSessions: activeSessionsResult[0]?.count ?? 0,
+      passwordResetsLast7Days: passwordResetsResult[0]?.count ?? 0,
+    };
   }
 
   private async logLoginEvent(

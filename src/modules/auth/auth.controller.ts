@@ -170,4 +170,9 @@ export class AuthController {
   ) {
     return this.authService.getLoginHistory(u.userId, query);
   }
+
+  @Get("audit/analytics")
+  getAuditAnalytics() {
+    return this.authService.getAuditAnalytics();
+  }
 }
