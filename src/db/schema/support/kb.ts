@@ -34,7 +34,7 @@ export const kbCategories = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_kb_categories_org_slug").on(table.orgId, table.slug),
+    uniqueIndex("uniq_kb_categories_org_space_slug").on(table.orgId, table.spaceId, table.slug),
     index("idx_kb_categories_space").on(table.spaceId),
     index("idx_kb_categories_parent").on(table.parentId),
     foreignKey({
@@ -79,6 +79,8 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_org_status").on(table.orgId, table.status),
     index("idx_kb_articles_org_category").on(table.orgId, table.categoryId),
     index("idx_kb_articles_space").on(table.spaceId),
+    index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),
+    index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
   ],
 );
 
@@ -95,6 +97,7 @@ export const kbArticleFeedback = pgTable(
   },
   (table) => [
     index("idx_kb_article_feedback_article").on(table.articleId),
+    uniqueIndex("uniq_kb_article_feedback_org_article_visitor").on(table.orgId, table.articleId, table.visitorId),
   ],
 );
 

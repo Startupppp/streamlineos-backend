@@ -36,6 +36,7 @@ export const kbEvents = pgTable(
   (table) => [
     index("idx_kb_events_org_time").on(table.orgId, table.occurredAt),
     index("idx_kb_events_org_type").on(table.orgId, table.eventType),
+    index("idx_kb_events_org_type_time").on(table.orgId, table.eventType, table.occurredAt),
   ],
 );
 
