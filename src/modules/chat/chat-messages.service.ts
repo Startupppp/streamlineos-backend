@@ -11,17 +11,33 @@ import {
   chatChannels,
   chatChannelMembers,
   chatMessages,
+  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { AblyService } from "../realtime/ably.service";
+import { WebPushService } from "../realtime/web-push.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
 const CEO = "CEO";
 const HR = "HR";
 
+type PersistedMessage = {
+  id: number;
+  channelId: number;
+  senderId: string;
+  content: string | null;
+  createdAt: Date;
+  replyToId: number | null;
+};
+
 @Injectable()
 export class ChatMessagesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly ably: AblyService,
+    private readonly webPush: WebPushService,
+  ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
     const member = await this.db.query.chatChannelMembers.findFirst({
@@ -85,7 +101,7 @@ export class ChatMessagesService {
     return newMessages.reverse();
   }
 
-  async send(channelId: number, userId: string, body: SendMessageInput) {
+  async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
     if (!(await this.isMember(channelId, userId))) {
       throw new ForbiddenException("You are not a member of this channel");
     }
@@ -94,8 +110,8 @@ export class ChatMessagesService {
       throw new BadRequestException("Message must have content or attachments");
     }
 
-    return this.db.transaction(async (tx) => {
-      const [message] = await tx
+    const message = await this.db.transaction(async (tx) => {
+      const [created] = await tx
         .insert(chatMessages)
         .values({
           channelId,
@@ -108,7 +124,7 @@ export class ChatMessagesService {
       if (body.attachments && body.attachments.length > 0) {
         await tx.insert(chatAttachments).values(
           body.attachments.map((a) => ({
-            messageId: message.id,
+            messageId: created.id,
             fileName: a.fileName,
             fileUrl: a.fileUrl,
             fileKey: a.fileKey,
@@ -123,7 +139,42 @@ export class ChatMessagesService {
         .set({ lastMessageAt: new Date(), updatedAt: new Date() })
         .where(eq(chatChannels.id, channelId));
 
-      return message;
+      return created;
+    });
+
+    void this.dispatchMessageSideEffects(orgId, channelId, message).catch(() => undefined);
+
+    return message;
+  }
+
+  private async dispatchMessageSideEffects(
+    orgId: string,
+    channelId: number,
+    message: PersistedMessage,
+  ): Promise<void> {
+    if (!this.ably.configured && !this.webPush.configured) return;
+
+    const [sender] = await this.db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, message.senderId))
+      .limit(1);
+    const senderName = sender?.name ?? null;
+
+    await this.ably.publishChatMessage(orgId, channelId, {
+      id: message.id,
+      channelId: message.channelId,
+      senderId: message.senderId,
+      senderName,
+      content: message.content,
+      createdAt: message.createdAt,
+      replyToId: message.replyToId,
+    });
+
+    await this.webPush.sendToChannelMembers(channelId, message.senderId, {
+      title: senderName ?? "New message",
+      body: message.content?.slice(0, 80) ?? "Sent an attachment",
+      url: `/chat?channel=${channelId}`,
     });
   }
 

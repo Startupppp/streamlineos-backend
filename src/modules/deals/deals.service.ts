@@ -1,17 +1,19 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
-import { deals, dealActivities, organizationMembers } from "../../db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { deals, dealActivities, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { EmailService } from "../email/email.service";
+import { AutomationService } from "../automation/automation.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
 type DealRow = typeof deals.$inferSelect;
 
 export type UpdateDealOutcome =
-  | { ok: true; deal: DealRow; stageChanged: boolean }
+  | { ok: true; deal: DealRow; stageChanged: boolean; previousStage: string | null }
   | { ok: false; reason: "version_conflict" | "not_found" };
 
 @Injectable()
@@ -20,7 +22,78 @@ export class DealsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
   ) {}
+
+  private async maybeCreateNegotiationChannel(orgId: string, userId: string, dealId: number): Promise<void> {
+    const alreadyLinked = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.linkedDealId, dealId),
+      columns: { id: true },
+    });
+    if (alreadyLinked) return;
+
+    const dealRow = await this.db.query.deals.findFirst({
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      columns: { name: true, assignedToId: true },
+    });
+
+    const channelName = dealRow ? `Deal: ${dealRow.name}` : `Deal #${dealId}`;
+
+    const [newChannel] = await this.db
+      .insert(chatChannels)
+      .values({
+        orgId,
+        name: channelName,
+        type: "GROUP",
+        description: `Auto-created channel for deal #${dealId} entering Negotiation`,
+        createdBy: userId,
+        linkedDealId: dealId,
+      })
+      .returning({ id: chatChannels.id });
+
+    const memberIds = [userId];
+    if (dealRow?.assignedToId && dealRow.assignedToId !== userId) {
+      memberIds.push(dealRow.assignedToId);
+    }
+
+    await this.db.insert(chatChannelMembers).values(
+      memberIds.map((uid) => ({
+        channelId: newChannel.id,
+        userId: uid,
+        role: uid === userId ? "ADMIN" : "MEMBER",
+      })),
+    );
+  }
+
+  private async sendStageChangeNotification(
+    actorId: string,
+    deal: DealRow,
+    previousStage: string,
+    newStage: string,
+  ): Promise<void> {
+    if (!deal.assignedToId) return;
+    const ids = Array.from(new Set([deal.assignedToId, actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const assignee = people.find((p) => p.id === deal.assignedToId);
+    if (!assignee?.email) return;
+
+    const actor = people.find((p) => p.id === actorId);
+    await this.email.sendDealStageChangeEmail(
+      assignee.email,
+      assignee.name ?? "Team Member",
+      deal.name,
+      previousStage,
+      newStage,
+      deal.value,
+      actor?.name ?? "Team Member",
+      deal.id,
+    );
+  }
 
   listDeals(orgId: string, role: string, userId: string, query: ListDealsInput) {
     const hash = Buffer.from(JSON.stringify({ ...query, userId, role })).toString("base64");
@@ -99,6 +172,7 @@ export class DealsService {
   async updateDeal(orgId: string, userId: string, dealId: number, input: UpdateDealInput): Promise<UpdateDealOutcome> {
     const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
     let stageChanged = false;
+    let previousStage: string | null = null;
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
@@ -124,6 +198,7 @@ export class DealsService {
 
       if (existing && existing.stage !== input.stage) {
         stageChanged = true;
+        previousStage = existing.stage ?? null;
         await this.db.insert(dealActivities).values({
           orgId,
           dealId,
@@ -133,6 +208,10 @@ export class DealsService {
           subject: `Stage changed from ${existing.stage} to ${input.stage}`,
           userId,
         });
+
+        if (input.stage === "NEGOTIATION") {
+          await this.maybeCreateNegotiationChannel(orgId, userId, dealId);
+        }
       }
     }
 
@@ -175,7 +254,22 @@ export class DealsService {
       metadata: { changedFields: Object.keys(input), newStage: input.stage },
     });
 
-    return { ok: true, deal: updated, stageChanged };
+    if (stageChanged && previousStage && input.stage) {
+      const newStage = input.stage;
+      void this.sendStageChangeNotification(userId, updated, previousStage, newStage).catch(() => undefined);
+      void this.automation
+        .runAutomationsForEvent(orgId, "deal.stage_changed", {
+          id: updated.id,
+          name: updated.name,
+          value: updated.value,
+          stage: updated.stage,
+          previousStage,
+          assignedToId: updated.assignedToId,
+        })
+        .catch(() => undefined);
+    }
+
+    return { ok: true, deal: updated, stageChanged, previousStage };
   }
 
   getDeal(orgId: string, dealId: number) {

@@ -6,8 +6,10 @@ import { ChatChannelsService } from "./chat-channels.service";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
+import { RealtimeModule } from "../realtime/realtime.module";
 
 @Module({
+  imports: [RealtimeModule],
   controllers: [ChatChannelsController, ChatMessagesController, ChatPresenceController],
   providers: [
     ChatChannelsService,

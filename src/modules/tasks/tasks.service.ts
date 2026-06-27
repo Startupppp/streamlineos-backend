@@ -7,12 +7,14 @@ import {
   count,
   lt,
   gte,
+  inArray,
   isNotNull,
   sql,
 } from "drizzle-orm";
 import { tasks, taskSequences, taskSequenceSteps, crmActivities, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { EmailService } from "../email/email.service";
 import type {
   ListInput,
   CreateInput,
@@ -57,7 +59,47 @@ function addMonths(date: Date, amount: number): Date {
 
 @Injectable()
 export class TasksService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+  ) {}
+
+  private async notifyTaskAssignee(params: {
+    assigneeId: string;
+    actorId: string;
+    title: string;
+    type: string;
+    dueDate: Date | null;
+    entityLabel?: string;
+  }): Promise<void> {
+    const ids = Array.from(new Set([params.assigneeId, params.actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const assignee = people.find((p) => p.id === params.assigneeId);
+    if (!assignee?.email) return;
+
+    const actor = people.find((p) => p.id === params.actorId);
+    const dueStr = params.dueDate
+      ? params.dueDate.toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : null;
+
+    await this.email.sendTaskAssignedEmail(
+      assignee.email,
+      assignee.name ?? "Team Member",
+      params.title,
+      params.type,
+      dueStr,
+      actor?.name ?? "Team Member",
+      params.entityLabel,
+    );
+  }
 
   async list(orgId: string, userId: string, filters: ListInput) {
     const offset = (filters.page - 1) * filters.limit;
@@ -104,6 +146,20 @@ export class TasksService {
       })
       .returning();
 
+    if (created && created.assigneeId && created.assigneeId !== userId) {
+      const entityLabel = input.entityType
+        ? `${input.entityType} #${input.entityId ?? ""}`
+        : undefined;
+      void this.notifyTaskAssignee({
+        assigneeId: created.assigneeId,
+        actorId: userId,
+        title: created.title,
+        type: created.type,
+        dueDate: created.dueDate,
+        entityLabel,
+      }).catch(() => undefined);
+    }
+
     return created ?? null;
   }
 
@@ -116,7 +172,7 @@ export class TasksService {
     return existing ?? null;
   }
 
-  async update(orgId: string, id: number, input: UpdateInput) {
+  async update(orgId: string, id: number, userId: string, input: UpdateInput) {
     const existing = await this.getTask(orgId, id);
     if (!existing) return null;
 
@@ -139,6 +195,21 @@ export class TasksService {
       })
       .where(and(eq(tasks.id, id), eq(tasks.orgId, orgId)))
       .returning();
+
+    if (
+      updated &&
+      input.assigneeId &&
+      input.assigneeId !== existing.assigneeId &&
+      input.assigneeId !== userId
+    ) {
+      void this.notifyTaskAssignee({
+        assigneeId: input.assigneeId,
+        actorId: userId,
+        title: updated.title,
+        type: updated.type,
+        dueDate: updated.dueDate,
+      }).catch(() => undefined);
+    }
 
     return updated ?? null;
   }

@@ -131,7 +131,7 @@ export class TasksController {
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.tasks.update(u.orgId, taskId, body);
+    const updated = await this.tasks.update(u.orgId, taskId, u.userId, body);
     if (!updated) throw new NotFoundException("Task not found");
     return updated;
   }

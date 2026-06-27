@@ -51,7 +51,7 @@ export class ChatMessagesController {
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.send(channelId, u.userId, body);
+    return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
   @Get("poll")

@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -25,6 +26,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
+import { PayrollStatusService } from "./payrolls-status.service";
 import { renderPayslipHtml } from "./lib/payslip-html";
 import {
   allPayrollsQuerySchema,
@@ -38,7 +40,10 @@ import {
 @Controller("hr/payrolls")
 @UseGuards(JwtAuthGuard)
 export class PayrollsController {
-  constructor(private readonly payrolls: PayrollsService) {}
+  constructor(
+    private readonly payrolls: PayrollsService,
+    private readonly payrollStatus: PayrollStatusService,
+  ) {}
 
   @Get()
   list(@CurrentUser() u: CurrentUserContext) {

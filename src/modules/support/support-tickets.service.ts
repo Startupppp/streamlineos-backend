@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketMessages,
@@ -11,6 +11,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
+import { EmailService } from "../email/email.service";
 import { SupportMacrosService } from "./support-macros.service";
 import type {
   CreateTicketInput,
@@ -58,6 +59,7 @@ export class SupportTicketsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly macros: SupportMacrosService,
+    private readonly email: EmailService,
   ) {}
 
   listTickets(orgId: string, query: ListTicketsInput) {
@@ -155,6 +157,17 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
 
+    if (finalAssigneeId) {
+      void this.sendAssignmentEmail(
+        finalAssigneeId,
+        userId,
+        input.title,
+        finalPriority,
+        ticket.id,
+        "User",
+      ).catch(() => undefined);
+    }
+
     return ticket;
   }
 
@@ -199,6 +212,27 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
 
+    if (input.status) {
+      void this.sendStatusEmail(
+        ticket.createdBy,
+        userId,
+        ticket.title,
+        ticketId,
+        input.status,
+      ).catch(() => undefined);
+    }
+
+    if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
+      void this.sendAssignmentEmail(
+        input.assigneeId,
+        userId,
+        ticket.title,
+        ticket.priority ?? "MEDIUM",
+        ticketId,
+        "Support",
+      ).catch(() => undefined);
+    }
+
     return { success: true };
   }
 
@@ -219,7 +253,7 @@ export class SupportTicketsService {
   async addMessage(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true, status: true },
+      columns: { id: true, status: true, title: true, createdBy: true, assigneeId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -239,6 +273,15 @@ export class SupportTicketsService {
         .update(supportTickets)
         .set({ status: "IN_PROGRESS", updatedAt: new Date() })
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+    }
+
+    if (!input.isInternal) {
+      void this.sendReplyEmail(
+        { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
+        ticketId,
+        userId,
+        input.body,
+      ).catch(() => undefined);
     }
 
     return message;
@@ -373,6 +416,90 @@ export class SupportTicketsService {
         error: activityError instanceof Error ? activityError.message : String(activityError),
       });
     }
+  }
+
+  private async sendAssignmentEmail(
+    assigneeId: string,
+    actorId: string,
+    title: string,
+    priority: string,
+    ticketId: number,
+    actorFallback: string,
+  ): Promise<void> {
+    const ids = Array.from(new Set([assigneeId, actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const assignee = people.find((p) => p.id === assigneeId);
+    if (!assignee?.email) return;
+
+    const actor = people.find((p) => p.id === actorId);
+    await this.email.sendSupportTicketCreatedEmail(
+      assignee.email,
+      assignee.name ?? "Team Member",
+      title,
+      priority,
+      actor?.name ?? actorFallback,
+      ticketId,
+    );
+  }
+
+  private async sendStatusEmail(
+    creatorId: string,
+    actorId: string,
+    title: string,
+    ticketId: number,
+    status: string,
+  ): Promise<void> {
+    const ids = Array.from(new Set([creatorId, actorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const creator = people.find((p) => p.id === creatorId);
+    if (!creator?.email) return;
+
+    const actor = people.find((p) => p.id === actorId);
+    await this.email.sendSupportTicketStatusEmail(
+      creator.email,
+      creator.name ?? "User",
+      title,
+      ticketId,
+      status,
+      actor?.name ?? "Support",
+    );
+  }
+
+  private async sendReplyEmail(
+    ticket: { title: string; createdBy: string; assigneeId: string | null },
+    ticketId: number,
+    authorId: string,
+    body: string,
+  ): Promise<void> {
+    const notifyUserId = authorId === ticket.createdBy ? ticket.assigneeId : ticket.createdBy;
+    if (!notifyUserId) return;
+
+    const ids = Array.from(new Set([notifyUserId, authorId]));
+    const people = await this.db
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+
+    const recipient = people.find((p) => p.id === notifyUserId);
+    if (!recipient?.email) return;
+
+    const author = people.find((p) => p.id === authorId);
+    await this.email.sendSupportTicketReplyEmail(
+      recipient.email,
+      recipient.name ?? "User",
+      ticket.title,
+      ticketId,
+      author?.name ?? "Team Member",
+      body,
+    );
   }
 
   private async invalidateTicketCaches(orgId: string) {
