@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
-import { kbArticleFeedback, kbArticles, kbCategories } from "../../db/schema";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { kbArticleFeedback, kbArticles, kbCategories, kbSpaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { KbFeedbackInput, KbListInput } from "./dto/public.schemas";
@@ -29,6 +29,8 @@ export class KbService {
       eq(kbArticles.orgId, org),
       eq(kbArticles.status, "published"),
       eq(kbArticles.visibility, "public"),
+      inArray(kbSpaces.audience, ["public", "mixed"]),
+      isNull(kbSpaces.deletedAt),
     ];
     if (categoryId) conditions.push(eq(kbArticles.categoryId, categoryId));
     if (search) {
@@ -51,6 +53,7 @@ export class KbService {
         publishedAt: kbArticles.publishedAt,
       })
       .from(kbArticles)
+      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
       .where(and(...conditions))
       .orderBy(desc(kbArticles.publishedAt));
 
@@ -76,12 +79,15 @@ export class KbService {
       })
       .from(kbArticles)
       .leftJoin(kbCategories, eq(kbArticles.categoryId, kbCategories.id))
+      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
       .where(
         and(
           eq(kbArticles.orgId, org),
           eq(kbArticles.slug, slug),
           eq(kbArticles.status, "published"),
           eq(kbArticles.visibility, "public"),
+          inArray(kbSpaces.audience, ["public", "mixed"]),
+          isNull(kbSpaces.deletedAt),
         ),
       );
 
@@ -101,12 +107,15 @@ export class KbService {
     const [article] = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)
+      .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
       .where(
         and(
           eq(kbArticles.orgId, org),
           eq(kbArticles.slug, slug),
           eq(kbArticles.status, "published"),
           eq(kbArticles.visibility, "public"),
+          inArray(kbSpaces.audience, ["public", "mixed"]),
+          isNull(kbSpaces.deletedAt),
         ),
       );
 

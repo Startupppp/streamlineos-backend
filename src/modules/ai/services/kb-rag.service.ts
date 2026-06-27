@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { kbArticleAttachments, kbArticleChunks, kbArticles } from "../../../db/schema";
+import { kbArticleAttachments, kbArticleChunks, kbArticles, kbSpaces } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { EmbeddingsService } from "../providers/embeddings.service";
@@ -62,9 +62,11 @@ export class KbRagService {
     if (publicOnly) {
       conditions.push(eq(kbArticles.status, "published"));
       conditions.push(eq(kbArticles.visibility, "public"));
+      conditions.push(inArray(kbSpaces.audience, ["public", "mixed"]));
+      conditions.push(isNull(kbSpaces.deletedAt));
     }
 
-    return this.db
+    let query = this.db
       .select({
         id: kbArticleChunks.id,
         articleId: kbArticleChunks.articleId,
@@ -79,6 +81,12 @@ export class KbRagService {
       .from(kbArticleChunks)
       .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
       .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
+      .$dynamic();
+    if (publicOnly) {
+      query = query.innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id));
+    }
+
+    return query
       .where(and(...conditions))
       .orderBy(distance)
       .limit(limit);
