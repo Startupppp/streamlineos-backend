@@ -88,6 +88,7 @@ export class EntitlementsService {
         this.db.query.orgModules.findMany({
           where: eq(orgModules.orgId, orgId),
           columns: { moduleKey: true, enabled: true },
+          limit: 100,
         }),
       [],
     );

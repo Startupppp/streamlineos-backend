@@ -186,7 +186,8 @@ export class RolesService {
       .from(rolePermissionGrants)
       .where(
         and(eq(rolePermissionGrants.orgId, orgId), eq(rolePermissionGrants.roleId, roleId)),
-      );
+      )
+      .limit(500);
     if (grants.length > 0) return grants;
 
     const fallbackKeys =
@@ -254,7 +255,8 @@ export class RolesService {
       .select({ userId: userRoles.userId, name: users.name, email: users.email })
       .from(userRoles)
       .innerJoin(users, eq(userRoles.userId, users.id))
-      .where(and(eq(userRoles.orgId, orgId), eq(userRoles.roleId, roleId)));
+      .where(and(eq(userRoles.orgId, orgId), eq(userRoles.roleId, roleId)))
+      .limit(100);
 
     const departmentRows = await this.db
       .select({ departmentId: groupRoles.groupId, name: departments.name })
@@ -266,7 +268,8 @@ export class RolesService {
           eq(groupRoles.groupType, "department"),
           eq(groupRoles.roleId, roleId),
         ),
-      );
+      )
+      .limit(100);
 
     const departmentIds = departmentRows.map((row) => row.departmentId);
     const viaDepartment =
@@ -281,6 +284,7 @@ export class RolesService {
             .from(departmentMembers)
             .innerJoin(users, eq(departmentMembers.userId, users.id))
             .where(inArray(departmentMembers.departmentId, departmentIds))
+            .limit(500)
         : [];
 
     const effective = new Map<string, { userId: string; name: string | null; email: string }>();
@@ -435,12 +439,14 @@ export class RolesService {
       .select({ id: roles.id, name: roles.name, slug: roles.slug, permissions: roles.permissions })
       .from(roles)
       .where(eq(roles.orgId, orgId))
-      .orderBy(asc(roles.name));
+      .orderBy(asc(roles.name))
+      .limit(ROLES_PAGE_LIMIT);
 
     const allGrants = await this.db
       .select({ roleId: rolePermissionGrants.roleId, permissionKey: rolePermissionGrants.permissionKey })
       .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId));
+      .where(eq(rolePermissionGrants.orgId, orgId))
+      .limit(10000);
 
     const grantsByRole = new Map<number, string[]>();
     for (const grant of allGrants) {
@@ -500,7 +506,8 @@ export class RolesService {
     const orgRoles = await this.db
       .select({ id: roles.id, slug: roles.slug, permissions: roles.permissions })
       .from(roles)
-      .where(eq(roles.orgId, orgId));
+      .where(eq(roles.orgId, orgId))
+      .limit(ROLES_PAGE_LIMIT);
 
     const grantRows = await this.db
       .select({
@@ -509,7 +516,8 @@ export class RolesService {
         scope: rolePermissionGrants.scope,
       })
       .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId));
+      .where(eq(rolePermissionGrants.orgId, orgId))
+      .limit(10000);
 
     const grantedRoleIds = new Set<number>();
     const manageViaGrant = new Set<number>();

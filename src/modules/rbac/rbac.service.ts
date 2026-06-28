@@ -38,12 +38,14 @@ export class RbacService {
         eq(userPermissions.granted, true),
       ),
       with: { permission: true },
+      limit: 500,
     });
 
     const rolePerms = role
       ? await this.db.query.rolePermissions.findMany({
           where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
           with: { permission: true },
+          limit: 500,
         })
       : [];
 
@@ -79,6 +81,7 @@ export class RbacService {
     const perms = await this.db.query.rolePermissions.findMany({
       where: and(eq(rolePermissions.role, role), eq(rolePermissions.orgId, orgId)),
       with: { permission: true },
+      limit: 500,
     });
 
     const customRole = await this.db.query.roles.findFirst({
@@ -171,6 +174,7 @@ export class RbacService {
     const userPerms = await this.db.query.userPermissions.findMany({
       where: and(eq(userPermissions.userId, userId), eq(userPermissions.orgId, orgId)),
       with: { permission: true },
+      limit: 500,
     });
 
     const matchingUserPerm = userPerms.find((up) => up.permission?.name === permissionName);
@@ -183,6 +187,7 @@ export class RbacService {
           or(eq(rolePermissions.orgId, orgId), isNull(rolePermissions.orgId)),
         ),
         with: { permission: true },
+        limit: 500,
       });
       if (rolePerms.some((rp) => rp.permission?.name === permissionName)) return true;
     }
