@@ -11,6 +11,8 @@ import { KbAskService } from "./kb-ask.service";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbMembersService } from "./kb-members.service";
 import { KbAuthoringService } from "./kb-authoring.service";
+import { KbIndexingService } from "./kb-indexing.service";
+import { KbFromTicketService } from "./kb-from-ticket.service";
 import { KbSpacesController } from "./kb-spaces.controller";
 import { KbCategoriesController } from "./kb-categories.controller";
 import { KbArticlesController } from "./kb-articles.controller";
@@ -19,6 +21,8 @@ import { KbAskController } from "./kb-ask.controller";
 import { KbAnalyticsController } from "./kb-analytics.controller";
 import { KbMembersController } from "./kb-members.controller";
 import { KbAuthoringController } from "./kb-authoring.controller";
+import { KbIndexingController } from "./kb-indexing.controller";
+import { KbFromTicketController } from "./kb-from-ticket.controller";
 
 @Module({
   imports: [AiModule],
@@ -31,6 +35,8 @@ import { KbAuthoringController } from "./kb-authoring.controller";
     KbAnalyticsController,
     KbMembersController,
     KbAuthoringController,
+    KbIndexingController,
+    KbFromTicketController,
   ],
   providers: [
     KbCreditsService,
@@ -44,6 +50,8 @@ import { KbAuthoringController } from "./kb-authoring.controller";
     KbAnalyticsService,
     KbMembersService,
     KbAuthoringService,
+    KbIndexingService,
+    KbFromTicketService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService],
 })

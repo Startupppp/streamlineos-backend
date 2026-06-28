@@ -17,7 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type { CompOffInput } from "./dto/leaves.schemas";
@@ -54,6 +54,7 @@ export class LeavesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   balance(orgId: string, userId: string) {
@@ -93,7 +94,8 @@ export class LeavesService {
 
   async team(u: CurrentUserContext) {
     const role = u.role ?? "";
-    const isAdmin = defineAbilityFor(u).can("approve", "hr:leaves");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:leaves:approve");
 
     if (!isAdmin && role !== "MANAGER" && role !== "BRANCH_MANAGER") {
       throw new ForbiddenException("Only managers and admins can access team leave requests.");

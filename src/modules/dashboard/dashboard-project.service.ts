@@ -3,7 +3,6 @@ import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 import { projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { type DashboardActor } from "./dashboard.errors";
 
 @Injectable()
@@ -30,8 +29,7 @@ export class DashboardProjectService {
   }
 
   async getRecentProjects(orgId: string, actor: DashboardActor) {
-    const ability = defineAbilityFor(actor);
-    const isOwnerOrAdmin = ability.can("manage", "hr:employees");
+    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
 
     if (isOwnerOrAdmin) {
       return this.db.query.projects.findMany({
@@ -105,8 +103,7 @@ export class DashboardProjectService {
   }
 
   async getActiveSprintSummary(orgId: string, actor: DashboardActor) {
-    const ability = defineAbilityFor(actor);
-    const isOwnerOrAdmin = ability.can("manage", "hr:employees");
+    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
 
     const projectIds = await this.resolveProjectIds(orgId, actor.userId, isOwnerOrAdmin);
     if (projectIds.length === 0) return null;
@@ -166,8 +163,7 @@ export class DashboardProjectService {
   }
 
   async getRecentActivity(orgId: string, actor: DashboardActor) {
-    const ability = defineAbilityFor(actor);
-    const isOwnerOrAdmin = ability.can("manage", "hr:employees");
+    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
 
     const projectIds = await this.resolveProjectIds(orgId, actor.userId, isOwnerOrAdmin);
     if (projectIds.length === 0) return [];

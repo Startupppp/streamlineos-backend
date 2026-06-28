@@ -20,7 +20,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { subMonths } from "./date.helpers";
 import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
@@ -65,7 +64,7 @@ function toRange(input: { from?: string; to?: string }): DateRange {
 }
 
 @Controller("sales")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class SalesController {
   constructor(
     private readonly sales: SalesService,
@@ -74,24 +73,18 @@ export class SalesController {
   ) {}
 
   @Get("commission-rules")
+  @RequirePermission("sales:view")
   listCommissionRules(@CurrentUser() u: CurrentUserContext) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("view", "sales")) {
-      throw new ForbiddenException("You do not have access to commission rules");
-    }
     return this.sales.listCommissionRules(u.orgId);
   }
 
   @Post("commission-rules")
   @HttpCode(201)
+  @RequirePermission("settings:manage")
   createCommissionRule(
     @Body(new ZodValidationPipe(commissionRuleCreateSchema)) body: CommissionRuleCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "settings")) {
-      throw new ForbiddenException("Only admins can create commission rules");
-    }
     return this.sales.createCommissionRule(u.orgId, body);
   }
 

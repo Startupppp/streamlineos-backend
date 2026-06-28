@@ -1,6 +1,4 @@
 import { createHash, randomBytes } from "crypto";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 export const VALID_API_KEY_SCOPES = [
   "leads:read",
@@ -38,15 +36,6 @@ function resolveAppUrl(): string {
 }
 
 const APP_URL = resolveAppUrl();
-
-export function abilityFor(u: CurrentUserContext) {
-  return defineAbilityFor({
-    isPlatformAdmin: u.isPlatformAdmin,
-    isOrgOwner: u.isOrgOwner,
-    permissions: u.permissions,
-    enabledModules: u.enabledModules,
-  });
-}
 
 export function generateWebhookSecret(): string {
   return randomBytes(30).toString("base64url").slice(0, 40);

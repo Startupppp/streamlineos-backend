@@ -24,11 +24,11 @@ export class WorkLogsController {
   constructor(private readonly workLogs: WorkLogsService) {}
 
   @Get()
-  list(
+  async list(
     @Query(new ZodValidationPipe(listWorkLogsQuerySchema)) query: ListWorkLogsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.workLogs.list(u, query);
+    return await this.workLogs.list(u, query);
   }
 
   @Post()

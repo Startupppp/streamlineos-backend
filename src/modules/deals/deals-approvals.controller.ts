@@ -11,9 +11,10 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import {
@@ -26,7 +27,7 @@ import {
 } from "./dto/deals.schemas";
 
 @Controller("deals")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class DealsApprovalsController {
   constructor(private readonly approvals: DealsApprovalsService) {}
 
@@ -37,14 +38,11 @@ export class DealsApprovalsController {
 
   @Post("approval-rules")
   @HttpCode(201)
+  @RequirePermission("settings:manage")
   createRule(
     @Body(new ZodValidationPipe(createApprovalRuleSchema)) body: CreateApprovalRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "settings")) {
-      throw new ForbiddenException("Only admins can create approval rules");
-    }
     return this.approvals.createRule(u.orgId, body);
   }
 
@@ -63,8 +61,7 @@ export class DealsApprovalsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     if ("approvalId" in body) {
-      const ability = defineAbilityFor(u);
-      if (!ability.can("manage", "settings")) {
+      if (!(u.isOrgOwner || u.isPlatformAdmin)) {
         throw new ForbiddenException("Only admins can resolve approvals");
       }
       const updated = await this.approvals.resolveApproval(u.orgId, u.userId, body);

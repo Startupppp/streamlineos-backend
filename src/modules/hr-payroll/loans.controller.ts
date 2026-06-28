@@ -14,7 +14,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { LoansService } from "./loans.service";
 import {
@@ -25,13 +24,7 @@ import {
 } from "./dto/payroll.schemas";
 
 function isLoanAdmin(u: CurrentUserContext): boolean {
-  const ability = defineAbilityFor({
-    isPlatformAdmin: u.isPlatformAdmin,
-    isOrgOwner: u.isOrgOwner,
-    permissions: u.permissions,
-    enabledModules: u.enabledModules,
-  });
-  return ability.can("approve", "hr:expenses");
+  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve");
 }
 
 @Controller("hr/loans")

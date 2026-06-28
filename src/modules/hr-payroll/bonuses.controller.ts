@@ -16,7 +16,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BonusesService } from "./bonuses.service";
 import {
@@ -33,13 +32,7 @@ export class BonusesController {
 
   @Get()
   list(@CurrentUser() u: CurrentUserContext) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("approve", "hr:payroll");
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:approve");
     return this.bonuses.listBonuses(u.orgId, u.userId, isAdmin);
   }
 

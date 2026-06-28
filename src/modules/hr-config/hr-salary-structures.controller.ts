@@ -11,9 +11,9 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrSalaryStructuresService } from "./hr-salary-structures.service";
 import {
@@ -24,16 +24,21 @@ import {
 } from "./dto/salary-structures.schemas";
 
 @Controller("hr/salary-structures")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSalaryStructuresController {
-  constructor(private readonly salaryStructures: HrSalaryStructuresService) {}
+  constructor(
+    private readonly salaryStructures: HrSalaryStructuresService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(
+  @RequirePermission("hr:salary:view")
+  async list(
     @Query(new ZodValidationPipe(salaryStructureListQuerySchema)) query: SalaryStructureListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = defineAbilityFor(u).can("manage", "hr:salary");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:salary:manage");
     if (query.userId && query.userId !== u.userId && !isAdmin) {
       throw new ForbiddenException("Not authorized.");
     }

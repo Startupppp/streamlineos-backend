@@ -14,7 +14,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ReimbursementsService } from "./reimbursements.service";
 import {
@@ -31,13 +30,7 @@ export class ReimbursementsController {
 
   @Get()
   list(@CurrentUser() u: CurrentUserContext) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("approve", "hr:expenses");
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve");
     return this.reimbursements.listReimbursements(u.orgId, u.userId, isAdmin);
   }
 
@@ -56,13 +49,7 @@ export class ReimbursementsController {
     @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    if (!ability.can("approve", "hr:expenses")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve"))) {
       throw new ForbiddenException("Only admins can process reimbursements.");
     }
 

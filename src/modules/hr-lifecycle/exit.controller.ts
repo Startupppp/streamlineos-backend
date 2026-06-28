@@ -49,7 +49,7 @@ export class ExitController {
     @Body(new ZodValidationPipe(resignationCreateSchema)) body: ResignationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (userCan(u, "manage", "all")) {
+    if (u.isOrgOwner || u.isPlatformAdmin) {
       throw new ForbiddenException("CEO users cannot submit a resignation through this system.");
     }
     return this.exitWrite.create(u.orgId, u.userId, body);

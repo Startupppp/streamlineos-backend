@@ -64,8 +64,8 @@ export class LeavesController {
   }
 
   @Get("team")
-  team(@CurrentUser() u: CurrentUserContext) {
-    return this.leaves.team(u);
+  async team(@CurrentUser() u: CurrentUserContext) {
+    return await this.leaves.team(u);
   }
 
   @Get("this-week")

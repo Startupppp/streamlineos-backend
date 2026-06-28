@@ -12,7 +12,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { addDays, formatDateOnly, getTodayString } from "./date.helpers";
 import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
 
@@ -75,8 +74,8 @@ export class DashboardLeaveService {
   }
 
   async getPendingApprovals(orgId: string, actor: DashboardActor) {
-    const ability = defineAbilityFor(actor);
-    if (!ability.can("approve", "hr:leaves")) {
+    const canApprove = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:leaves:approve");
+    if (!canApprove) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 

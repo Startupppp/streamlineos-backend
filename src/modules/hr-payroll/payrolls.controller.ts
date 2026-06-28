@@ -23,7 +23,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
 import { PayrollStatusService } from "./payrolls-status.service";
@@ -70,13 +69,7 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    if (!ability.can("generate", "hr:payroll")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:generate"))) {
       throw new ForbiddenException("Only admins can generate payroll.");
     }
 
@@ -143,13 +136,7 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("approve", "hr:payroll") || ability.can("generate", "hr:payroll");
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:approve") || u.permissions.includes("hr:payroll:generate");
 
     const result = await this.payrolls.getPayslipDownload(u.orgId, payrollId, u.userId, isAdmin);
     if (!result.ok) {

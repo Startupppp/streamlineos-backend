@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
 import { attendance, departments, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
 import type { CheckInInput } from "./dto/attendance.schemas";
@@ -12,7 +12,10 @@ type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
 @Injectable()
 export class AttendanceService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async checkIn(orgId: string, userId: string, body: CheckInInput) {
     const today = body.localDate ?? getTodayString();
@@ -276,9 +279,10 @@ export class AttendanceService {
     };
   }
 
-  logs(u: CurrentUserContext, requestedUserId: string | undefined, year?: number, month?: number) {
+  async logs(u: CurrentUserContext, requestedUserId: string | undefined, year?: number, month?: number) {
     const userId = requestedUserId ?? u.userId;
-    const isAdmin = defineAbilityFor(u).can("manage", "hr:attendance");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
     if (userId !== u.userId && !isAdmin) {
       throw new ForbiddenException("Not authorized to view other users' logs.");
     }
@@ -390,7 +394,8 @@ export class AttendanceService {
   }
 
   async teamStatus(u: CurrentUserContext) {
-    if (!defineAbilityFor(u).can("manage", "hr:attendance")) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (!(u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage"))) {
       throw new ForbiddenException("Only admins can view team attendance.");
     }
 

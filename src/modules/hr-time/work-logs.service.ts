@@ -4,7 +4,7 @@ import { timesheets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
 import type {
@@ -19,10 +19,12 @@ export class WorkLogsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
-    const isAdmin = defineAbilityFor(u).can("manage", "hr:attendance");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
 
     if (query.userId && query.userId !== u.userId && !isAdmin) {
       throw new ForbiddenException("Not authorized to view other users' work logs.");
@@ -149,7 +151,8 @@ export class WorkLogsService {
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {
-    const isAdmin = defineAbilityFor(u).can("manage", "hr:attendance");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
 
     const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
 

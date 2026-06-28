@@ -25,7 +25,6 @@ import { queryAiUsage } from "./ai-usage.query";
 import { ALL_ROLES, PERMISSIONS } from "./permissions.constants";
 import {
   VALID_API_KEY_SCOPES,
-  abilityFor,
   generateApiKey,
   generateWebhookSecret,
   gitWebhookUrl,
@@ -52,14 +51,14 @@ export class SettingsService {
   }
 
   getAiUsage(u: CurrentUserContext) {
-    if (!abilityFor(u).can("manage", "settings")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Forbidden");
     }
     return queryAiUsage(this.db, u.orgId);
   }
 
   async listApiKeys(u: CurrentUserContext) {
-    if (!abilityFor(u).can("manage", "settings")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
     return this.db.query.apiKeys.findMany({
@@ -71,7 +70,7 @@ export class SettingsService {
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {
-    if (!abilityFor(u).can("manage", "settings")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Only admins can create API keys.");
     }
 
@@ -102,7 +101,7 @@ export class SettingsService {
   }
 
   async revokeApiKey(u: CurrentUserContext, keyId: string) {
-    if (!abilityFor(u).can("manage", "settings")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Only admins can revoke API keys.");
     }
 
@@ -311,7 +310,7 @@ export class SettingsService {
   }
 
   async updateFeatureFlag(u: CurrentUserContext, input: FeatureFlagInput) {
-    if (!abilityFor(u).can("manage", "settings")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -427,7 +426,7 @@ export class SettingsService {
   }
 
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    if (!abilityFor(u).can("manage", "all")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin)) {
       throw new ForbiddenException("Only Owner, CEO, or CTO can change user roles");
     }
 

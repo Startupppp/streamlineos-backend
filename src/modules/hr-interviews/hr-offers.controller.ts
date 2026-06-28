@@ -15,7 +15,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrOffersService } from "./hr-offers.service";
 import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
@@ -91,8 +90,7 @@ export class HrOffersController {
     @Body(new ZodValidationPipe(offerLetterSchema)) body: OfferLetterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "hr:employees")) {
+    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage"))) {
       throw new ForbiddenException("Only admins can generate offer letters.");
     }
     return this.offers.generateOfferLetter(u.orgId, u.userId, body);

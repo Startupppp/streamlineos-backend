@@ -8,12 +8,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { HrAiService } from "../services/hr-ai.service";
-import { abilityFor } from "../services/ai-ability.helper";
 import { requireFeature } from "../billing/feature-gates";
 import {
   attritionRiskSchema,
@@ -30,7 +31,7 @@ import {
 import type { HelpdeskReplyResult } from "../dto/output.schemas";
 
 @Controller("ai")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrAiController {
   constructor(
     private readonly llm: LlmService,
@@ -42,28 +43,24 @@ export class HrAiController {
   }
 
   @Post("attrition-risk")
+  @RequirePermission("hr:employees:manage")
   async attritionRisk(
     @Body(new ZodValidationPipe(attritionRiskSchema)) body: AttritionRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    if (!abilityFor(u).can("manage", "hr:employees")) {
-      throw new ForbiddenException("Only admins can analyze attrition risk");
-    }
     const result = await this.hr.analyzeAttritionRisk(u.orgId, body.userId);
     if (!result) throw new NotFoundException("Employee not found or analysis failed");
     return result;
   }
 
   @Post("generate-review")
+  @RequirePermission("hr:performance:manage")
   async generateReview(
     @Body(new ZodValidationPipe(generateReviewSchema)) body: GenerateReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    if (!abilityFor(u).can("manage", "hr:performance")) {
-      throw new ForbiddenException("Only admins/managers can generate reviews");
-    }
     const result = await this.hr.generateReview(u.orgId, body.userId, body.periodStart, body.periodEnd);
     if (!result) throw new NotFoundException("Employee not found or review generation failed");
     return result;

@@ -15,7 +15,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { IncentivesService } from "./incentives.service";
 import {
@@ -28,13 +27,7 @@ import {
 } from "./dto/payroll.schemas";
 
 function canApproveIncentives(u: CurrentUserContext): boolean {
-  const ability = defineAbilityFor({
-    isPlatformAdmin: u.isPlatformAdmin,
-    isOrgOwner: u.isOrgOwner,
-    permissions: u.permissions,
-    enabledModules: u.enabledModules,
-  });
-  return ability.can("approve", "crm:incentives");
+  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("crm:incentives:approve");
 }
 
 @Controller("hr/incentives")

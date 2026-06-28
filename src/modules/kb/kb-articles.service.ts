@@ -1,10 +1,11 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleVersions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
+import { KbIndexingService } from "./kb-indexing.service";
 import { kbSlugify } from "./kb.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
@@ -21,10 +22,13 @@ type SnapshotSource = { id: number; title: string; content: string; excerpt: str
 
 @Injectable()
 export class KbArticlesService {
+  private readonly logger = new Logger(KbArticlesService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
     private readonly events: KbEventsService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
   async list(user: CurrentUserContext, query: ListArticlesInput) {
@@ -182,17 +186,27 @@ export class KbArticlesService {
 
     if (Object.keys(values).length === 0) return current;
 
-    return this.db.transaction(async (tx) => {
-      const [updated] = await tx
+    const updated = await this.db.transaction(async (tx) => {
+      const [result] = await tx
         .update(kbArticles)
         .set(values)
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
       if (titleChanged || contentChanged) {
-        await this.snapshot(tx, orgId, updated, user.userId, input.changeSummary);
+        await this.snapshot(tx, orgId, result, user.userId, input.changeSummary);
       }
-      return updated;
+      return result;
     });
+
+    if (updated.status === "published" && contentChanged) {
+      try {
+        await this.indexing.indexArticle(orgId, articleId);
+      } catch (err) {
+        this.logger.error(`Failed to index article ${articleId}: ${err}`);
+      }
+    }
+
+    return updated;
   }
 
   async archive(user: CurrentUserContext, articleId: number) {
@@ -204,38 +218,61 @@ export class KbArticlesService {
       .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Article not found");
+
+    try {
+      await this.indexing.removeArticleChunks(orgId, articleId);
+    } catch (err) {
+      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
+    }
+
     return updated;
   }
 
   async publish(user: CurrentUserContext, articleId: number) {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
-    return this.db.transaction(async (tx) => {
+    const updated = await this.db.transaction(async (tx) => {
       const current = await tx.query.kbArticles.findFirst({
         where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
         columns: { publishedAt: true },
       });
       if (!current) throw new NotFoundException("Article not found");
 
-      const [updated] = await tx
+      const [result] = await tx
         .update(kbArticles)
         .set({ status: "published", publishedAt: current.publishedAt ?? new Date() })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
 
-      await this.snapshot(tx, orgId, updated, user.userId);
-      return updated;
+      await this.snapshot(tx, orgId, result, user.userId);
+      return result;
     });
+
+    try {
+      await this.indexing.indexArticle(orgId, articleId);
+    } catch (err) {
+      this.logger.error(`Failed to index article ${articleId}: ${err}`);
+    }
+
+    return updated;
   }
 
   async unpublish(user: CurrentUserContext, articleId: number) {
     await this.access.assertArticleEditable(user, articleId);
+    const orgId = user.orgId;
     const [updated] = await this.db
       .update(kbArticles)
       .set({ status: "draft" })
-      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)))
+      .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Article not found");
+
+    try {
+      await this.indexing.removeArticleChunks(orgId, articleId);
+    } catch (err) {
+      this.logger.error(`Failed to remove indexed chunks for article ${articleId}: ${err}`);
+    }
+
     return updated;
   }
 

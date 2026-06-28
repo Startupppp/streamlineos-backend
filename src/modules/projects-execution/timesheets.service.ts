@@ -10,7 +10,7 @@ import { projectMembers, projects, tickets, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { defineAbilityFor, type AppAbility } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly } from "./date.helpers";
 import type {
@@ -27,16 +27,8 @@ export class TimesheetsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
-
-  private abilityFor(user: CurrentUserContext): AppAbility {
-    return defineAbilityFor({
-      isPlatformAdmin: user.isPlatformAdmin,
-      isOrgOwner: user.isOrgOwner,
-      permissions: user.permissions,
-      enabledModules: user.enabledModules,
-    });
-  }
 
   private async recomputeTimeSpent(ticketId: number): Promise<void> {
     const totalHours = await this.db
@@ -55,7 +47,8 @@ export class TimesheetsService {
     const limit = query.limit ?? 50;
     const offset = (page - 1) * limit;
 
-    const isOwnerOrAdmin = this.abilityFor(user).can("manage", "projects:timesheets");
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const isOwnerOrAdmin = perms.has("projects:timesheets:manage");
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
@@ -87,7 +80,8 @@ export class TimesheetsService {
       throw new ForbiddenException("Cannot edit a time entry that has already been reviewed");
     }
 
-    const isOwnerOrAdmin = this.abilityFor(user).can("manage", "projects:timesheets");
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const isOwnerOrAdmin = perms.has("projects:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only edit your own time entries");
     }
@@ -120,7 +114,8 @@ export class TimesheetsService {
       throw new ForbiddenException("Cannot delete a time entry that has already been reviewed");
     }
 
-    const isOwnerOrAdmin = this.abilityFor(user).can("manage", "projects:timesheets");
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const isOwnerOrAdmin = perms.has("projects:timesheets:manage");
     if (!isOwnerOrAdmin && entry.userId !== user.userId) {
       throw new ForbiddenException("You can only delete your own time entries");
     }
@@ -134,7 +129,8 @@ export class TimesheetsService {
   }
 
   async approveEntry(user: CurrentUserContext, entryId: number) {
-    if (!this.abilityFor(user).can("manage", "projects:timesheets")) {
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    if (!perms.has("projects:timesheets:manage")) {
       throw new ForbiddenException("Only admins can approve timesheets");
     }
 
@@ -160,7 +156,8 @@ export class TimesheetsService {
   }
 
   async rejectEntry(user: CurrentUserContext, entryId: number, input: RejectEntryInput) {
-    if (!this.abilityFor(user).can("manage", "projects:timesheets")) {
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    if (!perms.has("projects:timesheets:manage")) {
       throw new ForbiddenException("Only admins can reject timesheets");
     }
 
@@ -181,7 +178,8 @@ export class TimesheetsService {
   }
 
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
-    if (!this.abilityFor(user).can("manage", "projects:timesheets")) {
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    if (!perms.has("projects:timesheets:manage")) {
       throw new ForbiddenException("Only admins can view team timesheets");
     }
 
@@ -199,7 +197,8 @@ export class TimesheetsService {
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {
-    const isAdmin = this.abilityFor(user).can("manage", "projects");
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const isAdmin = perms.has("projects:manage");
     const { orgId, userId } = user;
     const startDate = query.startDate;
     const endDate = query.endDate;
@@ -246,7 +245,8 @@ export class TimesheetsService {
     });
     if (!ticket?.project) throw new NotFoundException("Ticket not found");
 
-    const isOwnerOrAdmin = this.abilityFor(user).can("manage", "projects");
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    const isOwnerOrAdmin = perms.has("projects:manage");
     const isManager = ticket.project.managerId === user.userId;
 
     if (!isOwnerOrAdmin && !isManager) {

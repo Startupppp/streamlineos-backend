@@ -16,7 +16,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
@@ -50,10 +50,12 @@ export class ProjectsTicketsService {
     private readonly notifications: NotificationsService,
     private readonly projectsEmail: ProjectsEmailService,
     private readonly activity: ProjectsActivityService,
+    private readonly access: AccessService,
   ) {}
 
   private async checkProjectAccess(u: CurrentUserContext, projectId: number): Promise<boolean> {
-    if (defineAbilityFor(u).can("manage", "projects")) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("projects:manage")) return true;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
       columns: { managerId: true },
@@ -212,7 +214,8 @@ export class ProjectsTicketsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    if (!defineAbilityFor(u).can("manage", "projects")) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (!perms.has("projects:manage")) {
       const isAssignee =
         ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;

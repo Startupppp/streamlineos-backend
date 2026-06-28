@@ -3,7 +3,7 @@ import { and, eq, sum } from "drizzle-orm";
 import { projectMembers, projects, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { UpdateBudgetInput } from "./dto/projects.schemas";
 
@@ -15,13 +15,17 @@ export interface MemberCost {
 
 @Injectable()
 export class ProjectsBudgetService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   private async assertProjectAccess(
     u: CurrentUserContext,
     projectId: number,
   ): Promise<{ id: number; budget: string | null }> {
-    const isOwnerOrAdmin = defineAbilityFor(u).can("manage", "projects");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isOwnerOrAdmin = perms.has("projects:manage");
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
       columns: { id: true, budget: true, managerId: true },

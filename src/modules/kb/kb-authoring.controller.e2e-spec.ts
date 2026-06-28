@@ -4,13 +4,25 @@ import request from "supertest";
 import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
+import { AccessService } from "../../modules/access/access.service";
+import { KbIndexingService } from "../../modules/kb/kb-indexing.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 describe("KB Authoring auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const ref = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(AccessService)
+      .useValue({
+        resolveUserPermissions: async () => new Map(),
+        getModuleEnabled: (ctx: CurrentUserContext, moduleKey: string) =>
+          ctx.enabledModules?.includes(moduleKey) ?? true,
+      })
+      .overrideProvider(KbIndexingService)
+      .useValue({})
+      .compile();
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();

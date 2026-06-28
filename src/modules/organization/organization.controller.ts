@@ -18,7 +18,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrganizationService } from "./organization.service";
 import {
@@ -98,13 +97,10 @@ export class OrganizationController {
   }
 
   @Delete("members/:memberId")
+  @RequirePermission("settings:manage")
   removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot remove yourself from the organization");
-    }
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "settings")) {
-      throw new ForbiddenException("Forbidden");
     }
     return this.organization.removeMember(u.orgId, u.userId, memberId);
   }
@@ -132,14 +128,11 @@ export class OrganizationController {
   }
 
   @Patch("settings")
+  @RequirePermission("settings:manage")
   updateSettings(
     @Body(new ZodValidationPipe(updateOrgSettingsSchema)) body: UpdateOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "settings")) {
-      throw new ForbiddenException("Forbidden");
-    }
     return this.organization.updateSettings(u.orgId, u.userId, body);
   }
 

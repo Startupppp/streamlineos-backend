@@ -14,7 +14,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
 import { CompensationService } from "./compensation.service";
@@ -56,13 +55,7 @@ export class PayrollReportsController {
     @Query(new ZodValidationPipe(payslipsQuerySchema)) query: PayslipsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const canViewAll = ability.can("read", "hr:payroll");
+    const canViewAll = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:read");
     const requestedId = query.userId;
 
     if (requestedId && requestedId !== u.userId && !canViewAll) {

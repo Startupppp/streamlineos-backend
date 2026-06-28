@@ -25,7 +25,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { ProjectsEmailService } from "./projects-email.service";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type {
@@ -55,10 +55,12 @@ export class ProjectsService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly projectsEmail: ProjectsEmailService,
+    private readonly access: AccessService,
   ) {}
 
-  listProjects(u: CurrentUserContext, input: ListProjectsInput) {
-    const isOwnerOrAdmin = defineAbilityFor(u).can("manage", "projects");
+  async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isOwnerOrAdmin = perms.has("projects:manage");
     const orgId = u.orgId;
     const userId = u.userId;
     const key = `projects:list:${orgId}:${userId}:${isOwnerOrAdmin ? "all" : "scoped"}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
@@ -319,7 +321,8 @@ export class ProjectsService {
 
   async getProject(u: CurrentUserContext, projectId: number) {
     const orgId = u.orgId;
-    const isOwnerOrAdmin = defineAbilityFor(u).can("manage", "projects");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isOwnerOrAdmin = perms.has("projects:manage");
 
     const projectCheck = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
@@ -361,7 +364,8 @@ export class ProjectsService {
 
   async updateProject(u: CurrentUserContext, projectId: number, body: UpdateProjectInput) {
     const orgId = u.orgId;
-    const isOwnerOrAdmin = defineAbilityFor(u).can("manage", "projects");
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isOwnerOrAdmin = perms.has("projects:manage");
 
     if (!isOwnerOrAdmin) {
       const project = await this.db.query.projects.findFirst({

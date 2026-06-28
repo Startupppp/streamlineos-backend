@@ -14,9 +14,9 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrDocumentTypesService } from "./hr-document-types.service";
 import {
@@ -27,13 +27,18 @@ import {
 } from "./dto/document-types.schemas";
 
 @Controller("hr/document-types")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrDocumentTypesController {
-  constructor(private readonly documentTypes: HrDocumentTypesService) {}
+  constructor(
+    private readonly documentTypes: HrDocumentTypesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = defineAbilityFor(u).can("manage", "hr:documents");
+  @RequirePermission("hr:documents:view")
+  async list(@CurrentUser() u: CurrentUserContext) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
     return this.documentTypes.list(u.orgId, isAdmin);
   }
 

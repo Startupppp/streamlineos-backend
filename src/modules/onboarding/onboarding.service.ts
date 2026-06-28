@@ -14,7 +14,6 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   BankDetailsInput,
@@ -358,13 +357,7 @@ export class OnboardingService {
   }
 
   getUserTasks(u: CurrentUserContext, userId: string) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("manage", "hr:employees");
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage");
 
     if (!isAdmin && u.userId !== userId) {
       throw new ForbiddenException("Forbidden");

@@ -15,9 +15,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ClientAccountsService } from "./client-accounts.service";
@@ -56,7 +57,7 @@ const RENEWAL_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO", "SALES"];
 const CLIENT_STATUS_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO"];
 
 @Controller("clients")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ClientsController {
   constructor(
     private readonly accounts: ClientAccountsService,
@@ -210,14 +211,11 @@ export class ClientsController {
 
   @Post("onboarding/templates")
   @HttpCode(201)
+  @RequirePermission("settings:manage")
   createOnboardingTemplate(
     @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor(u);
-    if (!ability.can("manage", "settings")) {
-      throw new ForbiddenException("Forbidden: admin access required");
-    }
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
   }
 

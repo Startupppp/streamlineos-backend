@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type {
   AttendanceReportInput,
   PayrollReportInput,
@@ -61,6 +61,7 @@ export class ReportsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   async getAttendanceReport(
@@ -74,13 +75,7 @@ export class ReportsService {
       return { error: "bad_request", message: "Invalid date format" } as ReportBadRequest;
     }
 
-    const ability = defineAbilityFor({
-      isPlatformAdmin: actor.isPlatformAdmin,
-      isOrgOwner: actor.isOrgOwner,
-      permissions: actor.permissions,
-      enabledModules: actor.enabledModules,
-    });
-    const isAdmin = ability.can("view", "hr:attendance");
+    const isAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:attendance:view");
     if (input.userId && input.userId !== actor.userId && !isAdmin) {
       return { error: "forbidden", message: "Forbidden" } as ReportForbidden;
     }
@@ -121,13 +116,7 @@ export class ReportsService {
     actor: ReportActor,
     input: PayrollReportInput,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: actor.isPlatformAdmin,
-      isOrgOwner: actor.isOrgOwner,
-      permissions: actor.permissions,
-      enabledModules: actor.enabledModules,
-    });
-    const isAdmin = ability.can("view", "hr:payroll");
+    const isAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:payroll:view");
     if (input.userId && input.userId !== actor.userId && !isAdmin) {
       return { error: "forbidden", message: "Forbidden" } as ReportForbidden;
     }

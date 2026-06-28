@@ -52,11 +52,11 @@ export class AttendanceController {
   }
 
   @Get("logs")
-  logs(
+  async logs(
     @Query(new ZodValidationPipe(attendanceLogsQuerySchema)) query: AttendanceLogsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.attendance.logs(u, query.userId, query.year, query.month);
+    return await this.attendance.logs(u, query.userId, query.year, query.month);
   }
 
   @Get("monthly")

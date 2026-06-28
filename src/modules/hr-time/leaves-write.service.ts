@@ -16,7 +16,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
@@ -49,6 +49,7 @@ export class LeavesWriteService {
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly notifications: NotificationsService,
+    private readonly access: AccessService,
   ) {}
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {
@@ -158,7 +159,8 @@ export class LeavesWriteService {
   }
 
   async updateStatus(u: CurrentUserContext, leaveId: number, body: UpdateLeaveInput) {
-    if (!defineAbilityFor(u).can("approve", "hr:leaves")) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (!(u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:leaves:approve"))) {
       throw new ForbiddenException("Only admins can approve or reject leave requests.");
     }
 
