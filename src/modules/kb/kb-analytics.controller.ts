@@ -33,10 +33,4 @@ export class KbAnalyticsController {
   ): Promise<unknown> {
     return await this.analytics.noResults(u.orgId, query);
   }
-
-  @Get("verification/queue")
-  @RequirePermission("kb:articles:manage")
-  async verificationQueue(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return await this.analytics.verificationQueue(u.orgId);
-  }
 }

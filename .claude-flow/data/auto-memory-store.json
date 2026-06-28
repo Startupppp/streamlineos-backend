@@ -10,5 +10,53 @@
       "quality": 0.85
     },
     "createdAt": 1782636152356
+  },
+  {
+    "id": "task-crm-leads-deals-quality-audit",
+    "key": "crm-leads-deals-quality-audit",
+    "content": "Task completed: crm-leads-deals-quality-audit",
+    "namespace": "tasks",
+    "type": "task-outcome",
+    "metadata": {
+      "success": true,
+      "quality": 0.85
+    },
+    "createdAt": 1782637532102
+  },
+  {
+    "id": "task-hr-time-audit",
+    "key": "hr-time-audit",
+    "content": "Task completed: hr-time-audit",
+    "namespace": "tasks",
+    "type": "task-outcome",
+    "metadata": {
+      "success": true,
+      "quality": 0.85
+    },
+    "createdAt": 1782637557024
+  },
+  {
+    "id": "task-quality-audit-quotes-clients-targets-sales",
+    "key": "quality-audit-quotes-clients-targets-sales",
+    "content": "Task completed: quality-audit-quotes-clients-targets-sales",
+    "namespace": "tasks",
+    "type": "task-outcome",
+    "metadata": {
+      "success": true,
+      "quality": 0.85
+    },
+    "createdAt": 1782637932727
+  },
+  {
+    "id": "task-kb-service-audit",
+    "key": "kb-service-audit",
+    "content": "Task completed: kb-service-audit",
+    "namespace": "tasks",
+    "type": "task-outcome",
+    "metadata": {
+      "success": true,
+      "quality": 0.85
+    },
+    "createdAt": 1782638189710
   }
 ]

@@ -9,15 +9,20 @@ function ctxWith(headers: Record<string, string>): ExecutionContext {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => ({}),
     getClass: () => ({}),
-  } as unknown as ExecutionContext;
+  } as Partial<ExecutionContext> as ExecutionContext;
 }
 
 describe("JwtAuthGuard", () => {
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-  const reflector = { getAllAndOverride: jest.fn() } as unknown as Reflector;
+  const reflector: jest.Mocked<Reflector> = {
+    get: jest.fn(),
+    getAll: jest.fn(),
+    getAllAndMerge: jest.fn(),
+    getAllAndOverride: jest.fn(),
+  } as jest.Mocked<Reflector>;
   const guard = new JwtAuthGuard(reflector);
 
-  beforeEach(() => (reflector.getAllAndOverride as jest.Mock).mockReturnValue(false));
+  beforeEach(() => reflector.getAllAndOverride.mockReturnValue(false));
 
   it("rejects a missing token with 401", async () => {
     await expect(guard.canActivate(ctxWith({}))).rejects.toBeInstanceOf(UnauthorizedException);
@@ -33,13 +38,12 @@ describe("JwtAuthGuard", () => {
     const token = await signToken({ sub: "user_42", orgId: "org_9" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    const req = (ctx as unknown as { switchToHttp: () => { getRequest: () => { user: { userId: string } } } })
-      .switchToHttp().getRequest();
+    const req = ctx.switchToHttp().getRequest<{ user: { userId: string } }>();
     expect(req.user.userId).toBe("user_42");
   });
 
   it("allows @Public routes without a token", async () => {
-    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(true);
+    reflector.getAllAndOverride.mockReturnValue(true);
     await expect(guard.canActivate(ctxWith({}))).resolves.toBe(true);
   });
 

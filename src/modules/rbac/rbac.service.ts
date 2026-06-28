@@ -4,6 +4,7 @@ import { organizationMembers, rolePermissions, roles, userPermissions, users } f
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
 import type { AssignRolePermissionInput } from "./dto/rbac.schemas";
 
@@ -97,10 +98,13 @@ export class RbacService {
 
     if (!hasAccess) throw new ForbiddenException("Permission denied");
 
-    await this.db.insert(rolePermissions).values({
-      role: input.role,
-      permissionId: input.permissionId,
-      orgId: actor.orgId,
+    await this.db.transaction(async (tx) => {
+      await tx.insert(rolePermissions).values({
+        role: input.role,
+        permissionId: input.permissionId,
+        orgId: actor.orgId,
+      });
+      await bumpPermissionsVersion(tx, actor.orgId);
     });
 
     return { success: true };

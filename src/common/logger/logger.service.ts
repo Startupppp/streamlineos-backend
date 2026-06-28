@@ -5,8 +5,12 @@ const current: LogLevel = process.env.NODE_ENV === "production" ? "info" : "debu
 function emit(level: LogLevel, message: string, meta?: unknown): void {
   if (LEVELS[level] < LEVELS[current]) return;
   const base = { timestamp: new Date().toISOString(), level, message };
-  const line = JSON.stringify(meta !== undefined ? { ...base, meta } : base);
-  (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(line);
+  const line = JSON.stringify(meta !== undefined ? { ...base, meta } : base) + "\n";
+  if (level === "error" || level === "warn") {
+    process.stderr.write(line);
+  } else {
+    process.stdout.write(line);
+  }
 }
 
 export const logger = {

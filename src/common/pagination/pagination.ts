@@ -11,8 +11,11 @@ export interface ListResponse<T> {
   totalPages: number;
 }
 
+const PAGE_SIZE_MAX = 100;
+
 export function paginateOffset({ page, pageSize }: PageParams): { limit: number; offset: number } {
-  return { limit: pageSize, offset: (page - 1) * pageSize };
+  const size = Math.min(pageSize, PAGE_SIZE_MAX);
+  return { limit: size, offset: (page - 1) * size };
 }
 
 export function buildListResponse<T>(items: T[], total: number, { page, pageSize }: PageParams): ListResponse<T> {

@@ -42,10 +42,11 @@ export class NotificationsService {
   }
 
   list(orgId: string, userId: string, filters: ListInput) {
-    const key = `notifications:list:${userId}:${orgId}:${filters.unreadOnly ? "unread" : "all"}:${filters.limit}`;
+    const limit = Math.min(filters.limit ?? 20, 100);
+    const key = `notifications:list:${userId}:${orgId}:${filters.unreadOnly ? "unread" : "all"}:${limit}`;
     return this.cache.cached(
       key,
-      () => this.queryNotifications(orgId, userId, filters),
+      () => this.queryNotifications(orgId, userId, { ...filters, limit }),
       CACHE_TTL.SHORT,
     );
   }

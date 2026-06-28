@@ -1,4 +1,4 @@
-﻿import {
+import {
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -7,8 +7,28 @@
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
+import type { JWTPayload } from "jose";
 import { IS_PUBLIC } from "./public.decorator";
 import type { BackendClaims, CurrentUserContext } from "./backend-claims";
+
+function extractClaims(payload: JWTPayload): BackendClaims {
+  return {
+    sub: typeof payload.sub === "string" ? payload.sub : "",
+    orgId: typeof payload["orgId"] === "string" ? payload["orgId"] : null,
+    branchId: typeof payload["branchId"] === "number" ? payload["branchId"] : null,
+    role: typeof payload["role"] === "string" ? payload["role"] : "",
+    permissions: Array.isArray(payload["permissions"])
+      ? payload["permissions"].filter((x): x is string => typeof x === "string")
+      : [],
+    enabledModules: Array.isArray(payload["enabledModules"])
+      ? payload["enabledModules"].filter((x): x is string => typeof x === "string")
+      : [],
+    plan: typeof payload["plan"] === "string" ? payload["plan"] : null,
+    isPlatformAdmin: payload["isPlatformAdmin"] === true,
+    isOrgOwner: payload["isOrgOwner"] === true,
+    sessionId: typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
+  };
+}
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -33,7 +53,7 @@ export class JwtAuthGuard implements CanActivate {
     let claims: BackendClaims;
     try {
       const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] });
-      claims = payload as unknown as BackendClaims;
+      claims = extractClaims(payload);
     } catch {
       throw new UnauthorizedException("Unauthorized");
     }

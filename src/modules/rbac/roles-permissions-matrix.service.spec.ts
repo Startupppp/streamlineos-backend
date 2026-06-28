@@ -50,7 +50,7 @@ function buildMockDb(rolesResult: RoleRow[], grantsResult: GrantRow[]) {
     return buildGrantChain(grantsResult);
   });
 
-  const db = { select: selectFn } as unknown as Db;
+  const db = { select: selectFn } as Partial<Db> as Db;
   return { db, selectFn };
 }
 
@@ -59,7 +59,7 @@ function makeCache(): CacheService {
 }
 
 function makeAudit(): AuditService {
-  return { log: jest.fn() } as unknown as AuditService;
+  return { log: jest.fn() } as Partial<AuditService> as AuditService;
 }
 
 function makeService(db: Db): RolesService {

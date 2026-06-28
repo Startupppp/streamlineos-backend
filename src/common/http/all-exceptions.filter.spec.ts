@@ -4,13 +4,19 @@ import { AllExceptionsFilter } from "./all-exceptions.filter";
 
 function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();
-  const status = jest.fn(() => ({ json }));
-  const host = {
+  const status = jest.fn((): { json: jest.Mock } => ({ json }));
+  const host: ArgumentsHost = {
+    getArgs: () => [],
+    getArgByIndex: () => undefined,
     switchToHttp: () => ({
       getResponse: () => ({ status }),
       getRequest: () => ({ method: "GET", url: "/x" }),
+      getNext: () => undefined,
     }),
-  } as unknown as ArgumentsHost;
+    switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
+    switchToWs: () => ({} as ReturnType<ArgumentsHost["switchToWs"]>),
+    getType: () => "http",
+  } as ArgumentsHost;
   return { host, json, status };
 }
 
