@@ -14,10 +14,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentOffersService } from "./recruitment-offers.service";
-import { RECRUITMENT_OFFER_ROLES } from "./recruitment-roles";
 import {
   approvalRemarksSchema,
   createOfferSchema,
@@ -37,7 +35,7 @@ export class RecruitmentOffersController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_OFFER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.offers.listOffers(u.orgId, candidateId);
   }
@@ -49,7 +47,7 @@ export class RecruitmentOffersController {
     @Body(new ZodValidationPipe(createOfferSchema)) body: CreateOfferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_OFFER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.offers.createOffer(u.orgId, u.userId, candidateId, body);
   }
@@ -59,7 +57,7 @@ export class RecruitmentOffersController {
     @Param("offerId", ParseIntPipe) offerId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["HR", "ADMIN"])) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Only HR or Admin can submit offers for approval.");
     }
     return this.offers.submitForApproval(u.orgId, offerId);
@@ -71,7 +69,7 @@ export class RecruitmentOffersController {
     @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["CEO"])) throw new ForbiddenException("Only CEO can approve offers.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Only CEO can approve offers.");
     return this.offers.approveOffer(u.orgId, u.userId, offerId, body.remarks);
   }
 
@@ -81,7 +79,7 @@ export class RecruitmentOffersController {
     @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["CEO"]))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Only CEO can reject offer approvals.");
     return this.offers.rejectApproval(u.orgId, offerId, body.remarks);
   }
@@ -93,7 +91,7 @@ export class RecruitmentOffersController {
     @Body(new ZodValidationPipe(updateOfferSchema)) body: UpdateOfferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_OFFER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.offers.updateOffer(u.orgId, candidateId, offerId, body);
   }
@@ -104,7 +102,7 @@ export class RecruitmentOffersController {
     @Param("offerId", ParseIntPipe) offerId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_OFFER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.offers.deleteOffer(u.orgId, candidateId, offerId);
   }

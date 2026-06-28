@@ -15,10 +15,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrScorecardsService } from "./hr-scorecards.service";
-import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
 import {
   createScorecardTemplateSchema,
   scorecardAnalyticsQuerySchema,
@@ -44,7 +42,7 @@ export class HrScorecardsController {
     @Body(new ZodValidationPipe(createScorecardTemplateSchema)) body: CreateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.createTemplate(u.orgId, u.userId, body);
@@ -56,7 +54,7 @@ export class HrScorecardsController {
     @Body(new ZodValidationPipe(updateScorecardTemplateSchema)) body: UpdateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.updateTemplate(u.orgId, templateId, body);
@@ -67,7 +65,7 @@ export class HrScorecardsController {
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.deleteTemplate(u.orgId, templateId);

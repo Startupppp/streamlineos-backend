@@ -14,10 +14,9 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { HrOffersService } from "./hr-offers.service";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   createOfferTemplateSchema,
   generateOfferPdfSchema,
@@ -32,7 +31,10 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class HrOffersController {
-  constructor(private readonly offers: HrOffersService) {}
+  constructor(
+    private readonly offers: HrOffersService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("offer-templates")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
@@ -45,7 +47,7 @@ export class HrOffersController {
     @Body(new ZodValidationPipe(createOfferTemplateSchema)) body: CreateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.createTemplate(u.orgId, u.userId, body);
@@ -57,7 +59,7 @@ export class HrOffersController {
     @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.updateTemplate(u.orgId, templateId, body);
@@ -68,7 +70,7 @@ export class HrOffersController {
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.offers.deleteTemplate(u.orgId, templateId);
@@ -86,12 +88,15 @@ export class HrOffersController {
 
   @Post("offer-letter")
   @HttpCode(201)
-  generateOfferLetter(
+  async generateOfferLetter(
     @Body(new ZodValidationPipe(offerLetterSchema)) body: OfferLetterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage"))) {
-      throw new ForbiddenException("Only admins can generate offer letters.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) {
+        throw new ForbiddenException("Only admins can generate offer letters.");
+      }
     }
     return this.offers.generateOfferLetter(u.orgId, u.userId, body);
   }

@@ -13,8 +13,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { TerminationService } from "./termination.service";
 import { userCan } from "./ability.helper";
 import {
@@ -27,93 +27,96 @@ import {
 @Controller("hr/termination")
 @UseGuards(JwtAuthGuard)
 export class TerminationController {
-  constructor(private readonly termination: TerminationService) {}
+  constructor(
+    private readonly termination: TerminationService,
+    private readonly access: AccessService,
+  ) {}
 
-  private assertManageAccess(u: CurrentUserContext): void {
-    if (!hasRoleOrPrivileged(u, ["HR", "CEO"]) && !userCan(u, "manage", "hr:employees")) {
+  private async assertManageAccess(u: CurrentUserContext): Promise<void> {
+    if (u.isOrgOwner || u.isPlatformAdmin || userCan(u, "manage", "hr:employees")) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (!perms.has("hr:exit:manage")) {
       throw new ForbiddenException("Forbidden");
     }
   }
 
+  private async assertExitManage(u: CurrentUserContext, message: string): Promise<void> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (!perms.has("hr:exit:manage")) {
+      throw new ForbiddenException(message);
+    }
+  }
+
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    this.assertManageAccess(u);
+  async list(@CurrentUser() u: CurrentUserContext) {
+    await this.assertManageAccess(u);
     return this.termination.list(u.orgId);
   }
 
   @Post()
   @HttpCode(201)
-  create(
+  async create(
     @Body(new ZodValidationPipe(terminationCreateSchema)) body: TerminationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
-      throw new ForbiddenException("Only HR or CEO can initiate terminations.");
-    }
+    await this.assertExitManage(u, "Only HR or CEO can initiate terminations.");
     return this.termination.create(u.orgId, u.userId, u.role, body);
   }
 
   @Post(":terminationId/send-email")
   @HttpCode(200)
-  sendEmail(
+  async sendEmail(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
-      throw new ForbiddenException("Only HR can send termination emails.");
-    }
+    await this.assertExitManage(u, "Only HR can send termination emails.");
     return this.termination.sendEmail(u.orgId, u.userId, terminationId);
   }
 
   @Patch(":terminationId/complete")
-  complete(
+  async complete(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
-      throw new ForbiddenException("Only HR can complete terminations.");
-    }
+    await this.assertExitManage(u, "Only HR can complete terminations.");
     return this.termination.complete(u.orgId, u.userId, terminationId);
   }
 
   @Get(":terminationId/letter")
-  getLetter(
+  async getLetter(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    this.assertManageAccess(u);
+    await this.assertManageAccess(u);
     return this.termination.getLetter(u.orgId, terminationId);
   }
 
   @Patch(":terminationId/submit")
-  submit(
+  async submit(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["HR", "CEO"])) {
-      throw new ForbiddenException("Only HR can submit for CEO approval.");
-    }
+    await this.assertExitManage(u, "Only HR can submit for CEO approval.");
     return this.termination.submit(u.orgId, u.userId, terminationId);
   }
 
   @Patch(":terminationId/ceo-review")
-  ceoReview(
+  async ceoReview(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @Body(new ZodValidationPipe(terminationReviewSchema)) body: TerminationReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ["CEO"])) {
-      throw new ForbiddenException("Only CEO can review terminations.");
-    }
+    await this.assertExitManage(u, "Only CEO can review terminations.");
     return this.termination.ceoReview(u.orgId, u.userId, terminationId, body);
   }
 
   @Get(":terminationId")
-  getOne(
+  async getOne(
     @Param("terminationId", ParseIntPipe) terminationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    this.assertManageAccess(u);
+    await this.assertManageAccess(u);
     return this.termination.getOne(u.orgId, terminationId);
   }
 }

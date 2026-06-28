@@ -13,10 +13,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrRecruitmentReportsService } from "./hr-recruitment-reports.service";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   createScheduledReportSchema,
   generateReportSchema,
@@ -40,7 +38,7 @@ export class HrRecruitmentReportsController {
 
   @Get("reports/scheduled")
   listScheduled(@CurrentUser() u: CurrentUserContext) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.reports.listScheduledReports(u.orgId);
@@ -52,7 +50,7 @@ export class HrRecruitmentReportsController {
     @Body(new ZodValidationPipe(createScheduledReportSchema)) body: CreateScheduledReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.reports.createScheduledReport(u.orgId, u.userId, body);
@@ -63,7 +61,7 @@ export class HrRecruitmentReportsController {
     @Param("reportId", ParseIntPipe) reportId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden");
     }
     return this.reports.deleteScheduledReport(u.orgId, reportId);

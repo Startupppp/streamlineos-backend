@@ -5,13 +5,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { decrypt } from "./crypto.helpers";
-
-const COMPLIANCE_ROLES = ["CEO", "ADMIN", "HR", "BRANCH_HR", "BRANCH_MANAGER"];
-const EXPORT_ROLES = ["CEO", "ADMIN", "HR", "BRANCH_HR"];
 
 function csvEscape(val: unknown): string {
   if (val === null || val === undefined) return "";
@@ -78,13 +74,17 @@ export class HrDashboardController {
 
   @Get("compliance")
   compliance(@CurrentUser() u: CurrentUserContext) {
-    if (!hasRoleOrPrivileged(u, COMPLIANCE_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:compliance:manage")) {
+      throw new ForbiddenException("Forbidden");
+    }
     return this.dashboard.compliance(u.orgId);
   }
 
   @Get("export")
   async export(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    if (!hasRoleOrPrivileged(u, EXPORT_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:analytics:read")) {
+      throw new ForbiddenException("Forbidden");
+    }
 
     const rows = await this.reports.exportRows(u.orgId);
 

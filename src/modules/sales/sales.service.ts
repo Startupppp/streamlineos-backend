@@ -13,8 +13,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import { ADMIN_ROLES } from "./roles.constants";
 import type {
   CommissionRuleCreateInput,
   CommissionListInput,
@@ -233,11 +231,11 @@ export class SalesService {
 
   async createQuota(
     orgId: string,
-    actor: { isOrgOwner: boolean; isPlatformAdmin: boolean; role: string },
+    actor: { isOrgOwner: boolean; isPlatformAdmin: boolean; role: string; permissions: string[] },
     setById: string,
     input: QuotaCreateInput,
   ) {
-    if (!hasRoleOrPrivileged(actor, ADMIN_ROLES) && actor.role !== "BRANCH_MANAGER") {
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && !actor.permissions.includes("crm:targets:manage") && actor.role !== "BRANCH_MANAGER") {
       return { error: "forbidden", message: "Only managers can set quotas" } as SalesForbidden;
     }
 

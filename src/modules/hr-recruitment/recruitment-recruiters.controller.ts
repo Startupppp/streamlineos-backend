@@ -14,10 +14,8 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
-import { RECRUITMENT_ADMIN_ROLES, RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   recruiterActivityQuerySchema,
   recruiterActivitySchema,
@@ -34,7 +32,7 @@ export class RecruitmentRecruitersController {
 
   @Get("portals")
   listPortals(@CurrentUser() u: CurrentUserContext) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.recruiters.listPortals(u.orgId);
   }
 
@@ -44,7 +42,7 @@ export class RecruitmentRecruitersController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden: Admin role required");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden: Admin role required");
     const { record, created } = await this.recruiters.upsertPortal(u.orgId, u.userId, body);
     res.status(created ? 201 : 200);
     return record;
@@ -55,7 +53,7 @@ export class RecruitmentRecruitersController {
     @Param("platform") platform: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.recruiters.syncPortal(u.orgId, platform);
   }
 

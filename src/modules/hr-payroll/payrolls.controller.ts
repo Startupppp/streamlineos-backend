@@ -24,6 +24,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { PayrollsService } from "./payrolls.service";
 import { PayrollStatusService } from "./payrolls-status.service";
 import { renderPayslipHtml } from "./lib/payslip-html";
@@ -42,6 +43,7 @@ export class PayrollsController {
   constructor(
     private readonly payrolls: PayrollsService,
     private readonly payrollStatus: PayrollStatusService,
+    private readonly access: AccessService,
   ) {}
 
   @Get()
@@ -69,8 +71,11 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:generate"))) {
-      throw new ForbiddenException("Only admins can generate payroll.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:payroll:generate")) {
+        throw new ForbiddenException("Only admins can generate payroll.");
+      }
     }
 
     if (!body.month || !/^\d{4}-\d{2}$/.test(body.month)) {
@@ -136,7 +141,11 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:approve") || u.permissions.includes("hr:payroll:generate");
+    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    if (!isAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      isAdmin = perms.has("hr:payroll:approve") || perms.has("hr:payroll:generate");
+    }
 
     const result = await this.payrolls.getPayslipDownload(u.orgId, payrollId, u.userId, isAdmin);
     if (!result.ok) {

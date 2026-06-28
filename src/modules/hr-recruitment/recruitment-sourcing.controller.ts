@@ -15,10 +15,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   createHeadcountSchema,
   createReferralSubmissionSchema,
@@ -69,7 +67,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(updateReferralStatusSchema)) body: UpdateReferralStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.updateReferralStatus(u.orgId, referralId, body);
   }
@@ -85,7 +83,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(createVendorSchema)) body: CreateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.createVendor(u.orgId, u.userId, body);
   }
@@ -96,7 +94,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(updateVendorSchema)) body: UpdateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.updateVendor(u.orgId, vendorId, body);
   }
@@ -106,7 +104,7 @@ export class RecruitmentSourcingController {
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.deleteVendor(u.orgId, vendorId);
   }
@@ -126,7 +124,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(createSubmissionSchema)) body: CreateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.createSubmission(u.orgId, vendorId, body);
   }
@@ -138,7 +136,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(updateSubmissionSchema)) body: UpdateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.updateSubmission(vendorId, query.submissionId, body);
   }
@@ -182,7 +180,7 @@ export class RecruitmentSourcingController {
     @Param("requestId", ParseIntPipe) requestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId);
   }
@@ -193,7 +191,7 @@ export class RecruitmentSourcingController {
     @Body(new ZodValidationPipe(rejectHeadcountSchema)) body: RejectHeadcountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.rejectHeadcount(u.orgId, requestId, body.reason);
   }
@@ -204,7 +202,7 @@ export class RecruitmentSourcingController {
     @Param("requestId", ParseIntPipe) requestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
   }

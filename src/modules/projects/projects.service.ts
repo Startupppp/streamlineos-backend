@@ -28,7 +28,6 @@ import { ProjectsEmailService } from "./projects-email.service";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { resolveProjectsScope } from "./projects-scope";
 import type {
   CreateProjectInput,
@@ -457,7 +456,7 @@ export class ProjectsService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (!hasRoleOrPrivileged(u, ["CEO"])) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("projects:delete")) {
       throw new ForbiddenException("Only organization owners can delete projects");
     }
     const orgId = u.orgId;

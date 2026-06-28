@@ -22,6 +22,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
 import {
@@ -38,10 +39,6 @@ import {
   type PageDataInput,
   type ReportInput,
 } from "./dto/expense.schemas";
-
-function canApprove(u: CurrentUserContext): boolean {
-  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve");
-}
 
 const EXPORT_HEADERS = [
   "Date",
@@ -60,62 +57,69 @@ export class ExpensesController {
   constructor(
     private readonly expenses: ExpensesService,
     private readonly expensesWrite: ExpensesWriteService,
+    private readonly access: AccessService,
   ) {}
 
+  private async canApprove(u: CurrentUserContext): Promise<boolean> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return perms.has("hr:expenses:approve");
+  }
+
   @Get()
-  list(
+  async list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.list(u.orgId, u.userId, canApprove(u), filters);
+    return this.expenses.list(u.orgId, u.userId, await this.canApprove(u), filters);
   }
 
   @Post()
   @HttpCode(201)
-  create(
+  async create(
     @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expensesWrite.create(u.orgId, u.userId, canApprove(u), body);
+    return this.expensesWrite.create(u.orgId, u.userId, await this.canApprove(u), body);
   }
 
   @Patch(":expenseId")
-  update(
+  async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expensesWrite.update(u, canApprove(u), expenseId, body);
+    return this.expensesWrite.update(u, await this.canApprove(u), expenseId, body);
   }
 
   @Post("email-report")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:expenses:read")
-  emailReport(
+  async emailReport(
     @Body(new ZodValidationPipe(emailReportSchema)) body: EmailReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canApprove(u)) {
+    if (!(await this.canApprove(u))) {
       throw new BadRequestException("Only HR and CEO can send expense reports");
     }
     return this.expensesWrite.emailReport(u.orgId, u.userId, true, body);
   }
 
   @Get("page-data")
-  pageData(
+  async pageData(
     @Query(new ZodValidationPipe(pageDataSchema)) filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getPageData(u.orgId, u.userId, canApprove(u), filters);
+    return this.expenses.getPageData(u.orgId, u.userId, await this.canApprove(u), filters);
   }
 
   @Get("report")
-  report(
+  async report(
     @Query(new ZodValidationPipe(reportSchema)) filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getReport(u.orgId, u.userId, canApprove(u), filters);
+    return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
   }
 
   @Get("export")
@@ -126,7 +130,7 @@ export class ExpensesController {
   ) {
     const data = await this.expenses.getExportRows(
       u.orgId,
-      { userId: u.userId, isAdmin: canApprove(u) },
+      { userId: u.userId, isAdmin: await this.canApprove(u) },
       filters,
     );
 
@@ -160,7 +164,7 @@ export class ExpensesController {
   ) {
     const result = await this.expenses.remove(
       u.orgId,
-      { userId: u.userId, isAdmin: canApprove(u) },
+      { userId: u.userId, isAdmin: await this.canApprove(u) },
       expenseId,
     );
     if ("error" in result) {

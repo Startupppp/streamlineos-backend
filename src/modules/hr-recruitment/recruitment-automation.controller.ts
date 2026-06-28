@@ -15,10 +15,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   createAutomationSchema,
   createSequenceSchema,
@@ -52,7 +50,7 @@ export class RecruitmentAutomationController {
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.createAutomation(u.orgId, u.userId, body);
   }
@@ -63,7 +61,7 @@ export class RecruitmentAutomationController {
     @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.updateAutomation(u.orgId, automationId, body);
   }
@@ -73,7 +71,7 @@ export class RecruitmentAutomationController {
     @Param("automationId", ParseIntPipe) automationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.deleteAutomation(u.orgId, automationId);
   }
@@ -119,7 +117,7 @@ export class RecruitmentAutomationController {
     @Body(new ZodValidationPipe(createSequenceSchema)) body: CreateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.createSequence(u.orgId, u.userId, body);
   }
@@ -138,7 +136,7 @@ export class RecruitmentAutomationController {
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.updateSequence(u.orgId, sequenceId, body);
   }
@@ -148,7 +146,7 @@ export class RecruitmentAutomationController {
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.deleteSequence(u.orgId, sequenceId);
   }
@@ -159,7 +157,7 @@ export class RecruitmentAutomationController {
     @Body(new ZodValidationPipe(enrollSequenceSchema)) body: EnrollSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.automation.enrollSequence(u.orgId, sequenceId, body);
   }

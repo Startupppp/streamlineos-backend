@@ -16,6 +16,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { candidateDocumentsVault, vaultAccessLogs } from "../../db/schema";
+import { AccessService } from "../access/access.service";
 import { StorageService } from "./storage.service";
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -26,6 +27,7 @@ export class StorageVaultController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
+    private readonly access: AccessService,
   ) {}
 
   @Get(":documentId(\\d+)")
@@ -34,8 +36,11 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:documents:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:documents:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
 
     const doc = await this.db.query.candidateDocumentsVault.findFirst({
@@ -71,8 +76,11 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:documents:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:documents:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
 
     const doc = await this.db.query.candidateDocumentsVault.findFirst({

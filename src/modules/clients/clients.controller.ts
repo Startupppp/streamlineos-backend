@@ -19,8 +19,8 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
@@ -52,10 +52,6 @@ import {
   type UpdateClientStatusInput,
 } from "./dto/clients.schemas";
 
-const ACTIVITY_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO"];
-const RENEWAL_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO", "SALES"];
-const CLIENT_STATUS_ROLES = ["CUSTOMER_SUPPORT", "HR", "CEO"];
-
 @Controller("clients")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ClientsController {
@@ -64,6 +60,7 @@ export class ClientsController {
     private readonly clients: ClientsService,
     private readonly opportunities: ClientOpportunitiesService,
     private readonly onboarding: ClientOnboardingService,
+    private readonly access: AccessService,
   ) {}
 
   @Get()
@@ -118,8 +115,11 @@ export class ClientsController {
     @Body(new ZodValidationPipe(updateRenewalSchema)) body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RENEWAL_ROLES)) {
-      throw new ForbiddenException("Insufficient permissions to update renewal stage");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("crm:clients:update")) {
+        throw new ForbiddenException("Insufficient permissions to update renewal stage");
+      }
     }
     const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
     if (!updated) throw new NotFoundException("Client account not found");
@@ -238,8 +238,11 @@ export class ClientsController {
     @Body(new ZodValidationPipe(updateClientStatusSchema)) body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!CLIENT_STATUS_ROLES.includes(u.role)) {
-      throw new ForbiddenException("Only CRM team can update client status");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("crm:clients:manage")) {
+        throw new ForbiddenException("Only CRM team can update client status");
+      }
     }
     const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
     if (!updated) throw new NotFoundException("Client account not found");
@@ -261,8 +264,11 @@ export class ClientsController {
     @Body(new ZodValidationPipe(createActivitySchema)) body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, ACTIVITY_ROLES)) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("crm:clients:update")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);
     if (!activity) throw new NotFoundException("Client account not found");

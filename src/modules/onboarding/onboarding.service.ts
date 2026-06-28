@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   BankDetailsInput,
@@ -65,6 +66,7 @@ export class OnboardingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly access: AccessService,
   ) {}
 
   async getProgressSummary(orgId: string) {
@@ -372,8 +374,12 @@ export class OnboardingService {
     return { success: true };
   }
 
-  getUserTasks(u: CurrentUserContext, userId: string) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage");
+  async getUserTasks(u: CurrentUserContext, userId: string) {
+    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    if (!isAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      isAdmin = perms.has("hr:employees:manage");
+    }
 
     if (!isAdmin && u.userId !== userId) {
       throw new ForbiddenException("Forbidden");
@@ -394,7 +400,11 @@ export class OnboardingService {
 
     if (!task) throw new NotFoundException("Task not found");
 
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage");
+    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    if (!isAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      isAdmin = perms.has("hr:employees:manage");
+    }
 
     if (!isAdmin && task.userId !== u.userId) {
       throw new ForbiddenException("Forbidden");

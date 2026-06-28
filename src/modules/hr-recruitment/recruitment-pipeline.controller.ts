@@ -2,10 +2,8 @@ import { Controller, ForbiddenException, Get, Query, UseGuards } from "@nestjs/c
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
-import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import { diversityReportQuerySchema, type DiversityReportQueryInput } from "./dto/candidates.schemas";
 
 @Controller("hr/recruitment")
@@ -28,7 +26,7 @@ export class RecruitmentPipelineController {
 
   @Get("bgv-compliance")
   bgvCompliance(@CurrentUser() u: CurrentUserContext) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES))
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
       throw new ForbiddenException("Forbidden");
     return this.pipeline.bgvCompliance(u.orgId);
   }

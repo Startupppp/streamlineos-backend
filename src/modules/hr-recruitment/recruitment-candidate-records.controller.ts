@@ -19,11 +19,9 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
-import { RECRUITMENT_ADMIN_ROLES, RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
 import {
   addVaultDocumentSchema,
   createCalibrationSchema,
@@ -58,7 +56,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.ai.aiScore(u.orgId, candidateId);
   }
 
@@ -67,7 +65,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.ai.compositeScore(u.orgId, candidateId);
   }
 
@@ -79,7 +77,7 @@ export class RecruitmentCandidateRecordsController {
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.ai.parseResume(u.orgId, candidateId, file, body);
   }
 
@@ -98,7 +96,7 @@ export class RecruitmentCandidateRecordsController {
     @Body(new ZodValidationPipe(rolloutDocumentsSchema)) body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_MANAGER_ROLES)) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
       throw new ForbiddenException("Forbidden: HR/Admin role required");
     }
     return this.records.generateRolloutDocuments(u.orgId, u.userId, candidateId, body);
@@ -119,7 +117,7 @@ export class RecruitmentCandidateRecordsController {
     @Body(new ZodValidationPipe(createCalibrationSchema)) body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.records.createCalibration(u.orgId, u.userId, candidateId, body);
   }
 
@@ -129,7 +127,7 @@ export class RecruitmentCandidateRecordsController {
     @Body(new ZodValidationPipe(updateCalibrationSchema)) body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.records.updateCalibration(u.orgId, candidateId, body);
   }
 
@@ -235,7 +233,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.records.listVault(u.orgId, candidateId);
   }
 
@@ -246,7 +244,7 @@ export class RecruitmentCandidateRecordsController {
     @Body(new ZodValidationPipe(addVaultDocumentSchema)) body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);
   }
 
@@ -255,7 +253,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Access denied — HR only");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Access denied — HR only");
     return this.records.listVaultAccessLogs(u.orgId, candidateId);
   }
 }

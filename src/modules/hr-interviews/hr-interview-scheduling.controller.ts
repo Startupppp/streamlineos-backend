@@ -16,11 +16,9 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewSchedulingService } from "./hr-interview-scheduling.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
-import { RECRUITMENT_ADMIN_ROLES } from "./recruitment-roles";
 import {
   createInterviewSchema,
   scheduleInterviewSchema,
@@ -57,7 +55,7 @@ export class HrInterviewSchedulingController {
     @Body(new ZodValidationPipe(scheduleInterviewSchema)) body: ScheduleInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.scheduling.scheduleInterview(u.orgId, u.userId, body);
   }
 
@@ -67,7 +65,7 @@ export class HrInterviewSchedulingController {
     @Body(new ZodValidationPipe(selfScheduleSchema)) body: SelfScheduleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, RECRUITMENT_ADMIN_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     return this.scheduling.selfSchedule(u.orgId, u.userId, body);
   }
 
