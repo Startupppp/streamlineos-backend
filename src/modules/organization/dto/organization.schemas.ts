@@ -28,7 +28,7 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   logo: z.string().url().nullable().optional(),
   timezone: z.string().min(1).optional(),
-  currency: z.enum(["USD", "EUR", "INR", "GBP", "AED"]).optional(),
+  currency: z.enum(["USD", "EUR", "INR", "GBP", "AED", "SGD", "AUD", "CAD", "JPY"]).optional(),
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   directoryPublic: z.boolean().optional(),
   mfaEnforced: z.boolean().optional(),
@@ -40,6 +40,21 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   loginBgUrl: z.string().url().nullable().optional(),
   ipAllowlist: z.array(z.string().min(1)).optional(),
+  industry: z.string().min(1).nullable().optional(),
+  website: z.string().url().nullable().optional(),
+  legalName: z.string().min(1).nullable().optional(),
+  orgCode: z.string().min(1).max(20).nullable().optional(),
+  registrationNumber: z.string().min(1).nullable().optional(),
+  taxNumber: z.string().min(1).nullable().optional(),
+  supportEmail: z.string().email().nullable().optional(),
+  supportPhone: z.string().min(1).nullable().optional(),
+  favicon: z.string().url().nullable().optional(),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  language: z.string().min(2).max(10).optional(),
+  dateFormat: z.string().min(1).optional(),
+  timeFormat: z.enum(["12h", "24h"]).optional(),
+  numberFormat: z.string().min(1).optional(),
+  weekStartDay: z.enum(["monday", "sunday", "saturday"]).optional(),
 });
 
 export const securitySettingsSchema = z.object({
@@ -58,6 +73,10 @@ export const updateMemberRoleSchema = z.object({
   role: z.string().min(1),
 });
 
+export const switchOrgSchema = z.object({
+  orgId: z.string().min(1),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type CancelInvitationInput = z.infer<typeof cancelInvitationSchema>;
@@ -65,3 +84,4 @@ export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
 export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
+export type SwitchOrgInput = z.infer<typeof switchOrgSchema>;

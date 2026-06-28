@@ -16,6 +16,7 @@ import type {
   UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
 
+
 type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
   passwordExpiryDays?: number | null;
@@ -80,6 +81,30 @@ export class OrganizationService {
         joinedAt: m.joinedAt,
       };
     });
+  }
+
+  async switchOrg(userId: string, targetOrgId: string) {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, targetOrgId),
+      ),
+      columns: { role: true },
+    });
+    if (!membership) throw new BadRequestException("You are not a member of this organization");
+
+    const [org] = await this.db
+      .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
+      .from(organizations)
+      .where(eq(organizations.id, targetOrgId))
+      .limit(1);
+    if (!org) throw new BadRequestException("Organization not found");
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+
+    this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
+
+    return { orgId: org.id, name: org.name, slug: org.slug, role: membership.role };
   }
 
   async createOrganization(userId: string, input: CreateOrganizationInput) {
@@ -260,12 +285,27 @@ export class OrganizationService {
     if (input.logo !== undefined) updateData.logo = input.logo;
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.allowedEmailDomains !== undefined) updateData.allowedEmailDomains = input.allowedEmailDomains;
+    if (input.industry !== undefined) updateData.industry = input.industry;
+    if (input.website !== undefined) updateData.website = input.website;
+    if (input.legalName !== undefined) updateData.legalName = input.legalName;
+    if (input.orgCode !== undefined) updateData.orgCode = input.orgCode;
+    if (input.registrationNumber !== undefined) updateData.registrationNumber = input.registrationNumber;
+    if (input.taxNumber !== undefined) updateData.taxNumber = input.taxNumber;
+    if (input.supportEmail !== undefined) updateData.supportEmail = input.supportEmail;
+    if (input.supportPhone !== undefined) updateData.supportPhone = input.supportPhone;
+    if (input.favicon !== undefined) updateData.favicon = input.favicon;
+    if (input.secondaryColor !== undefined) updateData.secondaryColor = input.secondaryColor;
 
     const hasSettingsUpdate =
       input.directoryPublic !== undefined ||
       input.primaryColor !== undefined ||
       input.loginBgUrl !== undefined ||
-      input.ipAllowlist !== undefined;
+      input.ipAllowlist !== undefined ||
+      input.language !== undefined ||
+      input.dateFormat !== undefined ||
+      input.timeFormat !== undefined ||
+      input.numberFormat !== undefined ||
+      input.weekStartDay !== undefined;
 
     if (hasSettingsUpdate) {
       const currentOrg = await this.db.query.organizations.findFirst({
@@ -296,6 +336,11 @@ export class OrganizationService {
           await this.cache.set(`org:ip-allowlist:${orgId}`, JSON.stringify(input.ipAllowlist), 3600);
         }
       }
+      if (input.language !== undefined) currentSettings.language = input.language;
+      if (input.dateFormat !== undefined) currentSettings.dateFormat = input.dateFormat;
+      if (input.timeFormat !== undefined) currentSettings.timeFormat = input.timeFormat;
+      if (input.numberFormat !== undefined) currentSettings.numberFormat = input.numberFormat;
+      if (input.weekStartDay !== undefined) currentSettings.weekStartDay = input.weekStartDay;
       updateData.settings = currentSettings;
     }
 

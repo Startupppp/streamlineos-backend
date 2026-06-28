@@ -30,12 +30,16 @@ import {
   verifyEmailSchema,
   changePasswordSchema,
   resendVerificationSchema,
+  magicLinkRequestSchema,
+  magicLinkVerifySchema,
   type RegisterInput,
   type LoginInput,
   type ForgotPasswordInput,
   type ResetPasswordInput,
   type VerifyEmailInput,
   type ChangePasswordInput,
+  type MagicLinkRequestInput,
+  type MagicLinkVerifyInput,
 } from "./dto/auth.schemas";
 
 const loginHistoryQuerySchema = z.object({
@@ -212,5 +216,28 @@ export class AuthController {
   @Get("audit/analytics")
   getAuditAnalytics() {
     return this.authService.getAuditAnalytics();
+  }
+
+  @Post("magic-link")
+  @Public()
+  @HttpCode(200)
+  async requestMagicLink(
+    @Body(new ZodValidationPipe(magicLinkRequestSchema)) body: MagicLinkRequestInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:magic-link", this.getIp(req));
+    await this.authService.requestMagicLink(body);
+    return { message: "If an account exists, a sign-in link has been sent" };
+  }
+
+  @Post("magic-link/verify")
+  @Public()
+  @HttpCode(200)
+  async verifyMagicLink(
+    @Body(new ZodValidationPipe(magicLinkVerifySchema)) body: MagicLinkVerifyInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
+    return this.authService.verifyMagicLink(body.token);
   }
 }

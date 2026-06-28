@@ -10,6 +10,7 @@ import { and, eq, gt, gte, sql } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import {
   loginHistory,
+  magicLinkTokens,
   organizationMembers,
   organizations,
   passwordResetTokens,
@@ -36,6 +37,7 @@ import type {
   ResetPasswordInput,
   VerifyEmailInput,
   ChangePasswordInput,
+  MagicLinkRequestInput,
 } from "./dto/auth.schemas";
 
 const LOCK_AFTER_ATTEMPTS = 5;
@@ -102,7 +104,6 @@ export class AuthService {
         role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
-        emailVerified: new Date(),
         isPasswordChangeRequired: false,
       });
 
@@ -125,6 +126,15 @@ export class AuthService {
       const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };
       await tx.insert(roles).values({ ...adminRole, orgId, permissions: [] });
     });
+
+    const verificationToken = generateToken();
+    await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
+    await this.db.insert(verificationTokens).values({
+      identifier: normalizedEmail,
+      token: verificationToken,
+      expires: addHours(new Date(), 24),
+    });
+    void this.email.sendVerificationEmail(normalizedEmail, verificationToken).catch(() => {});
 
     this.audit.log({
       action: "user.registered",
@@ -288,11 +298,17 @@ export class AuthService {
     const isValid = await this.passwordService.verify(input.currentPassword, user.password);
     if (!isValid) throw new BadRequestException("Current password is incorrect");
 
+    if (input.newPassword.toLowerCase() === user.email.toLowerCase()) {
+      throw new BadRequestException("Password cannot be the same as your email address");
+    }
+    await this.passwordService.checkPasswordHistory(userId, input.newPassword);
+
     const newHash = await this.passwordService.hash(input.newPassword);
     await this.db
       .update(users)
       .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
       .where(eq(users.id, userId));
+    await this.passwordService.recordPasswordHistory(userId, newHash);
 
     await this.sessionService.revokeAll(userId);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
@@ -347,11 +363,14 @@ export class AuthService {
     });
     if (!user) throw new NotFoundException("User not found");
 
+    await this.passwordService.checkPasswordHistory(user.id, input.newPassword);
+
     const newHash = await this.passwordService.hash(input.newPassword);
     await this.db
       .update(users)
       .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
       .where(eq(users.id, user.id));
+    await this.passwordService.recordPasswordHistory(user.id, newHash);
 
     await this.db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, record.id));
     await this.sessionService.revokeAll(user.id);
@@ -489,5 +508,64 @@ export class AuthService {
       success,
       failureReason,
     }).catch(() => {});
+  }
+
+  async requestMagicLink(input: MagicLinkRequestInput): Promise<void> {
+    const user = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${input.email.toLowerCase()}`,
+      columns: { id: true, email: true, emailVerified: true },
+    });
+
+    if (!user || !user.emailVerified) return;
+
+    const token = randomBytes(32).toString("hex");
+    const { createHash } = await import("node:crypto");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const expiresAt = addHours(new Date(), 1);
+
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    await this.email.sendMagicLinkEmail(user.email, token);
+  }
+
+  async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
+    const { createHash } = await import("node:crypto");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+
+    const row = await this.db.query.magicLinkTokens.findFirst({
+      where: and(
+        eq(magicLinkTokens.tokenHash, tokenHash),
+        gt(magicLinkTokens.expiresAt, new Date()),
+      ),
+    });
+
+    if (!row || row.usedAt) {
+      throw new UnauthorizedException("Invalid or expired magic link");
+    }
+
+    await this.db.update(magicLinkTokens).set({ usedAt: new Date() }).where(eq(magicLinkTokens.id, row.id));
+
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: eq(organizationMembers.userId, row.userId),
+      columns: { orgId: true },
+    });
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, row.userId),
+      columns: { isPasswordChangeRequired: true },
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(row.userId));
+
+    return {
+      userId: row.userId,
+      orgId: membership?.orgId ?? "",
+      forceChangePassword: user?.isPasswordChangeRequired ?? false,
+    };
   }
 }

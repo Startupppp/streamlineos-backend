@@ -27,6 +27,7 @@ import {
   inviteMemberSchema,
   listMembersSchema,
   securitySettingsSchema,
+  switchOrgSchema,
   updateMemberRoleSchema,
   updateOrgSettingsSchema,
   type CancelInvitationInput,
@@ -34,6 +35,7 @@ import {
   type InviteMemberInput,
   type ListMembersInput,
   type SecuritySettingsInput,
+  type SwitchOrgInput,
   type UpdateMemberRoleInput,
   type UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
@@ -56,6 +58,15 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.createOrganization(u.userId, body);
+  }
+
+  @Post("switch")
+  @HttpCode(200)
+  switchOrg(
+    @Body(new ZodValidationPipe(switchOrgSchema)) body: SwitchOrgInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.switchOrg(u.userId, body.orgId);
   }
 
   @Get("profile")
