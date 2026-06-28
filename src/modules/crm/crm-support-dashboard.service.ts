@@ -179,7 +179,7 @@ export class CrmSupportDashboardService {
       assigneeUsers = await this.db
         .select({ id: users.id, name: users.name, role: users.role })
         .from(users)
-        .where(sql`${users.id} = ANY(${assigneeIds})`);
+        .where(inArray(users.id, assigneeIds));
     }
     const assigneeMap = new Map(assigneeUsers.map((u) => [u.id, u]));
 

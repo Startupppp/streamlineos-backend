@@ -269,7 +269,7 @@ export class QuotesService {
     return updated;
   }
 
-  async remove(orgId: string, userId: string, quoteId: number) {
+  async remove(orgId: string, userId: string, quoteId: number): Promise<{ success: true } | null> {
     const existing = await this.db.query.quotes.findFirst({
       where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
       columns: { quoteNumber: true },
@@ -322,7 +322,7 @@ export class QuotesService {
     return updated;
   }
 
-  async buildExportCsv(orgId: string, userId: string, filters: ExportInput) {
+  async buildExportCsv(orgId: string, userId: string, filters: ExportInput): Promise<string> {
     const conditions = [eq(quotes.orgId, orgId)];
     if (filters.status) conditions.push(eq(quotes.status, filters.status));
 

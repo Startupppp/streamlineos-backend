@@ -211,6 +211,7 @@ export class LeavesWriteService {
             where: and(
               eq(leaveBalances.userId, existing.userId),
               eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
+              eq(leaveBalances.orgId, u.orgId),
               eq(leaveBalances.year, new Date().getFullYear()),
             ),
           });
@@ -285,6 +286,7 @@ export class LeavesWriteService {
         where: and(
           eq(leaveBalances.userId, existing.userId),
           eq(leaveBalances.leaveTypeId, existing.leaveTypeId),
+          eq(leaveBalances.orgId, u.orgId),
           eq(leaveBalances.year, new Date().getFullYear()),
         ),
       });

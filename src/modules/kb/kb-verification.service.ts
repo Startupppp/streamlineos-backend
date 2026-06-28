@@ -6,6 +6,26 @@ import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
+type VerificationQueueItem = {
+  id: number;
+  spaceId: number | null;
+  categoryId: number | null;
+  title: string;
+  slug: string;
+  ownerId: string | null;
+  reviewIntervalDays: number | null;
+  lastVerifiedAt: Date | null;
+  updatedAt: Date;
+};
+
+type VerificationQueueResult = {
+  items: VerificationQueueItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 @Injectable()
 export class KbVerificationService {
   constructor(
@@ -13,10 +33,11 @@ export class KbVerificationService {
     private readonly access: KbAccessService,
   ) {}
 
-  async listDue(user: CurrentUserContext, page: number, pageSize: number) {
+  async listDue(user: CurrentUserContext, page: number, pageSize: number): Promise<VerificationQueueResult> {
+    const capped = Math.min(pageSize, 100);
     const spaceIds = await this.access.getAccessibleSpaceIds(user);
     if (spaceIds.length === 0) {
-      return { items: [], total: 0, page, pageSize, totalPages: 0 };
+      return { items: [], total: 0, page, pageSize: capped, totalPages: 0 };
     }
 
     const overdue = and(
@@ -59,9 +80,9 @@ export class KbVerificationService {
       .from(kbArticles)
       .where(where)
       .orderBy(asc(kbArticles.lastVerifiedAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
+      .limit(capped)
+      .offset((page - 1) * capped);
 
-    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    return { items, total, page, pageSize: capped, totalPages: Math.ceil(total / capped) };
   }
 }

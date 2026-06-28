@@ -8,10 +8,8 @@ import {
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 
-type DbHandle = Db;
-
 export async function evaluateAssignmentRules(
-  db: DbHandle,
+  db: Db,
   orgId: string,
   leadId: number,
 ): Promise<{ assigned: boolean; userId: string | null; ruleName: string | null }> {
@@ -106,7 +104,7 @@ export async function evaluateAssignmentRules(
 }
 
 export async function recalculateLeadScore(
-  db: DbHandle,
+  db: Db,
   orgId: string,
   leadId: number,
 ): Promise<number | null> {
@@ -166,7 +164,7 @@ export async function recalculateLeadScore(
 }
 
 export async function applySlaPolicy(
-  db: DbHandle,
+  db: Db,
   orgId: string,
   leadId: number,
 ): Promise<{ slaApplied: boolean; deadline?: Date }> {

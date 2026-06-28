@@ -10,6 +10,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -41,11 +43,15 @@ export class WfhController {
   }
 
   @Get("pending")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   pending(@CurrentUser() u: CurrentUserContext) {
     return this.wfh.pending(u.orgId);
   }
 
   @Patch(":requestId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   update(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(updateWfhSchema)) body: UpdateWfhInput,

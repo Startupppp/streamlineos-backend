@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, asc, desc } from "drizzle-orm";
+import { eq, and, or, asc, desc, inArray } from "drizzle-orm";
 import { clients, deals, dealActivities, leadActivities, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -24,12 +24,13 @@ export class ClientsService {
     private readonly cache: CacheService,
   ) {}
 
-  listClients(orgId: string) {
+  listClients(orgId: string): Promise<{ id: number; name: string | null }[]> {
     return this.db
       .select({ id: clients.id, name: clients.name })
       .from(clients)
       .where(eq(clients.orgId, orgId))
-      .orderBy(clients.name);
+      .orderBy(clients.name)
+      .limit(100);
   }
 
   getHealth(orgId: string, status: ClientHealthFilter | undefined, limit: number | undefined) {
@@ -137,32 +138,36 @@ export class ClientsService {
         description: `New deal associated with this client`,
         date: deal.createdAt ? new Date(deal.createdAt).toISOString() : new Date().toISOString(),
       });
+    }
 
-      const activities = await this.db
-        .select({
-          id: dealActivities.id,
-          type: dealActivities.type,
-          subject: dealActivities.subject,
-          notes: dealActivities.notes,
-          createdAt: dealActivities.createdAt,
-          userName: users.name,
-        })
-        .from(dealActivities)
-        .leftJoin(users, eq(dealActivities.userId, users.id))
-        .where(eq(dealActivities.dealId, deal.id))
-        .orderBy(desc(dealActivities.createdAt))
-        .limit(10);
+    const dealIds = clientDeals.map((d) => d.id);
+    const allDealActivities = dealIds.length > 0
+      ? await this.db
+          .select({
+            id: dealActivities.id,
+            dealId: dealActivities.dealId,
+            type: dealActivities.type,
+            subject: dealActivities.subject,
+            notes: dealActivities.notes,
+            createdAt: dealActivities.createdAt,
+            userName: users.name,
+          })
+          .from(dealActivities)
+          .leftJoin(users, eq(dealActivities.userId, users.id))
+          .where(inArray(dealActivities.dealId, dealIds))
+          .orderBy(desc(dealActivities.createdAt))
+          .limit(50)
+      : [];
 
-      for (const act of activities) {
-        events.push({
-          id: `deal-act-${act.id}`,
-          type: act.type as TimelineEvent["type"],
-          title: act.subject || `${act.type} logged`,
-          description: act.notes || "",
-          date: act.createdAt ? new Date(act.createdAt).toISOString() : new Date().toISOString(),
-          user: act.userName ?? undefined,
-        });
-      }
+    for (const act of allDealActivities) {
+      events.push({
+        id: `deal-act-${act.id}`,
+        type: act.type as TimelineEvent["type"],
+        title: act.subject || `${act.type} logged`,
+        description: act.notes || "",
+        date: act.createdAt ? new Date(act.createdAt).toISOString() : new Date().toISOString(),
+        user: act.userName ?? undefined,
+      });
     }
 
     if (client.leadId) {

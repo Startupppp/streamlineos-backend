@@ -76,6 +76,7 @@ export class WorkLogsService {
     const logs = await this.db.query.timesheets.findMany({
       where: and(...conditions),
       orderBy: [asc(timesheets.date)],
+      limit: 1000,
     });
 
     const seenDates = new Set<string>();
@@ -175,7 +176,8 @@ export class WorkLogsService {
       .from(timesheets)
       .leftJoin(users, eq(timesheets.userId, users.id))
       .where(and(...conditions))
-      .orderBy(timesheets.date);
+      .orderBy(timesheets.date)
+      .limit(5000);
 
     const headers = ["Date", "Employee", "Email", "Hours", "Description", "Status"];
     const rows = data.map((r) => [

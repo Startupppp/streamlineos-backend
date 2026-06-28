@@ -475,6 +475,7 @@ export class LeadsReportsService {
       ),
       with: { assignedTo: { columns: { id: true, name: true, image: true } } },
       orderBy: [desc(leads.createdAt)],
+      limit: 100,
     });
   }
 }

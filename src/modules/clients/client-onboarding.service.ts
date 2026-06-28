@@ -33,7 +33,8 @@ export class ClientOnboardingService {
       .from(clientOnboardingItems)
       .leftJoin(users, eq(clientOnboardingItems.assignedTo, users.id))
       .where(and(...conditions))
-      .orderBy(clientOnboardingItems.sortOrder, clientOnboardingItems.createdAt);
+      .orderBy(clientOnboardingItems.sortOrder, clientOnboardingItems.createdAt)
+      .limit(100);
   }
 
   async createItem(orgId: string, input: CreateOnboardingItemInput) {

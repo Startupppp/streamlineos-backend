@@ -8,6 +8,13 @@ import { KbAccessService } from "./kb-access.service";
 import { kbSlugify } from "./kb.util";
 import type { CreateSpaceInput, UpdateSpaceInput } from "./dto/kb.schemas";
 
+type SpaceRow = typeof kbSpaces.$inferSelect;
+
+type SpaceListItem = Pick<
+  SpaceRow,
+  "id" | "name" | "slug" | "description" | "audience" | "icon" | "isPublicHelpCenter" | "createdAt" | "updatedAt"
+> & { articleCount: number };
+
 @Injectable()
 export class KbSpacesService {
   constructor(
@@ -15,7 +22,7 @@ export class KbSpacesService {
     private readonly access: KbAccessService,
   ) {}
 
-  async list(user: CurrentUserContext) {
+  async list(user: CurrentUserContext): Promise<SpaceListItem[]> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) return [];
     const spaces = await this.db
@@ -42,7 +49,7 @@ export class KbSpacesService {
     return spaces.map((s) => ({ ...s, articleCount: countMap.get(s.id) ?? 0 }));
   }
 
-  async create(orgId: string, userId: string, input: CreateSpaceInput) {
+  async create(orgId: string, userId: string, input: CreateSpaceInput): Promise<SpaceRow> {
     const slug = kbSlugify(input.name);
     if (!slug) throw new ConflictException("Invalid space name");
     const existing = await this.db.query.kbSpaces.findFirst({
@@ -74,7 +81,7 @@ export class KbSpacesService {
     });
   }
 
-  async get(user: CurrentUserContext, spaceId: number) {
+  async get(user: CurrentUserContext, spaceId: number): Promise<SpaceRow> {
     const space = await this.db.query.kbSpaces.findFirst({
       where: and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, user.orgId), isNull(kbSpaces.deletedAt)),
     });
@@ -83,7 +90,7 @@ export class KbSpacesService {
     return space;
   }
 
-  async update(orgId: string, spaceId: number, input: UpdateSpaceInput) {
+  async update(orgId: string, spaceId: number, input: UpdateSpaceInput): Promise<SpaceRow> {
     const values: Partial<typeof kbSpaces.$inferInsert> = { updatedAt: new Date() };
     if (input.description !== undefined) values.description = input.description ?? null;
     if (input.audience !== undefined) values.audience = input.audience;
@@ -109,7 +116,7 @@ export class KbSpacesService {
     return updated;
   }
 
-  async remove(orgId: string, spaceId: number) {
+  async remove(orgId: string, spaceId: number): Promise<{ success: boolean }> {
     const [deleted] = await this.db
       .update(kbSpaces)
       .set({ deletedAt: new Date() })

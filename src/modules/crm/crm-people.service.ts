@@ -109,17 +109,28 @@ export class CrmPeopleService {
 
     if (!person) return null;
 
-    const performance = await this.db.query.crmTeamPerformance.findMany({
-      where: and(eq(crmTeamPerformance.orgId, orgId), eq(crmTeamPerformance.personId, person.id)),
-    });
+    const [performance, personDealsRaw, accounts, activities] = await Promise.all([
+      this.db.query.crmTeamPerformance.findMany({
+        where: and(eq(crmTeamPerformance.orgId, orgId), eq(crmTeamPerformance.personId, person.id)),
+      }),
+      this.db.query.crmDeals.findMany({
+        where: and(eq(crmDeals.orgId, orgId), eq(crmDeals.salesRepId, person.id)),
+      }),
+      this.db.query.crmCompanies.findMany({
+        where: and(eq(crmCompanies.orgId, orgId), eq(crmCompanies.csmId, person.id)),
+      }),
+      this.db.query.crmActivities.findMany({
+        where: and(eq(crmActivities.orgId, orgId), eq(crmActivities.personId, person.id)),
+        orderBy: [desc(crmActivities.createdAt)],
+        limit: 10,
+      }),
+    ]);
+
     const monthlyPerformance = performance.map((p) => ({
       month: p.month,
       value: Number(p.value),
     }));
 
-    const personDealsRaw = await this.db.query.crmDeals.findMany({
-      where: and(eq(crmDeals.orgId, orgId), eq(crmDeals.salesRepId, person.id)),
-    });
     const personDeals = personDealsRaw.map((d) => ({
       company: d.companyName,
       value: Number(d.value),
@@ -128,9 +139,6 @@ export class CrmPeopleService {
       closeDate: d.closeDate ?? "",
     }));
 
-    const accounts = await this.db.query.crmCompanies.findMany({
-      where: and(eq(crmCompanies.orgId, orgId), eq(crmCompanies.csmId, person.id)),
-    });
     const personAccounts = accounts.map((a) => ({
       name: a.name,
       revenue: Number(a.revenue),
@@ -139,11 +147,6 @@ export class CrmPeopleService {
       renewalDate: a.renewalDate ?? "",
     }));
 
-    const activities = await this.db.query.crmActivities.findMany({
-      where: and(eq(crmActivities.orgId, orgId), eq(crmActivities.personId, person.id)),
-      orderBy: [desc(crmActivities.createdAt)],
-      limit: 10,
-    });
     const personActivities = activities.map((a) => ({
       type: a.type as "deal_won" | "meeting" | "proposal" | "call" | "email" | "ticket" | "escalation",
       message: a.message,

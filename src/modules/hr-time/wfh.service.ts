@@ -14,6 +14,7 @@ export class WfhService {
     return this.db.query.wfhRequests.findMany({
       where: and(eq(wfhRequests.orgId, orgId), eq(wfhRequests.userId, userId)),
       orderBy: [desc(wfhRequests.createdAt)],
+      limit: 100,
     });
   }
 

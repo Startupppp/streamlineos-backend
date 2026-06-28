@@ -96,6 +96,7 @@ export class ClientsController {
 
   @Post("assign-crm")
   @HttpCode(200)
+  @RequirePermission("crm:clients:manage")
   async runCrmAssignments(@CurrentUser() u: CurrentUserContext) {
     try {
       return await this.accounts.runCrmAssignments(u.orgId);
@@ -136,6 +137,7 @@ export class ClientsController {
 
   @Post("opportunities")
   @HttpCode(201)
+  @RequirePermission("crm:clients:update")
   async createOpportunity(
     @Body(new ZodValidationPipe(createOpportunitySchema)) body: CreateOpportunityInput,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +148,7 @@ export class ClientsController {
   }
 
   @Patch("opportunities/:oppId")
+  @RequirePermission("crm:clients:update")
   async updateOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
     @Body(new ZodValidationPipe(updateOpportunitySchema)) body: UpdateOpportunityInput,
@@ -157,6 +160,7 @@ export class ClientsController {
   }
 
   @Delete("opportunities/:oppId")
+  @RequirePermission("crm:clients:update")
   async deleteOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -176,6 +180,7 @@ export class ClientsController {
 
   @Post("onboarding/items")
   @HttpCode(201)
+  @RequirePermission("crm:clients:update")
   createOnboardingItem(
     @Body(new ZodValidationPipe(createOnboardingItemSchema)) body: CreateOnboardingItemInput,
     @CurrentUser() u: CurrentUserContext,
@@ -184,6 +189,7 @@ export class ClientsController {
   }
 
   @Patch("onboarding/items/:itemId")
+  @RequirePermission("crm:clients:update")
   async updateOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(patchOnboardingItemSchema)) body: PatchOnboardingItemInput,
@@ -195,6 +201,7 @@ export class ClientsController {
   }
 
   @Delete("onboarding/items/:itemId")
+  @RequirePermission("crm:clients:update")
   async deleteOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,

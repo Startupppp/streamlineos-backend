@@ -36,6 +36,7 @@ export class SupportKbService {
     return this.db.query.kbCategories.findMany({
       where: eq(kbCategories.orgId, orgId),
       orderBy: [asc(kbCategories.sortOrder), asc(kbCategories.name)],
+      limit: 100,
     });
   }
 
@@ -139,7 +140,8 @@ export class SupportKbService {
       })
       .from(kbArticles)
       .where(and(...conditions))
-      .orderBy(desc(kbArticles.updatedAt));
+      .orderBy(desc(kbArticles.updatedAt))
+      .limit(200);
   }
 
   async createArticle(orgId: string, userId: string, input: CreateKbArticleInput) {
@@ -244,7 +246,8 @@ export class SupportKbService {
       })
       .from(kbArticleFeedback)
       .where(and(eq(kbArticleFeedback.articleId, articleId), eq(kbArticleFeedback.orgId, orgId)))
-      .orderBy(desc(kbArticleFeedback.createdAt));
+      .orderBy(desc(kbArticleFeedback.createdAt))
+      .limit(100);
   }
 
   async listComments(orgId: string, articleId: number) {
@@ -263,7 +266,8 @@ export class SupportKbService {
       .from(kbArticleComments)
       .leftJoin(users, eq(kbArticleComments.authorId, users.id))
       .where(and(eq(kbArticleComments.articleId, articleId), eq(kbArticleComments.orgId, orgId)))
-      .orderBy(desc(kbArticleComments.createdAt));
+      .orderBy(desc(kbArticleComments.createdAt))
+      .limit(100);
   }
 
   async createComment(orgId: string, articleId: number, userId: string, input: CreateKbCommentInput) {
@@ -323,7 +327,8 @@ export class SupportKbService {
       .where(
         and(eq(kbArticleAttachments.articleId, articleId), eq(kbArticleAttachments.orgId, orgId)),
       )
-      .orderBy(desc(kbArticleAttachments.createdAt));
+      .orderBy(desc(kbArticleAttachments.createdAt))
+      .limit(100);
   }
 
   async createAttachment(orgId: string, articleId: number, userId: string, input: CreateKbAttachmentInput) {

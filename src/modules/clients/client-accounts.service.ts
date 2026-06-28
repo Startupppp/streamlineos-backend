@@ -118,6 +118,7 @@ export class ClientAccountsService {
       where: eq(clientAccountActivities.clientAccountId, clientAccountId),
       orderBy: [desc(clientAccountActivities.createdAt)],
       with: { user: { columns: { id: true, name: true, image: true } } },
+      limit: 100,
     });
   }
 
@@ -148,6 +149,7 @@ export class ClientAccountsService {
       where: eq(clientAccounts.orgId, orgId),
       with: { salesRep: { columns: { id: true, name: true } } },
       orderBy: (t, { asc }) => [asc(t.clientName)],
+      limit: 100,
     });
   }
 

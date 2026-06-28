@@ -94,6 +94,7 @@ export class LeavesPageService {
           approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
         },
         orderBy: [desc(leaveRequests.createdAt)],
+        limit: 200,
       }),
       this.db.query.users.findFirst({
         where: eq(users.id, userId),

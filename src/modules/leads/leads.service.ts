@@ -416,10 +416,8 @@ export class LeadsService {
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
-    const { ...data } = input;
-
     const [updated] = await this.db.update(leads)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...input, updatedAt: new Date() })
       .where(and(eq(leads.id, id), eq(leads.orgId, orgId)))
       .returning();
 

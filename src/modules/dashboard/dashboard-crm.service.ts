@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, lt, or, sql, sum } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lt, or, sql, sum } from "drizzle-orm";
 import {
   branches,
   clientAccounts,
@@ -153,75 +153,101 @@ export class DashboardCrmService {
       },
     });
 
-    const branchKpis = await Promise.all(
-      allBranches.map(async (branch) => {
-        const [
-          employeeCountResult,
-          workLogHoursResult,
-          pendingExpensesResult,
-          clientCountResult,
-        ] = await Promise.all([
-          this.db
-            .select({ count: count() })
-            .from(users)
-            .where(and(eq(users.branchId, branch.id), eq(users.isActive, true))),
+    if (allBranches.length === 0) {
+      return {
+        summary: {
+          totalBranches: 0,
+          activeBranches: 0,
+          totalEmployees: 0,
+          totalWorkLogHours: 0,
+          totalClients: 0,
+        },
+        branches: [],
+      };
+    }
 
-          this.db
-            .select({
-              totalHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)`,
-            })
-            .from(timesheets)
-            .innerJoin(users, eq(timesheets.userId, users.id))
-            .where(
-              and(
-                eq(timesheets.orgId, orgId),
-                eq(users.branchId, branch.id),
-                gte(timesheets.date, monthStartStr),
-              ),
-            ),
+    const branchIds = allBranches.map((b) => b.id);
 
-          this.db
-            .select({
-              count: count(),
-              total: sql<string>`COALESCE(SUM(${expenses.amount}::numeric), 0)`,
-            })
-            .from(expenses)
-            .innerJoin(users, eq(expenses.userId, users.id))
-            .where(
-              and(
-                eq(expenses.orgId, orgId),
-                eq(users.branchId, branch.id),
-                eq(expenses.status, "PENDING"),
-              ),
-            ),
+    const [employeeCounts, timesheetHours, pendingExpenses, clientCounts] = await Promise.all([
+      this.db
+        .select({ branchId: users.branchId, count: count() })
+        .from(users)
+        .where(and(inArray(users.branchId, branchIds), eq(users.isActive, true)))
+        .groupBy(users.branchId),
+      this.db
+        .select({
+          branchId: users.branchId,
+          totalHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)`,
+        })
+        .from(timesheets)
+        .innerJoin(users, eq(timesheets.userId, users.id))
+        .where(
+          and(
+            eq(timesheets.orgId, orgId),
+            inArray(users.branchId, branchIds),
+            gte(timesheets.date, monthStartStr),
+          ),
+        )
+        .groupBy(users.branchId),
+      this.db
+        .select({
+          branchId: users.branchId,
+          count: count(),
+          total: sql<string>`COALESCE(SUM(${expenses.amount}::numeric), 0)`,
+        })
+        .from(expenses)
+        .innerJoin(users, eq(expenses.userId, users.id))
+        .where(
+          and(
+            eq(expenses.orgId, orgId),
+            inArray(users.branchId, branchIds),
+            eq(expenses.status, "PENDING"),
+          ),
+        )
+        .groupBy(users.branchId),
+      this.db
+        .select({ branchId: clientAccounts.branchId, count: count() })
+        .from(clientAccounts)
+        .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.branchId, branchIds)))
+        .groupBy(clientAccounts.branchId),
+    ]);
 
-          this.db
-            .select({ count: count() })
-            .from(clientAccounts)
-            .where(and(eq(clientAccounts.orgId, orgId), eq(clientAccounts.branchId, branch.id))),
-        ]);
+    const employeeMap = new Map<number, number>();
+    for (const r of employeeCounts) {
+      if (r.branchId !== null) employeeMap.set(r.branchId, r.count);
+    }
 
-        return {
-          id: branch.id,
-          name: branch.name,
-          code: branch.code,
-          city: branch.city,
-          state: branch.state,
-          status: branch.status,
-          branchManager: branch.branchManager,
-          branchHr: branch.branchHr,
-          kpis: {
-            employees: employeeCountResult[0]?.count ?? 0,
-            workLogHours: Number(workLogHoursResult[0]?.totalHours ?? 0),
-            pendingExpenses: {
-              count: pendingExpensesResult[0]?.count ?? 0,
-              total: Number(pendingExpensesResult[0]?.total ?? 0),
-            },
-            clients: clientCountResult[0]?.count ?? 0,
-          },
-        };
-      }),
-    );
+    const timesheetMap = new Map<number, number>();
+    for (const r of timesheetHours) {
+      if (r.branchId !== null) timesheetMap.set(r.branchId, Number(r.totalHours ?? 0));
+    }
+
+    const expenseMap = new Map<number, { count: number; total: number }>();
+    for (const r of pendingExpenses) {
+      if (r.branchId !== null) expenseMap.set(r.branchId, { count: r.count, total: Number(r.total ?? 0) });
+    }
+
+    const clientMap = new Map<number, number>();
+    for (const r of clientCounts) {
+      if (r.branchId !== null) clientMap.set(r.branchId, r.count);
+    }
+
+    const branchKpis = allBranches.map((branch) => ({
+      id: branch.id,
+      name: branch.name,
+      code: branch.code,
+      city: branch.city,
+      state: branch.state,
+      status: branch.status,
+      branchManager: branch.branchManager,
+      branchHr: branch.branchHr,
+      kpis: {
+        employees: employeeMap.get(branch.id) ?? 0,
+        workLogHours: timesheetMap.get(branch.id) ?? 0,
+        pendingExpenses: expenseMap.get(branch.id) ?? { count: 0, total: 0 },
+        clients: clientMap.get(branch.id) ?? 0,
+      },
+    }));
 
     const totalEmployees = branchKpis.reduce((acc, b) => acc + b.kpis.employees, 0);
     const totalHours = branchKpis.reduce((acc, b) => acc + b.kpis.workLogHours, 0);

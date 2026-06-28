@@ -48,6 +48,7 @@ export class QuotesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("crm:quotes:create")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +82,7 @@ export class QuotesController {
   }
 
   @Patch(":quoteId")
+  @RequirePermission("crm:quotes:update")
   async update(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -103,6 +105,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/send")
+  @RequirePermission("crm:quotes:update")
   async send(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

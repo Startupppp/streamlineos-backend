@@ -14,6 +14,8 @@ import { KbAccessService } from "./kb-access.service";
 import { kbSlugify, KB_MAX_COLLECTION_DEPTH } from "./kb.util";
 import type { CreateCategoryInput, UpdateCategoryInput } from "./dto/kb.schemas";
 
+type CategoryRow = typeof kbCategories.$inferSelect;
+
 @Injectable()
 export class KbCategoriesService {
   constructor(
@@ -21,7 +23,7 @@ export class KbCategoriesService {
     private readonly access: KbAccessService,
   ) {}
 
-  async listBySpace(user: CurrentUserContext, spaceId: number) {
+  async listBySpace(user: CurrentUserContext, spaceId: number): Promise<CategoryRow[]> {
     await this.access.assertSpaceAccessible(user, spaceId);
     return this.db
       .select()
@@ -30,7 +32,7 @@ export class KbCategoriesService {
       .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
   }
 
-  async create(user: CurrentUserContext, spaceId: number, input: CreateCategoryInput) {
+  async create(user: CurrentUserContext, spaceId: number, input: CreateCategoryInput): Promise<CategoryRow> {
     await this.access.assertSpaceAccessible(user, spaceId);
     if (input.parentId !== undefined && input.parentId !== null) {
       const parent = await this.db.query.kbCategories.findFirst({
@@ -74,7 +76,7 @@ export class KbCategoriesService {
     return category;
   }
 
-  async update(user: CurrentUserContext, categoryId: number, input: UpdateCategoryInput) {
+  async update(user: CurrentUserContext, categoryId: number, input: UpdateCategoryInput): Promise<CategoryRow> {
     const current = await this.db.query.kbCategories.findFirst({
       where: and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, user.orgId)),
       columns: { id: true, slug: true, spaceId: true },
@@ -139,7 +141,7 @@ export class KbCategoriesService {
     return updated;
   }
 
-  async remove(orgId: string, categoryId: number) {
+  async remove(orgId: string, categoryId: number): Promise<{ success: boolean }> {
     const [deleted] = await this.db
       .delete(kbCategories)
       .where(and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)))
