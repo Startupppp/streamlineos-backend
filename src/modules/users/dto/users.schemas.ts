@@ -55,3 +55,26 @@ export const updatePreferencesSchema = z.object({
   dashboardPreferences: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;
+
+export const updateMembershipSchema = z.object({
+  businessUnitId: z.string().optional().nullable(),
+  branchId: z.number().int().optional().nullable(),
+  departmentId: z.number().int().optional().nullable(),
+  teamId: z.string().optional().nullable(),
+  managerUserId: z.string().optional().nullable(),
+  isPrimary: z.boolean().optional(),
+});
+export type UpdateMembershipInput = z.infer<typeof updateMembershipSchema>;
+
+export const bulkActionSchema = z.object({
+  userIds: z.array(z.string()).min(1).max(200),
+  reason: z.string().optional(),
+});
+export type BulkActionInput = z.infer<typeof bulkActionSchema>;
+
+export const listLoginHistorySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  success: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
+});
+export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, or, sql, gt } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addDays } from "date-fns";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -11,13 +11,20 @@ import {
   userSessions,
   devices,
   invitations,
+  loginHistory,
   userActivity,
   userPreferences,
   userMemberships,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import type { ListUsersInput, UpdateUserInput, UpdatePreferencesInput } from "./dto/users.schemas";
+import type {
+  ListUsersInput,
+  UpdateUserInput,
+  UpdatePreferencesInput,
+  UpdateMembershipInput,
+  ListLoginHistoryInput,
+} from "./dto/users.schemas";
 
 @Injectable()
 export class UsersService {
@@ -454,5 +461,203 @@ export class UsersService {
         pendingInvitations: pendingResult[0]?.count ?? 0,
       };
     }, 60);
+  }
+
+  async getInvitations(orgId: string, params?: { page?: number; limit?: number; includeAccepted?: boolean }) {
+    const page = params?.page ?? 1;
+    const limit = Math.min(params?.limit ?? 20, 100);
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(invitations.orgId, orgId)];
+    if (!params?.includeAccepted) {
+      conditions.push(isNull(invitations.acceptedAt));
+    }
+
+    const [data, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: invitations.id,
+          email: invitations.email,
+          role: invitations.role,
+          invitedBy: invitations.invitedBy,
+          expiresAt: invitations.expiresAt,
+          acceptedAt: invitations.acceptedAt,
+          createdAt: invitations.createdAt,
+        })
+        .from(invitations)
+        .where(and(...conditions))
+        .orderBy(desc(invitations.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(invitations)
+        .where(and(...conditions)),
+    ]);
+
+    return {
+      data,
+      pagination: { page, limit, total: countResult[0]?.total ?? 0, totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit) },
+    };
+  }
+
+  async resendInvite(orgId: string, invitationId: string, actorUserId: string) {
+    const invitation = await this.db.query.invitations.findFirst({
+      where: and(eq(invitations.id, invitationId), eq(invitations.orgId, orgId), isNull(invitations.acceptedAt)),
+    });
+    if (!invitation) throw new NotFoundException("Invitation not found");
+
+    const newToken = randomBytes(32).toString("hex");
+    const newExpiresAt = addDays(new Date(), 7);
+
+    await this.db
+      .update(invitations)
+      .set({ token: newToken, expiresAt: newExpiresAt })
+      .where(eq(invitations.id, invitationId));
+
+    this.audit.log({ action: "user.invitation.resent", userId: actorUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email: invitation.email } });
+
+    return { success: true, token: newToken };
+  }
+
+  async cancelInvite(orgId: string, invitationId: string, actorUserId: string) {
+    const invitation = await this.db.query.invitations.findFirst({
+      where: and(eq(invitations.id, invitationId), eq(invitations.orgId, orgId), isNull(invitations.acceptedAt)),
+    });
+    if (!invitation) throw new NotFoundException("Invitation not found or already accepted");
+
+    await this.db.delete(invitations).where(eq(invitations.id, invitationId));
+
+    this.audit.log({ action: "user.invitation.cancelled", userId: actorUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email: invitation.email } });
+
+    return { success: true };
+  }
+
+  async getLoginHistory(orgId: string, userId: string, params: ListLoginHistoryInput) {
+    await this.getUser(orgId, userId);
+
+    const { page, limit, success: successFilter } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(loginHistory.userId, userId)];
+    if (successFilter !== undefined) {
+      conditions.push(eq(loginHistory.success, successFilter));
+    }
+
+    const [data, countResult] = await Promise.all([
+      this.db
+        .select()
+        .from(loginHistory)
+        .where(and(...conditions))
+        .orderBy(desc(loginHistory.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(loginHistory)
+        .where(and(...conditions)),
+    ]);
+
+    return {
+      data,
+      pagination: { page, limit, total: countResult[0]?.total ?? 0, totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit) },
+    };
+  }
+
+  async updateMembership(orgId: string, userId: string, data: UpdateMembershipInput, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    const existing = await this.db.query.userMemberships.findFirst({
+      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
+    });
+
+    const updateData: Record<string, unknown> = {};
+    if (data.businessUnitId !== undefined) updateData.businessUnitId = data.businessUnitId;
+    if (data.branchId !== undefined) updateData.branchId = data.branchId;
+    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
+    if (data.teamId !== undefined) updateData.teamId = data.teamId;
+    if (data.managerUserId !== undefined) updateData.managerUserId = data.managerUserId;
+    if (data.isPrimary !== undefined) updateData.isPrimary = data.isPrimary;
+
+    if (existing) {
+      await this.db.update(userMemberships).set(updateData).where(and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)));
+    } else {
+      await this.db.insert(userMemberships).values({
+        id: randomUUID(),
+        orgId,
+        userId,
+        isPrimary: data.isPrimary ?? true,
+        ...updateData,
+      });
+    }
+
+    if (data.managerUserId !== undefined) {
+      await this.db.update(users).set({ reportingTo: data.managerUserId }).where(eq(users.id, userId));
+    }
+    if (data.departmentId !== undefined) {
+      await this.db.update(users).set({ departmentId: data.departmentId }).where(eq(users.id, userId));
+    }
+
+    await this.db.insert(userActivity).values({
+      id: randomUUID(),
+      orgId,
+      userId,
+      actorUserId,
+      action: "user.membership.updated",
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { changes: data },
+    });
+
+    this.audit.log({ action: "user.membership.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { changes: data } });
+
+    return { success: true };
+  }
+
+  async getMembership(orgId: string, userId: string) {
+    await this.getUser(orgId, userId);
+    const membership = await this.db.query.userMemberships.findFirst({
+      where: and(eq(userMemberships.orgId, orgId), eq(userMemberships.userId, userId)),
+    });
+    return membership ?? { userId, orgId, businessUnitId: null, branchId: null, departmentId: null, teamId: null, managerUserId: null, isPrimary: true };
+  }
+
+  async bulkSuspend(orgId: string, userIds: string[], actorUserId: string) {
+    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
+    for (const userId of userIds) {
+      try {
+        await this.updateUserStatus(orgId, userId, "suspended", actorUserId);
+        results.push({ userId, success: true });
+      } catch {
+        results.push({ userId, success: false, error: "Failed to suspend" });
+      }
+    }
+    return { results, succeeded: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length };
+  }
+
+  async bulkArchive(orgId: string, userIds: string[], actorUserId: string) {
+    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
+    for (const userId of userIds) {
+      try {
+        await this.updateUserStatus(orgId, userId, "archived", actorUserId);
+        results.push({ userId, success: true });
+      } catch {
+        results.push({ userId, success: false, error: "Failed to archive" });
+      }
+    }
+    return { results, succeeded: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length };
+  }
+
+  async bulkRestore(orgId: string, userIds: string[], actorUserId: string) {
+    const results: Array<{ userId: string; success: boolean; error?: string }> = [];
+    for (const userId of userIds) {
+      try {
+        await this.updateUserStatus(orgId, userId, "active", actorUserId);
+        results.push({ userId, success: true });
+      } catch {
+        results.push({ userId, success: false, error: "Failed to restore" });
+      }
+    }
+    return { results, succeeded: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length };
   }
 }

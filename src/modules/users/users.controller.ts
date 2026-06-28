@@ -10,8 +10,10 @@ import { UsersService } from "./users.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
+  updateMembershipSchema, bulkActionSchema, listLoginHistorySchema,
   type ListUsersInput, type UpdateUserInput, type UpdateUserStatusInput,
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
+  type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
 } from "./dto/users.schemas";
 
 @Controller("users")
@@ -134,5 +136,74 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.updatePreferences(userId, body);
+  }
+
+  @Get(":userId/login-history")
+  getLoginHistory(
+    @Param("userId") userId: string,
+    @Query(new ZodValidationPipe(listLoginHistorySchema)) query: ListLoginHistoryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getLoginHistory(u.orgId, userId, query);
+  }
+
+  @Get(":userId/membership")
+  getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.getMembership(u.orgId, userId);
+  }
+
+  @Patch(":userId/membership")
+  updateMembership(
+    @Param("userId") userId: string,
+    @Body(new ZodValidationPipe(updateMembershipSchema)) body: UpdateMembershipInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.updateMembership(u.orgId, userId, body, u.userId);
+  }
+
+  @Get("invitations")
+  listInvitations(
+    @Query() query: { page?: string; limit?: string; includeAccepted?: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getInvitations(u.orgId, {
+      page: query.page ? Number(query.page) : undefined,
+      limit: query.limit ? Number(query.limit) : undefined,
+      includeAccepted: query.includeAccepted === "true",
+    });
+  }
+
+  @Post("invitations/:invitationId/resend")
+  resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.resendInvite(u.orgId, invitationId, u.userId);
+  }
+
+  @Delete("invitations/:invitationId")
+  cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.cancelInvite(u.orgId, invitationId, u.userId);
+  }
+
+  @Post("bulk-suspend")
+  bulkSuspend(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkSuspend(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-archive")
+  bulkArchive(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkArchive(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-restore")
+  bulkRestore(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
   }
 }
