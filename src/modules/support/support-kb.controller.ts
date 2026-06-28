@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -41,15 +41,15 @@ export class SupportKbController {
   constructor(private readonly kb: SupportKbService) {}
 
   @Get("categories")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   listCategories(@CurrentUser() u: CurrentUserContext) {
     return this.kb.listCategories(u.orgId);
   }
 
   @Post("categories")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   @HttpCode(201)
   createCategory(
     @Body(new ZodValidationPipe(createKbCategorySchema)) body: CreateKbCategoryInput,
@@ -59,8 +59,8 @@ export class SupportKbController {
   }
 
   @Patch("categories/:categoryId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   updateCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateKbCategorySchema)) body: UpdateKbCategoryInput,
@@ -70,8 +70,8 @@ export class SupportKbController {
   }
 
   @Delete("categories/:categoryId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   deleteCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,8 +80,8 @@ export class SupportKbController {
   }
 
   @Get("articles")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   listArticles(
     @Query(new ZodValidationPipe(listKbArticlesSchema)) query: ListKbArticlesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,8 +90,8 @@ export class SupportKbController {
   }
 
   @Post("articles")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   @HttpCode(201)
   createArticle(
     @Body(new ZodValidationPipe(createKbArticleSchema)) body: CreateKbArticleInput,
@@ -101,8 +101,8 @@ export class SupportKbController {
   }
 
   @Get("articles/:articleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   getArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -111,8 +111,8 @@ export class SupportKbController {
   }
 
   @Patch("articles/:articleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   updateArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(updateKbArticleSchema)) body: UpdateKbArticleInput,
@@ -122,8 +122,8 @@ export class SupportKbController {
   }
 
   @Delete("articles/:articleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   deleteArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -132,8 +132,8 @@ export class SupportKbController {
   }
 
   @Get("articles/:articleId/feedback")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   listFeedback(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -142,8 +142,8 @@ export class SupportKbController {
   }
 
   @Get("articles/:articleId/comments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   listComments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -152,8 +152,8 @@ export class SupportKbController {
   }
 
   @Post("articles/:articleId/comments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   @HttpCode(201)
   createComment(
     @Param("articleId", ParseIntPipe) articleId: number,
@@ -164,8 +164,8 @@ export class SupportKbController {
   }
 
   @Delete("articles/:articleId/comments/:commentId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   deleteComment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -175,8 +175,8 @@ export class SupportKbController {
   }
 
   @Get("articles/:articleId/attachments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
   listAttachments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -185,8 +185,8 @@ export class SupportKbController {
   }
 
   @Post("articles/:articleId/attachments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   @HttpCode(201)
   createAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
@@ -197,8 +197,8 @@ export class SupportKbController {
   }
 
   @Delete("articles/:articleId/attachments/:attachmentId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:kb")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
   deleteAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,

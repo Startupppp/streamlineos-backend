@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -19,8 +19,8 @@ export class InvProductsController {
   constructor(private readonly products: InvProductsService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
   list(
     @Query(new ZodValidationPipe(listProductsSchema)) filters: ListProductsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -29,15 +29,15 @@ export class InvProductsController {
   }
 
   @Get("categories")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
   listCategories(@CurrentUser() u: CurrentUserContext) {
     return this.products.listCategories(u.orgId);
   }
 
   @Post("categories")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:create")
   createCategory(
     @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -46,15 +46,15 @@ export class InvProductsController {
   }
 
   @Get("uom")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
   listUom(@CurrentUser() u: CurrentUserContext) {
     return this.products.listUom(u.orgId);
   }
 
   @Post("uom")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:create")
   createUom(
     @Body(new ZodValidationPipe(createUomSchema)) body: CreateUomInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,8 +63,8 @@ export class InvProductsController {
   }
 
   @Get("variants")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
   listVariants(
     @Query(new ZodValidationPipe(listVariantsSchema)) filters: ListVariantsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -73,15 +73,15 @@ export class InvProductsController {
   }
 
   @Get(":productId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:read")
   get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
     return this.products.getProduct(u.orgId, productId);
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:create")
   create(
     @Body(new ZodValidationPipe(createProductSchema)) body: CreateProductInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,8 +90,8 @@ export class InvProductsController {
   }
 
   @Patch(":productId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("update", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
   update(
     @Param("productId", ParseIntPipe) productId: number,
     @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
@@ -102,15 +102,15 @@ export class InvProductsController {
 
   @Delete(":productId")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(AbilityGuard)
-  @CheckAbility("delete", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:delete")
   async delete(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
     await this.products.deleteProduct(u.orgId, productId);
   }
 
   @Post(":productId/variants")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("update", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
   createVariant(
     @Param("productId", ParseIntPipe) productId: number,
     @Body(new ZodValidationPipe(createVariantSchema)) body: CreateVariantInput,
@@ -120,8 +120,8 @@ export class InvProductsController {
   }
 
   @Patch(":productId/variants/:variantId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("update", "inventory:products")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
   updateVariant(
     @Param("productId", ParseIntPipe) _productId: number,
     @Param("variantId", ParseIntPipe) variantId: number,

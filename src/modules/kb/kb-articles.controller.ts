@@ -12,9 +12,9 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { PermissionGuard } from "../access/permission.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -34,13 +34,13 @@ import {
 } from "./dto/kb.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard, ModuleGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequireModule("kb")
 export class KbArticlesController {
   constructor(private readonly articles: KbArticlesService) {}
 
   @Get("articles")
-  @CheckAbility("view", "kb:articles")
+  @RequirePermission("kb:articles:view")
   list(
     @Query(new ZodValidationPipe(listArticlesSchema)) query: ListArticlesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -49,7 +49,7 @@ export class KbArticlesController {
   }
 
   @Post("articles")
-  @CheckAbility("create", "kb:articles")
+  @RequirePermission("kb:articles:create")
   create(
     @Body(new ZodValidationPipe(createArticleSchema)) body: CreateArticleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -58,13 +58,13 @@ export class KbArticlesController {
   }
 
   @Get("articles/:articleId")
-  @CheckAbility("view", "kb:articles")
+  @RequirePermission("kb:articles:view")
   get(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.get(u, articleId);
   }
 
   @Patch("articles/:articleId")
-  @CheckAbility("update", "kb:articles")
+  @RequirePermission("kb:articles:update")
   update(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(updateArticleSchema)) body: UpdateArticleInput,
@@ -74,25 +74,25 @@ export class KbArticlesController {
   }
 
   @Delete("articles/:articleId")
-  @CheckAbility("delete", "kb:articles")
+  @RequirePermission("kb:articles:delete")
   remove(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.archive(u, articleId);
   }
 
   @Post("articles/:articleId/publish")
-  @CheckAbility("manage", "kb:articles")
+  @RequirePermission("kb:articles:manage")
   publish(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.publish(u, articleId);
   }
 
   @Post("articles/:articleId/unpublish")
-  @CheckAbility("manage", "kb:articles")
+  @RequirePermission("kb:articles:manage")
   unpublish(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.unpublish(u, articleId);
   }
 
   @Post("articles/:articleId/verify")
-  @CheckAbility("manage", "kb:articles")
+  @RequirePermission("kb:articles:manage")
   verify(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(verifyArticleSchema)) body: VerifyArticleInput,
@@ -102,7 +102,7 @@ export class KbArticlesController {
   }
 
   @Post("articles/:articleId/vote")
-  @CheckAbility("view", "kb:articles")
+  @RequirePermission("kb:articles:view")
   vote(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(voteArticleSchema)) body: VoteArticleInput,
@@ -113,19 +113,19 @@ export class KbArticlesController {
 
   @Post("articles/:articleId/view")
   @HttpCode(200)
-  @CheckAbility("view", "kb:articles")
+  @RequirePermission("kb:articles:view")
   recordView(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.recordView(u, articleId);
   }
 
   @Get("articles/:articleId/versions")
-  @CheckAbility("view", "kb:articles")
+  @RequirePermission("kb:articles:view")
   versions(@Param("articleId", ParseIntPipe) articleId: number, @CurrentUser() u: CurrentUserContext) {
     return this.articles.listVersions(u, articleId);
   }
 
   @Post("articles/:articleId/versions/:versionNumber/restore")
-  @CheckAbility("update", "kb:articles")
+  @RequirePermission("kb:articles:update")
   restore(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,

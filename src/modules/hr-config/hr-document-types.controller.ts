@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
@@ -38,8 +38,8 @@ export class HrDocumentTypesController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:documents")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createDocumentTypeSchema)) body: CreateDocumentTypeInput,
@@ -59,8 +59,8 @@ export class HrDocumentTypesController {
   }
 
   @Patch(":documentTypeId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:documents")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:manage")
   async update(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @Body(new ZodValidationPipe(updateDocumentTypeSchema)) body: UpdateDocumentTypeInput,
@@ -72,8 +72,8 @@ export class HrDocumentTypesController {
   }
 
   @Delete(":documentTypeId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:documents")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:manage")
   async remove(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,

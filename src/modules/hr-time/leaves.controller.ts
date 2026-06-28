@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -110,8 +110,8 @@ export class LeavesController {
   }
 
   @Put(":leaveId/approve")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("approve", "hr:leaves")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:leaves:approve")
   approve(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(approveLeaveSchema)) body: ApproveLeaveInput,
@@ -121,8 +121,8 @@ export class LeavesController {
   }
 
   @Put(":leaveId/reject")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("approve", "hr:leaves")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:leaves:approve")
   reject(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(rejectLeaveSchema)) body: RejectLeaveInput,
@@ -144,12 +144,12 @@ export class LeavesController {
 }
 
 @Controller("hr/leave-calendar")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeaveCalendarController {
   constructor(private readonly leaves: LeavesService) {}
 
   @Get()
-  @CheckAbility("read", "hr:leaves")
+  @RequirePermission("hr:leaves:read")
   calendar(
     @Query(new ZodValidationPipe(leaveCalendarQuerySchema)) query: LeaveCalendarQuery,
     @CurrentUser() u: CurrentUserContext,

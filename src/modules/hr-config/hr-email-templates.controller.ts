@@ -11,8 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -25,8 +25,8 @@ import {
 } from "./dto/email-templates.schemas";
 
 @Controller("hr/email-templates")
-@UseGuards(JwtAuthGuard, AbilityGuard)
-@CheckAbility("manage", "hr:email-templates")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission("hr:email-templates:manage")
 export class HrEmailTemplatesController {
   constructor(private readonly emailTemplates: HrEmailTemplatesService) {}
 

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -9,7 +9,7 @@ import { ExpensesService } from "./expenses.service";
 import { createCategorySchema, type CreateCategoryInput } from "./dto/expense.schemas";
 
 @Controller("hr/expenses/categories")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpenseCategoriesController {
   constructor(private readonly expenses: ExpensesService) {}
 
@@ -20,7 +20,7 @@ export class ExpenseCategoriesController {
 
   @Post()
   @HttpCode(201)
-  @CheckAbility("manage", "hr:expenses")
+  @RequirePermission("hr:expenses:manage")
   create(
     @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,

@@ -16,6 +16,7 @@ import { EmbeddingsService } from "../providers/embeddings.service";
 import { LlmService } from "../providers/llm.service";
 
 const DEFAULT_TOP_K = 6;
+const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
 const MIN_DISPLAY_SIMILARITY = 0.2;
 
 export interface KbAnswerSource {
@@ -66,7 +67,6 @@ export class KbRagService {
 
   private async searchChunks(opts: AnswerOptions): Promise<KbSearchResult[]> {
     const { orgId, question, articleId, publicOnly = false } = opts;
-    const limit = DEFAULT_TOP_K;
     const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(question));
     const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 
@@ -89,7 +89,7 @@ export class KbRagService {
         title: kbArticles.title,
         slug: kbArticles.slug,
         attachmentName: kbArticleAttachments.fileName,
-        similarity: sql<number>`(1 - (${kbArticleChunks.embedding} <=> ${vector}::vector))::float8`,
+        similarity: sql<number>`(1 - (${distance}))::float8`,
       })
       .from(kbArticleChunks)
       .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
@@ -99,10 +99,11 @@ export class KbRagService {
       query = query.innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id));
     }
 
-    return query
+    const pool = await query
       .where(and(...conditions))
       .orderBy(distance)
-      .limit(limit);
+      .limit(SEARCH_POOL_K);
+    return pool.slice(0, DEFAULT_TOP_K);
   }
 
   private dedupeSources(results: KbSearchResult[]): KbAnswerSource[] {

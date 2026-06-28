@@ -12,9 +12,9 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { ModuleGuard } from "../../common/rbac/module.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -53,9 +53,9 @@ export class SprintsController {
   }
 
   @Post()
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("projects")
-  @CheckAbility("manage", "projects:sprints")
+  @RequirePermission("projects:sprints:manage")
   @HttpCode(201)
   createSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -82,9 +82,9 @@ export class SprintsController {
   }
 
   @Patch(":sprintId")
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("projects")
-  @CheckAbility("manage", "projects:sprints")
+  @RequirePermission("projects:sprints:manage")
   updateSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @Body(new ZodValidationPipe(updateSprintSchema)) body: UpdateSprintInput,

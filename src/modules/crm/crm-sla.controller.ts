@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -36,8 +36,8 @@ export class CrmSlaController {
   }
 
   @Post("policies")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:sla")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:sla:manage")
   @HttpCode(201)
   createPolicy(
     @Body(new ZodValidationPipe(slaPolicyCreateSchema)) body: SlaPolicyCreateInput,
@@ -47,8 +47,8 @@ export class CrmSlaController {
   }
 
   @Patch("policies/:policyId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:sla")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:sla:manage")
   async updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(slaPolicyUpdateSchema)) body: SlaPolicyUpdateInput,
@@ -60,8 +60,8 @@ export class CrmSlaController {
   }
 
   @Delete("policies/:policyId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:sla")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:sla:manage")
   deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

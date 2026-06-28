@@ -1,7 +1,7 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -19,8 +19,8 @@ export class AccountingGstController {
   constructor(private readonly gst: AccountingGstService) {}
 
   @Get("gstr-1")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   gstr1(
     @Query(new ZodValidationPipe(gstr1QuerySchema)) query: Gstr1Query,
     @CurrentUser() u: CurrentUserContext,
@@ -29,8 +29,8 @@ export class AccountingGstController {
   }
 
   @Get("gstr-3b")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   gstr3b(
     @Query(new ZodValidationPipe(gstr3BQuerySchema)) query: Gstr3BQuery,
     @CurrentUser() u: CurrentUserContext,

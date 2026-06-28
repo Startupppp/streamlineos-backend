@@ -9,8 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
@@ -41,8 +41,8 @@ export class HrSalaryStructuresController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:salary")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:salary:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createSalaryStructureSchema)) body: CreateSalaryStructureInput,

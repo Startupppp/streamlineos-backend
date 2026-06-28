@@ -13,8 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -42,8 +42,8 @@ export class HrInterviewQuestionsController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:employees")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createInterviewQuestionSchema)) body: CreateInterviewQuestionInput,
@@ -53,8 +53,8 @@ export class HrInterviewQuestionsController {
   }
 
   @Patch(":questionId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:employees")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
   async update(
     @Param("questionId", ParseIntPipe) questionId: number,
     @Body(new ZodValidationPipe(updateInterviewQuestionSchema)) body: UpdateInterviewQuestionInput,
@@ -66,8 +66,8 @@ export class HrInterviewQuestionsController {
   }
 
   @Delete(":questionId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:employees")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
   async remove(
     @Param("questionId", ParseIntPipe) questionId: number,
     @CurrentUser() u: CurrentUserContext,

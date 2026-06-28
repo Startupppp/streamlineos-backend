@@ -1,8 +1,8 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { PermissionGuard } from "../access/permission.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -11,13 +11,13 @@ import { KbAnalyticsService } from "./kb-analytics.service";
 import { rangeSchema, type RangeInput } from "./dto/kb-analytics.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard, ModuleGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequireModule("kb")
 export class KbAnalyticsController {
   constructor(private readonly analytics: KbAnalyticsService) {}
 
   @Get("analytics/overview")
-  @CheckAbility("view", "kb:analytics")
+  @RequirePermission("kb:analytics:view")
   overview(
     @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -26,7 +26,7 @@ export class KbAnalyticsController {
   }
 
   @Get("analytics/no-results")
-  @CheckAbility("view", "kb:analytics")
+  @RequirePermission("kb:analytics:view")
   noResults(
     @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -35,7 +35,7 @@ export class KbAnalyticsController {
   }
 
   @Get("verification/queue")
-  @CheckAbility("manage", "kb:articles")
+  @RequirePermission("kb:articles:manage")
   verificationQueue(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.verificationQueue(u.orgId);
   }

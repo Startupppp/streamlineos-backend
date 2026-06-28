@@ -1,14 +1,14 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../common/auth/current-user.decorator";
-import { AbilityGuard } from "../common/rbac/ability.guard";
-import { CheckAbility } from "../common/rbac/check-ability.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
+import { PermissionGuard } from "../modules/access/permission.guard";
+import { RequirePermission } from "../modules/access/require-permission.decorator";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
 
 @Controller("me")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class MeController {
   constructor(private readonly access: AccessService) {}
 
@@ -23,7 +23,7 @@ export class MeController {
   }
 
   @Get("protected")
-  @CheckAbility("delete", "crm:leads")
+  @RequirePermission("crm:leads:delete")
   protected(@CurrentUser() user: CurrentUserContext): { ok: true; userId: string } {
     return { ok: true, userId: user.userId };
   }

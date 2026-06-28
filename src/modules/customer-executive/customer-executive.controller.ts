@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -29,7 +29,7 @@ import {
 } from "./dto/customer-executive.schemas";
 
 @Controller("customer-executive")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CustomerExecutiveController {
   constructor(
     private readonly health: CsHealthService,
@@ -37,19 +37,19 @@ export class CustomerExecutiveController {
   ) {}
 
   @Get("health")
-  @CheckAbility("read", "crm:clients")
+  @RequirePermission("crm:clients:read")
   getHealth(@CurrentUser() u: CurrentUserContext) {
     return this.health.getLatestHealthScores(u.orgId);
   }
 
   @Get("health/config")
-  @CheckAbility("read", "crm:clients")
+  @RequirePermission("crm:clients:read")
   getHealthConfig(@CurrentUser() u: CurrentUserContext) {
     return this.health.getOrgHealthConfig(u.orgId);
   }
 
   @Put("health/config")
-  @CheckAbility("update", "crm:clients")
+  @RequirePermission("crm:clients:update")
   updateHealthConfig(
     @Body(new ZodValidationPipe(updateHealthConfigSchema)) body: UpdateHealthConfigInput,
     @CurrentUser() u: CurrentUserContext,
@@ -58,7 +58,7 @@ export class CustomerExecutiveController {
   }
 
   @Post("health/recompute")
-  @CheckAbility("update", "crm:clients")
+  @RequirePermission("crm:clients:update")
   async recomputeHealth(@CurrentUser() u: CurrentUserContext) {
     const results = await this.health.computeHealthForOrg(u.orgId);
     const total = results.length;
@@ -70,13 +70,13 @@ export class CustomerExecutiveController {
   }
 
   @Get("nps")
-  @CheckAbility("read", "crm:clients")
+  @RequirePermission("crm:clients:read")
   listSurveys(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.listSurveys(u.orgId);
   }
 
   @Post("nps")
-  @CheckAbility("manage", "crm:clients")
+  @RequirePermission("crm:clients:manage")
   createSurvey(
     @Body(new ZodValidationPipe(createSurveySchema)) body: CreateSurveyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,13 +85,13 @@ export class CustomerExecutiveController {
   }
 
   @Get("nps/stats")
-  @CheckAbility("read", "crm:clients")
+  @RequirePermission("crm:clients:read")
   getNpsStats(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.getSurveyStats(u.orgId);
   }
 
   @Get("nps/:surveyId")
-  @CheckAbility("read", "crm:clients")
+  @RequirePermission("crm:clients:read")
   async getSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -102,7 +102,7 @@ export class CustomerExecutiveController {
   }
 
   @Patch("nps/:surveyId")
-  @CheckAbility("manage", "crm:clients")
+  @RequirePermission("crm:clients:manage")
   async updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(updateSurveySchema)) body: UpdateSurveyInput,
@@ -114,7 +114,7 @@ export class CustomerExecutiveController {
   }
 
   @Delete("nps/:surveyId")
-  @CheckAbility("manage", "crm:clients")
+  @RequirePermission("crm:clients:manage")
   async deleteSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

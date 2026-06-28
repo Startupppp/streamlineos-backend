@@ -32,6 +32,26 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:performance:manage", resource: "hr:performance", action: "manage", description: "Manage performance reviews" },
   { name: "hr:goals:view", resource: "hr:goals", action: "view", description: "View goals" },
   { name: "hr:goals:manage", resource: "hr:goals", action: "manage", description: "Manage goals" },
+  { name: "hr:employees:read", resource: "hr:employees", action: "read", description: "Read employee records" },
+  { name: "hr:employees:manage", resource: "hr:employees", action: "manage", description: "Manage employees" },
+  { name: "hr:leaves:read", resource: "hr:leaves", action: "read", description: "Read leave requests" },
+  { name: "hr:leaves:manage", resource: "hr:leaves", action: "manage", description: "Manage leave requests" },
+  { name: "hr:expenses:read", resource: "hr:expenses", action: "read", description: "Read expense requests" },
+  { name: "hr:expenses:manage", resource: "hr:expenses", action: "manage", description: "Manage expense requests" },
+  { name: "hr:payrolls:read", resource: "hr:payrolls", action: "read", description: "Read payroll runs" },
+  { name: "hr:payrolls:manage", resource: "hr:payrolls", action: "manage", description: "Manage payroll runs" },
+  { name: "hr:bonuses:manage", resource: "hr:bonuses", action: "manage", description: "Manage bonuses" },
+  { name: "hr:career-ladders:manage", resource: "hr:career-ladders", action: "manage", description: "Manage career ladders" },
+  { name: "hr:compliance:manage", resource: "hr:compliance", action: "manage", description: "Manage compliance records" },
+  { name: "hr:email-templates:manage", resource: "hr:email-templates", action: "manage", description: "Manage HR email templates" },
+  { name: "hr:exit:manage", resource: "hr:exit", action: "manage", description: "Manage employee exits and offboarding" },
+  { name: "hr:feedback:manage", resource: "hr:feedback", action: "manage", description: "Manage feedback" },
+  { name: "hr:handbook:manage", resource: "hr:handbook", action: "manage", description: "Manage the employee handbook" },
+  { name: "hr:integrations:manage", resource: "hr:integrations", action: "manage", description: "Manage HR integrations" },
+  { name: "hr:onboarding:manage", resource: "hr:onboarding", action: "manage", description: "Manage onboarding" },
+  { name: "hr:alumni:read", resource: "hr:alumni", action: "read", description: "Read alumni records" },
+  { name: "hr:analytics:read", resource: "hr:analytics", action: "read", description: "Read HR analytics" },
+  { name: "hr:headcount:read", resource: "hr:headcount", action: "read", description: "Read headcount planning" },
 ];
 
 const CRM_PERMISSIONS: Permission[] = [
@@ -49,6 +69,15 @@ const CRM_PERMISSIONS: Permission[] = [
   { name: "crm:incentives:read", resource: "crm:incentives", action: "read", description: "View incentives" },
   { name: "crm:incentives:approve", resource: "crm:incentives", action: "approve", description: "Approve incentives" },
   { name: "crm:incentives:config", resource: "crm:incentives", action: "config", description: "Configure incentive rates" },
+  { name: "crm:deals:read", resource: "crm:deals", action: "read", description: "View CRM deals" },
+  { name: "crm:deals:create", resource: "crm:deals", action: "create", description: "Create CRM deals" },
+  { name: "crm:deals:delete", resource: "crm:deals", action: "delete", description: "Delete CRM deals" },
+  { name: "crm:quotes:delete", resource: "crm:quotes", action: "delete", description: "Delete CRM quotes" },
+  { name: "crm:clients:manage", resource: "crm:clients", action: "manage", description: "Manage client accounts" },
+  { name: "crm:assignment-rules:manage", resource: "crm:assignment-rules", action: "manage", description: "Manage lead assignment rules" },
+  { name: "crm:email-templates:manage", resource: "crm:email-templates", action: "manage", description: "Manage CRM email templates" },
+  { name: "crm:scoring-rules:manage", resource: "crm:scoring-rules", action: "manage", description: "Manage lead scoring rules" },
+  { name: "crm:sla:manage", resource: "crm:sla", action: "manage", description: "Manage CRM SLA policies" },
 ];
 
 const SHARED_PERMISSIONS: Permission[] = [
@@ -82,6 +111,11 @@ const SHARED_PERMISSIONS: Permission[] = [
   { name: "settings:rbac:manage", resource: "settings:rbac", action: "manage", description: "Manage RBAC permissions" },
   { name: "settings:automations:view", resource: "settings:automations", action: "view", description: "View automation rules and run history" },
   { name: "settings:automations:manage", resource: "settings:automations", action: "manage", description: "Create, edit, and run automation rules" },
+  { name: "settings:custom-fields:manage", resource: "settings:custom-fields", action: "manage", description: "Manage custom fields" },
+  { name: "settings:email-templates:manage", resource: "settings:email-templates", action: "manage", description: "Manage email templates" },
+  { name: "settings:onboarding:manage", resource: "settings:onboarding", action: "manage", description: "Manage onboarding settings" },
+  { name: "settings:webhooks:manage", resource: "settings:webhooks", action: "manage", description: "Manage webhooks" },
+  { name: "audit-log:read", resource: "audit-log", action: "read", description: "View the audit log" },
   { name: "dashboard:sales:view", resource: "dashboard:sales", action: "view", description: "View Sales dashboard" },
   { name: "dashboard:customer-executive:view", resource: "dashboard:customer-executive", action: "view", description: "View Customer Executive dashboard" },
   { name: "dashboard:support:view", resource: "dashboard:support", action: "view", description: "View Support CRM dashboard" },
@@ -113,9 +147,72 @@ const SUPPORT_PERMISSIONS: Permission[] = [
   { name: "support:macros:manage", resource: "support:macros", action: "manage", description: "Create and edit canned responses and ticket routing rules" },
 ];
 
+const ACCOUNTING_PERMISSIONS: Permission[] = [
+  { name: "accounting:read", resource: "accounting", action: "read", description: "Read accounting data" },
+  { name: "accounting:create", resource: "accounting", action: "create", description: "Create accounting records" },
+  { name: "accounting:accounts:read", resource: "accounting:accounts", action: "read", description: "View chart of accounts" },
+  { name: "accounting:accounts:create", resource: "accounting:accounts", action: "create", description: "Create accounts" },
+  { name: "accounting:accounts:update", resource: "accounting:accounts", action: "update", description: "Update accounts" },
+  { name: "accounting:journal:read", resource: "accounting:journal", action: "read", description: "View journal entries" },
+  { name: "accounting:journal:manage", resource: "accounting:journal", action: "manage", description: "Post and manage journal entries" },
+  { name: "accounting:reports:read", resource: "accounting:reports", action: "read", description: "View accounting reports" },
+];
+
+const INVENTORY_PERMISSIONS: Permission[] = [
+  { name: "inventory:products:read", resource: "inventory:products", action: "read", description: "View products" },
+  { name: "inventory:products:create", resource: "inventory:products", action: "create", description: "Create products" },
+  { name: "inventory:products:update", resource: "inventory:products", action: "update", description: "Update products" },
+  { name: "inventory:products:delete", resource: "inventory:products", action: "delete", description: "Delete products" },
+  { name: "inventory:stock:read", resource: "inventory:stock", action: "read", description: "View stock levels" },
+  { name: "inventory:stock:adjust", resource: "inventory:stock", action: "adjust", description: "Adjust stock levels" },
+  { name: "inventory:stock:transfer", resource: "inventory:stock", action: "transfer", description: "Transfer stock between warehouses" },
+  { name: "inventory:warehouses:read", resource: "inventory:warehouses", action: "read", description: "View warehouses" },
+  { name: "inventory:warehouses:manage", resource: "inventory:warehouses", action: "manage", description: "Manage warehouses" },
+  { name: "inventory:vendors:read", resource: "inventory:vendors", action: "read", description: "View vendors" },
+  { name: "inventory:vendors:manage", resource: "inventory:vendors", action: "manage", description: "Manage vendors" },
+  { name: "inventory:purchase-orders:read", resource: "inventory:purchase-orders", action: "read", description: "View purchase orders" },
+  { name: "inventory:purchase-orders:create", resource: "inventory:purchase-orders", action: "create", description: "Create purchase orders" },
+  { name: "inventory:purchase-orders:approve", resource: "inventory:purchase-orders", action: "approve", description: "Approve purchase orders" },
+  { name: "inventory:purchase-orders:receive", resource: "inventory:purchase-orders", action: "receive", description: "Receive purchase orders" },
+  { name: "inventory:sales-orders:read", resource: "inventory:sales-orders", action: "read", description: "View sales orders" },
+  { name: "inventory:sales-orders:create", resource: "inventory:sales-orders", action: "create", description: "Create sales orders" },
+  { name: "inventory:sales-orders:confirm", resource: "inventory:sales-orders", action: "confirm", description: "Confirm sales orders" },
+  { name: "inventory:sales-orders:ship", resource: "inventory:sales-orders", action: "ship", description: "Ship sales orders" },
+  { name: "inventory:sales-orders:invoice", resource: "inventory:sales-orders", action: "invoice", description: "Invoice sales orders" },
+  { name: "inventory:reports:read", resource: "inventory:reports", action: "read", description: "View inventory reports" },
+];
+
+const KB_PERMISSIONS: Permission[] = [
+  { name: "kb:articles:view", resource: "kb:articles", action: "view", description: "View knowledge base articles" },
+  { name: "kb:articles:create", resource: "kb:articles", action: "create", description: "Create knowledge base articles" },
+  { name: "kb:articles:update", resource: "kb:articles", action: "update", description: "Update knowledge base articles" },
+  { name: "kb:articles:delete", resource: "kb:articles", action: "delete", description: "Delete knowledge base articles" },
+  { name: "kb:articles:manage", resource: "kb:articles", action: "manage", description: "Manage knowledge base articles" },
+  { name: "kb:categories:manage", resource: "kb:categories", action: "manage", description: "Manage knowledge base categories" },
+  { name: "kb:spaces:view", resource: "kb:spaces", action: "view", description: "View knowledge base spaces" },
+  { name: "kb:spaces:manage", resource: "kb:spaces", action: "manage", description: "Manage knowledge base spaces" },
+  { name: "kb:analytics:view", resource: "kb:analytics", action: "view", description: "View knowledge base analytics" },
+  { name: "kb:ai:generate", resource: "kb:ai", action: "generate", description: "Generate AI answers from the knowledge base" },
+];
+
+const BLOG_PERMISSIONS: Permission[] = [
+  { name: "blog:posts:manage", resource: "blog:posts", action: "manage", description: "Manage blog posts" },
+  { name: "blog:categories:manage", resource: "blog:categories", action: "manage", description: "Manage blog categories" },
+];
+
+const SALES_PERMISSIONS: Permission[] = [
+  { name: "sales:view", resource: "sales", action: "view", description: "View sales module" },
+  { name: "sales:manage", resource: "sales", action: "manage", description: "Manage sales module" },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
+  ...ACCOUNTING_PERMISSIONS,
+  ...INVENTORY_PERMISSIONS,
+  ...KB_PERMISSIONS,
+  ...BLOG_PERMISSIONS,
+  ...SALES_PERMISSIONS,
   ...SHARED_PERMISSIONS,
   ...SUPPORT_PERMISSIONS,
 ];

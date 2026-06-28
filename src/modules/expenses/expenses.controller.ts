@@ -17,8 +17,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -97,8 +97,8 @@ export class ExpensesController {
 
   @Post("email-report")
   @HttpCode(200)
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:expenses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:expenses:read")
   emailReport(
     @Body(new ZodValidationPipe(emailReportSchema)) body: EmailReportInput,
     @CurrentUser() u: CurrentUserContext,

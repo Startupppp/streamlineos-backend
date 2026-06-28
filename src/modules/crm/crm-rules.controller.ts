@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -46,8 +46,8 @@ export class CrmRulesController {
   }
 
   @Post("assignment-rules")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:assignment-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:assignment-rules:manage")
   @HttpCode(201)
   createAssignmentRule(
     @Body(new ZodValidationPipe(assignmentRuleCreateSchema)) body: AssignmentRuleCreateInput,
@@ -57,8 +57,8 @@ export class CrmRulesController {
   }
 
   @Patch("assignment-rules/reorder")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:assignment-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:assignment-rules:manage")
   reorderAssignmentRules(
     @Body(new ZodValidationPipe(assignmentReorderSchema)) body: AssignmentReorderInput,
     @CurrentUser() u: CurrentUserContext,
@@ -67,8 +67,8 @@ export class CrmRulesController {
   }
 
   @Patch("assignment-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:assignment-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:assignment-rules:manage")
   async updateAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(assignmentRuleUpdateSchema)) body: AssignmentRuleUpdateInput,
@@ -80,8 +80,8 @@ export class CrmRulesController {
   }
 
   @Delete("assignment-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:assignment-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:assignment-rules:manage")
   deleteAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,8 +95,8 @@ export class CrmRulesController {
   }
 
   @Post("scoring-rules")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:scoring-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:scoring-rules:manage")
   @HttpCode(201)
   createScoringRule(
     @Body(new ZodValidationPipe(scoringRuleCreateSchema)) body: ScoringRuleCreateInput,
@@ -106,8 +106,8 @@ export class CrmRulesController {
   }
 
   @Patch("scoring-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:scoring-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:scoring-rules:manage")
   async updateScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(scoringRuleUpdateSchema)) body: ScoringRuleUpdateInput,
@@ -119,8 +119,8 @@ export class CrmRulesController {
   }
 
   @Delete("scoring-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:scoring-rules")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:scoring-rules:manage")
   deleteScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -134,8 +134,8 @@ export class CrmRulesController {
   }
 
   @Post("email-templates")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:email-templates")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:email-templates:manage")
   @HttpCode(201)
   createEmailTemplate(
     @Body(new ZodValidationPipe(emailTemplateCreateSchema)) body: EmailTemplateCreateInput,
@@ -145,8 +145,8 @@ export class CrmRulesController {
   }
 
   @Patch("email-templates/:templateId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:email-templates")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:email-templates:manage")
   async updateEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(emailTemplateUpdateSchema)) body: EmailTemplateUpdateInput,
@@ -158,8 +158,8 @@ export class CrmRulesController {
   }
 
   @Delete("email-templates/:templateId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "crm:email-templates")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:email-templates:manage")
   deleteEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -42,8 +42,8 @@ export class AssetsController {
   }
 
   @Post("asset-returns")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:assets")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:assets:manage")
   @HttpCode(201)
   createAssetReturn(
     @Body(new ZodValidationPipe(createAssetReturnSchema)) body: CreateAssetReturnInput,
@@ -53,8 +53,8 @@ export class AssetsController {
   }
 
   @Patch("asset-returns/:returnId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:assets")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:assets:manage")
   updateAssetReturn(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body(new ZodValidationPipe(patchAssetReturnSchema)) body: PatchAssetReturnInput,

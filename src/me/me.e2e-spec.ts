@@ -32,17 +32,17 @@ describe("/me (e2e)", () => {
     expect(res.body).toMatchObject({ userId: "user_77", orgId: "org_3", role: "SALES" });
   });
 
-  it("403 RBAC_DENIED on /me/protected without the permission", async () => {
-    const token = await signToken({ permissions: ["crm:leads:read"], enabledModules: [] });
+  it("403 on /me/protected for a non-owner without the crm:leads:delete grant", async () => {
+    const token = await signToken({ role: "SALES", enabledModules: ["crm"], isOrgOwner: false });
     const res = await request(app.getHttpServer())
       .get("/me/protected")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "Forbidden", code: "RBAC_DENIED", verb: "delete", subject: "crm:leads" });
+    expect(res.body).toEqual({ error: "Permission denied" });
   });
 
-  it("200 on /me/protected with the permission", async () => {
-    const token = await signToken({ permissions: ["crm:leads:delete"], enabledModules: [] });
+  it("200 on /me/protected for an org owner", async () => {
+    const token = await signToken({ isOrgOwner: true });
     const res = await request(app.getHttpServer())
       .get("/me/protected")
       .set("Authorization", `Bearer ${token}`);

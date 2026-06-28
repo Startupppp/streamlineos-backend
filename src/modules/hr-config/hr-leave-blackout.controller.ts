@@ -13,8 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -27,8 +27,8 @@ import {
 } from "./dto/leave-blackout.schemas";
 
 @Controller("hr/leaves/blackout")
-@UseGuards(JwtAuthGuard, AbilityGuard)
-@CheckAbility("manage", "hr:leaves")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission("hr:leaves:manage")
 export class HrLeaveBlackoutController {
   constructor(private readonly blackout: HrLeaveBlackoutService) {}
 

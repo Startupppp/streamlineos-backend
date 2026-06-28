@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -40,12 +40,12 @@ import {
 } from "./dto/projects.schemas";
 
 @Controller("projects")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsRoadmapController {
   constructor(private readonly roadmap: ProjectsRoadmapService) {}
 
   @Get("roadmap")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   listRoadmap(
     @Query(new ZodValidationPipe(roadmapListQuerySchema)) query: RoadmapListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -54,7 +54,7 @@ export class ProjectsRoadmapController {
   }
 
   @Post("roadmap")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   @HttpCode(201)
   createRoadmap(
     @Body(new ZodValidationPipe(createRoadmapSchema)) body: CreateRoadmapInput,
@@ -64,7 +64,7 @@ export class ProjectsRoadmapController {
   }
 
   @Get("roadmap/:itemId")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   getRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,7 +73,7 @@ export class ProjectsRoadmapController {
   }
 
   @Patch("roadmap/:itemId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   updateRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(updateRoadmapSchema)) body: UpdateRoadmapInput,
@@ -83,7 +83,7 @@ export class ProjectsRoadmapController {
   }
 
   @Delete("roadmap/:itemId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   deleteRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -92,7 +92,7 @@ export class ProjectsRoadmapController {
   }
 
   @Get("feedback")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   listFeedback(
     @Query(new ZodValidationPipe(feedbackListQuerySchema)) query: FeedbackListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -101,7 +101,7 @@ export class ProjectsRoadmapController {
   }
 
   @Post("feedback")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   @HttpCode(201)
   createFeedback(
     @Body(new ZodValidationPipe(createFeedbackSchema)) body: CreateFeedbackInput,
@@ -111,7 +111,7 @@ export class ProjectsRoadmapController {
   }
 
   @Get("feedback/:postId")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   getFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -120,7 +120,7 @@ export class ProjectsRoadmapController {
   }
 
   @Patch("feedback/:postId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   updateFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @Body(new ZodValidationPipe(updateFeedbackSchema)) body: UpdateFeedbackInput,
@@ -130,7 +130,7 @@ export class ProjectsRoadmapController {
   }
 
   @Delete("feedback/:postId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   deleteFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -139,7 +139,7 @@ export class ProjectsRoadmapController {
   }
 
   @Get("changelog")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   listChangelog(
     @Query(new ZodValidationPipe(changelogListQuerySchema)) query: ChangelogListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -148,7 +148,7 @@ export class ProjectsRoadmapController {
   }
 
   @Post("changelog")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   @HttpCode(201)
   createChangelog(
     @Body(new ZodValidationPipe(createChangelogSchema)) body: CreateChangelogInput,
@@ -158,7 +158,7 @@ export class ProjectsRoadmapController {
   }
 
   @Get("changelog/:entryId")
-  @CheckAbility("view", "projects:roadmap")
+  @RequirePermission("projects:roadmap:view")
   getChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -167,7 +167,7 @@ export class ProjectsRoadmapController {
   }
 
   @Patch("changelog/:entryId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   updateChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(updateChangelogSchema)) body: UpdateChangelogInput,
@@ -177,7 +177,7 @@ export class ProjectsRoadmapController {
   }
 
   @Delete("changelog/:entryId")
-  @CheckAbility("manage", "projects:roadmap")
+  @RequirePermission("projects:roadmap:manage")
   deleteChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

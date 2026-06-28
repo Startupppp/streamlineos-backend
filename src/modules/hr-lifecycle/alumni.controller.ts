@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -27,8 +27,8 @@ export class AlumniController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:alumni")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:alumni:read")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(alumniCreateSchema)) body: AlumniCreateInput,

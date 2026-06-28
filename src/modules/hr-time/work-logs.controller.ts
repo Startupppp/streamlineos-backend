@@ -1,8 +1,8 @@
 import { Body, Controller, Get, HttpCode, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -41,8 +41,8 @@ export class WorkLogsController {
   }
 
   @Patch("status")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:attendance")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   updateStatus(
     @Body(new ZodValidationPipe(patchWorkLogStatusSchema)) body: PatchWorkLogStatusInput,
     @CurrentUser() u: CurrentUserContext,

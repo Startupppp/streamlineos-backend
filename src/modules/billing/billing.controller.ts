@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -14,7 +14,7 @@ import {
 } from "./dto/billing.schemas";
 
 @Controller("billing")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
@@ -30,7 +30,7 @@ export class BillingController {
 
   @Post("razorpay")
   @HttpCode(200)
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   createOrder(
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
@@ -39,7 +39,7 @@ export class BillingController {
   }
 
   @Patch("razorpay")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   verifyPayment(
     @Body(new ZodValidationPipe(verifyPaymentSchema)) body: VerifyPaymentInput,
     @CurrentUser() u: CurrentUserContext,

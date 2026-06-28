@@ -50,26 +50,28 @@ export class KbSpacesService {
       columns: { id: true },
     });
     if (existing) throw new ConflictException("A space with this name already exists");
-    const [space] = await this.db
-      .insert(kbSpaces)
-      .values({
+    return this.db.transaction(async (tx) => {
+      const [space] = await tx
+        .insert(kbSpaces)
+        .values({
+          orgId,
+          name: input.name,
+          slug,
+          description: input.description ?? null,
+          audience: input.audience,
+          icon: input.icon ?? null,
+          isPublicHelpCenter: input.isPublicHelpCenter ?? false,
+          createdById: userId,
+        })
+        .returning();
+      await tx.insert(kbSpaceMembers).values({
         orgId,
-        name: input.name,
-        slug,
-        description: input.description ?? null,
-        audience: input.audience,
-        icon: input.icon ?? null,
-        isPublicHelpCenter: input.isPublicHelpCenter ?? false,
-        createdById: userId,
-      })
-      .returning();
-    await this.db.insert(kbSpaceMembers).values({
-      orgId,
-      spaceId: space.id,
-      userId,
-      spaceRole: "admin",
+        spaceId: space.id,
+        userId,
+        spaceRole: "admin",
+      });
+      return space;
     });
-    return space;
   }
 
   async get(user: CurrentUserContext, spaceId: number) {

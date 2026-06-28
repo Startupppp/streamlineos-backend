@@ -11,8 +11,8 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -32,8 +32,8 @@ export class InvPurchaseOrdersController {
   constructor(private readonly pos: InvPurchaseOrdersService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:purchase-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:read")
   list(
     @Query(new ZodValidationPipe(listPoSchema)) filters: ListPoInput,
     @CurrentUser() u: CurrentUserContext,
@@ -42,8 +42,8 @@ export class InvPurchaseOrdersController {
   }
 
   @Get(":poId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:purchase-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:read")
   get(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,8 +52,8 @@ export class InvPurchaseOrdersController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "inventory:purchase-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:create")
   create(
     @Body(new ZodValidationPipe(createPoSchema)) body: CreatePoInput,
     @CurrentUser() u: CurrentUserContext,
@@ -62,8 +62,8 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/send")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("approve", "inventory:purchase-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
   send(
     @Param("poId", ParseIntPipe) poId: number,
@@ -73,8 +73,8 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/receive")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("receive", "inventory:purchase-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,

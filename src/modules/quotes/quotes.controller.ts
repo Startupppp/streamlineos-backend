@@ -16,8 +16,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -34,7 +34,7 @@ import {
 } from "./dto/quote.schemas";
 
 @Controller("quotes")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class QuotesController {
   constructor(private readonly quotes: QuotesService) {}
 
@@ -92,7 +92,7 @@ export class QuotesController {
   }
 
   @Delete(":quoteId")
-  @CheckAbility("delete", "crm:quotes")
+  @RequirePermission("crm:quotes:delete")
   async remove(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

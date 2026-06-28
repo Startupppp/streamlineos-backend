@@ -13,8 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -29,7 +29,7 @@ import {
 } from "./dto/webhook.schemas";
 
 @Controller("webhooks")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 
@@ -43,7 +43,7 @@ export class WebhooksController {
 
   @Post()
   @HttpCode(201)
-  @CheckAbility("manage", "settings:webhooks")
+  @RequirePermission("settings:webhooks:manage")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -62,7 +62,7 @@ export class WebhooksController {
   }
 
   @Patch(":webhookId")
-  @CheckAbility("manage", "settings:webhooks")
+  @RequirePermission("settings:webhooks:manage")
   async update(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -74,7 +74,7 @@ export class WebhooksController {
   }
 
   @Delete(":webhookId")
-  @CheckAbility("manage", "settings:webhooks")
+  @RequirePermission("settings:webhooks:manage")
   async remove(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,

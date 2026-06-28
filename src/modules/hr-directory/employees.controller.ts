@@ -15,8 +15,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -54,8 +54,8 @@ export class EmployeesController {
   ) {}
 
   @Post("onboard")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:employees")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   onboard(
     @Body(new ZodValidationPipe(onboardEmployeeSchema)) body: OnboardEmployeeInput,
@@ -65,8 +65,8 @@ export class EmployeesController {
   }
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:employees")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:read")
   listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
     @CurrentUser() u: CurrentUserContext,

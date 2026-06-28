@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -36,8 +36,8 @@ export class HrHandbookController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:handbook")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:handbook:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createHandbookSchema)) body: CreateHandbookInput,
@@ -47,8 +47,8 @@ export class HrHandbookController {
   }
 
   @Patch(":handbookId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:handbook")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:handbook:manage")
   async update(
     @Param("handbookId", ParseIntPipe) handbookId: number,
     @Body(new ZodValidationPipe(updateHandbookSchema)) body: UpdateHandbookInput,
@@ -60,8 +60,8 @@ export class HrHandbookController {
   }
 
   @Delete(":handbookId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:handbook")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:handbook:manage")
   async remove(
     @Param("handbookId", ParseIntPipe) handbookId: number,
     @CurrentUser() u: CurrentUserContext,

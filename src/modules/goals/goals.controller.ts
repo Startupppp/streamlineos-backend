@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -45,12 +45,12 @@ import {
 } from "./dto/goal.schemas";
 
 @Controller("goals")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class GoalsController {
   constructor(private readonly goals: GoalsService) {}
 
   @Get()
-  @CheckAbility("view", "projects:goals")
+  @RequirePermission("projects:goals:view")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -59,7 +59,7 @@ export class GoalsController {
   }
 
   @Post()
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -69,13 +69,13 @@ export class GoalsController {
   }
 
   @Get("stats")
-  @CheckAbility("view", "projects:goals")
+  @RequirePermission("projects:goals:view")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.goals.getStats(u.orgId);
   }
 
   @Patch("key-results/:keyResultId")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async updateKeyResult(
     @Param("keyResultId", ParseIntPipe) keyResultId: number,
     @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
@@ -87,7 +87,7 @@ export class GoalsController {
   }
 
   @Delete("key-results/:keyResultId")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async removeKeyResult(
     @Param("keyResultId", ParseIntPipe) keyResultId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,7 +98,7 @@ export class GoalsController {
   }
 
   @Get(":goalId")
-  @CheckAbility("view", "projects:goals")
+  @RequirePermission("projects:goals:view")
   async get(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,7 +109,7 @@ export class GoalsController {
   }
 
   @Patch(":goalId")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async update(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -121,7 +121,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async remove(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -132,7 +132,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/check-in")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async checkIn(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
@@ -144,7 +144,7 @@ export class GoalsController {
   }
 
   @Get(":goalId/key-results")
-  @CheckAbility("view", "projects:goals")
+  @RequirePermission("projects:goals:view")
   listKeyResults(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,7 +153,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/key-results")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   @HttpCode(201)
   async createKeyResult(
     @Param("goalId", ParseIntPipe) goalId: number,
@@ -166,7 +166,7 @@ export class GoalsController {
   }
 
   @Get(":goalId/links")
-  @CheckAbility("view", "projects:goals")
+  @RequirePermission("projects:goals:view")
   getLinks(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -175,7 +175,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/links")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   @HttpCode(201)
   async createLink(
     @Param("goalId", ParseIntPipe) goalId: number,
@@ -190,7 +190,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId/links")
-  @CheckAbility("manage", "projects:goals")
+  @RequirePermission("projects:goals:manage")
   async removeLink(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Query(new ZodValidationPipe(deleteLinkSchema)) query: DeleteLinkInput,

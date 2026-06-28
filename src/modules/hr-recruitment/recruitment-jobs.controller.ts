@@ -13,8 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -37,7 +37,7 @@ import {
 } from "./dto/jobs.schemas";
 
 @Controller("hr/recruitment")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentJobsController {
   constructor(private readonly jobs: RecruitmentJobsService) {}
 
@@ -51,7 +51,7 @@ export class RecruitmentJobsController {
 
   @Post("jobs")
   @HttpCode(201)
-  @CheckAbility("manage", "hr:employees")
+  @RequirePermission("hr:employees:manage")
   create(
     @Body(new ZodValidationPipe(createJobSchema)) body: CreateJobInput,
     @CurrentUser() u: CurrentUserContext,
@@ -68,7 +68,7 @@ export class RecruitmentJobsController {
   }
 
   @Patch("jobs/:jobId")
-  @CheckAbility("manage", "hr:employees")
+  @RequirePermission("hr:employees:manage")
   update(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(updateJobSchema)) body: UpdateJobInput,
@@ -78,7 +78,7 @@ export class RecruitmentJobsController {
   }
 
   @Delete("jobs/:jobId")
-  @CheckAbility("manage", "hr:employees")
+  @RequirePermission("hr:employees:manage")
   remove(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,

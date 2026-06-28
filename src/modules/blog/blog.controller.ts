@@ -14,8 +14,8 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BlogService, isDuplicateCategory } from "./blog.service";
 import {
@@ -32,18 +32,18 @@ import {
 } from "./dto/blog.schemas";
 
 @Controller("blog")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BlogController {
   constructor(private readonly blog: BlogService) {}
 
   @Get("posts")
-  @CheckAbility("manage", "blog:posts")
+  @RequirePermission("blog:posts:manage")
   listPosts() {
     return this.blog.listAdminPosts();
   }
 
   @Post("posts")
-  @CheckAbility("manage", "blog:posts")
+  @RequirePermission("blog:posts:manage")
   @HttpCode(201)
   createPost(
     @Body(new ZodValidationPipe(postCreateSchema)) body: PostCreateInput,
@@ -52,7 +52,7 @@ export class BlogController {
   }
 
   @Get("posts/:postId")
-  @CheckAbility("manage", "blog:posts")
+  @RequirePermission("blog:posts:manage")
   async getPost(@Param("postId") postId: string) {
     const post = await this.blog.getAdminPostById(postId);
     if (!post) throw new NotFoundException("Post not found");
@@ -60,7 +60,7 @@ export class BlogController {
   }
 
   @Patch("posts/:postId")
-  @CheckAbility("manage", "blog:posts")
+  @RequirePermission("blog:posts:manage")
   async updatePost(
     @Param("postId") postId: string,
     @Body(new ZodValidationPipe(postUpdateSchema)) body: PostUpdateInput,
@@ -71,7 +71,7 @@ export class BlogController {
   }
 
   @Delete("posts/:postId")
-  @CheckAbility("manage", "blog:posts")
+  @RequirePermission("blog:posts:manage")
   async deletePost(@Param("postId") postId: string) {
     const deleted = await this.blog.deletePost(postId);
     if (!deleted) throw new NotFoundException("Post not found");
@@ -85,7 +85,7 @@ export class BlogController {
   }
 
   @Post("categories")
-  @CheckAbility("manage", "blog:categories")
+  @RequirePermission("blog:categories:manage")
   @HttpCode(201)
   async createCategory(
     @Body(new ZodValidationPipe(categoryCreateSchema)) body: CategoryCreateInput,
@@ -98,7 +98,7 @@ export class BlogController {
   }
 
   @Patch("categories/:categoryId")
-  @CheckAbility("manage", "blog:categories")
+  @RequirePermission("blog:categories:manage")
   async updateCategory(
     @Param("categoryId") categoryId: string,
     @Body(new ZodValidationPipe(categoryUpdateSchema)) body: CategoryUpdateInput,
@@ -109,7 +109,7 @@ export class BlogController {
   }
 
   @Delete("categories/:categoryId")
-  @CheckAbility("manage", "blog:categories")
+  @RequirePermission("blog:categories:manage")
   async deleteCategory(@Param("categoryId") categoryId: string) {
     const deleted = await this.blog.deleteCategory(categoryId);
     if (!deleted) throw new NotFoundException("Category not found");

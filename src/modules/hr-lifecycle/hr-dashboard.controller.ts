@@ -1,8 +1,8 @@
 import { Controller, ForbiddenException, Get, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -35,43 +35,43 @@ export class HrDashboardController {
   ) {}
 
   @Get("metrics")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   metrics(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.metrics(u.orgId);
   }
 
   @Get("diversity")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   diversity(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.diversity(u.orgId);
   }
 
   @Get("onboarding-status")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   onboardingStatus(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.onboardingStatus(u.orgId);
   }
 
   @Get("headcount-trends")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   headcountTrends(@CurrentUser() u: CurrentUserContext) {
     return this.reports.headcountTrends(u.orgId);
   }
 
   @Get("time-to-fill")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   timeToFill(@CurrentUser() u: CurrentUserContext) {
     return this.reports.timeToFill(u.orgId);
   }
 
   @Get("attendance-analytics")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   attendanceAnalytics(@CurrentUser() u: CurrentUserContext) {
     return this.reports.attendanceAnalytics(u.orgId);
   }

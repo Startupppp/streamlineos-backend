@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -39,8 +39,8 @@ export class DealsController {
   constructor(private readonly deals: DealsService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "crm:deals")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
   listDeals(
     @Query(new ZodValidationPipe(listDealsSchema)) query: ListDealsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -49,8 +49,8 @@ export class DealsController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "crm:deals")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:create")
   @HttpCode(201)
   createDeal(
     @Body(new ZodValidationPipe(createDealSchema)) body: CreateDealInput,
@@ -122,8 +122,8 @@ export class DealsController {
   }
 
   @Delete(":dealId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("delete", "crm:deals")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:delete")
   deleteDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

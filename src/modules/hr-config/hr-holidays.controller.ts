@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -56,8 +56,8 @@ export class HrHolidaysController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:attendance")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   @HttpCode(201)
   async create(
     @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
@@ -71,8 +71,8 @@ export class HrHolidaysController {
   }
 
   @Patch(":holidayId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:attendance")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   async update(
     @Param("holidayId", ParseIntPipe) holidayId: number,
     @Body(new ZodValidationPipe(updateHolidaySchema)) body: UpdateHolidayInput,
@@ -84,8 +84,8 @@ export class HrHolidaysController {
   }
 
   @Delete(":holidayId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:attendance")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:attendance:manage")
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,
     @CurrentUser() u: CurrentUserContext,

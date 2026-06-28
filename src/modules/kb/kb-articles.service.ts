@@ -106,35 +106,47 @@ export class KbArticlesService {
   async create(user: CurrentUserContext, input: CreateArticleInput) {
     const orgId = user.orgId;
     await this.access.assertSpaceAccessible(user, input.spaceId);
-    const slug = await this.uniqueArticleSlug(orgId, input.title);
 
-    return this.db.transaction(async (tx) => {
-      const [article] = await tx
-        .insert(kbArticles)
-        .values({
-          orgId,
-          spaceId: input.spaceId,
-          categoryId: input.categoryId ?? null,
-          title: input.title,
-          slug,
-          excerpt: input.excerpt ?? null,
-          content: input.content ?? "",
-          contentText: input.contentText ?? "",
-          status: input.status,
-          visibility: input.visibility,
-          authorId: user.userId,
-          ownerId: user.userId,
-          tags: input.tags ?? null,
-          seoTitle: input.seoTitle ?? null,
-          seoDescription: input.seoDescription ?? null,
-          reviewIntervalDays: input.reviewIntervalDays ?? null,
-          publishedAt: input.status === "published" ? new Date() : null,
-        })
-        .returning();
+    const maxAttempts = 3;
+    for (let attempt = 1; ; attempt += 1) {
+      const slug = await this.uniqueArticleSlug(orgId, input.title);
+      try {
+        return await this.db.transaction(async (tx) => {
+          const [article] = await tx
+            .insert(kbArticles)
+            .values({
+              orgId,
+              spaceId: input.spaceId,
+              categoryId: input.categoryId ?? null,
+              title: input.title,
+              slug,
+              excerpt: input.excerpt ?? null,
+              content: input.content ?? "",
+              contentText: input.contentText ?? "",
+              status: input.status,
+              visibility: input.visibility,
+              authorId: user.userId,
+              ownerId: user.userId,
+              tags: input.tags ?? null,
+              seoTitle: input.seoTitle ?? null,
+              seoDescription: input.seoDescription ?? null,
+              reviewIntervalDays: input.reviewIntervalDays ?? null,
+              publishedAt: input.status === "published" ? new Date() : null,
+            })
+            .returning();
 
-      await this.snapshot(tx, orgId, article, user.userId);
-      return article;
-    });
+          await this.snapshot(tx, orgId, article, user.userId);
+          return article;
+        });
+      } catch (err) {
+        if (attempt < maxAttempts && this.isUniqueViolation(err)) continue;
+        throw err;
+      }
+    }
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
   }
 
   async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput) {

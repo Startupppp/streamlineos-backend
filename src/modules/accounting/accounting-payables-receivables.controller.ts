@@ -11,8 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -44,8 +44,8 @@ export class AccountingPayablesReceivablesController {
   ) {}
 
   @Get("purchase-bills")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:read")
   listPurchaseBills(
     @Query(new ZodValidationPipe(listPurchaseBillsQuerySchema)) query: ListPurchaseBillsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -54,8 +54,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Post("purchase-bills")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
   createPurchaseBill(
     @Body(new ZodValidationPipe(createPurchaseBillSchema)) body: CreatePurchaseBillInput,
@@ -65,8 +65,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("purchase-bills/:billId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:read")
   getPurchaseBill(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -75,8 +75,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Patch("purchase-bills/:billId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   updatePurchaseBill(
     @Param("billId", ParseIntPipe) billId: number,
     @Body(new ZodValidationPipe(updatePurchaseBillStatusSchema)) body: UpdatePurchaseBillStatusInput,
@@ -86,8 +86,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("purchase-bills/:billId/payments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:read")
   listBillPayments(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -96,8 +96,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Post("purchase-bills/:billId/payments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
   recordBillPayment(
     @Param("billId", ParseIntPipe) billId: number,
@@ -108,8 +108,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("vendors")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   listVendors(
     @Query(new ZodValidationPipe(listCustomersOutstandingQuerySchema)) query: ListCustomersOutstandingQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -118,8 +118,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("vendors/:vendorId/ledger")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   vendorLedger(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -128,8 +128,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("customers")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   listCustomers(
     @Query(new ZodValidationPipe(listCustomersOutstandingQuerySchema)) query: ListCustomersOutstandingQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -138,8 +138,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("customers/:clientId/ledger")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   customerLedger(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Query(new ZodValidationPipe(listCustomerLedgerQuerySchema)) query: ListCustomerLedgerQuery,
@@ -149,8 +149,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("reports/aged-receivables")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   agedReceivables(
     @Query(new ZodValidationPipe(agedReceivablesQuerySchema)) query: AgedReceivablesQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -159,8 +159,8 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("reports/aged-payables")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:reports")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:reports:read")
   agedPayables(
     @Query(new ZodValidationPipe(agedReceivablesQuerySchema)) query: AgedReceivablesQuery,
     @CurrentUser() u: CurrentUserContext,

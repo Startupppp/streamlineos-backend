@@ -11,8 +11,8 @@ import {
   HttpStatus,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -32,8 +32,8 @@ export class InvSalesOrdersController {
   constructor(private readonly so: InvSalesOrdersService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:read")
   list(
     @Query(new ZodValidationPipe(listSoSchema)) filters: ListSoInput,
     @CurrentUser() u: CurrentUserContext,
@@ -42,8 +42,8 @@ export class InvSalesOrdersController {
   }
 
   @Get(":soId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:read")
   get(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,8 +52,8 @@ export class InvSalesOrdersController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:create")
   create(
     @Body(new ZodValidationPipe(createSoSchema)) body: CreateSoInput,
     @CurrentUser() u: CurrentUserContext,
@@ -62,8 +62,8 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/confirm")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("confirm", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:confirm")
   @HttpCode(HttpStatus.OK)
   confirm(
     @Param("soId", ParseIntPipe) soId: number,
@@ -73,8 +73,8 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/ship")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("ship", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
   ship(
     @Param("soId", ParseIntPipe) soId: number,
@@ -85,8 +85,8 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/invoice")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("invoice", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:invoice")
   @HttpCode(HttpStatus.OK)
   invoice(
     @Param("soId", ParseIntPipe) soId: number,
@@ -96,8 +96,8 @@ export class InvSalesOrdersController {
   }
 
   @Get(":soId/atp")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:sales-orders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:sales-orders:read")
   async getAtp(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,

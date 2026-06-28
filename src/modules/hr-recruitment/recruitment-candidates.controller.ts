@@ -13,8 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -46,7 +46,7 @@ import {
 } from "./dto/candidates.schemas";
 
 @Controller("hr/recruitment/candidates")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentCandidatesController {
   constructor(
     private readonly candidates: RecruitmentCandidatesService,
@@ -82,7 +82,7 @@ export class RecruitmentCandidatesController {
 
   @Post("import")
   @HttpCode(201)
-  @CheckAbility("manage", "hr:employees")
+  @RequirePermission("hr:employees:manage")
   importCandidates(
     @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
     @CurrentUser() u: CurrentUserContext,

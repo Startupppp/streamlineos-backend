@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
@@ -44,8 +44,8 @@ export class BonusesController {
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:bonuses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:bonuses:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createBonusSchema)) body: CreateBonusInput,
@@ -55,8 +55,8 @@ export class BonusesController {
   }
 
   @Patch(":bonusId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:bonuses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:bonuses:manage")
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,
     @Body(new ZodValidationPipe(patchBonusSchema)) body: PatchBonusInput,

@@ -17,9 +17,9 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
+import { PermissionGuard } from "../access/permission.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -51,9 +51,9 @@ export class PayrollsController {
   }
 
   @Get("all")
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
-  @CheckAbility("view", "hr:payroll")
+  @RequirePermission("hr:payroll:view")
   listAll(
     @Query(new ZodValidationPipe(allPayrollsQuerySchema)) query: AllPayrollsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,9 +90,9 @@ export class PayrollsController {
   }
 
   @Post("generate")
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
-  @CheckAbility("generate", "hr:payroll")
+  @RequirePermission("hr:payroll:generate")
   @HttpCode(201)
   async generateSingle(
     @Body(new ZodValidationPipe(generateSinglePayrollSchema)) body: GenerateSinglePayrollInput,
@@ -109,9 +109,9 @@ export class PayrollsController {
   }
 
   @Patch(":payrollId/approve")
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
-  @CheckAbility("approve", "hr:payroll")
+  @RequirePermission("hr:payroll:approve")
   async approve(
     @Param("payrollId", ParseIntPipe) payrollId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,9 +122,9 @@ export class PayrollsController {
   }
 
   @Patch(":payrollId/paid")
-  @UseGuards(ModuleGuard, AbilityGuard)
+  @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
-  @CheckAbility("manage", "hr:payrolls")
+  @RequirePermission("hr:payrolls:manage")
   async markPaid(
     @Param("payrollId", ParseIntPipe) payrollId: number,
     @CurrentUser() u: CurrentUserContext,

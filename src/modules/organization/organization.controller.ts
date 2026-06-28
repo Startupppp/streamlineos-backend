@@ -14,8 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
@@ -39,7 +39,7 @@ import {
 } from "./dto/organization.schemas";
 
 @Controller("organization")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class OrganizationController {
   constructor(private readonly organization: OrganizationService) {}
 
@@ -50,11 +50,13 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
-  @CheckAbility("manage", "all")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      throw new ForbiddenException("Forbidden");
+    }
     return this.organization.createOrganization(u.userId, body);
   }
 
@@ -75,7 +77,7 @@ export class OrganizationController {
 
   @Post("members")
   @HttpCode(201)
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   inviteMember(
     @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
     @CurrentUser() u: CurrentUserContext,
@@ -84,12 +86,14 @@ export class OrganizationController {
   }
 
   @Patch("members/:memberId")
-  @CheckAbility("manage", "all")
   updateMemberRole(
     @Param("memberId") memberId: string,
     @Body(new ZodValidationPipe(updateMemberRoleSchema)) body: UpdateMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      throw new ForbiddenException("Forbidden");
+    }
     return this.organization.updateMemberRole(u.orgId, u.userId, memberId, body.role);
   }
 
@@ -106,13 +110,13 @@ export class OrganizationController {
   }
 
   @Get("invitations")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   listInvitations(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listInvitations(u.orgId);
   }
 
   @Delete("invitations")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   cancelInvitation(
     @Body(new ZodValidationPipe(cancelInvitationSchema)) body: CancelInvitationInput,
     @CurrentUser() u: CurrentUserContext,
@@ -140,7 +144,7 @@ export class OrganizationController {
   }
 
   @Patch("security")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   updateSecuritySettings(
     @Body(new ZodValidationPipe(securitySettingsSchema)) body: SecuritySettingsInput,
     @CurrentUser() u: CurrentUserContext,

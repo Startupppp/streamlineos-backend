@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -17,22 +17,22 @@ export class InvWarehousesController {
   constructor(private readonly warehouses: InvWarehousesService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:read")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.warehouses.listWarehouses(u.orgId);
   }
 
   @Get(":warehouseId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:read")
   get(@Param("warehouseId", ParseIntPipe) warehouseId: number, @CurrentUser() u: CurrentUserContext) {
     return this.warehouses.getWarehouse(u.orgId, warehouseId);
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:manage")
   create(
     @Body(new ZodValidationPipe(createWarehouseSchema)) body: CreateWarehouseInput,
     @CurrentUser() u: CurrentUserContext,
@@ -41,8 +41,8 @@ export class InvWarehousesController {
   }
 
   @Patch(":warehouseId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:manage")
   update(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,
     @Body(new ZodValidationPipe(updateWarehouseSchema)) body: UpdateWarehouseInput,
@@ -52,15 +52,15 @@ export class InvWarehousesController {
   }
 
   @Get(":warehouseId/locations")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:read")
   listLocations(@Param("warehouseId", ParseIntPipe) warehouseId: number, @CurrentUser() u: CurrentUserContext) {
     return this.warehouses.listLocations(u.orgId, warehouseId);
   }
 
   @Post(":warehouseId/locations")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:manage")
   createLocation(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,
     @Body(new ZodValidationPipe(createLocationSchema)) body: CreateLocationInput,
@@ -70,8 +70,8 @@ export class InvWarehousesController {
   }
 
   @Patch(":warehouseId/locations/:locationId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "inventory:warehouses")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:warehouses:manage")
   updateLocation(
     @Param("warehouseId", ParseIntPipe) _warehouseId: number,
     @Param("locationId", ParseIntPipe) locationId: number,

@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -17,8 +17,8 @@ export class InvStockController {
   constructor(private readonly stock: InvStockService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
   listLevels(
     @Query(new ZodValidationPipe(listStockLevelsSchema)) filters: ListStockLevelsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -27,8 +27,8 @@ export class InvStockController {
   }
 
   @Get("transactions")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
   listTransactions(
     @Query(new ZodValidationPipe(listTransactionsSchema)) filters: ListTransactionsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -37,8 +37,8 @@ export class InvStockController {
   }
 
   @Get("adjustments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
   listAdjustments(
     @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -47,8 +47,8 @@ export class InvStockController {
   }
 
   @Post("adjustments")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("adjust", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:adjust")
   createAdjustment(
     @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
@@ -57,22 +57,22 @@ export class InvStockController {
   }
 
   @Get("transfers")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
   listTransfers(@CurrentUser() u: CurrentUserContext) {
     return this.stock.listTransfers(u.orgId);
   }
 
   @Get("transfers/:transferId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
   getTransfer(@Param("transferId", ParseIntPipe) transferId: number, @CurrentUser() u: CurrentUserContext) {
     return this.stock.getTransfer(u.orgId, transferId);
   }
 
   @Post("transfers")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("transfer", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:transfer")
   createTransfer(
     @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
@@ -81,8 +81,8 @@ export class InvStockController {
   }
 
   @Post("transfers/:transferId/complete")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("transfer", "inventory:stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:transfer")
   completeTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,

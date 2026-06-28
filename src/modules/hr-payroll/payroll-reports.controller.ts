@@ -9,8 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
@@ -40,8 +40,8 @@ export class PayrollReportsController {
   ) {}
 
   @Get("payroll-reports")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:payrolls")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:payrolls:read")
   payrollReports(
     @Query(new ZodValidationPipe(payrollReportsQuerySchema)) query: PayrollReportsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,8 +74,8 @@ export class PayrollReportsController {
   }
 
   @Get("dashboard/payroll-summary")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   payrollSummary(@CurrentUser() u: CurrentUserContext) {
     return this.compensation.getPayrollSummary(u.orgId);
   }
@@ -89,8 +89,8 @@ export class PayrollReportsController {
   }
 
   @Get("analytics/compensation")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
   compensationAnalytics(@CurrentUser() u: CurrentUserContext) {
     return this.compensation.getCompensationAnalytics(u.orgId);
   }
@@ -102,8 +102,8 @@ export class PayrollReportsController {
   }
 
   @Post("integrations/accounting-export")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:integrations")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:integrations:manage")
   @HttpCode(200)
   accountingExport(
     @Body(new ZodValidationPipe(accountingExportSchema)) body: AccountingExportInput,

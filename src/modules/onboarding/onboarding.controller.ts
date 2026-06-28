@@ -14,8 +14,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -43,15 +43,15 @@ export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "settings:onboarding")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:onboarding:manage")
   getProgress(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getProgressSummary(u.orgId);
   }
 
   @Post()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "settings:onboarding")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:onboarding:manage")
   async initiate(
     @Body(new ZodValidationPipe(initiateSchema)) body: InitiateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -69,15 +69,15 @@ export class OnboardingController {
   }
 
   @Get("templates")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "settings:onboarding")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:onboarding:manage")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplates(u.orgId);
   }
 
   @Post("templates")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "settings:onboarding")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:onboarding:manage")
   @HttpCode(201)
   createTemplate(
     @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,

@@ -13,8 +13,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -38,8 +38,8 @@ export class AccountingLedgerController {
   constructor(private readonly ledger: AccountingLedgerService) {}
 
   @Get("accounts")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:accounts")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:accounts:read")
   listAccounts(
     @Query(new ZodValidationPipe(listAccountsQuerySchema)) query: ListAccountsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -48,8 +48,8 @@ export class AccountingLedgerController {
   }
 
   @Post("accounts")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("create", "accounting:accounts")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:accounts:create")
   @HttpCode(201)
   createAccount(
     @Body(new ZodValidationPipe(createAccountSchema)) body: CreateAccountInput,
@@ -59,8 +59,8 @@ export class AccountingLedgerController {
   }
 
   @Patch("accounts/:accountId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("update", "accounting:accounts")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:accounts:update")
   updateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @Body(new ZodValidationPipe(updateAccountSchema)) body: UpdateAccountInput,
@@ -70,8 +70,8 @@ export class AccountingLedgerController {
   }
 
   @Get("journal")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:read")
   listJournal(
     @Query(new ZodValidationPipe(listJournalQuerySchema)) query: ListJournalQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -80,8 +80,8 @@ export class AccountingLedgerController {
   }
 
   @Post("journal")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
   createJournalEntry(
     @Body(new ZodValidationPipe(createJournalEntrySchema)) body: CreateJournalEntryInput,
@@ -91,8 +91,8 @@ export class AccountingLedgerController {
   }
 
   @Get("journal/:entryId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:read")
   getJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -101,8 +101,8 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/post")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   @HttpCode(200)
   postJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -112,8 +112,8 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/reverse")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "accounting:journal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:journal:manage")
   async reverseJournalEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

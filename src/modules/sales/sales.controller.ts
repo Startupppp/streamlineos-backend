@@ -16,8 +16,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
@@ -104,8 +104,8 @@ export class SalesController {
   }
 
   @Patch("commissions/:commissionId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "sales")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("sales:manage")
   async updateCommission(
     @Param("commissionId", ParseIntPipe) commissionId: number,
     @Body(new ZodValidationPipe(commissionUpdateSchema)) body: CommissionUpdateInput,
@@ -137,15 +137,15 @@ export class SalesController {
   }
 
   @Get("playbook")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "sales")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("sales:view")
   listPlaybook(@CurrentUser() u: CurrentUserContext) {
     return this.sales.listPlaybook(u.orgId);
   }
 
   @Post("playbook")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "sales")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("sales:manage")
   @HttpCode(201)
   createPlaybookEntry(
     @Body(new ZodValidationPipe(playbookCreateSchema)) body: PlaybookCreateInput,
@@ -155,8 +155,8 @@ export class SalesController {
   }
 
   @Patch("playbook/:entryId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "sales")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("sales:manage")
   async updatePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(playbookUpdateSchema)) body: PlaybookUpdateInput,
@@ -168,8 +168,8 @@ export class SalesController {
   }
 
   @Delete("playbook/:entryId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "sales")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("sales:manage")
   async removePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -239,8 +239,8 @@ export class SalesController {
   }
 
   @Get("dashboard/cycle-length")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "crm:deals")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
   dashboardCycleLength(
     @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
     @CurrentUser() u: CurrentUserContext,
@@ -249,8 +249,8 @@ export class SalesController {
   }
 
   @Get("dashboard/lost-analysis")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "crm:deals")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
   dashboardLostAnalysis(
     @Query(new ZodValidationPipe(repFilterSchema)) query: RepFilterInput,
     @CurrentUser() u: CurrentUserContext,

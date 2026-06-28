@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -42,7 +42,7 @@ import {
 } from "./dto/settings.schemas";
 
 @Controller("settings")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
 
@@ -76,14 +76,14 @@ export class SettingsController {
   }
 
   @Get("automations")
-  @CheckAbility("view", "settings:automations")
+  @RequirePermission("settings:automations:view")
   listAutomations(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listAutomations(u.orgId);
   }
 
   @Post("automations")
   @HttpCode(201)
-  @CheckAbility("manage", "settings:automations")
+  @RequirePermission("settings:automations:manage")
   createAutomation(
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
@@ -92,7 +92,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId")
-  @CheckAbility("view", "settings:automations")
+  @RequirePermission("settings:automations:view")
   getAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -101,7 +101,7 @@ export class SettingsController {
   }
 
   @Patch("automations/:ruleId")
-  @CheckAbility("manage", "settings:automations")
+  @RequirePermission("settings:automations:manage")
   updateAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
@@ -111,7 +111,7 @@ export class SettingsController {
   }
 
   @Delete("automations/:ruleId")
-  @CheckAbility("manage", "settings:automations")
+  @RequirePermission("settings:automations:manage")
   deleteAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -120,7 +120,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId/runs")
-  @CheckAbility("view", "settings:automations")
+  @RequirePermission("settings:automations:view")
   listAutomationRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -129,7 +129,7 @@ export class SettingsController {
   }
 
   @Get("custom-fields")
-  @CheckAbility("manage", "settings:custom-fields")
+  @RequirePermission("settings:custom-fields:manage")
   listCustomFields(
     @Query(new ZodValidationPipe(customFieldsListSchema)) query: CustomFieldsListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -139,7 +139,7 @@ export class SettingsController {
 
   @Post("custom-fields")
   @HttpCode(201)
-  @CheckAbility("manage", "settings:custom-fields")
+  @RequirePermission("settings:custom-fields:manage")
   createCustomField(
     @Body(new ZodValidationPipe(createCustomFieldSchema)) body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
@@ -148,7 +148,7 @@ export class SettingsController {
   }
 
   @Patch("custom-fields/:fieldId")
-  @CheckAbility("manage", "settings:custom-fields")
+  @RequirePermission("settings:custom-fields:manage")
   updateCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
@@ -158,7 +158,7 @@ export class SettingsController {
   }
 
   @Delete("custom-fields/:fieldId")
-  @CheckAbility("manage", "settings:custom-fields")
+  @RequirePermission("settings:custom-fields:manage")
   deleteCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -180,14 +180,14 @@ export class SettingsController {
   }
 
   @Get("integrations/git")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   listGitConnections(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listGitConnections(u.orgId);
   }
 
   @Post("integrations/git")
   @HttpCode(201)
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   createGitConnection(
     @Body(new ZodValidationPipe(createGitConnectionSchema)) body: CreateGitConnectionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -196,7 +196,7 @@ export class SettingsController {
   }
 
   @Patch("integrations/git/:connectionId")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   updateGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @Body(new ZodValidationPipe(updateGitConnectionSchema)) body: UpdateGitConnectionInput,
@@ -206,7 +206,7 @@ export class SettingsController {
   }
 
   @Delete("integrations/git/:connectionId")
-  @CheckAbility("manage", "settings")
+  @RequirePermission("settings:manage")
   deleteGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,

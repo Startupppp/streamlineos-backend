@@ -1,7 +1,7 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -9,12 +9,12 @@ import { AuditLogService } from "./audit-log.service";
 import { listSchema, type ListInput } from "./dto/audit-log.schemas";
 
 @Controller("audit-log")
-@UseGuards(JwtAuthGuard, AbilityGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class AuditLogController {
   constructor(private readonly auditLog: AuditLogService) {}
 
   @Get()
-  @CheckAbility("read", "audit-log")
+  @RequirePermission("audit-log:read")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -23,13 +23,13 @@ export class AuditLogController {
   }
 
   @Get("actions")
-  @CheckAbility("read", "audit-log")
+  @RequirePermission("audit-log:read")
   listActions(@CurrentUser() u: CurrentUserContext) {
     return this.auditLog.listActions(u.orgId);
   }
 
   @Get("target-types")
-  @CheckAbility("read", "audit-log")
+  @RequirePermission("audit-log:read")
   listTargetTypes(@CurrentUser() u: CurrentUserContext) {
     return this.auditLog.listTargetTypes(u.orgId);
   }

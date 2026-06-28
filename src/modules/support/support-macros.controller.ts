@@ -12,8 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -37,8 +37,8 @@ export class SupportMacrosController {
   constructor(private readonly macros: SupportMacrosService) {}
 
   @Get("macros")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
   listMacros(
     @Query(new ZodValidationPipe(listMacrosSchema)) query: ListMacrosInput,
     @CurrentUser() u: CurrentUserContext,
@@ -47,8 +47,8 @@ export class SupportMacrosController {
   }
 
   @Post("macros")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   @HttpCode(201)
   createMacro(
     @Body(new ZodValidationPipe(createMacroSchema)) body: CreateMacroInput,
@@ -58,8 +58,8 @@ export class SupportMacrosController {
   }
 
   @Patch("macros/:macroId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   updateMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body(new ZodValidationPipe(updateMacroSchema)) body: UpdateMacroInput,
@@ -69,8 +69,8 @@ export class SupportMacrosController {
   }
 
   @Delete("macros/:macroId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   deleteMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,15 +79,15 @@ export class SupportMacrosController {
   }
 
   @Get("routing-rules")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("view", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
   listRoutingRules(@CurrentUser() u: CurrentUserContext) {
     return this.macros.listRoutingRules(u.orgId);
   }
 
   @Post("routing-rules")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   @HttpCode(201)
   createRoutingRule(
     @Body(new ZodValidationPipe(createRoutingRuleSchema)) body: CreateRoutingRuleInput,
@@ -97,8 +97,8 @@ export class SupportMacrosController {
   }
 
   @Patch("routing-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   updateRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateRoutingRuleSchema)) body: UpdateRoutingRuleInput,
@@ -108,8 +108,8 @@ export class SupportMacrosController {
   }
 
   @Delete("routing-rules/:ruleId")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "support:macros")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
   deleteRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
