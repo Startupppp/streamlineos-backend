@@ -568,4 +568,38 @@ export class AuthService {
       forceChangePassword: user?.isPasswordChangeRequired ?? false,
     };
   }
+
+  async getAccessBootstrap(userId: string, orgId: string) {
+    const [member, org] = await Promise.all([
+      this.db.query.organizationMembers.findFirst({
+        where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      }),
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { id: true, name: true, enabledModules: true, status: true },
+      }),
+    ]);
+
+    const permissions: string[] = member?.permissions ?? [];
+    const enabledModules: string[] = org?.enabledModules ?? [];
+    const isOrgOwner = member?.role === "OWNER";
+
+    const modules: Record<string, boolean> = {};
+    for (const m of enabledModules) {
+      modules[m] = true;
+    }
+
+    const scopes: Record<string, "all" | "team" | "own" | "none"> = {};
+    for (const perm of permissions) {
+      scopes[perm] = isOrgOwner ? "all" : "own";
+    }
+
+    return {
+      permissions,
+      modules,
+      scopes,
+      isOrgOwner,
+      version: 1,
+    };
+  }
 }

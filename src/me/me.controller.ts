@@ -4,13 +4,21 @@ import { CurrentUser } from "../common/auth/current-user.decorator";
 import { AbilityGuard } from "../common/rbac/ability.guard";
 import { CheckAbility } from "../common/rbac/check-ability.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
+import { AuthService } from "../modules/auth/auth.service";
 
 @Controller("me")
 @UseGuards(JwtAuthGuard, AbilityGuard)
 export class MeController {
+  constructor(private readonly authService: AuthService) {}
+
   @Get()
   me(@CurrentUser() user: CurrentUserContext): CurrentUserContext {
     return user;
+  }
+
+  @Get("access")
+  access(@CurrentUser() user: CurrentUserContext) {
+    return this.authService.getAccessBootstrap(user.userId, user.orgId);
   }
 
   @Get("protected")
