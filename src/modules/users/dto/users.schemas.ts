@@ -13,6 +13,13 @@ export const listUsersSchema = z.object({
 });
 export type ListUsersInput = z.infer<typeof listUsersSchema>;
 
+const emergencyContactSchema = z.object({
+  name: z.string().min(1),
+  relation: z.string().min(1),
+  phone: z.string().min(1),
+  email: z.string().email().optional(),
+}).optional();
+
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
@@ -27,6 +34,7 @@ export const updateUserSchema = z.object({
   websiteUrl: z.string().url().optional().or(z.literal("")),
   reportingTo: z.string().optional(),
   team: z.string().optional(),
+  emergencyContact: emergencyContactSchema,
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 

@@ -161,6 +161,13 @@ export class UsersService {
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
     if (data.bio !== undefined) updateData.bio = data.bio;
+    if (data.linkedinUrl !== undefined) updateData.linkedinUrl = data.linkedinUrl || null;
+    if (data.twitterUrl !== undefined) updateData.twitterUrl = data.twitterUrl || null;
+    if (data.githubUrl !== undefined) updateData.githubUrl = data.githubUrl || null;
+    if (data.websiteUrl !== undefined) updateData.websiteUrl = data.websiteUrl || null;
+    if (data.reportingTo !== undefined) updateData.reportingTo = data.reportingTo;
+    if (data.team !== undefined) updateData.team = data.team;
+    if (data.emergencyContact !== undefined) updateData.emergencyContact = data.emergencyContact;
 
     if (Object.keys(updateData).length > 0) {
       await this.db.update(users).set(updateData).where(eq(users.id, userId));
