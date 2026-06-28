@@ -249,6 +249,32 @@ export const passwordHistory = pgTable("password_history", {
   index("idx_password_history_user").on(table.userId, table.createdAt),
 ]);
 
+export const serviceAccounts = pgTable("service_accounts", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_service_accounts_org").on(table.orgId),
+]);
+
+export const magicLinkTokens = pgTable("magic_link_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_magic_link_tokens_user").on(table.userId),
+  uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
+]);
+
 export const roles = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -450,34 +476,6 @@ export const loginHistoryRelations = relations(loginHistory, ({ one }) => ({
   user: one(users, { fields: [loginHistory.userId], references: [users.id] }),
   organization: one(organizations, { fields: [loginHistory.orgId], references: [organizations.id] }),
 }));
-<<<<<<< HEAD
-=======
-
-export const serviceAccounts = pgTable("service_accounts", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  isActive: boolean("is_active").default(true).notNull(),
-  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_service_accounts_org").on(table.orgId),
-]);
-
-export const magicLinkTokens = pgTable("magic_link_tokens", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  tokenHash: text("token_hash").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_magic_link_tokens_user").on(table.userId),
-  uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
-]);
 
 export const userApiTokens = pgTable("user_api_tokens", {
   id: text("id").primaryKey(),
@@ -494,16 +492,65 @@ export const userApiTokens = pgTable("user_api_tokens", {
   index("idx_user_api_tokens_user").on(table.userId),
 ]);
 
-export const serviceAccountsRelations = relations(serviceAccounts, ({ one }) => ({
-  organization: one(organizations, { fields: [serviceAccounts.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [serviceAccounts.createdBy], references: [users.id] }),
-}));
-
-export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => ({
-  user: one(users, { fields: [magicLinkTokens.userId], references: [users.id] }),
-}));
-
 export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
   user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
 }));
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
+
+export const userSeats = pgTable("user_seats", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  moduleKey: text("module_key").notNull(),
+  status: text("status").default("ACTIVE").notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  assignedBy: text("assigned_by").references(() => users.id),
+}, (table) => [
+  uniqueIndex("uniq_user_seats_org_user_module").on(table.orgId, table.userId, table.moduleKey),
+  index("idx_user_seats_org_module").on(table.orgId, table.moduleKey),
+  index("idx_user_seats_user").on(table.userId),
+]);
+
+export const orgLimits = pgTable("org_limits", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  limitKey: text("limit_key").notNull(),
+  limitValue: integer("limit_value").notNull(),
+  usedValue: integer("used_value").default(0).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_org_limits_org_key").on(table.orgId, table.limitKey),
+  index("idx_org_limits_org").on(table.orgId),
+]);
+
+export const userDelegations = pgTable("user_delegations", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  delegatorId: text("delegator_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  delegateeId: text("delegatee_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  permissions: text("permissions").array().default([]).notNull(),
+  startsAt: timestamp("starts_at").defaultNow().notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  reason: text("reason"),
+  status: text("status").default("ACTIVE").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+  revokedBy: text("revoked_by").references(() => users.id),
+}, (table) => [
+  index("idx_user_delegations_delegatee_status").on(table.delegateeId, table.status),
+  index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
+]);
+
+export const userSeatsRelations = relations(userSeats, ({ one }) => ({
+  org: one(organizations, { fields: [userSeats.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [userSeats.userId], references: [users.id] }),
+}));
+
+export const orgLimitsRelations = relations(orgLimits, ({ one }) => ({
+  org: one(organizations, { fields: [orgLimits.orgId], references: [organizations.id] }),
+}));
+
+export const userDelegationsRelations = relations(userDelegations, ({ one }) => ({
+  org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),
+  delegator: one(users, { fields: [userDelegations.delegatorId], references: [users.id] }),
+  delegatee: one(users, { fields: [userDelegations.delegateeId], references: [users.id] }),
+}));

@@ -14,23 +14,15 @@ function ctxWith(headers: Record<string, string>): ExecutionContext {
 
 describe("JwtAuthGuard", () => {
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
-<<<<<<< HEAD
-  const reflector: jest.Mocked<Reflector> = {
-    get: jest.fn(),
-    getAll: jest.fn(),
-    getAllAndMerge: jest.fn(),
+  const reflector = {
     getAllAndOverride: jest.fn(),
-  } as jest.Mocked<Reflector>;
-  const guard = new JwtAuthGuard(reflector);
-=======
-  const reflector = { getAllAndOverride: jest.fn() } as unknown as Reflector;
+  } as unknown as jest.Mocked<Pick<Reflector, "getAllAndOverride">> & Reflector;
   const mockDb = {
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ catch: jest.fn() }) }) }),
     query: { users: { findFirst: jest.fn() }, organizationMembers: { findFirst: jest.fn() }, organizations: { findFirst: jest.fn() } },
   };
   const guard = new JwtAuthGuard(reflector, mockDb as unknown as import("../../db/drizzle.module").Db);
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 
   beforeEach(() => reflector.getAllAndOverride.mockReturnValue(false));
 
@@ -45,7 +37,7 @@ describe("JwtAuthGuard", () => {
   });
 
   it("accepts a valid token and attaches req.user", async () => {
-    const token = await signToken({ sub: "user_42", orgId: "org_9" });
+    const token = await signToken({ sub: "user_42", orgId: "org_9", sessionId: "sess_1" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const req = ctx.switchToHttp().getRequest<{ user: { userId: string } }>();
@@ -94,7 +86,7 @@ describe("JwtAuthGuard", () => {
   });
 
   it("accepts a platform-admin token with no orgId", async () => {
-    const token = await signToken({ isPlatformAdmin: true, orgId: null });
+    const token = await signToken({ isPlatformAdmin: true, orgId: null, sessionId: "sess_admin" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const req = ctx.switchToHttp().getRequest<{ user: { isPlatformAdmin: boolean; orgId: string } }>();

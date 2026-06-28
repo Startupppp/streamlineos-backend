@@ -8,12 +8,9 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
-<<<<<<< HEAD
 import type { JWTPayload } from "jose";
-=======
 import { eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 import { IS_PUBLIC } from "./public.decorator";
 import type { BackendClaims, CurrentUserContext } from "./backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -70,44 +67,27 @@ export class JwtAuthGuard implements CanActivate {
       // JWT verification failed — fall through to PAT check
     }
 
-<<<<<<< HEAD
-    if (!claims.sub) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-    if (!claims.sessionId) {
-      throw new UnauthorizedException("Unauthorized");
-    }
-    if (!claims.orgId && !claims.isPlatformAdmin) {
-      throw new UnauthorizedException("Organization not found");
-    }
-
-    req.user = {
-      userId: claims.sub,
-      orgId: claims.orgId ?? "",
-      branchId: claims.branchId ?? null,
-      role: claims.role,
-      permissions: claims.permissions,
-      enabledModules: claims.enabledModules,
-      plan: claims.plan,
-      isPlatformAdmin: claims.isPlatformAdmin,
-      isOrgOwner: claims.isOrgOwner,
-      sessionId: claims.sessionId,
-=======
     if (claims !== null) {
-      if (!claims.sub || !claims.orgId) {
+      if (!claims.sub) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+      if (!claims.sessionId) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+      if (!claims.orgId && !claims.isPlatformAdmin) {
         throw new UnauthorizedException("Organization not found");
       }
 
       req.user = {
         userId: claims.sub,
-        orgId: claims.orgId,
+        orgId: claims.orgId ?? "",
         branchId: claims.branchId ?? null,
         role: claims.role,
-        permissions: claims.permissions ?? [],
-        enabledModules: claims.enabledModules ?? [],
-        plan: claims.plan ?? null,
-        isPlatformAdmin: claims.isPlatformAdmin === true,
-        isOrgOwner: claims.isOrgOwner === true,
+        permissions: claims.permissions,
+        enabledModules: claims.enabledModules,
+        plan: claims.plan,
+        isPlatformAdmin: claims.isPlatformAdmin,
+        isOrgOwner: claims.isOrgOwner,
         sessionId: claims.sessionId,
       };
       return true;
@@ -195,7 +175,6 @@ export class JwtAuthGuard implements CanActivate {
       isPlatformAdmin: false,
       isOrgOwner: member.isOwner,
       sessionId: `pat:${matchedTokenId}`,
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
     };
   }
 }

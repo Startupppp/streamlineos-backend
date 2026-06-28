@@ -14,14 +14,9 @@ export * from "./blog";
 export * from "./platform";
 export * from "./accounting";
 export * from "./support";
-<<<<<<< HEAD
 export * from "./kb";
 export * from "./automation";
 export * from "./inventory";
-=======
-export * from "./kb/index";
-export * from "./automation";
-export * from "./inventory";
-export * from "./feature-flags";
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 export * from "./organization";
+export * from "./user-management";
+export * from "./feature-flags";

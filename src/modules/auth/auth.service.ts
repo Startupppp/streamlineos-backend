@@ -4,30 +4,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-<<<<<<< HEAD
-} from "@nestjs/common";
-import { and, eq, gt } from "drizzle-orm";
-import bcrypt from "bcryptjs";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
-import {
-  users,
-  organizations,
-  organizationMembers,
-  passwordResetTokens,
-  verificationTokens,
-} from "../../db/schema";
-import { EmailService } from "../email/email.service";
-import type {
-  ForgotPasswordInput,
-  RegisterInput,
-  ResendVerificationInput,
-  ResetPasswordInput,
-  VerifyEmailInput,
-} from "./dto/auth.schemas";
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-=======
   UnauthorizedException,
 } from "@nestjs/common";
 import { and, eq, gt, gte, sql } from "drizzle-orm";
@@ -90,136 +66,11 @@ function hashToken(token: string): string {
 function generateToken(): string {
   return randomBytes(32).toString("hex");
 }
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-<<<<<<< HEAD
-    private readonly email: EmailService,
-  ) {}
-
-  async register(input: RegisterInput): Promise<{ success: true }> {
-    const existing = await this.db.query.users.findFirst({
-      where: eq(users.email, input.email.toLowerCase()),
-      columns: { id: true },
-    });
-
-    if (existing) throw new ConflictException("Email already in use");
-
-    const orgId = crypto.randomUUID();
-    const orgSlug = input.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-
-    await this.db.insert(organizations).values({
-      id: orgId,
-      name: input.organizationName,
-      slug: orgSlug,
-    });
-
-    const userId = crypto.randomUUID();
-    const passwordHash = await bcrypt.hash(input.password, 12);
-
-    await this.db.insert(users).values({
-      id: userId,
-      email: input.email.toLowerCase(),
-      password: passwordHash,
-      name: `${input.firstName} ${input.lastName}`,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      isActive: true,
-    });
-
-    await this.db.insert(organizationMembers).values({
-      userId,
-      orgId,
-      role: "OWNER",
-      isOwner: true,
-    });
-
-    const verificationToken = crypto.randomUUID();
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await this.db.insert(verificationTokens).values({
-      identifier: input.email.toLowerCase(),
-      token: verificationToken,
-      expires,
-    });
-
-    await this.email.sendWelcomeEmail(
-      input.email.toLowerCase(),
-      `${input.firstName} ${input.lastName}`,
-      `${APP_URL}/verify-email?token=${verificationToken}&identifier=${encodeURIComponent(input.email.toLowerCase())}`,
-    );
-
-    return { success: true };
-  }
-
-  async forgotPassword(input: ForgotPasswordInput): Promise<{ success: true }> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.email, input.email.toLowerCase()),
-      columns: { id: true, email: true },
-    });
-
-    if (!user) return { success: true };
-
-    const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-
-    await this.db
-      .delete(passwordResetTokens)
-      .where(eq(passwordResetTokens.email, user.email));
-
-    await this.db.insert(passwordResetTokens).values({
-      id: crypto.randomUUID(),
-      token,
-      email: user.email,
-      expiresAt,
-    });
-
-    await this.email.sendPasswordResetEmail(user.email, token);
-
-    return { success: true };
-  }
-
-  async resetPassword(input: ResetPasswordInput): Promise<{ success: true }> {
-    const tokenRecord = await this.db.query.passwordResetTokens.findFirst({
-      where: and(
-        eq(passwordResetTokens.token, input.token),
-        gt(passwordResetTokens.expiresAt, new Date()),
-      ),
-    });
-
-    if (!tokenRecord) throw new BadRequestException("Invalid or expired token");
-
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.email, tokenRecord.email),
-      columns: { id: true },
-    });
-
-    if (!user) throw new NotFoundException("User not found");
-
-    const passwordHash = await bcrypt.hash(input.password, 12);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(users)
-        .set({ password: passwordHash, passwordChangedAt: new Date() })
-        .where(eq(users.id, user.id));
-
-      await tx
-        .delete(passwordResetTokens)
-        .where(eq(passwordResetTokens.token, input.token));
-    });
-
-    return { success: true };
-  }
-
-  async verifyEmail(input: VerifyEmailInput): Promise<{ success: true }> {
-    const record = await this.db.query.verificationTokens.findFirst({
-      where: and(
-        eq(verificationTokens.identifier, input.identifier),
-=======
     private readonly passwordService: PasswordService,
     private readonly sessionService: SessionService,
     private readonly deviceService: DeviceService,
@@ -541,63 +392,15 @@ export class AuthService {
   async verifyEmail(input: VerifyEmailInput): Promise<void> {
     const record = await this.db.query.verificationTokens.findFirst({
       where: and(
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
         eq(verificationTokens.token, input.token),
         gt(verificationTokens.expires, new Date()),
       ),
     });
-<<<<<<< HEAD
-
-    if (!record) throw new BadRequestException("Invalid or expired token");
-=======
     if (!record) throw new BadRequestException("Invalid or expired verification token");
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 
     await this.db
       .update(users)
       .set({ emailVerified: new Date() })
-<<<<<<< HEAD
-      .where(eq(users.email, input.identifier));
-
-    await this.db
-      .delete(verificationTokens)
-      .where(
-        and(
-          eq(verificationTokens.identifier, input.identifier),
-          eq(verificationTokens.token, input.token),
-        ),
-      );
-
-    return { success: true };
-  }
-
-  async resendVerification(input: ResendVerificationInput): Promise<{ success: true }> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.email, input.email.toLowerCase()),
-      columns: { id: true, email: true, emailVerified: true },
-    });
-
-    if (!user || user.emailVerified) return { success: true };
-
-    const token = crypto.randomUUID();
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await this.db
-      .delete(verificationTokens)
-      .where(eq(verificationTokens.identifier, user.email));
-
-    await this.db.insert(verificationTokens).values({
-      identifier: user.email,
-      token,
-      expires,
-    });
-
-    await this.email.sendVerificationEmail(user.email, token);
-
-    return { success: true };
-  }
-}
-=======
       .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`);
 
     await this.db
@@ -632,7 +435,7 @@ export class AuthService {
     userId: string,
     query: { success?: boolean; from?: Date; to?: Date; page?: number; limit?: number },
   ) {
-    const { and, desc, eq, gte, lte, sql: drizzleSql } = await import("drizzle-orm");
+    const { and: andFn, desc, lte } = await import("drizzle-orm");
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 20, 100);
     const offset = (page - 1) * limit;
@@ -644,12 +447,12 @@ export class AuthService {
 
     const [data, countResult] = await Promise.all([
       this.db.query.loginHistory.findMany({
-        where: and(...conditions),
+        where: andFn(...conditions),
         orderBy: [desc(loginHistory.createdAt)],
         limit,
         offset,
       }),
-      this.db.select({ count: drizzleSql<number>`count(*)::int` }).from(loginHistory).where(and(...conditions)),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(loginHistory).where(andFn(...conditions)),
     ]);
 
     return { data, total: countResult[0]?.count ?? 0, page, limit };
@@ -726,7 +529,6 @@ export class AuthService {
     if (!user || !user.emailVerified) return;
 
     const token = randomBytes(32).toString("hex");
-    const { createHash } = await import("node:crypto");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const expiresAt = addHours(new Date(), 1);
 
@@ -741,7 +543,6 @@ export class AuthService {
   }
 
   async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
-    const { createHash } = await import("node:crypto");
     const tokenHash = createHash("sha256").update(token).digest("hex");
 
     const row = await this.db.query.magicLinkTokens.findFirst({
@@ -861,4 +662,3 @@ export interface AccessBootstrap {
   featureFlags: Record<string, boolean>;
   version: number;
 }
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8

@@ -72,11 +72,8 @@ import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.
 import { CalendarConnectionsModule } from "./modules/calendar-connections/calendar-connections.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
-<<<<<<< HEAD
 import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
-import { AuthModule } from "./modules/auth/auth.module";
-=======
 import { AuthModule } from "./modules/auth/auth.module";
 import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
@@ -86,7 +83,7 @@ import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.m
 import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.module";
 import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
+import { UsersModule } from "./modules/users/users.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -163,11 +160,8 @@ import { MeService } from "./me/me.service";
     CalendarConnectionsModule,
     RealtimeModule,
     AutomationModule,
-<<<<<<< HEAD
     SessionsModule,
     MfaModule,
-    AuthModule,
-=======
     AuthModule,
     FeatureFlagsModule,
     OrgHierarchyModule,
@@ -177,7 +171,7 @@ import { MeService } from "./me/me.service";
     ResourceGrantsModule,
     TemporaryAccessModule,
     DelegationsModule,
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
+    UsersModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

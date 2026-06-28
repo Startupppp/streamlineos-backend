@@ -1,38 +1,5 @@
 import { z } from "zod";
 
-<<<<<<< HEAD
-export const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  organizationName: z.string().min(1),
-});
-
-export const forgotPasswordSchema = z.object({
-  email: z.string().email(),
-});
-
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1),
-  password: z.string().min(8),
-});
-
-export const verifyEmailSchema = z.object({
-  identifier: z.string().min(1),
-  token: z.string().min(1),
-});
-
-export const resendVerificationSchema = z.object({
-  email: z.string().email(),
-});
-
-export type RegisterInput = z.infer<typeof registerSchema>;
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
-export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
-export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
-=======
 const passwordSchema = z
   .string()
   .min(12, "Minimum 12 characters")
@@ -92,6 +59,6 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type MagicLinkRequestInput = z.infer<typeof magicLinkRequestSchema>;
 export type MagicLinkVerifyInput = z.infer<typeof magicLinkVerifySchema>;
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8

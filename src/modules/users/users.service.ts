@@ -1,0 +1,458 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { randomUUID, randomBytes } from "node:crypto";
+import { addDays } from "date-fns";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import {
+  users,
+  organizations,
+  organizationMembers,
+  userSessions,
+  devices,
+  invitations,
+  userActivity,
+  userPreferences,
+  userMemberships,
+} from "../../db/schema";
+import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import type { ListUsersInput, UpdateUserInput, UpdatePreferencesInput } from "./dto/users.schemas";
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+    private readonly cache: CacheService,
+  ) {}
+
+  async listUsers(orgId: string, params: ListUsersInput) {
+    const { page, limit, search, status, role, departmentId } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(organizationMembers.orgId, orgId)];
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(users.name, `%${search}%`),
+          ilike(users.email, `%${search}%`),
+          ilike(users.firstName, `%${search}%`),
+          ilike(users.lastName, `%${search}%`),
+        )!,
+      );
+    }
+
+    if (role) {
+      conditions.push(eq(organizationMembers.role, role));
+    }
+
+    if (departmentId !== undefined) {
+      conditions.push(eq(users.departmentId, departmentId));
+    }
+
+    if (status === "active") {
+      conditions.push(eq(users.isActive, true));
+    } else if (status === "suspended" || status === "archived") {
+      conditions.push(eq(users.isActive, false));
+    }
+
+    const [data, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          image: users.image,
+          role: organizationMembers.role,
+          isActive: users.isActive,
+          emailVerified: users.emailVerified,
+          departmentId: users.departmentId,
+          designation: users.designation,
+          phone: users.phone,
+          createdAt: users.createdAt,
+          joinedAt: organizationMembers.joinedAt,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(and(...conditions)),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getUser(orgId: string, userId: string) {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+    });
+
+    if (!membership) throw new NotFoundException("User not found in this organization");
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+
+    if (!user) throw new NotFoundException("User not found");
+
+    return { ...user, memberRole: membership.role, joinedAt: membership.joinedAt };
+  }
+
+  async updateUser(orgId: string, userId: string, data: UpdateUserInput, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    const updateData: Record<string, unknown> = {};
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+    if (data.firstName !== undefined || data.lastName !== undefined) {
+      const user = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { firstName: true, lastName: true } });
+      const first = data.firstName ?? user?.firstName ?? "";
+      const last = data.lastName ?? user?.lastName ?? "";
+      updateData.name = `${first} ${last}`.trim();
+    }
+    if (data.designation !== undefined) updateData.designation = data.designation;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.departmentId !== undefined) updateData.departmentId = data.departmentId;
+    if (data.bio !== undefined) updateData.bio = data.bio;
+
+    if (Object.keys(updateData).length > 0) {
+      await this.db.update(users).set(updateData).where(eq(users.id, userId));
+    }
+
+    if (data.role !== undefined) {
+      await this.db
+        .update(organizationMembers)
+        .set({ role: data.role })
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+    }
+
+    await this.db.insert(userActivity).values({
+      id: randomUUID(),
+      orgId,
+      userId,
+      actorUserId,
+      action: "user.updated",
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { changes: data },
+    });
+
+    this.audit.log({ action: "user.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { changes: data } });
+
+    return { success: true };
+  }
+
+  async updateUserStatus(orgId: string, userId: string, status: "active" | "suspended" | "archived", actorUserId: string, reason?: string) {
+    await this.getUser(orgId, userId);
+
+    const update: Record<string, unknown> = {};
+    if (status === "active") {
+      update.isActive = true;
+    } else if (status === "suspended" || status === "archived") {
+      update.isActive = false;
+    }
+
+    await this.db.update(users).set(update).where(eq(users.id, userId));
+
+    await this.db.insert(userActivity).values({
+      id: randomUUID(),
+      orgId,
+      userId,
+      actorUserId,
+      action: `user.status.${status}`,
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { status, ...(reason ? { reason } : {}) },
+    });
+
+    this.audit.log({ action: `user.status.${status}`, userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { status, reason } });
+
+    return { success: true };
+  }
+
+  async deleteUser(orgId: string, userId: string, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    await this.db.update(users).set({ isActive: false }).where(eq(users.id, userId));
+
+    await this.db.insert(userActivity).values({
+      id: randomUUID(),
+      orgId,
+      userId,
+      actorUserId,
+      action: "user.deleted",
+      resourceType: "user",
+      resourceId: userId,
+      metadata: {},
+    });
+
+    this.audit.log({ action: "user.deleted", userId: actorUserId, orgId, targetId: userId, targetType: "user" });
+
+    return { success: true };
+  }
+
+  async getUserSessions(orgId: string, userId: string) {
+    await this.getUser(orgId, userId);
+
+    return this.db
+      .select()
+      .from(userSessions)
+      .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
+      .orderBy(desc(userSessions.createdAt));
+  }
+
+  async revokeSession(orgId: string, userId: string, sessionId: string, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    await this.db
+      .update(userSessions)
+      .set({ isRevoked: true })
+      .where(and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)));
+
+    this.audit.log({ action: "user.session.revoked", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { sessionId } });
+
+    return { success: true };
+  }
+
+  async revokeAllSessions(orgId: string, userId: string, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    await this.db
+      .update(userSessions)
+      .set({ isRevoked: true })
+      .where(eq(userSessions.userId, userId));
+
+    this.audit.log({ action: "user.sessions.revoked_all", userId: actorUserId, orgId, targetId: userId, targetType: "user" });
+
+    return { success: true };
+  }
+
+  async getUserDevices(orgId: string, userId: string) {
+    await this.getUser(orgId, userId);
+
+    return this.db
+      .select()
+      .from(devices)
+      .where(eq(devices.userId, userId))
+      .orderBy(desc(devices.lastSeenAt));
+  }
+
+  async removeDevice(orgId: string, userId: string, deviceId: string, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    await this.db
+      .delete(devices)
+      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
+
+    this.audit.log({ action: "user.device.removed", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { deviceId } });
+
+    return { success: true };
+  }
+
+  async getUserActivity(orgId: string, userId: string, params?: { page?: number; limit?: number }) {
+    await this.getUser(orgId, userId);
+
+    const page = params?.page ?? 1;
+    const limit = Math.min(params?.limit ?? 20, 100);
+    const offset = (page - 1) * limit;
+
+    const data = await this.db
+      .select()
+      .from(userActivity)
+      .where(and(eq(userActivity.orgId, orgId), eq(userActivity.userId, userId)))
+      .orderBy(desc(userActivity.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, page, limit };
+  }
+
+  async getPreferences(userId: string) {
+    const prefs = await this.db.query.userPreferences.findFirst({
+      where: eq(userPreferences.userId, userId),
+    });
+
+    if (!prefs) {
+      return {
+        userId,
+        theme: "system",
+        language: "en",
+        timezone: "Asia/Kolkata",
+        dateFormat: "DD/MM/YYYY",
+        timeFormat: "12h",
+        notificationPreferences: {},
+        dashboardPreferences: {},
+      };
+    }
+
+    return prefs;
+  }
+
+  async updatePreferences(userId: string, data: UpdatePreferencesInput) {
+    const existing = await this.db.query.userPreferences.findFirst({
+      where: eq(userPreferences.userId, userId),
+    });
+
+    const updateData: Record<string, unknown> = {};
+    if (data.theme !== undefined) updateData.theme = data.theme;
+    if (data.language !== undefined) updateData.language = data.language;
+    if (data.timezone !== undefined) updateData.timezone = data.timezone;
+    if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
+    if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
+    if (data.notificationPreferences !== undefined) updateData.notificationPreferences = data.notificationPreferences;
+    if (data.dashboardPreferences !== undefined) updateData.dashboardPreferences = data.dashboardPreferences;
+
+    if (existing) {
+      await this.db
+        .update(userPreferences)
+        .set(updateData)
+        .where(eq(userPreferences.userId, userId));
+    } else {
+      await this.db.insert(userPreferences).values({
+        userId,
+        theme: data.theme ?? "system",
+        language: data.language ?? "en",
+        timezone: data.timezone ?? "Asia/Kolkata",
+        dateFormat: data.dateFormat ?? "DD/MM/YYYY",
+        timeFormat: data.timeFormat ?? "12h",
+        notificationPreferences: data.notificationPreferences ?? {} as Record<string, boolean>,
+        dashboardPreferences: data.dashboardPreferences ?? {} as Record<string, unknown>,
+      });
+    }
+
+    return { success: true };
+  }
+
+  async inviteUser(orgId: string, email: string, role: string, invitedByUserId: string) {
+    const token = randomBytes(32).toString("hex");
+    const invitationId = randomUUID();
+    const expiresAt = addDays(new Date(), 7);
+
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { name: true },
+    });
+
+    await this.db.insert(invitations).values({
+      id: invitationId,
+      email,
+      token,
+      orgId,
+      role,
+      invitedBy: invitedByUserId,
+      expiresAt,
+    });
+
+    this.audit.log({ action: "user.invited", userId: invitedByUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email, role } });
+
+    return { success: true, invitationId, token, organizationName: org?.name ?? "" };
+  }
+
+  async bulkInvite(orgId: string, emails: string[], role: string, invitedByUserId: string) {
+    const results: Array<{ email: string; success: boolean; invitationId?: string; error?: string }> = [];
+
+    for (const email of emails) {
+      try {
+        const result = await this.inviteUser(orgId, email, role, invitedByUserId);
+        results.push({ email, success: true, invitationId: result.invitationId });
+      } catch (err) {
+        results.push({ email, success: false, error: err instanceof Error ? err.message : "Unknown error" });
+      }
+    }
+
+    return { results };
+  }
+
+  async exportUsers(orgId: string): Promise<string> {
+    const data = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        role: organizationMembers.role,
+        isActive: users.isActive,
+        emailVerified: users.emailVerified,
+        departmentId: users.departmentId,
+        designation: users.designation,
+        phone: users.phone,
+        joinedAt: organizationMembers.joinedAt,
+        createdAt: users.createdAt,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(eq(organizationMembers.orgId, orgId))
+      .orderBy(desc(organizationMembers.joinedAt));
+
+    const headers = ["id", "email", "firstName", "lastName", "role", "isActive", "emailVerified", "departmentId", "designation", "phone", "joinedAt", "createdAt"];
+    const rows = data.map((u) =>
+      headers
+        .map((h) => {
+          const val = (u as Record<string, unknown>)[h];
+          if (val === null || val === undefined) return "";
+          if (val instanceof Date) return val.toISOString();
+          return String(val).replace(/,/g, ";");
+        })
+        .join(","),
+    );
+
+    return [headers.join(","), ...rows].join("\n");
+  }
+
+  async getStats(orgId: string) {
+    const cacheKey = `users:stats:${orgId}`;
+
+    return this.cache.cached(cacheKey, async () => {
+      const [totalResult, activeResult, suspendedResult, pendingResult] = await Promise.all([
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .where(eq(organizationMembers.orgId, orgId)),
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, false))),
+        this.db
+          .select({ count: count() })
+          .from(invitations)
+          .where(and(eq(invitations.orgId, orgId), isNull(invitations.acceptedAt))),
+      ]);
+
+      return {
+        total: totalResult[0]?.count ?? 0,
+        active: activeResult[0]?.count ?? 0,
+        suspended: suspendedResult[0]?.count ?? 0,
+        pendingInvitations: pendingResult[0]?.count ?? 0,
+      };
+    }, 60);
+  }
+}
