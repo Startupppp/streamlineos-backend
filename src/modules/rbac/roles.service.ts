@@ -76,7 +76,7 @@ export class RolesService {
       .returning();
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId);
+    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
     return created;
   }
 
@@ -104,7 +104,7 @@ export class RolesService {
       .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId);
+    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
 
     this.audit.log({
       action: "role.changed",
