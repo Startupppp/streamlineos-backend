@@ -9,12 +9,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { requireAuthorize } from "../../common/access/authorize";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
 import { CompensationService } from "./compensation.service";
@@ -40,12 +38,11 @@ export class PayrollReportsController {
   ) {}
 
   @Get("payroll-reports")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:payrolls")
   payrollReports(
     @Query(new ZodValidationPipe(payrollReportsQuerySchema)) query: PayrollReportsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:view", requiredModule: "hr" });
     const year = Number(query.year) || new Date().getFullYear();
     const reportType = query.type || "summary";
     return this.payrolls.getPayrollReports(u.orgId, year, reportType);
@@ -56,13 +53,10 @@ export class PayrollReportsController {
     @Query(new ZodValidationPipe(payslipsQuerySchema)) query: PayslipsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const canViewAll = ability.can("read", "hr:payroll");
+    const canViewAll =
+      u.isPlatformAdmin ||
+      u.isOrgOwner ||
+      (u.permissions ?? []).includes("hr:payroll:view");
     const requestedId = query.userId;
 
     if (requestedId && requestedId !== u.userId && !canViewAll) {
@@ -74,9 +68,8 @@ export class PayrollReportsController {
   }
 
   @Get("dashboard/payroll-summary")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
   payrollSummary(@CurrentUser() u: CurrentUserContext) {
+    requireAuthorize(u, { permission: "hr:payroll:view", requiredModule: "hr" });
     return this.compensation.getPayrollSummary(u.orgId);
   }
 
@@ -89,9 +82,8 @@ export class PayrollReportsController {
   }
 
   @Get("analytics/compensation")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:analytics")
   compensationAnalytics(@CurrentUser() u: CurrentUserContext) {
+    requireAuthorize(u, { permission: "hr:payroll:view", requiredModule: "hr" });
     return this.compensation.getCompensationAnalytics(u.orgId);
   }
 
@@ -102,13 +94,12 @@ export class PayrollReportsController {
   }
 
   @Post("integrations/accounting-export")
-  @UseGuards(AbilityGuard)
-  @CheckAbility("manage", "hr:integrations")
   @HttpCode(200)
   accountingExport(
     @Body(new ZodValidationPipe(accountingExportSchema)) body: AccountingExportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:manage", requiredModule: "hr" });
     return this.compensation.accountingExport(u.orgId, body);
   }
 }
