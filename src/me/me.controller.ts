@@ -1,5 +1,4 @@
-import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../common/auth/jwt-auth.guard";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 import { PermissionGuard } from "../modules/access/permission.guard";
@@ -11,7 +10,7 @@ import { MeService, changePasswordSchema, forceChangePasswordSchema, setupPasswo
 import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
 
 @Controller("me")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(PermissionGuard)
 export class MeController {
   constructor(
     private readonly access: AccessService,
@@ -64,11 +63,46 @@ export class MeController {
   }
 
   @Patch("setup-password")
-  @UseGuards(JwtAuthGuard)
   setupPassword(
     @Body(new ZodValidationPipe(setupPasswordSchema)) body: SetupPasswordInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
     return this.meService.setupPassword(user.userId, body.password);
+  }
+
+  @Get("login-history")
+  getLoginHistory(
+    @Query("page") page = 1,
+    @Query("limit") limit = 20,
+    @CurrentUser() u: CurrentUserContext,
+  ): ReturnType<MeService["getLoginHistory"]> {
+    return this.meService.getLoginHistory(u.userId, Number(page), Math.min(Number(limit), 100));
+  }
+
+  @Get("devices")
+  getDevices(@CurrentUser() u: CurrentUserContext): ReturnType<MeService["getDevices"]> {
+    return this.meService.getDevices(u.userId);
+  }
+
+  @Delete("devices/:deviceId")
+  deleteDevice(
+    @Param("deviceId") deviceId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): ReturnType<MeService["deleteDevice"]> {
+    return this.meService.deleteDevice(u.userId, deviceId);
+  }
+
+  @Post("devices/:deviceId/trust")
+  @HttpCode(200)
+  trustDevice(
+    @Param("deviceId") deviceId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): ReturnType<MeService["trustDevice"]> {
+    return this.meService.trustDevice(u.userId, deviceId);
+  }
+
+  @Get("auth-analytics")
+  getAuthAnalytics(@CurrentUser() u: CurrentUserContext): ReturnType<MeService["getAuthAnalytics"]> {
+    return this.meService.getAuthAnalytics(u.userId);
   }
 }

@@ -70,7 +70,6 @@ export const CACHE_KEYS = {
   targetLeaderboard: (orgId: string, metricType: string) => `targets:leaderboard:${orgId}:${metricType}`,
 
   branchesList: (orgId: string) => `branches:list:${orgId}`,
-  rolesList2: (orgId: string) => `roles:list:${orgId}`,
 
   invProductsList: (orgId: string, hash: string) => `inv:products:list:${orgId}:${hash}`,
   invProductDetail: (orgId: string, id: number) => `inv:products:detail:${orgId}:${id}`,

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Patch, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -32,6 +32,7 @@ export class EntitlementsController {
 
   @Patch(":moduleKey")
   @RequirePermission("settings:manage")
+  @HttpCode(204)
   toggleModule(
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
     @Body(new ZodValidationPipe(toggleModuleSchema)) body: ToggleModuleInput,

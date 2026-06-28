@@ -58,4 +58,37 @@ describe("JwtAuthGuard", () => {
       guard.canActivate(ctxWith({ authorization: `Bearer ${token}` })),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
+
+  it("rejects a token with missing sessionId", async () => {
+    const { SignJWT } = await import("jose");
+    const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
+    const token = await new SignJWT({ sub: "u", orgId: "o", sessionId: "" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("10m")
+      .sign(new TextEncoder().encode(secret));
+    await expect(
+      guard.canActivate(ctxWith({ authorization: `Bearer ${token}` })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("rejects a token with an empty-string orgId for a non-platform-admin", async () => {
+    const { SignJWT } = await import("jose");
+    const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
+    const token = await new SignJWT({ sub: "u", orgId: "", sessionId: "sess_1", isPlatformAdmin: false })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("10m")
+      .sign(new TextEncoder().encode(secret));
+    await expect(
+      guard.canActivate(ctxWith({ authorization: `Bearer ${token}` })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("accepts a platform-admin token with no orgId", async () => {
+    const token = await signToken({ isPlatformAdmin: true, orgId: null });
+    const ctx = ctxWith({ authorization: `Bearer ${token}` });
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    const req = ctx.switchToHttp().getRequest<{ user: { isPlatformAdmin: boolean; orgId: string } }>();
+    expect(req.user.isPlatformAdmin).toBe(true);
+    expect(req.user.orgId).toBe("");
+  });
 });

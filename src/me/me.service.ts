@@ -1,10 +1,10 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, desc } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { eq, desc, count, gte, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, passwordHistory } from "../db/schema";
+import { users, passwordHistory, loginHistory, userSessions, passwordResetTokens, devices } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
@@ -173,5 +173,93 @@ export class MeService {
 
   async setupPassword(userId: string, password: string): Promise<{ success: true }> {
     return this.forceChangePassword(userId, { newPassword: password });
+  }
+
+  async getLoginHistory(userId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const [rows, countResult] = await Promise.all([
+      this.db.query.loginHistory.findMany({
+        where: eq(loginHistory.userId, userId),
+        orderBy: [desc(loginHistory.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ count: count() }).from(loginHistory).where(eq(loginHistory.userId, userId)),
+    ]);
+    return { data: rows, total: countResult[0]?.count ?? 0, page, limit };
+  }
+
+  async getDevices(userId: string) {
+    return this.db.query.devices.findMany({
+      where: eq(devices.userId, userId),
+      orderBy: [desc(devices.lastSeenAt)],
+    });
+  }
+
+  async deleteDevice(userId: string, deviceId: string): Promise<{ message: string }> {
+    const device = await this.db.query.devices.findFirst({
+      where: and(eq(devices.id, deviceId), eq(devices.userId, userId)),
+    });
+    if (!device) throw new NotFoundException("Device not found");
+    await this.db.delete(devices).where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
+    return { message: "Device removed" };
+  }
+
+  async trustDevice(userId: string, deviceId: string): Promise<{ message: string }> {
+    const device = await this.db.query.devices.findFirst({
+      where: and(eq(devices.id, deviceId), eq(devices.userId, userId)),
+    });
+    if (!device) throw new NotFoundException("Device not found");
+    await this.db
+      .update(devices)
+      .set({ trusted: true })
+      .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
+    return { message: "Device trusted" };
+  }
+
+  async getAuthAnalytics(userId: string) {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true },
+    });
+
+    const [loginsToday, failedLoginsLast7Days, activeSessions, passwordResetsLast7Days] = await Promise.all([
+      this.db.select({ count: count() }).from(loginHistory).where(
+        and(
+          eq(loginHistory.userId, userId),
+          eq(loginHistory.success, true),
+          gte(loginHistory.createdAt, startOfToday),
+        ),
+      ),
+      this.db.select({ count: count() }).from(loginHistory).where(
+        and(
+          eq(loginHistory.userId, userId),
+          eq(loginHistory.success, false),
+          gte(loginHistory.createdAt, sevenDaysAgo),
+        ),
+      ),
+      this.db.select({ count: count() }).from(userSessions).where(
+        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+      ),
+      user
+        ? this.db.select({ count: count() }).from(passwordResetTokens).where(
+            and(
+              eq(passwordResetTokens.email, user.email),
+              gte(passwordResetTokens.createdAt, sevenDaysAgo),
+            ),
+          )
+        : Promise.resolve([{ count: 0 }]),
+    ]);
+
+    return {
+      loginsToday: loginsToday[0]?.count ?? 0,
+      failedLoginsLast7Days: failedLoginsLast7Days[0]?.count ?? 0,
+      activeSessions: activeSessions[0]?.count ?? 0,
+      passwordResetsLast7Days: passwordResetsLast7Days[0]?.count ?? 0,
+    };
   }
 }

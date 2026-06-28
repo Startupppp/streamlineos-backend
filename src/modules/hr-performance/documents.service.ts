@@ -35,10 +35,9 @@ export class DocumentsService {
 
   listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
     const conditions = [eq(documents.orgId, orgId), eq(documents.isActive, true)];
-    if (filters.userId) {
+    conditions.push(applyScope(scope, userId, { ownerColumn: documents.userId }));
+    if (filters.userId && scope === "all") {
       conditions.push(eq(documents.userId, filters.userId));
-    } else {
-      conditions.push(applyScope(scope, userId, { ownerColumn: documents.userId }));
     }
     if (filters.type && isDocumentType(filters.type)) {
       conditions.push(eq(documents.type, filters.type));

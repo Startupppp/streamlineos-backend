@@ -1,5 +1,8 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import { ConfigModule } from "./config/config.module";
+import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
@@ -71,6 +74,7 @@ import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
+import { AuthModule } from "./modules/auth/auth.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -149,8 +153,13 @@ import { MeService } from "./me/me.service";
     AutomationModule,
     SessionsModule,
     MfaModule,
+    AuthModule,
   ],
   controllers: [HealthController, MeController],
-  providers: [MeService],
+  providers: [
+    MeService,
+    Reflector,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class AppModule {}

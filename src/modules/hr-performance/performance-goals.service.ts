@@ -37,10 +37,9 @@ export class PerformanceGoalsService {
 
   listGoals(orgId: string, userId: string, scope: DataScope, filterUserId?: string) {
     const conditions = [eq(goals.orgId, orgId)];
-    if (filterUserId) {
+    conditions.push(applyScope(scope, userId, { ownerColumn: goals.userId }));
+    if (filterUserId && scope === "all") {
       conditions.push(eq(goals.userId, filterUserId));
-    } else {
-      conditions.push(applyScope(scope, userId, { ownerColumn: goals.userId }));
     }
 
     return this.db.query.goals.findMany({

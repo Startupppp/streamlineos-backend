@@ -50,6 +50,13 @@ describe("ApiKeyGuard", () => {
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it("403 when scopes is empty array", async () => {
+    const row = { id: "k", orgId: "o", scopes: [], expiresAt: null };
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true));
+    const { ctx } = ctxWith({ "x-api-key": "raw" });
+    await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it("allows and attaches req.apiKey when valid + scoped", async () => {
     const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: null };
     const g = new ApiKeyGuard(makeDb(row), makeRl(true));

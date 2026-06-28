@@ -6,6 +6,7 @@ import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
 import { ResourceGrantsService, type PaginatedGrants } from "./resource-grants.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import type { ResourceGrant } from "../../db/schema";
 import { z } from "zod";
 
 const grantInputSchema = z.object({
@@ -54,7 +55,7 @@ export class ResourceGrantsController {
   grant(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(grantInputSchema)) body: GrantInput,
-  ): Promise<GrantResourceInput | null> {
+  ): Promise<ResourceGrant | null> {
     const { callerManagesResource, ...grantInput } = body;
     return this.resourceGrantsService.grant(u.orgId, grantInput, u.userId, callerManagesResource);
   }

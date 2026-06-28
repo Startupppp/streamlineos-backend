@@ -1,12 +1,21 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { organizationMembers, rolePermissions, roles, userPermissions, users } from "../../db/schema";
+import {
+  organizationMembers,
+  rolePermissionGrants,
+  rolePermissions,
+  roles,
+  userPermissions,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
-import type { AssignRolePermissionInput } from "./dto/rbac.schemas";
+import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
+
+const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
 
 @Injectable()
 export class RbacService {
@@ -91,23 +100,58 @@ export class RbacService {
     actor: CurrentUserContext,
     input: AssignRolePermissionInput,
   ): Promise<{ success: true }> {
-    const hasAccess =
-      actor.isPlatformAdmin ||
-      actor.isOrgOwner ||
-      (await this.checkPermission(actor.userId, actor.orgId, actor.role, "settings:rbac:manage"));
-
+    const hasAccess = await this.checkActorAccess(actor);
     if (!hasAccess) throw new ForbiddenException("Permission denied");
 
+    if (!CATALOG_KEYS.has(input.permissionKey)) {
+      throw new BadRequestException(`Unknown permission key: ${input.permissionKey}`);
+    }
+
     await this.db.transaction(async (tx) => {
-      await tx.insert(rolePermissions).values({
-        role: input.role,
-        permissionId: input.permissionId,
-        orgId: actor.orgId,
-      });
+      await tx
+        .insert(rolePermissionGrants)
+        .values({
+          orgId: actor.orgId,
+          roleId: input.roleId,
+          permissionKey: input.permissionKey,
+          scope: input.scope,
+        })
+        .onConflictDoUpdate({
+          target: [rolePermissionGrants.roleId, rolePermissionGrants.permissionKey],
+          set: { scope: input.scope },
+        });
       await bumpPermissionsVersion(tx, actor.orgId);
     });
 
     return { success: true };
+  }
+
+  async revokeRolePermission(
+    actor: CurrentUserContext,
+    input: RevokeRolePermissionInput,
+  ): Promise<{ success: true }> {
+    const hasAccess = await this.checkActorAccess(actor);
+    if (!hasAccess) throw new ForbiddenException("Permission denied");
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(rolePermissionGrants)
+        .where(
+          and(
+            eq(rolePermissionGrants.orgId, actor.orgId),
+            eq(rolePermissionGrants.roleId, input.roleId),
+            eq(rolePermissionGrants.permissionKey, input.permissionKey),
+          ),
+        );
+      await bumpPermissionsVersion(tx, actor.orgId);
+    });
+
+    return { success: true };
+  }
+
+  private async checkActorAccess(actor: CurrentUserContext): Promise<boolean> {
+    if (actor.isPlatformAdmin || actor.isOrgOwner) return true;
+    return this.checkPermission(actor.userId, actor.orgId, actor.role, "settings:rbac:manage");
   }
 
   private async checkPermission(

@@ -10,8 +10,10 @@ import type { DataScope } from "../../modules/access/access.types";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 
+const GRANT_UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
 const mockGrant = {
-  id: "grant-uuid-1",
+  id: GRANT_UUID,
   orgId: "org_1",
   resourceType: "kb:space",
   resourceId: "space-1",
@@ -32,8 +34,10 @@ const forbiddenAccessService = {
   isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
 };
 
+const mockPaginatedGrants = { data: [mockGrant], total: 1, limit: 50, offset: 0 };
+
 const mockResourceGrantsService = {
-  listGrants: jest.fn().mockResolvedValue([mockGrant]),
+  listGrants: jest.fn().mockResolvedValue(mockPaginatedGrants),
   grant: jest.fn().mockResolvedValue(mockGrant),
   revoke: jest.fn().mockResolvedValue({ success: true }),
 };
@@ -62,7 +66,7 @@ describe("ResourceGrants auth/RBAC (e2e)", () => {
   const protectedRoutes: ReadonlyArray<["get" | "post" | "delete", string]> = [
     ["get", "/access/resource-grants?resourceType=kb:space&resourceId=space-1"],
     ["post", "/access/resource-grants"],
-    ["delete", "/access/resource-grants/grant-uuid-1"],
+    [`delete`, `/access/resource-grants/${GRANT_UUID}`],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -72,13 +76,13 @@ describe("ResourceGrants auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  it("GET /access/resource-grants returns 200 with array when permitted", async () => {
+  it("GET /access/resource-grants returns 200 with paginated result when permitted", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/access/resource-grants?resourceType=kb:space&resourceId=space-1")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject({ data: expect.any(Array), total: expect.any(Number) });
   });
 
   it("POST /access/resource-grants returns 201 with created grant when permitted", async () => {
@@ -92,6 +96,7 @@ describe("ResourceGrants auth/RBAC (e2e)", () => {
         principalType: "user",
         principalId: "user-uuid-1",
         permissionKey: "kb:space:read",
+        callerManagesResource: true,
       });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
@@ -114,7 +119,7 @@ describe("ResourceGrants auth/RBAC (e2e)", () => {
   it("DELETE /access/resource-grants/:grantId returns 200 with { success: true } when permitted", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .delete("/access/resource-grants/grant-uuid-1")
+      .delete(`/access/resource-grants/${GRANT_UUID}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
@@ -172,7 +177,7 @@ describeWithDb("ResourceGrants 403 when permission is none (e2e)", () => {
   it("DELETE /access/resource-grants/:grantId returns 403 when permission map is empty", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
-      .delete("/access/resource-grants/grant-uuid-1")
+      .delete(`/access/resource-grants/${GRANT_UUID}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });

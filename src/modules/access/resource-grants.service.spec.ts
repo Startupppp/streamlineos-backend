@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ResourceGrantsService, type GrantResourceInput } from "./resource-grants.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -10,24 +10,36 @@ type DeepPartial<T> = {
 function buildMockDb() {
   const returning = jest.fn();
   const onConflictDoNothing = jest.fn().mockReturnValue({ returning });
-  const values = jest.fn().mockReturnValue({ onConflictDoNothing });
-  const insert = jest.fn().mockReturnValue({ values });
+  const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+  const txValues = jest.fn().mockReturnValue({ onConflictDoNothing, onConflictDoUpdate });
+  const txInsert = jest.fn().mockReturnValue({ values: txValues });
 
-  const deleteWhere = jest.fn().mockResolvedValue([]);
-  const deleteFrom = jest.fn().mockReturnValue({ where: deleteWhere });
+  const txDeleteWhere = jest.fn().mockResolvedValue([]);
+  const txDeleteFrom = jest.fn().mockReturnValue({ where: txDeleteWhere });
 
-  const findMany = jest.fn();
+  const tx = { insert: txInsert, delete: txDeleteFrom };
+
+  const transaction = jest.fn().mockImplementation(async (fn: (t: unknown) => Promise<unknown>) => fn(tx));
+
+  const countWhere = jest.fn().mockResolvedValue([{ value: 0 }]);
+  const countFrom = jest.fn().mockReturnValue({ where: countWhere });
+  const select = jest.fn().mockReturnValue({ from: countFrom });
+
+  const findMany = jest.fn().mockResolvedValue([]);
   const findFirst = jest.fn();
 
   const db: DeepPartial<Db> = {
     query: {
       resourceGrants: { findMany, findFirst },
     } as unknown as Db["query"],
-    insert,
-    delete: deleteFrom,
+    select,
+    transaction,
   };
 
-  return { db: db as unknown as Db, mocks: { findMany, findFirst, insert, values, onConflictDoNothing, returning, deleteFrom, deleteWhere } };
+  return {
+    db: db as unknown as Db,
+    mocks: { findMany, findFirst, select, countFrom, countWhere, transaction, tx, txInsert, txValues, onConflictDoNothing, returning, txDeleteFrom, txDeleteWhere },
+  };
 }
 
 function buildMockCache() {
@@ -49,32 +61,68 @@ function makeGrant(overrides: Partial<GrantResourceInput> = {}): GrantResourceIn
 
 describe("ResourceGrantsService", () => {
   describe("listGrants", () => {
-    it("delegates to db.query.resourceGrants.findMany and returns its result", async () => {
+    it("returns paginated result with data, total, limit, and offset", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
       const svc = new ResourceGrantsService(db, cache);
-      const expected = [{ id: "grant-1" }];
-      mocks.findMany.mockResolvedValue(expected);
+      const rows = [{ id: "grant-1" }];
+      mocks.findMany.mockResolvedValue(rows);
+      mocks.countWhere.mockResolvedValue([{ value: 1 }]);
 
       const result = await svc.listGrants("org-1", "kb_space", "space-1");
 
       expect(mocks.findMany).toHaveBeenCalledTimes(1);
-      expect(result).toBe(expected);
+      expect(result).toEqual({ data: rows, total: 1, limit: 50, offset: 0 });
     });
 
-    it("returns an empty array when no grants exist", async () => {
+    it("respects custom limit and offset", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
       const svc = new ResourceGrantsService(db, cache);
       mocks.findMany.mockResolvedValue([]);
+      mocks.countWhere.mockResolvedValue([{ value: 0 }]);
+
+      const result = await svc.listGrants("org-1", "kb_space", "space-1", { limit: 10, offset: 20 });
+
+      expect(result.limit).toBe(10);
+      expect(result.offset).toBe(20);
+    });
+
+    it("caps limit at 100", async () => {
+      const { db, mocks } = buildMockDb();
+      const { cache } = buildMockCache();
+      const svc = new ResourceGrantsService(db, cache);
+      mocks.findMany.mockResolvedValue([]);
+      mocks.countWhere.mockResolvedValue([{ value: 0 }]);
+
+      const result = await svc.listGrants("org-1", "kb_space", "space-1", { limit: 9999 });
+
+      expect(result.limit).toBe(100);
+    });
+
+    it("returns empty data array when no grants exist", async () => {
+      const { db, mocks } = buildMockDb();
+      const { cache } = buildMockCache();
+      const svc = new ResourceGrantsService(db, cache);
+      mocks.findMany.mockResolvedValue([]);
+      mocks.countWhere.mockResolvedValue([{ value: 0 }]);
 
       const result = await svc.listGrants("org-1", "kb_space", "space-1");
 
-      expect(result).toEqual([]);
+      expect(result.data).toEqual([]);
+      expect(result.total).toBe(0);
     });
   });
 
   describe("grant", () => {
+    it("throws ForbiddenException when callerManagesResource is false", async () => {
+      const { db } = buildMockDb();
+      const { cache } = buildMockCache();
+      const svc = new ResourceGrantsService(db, cache);
+
+      await expect(svc.grant("org-1", makeGrant(), "admin-1", false)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it("inserts a new grant and returns the created record", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
@@ -82,11 +130,10 @@ describe("ResourceGrantsService", () => {
       const createdRecord = { id: "grant-1", orgId: "org-1" };
       mocks.returning.mockResolvedValue([createdRecord]);
 
-      const result = await svc.grant("org-1", makeGrant(), "admin-1");
+      const result = await svc.grant("org-1", makeGrant(), "admin-1", true);
 
-      expect(mocks.insert).toHaveBeenCalledTimes(1);
-      expect(mocks.values).toHaveBeenCalledTimes(1);
-      expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
+      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      expect(mocks.txInsert).toHaveBeenCalledTimes(2);
       expect(mocks.returning).toHaveBeenCalledTimes(1);
       expect(result).toBe(createdRecord);
     });
@@ -97,7 +144,7 @@ describe("ResourceGrantsService", () => {
       const svc = new ResourceGrantsService(db, cache);
       mocks.returning.mockResolvedValue([]);
 
-      const result = await svc.grant("org-1", makeGrant(), "admin-1");
+      const result = await svc.grant("org-1", makeGrant(), "admin-1", true);
 
       expect(result).toBeNull();
     });
@@ -109,9 +156,9 @@ describe("ResourceGrantsService", () => {
       mocks.returning.mockResolvedValue([{ id: "grant-1" }]);
 
       const input = makeGrant({ principalType: "role", principalId: "role-99", permissionKey: "kb:space:edit" });
-      await svc.grant("org-2", input, "granter-1");
+      await svc.grant("org-2", input, "granter-1", true);
 
-      expect(mocks.values).toHaveBeenCalledWith(
+      expect(mocks.txValues).toHaveBeenCalledWith(
         expect.objectContaining({
           orgId: "org-2",
           resourceType: input.resourceType,
@@ -130,7 +177,7 @@ describe("ResourceGrantsService", () => {
       const svc = new ResourceGrantsService(db, cache);
       mocks.returning.mockResolvedValue([{ id: "grant-1", orgId: "org-1" }]);
 
-      await svc.grant("org-1", makeGrant({ principalType: "user", principalId: "user-42" }), "admin-1");
+      await svc.grant("org-1", makeGrant({ principalType: "user", principalId: "user-42" }), "admin-1", true);
 
       expect(cacheMocks.invalidatePattern).toHaveBeenCalledWith("access:perms:org-1:user-42:*");
     });
@@ -141,7 +188,7 @@ describe("ResourceGrantsService", () => {
       const svc = new ResourceGrantsService(db, cache);
       mocks.returning.mockResolvedValue([{ id: "grant-1", orgId: "org-1" }]);
 
-      await svc.grant("org-1", makeGrant({ principalType: "role", principalId: "role-7" }), "admin-1");
+      await svc.grant("org-1", makeGrant({ principalType: "role", principalId: "role-7" }), "admin-1", true);
 
       expect(cacheMocks.invalidatePattern).toHaveBeenCalledWith("access:perms:org-1:*");
     });
@@ -152,7 +199,7 @@ describe("ResourceGrantsService", () => {
       const svc = new ResourceGrantsService(db, cache);
       mocks.returning.mockResolvedValue([]);
 
-      await svc.grant("org-1", makeGrant(), "admin-1");
+      await svc.grant("org-1", makeGrant(), "admin-1", true);
 
       expect(cacheMocks.invalidatePattern).not.toHaveBeenCalled();
     });
@@ -176,19 +223,20 @@ describe("ResourceGrantsService", () => {
 
       const result = await svc.revoke("org-1", "grant-1");
 
-      expect(mocks.deleteFrom).toHaveBeenCalledTimes(1);
-      expect(mocks.deleteWhere).toHaveBeenCalledTimes(1);
+      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      expect(mocks.txDeleteFrom).toHaveBeenCalledTimes(1);
+      expect(mocks.txDeleteWhere).toHaveBeenCalledTimes(1);
       expect(result).toEqual({ success: true });
     });
 
-    it("does not delete when findFirst returns no result", async () => {
+    it("does not enter transaction when findFirst returns no result", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
       const svc = new ResourceGrantsService(db, cache);
       mocks.findFirst.mockResolvedValue(null);
 
       await expect(svc.revoke("org-1", "grant-404")).rejects.toBeInstanceOf(NotFoundException);
-      expect(mocks.deleteFrom).not.toHaveBeenCalled();
+      expect(mocks.transaction).not.toHaveBeenCalled();
     });
 
     it("invalidates the user's permission cache after a successful user-principal revoke", async () => {
@@ -220,7 +268,7 @@ describe("ResourceGrantsService", () => {
       mocks.findFirst.mockResolvedValue(null);
 
       await expect(svc.revoke("org-attacker", "grant-from-org-victim")).rejects.toBeInstanceOf(NotFoundException);
-      expect(mocks.deleteFrom).not.toHaveBeenCalled();
+      expect(mocks.transaction).not.toHaveBeenCalled();
     });
   });
 

@@ -10,7 +10,6 @@ import {
   rolePermissionGrants,
   roles,
   userRoles,
-  users,
 } from "../db/schema";
 import { ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
 
@@ -63,10 +62,12 @@ interface BackfillSummary {
   accessVersionsSeeded: number;
 }
 
+const SALES_OWN_SCOPE_KEYS = new Set(["crm:leads:view", "crm:leads:update"]);
+
 async function backfill(db: Database): Promise<BackfillSummary> {
   const catalogRows = await db.select({ name: permissions.name }).from(permissions);
   const catalog = new Set(catalogRows.map((row) => row.name));
-  const systemSlugs = new Set(Object.keys(ROLE_DEFAULT_PERMISSIONS));
+  const allSystemSlugs = Object.keys(ROLE_DEFAULT_PERMISSIONS);
 
   const orgs = await db.select({ id: organizations.id }).from(organizations);
 
@@ -82,15 +83,11 @@ async function backfill(db: Database): Promise<BackfillSummary> {
   for (const org of orgs) {
     await db.transaction(async (tx) => {
       const members = await tx
-        .select({ userId: organizationMembers.userId, role: users.role })
+        .select({ userId: organizationMembers.userId, role: organizationMembers.role })
         .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(eq(organizationMembers.orgId, org.id));
 
-      const distinctRoles = [...new Set(members.map((member) => member.role))];
-
-      for (const slug of distinctRoles) {
-        if (!systemSlugs.has(slug)) continue;
+      for (const slug of allSystemSlugs) {
         const created = await tx
           .insert(roles)
           .values({
@@ -119,7 +116,6 @@ async function backfill(db: Database): Promise<BackfillSummary> {
         const rawKeys = role.isSystem ? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [] : role.permissions;
         const keys = [...new Set(rawKeys)].filter((key) => catalog.has(key));
         if (keys.length === 0) continue;
-        const SALES_OWN_SCOPE_KEYS = new Set(["crm:leads:view", "crm:leads:update"]);
         const inserted = await tx
           .insert(rolePermissionGrants)
           .values(
@@ -189,6 +185,13 @@ async function main(): Promise<void> {
   try {
     const summary = await backfill(db);
     console.log("[backfill-rbac-access] summary:", JSON.stringify(summary, null, 2));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("42P01")) {
+      console.error("[backfill-rbac-access] Required tables are missing. Run migrations first (pnpm db:push or pnpm migrate).");
+      process.exit(2);
+    }
+    throw err;
   } finally {
     await client.end({ timeout: 5 });
   }

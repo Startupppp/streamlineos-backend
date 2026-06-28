@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "./access.service";
 import { authorize } from "./authorize";
+import type { AuthResult } from "./access.types";
 import { REQUIRE_PERMISSION } from "./require-permission.decorator";
 
 @Injectable()
@@ -23,7 +24,7 @@ export class PermissionGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
 
-    let result;
+    let result: AuthResult;
     try {
       result = await authorize(this.access, req.user ?? null, permissionKey);
     } catch (error: unknown) {

@@ -37,6 +37,7 @@ import type {
 
 const RBAC_MANAGE_KEY = "settings:rbac:manage";
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
+const ROLES_PAGE_LIMIT = 100;
 
 @Injectable()
 export class RolesService {
@@ -53,6 +54,7 @@ export class RolesService {
         this.db.query.roles.findMany({
           where: eq(roles.orgId, orgId),
           orderBy: [asc(roles.name)],
+          limit: ROLES_PAGE_LIMIT,
         }),
       CACHE_TTL.LONG,
     );
@@ -467,6 +469,8 @@ export class RolesService {
     const slug = input.slug ?? template.slug;
     const name = input.name ?? template.name;
 
+    const validPermissions = template.permissions.filter((key) => CATALOG_KEYS.has(key));
+
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
@@ -480,7 +484,7 @@ export class RolesService {
           slug,
           orgId: actor.orgId,
           isSystem: false,
-          permissions: [...template.permissions],
+          permissions: validPermissions,
         })
         .returning();
 

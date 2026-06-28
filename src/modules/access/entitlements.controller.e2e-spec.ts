@@ -88,7 +88,7 @@ describeWithDb("Entitlements controller auth/RBAC (e2e)", () => {
     expect(mockEntitlementsService.listModules).toHaveBeenCalledTimes(1);
   });
 
-  it("PATCH /access/org-modules/crm → 200 with { enabled: true }", async () => {
+  it("PATCH /access/org-modules/crm → 204 when toggling module", async () => {
     const token = await signToken({
       permissions: ["settings:manage"],
       enabledModules: [],
@@ -98,7 +98,7 @@ describeWithDb("Entitlements controller auth/RBAC (e2e)", () => {
       .patch("/access/org-modules/crm")
       .set("Authorization", `Bearer ${token}`)
       .send({ enabled: true });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(204);
     expect(mockEntitlementsService.setModuleEnabled).toHaveBeenCalledTimes(1);
   });
 
