@@ -38,8 +38,17 @@ export const attendanceLogsQuerySchema = z.object({
   month: z.coerce.number().int().optional(),
 });
 
+export const attendanceEmailReportSchema = z.object({
+  to: z.array(z.string().email()).min(1, "At least one recipient required"),
+  cc: z.array(z.string().email()).default([]),
+  bcc: z.array(z.string().email()).default([]),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 export type CheckInInput = z.infer<typeof checkInSchema>;
 export type CheckOutInput = z.infer<typeof checkOutSchema>;
 export type MonthlyQuery = z.infer<typeof monthlyQuerySchema>;
 export type HeatmapQuery = z.infer<typeof heatmapQuerySchema>;
 export type AttendanceLogsQuery = z.infer<typeof attendanceLogsQuerySchema>;
+export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;

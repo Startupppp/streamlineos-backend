@@ -1,6 +1,6 @@
-export interface BackendClaims {
+﻿export interface BackendClaims {
   sub: string;
-  orgId: string;
+  orgId: string | null;
   branchId: number | null;
   role: string;
   permissions: string[];

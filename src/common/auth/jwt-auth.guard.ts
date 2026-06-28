@@ -1,4 +1,4 @@
-import {
+﻿import {
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -38,13 +38,16 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Unauthorized");
     }
 
-    if (!claims.sub || !claims.orgId) {
+    if (!claims.sub) {
+      throw new UnauthorizedException("Unauthorized");
+    }
+    if (!claims.orgId && !claims.isPlatformAdmin) {
       throw new UnauthorizedException("Organization not found");
     }
 
     req.user = {
       userId: claims.sub,
-      orgId: claims.orgId,
+      orgId: claims.orgId ?? "",
       branchId: claims.branchId ?? null,
       role: claims.role,
       permissions: claims.permissions ?? [],
