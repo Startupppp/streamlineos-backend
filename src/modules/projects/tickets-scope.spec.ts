@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
-import { resolveTicketsScope, TICKETS_MANAGE_PERMISSION } from "./tickets-scope";
+import { resolveTicketsScope, TICKETS_PERMISSION as TICKETS_MANAGE_PERMISSION } from "./tickets-scope";
 
 const mockAccess = {
   resolveUserPermissions: jest.fn(),

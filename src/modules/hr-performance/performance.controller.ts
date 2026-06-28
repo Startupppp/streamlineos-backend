@@ -57,15 +57,16 @@ export class PerformanceController {
   constructor(
     private readonly goalsService: PerformanceGoalsService,
     private readonly reviewsService: PerformanceReviewsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("goals")
-  listGoals(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    const isAdmin = canManagePerformance(u);
-    if (userId && userId !== u.userId && !isAdmin) {
+  async listGoals(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolvePerformanceScope(this.access, u);
+    if (userId && userId !== u.userId && scope !== "all") {
       throw new ForbiddenException("Not authorized.");
     }
-    return this.goalsService.listGoals(u.orgId, u.userId, isAdmin, userId);
+    return this.goalsService.listGoals(u.orgId, u.userId, scope, userId);
   }
 
   @Post("goals")
@@ -166,8 +167,9 @@ export class PerformanceController {
   }
 
   @Get("pip")
-  listPips(@CurrentUser() u: CurrentUserContext) {
-    return this.reviewsService.listPips(u.orgId, u.userId, canManagePerformance(u));
+  async listPips(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolvePerformanceScope(this.access, u);
+    return this.reviewsService.listPips(u.orgId, u.userId, scope);
   }
 
   @Post("pip")
@@ -191,18 +193,18 @@ export class PerformanceController {
   }
 
   @Get("reviews")
-  listReviews(
+  async listReviews(
     @Query("userId") userId: string | undefined,
     @Query("cycleId") cycleId: string | undefined,
     @Query("limit") limit: string | undefined,
     @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = canManagePerformance(u);
-    if (userId && userId !== u.userId && !isAdmin) {
+    const scope = await resolvePerformanceScope(this.access, u);
+    if (userId && userId !== u.userId && scope !== "all") {
       throw new ForbiddenException("Not authorized.");
     }
-    return this.reviewsService.listReviews(u.orgId, u.userId, isAdmin, {
+    return this.reviewsService.listReviews(u.orgId, u.userId, scope, {
       userId,
       cycleId: cycleId ? Number(cycleId) : undefined,
       limit: limit !== undefined ? Number(limit) : undefined,

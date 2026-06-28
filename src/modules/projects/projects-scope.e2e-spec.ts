@@ -9,7 +9,8 @@ import type { Db } from "../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
-  timesheets,
+  projectMembers,
+  projects,
   users,
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
@@ -20,22 +21,29 @@ const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
 
 describeWithDb(
-  "Timesheets scope enforcement (e2e, requires RBAC_E2E_DATABASE_URL)",
+  "Projects list scope enforcement (e2e, requires RBAC_E2E_DATABASE_URL)",
   () => {
     let app: INestApplication;
     let db: Db;
     let accessService: AccessService;
 
-    const ORG_ID = "org_ts_scope_e2e";
+    const ORG_ID = "org_proj_scope_e2e";
     const U = {
-      admin: "u_ts_admin",
-      member: "u_ts_member",
-      other: "u_ts_other",
+      admin: "u_proj_admin",
+      member: "u_proj_member",
+      outsider: "u_proj_outsider",
     };
-    const entryIds = { admin: 0, member: 0 };
+    const projectIds = { managed: 0, member: 0, other: 0 };
 
     async function cleanup(): Promise<void> {
-      await db.delete(timesheets).where(eq(timesheets.orgId, ORG_ID));
+      const existing = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.orgId, ORG_ID));
+      for (const row of existing) {
+        await db.delete(projectMembers).where(eq(projectMembers.projectId, row.id));
+      }
+      await db.delete(projects).where(eq(projects.orgId, ORG_ID));
       await db.delete(organizationMembers).where(eq(organizationMembers.orgId, ORG_ID));
       await db.delete(organizations).where(eq(organizations.id, ORG_ID));
       for (const id of Object.values(U)) {
@@ -46,7 +54,7 @@ describeWithDb(
     async function seed(): Promise<void> {
       await db
         .insert(organizations)
-        .values({ id: ORG_ID, name: "TS Scope E2E", slug: ORG_ID })
+        .values({ id: ORG_ID, name: "Proj Scope E2E", slug: ORG_ID })
         .onConflictDoNothing();
 
       await db
@@ -54,7 +62,7 @@ describeWithDb(
         .values([
           { id: U.admin, email: `${U.admin}@e2e.test`, name: "Admin", role: "CEO" },
           { id: U.member, email: `${U.member}@e2e.test`, name: "Member", role: "MEMBER" },
-          { id: U.other, email: `${U.other}@e2e.test`, name: "Other", role: "MEMBER" },
+          { id: U.outsider, email: `${U.outsider}@e2e.test`, name: "Outsider", role: "MEMBER" },
         ])
         .onConflictDoNothing();
 
@@ -63,33 +71,45 @@ describeWithDb(
         .values([
           { userId: U.admin, orgId: ORG_ID, role: "CEO", isOwner: true },
           { userId: U.member, orgId: ORG_ID, role: "MEMBER", isOwner: false },
-          { userId: U.other, orgId: ORG_ID, role: "MEMBER", isOwner: false },
+          { userId: U.outsider, orgId: ORG_ID, role: "MEMBER", isOwner: false },
         ])
         .onConflictDoNothing();
 
       const inserted = await db
-        .insert(timesheets)
+        .insert(projects)
         .values([
           {
             orgId: ORG_ID,
-            userId: U.admin,
-            date: "2024-01-10",
-            hours: "2",
+            name: "Managed Project",
+            key: "PSMGD",
+            managerId: U.member,
           },
           {
             orgId: ORG_ID,
-            userId: U.member,
-            date: "2024-01-11",
-            hours: "1",
+            name: "Member Project",
+            key: "PSMEM",
+            managerId: U.admin,
+          },
+          {
+            orgId: ORG_ID,
+            name: "Other Project",
+            key: "PSOTH",
+            managerId: U.admin,
           },
         ])
         .onConflictDoNothing()
-        .returning({ id: timesheets.id, userId: timesheets.userId });
+        .returning({ id: projects.id, name: projects.name });
 
       for (const row of inserted) {
-        if (row.userId === U.admin) entryIds.admin = row.id;
-        if (row.userId === U.member) entryIds.member = row.id;
+        if (row.name === "Managed Project") projectIds.managed = row.id;
+        if (row.name === "Member Project") projectIds.member = row.id;
+        if (row.name === "Other Project") projectIds.other = row.id;
       }
+
+      await db
+        .insert(projectMembers)
+        .values({ projectId: projectIds.member, userId: U.member })
+        .onConflictDoNothing();
     }
 
     beforeAll(async () => {
@@ -114,11 +134,11 @@ describeWithDb(
       jest.restoreAllMocks();
     });
 
-    it("scope=all — sees every time entry in the org", async () => {
+    it("scope=all — sees every project in the org", async () => {
       jest
         .spyOn(accessService, "resolveUserPermissions")
         .mockResolvedValue(
-          new Map<string, DataScope>([["projects:timesheets:manage", "all"]]),
+          new Map<string, DataScope>([["projects:manage", "all"]]),
         );
 
       const token = await signToken({
@@ -130,19 +150,21 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects/time-entries")
+        .get("/projects")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = (res.body as Array<{ id: number }>).map((e) => e.id);
-      expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
+      const ids = (res.body.data as Array<{ id: number }>).map((p) => p.id);
+      expect(ids).toEqual(
+        expect.arrayContaining([projectIds.managed, projectIds.member, projectIds.other]),
+      );
     });
 
-    it("scope=own — sees only own time entries", async () => {
+    it("scope=own — sees only projects where the user is manager or member", async () => {
       jest
         .spyOn(accessService, "resolveUserPermissions")
         .mockResolvedValue(
-          new Map<string, DataScope>([["projects:timesheets:manage", "own"]]),
+          new Map<string, DataScope>([["projects:manage", "own"]]),
         );
 
       const token = await signToken({
@@ -154,14 +176,14 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects/time-entries")
+        .get("/projects")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const returned = res.body as Array<{ id: number; userId: string }>;
-      expect(returned.length).toBeGreaterThan(0);
-      expect(returned.every((e) => e.userId === U.member)).toBe(true);
-      expect(returned.map((e) => e.id)).not.toContain(entryIds.admin);
+      const ids = (res.body.data as Array<{ id: number }>).map((p) => p.id);
+      expect(ids).toContain(projectIds.managed);
+      expect(ids).toContain(projectIds.member);
+      expect(ids).not.toContain(projectIds.other);
     });
 
     it("scope=none — returns an empty list", async () => {
@@ -170,7 +192,7 @@ describeWithDb(
         .mockResolvedValue(new Map<string, DataScope>());
 
       const token = await signToken({
-        sub: U.other,
+        sub: U.outsider,
         orgId: ORG_ID,
         role: "MEMBER",
         enabledModules: ["projects"],
@@ -178,14 +200,15 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects/time-entries")
+        .get("/projects")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body.data).toEqual([]);
+      expect(res.body.total).toBe(0);
     });
 
-    it("org owner always sees all entries regardless of permissions resolution", async () => {
+    it("org owner always sees all projects regardless of permissions resolution", async () => {
       const token = await signToken({
         sub: U.admin,
         orgId: ORG_ID,
@@ -195,12 +218,14 @@ describeWithDb(
       });
 
       const res = await request(app.getHttpServer())
-        .get("/projects/time-entries")
+        .get("/projects")
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = (res.body as Array<{ id: number }>).map((e) => e.id);
-      expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
+      const ids = (res.body.data as Array<{ id: number }>).map((p) => p.id);
+      expect(ids).toEqual(
+        expect.arrayContaining([projectIds.managed, projectIds.member, projectIds.other]),
+      );
     });
   },
 );

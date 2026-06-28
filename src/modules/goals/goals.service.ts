@@ -24,7 +24,12 @@ import type {
   UpdateKeyResultInput,
 } from "./dto/goal.schemas";
 
-type GoalStatus = "not_started" | "on_track" | "at_risk" | "off_track" | "completed";
+type GoalStatus =
+  | "not_started"
+  | "on_track"
+  | "at_risk"
+  | "off_track"
+  | "completed";
 
 const STATUS_KEYS: GoalStatus[] = [
   "not_started",
@@ -65,10 +70,16 @@ export class GoalsService {
     private readonly access: AccessService,
   ) {}
 
-  private recomputeGoalProgress(goalId: number, orgId: string): Promise<number | null> {
+  private recomputeGoalProgress(
+    goalId: number,
+    orgId: string,
+  ): Promise<number | null> {
     return this.db.transaction(async (tx) => {
       const keyResults = await tx.query.okrKeyResults.findMany({
-        where: and(eq(okrKeyResults.goalId, goalId), eq(okrKeyResults.orgId, orgId)),
+        where: and(
+          eq(okrKeyResults.goalId, goalId),
+          eq(okrKeyResults.orgId, orgId),
+        ),
         columns: {
           metricType: true,
           startValue: true,
@@ -81,7 +92,10 @@ export class GoalsService {
         return null;
       }
 
-      const total = keyResults.reduce((sum, kr) => sum + keyResultPercent(kr), 0);
+      const total = keyResults.reduce(
+        (sum, kr) => sum + keyResultPercent(kr),
+        0,
+      );
       const progress = Math.round(total / keyResults.length);
 
       await tx
@@ -93,13 +107,24 @@ export class GoalsService {
     });
   }
 
-  async list(orgId: string, filters: ListInput) {
-    const conditions = [eq(okrGoals.orgId, orgId)];
+  async list(u: CurrentUserContext, filters: ListInput) {
+    const { orgId, userId } = u;
+    const scope = await resolveGoalsScope(this.access, u);
+
+    const conditions: ReturnType<typeof and>[] = [eq(okrGoals.orgId, orgId)];
+
+    if (scope !== "all") {
+      const ownershipFilter = or(eq(okrGoals.ownerId, userId), eq(okrGoals.createdBy, userId));
+      if (ownershipFilter) conditions.push(ownershipFilter);
+    }
+
     if (filters.status) conditions.push(eq(okrGoals.status, filters.status));
     if (filters.level) conditions.push(eq(okrGoals.level, filters.level));
     if (filters.ownerId) conditions.push(eq(okrGoals.ownerId, filters.ownerId));
-    if (filters.projectId !== undefined) conditions.push(eq(okrGoals.projectId, filters.projectId));
-    if (filters.search) conditions.push(ilike(okrGoals.title, `%${filters.search}%`));
+    if (filters.projectId !== undefined)
+      conditions.push(eq(okrGoals.projectId, filters.projectId));
+    if (filters.search)
+      conditions.push(ilike(okrGoals.title, `%${filters.search}%`));
 
     const goals = await this.db.query.okrGoals.findMany({
       where: and(...conditions),
@@ -210,7 +235,10 @@ export class GoalsService {
     if (!goal) return null;
 
     const keyResults = await this.db.query.okrKeyResults.findMany({
-      where: and(eq(okrKeyResults.goalId, goalId), eq(okrKeyResults.orgId, orgId)),
+      where: and(
+        eq(okrKeyResults.goalId, goalId),
+        eq(okrKeyResults.orgId, orgId),
+      ),
       orderBy: [okrKeyResults.id],
     });
 
@@ -258,7 +286,12 @@ export class GoalsService {
     return { success: true };
   }
 
-  async checkIn(orgId: string, userId: string, goalId: number, input: CheckInInput) {
+  async checkIn(
+    orgId: string,
+    userId: string,
+    goalId: number,
+    input: CheckInInput,
+  ) {
     const keyResult = await this.db.query.okrKeyResults.findFirst({
       where: and(
         eq(okrKeyResults.id, input.keyResultId),
@@ -276,7 +309,12 @@ export class GoalsService {
       await tx
         .update(okrKeyResults)
         .set({ currentValue: newValue, updatedAt: new Date() })
-        .where(and(eq(okrKeyResults.id, input.keyResultId), eq(okrKeyResults.orgId, orgId)));
+        .where(
+          and(
+            eq(okrKeyResults.id, input.keyResultId),
+            eq(okrKeyResults.orgId, orgId),
+          ),
+        );
 
       await tx.insert(okrUpdates).values({
         orgId,
@@ -300,12 +338,19 @@ export class GoalsService {
 
   listKeyResults(orgId: string, goalId: number) {
     return this.db.query.okrKeyResults.findMany({
-      where: and(eq(okrKeyResults.goalId, goalId), eq(okrKeyResults.orgId, orgId)),
+      where: and(
+        eq(okrKeyResults.goalId, goalId),
+        eq(okrKeyResults.orgId, orgId),
+      ),
       orderBy: [okrKeyResults.id],
     });
   }
 
-  async createKeyResult(orgId: string, goalId: number, input: CreateKeyResultInput) {
+  async createKeyResult(
+    orgId: string,
+    goalId: number,
+    input: CreateKeyResultInput,
+  ) {
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
       columns: { id: true },
@@ -332,9 +377,16 @@ export class GoalsService {
     return keyResult;
   }
 
-  async updateKeyResult(orgId: string, keyResultId: number, input: UpdateKeyResultInput) {
+  async updateKeyResult(
+    orgId: string,
+    keyResultId: number,
+    input: UpdateKeyResultInput,
+  ) {
     const existing = await this.db.query.okrKeyResults.findFirst({
-      where: and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
+      where: and(
+        eq(okrKeyResults.id, keyResultId),
+        eq(okrKeyResults.orgId, orgId),
+      ),
       columns: { id: true, goalId: true },
     });
     if (!existing) return null;
@@ -342,16 +394,21 @@ export class GoalsService {
     const fields: Record<string, unknown> = { updatedAt: new Date() };
     if (input.title !== undefined) fields.title = input.title;
     if (input.metricType !== undefined) fields.metricType = input.metricType;
-    if (input.startValue !== undefined) fields.startValue = input.startValue.toString();
-    if (input.targetValue !== undefined) fields.targetValue = input.targetValue.toString();
-    if (input.currentValue !== undefined) fields.currentValue = input.currentValue.toString();
+    if (input.startValue !== undefined)
+      fields.startValue = input.startValue.toString();
+    if (input.targetValue !== undefined)
+      fields.targetValue = input.targetValue.toString();
+    if (input.currentValue !== undefined)
+      fields.currentValue = input.currentValue.toString();
     if (input.unit !== undefined) fields.unit = input.unit;
     if (input.status !== undefined) fields.status = input.status;
 
     const [updated] = await this.db
       .update(okrKeyResults)
       .set(fields)
-      .where(and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)))
+      .where(
+        and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
+      )
       .returning();
 
     await this.recomputeGoalProgress(existing.goalId, orgId);
@@ -361,14 +418,19 @@ export class GoalsService {
 
   async removeKeyResult(orgId: string, keyResultId: number) {
     const existing = await this.db.query.okrKeyResults.findFirst({
-      where: and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
+      where: and(
+        eq(okrKeyResults.id, keyResultId),
+        eq(okrKeyResults.orgId, orgId),
+      ),
       columns: { id: true, goalId: true },
     });
     if (!existing) return null;
 
     await this.db
       .delete(okrKeyResults)
-      .where(and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)));
+      .where(
+        and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
+      );
 
     await this.recomputeGoalProgress(existing.goalId, orgId);
 
@@ -433,7 +495,13 @@ export class GoalsService {
   async removeLink(orgId: string, goalId: number, linkId: number) {
     const [deleted] = await this.db
       .delete(okrLinks)
-      .where(and(eq(okrLinks.id, linkId), eq(okrLinks.goalId, goalId), eq(okrLinks.orgId, orgId)))
+      .where(
+        and(
+          eq(okrLinks.id, linkId),
+          eq(okrLinks.goalId, goalId),
+          eq(okrLinks.orgId, orgId),
+        ),
+      )
       .returning();
 
     if (!deleted) return null;

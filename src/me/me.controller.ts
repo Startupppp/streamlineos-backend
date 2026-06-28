@@ -34,6 +34,19 @@ export class MeController {
     return { ok: true, userId: user.userId };
   }
 
+  @Get("profile")
+  getProfile(@CurrentUser() user: CurrentUserContext): ReturnType<MeService["getProfile"]> {
+    return this.meService.getProfile(user.userId);
+  }
+
+  @Patch("profile")
+  updateProfile(
+    @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
+    @CurrentUser() user: CurrentUserContext,
+  ): Promise<{ success: true }> {
+    return this.meService.updateProfile(user.userId, body);
+  }
+
   @Patch("change-password")
   changePassword(
     @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,

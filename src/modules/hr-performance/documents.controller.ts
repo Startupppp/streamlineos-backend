@@ -18,7 +18,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { canManageDocuments } from "./ability.helpers";
+import { resolveDocumentsScope } from "./performance-scope";
 import { DocumentsService } from "./documents.service";
 import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
@@ -46,18 +48,19 @@ export class DocumentsController {
     private readonly documents: DocumentsService,
     private readonly compliance: ComplianceService,
     private readonly richDocuments: RichDocumentsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("documents")
-  listDocuments(
+  async listDocuments(
     @Query(new ZodValidationPipe(listDocumentsSchema)) filters: ListDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = canManageDocuments(u);
-    if (filters.userId && filters.userId !== u.userId && !isAdmin) {
+    const scope = await resolveDocumentsScope(this.access, u);
+    if (filters.userId && filters.userId !== u.userId && scope !== "all") {
       throw new ForbiddenException("Not authorized to view other users' documents.");
     }
-    return this.documents.listDocuments(u.orgId, u.userId, isAdmin, filters);
+    return this.documents.listDocuments(u.orgId, u.userId, scope, filters);
   }
 
   @Post("documents")
@@ -70,8 +73,9 @@ export class DocumentsController {
   }
 
   @Get("documents/stats")
-  documentStats(@CurrentUser() u: CurrentUserContext) {
-    return this.documents.stats(u.orgId, u.userId, canManageDocuments(u));
+  async documentStats(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveDocumentsScope(this.access, u);
+    return this.documents.stats(u.orgId, u.userId, scope);
   }
 
   @Patch("documents/:documentId")
@@ -107,8 +111,9 @@ export class DocumentsController {
   }
 
   @Get("compliance")
-  listCompliance(@CurrentUser() u: CurrentUserContext) {
-    return this.compliance.listAcknowledgments(u.orgId, u.userId, canManageDocuments(u));
+  async listCompliance(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveDocumentsScope(this.access, u);
+    return this.compliance.listAcknowledgments(u.orgId, u.userId, scope);
   }
 
   @Post("compliance")

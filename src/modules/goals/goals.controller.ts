@@ -55,7 +55,7 @@ export class GoalsController {
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goals.list(u.orgId, filters);
+    return this.goals.list(u, filters);
   }
 
   @Post()
