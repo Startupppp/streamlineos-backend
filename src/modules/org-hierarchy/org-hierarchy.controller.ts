@@ -64,6 +64,11 @@ export class OrgHierarchyController {
     return this.service.getHierarchy(u.orgId);
   }
 
+  @Get("tree")
+  getTree(@CurrentUser() u: CurrentUserContext) {
+    return this.service.getTree(u.orgId);
+  }
+
   // ─── Business Units ─────────────────────────────────────────────────
 
   @Get("business-units")

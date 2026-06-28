@@ -22,16 +22,22 @@ import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrganizationService } from "./organization.service";
 import {
+  addCustomDomainSchema,
   cancelInvitationSchema,
   createOrganizationSchema,
+  createHolidaySchema,
   inviteMemberSchema,
+  transferOwnershipSchema,
   listMembersSchema,
   securitySettingsSchema,
   switchOrgSchema,
   updateMemberRoleSchema,
   updateOrgSettingsSchema,
+  type AddCustomDomainInput,
   type CancelInvitationInput,
+  type CreateHolidayInput,
   type CreateOrganizationInput,
+  type TransferOwnershipInput,
   type InviteMemberInput,
   type ListMembersInput,
   type SecuritySettingsInput,
@@ -157,5 +163,75 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.updateSecuritySettings(u.orgId, u.userId, body);
+  }
+
+  @Post("archive")
+  @CheckAbility("manage", "settings")
+  archiveOrg(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can archive");
+    return this.organization.archiveOrg(u.orgId, u.userId);
+  }
+
+  @Post("restore")
+  @CheckAbility("manage", "settings")
+  restoreOrg(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can restore");
+    return this.organization.restoreOrg(u.orgId, u.userId);
+  }
+
+  @Post("transfer-ownership")
+  @CheckAbility("manage", "settings")
+  transferOwnership(
+    @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner) throw new ForbiddenException("Only the current owner can transfer ownership");
+    return this.organization.transferOwnership(u.orgId, u.userId, body);
+  }
+
+  @Get("custom-domains")
+  listCustomDomains(@CurrentUser() u: CurrentUserContext) {
+    return this.organization.listCustomDomains(u.orgId);
+  }
+
+  @Post("custom-domains")
+  @CheckAbility("manage", "settings")
+  addCustomDomain(
+    @Body(new ZodValidationPipe(addCustomDomainSchema)) body: AddCustomDomainInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.addCustomDomain(u.orgId, u.userId, body);
+  }
+
+  @Post("custom-domains/:domainId/verify")
+  @CheckAbility("manage", "settings")
+  verifyCustomDomain(@Param("domainId") domainId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.organization.verifyCustomDomain(u.orgId, u.userId, domainId);
+  }
+
+  @Delete("custom-domains/:domainId")
+  @CheckAbility("manage", "settings")
+  removeCustomDomain(@Param("domainId") domainId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.organization.removeCustomDomain(u.orgId, u.userId, domainId);
+  }
+
+  @Get("holidays")
+  listHolidays(@CurrentUser() u: CurrentUserContext) {
+    return this.organization.listHolidays(u.orgId);
+  }
+
+  @Post("holidays")
+  @CheckAbility("manage", "settings")
+  createHoliday(
+    @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.organization.createHoliday(u.orgId, u.userId, body);
+  }
+
+  @Delete("holidays/:holidayId")
+  @CheckAbility("manage", "settings")
+  deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.organization.deleteHoliday(u.orgId, u.userId, holidayId);
   }
 }

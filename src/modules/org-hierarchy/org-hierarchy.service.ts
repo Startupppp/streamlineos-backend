@@ -59,23 +59,20 @@ export class OrgHierarchyService {
 
   // ─── Business Units ───────────────────────────────────────────────────
 
-  listBusinessUnits(orgId: string, query: ListQueryInput) {
-    return this.cache.cached(
-      CACHE_KEYS.orgBusinessUnits(orgId),
-      async () => {
-        const rows = await this.db
-          .select()
-          .from(orgBusinessUnits)
-          .where(
-            and(
-              eq(orgBusinessUnits.orgId, orgId),
-              isNull(orgBusinessUnits.deletedAt),
-            ),
-          );
-        return rows;
-      },
-      CACHE_TTL.MEDIUM,
+  async listBusinessUnits(orgId: string, query: ListQueryInput) {
+    const { page, limit, search, status } = query;
+    const offset = (page - 1) * limit;
+    const filters = and(
+      eq(orgBusinessUnits.orgId, orgId),
+      isNull(orgBusinessUnits.deletedAt),
+      ...(search ? [or(ilike(orgBusinessUnits.name, `%${search}%`), ilike(orgBusinessUnits.code, `%${search}%`))] : []),
+      ...(status ? [sql`${orgBusinessUnits.status} = ${status}`] : []),
     );
+    const [rows, [{ count }]] = await Promise.all([
+      this.db.select().from(orgBusinessUnits).where(filters).limit(limit).offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(orgBusinessUnits).where(filters),
+    ]);
+    return { data: rows, total: count, page, limit };
   }
 
   async getBusinessUnit(orgId: string, id: string) {
@@ -158,16 +155,20 @@ export class OrgHierarchyService {
 
   // ─── Org Branches ─────────────────────────────────────────────────────
 
-  listOrgBranches(orgId: string, _query: ListQueryInput) {
-    return this.cache.cached(
-      CACHE_KEYS.orgBranches(orgId),
-      () =>
-        this.db
-          .select()
-          .from(orgBranches)
-          .where(and(eq(orgBranches.orgId, orgId), isNull(orgBranches.deletedAt))),
-      CACHE_TTL.MEDIUM,
+  async listOrgBranches(orgId: string, query: ListQueryInput) {
+    const { page, limit, search, status } = query;
+    const offset = (page - 1) * limit;
+    const filters = and(
+      eq(orgBranches.orgId, orgId),
+      isNull(orgBranches.deletedAt),
+      ...(search ? [or(ilike(orgBranches.name, `%${search}%`), ilike(orgBranches.code, `%${search}%`))] : []),
+      ...(status ? [sql`${orgBranches.status} = ${status}`] : []),
     );
+    const [rows, [{ count }]] = await Promise.all([
+      this.db.select().from(orgBranches).where(filters).limit(limit).offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(orgBranches).where(filters),
+    ]);
+    return { data: rows, total: count, page, limit };
   }
 
   async getOrgBranch(orgId: string, id: string) {
@@ -251,16 +252,20 @@ export class OrgHierarchyService {
 
   // ─── Departments ──────────────────────────────────────────────────────
 
-  listDepartments(orgId: string, _query: ListQueryInput) {
-    return this.cache.cached(
-      CACHE_KEYS.orgDepartments(orgId),
-      () =>
-        this.db
-          .select()
-          .from(orgDepartments)
-          .where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
-      CACHE_TTL.MEDIUM,
+  async listDepartments(orgId: string, query: ListQueryInput) {
+    const { page, limit, search, status } = query;
+    const offset = (page - 1) * limit;
+    const filters = and(
+      eq(orgDepartments.orgId, orgId),
+      isNull(orgDepartments.deletedAt),
+      ...(search ? [or(ilike(orgDepartments.name, `%${search}%`), ilike(orgDepartments.code, `%${search}%`))] : []),
+      ...(status ? [sql`${orgDepartments.status} = ${status}`] : []),
     );
+    const [rows, [{ count }]] = await Promise.all([
+      this.db.select().from(orgDepartments).where(filters).limit(limit).offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(orgDepartments).where(filters),
+    ]);
+    return { data: rows, total: count, page, limit };
   }
 
   async getDepartment(orgId: string, id: string) {
@@ -338,16 +343,20 @@ export class OrgHierarchyService {
 
   // ─── Teams ────────────────────────────────────────────────────────────
 
-  listTeams(orgId: string, _query: ListQueryInput) {
-    return this.cache.cached(
-      CACHE_KEYS.orgTeams(orgId),
-      () =>
-        this.db
-          .select()
-          .from(orgTeams)
-          .where(and(eq(orgTeams.orgId, orgId), isNull(orgTeams.deletedAt))),
-      CACHE_TTL.MEDIUM,
+  async listTeams(orgId: string, query: ListQueryInput) {
+    const { page, limit, search, status } = query;
+    const offset = (page - 1) * limit;
+    const filters = and(
+      eq(orgTeams.orgId, orgId),
+      isNull(orgTeams.deletedAt),
+      ...(search ? [or(ilike(orgTeams.name, `%${search}%`), ilike(orgTeams.code, `%${search}%`))] : []),
+      ...(status ? [sql`${orgTeams.status} = ${status}`] : []),
     );
+    const [rows, [{ count }]] = await Promise.all([
+      this.db.select().from(orgTeams).where(filters).limit(limit).offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(orgTeams).where(filters),
+    ]);
+    return { data: rows, total: count, page, limit };
   }
 
   async getTeam(orgId: string, id: string) {
@@ -603,5 +612,34 @@ export class OrgHierarchyService {
       locations: locations.length,
       costCenters: costCenters.length,
     };
+  }
+
+  async getTree(orgId: string) {
+    const [bus, branches, depts, teams] = await Promise.all([
+      this.db.select().from(orgBusinessUnits).where(and(eq(orgBusinessUnits.orgId, orgId), isNull(orgBusinessUnits.deletedAt))),
+      this.db.select().from(orgBranches).where(and(eq(orgBranches.orgId, orgId), isNull(orgBranches.deletedAt))),
+      this.db.select().from(orgDepartments).where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
+      this.db.select().from(orgTeams).where(and(eq(orgTeams.orgId, orgId), isNull(orgTeams.deletedAt))),
+    ]);
+
+    return bus.map((bu) => ({
+      ...bu,
+      type: "business_unit",
+      children: branches
+        .filter((b) => b.businessUnitId === bu.id)
+        .map((branch) => ({
+          ...branch,
+          type: "branch",
+          children: depts
+            .filter((d) => d.branchId === branch.id)
+            .map((dept) => ({
+              ...dept,
+              type: "department",
+              children: teams
+                .filter((t) => t.departmentId === dept.id)
+                .map((team) => ({ ...team, type: "team", children: [] })),
+            })),
+        })),
+    }));
   }
 }
