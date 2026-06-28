@@ -1,14 +1,13 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
-import { attendance, departments, organizationMembers, organizations, users } from "../../db/schema";
+import { attendance, departments, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { formatDateOnly, getTodayString } from "./date.helpers";
-import type { AttendanceEmailReportInput, CheckInInput } from "./dto/attendance.schemas";
+import { getTodayString } from "./date.helpers";
+import type { CheckInInput } from "./dto/attendance.schemas";
 import { resolveAttendanceScope } from "./attendance-scope";
-import { EmailService } from "../email/email.service";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 

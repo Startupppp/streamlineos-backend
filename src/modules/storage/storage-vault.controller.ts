@@ -2,11 +2,11 @@ import {
   Controller,
   Delete,
   ForbiddenException,
-  Get,
   Inject,
   NotFoundException,
   Param,
   ParseIntPipe,
+  Post,
   UseGuards,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";

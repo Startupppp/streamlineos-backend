@@ -13,10 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { AckInput, SendAckInput } from "./dto/documents.schemas";
-
-function formatDateString(value: Date): string {
-  return value.toISOString().split("T")[0];
-}
+import { formatDateOnly } from "./date.helpers";
 
 @Injectable()
 export class ComplianceService {
@@ -32,6 +29,7 @@ export class ComplianceService {
       where: and(...conditions),
       with: { document: true, user: true },
       orderBy: [desc(policyAcknowledgments.createdAt)],
+      limit: 100,
     });
   }
 

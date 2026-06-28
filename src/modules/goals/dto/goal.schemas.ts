@@ -20,6 +20,8 @@ export const listSchema = z.object({
   ownerId: z.string().optional(),
   projectId: z.coerce.number().int().optional(),
   search: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 const keyResultInputSchema = z.object({

@@ -17,8 +17,13 @@ export class BonusesService {
     return this.db
       .select()
       .from(bonuses)
-      .where(isAdmin ? eq(bonuses.orgId, orgId) : eq(bonuses.userId, userId))
-      .orderBy(desc(bonuses.createdAt));
+      .where(
+        isAdmin
+          ? eq(bonuses.orgId, orgId)
+          : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId)),
+      )
+      .orderBy(desc(bonuses.createdAt))
+      .limit(100);
   }
 
   async createBonus(orgId: string, body: CreateBonusInput) {

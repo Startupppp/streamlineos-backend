@@ -28,7 +28,7 @@ export class AlumniController {
 
   @Post()
   @UseGuards(PermissionGuard)
-  @RequirePermission("hr:alumni:read")
+  @RequirePermission("hr:alumni:write")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(alumniCreateSchema)) body: AlumniCreateInput,
