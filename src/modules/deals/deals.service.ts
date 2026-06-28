@@ -1,5 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { deals, dealActivities, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -97,13 +99,15 @@ export class DealsService {
     );
   }
 
-  listDeals(orgId: string, role: string, userId: string, query: ListDealsInput) {
-    const hash = Buffer.from(JSON.stringify({ ...query, userId, role })).toString("base64");
+  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
+    const hash = Buffer.from(JSON.stringify({ ...query, userId, scope })).toString("base64");
     return this.cache.cached(
       CACHE_KEYS.dealsList(orgId, hash),
       () => {
-        const conditions = [eq(deals.orgId, orgId)];
-        if (role === "SALES" && userId) conditions.push(eq(deals.assignedToId, userId));
+        const conditions: SQL[] = [
+          eq(deals.orgId, orgId),
+          applyScope(scope, userId, { ownerColumn: deals.assignedToId }),
+        ];
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
         if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
 

@@ -2,10 +2,12 @@ import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards } fr
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvStockService } from "./inv-stock.service";
+import { resolveInvStockScope } from "../inventory/inventory-scope";
 import {
   listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema,
   createTransferSchema, completeTransferSchema, listTransfersSchema,
@@ -16,7 +18,10 @@ import {
 @Controller("inventory/stock")
 @UseGuards(JwtAuthGuard)
 export class InvStockController {
-  constructor(private readonly stock: InvStockService) {}
+  constructor(
+    private readonly stock: InvStockService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -41,11 +46,12 @@ export class InvStockController {
   @Get("adjustments")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-  listAdjustments(
+  async listAdjustments(
     @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.listAdjustments(u.orgId, filters);
+    const scope = await resolveInvStockScope(this.access, u);
+    return this.stock.listAdjustments(u.orgId, filters, scope, u.userId);
   }
 
   @Post("adjustments")
@@ -61,11 +67,12 @@ export class InvStockController {
   @Get("transfers")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-  listTransfers(
+  async listTransfers(
     @Query(new ZodValidationPipe(listTransfersSchema)) filters: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.listTransfers(u.orgId, filters);
+    const scope = await resolveInvStockScope(this.access, u);
+    return this.stock.listTransfers(u.orgId, filters, scope, u.userId);
   }
 
   @Get("transfers/:transferId")

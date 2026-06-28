@@ -6,6 +6,8 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   invSalesOrders,
   invSoLines,
@@ -64,15 +66,21 @@ export class InvSalesOrdersService {
     return `INV-${year}-${String(cnt + 1).padStart(4, "0")}`;
   }
 
-  async listSos(orgId: string, filters: ListSoInput) {
+  async listSos(orgId: string, filters: ListSoInput, scope: DataScope = "all", userId?: string) {
+    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}`;
+    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
+    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
     return this.cache.cached(CACHE_KEYS.invSoList(orgId, hash), async () => {
       const conditions = [eq(invSalesOrders.orgId, orgId)];
       if (status) conditions.push(eq(invSalesOrders.status, status));
       if (clientId) conditions.push(eq(invSalesOrders.clientId, clientId));
+      if (scope !== "all" && userId) {
+        conditions.push(applyScope(scope, userId, { ownerColumn: invSalesOrders.createdBy }));
+      }
       const where = and(...conditions);
 
       const [items, countResult] = await Promise.all([

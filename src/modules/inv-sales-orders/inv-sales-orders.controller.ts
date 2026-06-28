@@ -13,10 +13,12 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvSalesOrdersService } from "./inv-sales-orders.service";
+import { resolveInvSoScope } from "../inventory/inventory-scope";
 import {
   listSoSchema,
   createSoSchema,
@@ -29,16 +31,20 @@ import {
 @Controller("inventory/sales-orders")
 @UseGuards(JwtAuthGuard)
 export class InvSalesOrdersController {
-  constructor(private readonly so: InvSalesOrdersService) {}
+  constructor(
+    private readonly so: InvSalesOrdersService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
-  list(
+  async list(
     @Query(new ZodValidationPipe(listSoSchema)) filters: ListSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.so.listSos(u.orgId, filters);
+    const scope = await resolveInvSoScope(this.access, u);
+    return this.so.listSos(u.orgId, filters, scope, u.userId);
   }
 
   @Get(":soId")

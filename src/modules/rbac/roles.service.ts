@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
 import {
   departmentMembers,
   departments,
@@ -142,6 +142,13 @@ export class RolesService {
     actor: CurrentUserContext,
     roleId: number,
   ): Promise<{ success: true }> {
+    const willLockOut = await this.wouldLockOutLastAdmin(actor.orgId, undefined, roleId);
+    if (willLockOut) {
+      throw new ForbiddenException(
+        "Cannot delete a role that would remove all role-management access",
+      );
+    }
+
     await this.db.transaction(async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
@@ -425,17 +432,11 @@ export class RolesService {
   ): Promise<{ success: true }> {
     await this.getRole(actor.orgId, roleId);
 
-    const manageRoleIds = await this.rbacManageRoleIds(actor.orgId);
-    if (manageRoleIds.includes(roleId)) {
-      const remains = await this.hasRemainingRbacManageHolder(
-        actor.orgId,
-        manageRoleIds,
-        input,
-        roleId,
-      );
-      if (!remains) {
-        throw new ConflictException(
-          "Cannot remove the last member who can manage roles and permissions",
+    if (input.principalType === "user") {
+      const willLockOut = await this.wouldLockOutLastAdmin(actor.orgId, input.principalId);
+      if (willLockOut) {
+        throw new ForbiddenException(
+          "Cannot remove the last administrator with role-management access",
         );
       }
     }
@@ -612,128 +613,48 @@ export class RolesService {
     return created;
   }
 
-  private async rbacManageRoleIds(orgId: string): Promise<number[]> {
-    const orgRoles = await this.db
-      .select({
-        id: roles.id,
-        slug: roles.slug,
-        permissions: roles.permissions,
-      })
-      .from(roles)
-      .where(eq(roles.orgId, orgId))
-      .limit(ROLES_PAGE_LIMIT);
-
-    const grantRows = await this.db
-      .select({
-        roleId: rolePermissionGrants.roleId,
-        permissionKey: rolePermissionGrants.permissionKey,
-        scope: rolePermissionGrants.scope,
-      })
-      .from(rolePermissionGrants)
-      .where(eq(rolePermissionGrants.orgId, orgId))
-      .limit(10000);
-
-    const grantedRoleIds = new Set<number>();
-    const manageViaGrant = new Set<number>();
-    for (const grant of grantRows) {
-      grantedRoleIds.add(grant.roleId);
-      if (grant.permissionKey === RBAC_MANAGE_KEY && grant.scope !== "none") {
-        manageViaGrant.add(grant.roleId);
-      }
-    }
-
-    const result: number[] = [];
-    for (const role of orgRoles) {
-      if (grantedRoleIds.has(role.id)) {
-        if (manageViaGrant.has(role.id)) result.push(role.id);
-        continue;
-      }
-      if (role.permissions.length > 0) {
-        if (role.permissions.includes(RBAC_MANAGE_KEY)) result.push(role.id);
-        continue;
-      }
-      if (
-        (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []).includes(RBAC_MANAGE_KEY)
-      ) {
-        result.push(role.id);
-      }
-    }
-    return result;
-  }
-
-  private async hasRemainingRbacManageHolder(
+  async wouldLockOutLastAdmin(
     orgId: string,
-    manageRoleIds: number[],
-    removing: RoleMemberInput,
-    removingRoleId: number,
+    excludeUserId?: string,
+    excludeRoleId?: number,
+    excludePermissionKey?: string,
   ): Promise<boolean> {
-    const holders = new Set<string>();
-
-    const owners = await this.db
+    const ownerRows = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true)))
+      .limit(1)
+      .catch(() => null);
+    if (ownerRows && ownerRows.length > 0) return false;
+
+    const excludedRoleId: number | undefined =
+      excludeRoleId !== undefined && excludePermissionKey === RBAC_MANAGE_KEY
+        ? excludeRoleId
+        : undefined;
+
+    const rows = await this.db
+      .select({ userId: userRoles.userId })
+      .from(userRoles)
+      .innerJoin(
+        rolePermissionGrants,
         and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.isOwner, true),
+          eq(rolePermissionGrants.roleId, userRoles.roleId),
+          eq(rolePermissionGrants.orgId, orgId),
+          eq(rolePermissionGrants.permissionKey, RBAC_MANAGE_KEY),
+          ne(rolePermissionGrants.scope, "none"),
+          excludedRoleId !== undefined
+            ? ne(rolePermissionGrants.roleId, excludedRoleId)
+            : undefined,
         ),
-      );
-    for (const owner of owners) holders.add(owner.userId);
+      )
+      .where(eq(userRoles.orgId, orgId))
+      .catch(() => null);
 
-    if (manageRoleIds.length > 0) {
-      const directHolders = await this.db
-        .select({ userId: userRoles.userId, roleId: userRoles.roleId })
-        .from(userRoles)
-        .where(
-          and(
-            eq(userRoles.orgId, orgId),
-            inArray(userRoles.roleId, manageRoleIds),
-          ),
-        );
-      for (const holder of directHolders) {
-        if (
-          removing.principalType === "user" &&
-          holder.userId === removing.principalId &&
-          holder.roleId === removingRoleId
-        ) {
-          continue;
-        }
-        holders.add(holder.userId);
-      }
+    if (!rows) return false;
 
-      const groupAssignments = await this.db
-        .select({ groupId: groupRoles.groupId, roleId: groupRoles.roleId })
-        .from(groupRoles)
-        .where(
-          and(
-            eq(groupRoles.orgId, orgId),
-            eq(groupRoles.groupType, "department"),
-            inArray(groupRoles.roleId, manageRoleIds),
-          ),
-        );
-      const relevantDepartmentIds: number[] = [];
-      for (const assignment of groupAssignments) {
-        if (
-          removing.principalType === "department" &&
-          assignment.groupId === removing.principalId &&
-          assignment.roleId === removingRoleId
-        ) {
-          continue;
-        }
-        relevantDepartmentIds.push(assignment.groupId);
-      }
+    const holderIds = new Set(rows.map((r) => r.userId));
+    if (excludeUserId) holderIds.delete(excludeUserId);
 
-      if (relevantDepartmentIds.length > 0) {
-        const departmentHolders = await this.db
-          .select({ userId: departmentMembers.userId })
-          .from(departmentMembers)
-          .where(
-            inArray(departmentMembers.departmentId, relevantDepartmentIds),
-          );
-        for (const holder of departmentHolders) holders.add(holder.userId);
-      }
-    }
-
-    return holders.size > 0;
+    return holderIds.size === 0;
   }
 }

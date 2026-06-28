@@ -23,6 +23,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
+import { resolveClientsReadScope } from "./clients-scope";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
 import {
@@ -72,16 +73,18 @@ export class ClientsController {
   }
 
   @Get("list")
-  listClients(@CurrentUser() u: CurrentUserContext) {
-    return this.clients.listClients(u.orgId);
+  async listClients(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.clients.listClients(u.orgId, u.userId, scope);
   }
 
   @Get("health")
-  getHealth(
+  async getHealth(
     @Query(new ZodValidationPipe(healthQuerySchema)) query: HealthQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.clients.getHealth(u.orgId, query.status, query.limit);
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.clients.getHealth(u.orgId, query.status, query.limit, u.userId, scope);
   }
 
   @Get("churn-alerts")

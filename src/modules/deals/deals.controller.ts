@@ -16,10 +16,12 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsService } from "./deals.service";
+import { resolveDealsReadScope } from "./deals-scope";
 import {
   createDealSchema,
   listDealsSchema,
@@ -36,16 +38,20 @@ import {
 @Controller("deals")
 @UseGuards(JwtAuthGuard)
 export class DealsController {
-  constructor(private readonly deals: DealsService) {}
+  constructor(
+    private readonly deals: DealsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
-  listDeals(
+  async listDeals(
     @Query(new ZodValidationPipe(listDealsSchema)) query: ListDealsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.deals.listDeals(u.orgId, u.role, u.userId, query);
+    const scope = await resolveDealsReadScope(this.access, u);
+    return this.deals.listDeals(u.orgId, u.userId, query, scope);
   }
 
   @Post()

@@ -13,10 +13,12 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvPurchaseOrdersService } from "./inv-purchase-orders.service";
+import { resolveInvPoScope } from "../inventory/inventory-scope";
 import {
   listPoSchema,
   createPoSchema,
@@ -29,16 +31,20 @@ import {
 @Controller("inventory/purchase-orders")
 @UseGuards(JwtAuthGuard)
 export class InvPurchaseOrdersController {
-  constructor(private readonly pos: InvPurchaseOrdersService) {}
+  constructor(
+    private readonly pos: InvPurchaseOrdersService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
-  list(
+  async list(
     @Query(new ZodValidationPipe(listPoSchema)) filters: ListPoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.listPos(u.orgId, filters);
+    const scope = await resolveInvPoScope(this.access, u);
+    return this.pos.listPos(u.orgId, filters, scope, u.userId);
   }
 
   @Get(":poId")

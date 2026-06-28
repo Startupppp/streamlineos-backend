@@ -13,11 +13,13 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccountingPayablesService } from "./accounting-payables.service";
 import { AccountingReceivablesService } from "./accounting-receivables.service";
+import { resolveAccountingJournalViewScope } from "./accounting-scope";
 import {
   agedReceivablesQuerySchema,
   createPurchaseBillSchema,
@@ -41,16 +43,18 @@ export class AccountingPayablesReceivablesController {
   constructor(
     private readonly payables: AccountingPayablesService,
     private readonly receivables: AccountingReceivablesService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("purchase-bills")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
-  listPurchaseBills(
+  async listPurchaseBills(
     @Query(new ZodValidationPipe(listPurchaseBillsQuerySchema)) query: ListPurchaseBillsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.payables.listPurchaseBills(u.orgId, query);
+    const scope = await resolveAccountingJournalViewScope(this.access, u);
+    return this.payables.listPurchaseBills(u.orgId, query, scope, u.userId);
   }
 
   @Post("purchase-bills")

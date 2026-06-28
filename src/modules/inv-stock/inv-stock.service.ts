@@ -1,5 +1,7 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, lte, sql, gte } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   invStockLevels, invStockTransactions, invStockAdjustments, invStockAdjustmentLines,
   invStockTransfers, invStockTransferLines,
@@ -76,13 +78,20 @@ export class InvStockService {
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
-  async listAdjustments(orgId: string, filters: ListAdjustmentsInput) {
+  async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
+    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
+    const conditions = [eq(invStockAdjustments.orgId, orgId)];
+    if (scope !== "all" && userId) {
+      conditions.push(applyScope(scope, userId, { ownerColumn: invStockAdjustments.createdBy }));
+    }
+    const where = and(...conditions);
 
     const [items, countResult] = await Promise.all([
       this.db.query.invStockAdjustments.findMany({
-        where: eq(invStockAdjustments.orgId, orgId),
+        where,
         orderBy: [desc(invStockAdjustments.createdAt)],
         limit,
         offset,
@@ -91,7 +100,7 @@ export class InvStockService {
           lines: { columns: { id: true } },
         },
       }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(eq(invStockAdjustments.orgId, orgId)),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
     ]);
 
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
@@ -281,13 +290,20 @@ export class InvStockService {
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
   }
 
-  async listTransfers(orgId: string, filters: ListTransfersInput) {
+  async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
+    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
+    const conditions = [eq(invStockTransfers.orgId, orgId)];
+    if (scope !== "all" && userId) {
+      conditions.push(applyScope(scope, userId, { ownerColumn: invStockTransfers.createdBy }));
+    }
+    const where = and(...conditions);
 
     const [items, countResult] = await Promise.all([
       this.db.query.invStockTransfers.findMany({
-        where: eq(invStockTransfers.orgId, orgId),
+        where,
         orderBy: [desc(invStockTransfers.createdAt)],
         limit,
         offset,
@@ -298,7 +314,7 @@ export class InvStockService {
           lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
         },
       }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(eq(invStockTransfers.orgId, orgId)),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(where),
     ]);
 
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };

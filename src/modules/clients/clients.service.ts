@@ -1,10 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, asc, desc, inArray } from "drizzle-orm";
+import { eq, and, or, asc, desc, inArray, type SQL } from "drizzle-orm";
 import { clients, deals, dealActivities, leadActivities, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 
@@ -24,20 +26,24 @@ export class ClientsService {
     private readonly cache: CacheService,
   ) {}
 
-  listClients(orgId: string): Promise<{ id: number; name: string | null }[]> {
+  listClients(orgId: string, userId: string, scope: DataScope): Promise<{ id: number; name: string | null }[]> {
     return this.db
       .select({ id: clients.id, name: clients.name })
       .from(clients)
-      .where(eq(clients.orgId, orgId))
+      .where(and(eq(clients.orgId, orgId), applyScope(scope, userId, { ownerColumn: clients.accountManagerId })))
       .orderBy(clients.name)
       .limit(100);
   }
 
-  getHealth(orgId: string, status: ClientHealthFilter | undefined, limit: number | undefined) {
+  getHealth(orgId: string, status: ClientHealthFilter | undefined, limit: number | undefined, userId: string, scope: DataScope) {
+    const cacheKey = `${CACHE_KEYS.clientsHealth(orgId)}:${userId}:${scope}`;
     return this.cache.cached(
-      CACHE_KEYS.clientsHealth(orgId),
+      cacheKey,
       async () => {
-        const conditions = [eq(clients.orgId, orgId)];
+        const conditions: SQL[] = [
+          eq(clients.orgId, orgId),
+          applyScope(scope, userId, { ownerColumn: clients.accountManagerId }),
+        ];
         if (status) conditions.push(eq(clients.healthStatus, status));
 
         const results = await this.db
