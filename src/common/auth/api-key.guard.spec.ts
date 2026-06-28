@@ -14,7 +14,7 @@ function makeDb(row: Record<string, unknown> | undefined): Db {
   return {
     query: { apiKeys: { findFirst: jest.fn().mockResolvedValue(row) } },
     update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
-  } as Partial<Db> as Db;
+  } as unknown as Db;
 }
 
 function makeRl(allowed: boolean): RateLimitService {
