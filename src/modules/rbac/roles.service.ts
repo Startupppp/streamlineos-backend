@@ -45,6 +45,7 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly rbac: RbacService,
   ) {}
 
   async getRoles(orgId: string) {
@@ -73,7 +74,8 @@ export class RolesService {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
       });
-      if (existing) throw new ConflictException("A role with this slug already exists");
+      if (existing)
+        throw new ConflictException("A role with this slug already exists");
 
       const [row] = await tx
         .insert(roles)
@@ -91,6 +93,7 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
     return created;
   }
 
@@ -105,7 +108,11 @@ export class RolesService {
       });
       if (!existing) throw new NotFoundException("Role not found");
 
-      const updateData: { updatedAt: Date; name?: string; permissions?: string[] } = {
+      const updateData: {
+        updatedAt: Date;
+        name?: string;
+        permissions?: string[];
+      } = {
         updatedAt: new Date(),
       };
       if (input.name && !existing.isSystem) updateData.name = input.name;
@@ -120,6 +127,7 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
 
     this.audit.log({
       action: "role.changed",
@@ -133,38 +141,54 @@ export class RolesService {
     return { success: true };
   }
 
-  async deleteRole(actor: CurrentUserContext, roleId: number): Promise<{ success: true }> {
+  async deleteRole(
+    actor: CurrentUserContext,
+    roleId: number,
+  ): Promise<{ success: true }> {
     await this.db.transaction(async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
       });
       if (!existing) throw new NotFoundException("Role not found");
-      if (existing.isSystem) throw new ForbiddenException("System roles cannot be deleted");
+      if (existing.isSystem)
+        throw new ForbiddenException("System roles cannot be deleted");
 
       const [{ value: legacyCount }] = await tx
         .select({ value: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, actor.orgId), eq(users.role, existing.slug)));
+        .where(
+          and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(users.role, existing.slug),
+          ),
+        );
 
       const [{ value: directCount }] = await tx
         .select({ value: count() })
         .from(userRoles)
-        .where(and(eq(userRoles.orgId, actor.orgId), eq(userRoles.roleId, roleId)));
+        .where(
+          and(eq(userRoles.orgId, actor.orgId), eq(userRoles.roleId, roleId)),
+        );
 
       const [{ value: groupCount }] = await tx
         .select({ value: count() })
         .from(groupRoles)
-        .where(and(eq(groupRoles.orgId, actor.orgId), eq(groupRoles.roleId, roleId)));
+        .where(
+          and(eq(groupRoles.orgId, actor.orgId), eq(groupRoles.roleId, roleId)),
+        );
 
-      const total = Number(legacyCount) + Number(directCount) + Number(groupCount);
+      const total =
+        Number(legacyCount) + Number(directCount) + Number(groupCount);
       if (total > 0) {
         throw new ConflictException(
           `Cannot delete role — ${total} member assignment${total !== 1 ? "s are" : " is"} attached to it. Reassign them first.`,
         );
       }
 
-      await tx.delete(roles).where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
+      await tx
+        .delete(roles)
+        .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
       await bumpPermissionsVersion(tx, actor.orgId);
     });
 
@@ -185,14 +209,22 @@ export class RolesService {
       })
       .from(rolePermissionGrants)
       .where(
-        and(eq(rolePermissionGrants.orgId, orgId), eq(rolePermissionGrants.roleId, roleId)),
+        and(
+          eq(rolePermissionGrants.orgId, orgId),
+          eq(rolePermissionGrants.roleId, roleId),
+        ),
       )
       .limit(500);
     if (grants.length > 0) return grants;
 
     const fallbackKeys =
-      role.permissions.length > 0 ? role.permissions : ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [];
-    return fallbackKeys.map((permissionKey) => ({ permissionKey, scope: "all" }));
+      role.permissions.length > 0
+        ? role.permissions
+        : (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
+    return fallbackKeys.map((permissionKey) => ({
+      permissionKey,
+      scope: "all",
+    }));
   }
 
   async setRolePermissions(
@@ -252,7 +284,11 @@ export class RolesService {
     await this.getRole(orgId, roleId);
 
     const direct = await this.db
-      .select({ userId: userRoles.userId, name: users.name, email: users.email })
+      .select({
+        userId: userRoles.userId,
+        name: users.name,
+        email: users.email,
+      })
       .from(userRoles)
       .innerJoin(users, eq(userRoles.userId, users.id))
       .where(and(eq(userRoles.orgId, orgId), eq(userRoles.roleId, roleId)))
@@ -287,7 +323,10 @@ export class RolesService {
             .limit(500)
         : [];
 
-    const effective = new Map<string, { userId: string; name: string | null; email: string }>();
+    const effective = new Map<
+      string,
+      { userId: string; name: string | null; email: string }
+    >();
     for (const member of direct) effective.set(member.userId, member);
     for (const member of viaDepartment) {
       if (!effective.has(member.userId)) {
@@ -321,7 +360,10 @@ export class RolesService {
         ),
         columns: { id: true },
       });
-      if (!member) throw new BadRequestException("User is not a member of this organization");
+      if (!member)
+        throw new BadRequestException(
+          "User is not a member of this organization",
+        );
 
       await this.db.transaction(async (tx): Promise<void> => {
         await tx
@@ -337,10 +379,16 @@ export class RolesService {
       });
     } else {
       const department = await this.db.query.departments.findFirst({
-        where: and(eq(departments.id, input.principalId), eq(departments.orgId, actor.orgId)),
+        where: and(
+          eq(departments.id, input.principalId),
+          eq(departments.orgId, actor.orgId),
+        ),
         columns: { id: true },
       });
-      if (!department) throw new BadRequestException("Department not found in this organization");
+      if (!department)
+        throw new BadRequestException(
+          "Department not found in this organization",
+        );
 
       await this.db.transaction(async (tx): Promise<void> => {
         await tx
@@ -364,7 +412,10 @@ export class RolesService {
       orgId: actor.orgId,
       targetId: String(roleId),
       targetType: "role",
-      metadata: { principalType: input.principalType, principalId: input.principalId },
+      metadata: {
+        principalType: input.principalType,
+        principalId: input.principalId,
+      },
     });
 
     return { success: true };
@@ -426,24 +477,40 @@ export class RolesService {
       orgId: actor.orgId,
       targetId: String(roleId),
       targetType: "role",
-      metadata: { principalType: input.principalType, principalId: input.principalId },
+      metadata: {
+        principalType: input.principalType,
+        principalId: input.principalId,
+      },
     });
 
     return { success: true };
   }
 
-  async getPermissionsMatrix(
-    orgId: string,
-  ): Promise<{ roleId: number; roleName: string; roleSlug: string; permissions: string[] }[]> {
+  async getPermissionsMatrix(orgId: string): Promise<
+    {
+      roleId: number;
+      roleName: string;
+      roleSlug: string;
+      permissions: string[];
+    }[]
+  > {
     const orgRoles = await this.db
-      .select({ id: roles.id, name: roles.name, slug: roles.slug, permissions: roles.permissions })
+      .select({
+        id: roles.id,
+        name: roles.name,
+        slug: roles.slug,
+        permissions: roles.permissions,
+      })
       .from(roles)
       .where(eq(roles.orgId, orgId))
       .orderBy(asc(roles.name))
       .limit(ROLES_PAGE_LIMIT);
 
     const allGrants = await this.db
-      .select({ roleId: rolePermissionGrants.roleId, permissionKey: rolePermissionGrants.permissionKey })
+      .select({
+        roleId: rolePermissionGrants.roleId,
+        permissionKey: rolePermissionGrants.permissionKey,
+      })
       .from(rolePermissionGrants)
       .where(eq(rolePermissionGrants.orgId, orgId))
       .limit(10000);
@@ -459,8 +526,15 @@ export class RolesService {
       const explicit = grantsByRole.get(role.id);
       const permissions =
         explicit ??
-        (role.permissions.length > 0 ? role.permissions : ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
-      return { roleId: role.id, roleName: role.name, roleSlug: role.slug, permissions };
+        (role.permissions.length > 0
+          ? role.permissions
+          : (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []));
+      return {
+        roleId: role.id,
+        roleName: role.name,
+        roleSlug: role.slug,
+        permissions,
+      };
     });
   }
 
@@ -475,13 +549,18 @@ export class RolesService {
     const slug = input.slug ?? template.slug;
     const name = input.name ?? template.name;
 
-    const validPermissions = template.permissions.filter((key) => CATALOG_KEYS.has(key));
+    const validPermissions = template.permissions.filter((key) =>
+      CATALOG_KEYS.has(key),
+    );
 
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, slug), eq(roles.orgId, actor.orgId)),
       });
-      if (existing) throw new ConflictException(`A role with slug "${slug}" already exists`);
+      if (existing)
+        throw new ConflictException(
+          `A role with slug "${slug}" already exists`,
+        );
 
       const [row] = await tx
         .insert(roles)
@@ -504,7 +583,11 @@ export class RolesService {
 
   private async rbacManageRoleIds(orgId: string): Promise<number[]> {
     const orgRoles = await this.db
-      .select({ id: roles.id, slug: roles.slug, permissions: roles.permissions })
+      .select({
+        id: roles.id,
+        slug: roles.slug,
+        permissions: roles.permissions,
+      })
       .from(roles)
       .where(eq(roles.orgId, orgId))
       .limit(ROLES_PAGE_LIMIT);
@@ -538,7 +621,9 @@ export class RolesService {
         if (role.permissions.includes(RBAC_MANAGE_KEY)) result.push(role.id);
         continue;
       }
-      if ((ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []).includes(RBAC_MANAGE_KEY)) {
+      if (
+        (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []).includes(RBAC_MANAGE_KEY)
+      ) {
         result.push(role.id);
       }
     }
@@ -556,14 +641,24 @@ export class RolesService {
     const owners = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true)));
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.isOwner, true),
+        ),
+      );
     for (const owner of owners) holders.add(owner.userId);
 
     if (manageRoleIds.length > 0) {
       const directHolders = await this.db
         .select({ userId: userRoles.userId, roleId: userRoles.roleId })
         .from(userRoles)
-        .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, manageRoleIds)));
+        .where(
+          and(
+            eq(userRoles.orgId, orgId),
+            inArray(userRoles.roleId, manageRoleIds),
+          ),
+        );
       for (const holder of directHolders) {
         if (
           removing.principalType === "user" &&
@@ -601,7 +696,9 @@ export class RolesService {
         const departmentHolders = await this.db
           .select({ userId: departmentMembers.userId })
           .from(departmentMembers)
-          .where(inArray(departmentMembers.departmentId, relevantDepartmentIds));
+          .where(
+            inArray(departmentMembers.departmentId, relevantDepartmentIds),
+          );
         for (const holder of departmentHolders) holders.add(holder.userId);
       }
     }

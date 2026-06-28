@@ -92,6 +92,11 @@ export class RolesController {
     return this.roles.listTemplates();
   }
 
+  @Get("analytics")
+  analytics(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.getAnalytics(u.orgId);
+  }
+
   @Post("templates")
   @RequirePermission("settings:rbac:manage")
   cloneTemplate(
@@ -99,6 +104,11 @@ export class RolesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.cloneTemplate(u, body);
+  }
+
+  @Get("simulate/:targetUserId")
+  simulate(@Param("targetUserId") targetUserId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.roles.simulatePermissions(u, targetUserId);
   }
 
   @Get(":roleId")

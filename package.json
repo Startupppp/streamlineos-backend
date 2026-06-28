@@ -10,7 +10,11 @@
     "start:prod": "node dist/main.js",
     "sync:schema": "node scripts/sync-schema.mjs",
     "check:schema": "node scripts/sync-schema.mjs --check",
+<<<<<<< HEAD
     "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
+=======
+    "seed:permissions": "node scripts/seed-permissions.mjs",
+>>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./jest-e2e.json"
@@ -25,6 +29,7 @@
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-express": "^10.4.15",
     "@sendgrid/mail": "^8.1.6",
+    "@types/bcryptjs": "^3.0.0",
     "@upstash/redis": "^1.37.0",
     "ably": "^2.23.0",
     "ai": "^5.0.206",

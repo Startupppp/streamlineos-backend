@@ -2,7 +2,11 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
+<<<<<<< HEAD
 import { organizations, organizationMembers, invitations, users, passwordResetTokens } from "../../db/schema";
+=======
+import { organizations, organizationMembers, invitations, users, orgHolidays, orgCustomDomains } from "../../db/schema";
+>>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -10,18 +14,26 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import type {
+<<<<<<< HEAD
   AcceptInvitationInput,
+=======
+  AddCustomDomainInput,
+>>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   CreateOrganizationInput,
+  CreateHolidayInput,
   InviteMemberInput,
   ListMembersInput,
   SecuritySettingsInput,
+  TransferOwnershipInput,
   UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
+
 
 type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
   passwordExpiryDays?: number | null;
   allowedEmailDomains?: string[];
+  maxConcurrentSessions?: number | null;
 };
 
 type OrgSettingsUpdate = {
@@ -34,6 +46,17 @@ type OrgSettingsUpdate = {
   mfaEnforced?: boolean;
   allowedEmailDomains?: string[];
   settings?: Record<string, unknown>;
+  industry?: string | null;
+  website?: string | null;
+  legalName?: string | null;
+  orgCode?: string | null;
+  registrationNumber?: string | null;
+  taxNumber?: string | null;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
+  favicon?: string | null;
+  secondaryColor?: string | null;
+  businessHours?: Record<string, { open: string; close: string; enabled: boolean }> | null;
 };
 
 @Injectable()
@@ -81,6 +104,30 @@ export class OrganizationService {
         joinedAt: m.joinedAt,
       };
     });
+  }
+
+  async switchOrg(userId: string, targetOrgId: string) {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, targetOrgId),
+      ),
+      columns: { role: true },
+    });
+    if (!membership) throw new BadRequestException("You are not a member of this organization");
+
+    const [org] = await this.db
+      .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
+      .from(organizations)
+      .where(eq(organizations.id, targetOrgId))
+      .limit(1);
+    if (!org) throw new BadRequestException("Organization not found");
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+
+    this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
+
+    return { orgId: org.id, name: org.name, slug: org.slug, role: membership.role };
   }
 
   async createOrganization(userId: string, input: CreateOrganizationInput) {
@@ -261,12 +308,28 @@ export class OrganizationService {
     if (input.logo !== undefined) updateData.logo = input.logo;
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.allowedEmailDomains !== undefined) updateData.allowedEmailDomains = input.allowedEmailDomains;
+    if (input.industry !== undefined) updateData.industry = input.industry;
+    if (input.website !== undefined) updateData.website = input.website;
+    if (input.legalName !== undefined) updateData.legalName = input.legalName;
+    if (input.orgCode !== undefined) updateData.orgCode = input.orgCode;
+    if (input.registrationNumber !== undefined) updateData.registrationNumber = input.registrationNumber;
+    if (input.taxNumber !== undefined) updateData.taxNumber = input.taxNumber;
+    if (input.supportEmail !== undefined) updateData.supportEmail = input.supportEmail;
+    if (input.supportPhone !== undefined) updateData.supportPhone = input.supportPhone;
+    if (input.favicon !== undefined) updateData.favicon = input.favicon;
+    if (input.secondaryColor !== undefined) updateData.secondaryColor = input.secondaryColor;
+    if (input.businessHours !== undefined) updateData.businessHours = input.businessHours;
 
     const hasSettingsUpdate =
       input.directoryPublic !== undefined ||
       input.primaryColor !== undefined ||
       input.loginBgUrl !== undefined ||
-      input.ipAllowlist !== undefined;
+      input.ipAllowlist !== undefined ||
+      input.language !== undefined ||
+      input.dateFormat !== undefined ||
+      input.timeFormat !== undefined ||
+      input.numberFormat !== undefined ||
+      input.weekStartDay !== undefined;
 
     if (hasSettingsUpdate) {
       const currentOrg = await this.db.query.organizations.findFirst({
@@ -297,6 +360,11 @@ export class OrganizationService {
           await this.cache.set(`org:ip-allowlist:${orgId}`, JSON.stringify(input.ipAllowlist), 3600);
         }
       }
+      if (input.language !== undefined) currentSettings.language = input.language;
+      if (input.dateFormat !== undefined) currentSettings.dateFormat = input.dateFormat;
+      if (input.timeFormat !== undefined) currentSettings.timeFormat = input.timeFormat;
+      if (input.numberFormat !== undefined) currentSettings.numberFormat = input.numberFormat;
+      if (input.weekStartDay !== undefined) currentSettings.weekStartDay = input.weekStartDay;
       updateData.settings = currentSettings;
     }
 
@@ -325,6 +393,7 @@ export class OrganizationService {
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.passwordExpiryDays !== undefined) updateData.passwordExpiryDays = input.passwordExpiryDays;
     if (input.allowedEmailDomains !== undefined) updateData.allowedEmailDomains = input.allowedEmailDomains;
+    if (input.maxConcurrentSessions !== undefined) updateData.maxConcurrentSessions = input.maxConcurrentSessions;
 
     if (Object.keys(updateData).length === 0) return { success: true };
 
@@ -523,6 +592,7 @@ export class OrganizationService {
     };
   }
 
+<<<<<<< HEAD
   async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
@@ -570,5 +640,77 @@ export class OrganizationService {
       email: tokenRecord.email,
       name: user?.name ?? "New Employee",
     };
+=======
+  async listHolidays(orgId: string) {
+    return this.db.select().from(orgHolidays).where(eq(orgHolidays.orgId, orgId)).orderBy(orgHolidays.date);
+  }
+
+  async createHoliday(orgId: string, userId: string, input: CreateHolidayInput) {
+    const id = randomUUID();
+    const [holiday] = await this.db.insert(orgHolidays).values({ id, orgId, name: input.name, date: input.date, recurring: input.recurring ?? false, createdBy: userId }).returning();
+    this.audit.log({ action: "org.holiday.created", userId, orgId, targetId: id, targetType: "org_holiday", metadata: input });
+    return holiday;
+  }
+
+  async deleteHoliday(orgId: string, userId: string, holidayId: string) {
+    await this.db.delete(orgHolidays).where(and(eq(orgHolidays.id, holidayId), eq(orgHolidays.orgId, orgId)));
+    this.audit.log({ action: "org.holiday.deleted", userId, orgId, targetId: holidayId, targetType: "org_holiday" });
+    return { success: true };
+  }
+
+  async listCustomDomains(orgId: string) {
+    return this.db.select().from(orgCustomDomains).where(eq(orgCustomDomains.orgId, orgId)).orderBy(orgCustomDomains.createdAt);
+  }
+
+  async addCustomDomain(orgId: string, userId: string, input: AddCustomDomainInput) {
+    const existing = await this.db.query.orgCustomDomains.findFirst({ where: eq(orgCustomDomains.domain, input.domain) });
+    if (existing) throw new ConflictException("Domain already registered");
+    const id = randomUUID();
+    const verificationToken = `streamline-verify=${randomUUID().replace(/-/g, "")}`;
+    const [domain] = await this.db.insert(orgCustomDomains).values({ id, orgId, domain: input.domain, verificationToken, createdBy: userId }).returning();
+    this.audit.log({ action: "org.domain.added", userId, orgId, targetId: id, targetType: "org_custom_domain", metadata: { domain: input.domain } });
+    return domain;
+  }
+
+  async verifyCustomDomain(orgId: string, userId: string, domainId: string) {
+    const record = await this.db.query.orgCustomDomains.findFirst({ where: and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)) });
+    if (!record) throw new BadRequestException("Domain not found");
+    this.audit.log({ action: "org.domain.verified", userId, orgId, targetId: domainId, targetType: "org_custom_domain" });
+    await this.db.update(orgCustomDomains).set({ verifiedAt: new Date() }).where(eq(orgCustomDomains.id, domainId));
+    return { success: true, verified: true };
+  }
+
+  async removeCustomDomain(orgId: string, userId: string, domainId: string) {
+    await this.db.delete(orgCustomDomains).where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)));
+    this.audit.log({ action: "org.domain.removed", userId, orgId, targetId: domainId, targetType: "org_custom_domain" });
+    return { success: true };
+  }
+
+  async archiveOrg(orgId: string, userId: string) {
+    await this.db.update(organizations).set({ status: "ARCHIVED", deletedAt: new Date() }).where(eq(organizations.id, orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    this.audit.log({ action: "org.archived", userId, orgId, targetId: orgId, targetType: "organization" });
+    return { success: true };
+  }
+
+  async restoreOrg(orgId: string, userId: string) {
+    await this.db.update(organizations).set({ status: "ACTIVE", deletedAt: null }).where(eq(organizations.id, orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    this.audit.log({ action: "org.restored", userId, orgId, targetId: orgId, targetType: "organization" });
+    return { success: true };
+  }
+
+  async transferOwnership(orgId: string, currentOwnerId: string, input: TransferOwnershipInput) {
+    const member = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.newOwnerUserId)) });
+    if (!member) throw new BadRequestException("New owner must be an existing org member");
+    await this.db.transaction(async (tx) => {
+      await tx.update(organizationMembers).set({ isOwner: false }).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, currentOwnerId)));
+      await tx.update(organizationMembers).set({ isOwner: true, role: "ADMIN" }).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.newOwnerUserId)));
+    });
+    await this.cache.invalidate(CACHE_KEYS.userSession(currentOwnerId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(input.newOwnerUserId));
+    this.audit.log({ action: "org.ownership_transferred", userId: currentOwnerId, orgId, targetId: input.newOwnerUserId, targetType: "user", metadata: { from: currentOwnerId, to: input.newOwnerUserId } });
+    return { success: true };
+>>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   }
 }

@@ -22,13 +22,50 @@ export const organizations = pgTable("organizations", {
   mfaEnforced: boolean("mfa_enforced").default(false).notNull(),
   allowedEmailDomains: text("allowed_email_domains").array().default([]),
   passwordExpiryDays: integer("password_expiry_days"),
+  maxConcurrentSessions: integer("max_concurrent_sessions"),
   enabledModules: text("enabled_modules").array(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  status: text("status").default("ACTIVE").notNull(),
+  deletedAt: timestamp("deleted_at"),
   companySize: text("company_size"),
   country: text("country"),
+  legalName: text("legal_name"),
+  orgCode: text("org_code"),
+  registrationNumber: text("registration_number"),
+  taxNumber: text("tax_number"),
+  supportEmail: text("support_email"),
+  supportPhone: text("support_phone"),
+  favicon: text("favicon"),
+  secondaryColor: text("secondary_color"),
+  businessHours: jsonb("business_hours").$type<Record<string, { open: string; close: string; enabled: boolean }>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
+
+export const orgCustomDomains = pgTable("org_custom_domains", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  domain: text("domain").notNull(),
+  verificationToken: text("verification_token").notNull(),
+  verifiedAt: timestamp("verified_at"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_org_custom_domains_domain").on(table.domain),
+  index("idx_org_custom_domains_org").on(table.orgId),
+]);
+
+export const orgHolidays = pgTable("org_holidays", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  date: date("date").notNull(),
+  recurring: boolean("recurring").default(false).notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_org_holidays_org_date").on(table.orgId, table.date),
+]);
 
 export const organizationMembers = pgTable("organization_members", {
   id: serial("id").primaryKey(),
@@ -413,3 +450,60 @@ export const loginHistoryRelations = relations(loginHistory, ({ one }) => ({
   user: one(users, { fields: [loginHistory.userId], references: [users.id] }),
   organization: one(organizations, { fields: [loginHistory.orgId], references: [organizations.id] }),
 }));
+<<<<<<< HEAD
+=======
+
+export const serviceAccounts = pgTable("service_accounts", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_service_accounts_org").on(table.orgId),
+]);
+
+export const magicLinkTokens = pgTable("magic_link_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_magic_link_tokens_user").on(table.userId),
+  uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
+]);
+
+export const userApiTokens = pgTable("user_api_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  prefix: text("prefix").notNull(),
+  scopes: text("scopes").array().default([]).notNull(),
+  expiresAt: timestamp("expires_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_user_api_tokens_hash").on(table.tokenHash),
+  index("idx_user_api_tokens_user").on(table.userId),
+]);
+
+export const serviceAccountsRelations = relations(serviceAccounts, ({ one }) => ({
+  organization: one(organizations, { fields: [serviceAccounts.orgId], references: [organizations.id] }),
+  creator: one(users, { fields: [serviceAccounts.createdBy], references: [users.id] }),
+}));
+
+export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => ({
+  user: one(users, { fields: [magicLinkTokens.userId], references: [users.id] }),
+}));
+
+export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
+  user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
+}));
+>>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8

@@ -16,6 +16,7 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { requireAuthorize } from "../../common/access/authorize";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ContactsService } from "./contacts.service";
 import { buildVcard, vcardFilename } from "./vcard";
@@ -40,6 +41,7 @@ export class ContactsController {
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:view", requiredModule: "crm" });
     return this.contacts.list(u.orgId, filters);
   }
 
@@ -48,6 +50,7 @@ export class ContactsController {
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:manage", requiredModule: "crm" });
     return this.contacts.create(u.orgId, body);
   }
 
@@ -56,6 +59,7 @@ export class ContactsController {
     @Query(new ZodValidationPipe(searchSchema)) query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:view", requiredModule: "crm" });
     return this.contacts.search(u.orgId, query.q);
   }
 
@@ -64,6 +68,7 @@ export class ContactsController {
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:view", requiredModule: "crm" });
     const contact = await this.contacts.getContact(u.orgId, contactId);
     if (!contact) throw new NotFoundException("Contact not found");
     return contact;
@@ -75,6 +80,7 @@ export class ContactsController {
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:manage", requiredModule: "crm" });
     const updated = await this.contacts.update(u.orgId, contactId, body);
     if (!updated) throw new NotFoundException("Contact not found");
     return updated;
@@ -85,6 +91,7 @@ export class ContactsController {
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "crm:contacts:manage", requiredModule: "crm" });
     return this.contacts.remove(u.orgId, contactId);
   }
 

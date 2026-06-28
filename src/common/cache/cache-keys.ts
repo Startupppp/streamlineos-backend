@@ -85,6 +85,16 @@ export const CACHE_KEYS = {
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
   invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
+
+  featureFlags: () => "feature-flags:all",
+  featureFlagsOrg: (orgId: string) => `feature-flags:org:${orgId}`,
+
+  orgBusinessUnits: (orgId: string) => `org:bu:${orgId}`,
+  orgBranches: (orgId: string) => `org:branches:${orgId}`,
+  orgDepartments: (orgId: string) => `org:depts:${orgId}`,
+  orgTeams: (orgId: string) => `org:teams:${orgId}`,
+  orgLocations: (orgId: string) => `org:locations:${orgId}`,
+  orgCostCenters: (orgId: string) => `org:cost-centers:${orgId}`,
 } as const;
 
 export const CACHE_TTL = {

@@ -28,7 +28,9 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   logo: z.string().url().nullable().optional(),
   timezone: z.string().min(1).optional(),
-  currency: z.enum(["USD", "EUR", "INR", "GBP", "AED"]).optional(),
+  currency: z
+    .enum(["USD", "EUR", "INR", "GBP", "AED", "SGD", "AUD", "CAD", "JPY"])
+    .optional(),
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   directoryPublic: z.boolean().optional(),
   mfaEnforced: z.boolean().optional(),
@@ -40,12 +42,38 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   loginBgUrl: z.string().url().nullable().optional(),
   ipAllowlist: z.array(z.string().min(1)).optional(),
+  industry: z.string().min(1).nullable().optional(),
+  website: z.string().url().nullable().optional(),
+  legalName: z.string().min(1).nullable().optional(),
+  orgCode: z.string().min(1).max(20).nullable().optional(),
+  registrationNumber: z.string().min(1).nullable().optional(),
+  taxNumber: z.string().min(1).nullable().optional(),
+  supportEmail: z.string().email().nullable().optional(),
+  supportPhone: z.string().min(1).nullable().optional(),
+  favicon: z.string().url().nullable().optional(),
+  secondaryColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
+  language: z.string().min(2).max(10).optional(),
+  dateFormat: z.string().min(1).optional(),
+  timeFormat: z.enum(["12h", "24h"]).optional(),
+  numberFormat: z.string().min(1).optional(),
+  weekStartDay: z.enum(["monday", "sunday", "saturday"]).optional(),
+  businessHours: z
+    .record(
+      z.string(),
+      z.object({ open: z.string(), close: z.string(), enabled: z.boolean() }),
+    )
+    .optional(),
 });
 
 export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
   passwordExpiryDays: z.number().int().min(30).max(365).nullable().optional(),
   allowedEmailDomains: z.array(z.string().min(1)).optional(),
+  maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
 });
 
 export const inviteMemberSchema = z.object({

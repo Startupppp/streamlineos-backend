@@ -375,4 +375,13 @@ export abstract class EmailSendersBase extends EmailBase {
       html: getReviewAssignedEmailTemplate(employeeName, reviewerName, periodStart, periodEnd),
     });
   }
+
+  sendMagicLinkEmail(email: string, token: string): Promise<void> {
+    const magicLink = `${appUrl}/magic-link?token=${token}`;
+    return this.sendEmail({
+      to: email,
+      subject: "Your StreamlineOS sign-in link",
+      html: `<p>Click the link below to sign in to StreamlineOS. This link expires in 1 hour and can only be used once.</p><p><a href="${magicLink}">${magicLink}</a></p>`,
+    });
+  }
 }
