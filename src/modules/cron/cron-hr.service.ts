@@ -1,0 +1,127 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { addDays, format } from "date-fns";
+import { certifications, onboardingTasks, users } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { AutomationService } from "../automation/automation.service";
+import { logger } from "../../common/logger/logger.service";
+
+@Injectable()
+export class CronHrService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly automation: AutomationService,
+  ) {}
+
+  async processCertificationExpiry(): Promise<{ fired: number }> {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const thirtyDaysStr = format(addDays(now, 30), "yyyy-MM-dd");
+
+    const expiring = await this.db
+      .select({
+        id: certifications.id,
+        orgId: certifications.orgId,
+        userId: certifications.userId,
+        name: certifications.name,
+        issuingOrganization: certifications.issuingOrganization,
+        expiryDate: certifications.expiryDate,
+      })
+      .from(certifications)
+      .where(
+        and(
+          gte(certifications.expiryDate, todayStr),
+          lte(certifications.expiryDate, thirtyDaysStr),
+          eq(certifications.reminderSent, false),
+        ),
+      )
+      .limit(500);
+
+    if (expiring.length === 0) return { fired: 0 };
+
+    const userIds = [...new Set(expiring.map((c) => c.userId))];
+    const employeeRows = await this.db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    const nameMap = new Map(employeeRows.map((u) => [u.id, u.name ?? ""]));
+
+    let fired = 0;
+    for (const cert of expiring) {
+      const expiryDateStr = cert.expiryDate ?? "";
+      const daysUntilExpiry = expiryDateStr
+        ? Math.ceil((new Date(expiryDateStr).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      await this.automation.runAutomationsForEvent(cert.orgId, "certification.expiring", {
+        certificationId: cert.id,
+        userId: cert.userId,
+        employeeName: nameMap.get(cert.userId) ?? "",
+        certificationName: cert.name,
+        issuingOrganization: cert.issuingOrganization ?? null,
+        expiryDate: expiryDateStr,
+        daysUntilExpiry,
+      });
+
+      await this.db
+        .update(certifications)
+        .set({ reminderSent: true })
+        .where(eq(certifications.id, cert.id));
+
+      fired++;
+    }
+
+    logger.info("Certification expiry check complete", { fired });
+    return { fired };
+  }
+
+  async processOnboardingCompletionSweep(): Promise<{ fired: number }> {
+    const taskStats = await this.db
+      .select({
+        userId: onboardingTasks.userId,
+        orgId: onboardingTasks.orgId,
+        total: sql<number>`COUNT(*)::int`,
+        pending: sql<number>`SUM(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 ELSE 0 END)::int`,
+      })
+      .from(onboardingTasks)
+      .groupBy(onboardingTasks.userId, onboardingTasks.orgId);
+
+    const fullyCompleted = taskStats.filter((s) => s.total > 0 && s.pending === 0);
+    if (fullyCompleted.length === 0) return { fired: 0 };
+
+    const userIds = fullyCompleted.map((s) => s.userId);
+    const employeeRows = await this.db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(and(inArray(users.id, userIds), isNull(users.onboardingCompletedAt)));
+
+    if (employeeRows.length === 0) return { fired: 0 };
+
+    const now = new Date();
+    let fired = 0;
+
+    for (const employee of employeeRows) {
+      const stats = fullyCompleted.find((s) => s.userId === employee.id);
+      if (!stats) continue;
+
+      await this.automation.runAutomationsForEvent(stats.orgId, "onboarding.completed", {
+        userId: employee.id,
+        employeeName: employee.name ?? "",
+        employeeEmail: employee.email ?? "",
+        totalTasks: stats.total,
+        completedAt: now.toISOString(),
+      });
+
+      await this.db
+        .update(users)
+        .set({ onboardingCompletedAt: now })
+        .where(eq(users.id, employee.id));
+
+      fired++;
+    }
+
+    logger.info("Onboarding completion sweep done", { fired });
+    return { fired };
+  }
+}

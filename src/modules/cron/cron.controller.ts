@@ -13,7 +13,9 @@ import { CronAttendanceService } from "./cron-attendance.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronHolidayService } from "./cron-holiday.service";
+import { CronHrService } from "./cron-hr.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 
 @Public()
 @Controller("cron")
@@ -24,6 +26,8 @@ export class CronController {
     private readonly notifications: CronNotificationsService,
     private readonly holiday: CronHolidayService,
     private readonly recruitment: CronRecruitmentService,
+    private readonly hr: CronHrService,
+    private readonly weeklyRecap: CronWeeklyRecapService,
   ) {}
 
   @Get("auto-checkout")
@@ -174,6 +178,72 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Interview no-show cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("certification-expiry")
+  getCertificationExpiry(@Headers("authorization") authorization?: string) {
+    return this.runCertificationExpiry(authorization);
+  }
+
+  @Post("certification-expiry")
+  @HttpCode(200)
+  postCertificationExpiry(@Headers("authorization") authorization?: string) {
+    return this.runCertificationExpiry(authorization);
+  }
+
+  @Get("onboarding-sweep")
+  getOnboardingSweep(@Headers("authorization") authorization?: string) {
+    return this.runOnboardingSweep(authorization);
+  }
+
+  @Post("onboarding-sweep")
+  @HttpCode(200)
+  postOnboardingSweep(@Headers("authorization") authorization?: string) {
+    return this.runOnboardingSweep(authorization);
+  }
+
+  @Get("weekly-ceo-recap")
+  getWeeklyCeoRecap(@Headers("authorization") authorization?: string) {
+    return this.runWeeklyCeoRecap(authorization);
+  }
+
+  @Post("weekly-ceo-recap")
+  @HttpCode(200)
+  postWeeklyCeoRecap(@Headers("authorization") authorization?: string) {
+    return this.runWeeklyCeoRecap(authorization);
+  }
+
+  private async runCertificationExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.hr.processCertificationExpiry();
+      return { success: true, message: `Processed ${result.fired} certification expiry reminders`, ...result };
+    } catch (error) {
+      logger.error("Certification expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runOnboardingSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.hr.processOnboardingCompletionSweep();
+      return { success: true, message: `Dispatched ${result.fired} onboarding completion events`, ...result };
+    } catch (error) {
+      logger.error("Onboarding completion sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runWeeklyCeoRecap(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.weeklyRecap.sendWeeklyCeoRecaps();
+      return { success: true, ...result };
+    } catch (error) {
+      logger.error("Weekly CEO recap cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

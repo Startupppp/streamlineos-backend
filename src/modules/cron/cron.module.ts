@@ -1,12 +1,17 @@
 import { Module } from "@nestjs/common";
+import { AiModule } from "../ai/ai.module";
+import { AutomationModule } from "../automation/automation.module";
 import { CronController } from "./cron.controller";
 import { CronAttendanceService } from "./cron-attendance.service";
+import { CronHolidayService } from "./cron-holiday.service";
+import { CronHrService } from "./cron-hr.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
-import { CronHolidayService } from "./cron-holiday.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 
 @Module({
+  imports: [AutomationModule, AiModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,
@@ -14,6 +19,8 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
     CronNotificationsService,
     CronHolidayService,
     CronRecruitmentService,
+    CronHrService,
+    CronWeeklyRecapService,
   ],
 })
 export class CronModule {}

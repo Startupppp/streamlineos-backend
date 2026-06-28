@@ -14,6 +14,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { AutomationService } from "../automation/automation.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -67,6 +68,7 @@ export class OnboardingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly access: AccessService,
+    private readonly automation: AutomationService,
   ) {}
 
   async getProgressSummary(orgId: string) {
@@ -467,6 +469,14 @@ export class OnboardingService {
           this.email.sendOnboardingCompleteHrEmail(m.email, m.name ?? "HR", employee?.name ?? "Employee"),
         ),
       );
+
+      void this.automation.runAutomationsForEvent(orgId, "onboarding.completed", {
+        userId: employeeUserId,
+        employeeName: employee?.name ?? "",
+        employeeEmail: employee?.email ?? "",
+        totalTasks: 0,
+        completedAt: new Date().toISOString(),
+      }).catch(() => undefined);
     })().catch(() => undefined);
   }
 
