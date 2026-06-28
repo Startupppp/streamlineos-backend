@@ -32,17 +32,7 @@ export class ReportsController {
     @Query(new ZodValidationPipe(attendanceReportSchema)) query: AttendanceReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.reports.getAttendanceReport(
-      u.orgId,
-      {
-        userId: u.userId,
-        permissions: u.permissions,
-        enabledModules: u.enabledModules,
-        isPlatformAdmin: u.isPlatformAdmin,
-        isOrgOwner: u.isOrgOwner,
-      },
-      query,
-    );
+    const result = await this.reports.getAttendanceReport(u.orgId, u, query);
     if (isBadRequest(result)) throw new BadRequestException(result.message);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
@@ -53,17 +43,7 @@ export class ReportsController {
     @Query(new ZodValidationPipe(payrollReportSchema)) query: PayrollReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.reports.getPayrollReport(
-      u.orgId,
-      {
-        userId: u.userId,
-        permissions: u.permissions,
-        enabledModules: u.enabledModules,
-        isPlatformAdmin: u.isPlatformAdmin,
-        isOrgOwner: u.isOrgOwner,
-      },
-      query,
-    );
+    const result = await this.reports.getPayrollReport(u.orgId, u, query);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }

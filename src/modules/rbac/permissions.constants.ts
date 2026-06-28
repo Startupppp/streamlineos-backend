@@ -332,6 +332,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   CUSTOMER_SUPPORT: [
     ...EMPLOYEE_SELF_SERVICE,
     "dashboard:support:view",
+    "dashboard:customer-executive:view",
     "support:kb:view",
     "support:kb:manage",
     "support:macros:view",

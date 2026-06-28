@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike } from "drizzle-orm";
+import { and, avg, count, desc, eq, ilike, or } from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
@@ -11,6 +11,9 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
+import { resolveGoalsScope } from "./goals-scope";
 import type {
   CheckInInput,
   CreateInput,
@@ -57,7 +60,10 @@ function keyResultPercent(kr: {
 
 @Injectable()
 export class GoalsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   private recomputeGoalProgress(goalId: number, orgId: string): Promise<number | null> {
     return this.db.transaction(async (tx) => {

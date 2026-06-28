@@ -21,6 +21,7 @@ import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type { CompOffInput } from "./dto/leaves.schemas";
+import { resolveLeavesViewScope } from "./leaves-scope";
 
 const COMP_OFF_LEAVE_NAME = "Compensatory Off";
 const TEAM_LEAVES_CAP = 500;
@@ -93,25 +94,24 @@ export class LeavesService {
   }
 
   async team(u: CurrentUserContext) {
-    const role = u.role ?? "";
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:leaves:approve");
+    const scope = await resolveLeavesViewScope(this.access, u);
 
-    if (!isAdmin && role !== "MANAGER" && role !== "BRANCH_MANAGER") {
-      throw new ForbiddenException("Only managers and admins can access team leave requests.");
+    if (scope === "none") {
+      throw new ForbiddenException("You do not have permission to view team leave requests.");
     }
 
     const orgId = u.orgId;
     const userId = u.userId;
+    const isAll = scope === "all";
 
-    const baseConditions: SQL[] = isAdmin
+    const baseConditions: SQL[] = isAll
       ? [eq(leaveRequests.orgId, orgId)]
       : [eq(leaveRequests.orgId, orgId), eq(leaveRequests.approverId, userId)];
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
     const [pending, all] = await Promise.all([
-      this.queryLeaves(pendingConditions, orgId, userId, isAdmin),
+      this.queryLeaves(pendingConditions, orgId, userId, isAll),
       this.db.query.leaveRequests.findMany({
         where: and(...baseConditions),
         with: TEAM_RELATIONS,
@@ -123,7 +123,7 @@ export class LeavesService {
     return { pending, all };
   }
 
-  private async queryLeaves(conditions: SQL[], orgId: string, userId: string, isAdmin: boolean) {
+  private async queryLeaves(conditions: SQL[], orgId: string, userId: string, isAll: boolean) {
     const base = await this.db.query.leaveRequests.findMany({
       where: and(...conditions),
       with: TEAM_RELATIONS,
@@ -131,7 +131,7 @@ export class LeavesService {
       limit: TEAM_LEAVES_CAP,
     });
 
-    if (isAdmin) return base;
+    if (isAll) return base;
 
     const reportingUsers = await this.db.query.users.findMany({
       where: eq(users.reportingTo, userId),

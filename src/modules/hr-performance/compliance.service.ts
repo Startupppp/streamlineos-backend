@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   backgroundVerifications,
   certifications,
@@ -20,9 +22,11 @@ function formatDateString(value: Date): string {
 export class ComplianceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listAcknowledgments(orgId: string, userId: string, isAdmin: boolean) {
-    const conditions = [eq(policyAcknowledgments.orgId, orgId)];
-    if (!isAdmin) conditions.push(eq(policyAcknowledgments.userId, userId));
+  listAcknowledgments(orgId: string, userId: string, scope: DataScope) {
+    const conditions = [
+      eq(policyAcknowledgments.orgId, orgId),
+      applyScope(scope, userId, { ownerColumn: policyAcknowledgments.userId }),
+    ];
 
     return this.db.query.policyAcknowledgments.findMany({
       where: and(...conditions),

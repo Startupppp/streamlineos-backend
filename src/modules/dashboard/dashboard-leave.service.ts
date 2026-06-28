@@ -13,13 +13,17 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { addDays, formatDateOnly, getTodayString } from "./date.helpers";
-import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
+import { type DashboardForbidden } from "./dashboard.errors";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
+import { resolveLeavesDashboardScope } from "./dashboard-scope";
 
 @Injectable()
 export class DashboardLeaveService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   getLeavesToday(orgId: string) {
@@ -73,13 +77,13 @@ export class DashboardLeaveService {
     );
   }
 
-  async getPendingApprovals(orgId: string, actor: DashboardActor) {
-    const canApprove = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:leaves:approve");
-    if (!canApprove) {
+  async getPendingApprovals(orgId: string, u: CurrentUserContext) {
+    const scope = await resolveLeavesDashboardScope(this.access, u);
+    if (scope === "none") {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
-    const role = actor.role ?? "";
+    const role = u.role ?? "";
     const key = `dashboard:pending-approvals:${orgId}:${role}`;
 
     return this.cache.cached(

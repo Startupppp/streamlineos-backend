@@ -4,6 +4,8 @@ import { reimbursements, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import type { CreateReimbursementInput, PatchReimbursementInput } from "./dto/payroll.schemas";
 
 export type UpdateReimbursementResult =
@@ -17,9 +19,8 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  listReimbursements(orgId: string, userId: string, isAdmin: boolean) {
-    const conditions = [eq(reimbursements.orgId, orgId)];
-    if (!isAdmin) conditions.push(eq(reimbursements.userId, userId));
+  listReimbursements(orgId: string, userId: string, scope: DataScope) {
+    const conditions = [eq(reimbursements.orgId, orgId), applyScope(scope, userId, { ownerColumn: reimbursements.userId })];
 
     return this.db.query.reimbursements.findMany({
       where: and(...conditions),

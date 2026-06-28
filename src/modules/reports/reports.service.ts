@@ -13,6 +13,11 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import {
+  resolveAttendanceReportScope,
+  resolvePayrollReportScope,
+} from "./reports-scope";
 import type {
   AttendanceReportInput,
   PayrollReportInput,
@@ -41,14 +46,6 @@ export function isForbidden(value: unknown): value is ReportForbidden {
   );
 }
 
-export interface ReportActor {
-  userId: string;
-  permissions: string[];
-  enabledModules: string[];
-  isPlatformAdmin: boolean;
-  isOrgOwner: boolean;
-}
-
 function formatDateOnly(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -66,7 +63,7 @@ export class ReportsService {
 
   async getAttendanceReport(
     orgId: string,
-    actor: ReportActor,
+    actor: CurrentUserContext,
     input: AttendanceReportInput,
   ) {
     const startDate = new Date(input.startDate);
@@ -75,12 +72,13 @@ export class ReportsService {
       return { error: "bad_request", message: "Invalid date format" } as ReportBadRequest;
     }
 
-    const isAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:attendance:view");
-    if (input.userId && input.userId !== actor.userId && !isAdmin) {
+    const attendanceScope = await resolveAttendanceReportScope(this.access, actor);
+    const canViewAll = attendanceScope === "all";
+    if (input.userId && input.userId !== actor.userId && !canViewAll) {
       return { error: "forbidden", message: "Forbidden" } as ReportForbidden;
     }
 
-    const targetUserId = input.userId || (isAdmin ? undefined : actor.userId);
+    const targetUserId = input.userId || (canViewAll ? undefined : actor.userId);
 
     const records = await this.db.query.attendance.findMany({
       where: and(
@@ -113,15 +111,16 @@ export class ReportsService {
 
   async getPayrollReport(
     orgId: string,
-    actor: ReportActor,
+    actor: CurrentUserContext,
     input: PayrollReportInput,
   ) {
-    const isAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:payroll:view");
-    if (input.userId && input.userId !== actor.userId && !isAdmin) {
+    const payrollScope = await resolvePayrollReportScope(this.access, actor);
+    const canViewAll = payrollScope === "all";
+    if (input.userId && input.userId !== actor.userId && !canViewAll) {
       return { error: "forbidden", message: "Forbidden" } as ReportForbidden;
     }
 
-    const targetUserId = input.userId || (isAdmin ? undefined : actor.userId);
+    const targetUserId = input.userId || (canViewAll ? undefined : actor.userId);
 
     const payrollsList = await this.db.query.payrolls.findMany({
       where: and(

@@ -14,11 +14,13 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AssetsService } from "./assets.service";
 import { userCan } from "./ability.helpers";
+import { resolveAssetsScope } from "./assets-scope";
 import {
   createAssetReturnSchema,
   createDeviceSchema,
@@ -33,12 +35,15 @@ import {
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class AssetsController {
-  constructor(private readonly assets: AssetsService) {}
+  constructor(
+    private readonly assets: AssetsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("asset-returns")
-  listAssetReturns(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = userCan(u, "manage", "hr:assets");
-    return this.assets.listAssetReturns(u.orgId, u.userId, isAdmin);
+  async listAssetReturns(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveAssetsScope(this.access, u);
+    return this.assets.listAssetReturns(u.orgId, u.userId, scope);
   }
 
   @Post("asset-returns")

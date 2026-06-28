@@ -52,7 +52,7 @@ export class DashboardController {
 
   @Get("active-sprint")
   activeSprint(@CurrentUser() u: CurrentUserContext) {
-    return this.project.getActiveSprintSummary(u.orgId, this.toActor(u));
+    return this.project.getActiveSprintSummary(u.orgId, u);
   }
 
   @Get("announcements")
@@ -130,7 +130,7 @@ export class DashboardController {
 
   @Get("pending-approvals")
   async pendingApprovals(@CurrentUser() u: CurrentUserContext) {
-    const result = await this.leave.getPendingApprovals(u.orgId, this.toActor(u));
+    const result = await this.leave.getPendingApprovals(u.orgId, u);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
   }
@@ -147,12 +147,12 @@ export class DashboardController {
 
   @Get("recent-activity")
   recentActivity(@CurrentUser() u: CurrentUserContext) {
-    return this.project.getRecentActivity(u.orgId, this.toActor(u));
+    return this.project.getRecentActivity(u.orgId, u);
   }
 
   @Get("recent-projects")
   recentProjects(@CurrentUser() u: CurrentUserContext) {
-    return this.project.getRecentProjects(u.orgId, this.toActor(u));
+    return this.project.getRecentProjects(u.orgId, u);
   }
 
   @Get("role-stats")

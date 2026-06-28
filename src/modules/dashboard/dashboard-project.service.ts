@@ -3,18 +3,23 @@ import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 import { projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { type DashboardActor } from "./dashboard.errors";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
+import { resolveEmployeesDashboardScope } from "./dashboard-scope";
 
 @Injectable()
 export class DashboardProjectService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   private async resolveProjectIds(
     orgId: string,
     userId: string,
-    isOwnerOrAdmin: boolean,
+    isAll: boolean,
   ): Promise<number[]> {
-    if (isOwnerOrAdmin) {
+    if (isAll) {
       const allProjects = await this.db.query.projects.findMany({
         where: eq(projects.orgId, orgId),
         columns: { id: true },
@@ -28,10 +33,10 @@ export class DashboardProjectService {
     return memberOf.map((m) => m.projectId);
   }
 
-  async getRecentProjects(orgId: string, actor: DashboardActor) {
-    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
+  async getRecentProjects(orgId: string, u: CurrentUserContext) {
+    const scope = await resolveEmployeesDashboardScope(this.access, u);
 
-    if (isOwnerOrAdmin) {
+    if (scope === "all") {
       return this.db.query.projects.findMany({
         where: eq(projects.orgId, orgId),
         orderBy: [desc(projects.id)],
@@ -47,7 +52,7 @@ export class DashboardProjectService {
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(eq(projectMembers.userId, actor.userId));
+      .where(eq(projectMembers.userId, u.userId));
 
     const projectIds = memberOf.map((m) => m.projectId);
 
@@ -55,7 +60,7 @@ export class DashboardProjectService {
       where: and(
         eq(projects.orgId, orgId),
         or(
-          eq(projects.managerId, actor.userId),
+          eq(projects.managerId, u.userId),
           projectIds.length > 0 ? inArray(projects.id, projectIds) : undefined,
         ),
       ),
@@ -102,10 +107,9 @@ export class DashboardProjectService {
     }));
   }
 
-  async getActiveSprintSummary(orgId: string, actor: DashboardActor) {
-    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
-
-    const projectIds = await this.resolveProjectIds(orgId, actor.userId, isOwnerOrAdmin);
+  async getActiveSprintSummary(orgId: string, u: CurrentUserContext) {
+    const scope = await resolveEmployeesDashboardScope(this.access, u);
+    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return null;
 
     const activeSprint = await this.db.query.sprints.findFirst({
@@ -162,10 +166,9 @@ export class DashboardProjectService {
     };
   }
 
-  async getRecentActivity(orgId: string, actor: DashboardActor) {
-    const isOwnerOrAdmin = actor.isPlatformAdmin || actor.isOrgOwner || actor.permissions.includes("hr:employees:manage");
-
-    const projectIds = await this.resolveProjectIds(orgId, actor.userId, isOwnerOrAdmin);
+  async getRecentActivity(orgId: string, u: CurrentUserContext) {
+    const scope = await resolveEmployeesDashboardScope(this.access, u);
+    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return [];
 
     const ticketFilters: SQL[] = [
@@ -173,10 +176,10 @@ export class DashboardProjectService {
       inArray(tickets.projectId, projectIds),
     ];
 
-    if (!isOwnerOrAdmin) {
+    if (scope !== "all") {
       const ownerFilter = or(
-        eq(tickets.assigneeId, actor.userId),
-        eq(tickets.reporterId, actor.userId),
+        eq(tickets.assigneeId, u.userId),
+        eq(tickets.reporterId, u.userId),
       );
       if (ownerFilter) ticketFilters.push(ownerFilter);
     }

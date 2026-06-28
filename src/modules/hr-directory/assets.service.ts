@@ -10,6 +10,8 @@ import { assetReturns, employeeDevices, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { formatDateOnly } from "./date.helpers";
+import type { DataScope } from "../access/access.types";
+import { applyScope } from "../access/apply-scope";
 import type {
   CreateAssetReturnInput,
   CreateDeviceInput,
@@ -21,11 +23,11 @@ import type {
 export class AssetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listAssetReturns(orgId: string, userId: string, isAdmin: boolean) {
+  listAssetReturns(orgId: string, userId: string, scope: DataScope) {
     return this.db
       .select()
       .from(assetReturns)
-      .where(isAdmin ? eq(assetReturns.orgId, orgId) : eq(assetReturns.userId, userId))
+      .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
       .orderBy(desc(assetReturns.createdAt));
   }
 

@@ -17,7 +17,9 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { canManagePerformance } from "./ability.helpers";
+import { resolvePerformanceScope } from "./performance-scope";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformanceReviewsService } from "./performance-reviews.service";
 import {

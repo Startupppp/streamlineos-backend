@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, or } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   oneOnOneMeetings,
   organizationMembers,
@@ -246,9 +248,11 @@ export class PerformanceReviewsService {
     return { success: true };
   }
 
-  listPips(orgId: string, userId: string, isAdmin: boolean) {
-    const conditions = [eq(performanceImprovementPlans.orgId, orgId)];
-    if (!isAdmin) conditions.push(eq(performanceImprovementPlans.userId, userId));
+  listPips(orgId: string, userId: string, scope: DataScope) {
+    const conditions = [
+      eq(performanceImprovementPlans.orgId, orgId),
+      applyScope(scope, userId, { ownerColumn: performanceImprovementPlans.userId }),
+    ];
 
     return this.db.query.performanceImprovementPlans.findMany({
       where: and(...conditions),
@@ -303,12 +307,15 @@ export class PerformanceReviewsService {
   listReviews(
     orgId: string,
     userId: string,
-    isAdmin: boolean,
+    scope: DataScope,
     filters: { userId?: string; cycleId?: number; limit?: number; offset?: number },
   ) {
     const conditions = [eq(performanceReviews.orgId, orgId)];
-    if (filters.userId) conditions.push(eq(performanceReviews.userId, filters.userId));
-    else if (!isAdmin) conditions.push(eq(performanceReviews.userId, userId));
+    if (filters.userId) {
+      conditions.push(eq(performanceReviews.userId, filters.userId));
+    } else {
+      conditions.push(applyScope(scope, userId, { ownerColumn: performanceReviews.userId }));
+    }
     if (filters.cycleId) conditions.push(eq(performanceReviews.cycleId, filters.cycleId));
 
     const limit = Math.min(filters.limit ?? 50, 100);

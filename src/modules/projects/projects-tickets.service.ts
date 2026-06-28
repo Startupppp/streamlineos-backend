@@ -18,6 +18,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { resolveTicketsScope } from "./tickets-scope";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
@@ -214,8 +215,8 @@ export class ProjectsTicketsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (!perms.has("projects:manage")) {
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope !== "all") {
       const isAssignee =
         ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;

@@ -3,6 +3,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { goals, keyResults } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { formatDateOnly } from "./date.helpers";
 import type {
   CreateGoalInput,
@@ -33,12 +35,12 @@ export class PerformanceGoalsService {
     return { goals: myGoals, keyResults: allKeyResults };
   }
 
-  listGoals(orgId: string, userId: string, isAdmin: boolean, filterUserId?: string) {
+  listGoals(orgId: string, userId: string, scope: DataScope, filterUserId?: string) {
     const conditions = [eq(goals.orgId, orgId)];
     if (filterUserId) {
       conditions.push(eq(goals.userId, filterUserId));
-    } else if (!isAdmin) {
-      conditions.push(eq(goals.userId, userId));
+    } else {
+      conditions.push(applyScope(scope, userId, { ownerColumn: goals.userId }));
     }
 
     return this.db.query.goals.findMany({

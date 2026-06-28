@@ -8,6 +8,8 @@ import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { certifications, documents, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { AuditService } from "../../common/audit/audit.service";
 import { DOCUMENT_TYPES, type DocumentType } from "./dto/documents.schemas";
 import type {
@@ -31,12 +33,12 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
-  listDocuments(orgId: string, userId: string, isAdmin: boolean, filters: ListDocumentsInput) {
+  listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
     const conditions = [eq(documents.orgId, orgId), eq(documents.isActive, true)];
     if (filters.userId) {
       conditions.push(eq(documents.userId, filters.userId));
-    } else if (!isAdmin) {
-      conditions.push(eq(documents.userId, userId));
+    } else {
+      conditions.push(applyScope(scope, userId, { ownerColumn: documents.userId }));
     }
     if (filters.type && isDocumentType(filters.type)) {
       conditions.push(eq(documents.type, filters.type));
@@ -168,14 +170,12 @@ export class DocumentsService {
     return { success: true };
   }
 
-  async stats(orgId: string, userId: string, isAdmin: boolean) {
-    const baseWhere = isAdmin
-      ? and(eq(documents.orgId, orgId), eq(documents.isActive, true))
-      : and(
-          eq(documents.orgId, orgId),
-          eq(documents.userId, userId),
-          eq(documents.isActive, true),
-        );
+  async stats(orgId: string, userId: string, scope: DataScope) {
+    const baseWhere = and(
+      eq(documents.orgId, orgId),
+      eq(documents.isActive, true),
+      applyScope(scope, userId, { ownerColumn: documents.userId }),
+    );
 
     const horizon = formatDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 

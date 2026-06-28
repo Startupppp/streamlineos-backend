@@ -16,6 +16,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ReimbursementsService } from "./reimbursements.service";
+import { resolveReimbursementsScope } from "./reimbursements-scope";
+import { AccessService } from "../access/access.service";
 import {
   createReimbursementSchema,
   patchReimbursementSchema,
@@ -26,12 +28,15 @@ import {
 @Controller("hr/reimbursements")
 @UseGuards(JwtAuthGuard)
 export class ReimbursementsController {
-  constructor(private readonly reimbursements: ReimbursementsService) {}
+  constructor(
+    private readonly reimbursements: ReimbursementsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve");
-    return this.reimbursements.listReimbursements(u.orgId, u.userId, isAdmin);
+  async list(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveReimbursementsScope(this.access, u);
+    return this.reimbursements.listReimbursements(u.orgId, u.userId, scope);
   }
 
   @Post()

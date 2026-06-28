@@ -1,9 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "./access.service";
-import { requirePermission } from "./authorize";
+import { authorize } from "./authorize";
 import { REQUIRE_PERMISSION } from "./require-permission.decorator";
 
 @Injectable()
@@ -21,7 +21,15 @@ export class PermissionGuard implements CanActivate {
     if (!permissionKey) return true;
 
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
-    await requirePermission(this.access, req.user ?? null, permissionKey);
+    const result = await authorize(this.access, req.user ?? null, permissionKey);
+
+    if (!result.allow) {
+      if (result.reason === "UNAUTHENTICATED") throw new UnauthorizedException("Unauthorized");
+      if (result.reason === "NO_MODULE") throw new ForbiddenException("Module not available on this plan");
+      throw new ForbiddenException("Permission denied");
+    }
+
+    req.rbacScope = result.scope;
     return true;
   }
 }

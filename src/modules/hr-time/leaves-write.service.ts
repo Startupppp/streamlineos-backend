@@ -18,6 +18,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { resolveLeavesViewScope } from "./leaves-scope";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
@@ -159,14 +160,18 @@ export class LeavesWriteService {
   }
 
   async updateStatus(u: CurrentUserContext, leaveId: number, body: UpdateLeaveInput) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (!(u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:leaves:approve"))) {
+    const scope = await resolveLeavesViewScope(this.access, u);
+    if (scope === "none") {
       throw new ForbiddenException("Only admins can approve or reject leave requests.");
     }
 
     const existing = await this.db.query.leaveRequests.findFirst({
       where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, u.orgId)),
     });
+
+    if (existing && scope === "own" && existing.approverId !== u.userId) {
+      throw new ForbiddenException("You can only update leave requests assigned to you.");
+    }
 
     if (!existing) return { ok: false as const, reason: "not_found" as const };
     if (existing.userId === u.userId) {
