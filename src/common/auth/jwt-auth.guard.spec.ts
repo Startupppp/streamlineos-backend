@@ -15,7 +15,12 @@ function ctxWith(headers: Record<string, string>): ExecutionContext {
 describe("JwtAuthGuard", () => {
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
   const reflector = { getAllAndOverride: jest.fn() } as unknown as Reflector;
-  const guard = new JwtAuthGuard(reflector);
+  const mockDb = {
+    select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ catch: jest.fn() }) }) }),
+    query: { users: { findFirst: jest.fn() }, organizationMembers: { findFirst: jest.fn() }, organizations: { findFirst: jest.fn() } },
+  };
+  const guard = new JwtAuthGuard(reflector, mockDb as unknown as import("../../db/drizzle.module").Db);
 
   beforeEach(() => (reflector.getAllAndOverride as jest.Mock).mockReturnValue(false));
 

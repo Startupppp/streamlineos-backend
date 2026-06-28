@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -15,7 +14,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { requireAuthorize } from "../../common/access/authorize";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrgHierarchyService } from "./org-hierarchy.service";
 import {
@@ -48,10 +47,7 @@ import {
 } from "./dto/org-hierarchy.schemas";
 
 function assertCanManage(u: CurrentUserContext) {
-  const ability = defineAbilityFor(u);
-  if (!ability.can("manage", "settings")) {
-    throw new ForbiddenException("Insufficient permissions");
-  }
+  requireAuthorize(u, { permission: "settings:org:manage" });
 }
 
 @Controller("org-hierarchy")

@@ -45,7 +45,7 @@ export function authorize(ctx: CurrentUserContext, input: AuthorizeInput): Autho
     return { allow: false, reason: "NO_MODULE", scope: "none", upgrade: resolvedModule };
   }
 
-  if (catalogEntry && !meetsMinTier((ctx as Record<string, unknown>).orgTier as string | undefined, catalogEntry.minTier)) {
+  if (catalogEntry && !meetsMinTier((ctx as unknown as Record<string, unknown>).orgTier as string | undefined, catalogEntry.minTier)) {
     return { allow: false, reason: "PLAN_UPGRADE", scope: "none", upgrade: catalogEntry.minTier };
   }
 

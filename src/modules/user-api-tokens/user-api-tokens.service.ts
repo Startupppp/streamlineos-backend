@@ -38,7 +38,7 @@ export class UserApiTokensService {
         createdAt: userApiTokens.createdAt,
       });
 
-    return { id: row.id, prefix: row.prefix, rawToken, ...row };
+    return { ...row, rawToken };
   }
 
   async list(userId: string) {

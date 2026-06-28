@@ -72,6 +72,8 @@ import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
 import { ServiceAccountsModule } from "./modules/service-accounts/service-accounts.module";
 import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.module";
 import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.module";
+import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
+import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -150,6 +152,8 @@ import { MeController } from "./me/me.controller";
     ServiceAccountsModule,
     UserApiTokensModule,
     ResourceGrantsModule,
+    TemporaryAccessModule,
+    DelegationsModule,
   ],
   controllers: [HealthController, MeController],
 })
