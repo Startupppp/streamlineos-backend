@@ -179,3 +179,9 @@ export type CreateKbArticleInput = z.infer<typeof createKbArticleSchema>;
 export type UpdateKbArticleInput = z.infer<typeof updateKbArticleSchema>;
 export type CreateKbCommentInput = z.infer<typeof createKbCommentSchema>;
 export type CreateKbAttachmentInput = z.infer<typeof createKbAttachmentSchema>;
+
+export const kbAskSchema = z.object({
+  question: z.string().trim().min(3, "Question is too short").max(1000),
+  articleId: z.number().int().positive().optional(),
+});
+export type KbAskInput = z.infer<typeof kbAskSchema>;

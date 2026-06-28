@@ -18,11 +18,14 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportKbService } from "./support-kb.service";
+import { KbAskService } from "../kb/kb-ask.service";
+import { KbIndexingService } from "../kb/kb-indexing.service";
 import {
   createKbArticleSchema,
   createKbAttachmentSchema,
   createKbCategorySchema,
   createKbCommentSchema,
+  kbAskSchema,
   listKbArticlesSchema,
   updateKbArticleSchema,
   updateKbCategorySchema,
@@ -30,6 +33,7 @@ import {
   type CreateKbAttachmentInput,
   type CreateKbCategoryInput,
   type CreateKbCommentInput,
+  type KbAskInput,
   type ListKbArticlesInput,
   type UpdateKbArticleInput,
   type UpdateKbCategoryInput,
@@ -38,7 +42,11 @@ import {
 @Controller("support/kb")
 @UseGuards(JwtAuthGuard)
 export class SupportKbController {
-  constructor(private readonly kb: SupportKbService) {}
+  constructor(
+    private readonly kb: SupportKbService,
+    private readonly ask: KbAskService,
+    private readonly indexing: KbIndexingService,
+  ) {}
 
   @Get("categories")
   @UseGuards(PermissionGuard)
@@ -205,5 +213,45 @@ export class SupportKbController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.kb.deleteAttachment(u.orgId, articleId, attachmentId);
+  }
+
+  @Post("ask")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
+  @HttpCode(200)
+  askQuestion(
+    @Body(new ZodValidationPipe(kbAskSchema)) body: KbAskInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ask.ask(u, { question: body.question });
+  }
+
+  @Get("articles/:articleId/index-status")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
+  getArticleIndexStatus(
+    @Param("articleId", ParseIntPipe) articleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.indexing.getArticleIndexStatus(u.orgId, articleId);
+  }
+
+  @Post("articles/:articleId/reindex")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
+  @HttpCode(200)
+  reindexArticle(
+    @Param("articleId", ParseIntPipe) articleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.indexing.reindexArticle(u.orgId, articleId);
+  }
+
+  @Post("reindex-all")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:manage")
+  @HttpCode(200)
+  reindexAll(@CurrentUser() u: CurrentUserContext) {
+    return this.indexing.reindexAll(u.orgId);
   }
 }

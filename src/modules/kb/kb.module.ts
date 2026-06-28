@@ -71,6 +71,6 @@ import { KbWidgetController } from "./kb-widget.controller";
     KbCommentsService,
     KbVerificationService,
   ],
-  exports: [KbCreditsService, KbAccessService, KbEventsService],
+  exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })
 export class KbModule {}
