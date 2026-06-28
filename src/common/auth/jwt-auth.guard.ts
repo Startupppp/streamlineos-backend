@@ -14,7 +14,7 @@ import type { BackendClaims, CurrentUserContext } from "./backend-claims";
 function extractClaims(payload: JWTPayload): BackendClaims {
   return {
     sub: typeof payload.sub === "string" ? payload.sub : "",
-    orgId: typeof payload["orgId"] === "string" ? payload["orgId"] : null,
+    orgId: typeof payload["orgId"] === "string" && payload["orgId"] !== "" ? payload["orgId"] : null,
     branchId: typeof payload["branchId"] === "number" ? payload["branchId"] : null,
     role: typeof payload["role"] === "string" ? payload["role"] : "",
     permissions: Array.isArray(payload["permissions"])
@@ -61,6 +61,9 @@ export class JwtAuthGuard implements CanActivate {
     if (!claims.sub) {
       throw new UnauthorizedException("Unauthorized");
     }
+    if (!claims.sessionId) {
+      throw new UnauthorizedException("Unauthorized");
+    }
     if (!claims.orgId && !claims.isPlatformAdmin) {
       throw new UnauthorizedException("Organization not found");
     }
@@ -70,11 +73,11 @@ export class JwtAuthGuard implements CanActivate {
       orgId: claims.orgId ?? "",
       branchId: claims.branchId ?? null,
       role: claims.role,
-      permissions: claims.permissions ?? [],
-      enabledModules: claims.enabledModules ?? [],
-      plan: claims.plan ?? null,
-      isPlatformAdmin: claims.isPlatformAdmin === true,
-      isOrgOwner: claims.isOrgOwner === true,
+      permissions: claims.permissions,
+      enabledModules: claims.enabledModules,
+      plan: claims.plan,
+      isPlatformAdmin: claims.isPlatformAdmin,
+      isOrgOwner: claims.isOrgOwner,
       sessionId: claims.sessionId,
     };
     return true;

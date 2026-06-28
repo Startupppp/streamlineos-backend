@@ -4,9 +4,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
-import { ResourceGrantsService, type GrantResourceInput } from "./resource-grants.service";
+import { ResourceGrantsService, type PaginatedGrants } from "./resource-grants.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import type { ResourceGrant } from "../../db/schema";
 import { z } from "zod";
 
 const grantInputSchema = z.object({
@@ -15,7 +14,23 @@ const grantInputSchema = z.object({
   principalType: z.enum(["user", "role"]),
   principalId: z.string().min(1).max(36),
   permissionKey: z.string().min(1).max(128),
+  callerManagesResource: z.boolean(),
 });
+
+const listQuerySchema = z.object({
+  resourceType: z.string().min(1).max(64),
+  resourceId: z.string().min(1).max(36),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+const grantIdParamSchema = z.object({
+  grantId: z.string().uuid(),
+});
+
+type ListQuery = z.infer<typeof listQuerySchema>;
+type GrantIdParam = z.infer<typeof grantIdParamSchema>;
+type GrantInput = z.infer<typeof grantInputSchema>;
 
 @Controller("access/resource-grants")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -26,27 +41,30 @@ export class ResourceGrantsController {
   @RequirePermission("settings:rbac:manage")
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query("resourceType") resourceType: string,
-    @Query("resourceId") resourceId: string,
-  ): Promise<ResourceGrant[]> {
-    return this.resourceGrantsService.listGrants(u.orgId, resourceType, resourceId);
+    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
+  ): Promise<PaginatedGrants> {
+    return this.resourceGrantsService.listGrants(u.orgId, query.resourceType, query.resourceId, {
+      limit: query.limit,
+      offset: query.offset,
+    });
   }
 
   @Post()
   @RequirePermission("settings:rbac:manage")
   grant(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(grantInputSchema)) body: GrantResourceInput,
-  ): Promise<ResourceGrant | null> {
-    return this.resourceGrantsService.grant(u.orgId, body, u.userId);
+    @Body(new ZodValidationPipe(grantInputSchema)) body: GrantInput,
+  ): Promise<GrantResourceInput | null> {
+    const { callerManagesResource, ...grantInput } = body;
+    return this.resourceGrantsService.grant(u.orgId, grantInput, u.userId, callerManagesResource);
   }
 
   @Delete(":grantId")
   @RequirePermission("settings:rbac:manage")
   revoke(
     @CurrentUser() u: CurrentUserContext,
-    @Param("grantId") grantId: string,
+    @Param(new ZodValidationPipe(grantIdParamSchema)) params: GrantIdParam,
   ): Promise<{ success: boolean }> {
-    return this.resourceGrantsService.revoke(u.orgId, grantId);
+    return this.resourceGrantsService.revoke(u.orgId, params.grantId);
   }
 }

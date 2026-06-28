@@ -53,8 +53,8 @@ export class TimesheetsService {
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
-    if (query.userId) conditions.push(eq(timesheets.userId, query.userId));
-    else conditions.push(applyScope(scope, user.userId, { ownerColumn: timesheets.userId }));
+    conditions.push(applyScope(scope, user.userId, { ownerColumn: timesheets.userId }));
+    if (query.userId && scope === "all") conditions.push(eq(timesheets.userId, query.userId));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
 

@@ -51,6 +51,7 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:integrations:manage", resource: "hr:integrations", action: "manage", description: "Manage HR integrations" },
   { name: "hr:onboarding:manage", resource: "hr:onboarding", action: "manage", description: "Manage onboarding" },
   { name: "hr:alumni:read", resource: "hr:alumni", action: "read", description: "Read alumni records" },
+  { name: "hr:alumni:write", resource: "hr:alumni", action: "write", description: "Write alumni records" },
   { name: "hr:analytics:read", resource: "hr:analytics", action: "read", description: "Read HR analytics" },
   { name: "hr:headcount:read", resource: "hr:headcount", action: "read", description: "Read headcount planning" },
 ];
@@ -72,13 +73,19 @@ const CRM_PERMISSIONS: Permission[] = [
   { name: "crm:incentives:config", resource: "crm:incentives", action: "config", description: "Configure incentive rates" },
   { name: "crm:deals:read", resource: "crm:deals", action: "read", description: "View CRM deals" },
   { name: "crm:deals:create", resource: "crm:deals", action: "create", description: "Create CRM deals" },
+  { name: "crm:deals:update", resource: "crm:deals", action: "update", description: "Update CRM deals" },
   { name: "crm:deals:delete", resource: "crm:deals", action: "delete", description: "Delete CRM deals" },
+  { name: "crm:quotes:create", resource: "crm:quotes", action: "create", description: "Create CRM quotes" },
+  { name: "crm:quotes:update", resource: "crm:quotes", action: "update", description: "Update CRM quotes" },
   { name: "crm:quotes:delete", resource: "crm:quotes", action: "delete", description: "Delete CRM quotes" },
   { name: "crm:clients:manage", resource: "crm:clients", action: "manage", description: "Manage client accounts" },
   { name: "crm:assignment-rules:manage", resource: "crm:assignment-rules", action: "manage", description: "Manage lead assignment rules" },
   { name: "crm:email-templates:manage", resource: "crm:email-templates", action: "manage", description: "Manage CRM email templates" },
   { name: "crm:scoring-rules:manage", resource: "crm:scoring-rules", action: "manage", description: "Manage lead scoring rules" },
   { name: "crm:sla:manage", resource: "crm:sla", action: "manage", description: "Manage CRM SLA policies" },
+  { name: "crm:organizations:manage", resource: "crm:organizations", action: "manage", description: "Manage CRM organizations" },
+  { name: "crm:web-forms:manage", resource: "crm:web-forms", action: "manage", description: "Manage CRM web forms" },
+  { name: "crm:territories:manage", resource: "crm:territories", action: "manage", description: "Manage CRM territories" },
 ];
 
 const SHARED_PERMISSIONS: Permission[] = [
@@ -111,6 +118,7 @@ const SHARED_PERMISSIONS: Permission[] = [
   { name: "reports:schedule", resource: "reports", action: "schedule", description: "Schedule reports" },
   { name: "settings:view", resource: "settings", action: "view", description: "View settings" },
   { name: "settings:manage", resource: "settings", action: "manage", description: "Manage settings" },
+  { name: "settings:mfa", resource: "settings", action: "mfa", description: "Manage MFA settings for the organization" },
   { name: "settings:rbac:manage", resource: "settings:rbac", action: "manage", description: "Manage RBAC permissions" },
   { name: "settings:automations:view", resource: "settings:automations", action: "view", description: "View automation rules and run history" },
   { name: "settings:automations:manage", resource: "settings:automations", action: "manage", description: "Create, edit, and run automation rules" },
@@ -148,6 +156,7 @@ const SUPPORT_PERMISSIONS: Permission[] = [
   { name: "support:kb:manage", resource: "support:kb", action: "manage", description: "Create, edit, and publish knowledge base articles and categories" },
   { name: "support:macros:view", resource: "support:macros", action: "view", description: "View canned responses and ticket routing rules" },
   { name: "support:macros:manage", resource: "support:macros", action: "manage", description: "Create and edit canned responses and ticket routing rules" },
+  { name: "support:tickets:manage", resource: "support:tickets", action: "manage", description: "Manage support tickets" },
 ];
 
 const ACCOUNTING_PERMISSIONS: Permission[] = [

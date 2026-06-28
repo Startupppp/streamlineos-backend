@@ -1,12 +1,20 @@
 import { z } from "zod";
 
+export const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
+
 export const rolePermissionsQuerySchema = z.object({
   role: z.string().min(1).max(100),
 });
 
 export const assignRolePermissionSchema = z.object({
-  role: z.string().min(1).max(100),
-  permissionId: z.number().int().positive(),
+  roleId: z.number().int().positive(),
+  permissionKey: z.string().min(1).max(120),
+  scope: dataScopeSchema.default("all"),
+});
+
+export const revokeRolePermissionSchema = z.object({
+  roleId: z.number().int().positive(),
+  permissionKey: z.string().min(1).max(120),
 });
 
 export const createRoleSchema = z.object({
@@ -35,8 +43,6 @@ export const cloneTemplateSchema = z.object({
     .optional(),
 });
 
-export const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
-
 export const setRolePermissionsSchema = z.object({
   items: z
     .array(
@@ -61,6 +67,7 @@ export const roleMemberSchema = z.discriminatedUnion("principalType", [
 
 export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
+export type RevokeRolePermissionInput = z.infer<typeof revokeRolePermissionSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type CloneTemplateInput = z.infer<typeof cloneTemplateSchema>;

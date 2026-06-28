@@ -313,10 +313,9 @@ export class PerformanceReviewsService {
     filters: { userId?: string; cycleId?: number; limit?: number; offset?: number },
   ) {
     const conditions = [eq(performanceReviews.orgId, orgId)];
-    if (filters.userId) {
+    conditions.push(applyScope(scope, userId, { ownerColumn: performanceReviews.userId }));
+    if (filters.userId && scope === "all") {
       conditions.push(eq(performanceReviews.userId, filters.userId));
-    } else {
-      conditions.push(applyScope(scope, userId, { ownerColumn: performanceReviews.userId }));
     }
     if (filters.cycleId) conditions.push(eq(performanceReviews.cycleId, filters.cycleId));
 

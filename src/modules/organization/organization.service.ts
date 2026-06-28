@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
-import { organizations, organizationMembers, invitations, users } from "../../db/schema";
+import { organizations, organizationMembers, invitations, users, passwordResetTokens } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -520,6 +520,48 @@ export class OrganizationService {
       ipAllowlist: Array.isArray(settings.ipAllowlist) ? settings.ipAllowlist : [],
       directoryPublic:
         typeof settings.directoryPublic === "boolean" ? settings.directoryPublic : false,
+    };
+  }
+
+  async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string }> {
+    const invitation = await this.db.query.invitations.findFirst({
+      where: and(
+        eq(invitations.token, token),
+        gt(invitations.expiresAt, new Date()),
+        isNull(invitations.acceptedAt),
+      ),
+    });
+    if (!invitation) throw new NotFoundException("Invalid or expired invitation");
+
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, invitation.orgId),
+      columns: { name: true },
+    });
+
+    return {
+      email: invitation.email,
+      organizationName: org?.name ?? "Unknown",
+      role: invitation.role,
+    };
+  }
+
+  async validateSetupToken(token: string): Promise<{ email: string; name: string }> {
+    const tokenRecord = await this.db.query.passwordResetTokens.findFirst({
+      where: and(
+        eq(passwordResetTokens.token, token),
+        gt(passwordResetTokens.expiresAt, new Date()),
+      ),
+    });
+    if (!tokenRecord) throw new BadRequestException("Invalid or expired setup link");
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.email, tokenRecord.email),
+      columns: { name: true, email: true },
+    });
+
+    return {
+      email: tokenRecord.email,
+      name: user?.name ?? "New Employee",
     };
   }
 }

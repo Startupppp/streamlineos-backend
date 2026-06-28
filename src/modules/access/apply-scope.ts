@@ -2,7 +2,7 @@ import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { DataScope } from "./access.types";
 
-interface ScopeColumns {
+export interface ScopeColumns {
   ownerColumn: PgColumn;
   teamColumn?: PgColumn;
   teamIds?: string[];
@@ -23,5 +23,9 @@ export function applyScope(scope: DataScope, userId: string, cols: ScopeColumns)
     }
     case "none":
       return sql`false`;
+    default: {
+      const _exhaustive: never = scope;
+      return sql`false`;
+    }
   }
 }

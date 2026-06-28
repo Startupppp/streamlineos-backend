@@ -42,10 +42,8 @@ export class ApiKeyGuard implements CanActivate {
       );
     }
 
-    if (apiKey.scopes && apiKey.scopes.length > 0) {
-      const hasScope = REQUIRED_SCOPES.some((s) => apiKey.scopes.includes(s));
-      if (!hasScope) throw new ForbiddenException("API key does not have leads:write scope");
-    }
+    const hasScope = REQUIRED_SCOPES.some((s) => apiKey.scopes.includes(s));
+    if (!hasScope) throw new ForbiddenException("API key does not have leads:write scope");
 
     void this.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, apiKey.id)).catch(() => undefined);
 

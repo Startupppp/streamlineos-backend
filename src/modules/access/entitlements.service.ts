@@ -59,9 +59,8 @@ export class EntitlementsService {
           this.db.query.orgModules.findMany({
             where: and(eq(orgModules.orgId, orgId), eq(orgModules.enabled, true)),
           }),
-        undefined,
+        [] as Array<{ moduleKey: string; enabled: boolean }>,
       );
-      if (rows === undefined) return [];
       return rows.map((r) => r.moduleKey);
     }, 30);
   }

@@ -45,6 +45,20 @@ import {
 export class OrganizationController {
   constructor(private readonly organization: OrganizationService) {}
 
+  @Public()
+  @Get("invitations/validate")
+  validateInvitationToken(@Query("token") token: string) {
+    if (!token) throw new BadRequestException("Missing token");
+    return this.organization.validateInvitationToken(token);
+  }
+
+  @Public()
+  @Get("setup-token/validate")
+  validateSetupToken(@Query("token") token: string) {
+    if (!token) throw new BadRequestException("Missing token");
+    return this.organization.validateSetupToken(token);
+  }
+
   @Get()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listUserOrganizations(u.userId);

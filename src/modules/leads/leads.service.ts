@@ -52,7 +52,12 @@ function pushLeadsViewScope(
   scope: DataScope | undefined,
   userId: string | undefined,
 ): void {
-  if (!scope || !userId) return;
+  if (!scope) return;
+  if (scope === "none") {
+    where.push(sql`false`);
+    return;
+  }
+  if (!userId) return;
   where.push(applyScope(scope, userId, { ownerColumn: leads.assignedToId }));
 }
 

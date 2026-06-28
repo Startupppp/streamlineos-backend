@@ -36,6 +36,12 @@ export const forceChangePasswordSchema = z.object({
 
 export type ForceChangePasswordInput = z.infer<typeof forceChangePasswordSchema>;
 
+export const setupPasswordSchema = z.object({
+  password: passwordRules,
+});
+
+export type SetupPasswordInput = z.infer<typeof setupPasswordSchema>;
+
 @Injectable()
 export class MeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -163,5 +169,9 @@ export class MeService {
     await this.db.update(users).set(setFields).where(eq(users.id, userId));
 
     return { success: true };
+  }
+
+  async setupPassword(userId: string, password: string): Promise<{ success: true }> {
+    return this.forceChangePassword(userId, { newPassword: password });
   }
 }

@@ -166,11 +166,15 @@ export class AccessService {
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
 
-    const deptRows = await this.db
-      .select({ departmentId: departmentMembers.departmentId })
-      .from(departmentMembers)
-      .innerJoin(departments, eq(departmentMembers.departmentId, departments.id))
-      .where(and(eq(departmentMembers.userId, userId), eq(departments.orgId, orgId)));
+    const deptRows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({ departmentId: departmentMembers.departmentId })
+          .from(departmentMembers)
+          .innerJoin(departments, eq(departmentMembers.departmentId, departments.id))
+          .where(and(eq(departmentMembers.userId, userId), eq(departments.orgId, orgId))),
+      [],
+    );
     const departmentIds = deptRows.map((row) => row.departmentId);
 
     if (departmentIds.length > 0) {
