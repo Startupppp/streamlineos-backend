@@ -49,7 +49,8 @@ export class OrgStructureService {
         organizationMembers,
         and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
       )
-      .where(eq(users.isActive, true));
+      .where(eq(users.isActive, true))
+      .limit(1000);
 
     const depts = await this.db.query.departments.findMany({
       where: eq(departments.orgId, orgId),
@@ -113,6 +114,7 @@ export class OrgStructureService {
             },
           },
         },
+        limit: 1000,
       }),
       this.db
         .select({ id: departments.id, name: departments.name })
@@ -184,7 +186,7 @@ export class OrgStructureService {
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
         .groupBy(users.role);
 
-      groups = rows.map((r) => ({ label: r.role, count: Number(r.count) }));
+      groups = rows.map((r) => ({ label: r.role ?? "Unassigned", count: Number(r.count) }));
     } else {
       const rows = await this.db
         .select({ branchId: users.branchId, count: count() })
@@ -226,7 +228,8 @@ export class OrgStructureService {
           eq(users.departmentId, teamId),
           eq(users.isActive, true),
         ),
-      );
+      )
+      .limit(500);
 
     let managerName: string | null = null;
     if (dept.managerId) {

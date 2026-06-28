@@ -39,6 +39,7 @@ export class SupportMacrosService {
     return this.db.query.supportMacros.findMany({
       where: and(...conditions),
       orderBy: [asc(supportMacros.title)],
+      limit: 200,
     });
   }
 
@@ -81,6 +82,7 @@ export class SupportMacrosService {
     return this.db.query.supportRoutingRules.findMany({
       where: eq(supportRoutingRules.orgId, orgId),
       orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
+      limit: 200,
     });
   }
 

@@ -25,7 +25,8 @@ export class CustomerExecutiveService {
       .select()
       .from(npsSurveys)
       .where(eq(npsSurveys.orgId, orgId))
-      .orderBy(desc(npsSurveys.createdAt));
+      .orderBy(desc(npsSurveys.createdAt))
+      .limit(200);
 
     const counts = await this.db
       .select({

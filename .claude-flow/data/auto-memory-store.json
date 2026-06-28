@@ -1,0 +1,14 @@
+[
+  {
+    "id": "task-access-security-audit",
+    "key": "access-security-audit",
+    "content": "Task completed: access-security-audit",
+    "namespace": "tasks",
+    "type": "task-outcome",
+    "metadata": {
+      "success": true,
+      "quality": 0.85
+    },
+    "createdAt": 1782636152356
+  }
+]

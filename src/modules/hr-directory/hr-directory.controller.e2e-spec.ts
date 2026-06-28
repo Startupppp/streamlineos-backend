@@ -30,6 +30,10 @@ describe("HR Directory auth/RBAC (e2e)", () => {
         return agent.patch(path);
       case "delete":
         return agent.delete(path);
+      default: {
+        const _exhaustive: never = method;
+        throw new Error(`Unsupported HTTP method: ${_exhaustive}`);
+      }
     }
   }
 

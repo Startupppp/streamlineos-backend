@@ -27,7 +27,7 @@ export interface AvailabilityEntry {
 export class CelebrationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async getAnniversaryFeed(orgId: string) {
+  async getAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
     const members = await this.db
       .select({
         userId: organizationMembers.userId,
@@ -38,7 +38,8 @@ export class CelebrationsService {
       })
       .from(organizationMembers)
       .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(organizationMembers.orgId, orgId));
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(1000);
 
     const today = startOfDay(new Date());
     const items: FeedItem[] = [];
@@ -107,7 +108,8 @@ export class CelebrationsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+      .limit(1000);
 
     const birthdays: typeof members = [];
     const anniversaries: Array<(typeof members)[number] & { years: number }> = [];
@@ -144,7 +146,7 @@ export class CelebrationsService {
     };
   }
 
-  async getAvailability(orgId: string, userIds: string | undefined) {
+  async getAvailability(orgId: string, userIds: string | undefined): Promise<AvailabilityEntry[]> {
     const today = formatDateOnly(new Date());
 
     let userIdList: string[] = [];

@@ -263,9 +263,6 @@ export class ReportsService {
 
       if (existing) {
         existing.totalHours += hours;
-        if (!existing.ticketsWorked) {
-          existing.ticketsWorked = new Set<number>();
-        }
         existing.ticketsWorked.add(entry.ticketId);
       } else {
         userStats.set(entry.userId, {

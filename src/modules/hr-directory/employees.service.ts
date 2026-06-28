@@ -78,6 +78,7 @@ export class EmployeesService {
           with: { department: { columns: { id: true, name: true } } },
         },
       },
+      limit: 1000,
     });
 
     return members

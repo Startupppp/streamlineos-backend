@@ -94,7 +94,8 @@ export class AssetsService {
       .from(employeeDevices)
       .innerJoin(users, eq(employeeDevices.userId, users.id))
       .where(eq(employeeDevices.orgId, orgId))
-      .orderBy(desc(employeeDevices.createdAt));
+      .orderBy(desc(employeeDevices.createdAt))
+      .limit(500);
 
     return rows.map((r) => ({
       id: r.id,

@@ -50,7 +50,8 @@ export class EmployeeSkillsService {
           eq(terminations.orgId, orgId),
           inArray(terminations.status, ["APPROVED", "COMPLETED", "SENT"]),
         ),
-      );
+      )
+      .limit(5000);
 
     const excludedIds = terminatedUserIds.map((t) => t.userId);
 
@@ -64,7 +65,8 @@ export class EmployeeSkillsService {
           eq(users.isActive, true),
           excludedIds.length > 0 ? notInArray(organizationMembers.userId, excludedIds) : undefined,
         ),
-      );
+      )
+      .limit(2000);
 
     if (activeMembers.length === 0) return [];
 

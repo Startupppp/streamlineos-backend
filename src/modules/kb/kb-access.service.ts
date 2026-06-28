@@ -104,6 +104,7 @@ export class KbAccessService {
       .from(kbArticleRestrictions)
       .where(
         and(
+          eq(kbArticleRestrictions.orgId, row.orgId),
           eq(kbArticleRestrictions.articleId, row.id),
           eq(kbArticleRestrictions.level, "view"),
         ),
@@ -148,6 +149,7 @@ export class KbAccessService {
       .from(kbArticleRestrictions)
       .where(
         and(
+          eq(kbArticleRestrictions.orgId, user.orgId),
           eq(kbArticleRestrictions.articleId, articleId),
           eq(kbArticleRestrictions.level, "edit"),
         ),

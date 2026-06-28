@@ -125,6 +125,7 @@ export class CustomerExecutiveController {
   }
 
   @Get("sla")
+  @RequirePermission("crm:clients:read")
   getSla(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.getSlaReport(u.orgId);
   }

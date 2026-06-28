@@ -74,13 +74,14 @@ export class EngagementService {
     return record;
   }
 
-  async submitFeedback(userId: string, feedbackId: number, input: SubmitFeedbackInput) {
+  async submitFeedback(orgId: string, userId: string, feedbackId: number, input: SubmitFeedbackInput) {
     const [existing] = await this.db
       .select()
       .from(feedbackRequests)
       .where(
         and(
           eq(feedbackRequests.id, feedbackId),
+          eq(feedbackRequests.orgId, orgId),
           eq(feedbackRequests.reviewerUserId, userId),
         ),
       );
@@ -98,7 +99,7 @@ export class EngagementService {
         isCompleted: true,
         completedAt: new Date(),
       })
-      .where(eq(feedbackRequests.id, feedbackId))
+      .where(and(eq(feedbackRequests.id, feedbackId), eq(feedbackRequests.orgId, orgId)))
       .returning();
 
     return updated;
@@ -220,7 +221,8 @@ export class EngagementService {
       .select()
       .from(enpsScores)
       .where(eq(enpsScores.orgId, orgId))
-      .orderBy(desc(enpsScores.createdAt));
+      .orderBy(desc(enpsScores.createdAt))
+      .limit(100);
   }
 
   async createEnps(orgId: string, userId: string, input: CreateEnpsInput) {
@@ -247,6 +249,7 @@ export class EngagementService {
       where: eq(pulseSurveys.orgId, orgId),
       with: { responses: true },
       orderBy: [desc(pulseSurveys.createdAt)],
+      limit: 100,
     });
   }
 

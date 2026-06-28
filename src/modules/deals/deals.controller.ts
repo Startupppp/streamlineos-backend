@@ -60,6 +60,8 @@ export class DealsController {
   }
 
   @Post(":dealId/clone")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:create")
   @HttpCode(200)
   cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -69,6 +71,8 @@ export class DealsController {
   }
 
   @Get(":dealId/activities")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
   listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +81,8 @@ export class DealsController {
   }
 
   @Post(":dealId/activities")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:update")
   @HttpCode(201)
   addActivity(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -87,6 +93,8 @@ export class DealsController {
   }
 
   @Patch(":dealId/custom-data")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:update")
   updateCustomData(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(patchCustomDataSchema)) body: PatchCustomDataInput,
@@ -96,6 +104,8 @@ export class DealsController {
   }
 
   @Patch(":dealId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:update")
   async updateDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body(new ZodValidationPipe(updateDealSchema)) body: UpdateDealInput,

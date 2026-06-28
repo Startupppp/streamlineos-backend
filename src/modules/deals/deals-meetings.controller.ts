@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -23,11 +25,12 @@ import {
 } from "./dto/deals.schemas";
 
 @Controller("deals")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class DealsMeetingsController {
   constructor(private readonly meetings: DealsMeetingsService) {}
 
   @Get(":dealId/meetings")
+  @RequirePermission("crm:deals:read")
   listMeetings(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -36,6 +39,7 @@ export class DealsMeetingsController {
   }
 
   @Post(":dealId/meetings")
+  @RequirePermission("crm:deals:update")
   @HttpCode(201)
   createMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -46,6 +50,7 @@ export class DealsMeetingsController {
   }
 
   @Patch(":dealId/meetings/:meetingId")
+  @RequirePermission("crm:deals:update")
   updateMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -56,6 +61,7 @@ export class DealsMeetingsController {
   }
 
   @Delete(":dealId/meetings/:meetingId")
+  @RequirePermission("crm:deals:update")
   deleteMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

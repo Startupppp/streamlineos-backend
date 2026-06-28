@@ -249,7 +249,7 @@ export class ProjectsTicketsService {
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
       columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true },
     });
-    if (!before) throw new NotFoundException("Ticket not found");
+    if (!before || !before.projectId) throw new NotFoundException("Ticket not found");
 
     const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
@@ -351,7 +351,7 @@ export class ProjectsTicketsService {
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
       columns: { id: true, projectId: true },
     });
-    if (!existing) throw new NotFoundException("Ticket not found");
+    if (!existing || !existing.projectId) throw new NotFoundException("Ticket not found");
 
     const hasAccess = await this.checkProjectAccess(orgId, userId, existing.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to delete this ticket");

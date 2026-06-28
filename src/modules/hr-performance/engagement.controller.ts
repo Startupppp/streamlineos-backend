@@ -68,7 +68,7 @@ export class EngagementController {
     @Body(new ZodValidationPipe(submitFeedbackSchema)) body: SubmitFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.engagement.submitFeedback(u.userId, feedbackId, body);
+    return this.engagement.submitFeedback(u.orgId, u.userId, feedbackId, body);
   }
 
   @Get("assessments")

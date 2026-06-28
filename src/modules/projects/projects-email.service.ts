@@ -71,7 +71,7 @@ export class ProjectsEmailService {
       this.db
         .select({ id: users.id, email: users.email, name: users.name })
         .from(users)
-        .where(and(inArray(users.id, targets))),
+        .where(inArray(users.id, targets)),
     ]);
     const assigneeMap = new Map(assigneeRows.map((u) => [u.id, u]));
 

@@ -70,7 +70,7 @@ export class PerformanceController {
   }
 
   @Post("goals")
-  @HttpCode(200)
+  @HttpCode(201)
   createGoal(
     @Body(new ZodValidationPipe(createGoalSchema)) body: CreateGoalInput,
     @CurrentUser() u: CurrentUserContext,
@@ -80,7 +80,6 @@ export class PerformanceController {
   }
 
   @Patch("goals")
-  @HttpCode(201)
   updateGoalCollection(
     @Body(new ZodValidationPipe(updateGoalCollectionSchema)) body: UpdateGoalCollectionInput,
     @CurrentUser() u: CurrentUserContext,

@@ -50,10 +50,11 @@ export class ComplianceService {
     return { success: true, sent: values.length };
   }
 
-  async acknowledge(userId: string, input: AckInput) {
+  async acknowledge(orgId: string, userId: string, input: AckInput) {
     const existing = await this.db.query.policyAcknowledgments.findFirst({
       where: and(
         eq(policyAcknowledgments.id, input.acknowledgmentId),
+        eq(policyAcknowledgments.orgId, orgId),
         eq(policyAcknowledgments.userId, userId),
       ),
     });
@@ -62,7 +63,7 @@ export class ComplianceService {
     await this.db
       .update(policyAcknowledgments)
       .set({ status: input.status, acknowledgedAt: new Date() })
-      .where(eq(policyAcknowledgments.id, input.acknowledgmentId));
+      .where(and(eq(policyAcknowledgments.id, input.acknowledgmentId), eq(policyAcknowledgments.orgId, orgId)));
 
     return { success: true };
   }

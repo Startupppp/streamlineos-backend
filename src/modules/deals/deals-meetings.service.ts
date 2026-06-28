@@ -75,7 +75,7 @@ export class DealsMeetingsService {
     const [updated] = await this.db
       .update(dealMeetings)
       .set(values)
-      .where(eq(dealMeetings.id, meetingId))
+      .where(and(eq(dealMeetings.id, meetingId), eq(dealMeetings.orgId, orgId)))
       .returning();
 
     return updated;
@@ -92,7 +92,7 @@ export class DealsMeetingsService {
     });
     if (!existing) throw new NotFoundException("Meeting not found.");
 
-    await this.db.delete(dealMeetings).where(eq(dealMeetings.id, meetingId));
+    await this.db.delete(dealMeetings).where(and(eq(dealMeetings.id, meetingId), eq(dealMeetings.orgId, orgId)));
 
     return { success: true };
   }

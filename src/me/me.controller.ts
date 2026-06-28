@@ -7,7 +7,7 @@ import { RequirePermission } from "../modules/access/require-permission.decorato
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
-import { MeService, changePasswordSchema, type ChangePasswordInput } from "./me.service";
+import { MeService, changePasswordSchema, forceChangePasswordSchema, type ChangePasswordInput, type ForceChangePasswordInput } from "./me.service";
 import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
 
 @Controller("me")
@@ -53,5 +53,13 @@ export class MeController {
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
     return this.meService.changePassword(user.userId, body);
+  }
+
+  @Patch("force-change-password")
+  forceChangePassword(
+    @Body(new ZodValidationPipe(forceChangePasswordSchema)) body: ForceChangePasswordInput,
+    @CurrentUser() user: CurrentUserContext,
+  ): Promise<{ success: true }> {
+    return this.meService.forceChangePassword(user.userId, body);
   }
 }

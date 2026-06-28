@@ -254,6 +254,7 @@ export class DashboardHrService {
           .from(timesheets)
           .where(
             and(
+              eq(timesheets.orgId, orgId),
               eq(timesheets.userId, userId),
               gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
               lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
@@ -269,7 +270,13 @@ export class DashboardHrService {
           })
           .from(leaveBalances)
           .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
-          .where(and(eq(leaveBalances.userId, userId), eq(leaveBalances.year, now.getFullYear()))),
+          .where(
+            and(
+              eq(leaveBalances.orgId, orgId),
+              eq(leaveBalances.userId, userId),
+              eq(leaveBalances.year, now.getFullYear()),
+            ),
+          ),
         this.db
           .select({
             id: calendarEvents.id,

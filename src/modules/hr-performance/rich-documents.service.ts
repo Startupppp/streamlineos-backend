@@ -21,6 +21,7 @@ export class RichDocumentsService {
     return this.db.query.richDocuments.findMany({
       where: eq(richDocuments.orgId, orgId),
       orderBy: [desc(richDocuments.updatedAt)],
+      limit: 100,
     });
   }
 
@@ -70,7 +71,7 @@ export class RichDocumentsService {
         updatedBy: userId,
         updatedAt: new Date(),
       })
-      .where(eq(richDocuments.id, documentId));
+      .where(and(eq(richDocuments.id, documentId), eq(richDocuments.orgId, orgId)));
 
     return { success: true };
   }

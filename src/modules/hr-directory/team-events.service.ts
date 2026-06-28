@@ -25,6 +25,7 @@ export class TeamEventsService {
         },
       },
       orderBy: [desc(teamEvents.date)],
+      limit: 500,
     });
   }
 

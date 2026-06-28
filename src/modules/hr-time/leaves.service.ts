@@ -180,6 +180,7 @@ export class LeavesService {
         leaveType: { columns: { id: true, name: true } },
       },
       orderBy: [desc(leaveRequests.startDate)],
+      limit: 100,
     });
   }
 
@@ -319,20 +320,16 @@ export class LeavesService {
           lte(leaveRequests.startDate, monthEnd),
           gte(leaveRequests.endDate, monthStart),
         ),
-      );
+      )
+      .limit(500);
 
-    const leaveTypeIds = [...new Set(rows.map((r) => r.leaveTypeId).filter(Boolean))];
+    const leaveTypeIds = [...new Set(rows.map((r) => r.leaveTypeId).filter((id): id is number => id !== null))];
     let leaveTypeMap = new Map<number, string>();
     if (leaveTypeIds.length > 0) {
-      const firstId = leaveTypeIds[0];
       const types = await this.db
         .select({ id: leaveTypes.id, name: leaveTypes.name })
         .from(leaveTypes)
-        .where(
-          leaveTypeIds.length === 1 && firstId !== undefined
-            ? eq(leaveTypes.id, firstId)
-            : eq(leaveTypes.orgId, orgId),
-        );
+        .where(inArray(leaveTypes.id, leaveTypeIds));
       leaveTypeMap = new Map(types.map((t) => [t.id, t.name]));
     }
 
@@ -378,6 +375,7 @@ export class LeavesService {
       where: and(
         eq(leaveBalances.userId, input.userId),
         eq(leaveBalances.leaveTypeId, compOffType.id),
+        eq(leaveBalances.orgId, u.orgId),
       ),
     });
 

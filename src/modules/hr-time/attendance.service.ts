@@ -312,7 +312,12 @@ export class AttendanceService {
     });
   }
 
-  monthly(orgId: string, userId: string, year: number, month: number) {
+  async monthly(u: CurrentUserContext, targetUserId: string, year: number, month: number) {
+    const scope = await resolveAttendanceScope(this.access, u);
+    if (scope !== "all" && targetUserId !== u.userId) {
+      throw new ForbiddenException("Not authorized to view other users' attendance.");
+    }
+
     const mm = String(month + 1).padStart(2, "0");
     const startDate = `${year}-${mm}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
@@ -320,8 +325,8 @@ export class AttendanceService {
 
     return this.db.query.attendance.findMany({
       where: and(
-        eq(attendance.userId, userId),
-        eq(attendance.orgId, orgId),
+        eq(attendance.userId, targetUserId),
+        eq(attendance.orgId, u.orgId),
         gte(attendance.date, startDate),
         lte(attendance.date, endDate),
       ),
@@ -329,7 +334,13 @@ export class AttendanceService {
     });
   }
 
-  async heatmap(orgId: string, userId: string, year: number) {
+  async heatmap(u: CurrentUserContext, targetUserId: string, year: number) {
+    const scope = await resolveAttendanceScope(this.access, u);
+    if (scope !== "all" && targetUserId !== u.userId) {
+      throw new ForbiddenException("Not authorized to view other users' attendance.");
+    }
+
+    const orgId = u.orgId;
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
@@ -343,7 +354,7 @@ export class AttendanceService {
       .where(
         and(
           eq(attendance.orgId, orgId),
-          eq(attendance.userId, userId),
+          eq(attendance.userId, targetUserId),
           gte(attendance.date, startDate),
           lte(attendance.date, endDate),
         ),
@@ -365,7 +376,7 @@ export class AttendanceService {
 
     return {
       year,
-      userId,
+      userId: targetUserId,
       heatmap,
       summary: {
         totalDays,

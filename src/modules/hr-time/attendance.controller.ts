@@ -5,11 +5,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AttendanceService } from "./attendance.service";
 import {
+  attendanceEmailReportSchema,
   attendanceLogsQuerySchema,
   checkInSchema,
   checkOutSchema,
   heatmapQuerySchema,
   monthlyQuerySchema,
+  type AttendanceEmailReportInput,
   type AttendanceLogsQuery,
   type CheckInInput,
   type CheckOutInput,
@@ -78,5 +80,13 @@ export class AttendanceController {
   @Get("team-status")
   teamStatus(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.teamStatus(u);
+  }
+
+  @Post("email-report")
+  emailReport(
+    @Body(new ZodValidationPipe(attendanceEmailReportSchema)) body: AttendanceEmailReportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.attendance.emailReport(u, body);
   }
 }

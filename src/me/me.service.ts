@@ -97,6 +97,34 @@ export class MeService {
     return { success: true };
   }
 
+  async forceChangePassword(userId: string, input: ForceChangePasswordInput): Promise<{ success: true }> {
+    const newHash = await bcrypt.hash(input.newPassword, 12);
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ password: newHash, isPasswordChangeRequired: false, passwordChangedAt: new Date() })
+        .where(eq(users.id, userId));
+
+      await tx.insert(passwordHistory).values({ userId, passwordHash: newHash });
+
+      const allHistory = await tx.query.passwordHistory.findMany({
+        where: eq(passwordHistory.userId, userId),
+        orderBy: [desc(passwordHistory.createdAt)],
+        columns: { id: true },
+      });
+
+      if (allHistory.length > PASSWORD_HISTORY_LIMIT) {
+        const toDelete = allHistory.slice(PASSWORD_HISTORY_LIMIT);
+        for (const entry of toDelete) {
+          await tx.delete(passwordHistory).where(eq(passwordHistory.id, entry.id));
+        }
+      }
+    });
+
+    return { success: true };
+  }
+
   async getProfile(userId: string) {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),

@@ -106,7 +106,7 @@ export class DocumentsController {
     @Query("days") days: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const daysAhead = Number(days) || 30;
+    const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
     return this.documents.expiry(u.orgId, daysAhead);
   }
 
@@ -133,7 +133,7 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(ackSchema)) body: AckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.compliance.acknowledge(u.userId, body);
+    return this.compliance.acknowledge(u.orgId, u.userId, body);
   }
 
   @Get("compliance/statutory")
