@@ -92,7 +92,6 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId);
     return created;
   }
 
@@ -126,7 +125,6 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId);
 
     this.audit.log({
       action: "role.changed",
@@ -539,6 +537,40 @@ export class RolesService {
 
   listTemplates(): readonly RoleTemplate[] {
     return ROLE_TEMPLATES;
+  }
+
+  async getRoleAnalytics(orgId: string): Promise<{
+    totalRoles: number;
+    customRoles: number;
+    systemRoles: number;
+    totalPermissions: number;
+    usersAssigned: number;
+  }> {
+    const orgRoles = await this.db
+      .select({ id: roles.id, isSystem: roles.isSystem })
+      .from(roles)
+      .where(eq(roles.orgId, orgId))
+      .limit(ROLES_PAGE_LIMIT);
+
+    const totalRoles = orgRoles.length;
+    const systemRoles = orgRoles.filter((r) => r.isSystem).length;
+    const customRoles = totalRoles - systemRoles;
+
+    const roleIds = orgRoles.map((r) => r.id);
+    const [assignedRow] = roleIds.length > 0
+      ? await this.db
+          .select({ value: count() })
+          .from(userRoles)
+          .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, roleIds)))
+      : [{ value: 0 }];
+
+    return {
+      totalRoles,
+      customRoles,
+      systemRoles,
+      totalPermissions: PERMISSIONS.length,
+      usersAssigned: Number(assignedRow.value),
+    };
   }
 
   async cloneTemplate(actor: CurrentUserContext, input: CloneTemplateInput) {

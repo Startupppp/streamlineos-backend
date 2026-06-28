@@ -17,12 +17,8 @@ import {
   roles,
   subscriptions,
   users,
-  userPermissions,
   userSessions,
   verificationTokens,
-  userSeats,
-  orgLimits,
-  featureFlags,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -579,88 +575,4 @@ export class AuthService {
     };
   }
 
-  async getAccessBootstrap(userId: string, orgId: string) {
-    const CACHE_TTL = 120;
-    const cacheKey = `access:bootstrap:${orgId}:${userId}`;
-
-    return this.cache.cached<AccessBootstrap>(cacheKey, async () => {
-      const [member, org, userPerms, seats, limits, flags] = await Promise.all([
-        this.db.query.organizationMembers.findFirst({
-          where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-        }),
-        this.db.query.organizations.findFirst({
-          where: eq(organizations.id, orgId),
-          columns: { id: true, name: true, enabledModules: true, status: true },
-        }),
-        this.db.query.userPermissions.findMany({
-          where: and(eq(userPermissions.userId, userId), eq(userPermissions.orgId, orgId), eq(userPermissions.granted, true)),
-          with: { permission: true },
-        }).catch(() => [] as Array<{ permission: { name: string } }>),
-        this.db.select({ moduleKey: userSeats.moduleKey, status: userSeats.status })
-          .from(userSeats)
-          .where(and(eq(userSeats.orgId, orgId), eq(userSeats.userId, userId))),
-        this.db.select({ limitKey: orgLimits.limitKey, limitValue: orgLimits.limitValue, usedValue: orgLimits.usedValue })
-          .from(orgLimits)
-          .where(eq(orgLimits.orgId, orgId)),
-        this.db.select({ key: featureFlags.key, enabled: featureFlags.enabled, orgOverrides: featureFlags.orgOverrides })
-          .from(featureFlags),
-      ]);
-
-      const permissions: string[] = userPerms.map((p) => p.permission.name);
-      const enabledModules: string[] = org?.enabledModules ?? [];
-      const isOrgOwner = member?.isOwner === true;
-
-      const modules: Record<string, boolean> = {};
-      for (const m of enabledModules) {
-        modules[m] = true;
-      }
-
-      const scopes: Record<string, "all" | "team" | "own" | "none"> = {};
-      for (const perm of permissions) {
-        scopes[perm] = isOrgOwner ? "all" : "own";
-      }
-
-      const userSeatMap: Record<string, string> = {};
-      for (const seat of seats) {
-        userSeatMap[seat.moduleKey] = seat.status;
-      }
-
-      const limitsMap: Record<string, { limit: number; used: number }> = {};
-      for (const l of limits) {
-        limitsMap[l.limitKey] = { limit: l.limitValue, used: l.usedValue };
-      }
-
-      const featureFlagsMap: Record<string, boolean> = {};
-      for (const flag of flags) {
-        let enabled = flag.enabled;
-        if (flag.orgOverrides && Array.isArray(flag.orgOverrides)) {
-          const override = (flag.orgOverrides as Array<{ orgId: string; enabled: boolean }>).find((o) => o.orgId === orgId);
-          if (override) enabled = override.enabled;
-        }
-        featureFlagsMap[flag.key] = enabled;
-      }
-
-      return {
-        permissions,
-        modules,
-        scopes,
-        isOrgOwner,
-        seats: userSeatMap,
-        limits: limitsMap,
-        featureFlags: featureFlagsMap,
-        version: 1,
-      };
-    }, CACHE_TTL);
-  }
-}
-
-export interface AccessBootstrap {
-  permissions: string[];
-  modules: Record<string, boolean>;
-  scopes: Record<string, "all" | "team" | "own" | "none">;
-  isOrgOwner: boolean;
-  seats: Record<string, string>;
-  limits: Record<string, { limit: number; used: number }>;
-  featureFlags: Record<string, boolean>;
-  version: number;
 }

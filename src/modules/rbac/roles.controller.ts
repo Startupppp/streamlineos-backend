@@ -63,6 +63,12 @@ export class RolesController {
     return this.roles.createRole(u, body);
   }
 
+  @Get("analytics")
+  @RequirePermission("settings:rbac:manage")
+  getAnalytics(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.getRoleAnalytics(u.orgId);
+  }
+
   @Get("permissions/matrix")
   @RequirePermission("settings:rbac:manage")
   getPermissionsMatrix(@CurrentUser() u: CurrentUserContext) {

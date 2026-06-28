@@ -5,6 +5,7 @@ import { userRoles, users, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 
 export const createTemporaryAccessSchema = z.object({
   userId: z.string().min(1),
@@ -50,31 +51,40 @@ export class TemporaryAccessService {
       throw new ForbiddenException("Only org owners or RBAC managers can assign temporary roles");
     }
 
-    const [record] = await this.db
-      .insert(userRoles)
-      .values({
-        orgId: actor.orgId,
-        userId: body.userId,
-        roleId: body.roleId,
-        expiresAt: new Date(body.expiresAt),
-        reason: body.reason ?? null,
-        assignedBy: actor.userId,
-      })
-      .returning();
+    const record = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(userRoles)
+        .values({
+          orgId: actor.orgId,
+          userId: body.userId,
+          roleId: body.roleId,
+          expiresAt: new Date(body.expiresAt),
+          reason: body.reason ?? null,
+          assignedBy: actor.userId,
+        })
+        .returning();
+
+      await bumpPermissionsVersion(tx, actor.orgId);
+      return inserted;
+    });
 
     return record;
   }
 
   async revoke(orgId: string, id: number) {
-    await this.db
-      .delete(userRoles)
-      .where(
-        and(
-          eq(userRoles.id, id),
-          eq(userRoles.orgId, orgId),
-          isNotNull(userRoles.expiresAt),
-        ),
-      );
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(userRoles)
+        .where(
+          and(
+            eq(userRoles.id, id),
+            eq(userRoles.orgId, orgId),
+            isNotNull(userRoles.expiresAt),
+          ),
+        );
+
+      await bumpPermissionsVersion(tx, orgId);
+    });
 
     return { success: true };
   }

@@ -183,8 +183,7 @@ async function main(): Promise<void> {
   });
   const db = drizzle(client, { schema });
   try {
-    const summary = await backfill(db);
-    console.log("[backfill-rbac-access] summary:", JSON.stringify(summary, null, 2));
+    await backfill(db);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("42P01")) {

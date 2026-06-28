@@ -15,6 +15,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -41,7 +43,7 @@ import {
 } from "./dto/task.schemas";
 
 @Controller("tasks")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
@@ -55,6 +57,7 @@ export class TasksController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("tasks:write")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +98,7 @@ export class TasksController {
 
   @Post("sequences")
   @HttpCode(201)
+  @RequirePermission("tasks:write")
   createSequence(
     @Body(new ZodValidationPipe(sequenceCreateSchema)) body: SequenceCreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -103,6 +107,7 @@ export class TasksController {
   }
 
   @Delete("sequences/:sequenceId")
+  @RequirePermission("tasks:write")
   async removeSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +119,7 @@ export class TasksController {
 
   @Post("sequences/:sequenceId/apply")
   @HttpCode(201)
+  @RequirePermission("tasks:write")
   async applySequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(sequenceApplySchema)) body: SequenceApplyInput,
@@ -126,6 +132,7 @@ export class TasksController {
   }
 
   @Patch(":taskId")
+  @RequirePermission("tasks:write")
   async update(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -137,6 +144,7 @@ export class TasksController {
   }
 
   @Delete(":taskId")
+  @RequirePermission("tasks:write")
   async remove(
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -147,6 +155,7 @@ export class TasksController {
   }
 
   @Post(":taskId/complete")
+  @RequirePermission("tasks:write")
   async complete(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(completeSchema)) body: CompleteInput,

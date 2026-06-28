@@ -14,6 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -35,7 +37,7 @@ import {
 } from "./dto/csat.schemas";
 
 @Controller("csat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CsatController {
   constructor(private readonly csat: CsatService) {}
 
@@ -46,6 +48,7 @@ export class CsatController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("csat:write")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -64,6 +67,7 @@ export class CsatController {
   }
 
   @Patch(":surveyId")
+  @RequirePermission("csat:write")
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
@@ -75,6 +79,7 @@ export class CsatController {
   }
 
   @Delete(":surveyId")
+  @RequirePermission("csat:write")
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

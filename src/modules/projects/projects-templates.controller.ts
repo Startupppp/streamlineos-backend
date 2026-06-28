@@ -10,6 +10,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -22,7 +24,7 @@ import {
 } from "./dto/projects.schemas";
 
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTemplatesController {
   constructor(private readonly templates: ProjectsTemplatesService) {}
 
@@ -33,6 +35,7 @@ export class ProjectsTemplatesController {
 
   @Post("templates")
   @HttpCode(201)
+  @RequirePermission("projects:manage")
   createTemplate(
     @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +44,7 @@ export class ProjectsTemplatesController {
   }
 
   @Delete("templates/:templateId")
+  @RequirePermission("projects:manage")
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +54,7 @@ export class ProjectsTemplatesController {
 
   @Post("templates/:templateId/apply")
   @HttpCode(201)
+  @RequirePermission("projects:manage")
   applyTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(applyTemplateSchema)) body: ApplyTemplateInput,

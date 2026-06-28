@@ -16,6 +16,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -53,7 +55,7 @@ function csvEscape(value: string): string {
 }
 
 @Controller("calendar")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}
 
@@ -72,6 +74,7 @@ export class CalendarController {
 
   @Post("events")
   @HttpCode(201)
+  @RequirePermission("calendar:write")
   createEvent(
     @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +83,7 @@ export class CalendarController {
   }
 
   @Put("events/:eventId")
+  @RequirePermission("calendar:write")
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
@@ -91,6 +95,7 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId")
+  @RequirePermission("calendar:write")
   removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
