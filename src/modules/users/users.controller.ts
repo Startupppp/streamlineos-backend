@@ -11,9 +11,11 @@ import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
   updateMembershipSchema, bulkActionSchema, listLoginHistorySchema,
+  bulkUpdateUsersSchema, listAuditSchema,
   type ListUsersInput, type UpdateUserInput, type UpdateUserStatusInput,
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
   type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
+  type BulkUpdateUsersInput, type ListAuditInput,
 } from "./dto/users.schemas";
 
 @Controller("users")
@@ -205,5 +207,35 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-update")
+  bulkUpdate(
+    @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkUpdateUsers(u.orgId, body, u.userId);
+  }
+
+  @Post(":userId/reset-password")
+  resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.resetPassword(u.orgId, userId, u.userId);
+  }
+
+  @Get("audit")
+  getOrgAuditLog(
+    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getAuditLog(u.orgId, query);
+  }
+
+  @Get(":userId/audit")
+  getUserAuditLog(
+    @Param("userId") userId: string,
+    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getUserAuditLog(u.orgId, userId, query);
   }
 }

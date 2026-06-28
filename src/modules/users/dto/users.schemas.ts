@@ -7,6 +7,9 @@ export const listUsersSchema = z.object({
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),
+  branchId: z.coerce.number().int().optional(),
+  sortBy: z.enum(["name", "joinedAt", "status"]).default("joinedAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
 export type ListUsersInput = z.infer<typeof listUsersSchema>;
 
@@ -78,3 +81,23 @@ export const listLoginHistorySchema = z.object({
   success: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
 });
 export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;
+
+export const bulkUpdateUsersSchema = z.object({
+  userIds: z.array(z.string()).min(1).max(200),
+  role: z.string().optional(),
+  departmentId: z.number().int().optional().nullable(),
+  branchId: z.number().int().optional().nullable(),
+  teamId: z.string().optional().nullable(),
+  managerUserId: z.string().optional().nullable(),
+});
+export type BulkUpdateUsersInput = z.infer<typeof bulkUpdateUsersSchema>;
+
+export const listAuditSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  actorUserId: z.string().optional(),
+  action: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+export type ListAuditInput = z.infer<typeof listAuditSchema>;

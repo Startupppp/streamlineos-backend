@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, or, sql, gt } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, gt } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addDays } from "date-fns";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,6 +15,7 @@ import {
   userActivity,
   userPreferences,
   userMemberships,
+  passwordResetTokens,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -24,6 +25,8 @@ import type {
   UpdatePreferencesInput,
   UpdateMembershipInput,
   ListLoginHistoryInput,
+  BulkUpdateUsersInput,
+  ListAuditInput,
 } from "./dto/users.schemas";
 
 @Injectable()
@@ -35,7 +38,7 @@ export class UsersService {
   ) {}
 
   async listUsers(orgId: string, params: ListUsersInput) {
-    const { page, limit, search, status, role, departmentId } = params;
+    const { page, limit, search, status, role, departmentId, branchId, sortBy, sortOrder } = params;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(organizationMembers.orgId, orgId)];
@@ -59,11 +62,23 @@ export class UsersService {
       conditions.push(eq(users.departmentId, departmentId));
     }
 
+    if (branchId !== undefined) {
+      conditions.push(eq(users.branchId, branchId));
+    }
+
     if (status === "active") {
       conditions.push(eq(users.isActive, true));
     } else if (status === "suspended" || status === "archived") {
       conditions.push(eq(users.isActive, false));
     }
+
+    const sortDir = sortOrder === "asc" ? asc : desc;
+    const sortExpr =
+      sortBy === "name"
+        ? sortDir(users.name)
+        : sortBy === "status"
+          ? sortDir(users.isActive)
+          : sortDir(organizationMembers.joinedAt);
 
     const [data, countResult] = await Promise.all([
       this.db
@@ -78,6 +93,7 @@ export class UsersService {
           isActive: users.isActive,
           emailVerified: users.emailVerified,
           departmentId: users.departmentId,
+          branchId: users.branchId,
           designation: users.designation,
           phone: users.phone,
           createdAt: users.createdAt,
@@ -86,7 +102,7 @@ export class UsersService {
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(...conditions))
-        .orderBy(desc(organizationMembers.joinedAt))
+        .orderBy(sortExpr)
         .limit(limit)
         .offset(offset),
       this.db
@@ -659,5 +675,99 @@ export class UsersService {
       }
     }
     return { results, succeeded: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length };
+  }
+
+  async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actorUserId: string) {
+    const { userIds, role, departmentId, branchId, teamId, managerUserId } = data;
+
+    const userUpdate: Record<string, unknown> = {};
+    if (departmentId !== undefined) userUpdate.departmentId = departmentId;
+    if (branchId !== undefined) userUpdate.branchId = branchId;
+    if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
+    if (teamId !== undefined) userUpdate.team = teamId;
+
+    if (Object.keys(userUpdate).length > 0) {
+      await this.db.update(users).set(userUpdate).where(inArray(users.id, userIds));
+    }
+
+    if (role) {
+      await this.db
+        .update(organizationMembers)
+        .set({ role })
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)));
+    }
+
+    this.audit.log({
+      action: "user.bulk_updated",
+      userId: actorUserId,
+      orgId,
+      targetType: "user",
+      metadata: { userIds, changes: { role, departmentId, branchId, teamId, managerUserId } },
+    });
+
+    return { success: true, updated: userIds.length };
+  }
+
+  async resetPassword(orgId: string, userId: string, actorUserId: string) {
+    await this.getUser(orgId, userId);
+
+    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { email: true } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = addDays(new Date(), 1);
+
+    await this.db.insert(passwordResetTokens).values({
+      id: randomUUID(),
+      email: user.email,
+      token,
+      expiresAt,
+    });
+
+    this.audit.log({ action: "user.password_reset_sent", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { email: user.email } });
+
+    return { success: true, email: user.email };
+  }
+
+  async getAuditLog(orgId: string, params: ListAuditInput) {
+    const { page, limit, actorUserId, action, from, to } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(userActivity.orgId, orgId)];
+    if (actorUserId) conditions.push(eq(userActivity.actorUserId, actorUserId));
+    if (action) conditions.push(ilike(userActivity.action, `%${action}%`));
+    if (from) conditions.push(gte(userActivity.createdAt, new Date(from)));
+    if (to) conditions.push(lte(userActivity.createdAt, new Date(to)));
+
+    const [data, countResult] = await Promise.all([
+      this.db.select().from(userActivity).where(and(...conditions)).orderBy(desc(userActivity.createdAt)).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(userActivity).where(and(...conditions)),
+    ]);
+
+    return {
+      data,
+      pagination: { page, limit, total: countResult[0]?.total ?? 0, totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit) },
+    };
+  }
+
+  async getUserAuditLog(orgId: string, userId: string, params: ListAuditInput) {
+    await this.getUser(orgId, userId);
+
+    const { page, limit, from, to } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(userActivity.orgId, orgId), eq(userActivity.userId, userId)];
+    if (from) conditions.push(gte(userActivity.createdAt, new Date(from)));
+    if (to) conditions.push(lte(userActivity.createdAt, new Date(to)));
+
+    const [data, countResult] = await Promise.all([
+      this.db.select().from(userActivity).where(and(...conditions)).orderBy(desc(userActivity.createdAt)).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(userActivity).where(and(...conditions)),
+    ]);
+
+    return {
+      data,
+      pagination: { page, limit, total: countResult[0]?.total ?? 0, totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit) },
+    };
   }
 }
