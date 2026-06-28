@@ -68,6 +68,7 @@ import { AutomationModule } from "./modules/automation/automation.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
+import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -142,6 +143,7 @@ import { MeController } from "./me/me.controller";
     AuthModule,
     FeatureFlagsModule,
     OrgHierarchyModule,
+    ApiTokensModule,
   ],
   controllers: [HealthController, MeController],
 })

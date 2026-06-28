@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { userSessions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -76,6 +76,37 @@ export class SessionService {
 
   async touch(id: string): Promise<void> {
     await this.db.update(userSessions).set({ lastActive: new Date() }).where(eq(userSessions.id, id));
+  }
+
+  async enforceMaxSessions(userId: string, maxAllowed: number, keepId: string): Promise<void> {
+    const now = new Date();
+    const active = await this.db
+      .select({ id: userSessions.id, lastActive: userSessions.lastActive })
+      .from(userSessions)
+      .where(
+        and(
+          eq(userSessions.userId, userId),
+          eq(userSessions.isRevoked, false),
+          or(isNull(userSessions.expiresAt), gt(userSessions.expiresAt, now)),
+        ),
+      )
+      .orderBy(asc(userSessions.lastActive));
+
+    if (active.length <= maxAllowed) return;
+
+    const toRevoke = active
+      .filter((s) => s.id !== keepId)
+      .slice(0, active.length - maxAllowed);
+
+    if (toRevoke.length === 0) return;
+
+    for (const s of toRevoke) {
+      await this.db
+        .update(userSessions)
+        .set({ isRevoked: true })
+        .where(eq(userSessions.id, s.id));
+    }
+    await this.cache.invalidate(`session:${userId}`);
   }
 
   async isValid(id: string, userId: string): Promise<boolean> {

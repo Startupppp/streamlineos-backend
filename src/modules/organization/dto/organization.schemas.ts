@@ -46,6 +46,7 @@ export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
   passwordExpiryDays: z.number().int().min(30).max(365).nullable().optional(),
   allowedEmailDomains: z.array(z.string().min(1)).optional(),
+  maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
 });
 
 export const inviteMemberSchema = z.object({

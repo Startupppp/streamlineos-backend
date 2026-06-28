@@ -20,6 +20,7 @@ type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
   passwordExpiryDays?: number | null;
   allowedEmailDomains?: string[];
+  maxConcurrentSessions?: number | null;
 };
 
 type OrgSettingsUpdate = {
@@ -323,6 +324,7 @@ export class OrganizationService {
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.passwordExpiryDays !== undefined) updateData.passwordExpiryDays = input.passwordExpiryDays;
     if (input.allowedEmailDomains !== undefined) updateData.allowedEmailDomains = input.allowedEmailDomains;
+    if (input.maxConcurrentSessions !== undefined) updateData.maxConcurrentSessions = input.maxConcurrentSessions;
 
     if (Object.keys(updateData).length === 0) return { success: true };
 

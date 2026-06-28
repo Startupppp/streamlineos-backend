@@ -238,6 +238,16 @@ export class AuthService {
       expiresAt,
     });
 
+    if (orgId) {
+      const [org] = await this.db
+        .select({ maxConcurrentSessions: organizations.maxConcurrentSessions })
+        .from(organizations)
+        .where(eq(organizations.id, orgId));
+      if (org?.maxConcurrentSessions) {
+        await this.sessionService.enforceMaxSessions(user.id, org.maxConcurrentSessions, sessionId);
+      }
+    }
+
     await this.logLoginEvent(user.id, orgId, "login.success", true, null, context);
 
     this.audit.log({

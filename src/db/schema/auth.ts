@@ -22,6 +22,7 @@ export const organizations = pgTable("organizations", {
   mfaEnforced: boolean("mfa_enforced").default(false).notNull(),
   allowedEmailDomains: text("allowed_email_domains").array().default([]),
   passwordExpiryDays: integer("password_expiry_days"),
+  maxConcurrentSessions: integer("max_concurrent_sessions"),
   enabledModules: text("enabled_modules").array(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   companySize: text("company_size"),
