@@ -14,3 +14,7 @@ export function formatDateOnly(value: Date | string | null | undefined): string 
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 86_400_000);
+}

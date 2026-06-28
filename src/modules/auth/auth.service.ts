@@ -112,6 +112,7 @@ export class AuthService {
         isActive: true,
         hasDashboardAccess: true,
         isPasswordChangeRequired: false,
+        emailVerified: new Date(),
       });
 
       await tx.insert(organizationMembers).values({

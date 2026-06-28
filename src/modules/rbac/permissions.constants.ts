@@ -136,6 +136,9 @@ const SHARED_PERMISSIONS: Permission[] = [
   { name: "self:leaves", resource: "self", action: "leaves", description: "Submit and view own leave requests" },
   { name: "self:expenses", resource: "self", action: "expenses", description: "Submit and view own expense claims" },
   { name: "self:payslips", resource: "self", action: "payslips", description: "View own payslips" },
+  { name: "branch:create", resource: "branch", action: "create", description: "Create branches" },
+  { name: "branch:update", resource: "branch", action: "update", description: "Update branches" },
+  { name: "branch:manage_targets", resource: "branch", action: "manage_targets", description: "Manage branch targets" },
 ];
 
 const SUPPORT_PERMISSIONS: Permission[] = [
