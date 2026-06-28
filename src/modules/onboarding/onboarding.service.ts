@@ -378,13 +378,7 @@ export class OnboardingService {
 
     if (!task) throw new NotFoundException("Task not found");
 
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("manage", "hr:employees");
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:employees:manage");
 
     if (!isAdmin && task.userId !== u.userId) {
       throw new ForbiddenException("Forbidden");
