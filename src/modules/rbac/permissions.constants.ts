@@ -19,6 +19,7 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:payroll:view", resource: "hr:payroll", action: "view", description: "View payroll information" },
   { name: "hr:payroll:generate", resource: "hr:payroll", action: "generate", description: "Generate payroll" },
   { name: "hr:payroll:approve", resource: "hr:payroll", action: "approve", description: "Approve payroll" },
+  { name: "hr:payroll:read", resource: "hr:payroll", action: "read", description: "Read payroll data for reporting and analytics" },
   { name: "hr:salary:view", resource: "hr:salary", action: "view", description: "View salary structures" },
   { name: "hr:salary:manage", resource: "hr:salary", action: "manage", description: "Manage salary structures" },
   { name: "hr:expenses:view", resource: "hr:expenses", action: "view", description: "View expenses" },
