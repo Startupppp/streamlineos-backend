@@ -11,11 +11,10 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
+import { requireAuthorize } from "../../common/access/authorize";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { BranchContext } from "../leads/branch-filter";
 import { EmployeesService } from "./employees.service";
@@ -44,13 +43,16 @@ export class EmployeesController {
   ) {}
 
   @Get()
-  @UseGuards(AbilityGuard)
-  @CheckAbility("read", "hr:employees")
   listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const branch: BranchContext = { role: u.role ?? "", branchId: u.branchId, userId: u.userId };
+    const scope = requireAuthorize(u, { permission: "hr:employees:view", requiredModule: "hr" });
+    const branch: BranchContext = {
+      role: u.role ?? "",
+      branchId: scope === "own" ? (u.branchId ?? null) : null,
+      userId: u.userId,
+    };
     const search = query.search ?? query.q;
     return this.employees.listEmployees(u.orgId, branch, {
       page: query.page,

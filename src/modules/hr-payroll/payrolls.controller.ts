@@ -17,13 +17,9 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { ModuleGuard } from "../../common/rbac/module.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { defineAbilityFor } from "../../common/rbac/abilities.factory";
+import { requireAuthorize } from "../../common/access/authorize";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PayrollsService } from "./payrolls.service";
 import { PayrollStatusService } from "./payrolls-status.service";
@@ -51,13 +47,11 @@ export class PayrollsController {
   }
 
   @Get("all")
-  @UseGuards(ModuleGuard, AbilityGuard)
-  @RequireModule("hr")
-  @CheckAbility("view", "hr:payroll")
   listAll(
     @Query(new ZodValidationPipe(allPayrollsQuerySchema)) query: AllPayrollsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:view", requiredModule: "hr" });
     if (!query.month && !query.year) {
       throw new BadRequestException("Either month (YYYY-MM) or year (YYYY) query param is required.");
     }
@@ -70,16 +64,7 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    if (!ability.can("generate", "hr:payroll")) {
-      throw new ForbiddenException("Only admins can generate payroll.");
-    }
-
+    requireAuthorize(u, { permission: "hr:payroll:manage", requiredModule: "hr" });
     if (!body.month || !/^\d{4}-\d{2}$/.test(body.month)) {
       throw new BadRequestException("month is required in YYYY-MM format.");
     }
@@ -90,14 +75,12 @@ export class PayrollsController {
   }
 
   @Post("generate")
-  @UseGuards(ModuleGuard, AbilityGuard)
-  @RequireModule("hr")
-  @CheckAbility("generate", "hr:payroll")
   @HttpCode(201)
   async generateSingle(
     @Body(new ZodValidationPipe(generateSinglePayrollSchema)) body: GenerateSinglePayrollInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:manage", requiredModule: "hr" });
     const result = await this.payrolls.generateSingle(u.orgId, u.userId, body);
     if (!result.ok) {
       if (result.reason === "no_salary_structure") {
@@ -109,26 +92,22 @@ export class PayrollsController {
   }
 
   @Patch(":payrollId/approve")
-  @UseGuards(ModuleGuard, AbilityGuard)
-  @RequireModule("hr")
-  @CheckAbility("approve", "hr:payroll")
   async approve(
     @Param("payrollId", ParseIntPipe) payrollId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:manage", requiredModule: "hr" });
     const result = await this.payrollStatus.approve(u.orgId, u.userId, payrollId);
     if (!result.ok) throw new NotFoundException("Payroll not found.");
     return { success: true };
   }
 
   @Patch(":payrollId/paid")
-  @UseGuards(ModuleGuard, AbilityGuard)
-  @RequireModule("hr")
-  @CheckAbility("manage", "hr:payrolls")
   async markPaid(
     @Param("payrollId", ParseIntPipe) payrollId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    requireAuthorize(u, { permission: "hr:payroll:manage", requiredModule: "hr" });
     const result = await this.payrollStatus.markPaid(u.orgId, u.userId, payrollId);
     if (!result.ok) {
       if (result.reason === "not_found") throw new NotFoundException("Payroll not found.");
@@ -143,13 +122,7 @@ export class PayrollsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const ability = defineAbilityFor({
-      isPlatformAdmin: u.isPlatformAdmin,
-      isOrgOwner: u.isOrgOwner,
-      permissions: u.permissions,
-      enabledModules: u.enabledModules,
-    });
-    const isAdmin = ability.can("approve", "hr:payroll") || ability.can("generate", "hr:payroll");
+    const isAdmin = u.isPlatformAdmin || u.isOrgOwner || (u.permissions ?? []).includes("hr:payroll:manage");
 
     const result = await this.payrolls.getPayslipDownload(u.orgId, payrollId, u.userId, isAdmin);
     if (!result.ok) {

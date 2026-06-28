@@ -23,6 +23,8 @@ export const PERMISSION_CATALOG: CatalogPermission[] = [
   { key: "crm:leads:create", module: "crm", resource: "leads", action: "create", description: "Create leads", minTier: "STARTER", scopable: false },
   { key: "crm:leads:update", module: "crm", resource: "leads", action: "update", description: "Update leads", minTier: "STARTER", scopable: true },
   { key: "crm:leads:delete", module: "crm", resource: "leads", action: "delete", description: "Delete leads", minTier: "GROWTH", scopable: false },
+  { key: "crm:contacts:view", module: "crm", resource: "contacts", action: "view", description: "View CRM contacts", minTier: "STARTER", scopable: true },
+  { key: "crm:contacts:manage", module: "crm", resource: "contacts", action: "manage", description: "Manage CRM contacts", minTier: "STARTER", scopable: false },
   { key: "inventory:products:view", module: "inventory", resource: "products", action: "view", description: "View products", minTier: "STARTER", scopable: false },
   { key: "inventory:products:manage", module: "inventory", resource: "products", action: "manage", description: "Manage products", minTier: "STARTER", scopable: false },
   { key: "inventory:orders:view", module: "inventory", resource: "orders", action: "view", description: "View orders", minTier: "STARTER", scopable: true },
