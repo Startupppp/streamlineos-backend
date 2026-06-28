@@ -523,7 +523,7 @@ export class OrganizationService {
     };
   }
 
-  async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string }> {
+  async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.token, token),
@@ -533,15 +533,22 @@ export class OrganizationService {
     });
     if (!invitation) throw new NotFoundException("Invalid or expired invitation");
 
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, invitation.orgId),
-      columns: { name: true },
-    });
+    const [org, existingUser] = await Promise.all([
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, invitation.orgId),
+        columns: { name: true },
+      }),
+      this.db.query.users.findFirst({
+        where: eq(users.email, invitation.email),
+        columns: { id: true },
+      }),
+    ]);
 
     return {
       email: invitation.email,
       organizationName: org?.name ?? "Unknown",
       role: invitation.role,
+      userExists: !!existingUser,
     };
   }
 

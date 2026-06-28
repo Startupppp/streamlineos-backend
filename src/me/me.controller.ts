@@ -105,4 +105,17 @@ export class MeController {
   getAuthAnalytics(@CurrentUser() u: CurrentUserContext): ReturnType<MeService["getAuthAnalytics"]> {
     return this.meService.getAuthAnalytics(u.userId);
   }
+
+  @Get("connected-accounts")
+  getConnectedAccounts(@CurrentUser() u: CurrentUserContext) {
+    return this.meService.getConnectedAccounts(u.userId);
+  }
+
+  @Delete("connected-accounts")
+  unlinkProvider(
+    @Body() body: { provider: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.meService.unlinkProvider(u.userId, body.provider);
+  }
 }

@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, passwordHistory, loginHistory, userSessions, passwordResetTokens, devices } from "../db/schema";
+import { users, passwordHistory, loginHistory, userSessions, passwordResetTokens, devices, accounts } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
@@ -215,6 +215,27 @@ export class MeService {
       .set({ trusted: true })
       .where(and(eq(devices.id, deviceId), eq(devices.userId, userId)));
     return { message: "Device trusted" };
+  }
+
+  async getConnectedAccounts(userId: string) {
+    return this.db
+      .select({ provider: accounts.provider, providerAccountId: accounts.providerAccountId })
+      .from(accounts)
+      .where(eq(accounts.userId, userId));
+  }
+
+  async unlinkProvider(userId: string, provider: string) {
+    const existing = await this.db
+      .select({ provider: accounts.provider })
+      .from(accounts)
+      .where(eq(accounts.userId, userId));
+    if (existing.length <= 1) {
+      throw new BadRequestException("Cannot unlink the only connected account");
+    }
+    await this.db
+      .delete(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.provider, provider)));
+    return { success: true as const };
   }
 
   async getAuthAnalytics(userId: string) {
