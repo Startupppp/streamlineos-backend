@@ -253,15 +253,15 @@ export class SupportKbService {
       .select({
         id: kbArticleComments.id,
         articleId: kbArticleComments.articleId,
-        body: kbArticleComments.body,
-        userId: kbArticleComments.userId,
+        body: kbArticleComments.content,
+        userId: kbArticleComments.authorId,
         userName: users.name,
         userImage: users.image,
         createdAt: kbArticleComments.createdAt,
         updatedAt: kbArticleComments.updatedAt,
       })
       .from(kbArticleComments)
-      .leftJoin(users, eq(kbArticleComments.userId, users.id))
+      .leftJoin(users, eq(kbArticleComments.authorId, users.id))
       .where(and(eq(kbArticleComments.articleId, articleId), eq(kbArticleComments.orgId, orgId)))
       .orderBy(desc(kbArticleComments.createdAt));
   }
@@ -271,7 +271,7 @@ export class SupportKbService {
 
     const [inserted] = await this.db
       .insert(kbArticleComments)
-      .values({ orgId, articleId, userId, body: input.body })
+      .values({ orgId, articleId, authorId: userId, content: input.body })
       .returning();
 
     const author = await this.db.query.users.findFirst({
@@ -282,8 +282,8 @@ export class SupportKbService {
     return {
       id: inserted.id,
       articleId: inserted.articleId,
-      body: inserted.body,
-      userId: inserted.userId,
+      body: inserted.content,
+      userId: inserted.authorId,
       userName: author?.name ?? null,
       userImage: author?.image ?? null,
       createdAt: inserted.createdAt,
