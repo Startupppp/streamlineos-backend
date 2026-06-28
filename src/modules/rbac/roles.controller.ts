@@ -54,6 +54,11 @@ export class RolesController {
     return this.roles.cloneTemplate(u, body);
   }
 
+  @Get("simulate/:targetUserId")
+  simulate(@Param("targetUserId") targetUserId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.roles.simulatePermissions(u, targetUserId);
+  }
+
   @Get(":roleId")
   get(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));

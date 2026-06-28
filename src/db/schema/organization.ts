@@ -169,6 +169,7 @@ export const orgLocations = pgTable(
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [index("idx_org_locations_org").on(table.orgId)],
 );
@@ -191,6 +192,7 @@ export const orgCostCenters = pgTable(
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
     index("idx_org_cc_org").on(table.orgId),

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { organizationMembers, roles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -171,5 +171,60 @@ export class RolesService {
       .returning();
 
     return created;
+  }
+
+  async simulatePermissions(actor: CurrentUserContext, targetUserId: string) {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, actor.orgId),
+        eq(organizationMembers.userId, targetUserId),
+        isNull(organizationMembers.leftAt),
+      ),
+    });
+
+    if (!member) throw new ForbiddenException("Target user not found in this organization");
+
+    const targetCtx: CurrentUserContext = {
+      userId: targetUserId,
+      orgId: actor.orgId,
+      role: member.role,
+      permissions: member.permissions ?? [],
+      isOrgOwner: member.role === "OWNER",
+    };
+
+    const ability = defineAbilityFor(targetCtx);
+    const permissions: string[] = targetCtx.permissions;
+
+    const effectivePermissions = permissions.map((p) => {
+      const [module, action] = p.split(":");
+      return { permission: p, module: module ?? p, action: action ?? "*", granted: true };
+    });
+
+    const commonActions = [
+      { action: "manage:all", label: "Manage all" },
+      { action: "manage:settings", label: "Manage settings" },
+      { action: "hr:employees:view", label: "View employees" },
+      { action: "hr:employees:create", label: "Create employees" },
+      { action: "settings:rbac:manage", label: "Manage RBAC" },
+    ] as const;
+
+    const checks = commonActions.map(({ action, label }) => {
+      const [subject, act] = action.split(":");
+      const granted = ability.can(act ?? "manage", subject ?? "all");
+      return {
+        permission: action,
+        label,
+        result: granted ? ("ALLOW" as const) : ("DENY" as const),
+        reason: granted ? null : "FORBIDDEN",
+      };
+    });
+
+    return {
+      targetUserId,
+      role: member.role,
+      effectivePermissions,
+      checks,
+      isOwner: targetCtx.isOrgOwner,
+    };
   }
 }
