@@ -33,38 +33,44 @@ export class KbSpacesController {
 
   @Get()
   @RequirePermission("kb:spaces:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.spaces.list(u);
+  async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return await this.spaces.list(u);
   }
 
   @Post()
   @RequirePermission("kb:spaces:manage")
-  create(
+  async create(
     @Body(new ZodValidationPipe(createSpaceSchema)) body: CreateSpaceInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.spaces.create(u.orgId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.spaces.create(u.orgId, u.userId, body);
   }
 
   @Get(":spaceId")
   @RequirePermission("kb:spaces:view")
-  get(@Param("spaceId", ParseIntPipe) spaceId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.spaces.get(u, spaceId);
+  async get(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.spaces.get(u, spaceId);
   }
 
   @Patch(":spaceId")
   @RequirePermission("kb:spaces:manage")
-  update(
+  async update(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(updateSpaceSchema)) body: UpdateSpaceInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.spaces.update(u.orgId, spaceId, body);
+  ): Promise<unknown> {
+    return await this.spaces.update(u.orgId, spaceId, body);
   }
 
   @Delete(":spaceId")
   @RequirePermission("kb:spaces:manage")
-  remove(@Param("spaceId", ParseIntPipe) spaceId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.spaces.remove(u.orgId, spaceId);
+  async remove(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.spaces.remove(u.orgId, spaceId);
   }
 }

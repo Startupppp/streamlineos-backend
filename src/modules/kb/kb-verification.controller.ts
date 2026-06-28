@@ -25,10 +25,10 @@ export class KbVerificationController {
 
   @Get("verification/queue")
   @RequirePermission("kb:articles:manage")
-  listDue(
+  async listDue(
     @Query(new ZodValidationPipe(verificationQueueSchema)) query: VerificationQueueInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.verification.listDue(u, query.page, query.pageSize);
+  ): Promise<unknown> {
+    return await this.verification.listDue(u, query.page, query.pageSize);
   }
 }

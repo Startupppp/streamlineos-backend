@@ -18,25 +18,25 @@ export class KbAnalyticsController {
 
   @Get("analytics/overview")
   @RequirePermission("kb:analytics:view")
-  overview(
+  async overview(
     @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.analytics.overview(u.orgId, query);
+  ): Promise<unknown> {
+    return await this.analytics.overview(u.orgId, query);
   }
 
   @Get("analytics/no-results")
   @RequirePermission("kb:analytics:view")
-  noResults(
+  async noResults(
     @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.analytics.noResults(u.orgId, query);
+  ): Promise<unknown> {
+    return await this.analytics.noResults(u.orgId, query);
   }
 
   @Get("verification/queue")
   @RequirePermission("kb:articles:manage")
-  verificationQueue(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.verificationQueue(u.orgId);
+  async verificationQueue(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return await this.analytics.verificationQueue(u.orgId);
   }
 }

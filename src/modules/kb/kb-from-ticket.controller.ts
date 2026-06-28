@@ -27,11 +27,11 @@ export class KbFromTicketController {
   @Post("articles/from-ticket/:ticketId")
   @HttpCode(200)
   @RequirePermission("kb:articles:create")
-  draftFromTicket(
+  async draftFromTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(fromTicketSchema)) body: FromTicketInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.fromTicket.draftFromTicket(u, ticketId, body);
+  ): Promise<unknown> {
+    return await this.fromTicket.draftFromTicket(u, ticketId, body);
   }
 }

@@ -18,27 +18,30 @@ export class KbMembersController {
 
   @Get("spaces/:spaceId/members")
   @RequirePermission("kb:spaces:manage")
-  list(@Param("spaceId", ParseIntPipe) spaceId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.list(u.orgId, spaceId);
+  async list(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.members.list(u.orgId, spaceId);
   }
 
   @Post("spaces/:spaceId/members")
   @RequirePermission("kb:spaces:manage")
-  add(
+  async add(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.members.add(u.orgId, spaceId, body);
+  ): Promise<unknown> {
+    return await this.members.add(u.orgId, spaceId, body);
   }
 
   @Delete("spaces/:spaceId/members/:memberId")
   @RequirePermission("kb:spaces:manage")
-  remove(
+  async remove(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Param("memberId", ParseIntPipe) memberId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.members.remove(u.orgId, spaceId, memberId);
+  ): Promise<unknown> {
+    return await this.members.remove(u.orgId, spaceId, memberId);
   }
 }

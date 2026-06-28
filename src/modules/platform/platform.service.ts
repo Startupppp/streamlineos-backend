@@ -1,4 +1,5 @@
 ﻿import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomBytes } from "crypto";
 import { eq, sql, gte, desc, ilike, or, and, isNull, type SQL } from "drizzle-orm";
 import {
   platformVisits,
@@ -13,7 +14,8 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import type { VisitInput, ListMessagesQuery } from "./dto/platform.schemas";
+import { EmailService } from "../email/email.service";
+import type { VisitInput, ListMessagesQuery, ContactFormInput } from "./dto/platform.schemas";
 
 export interface VisitMeta {
   userAgent: string | null;
@@ -23,9 +25,149 @@ export interface VisitMeta {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inr = (paise: number) => Math.round(paise / 100);
 
+const BRAND_NAME = "StreamlineOS";
+const BRAND_URL = "https://www.streamlineos.in";
+const BRAND_SUPPORT_EMAIL = "support@streamlineos.in";
+
+const TOPIC_LABEL: Record<string, string> = {
+  sales: "Talk to sales",
+  support: "Get support",
+  partnership: "Partnership",
+  press: "Press",
+  other: "Something else",
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parseEmailList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "" && EMAIL_RE.test(s));
+}
+
+function getAdminRecipients(): string[] {
+  const candidates = [
+    ...parseEmailList(process.env.ADMIN_NOTIFICATION_EMAILS),
+    ...parseEmailList(process.env.ADMIN_NOTIFICATION_EMAIL),
+    ...parseEmailList(process.env.OWNER_EMAIL),
+  ];
+  const deduped = Array.from(new Set(candidates));
+  return deduped.length > 0 ? deduped : [BRAND_SUPPORT_EMAIL];
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildAdminNotificationHtml(data: ContactFormInput, reference: string): string {
+  const topicLabel = TOPIC_LABEL[data.topic ?? "other"] ?? "Something else";
+  const fields: { label: string; value: string }[] = [
+    { label: "Reference", value: reference },
+    { label: "Name", value: data.name },
+    { label: "Email", value: data.email },
+    { label: "Company", value: data.company ?? "—" },
+    { label: "Phone", value: data.phone ?? "—" },
+    { label: "Topic", value: topicLabel },
+  ];
+  const rows = fields
+    .map(
+      (f) =>
+        `<tr><td style="padding:8px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;width:120px;border-bottom:1px solid #e2e8f0;">${escapeHtml(f.label)}</td><td style="padding:8px 16px;color:#0b1220;font-size:14px;border-bottom:1px solid #e2e8f0;">${escapeHtml(f.value)}</td></tr>`,
+    )
+    .join("");
+
+  return `<!doctype html>
+<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:580px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:24px 32px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
+      <p style="margin:0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">${BRAND_NAME} · New contact submission</p>
+      <h1 style="margin:6px 0 0;font-size:22px;font-weight:700;letter-spacing:-0.01em;">${topicLabel} — ${escapeHtml(data.name)}</h1>
+    </div>
+    <table style="width:100%;border-collapse:collapse;">${rows}</table>
+    <div style="padding:20px 32px;border-top:1px solid #e2e8f0;">
+      <p style="margin:0 0 6px;color:#64748b;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;">Message</p>
+      <p style="margin:0;color:#0b1220;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(data.message)}</p>
+    </div>
+    <div style="padding:18px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
+      <a href="${BRAND_URL}/owner/inbox/${reference}" style="color:#3b82f6;text-decoration:none;font-weight:500;">Open in owner inbox →</a>
+    </div>
+  </div>
+</body></html>`;
+}
+
+function buildCustomerAutoreplyHtml(data: ContactFormInput): string {
+  const firstName = data.name.split(" ")[0] ?? data.name;
+  return `<!doctype html>
+<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:560px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:28px 32px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
+      <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.01em;">Thanks, ${escapeHtml(firstName)} — we got it.</h1>
+    </div>
+    <div style="padding:24px 32px;color:#0b1220;font-size:14px;line-height:1.65;">
+      <p style="margin:0 0 14px;">A human on the ${BRAND_NAME} team will reply within one business day. If it&apos;s urgent, reply to this email and it reaches us directly.</p>
+      <p style="margin:0 0 14px;color:#64748b;">For reference, the message you sent:</p>
+      <div style="padding:14px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;color:#475569;font-size:13px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(data.message)}</div>
+      <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">— The ${BRAND_NAME} team</p>
+    </div>
+  </div>
+</body></html>`;
+}
+
 @Injectable()
 export class PlatformService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: EmailService,
+  ) {}
+
+  async submitContactForm(input: ContactFormInput): Promise<{ ok: true }> {
+    const reference = `MSG-${randomBytes(6).toString("hex").toUpperCase()}`;
+
+    await this.db.insert(platformMessages).values({
+      publicCode: reference,
+      name: input.name,
+      email: input.email,
+      company: input.company ?? null,
+      phone: input.phone ?? null,
+      topic: input.topic ?? "other",
+      message: input.message,
+      status: "NEW",
+    });
+
+    const adminRecipients = getAdminRecipients();
+    const topicLabel = TOPIC_LABEL[input.topic ?? "other"] ?? "Something else";
+
+    try {
+      await this.email.sendEmail({
+        to: adminRecipients,
+        subject: `[${BRAND_NAME}] New ${topicLabel} — ${input.name}`,
+        html: buildAdminNotificationHtml(input, reference),
+        replyTo: input.email,
+      });
+    } catch (error) {
+      logger.warn("[contact-form] Admin notification failed", { error });
+    }
+
+    try {
+      await this.email.sendEmail({
+        to: input.email,
+        subject: `We got your message — ${BRAND_NAME}`,
+        html: buildCustomerAutoreplyHtml(input),
+        replyTo: BRAND_SUPPORT_EMAIL,
+      });
+    } catch (error) {
+      logger.warn("[contact-form] Customer auto-reply failed", { error });
+    }
+
+    return { ok: true };
+  }
 
   async recordVisit(input: VisitInput, meta: VisitMeta) {
     try {

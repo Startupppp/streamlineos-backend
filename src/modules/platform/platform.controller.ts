@@ -12,6 +12,7 @@
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -22,6 +23,8 @@ import {
   listMessagesQuerySchema,
   markStatusBodySchema,
   markRepliedBodySchema,
+  contactFormSchema,
+  type ContactFormInput,
 } from "./dto/platform.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -70,6 +73,15 @@ export class PlatformController {
   @HttpCode(405)
   visitUsage() {
     return { usage: "POST { sessionToken, path, referrer }" };
+  }
+
+  @Public()
+  @Post("contact")
+  @HttpCode(200)
+  submitContact(
+    @Body(new ZodValidationPipe(contactFormSchema)) body: ContactFormInput,
+  ) {
+    return this.platform.submitContactForm(body);
   }
 
   @UseGuards(PlatformOwnerGuard)

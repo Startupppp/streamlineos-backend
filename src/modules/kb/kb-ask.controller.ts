@@ -19,10 +19,10 @@ export class KbAskController {
   @Post("ask")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
-  askQuestion(
+  async askQuestion(
     @Body(new ZodValidationPipe(askSchema)) body: AskInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.ask.ask(u, body);
+  ): Promise<unknown> {
+    return await this.ask.ask(u, body);
   }
 }

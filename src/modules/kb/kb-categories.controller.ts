@@ -33,33 +33,39 @@ export class KbCategoriesController {
 
   @Get("spaces/:spaceId/categories")
   @RequirePermission("kb:spaces:view")
-  list(@Param("spaceId", ParseIntPipe) spaceId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.categories.listBySpace(u, spaceId);
+  async list(
+    @Param("spaceId", ParseIntPipe) spaceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.categories.listBySpace(u, spaceId);
   }
 
   @Post("spaces/:spaceId/categories")
   @RequirePermission("kb:categories:manage")
-  create(
+  async create(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.categories.create(u, spaceId, body);
+  ): Promise<unknown> {
+    return await this.categories.create(u, spaceId, body);
   }
 
   @Patch("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
-  update(
+  async update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.categories.update(u, categoryId, body);
+  ): Promise<unknown> {
+    return await this.categories.update(u, categoryId, body);
   }
 
   @Delete("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
-  remove(@Param("categoryId", ParseIntPipe) categoryId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.categories.remove(u.orgId, categoryId);
+  async remove(
+    @Param("categoryId", ParseIntPipe) categoryId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.categories.remove(u.orgId, categoryId);
   }
 }

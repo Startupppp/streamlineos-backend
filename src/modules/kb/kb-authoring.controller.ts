@@ -28,40 +28,40 @@ export class KbAuthoringController {
   @Post("draft")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
-  draft(
+  async draft(
     @Body(new ZodValidationPipe(draftSchema)) body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authoring.draft(u.orgId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.authoring.draft(u.orgId, u.userId, body);
   }
 
   @Post("improve")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
-  improve(
+  async improve(
     @Body(new ZodValidationPipe(improveSchema)) body: ImproveInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authoring.improve(u.orgId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.authoring.improve(u.orgId, u.userId, body);
   }
 
   @Post("summarize")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
-  summarize(
+  async summarize(
     @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authoring.summarize(u.orgId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.authoring.summarize(u.orgId, u.userId, body);
   }
 
   @Post("translate")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
-  translate(
+  async translate(
     @Body(new ZodValidationPipe(translateSchema)) body: TranslateInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authoring.translate(u.orgId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.authoring.translate(u.orgId, u.userId, body);
   }
 }

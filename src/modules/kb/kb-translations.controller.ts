@@ -31,42 +31,42 @@ export class KbTranslationsController {
 
   @Get("articles/:articleId/translations")
   @RequirePermission("kb:articles:view")
-  list(
+  async list(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.translations.list(u.orgId, articleId);
+  ): Promise<unknown> {
+    return await this.translations.list(u.orgId, articleId);
   }
 
   @Get("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:view")
-  get(
+  async get(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.translations.get(u.orgId, articleId, locale);
+  ): Promise<unknown> {
+    return await this.translations.get(u.orgId, articleId, locale);
   }
 
   @Put("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:update")
-  upsert(
+  async upsert(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
     @Body(new ZodValidationPipe(upsertTranslationSchema)) body: UpsertTranslationInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.translations.upsert(u.orgId, articleId, locale, body);
+  ): Promise<unknown> {
+    return await this.translations.upsert(u.orgId, articleId, locale, body);
   }
 
   @Delete("articles/:articleId/translations/:locale")
   @HttpCode(200)
   @RequirePermission("kb:articles:update")
-  remove(
+  async remove(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.translations.remove(u.orgId, articleId, locale);
+  ): Promise<unknown> {
+    return await this.translations.remove(u.orgId, articleId, locale);
   }
 }

@@ -34,49 +34,49 @@ export class KbCommentsController {
 
   @Get("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
-  list(
+  async list(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.comments.list(u.orgId, articleId);
+  ): Promise<unknown> {
+    return await this.comments.list(u.orgId, articleId);
   }
 
   @Post("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
-  create(
+  async create(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(createCommentSchema)) body: CreateCommentInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.comments.create(u.orgId, articleId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.comments.create(u.orgId, articleId, u.userId, body);
   }
 
   @Patch("comments/:commentId")
   @RequirePermission("kb:articles:view")
-  update(
+  async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body(new ZodValidationPipe(updateCommentSchema)) body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.comments.update(u.orgId, commentId, u.userId, body);
+  ): Promise<unknown> {
+    return await this.comments.update(u.orgId, commentId, u.userId, body);
   }
 
   @Delete("comments/:commentId")
   @HttpCode(204)
   @RequirePermission("kb:articles:view")
-  remove(
+  async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.comments.remove(u.orgId, commentId, u.userId);
+  ): Promise<unknown> {
+    return await this.comments.remove(u.orgId, commentId, u.userId);
   }
 
   @Post("comments/:commentId/resolve")
   @RequirePermission("kb:articles:update")
-  resolve(
+  async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.comments.resolve(u.orgId, commentId);
+  ): Promise<unknown> {
+    return await this.comments.resolve(u.orgId, commentId);
   }
 }

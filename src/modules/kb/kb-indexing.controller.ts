@@ -16,7 +16,7 @@ export class KbIndexingController {
 
   @Post("articles/reindex-all")
   @RequirePermission("kb:articles:manage")
-  async reindexAll(@CurrentUser() u: CurrentUserContext) {
-    return this.indexing.reindexAll(u.orgId);
+  async reindexAll(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return await this.indexing.reindexAll(u.orgId);
   }
 }

@@ -6,7 +6,13 @@ import { Public } from "../../common/auth/public.decorator";
 @Controller("public/kb/widget")
 export class KbWidgetController {
   @Get(":orgId")
-  config(@Param("orgId") orgId: string) {
+  config(@Param("orgId") orgId: string): {
+    orgId: string;
+    helpCenterUrl: string;
+    buttonLabel: string;
+    primaryColor: string;
+    position: string;
+  } {
     return {
       orgId,
       helpCenterUrl: `https://app.streamlineos.com/help/${orgId}`,
@@ -17,7 +23,7 @@ export class KbWidgetController {
   }
 
   @Get(":orgId/script")
-  script(@Param("orgId") orgId: string, @Res() res: Response) {
+  script(@Param("orgId") orgId: string, @Res() res: Response): void {
     const helpUrl = `https://app.streamlineos.com/help/${encodeURIComponent(orgId)}`;
     const snippet = `(function () {
   if (document.getElementById('sleos-help-widget')) return;

@@ -33,44 +33,44 @@ export class KbTagsController {
 
   @Get("tags")
   @RequirePermission("kb:spaces:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.tags.list(u.orgId);
+  async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return await this.tags.list(u.orgId);
   }
 
   @Post("tags")
   @RequirePermission("kb:articles:manage")
-  create(
+  async create(
     @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.tags.create(u.orgId, body);
+  ): Promise<unknown> {
+    return await this.tags.create(u.orgId, body);
   }
 
   @Delete("tags/:tagId")
   @RequirePermission("kb:articles:manage")
-  remove(
+  async remove(
     @Param("tagId", ParseIntPipe) tagId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.tags.remove(u.orgId, tagId);
+  ): Promise<unknown> {
+    return await this.tags.remove(u.orgId, tagId);
   }
 
   @Get("articles/:articleId/tags")
   @RequirePermission("kb:articles:view")
-  getArticleTags(
+  async getArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.tags.getArticleTags(u.orgId, articleId);
+  ): Promise<unknown> {
+    return await this.tags.getArticleTags(u.orgId, articleId);
   }
 
   @Put("articles/:articleId/tags")
   @RequirePermission("kb:articles:update")
-  setArticleTags(
+  async setArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(setArticleTagsSchema)) body: SetArticleTagsInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.tags.setArticleTags(u.orgId, articleId, body);
+  ): Promise<unknown> {
+    return await this.tags.setArticleTags(u.orgId, articleId, body);
   }
 }

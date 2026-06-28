@@ -18,10 +18,10 @@ export class KbSearchController {
 
   @Get("search")
   @RequirePermission("kb:articles:view")
-  searchArticles(
+  async searchArticles(
     @Query(new ZodValidationPipe(searchSchema)) query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.search.search(u, query);
+  ): Promise<unknown> {
+    return await this.search.search(u, query);
   }
 }
