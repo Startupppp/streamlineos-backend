@@ -14,6 +14,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { defineAbilityFor } from "../../common/rbac/abilities.factory";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { bumpPermissionsVersion } from "../../common/access/invalidate";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import type { CloneTemplateInput, CreateRoleInput, UpdateRoleInput } from "./dto/rbac.schemas";
 
@@ -75,6 +76,7 @@ export class RolesService {
       .returning();
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await bumpPermissionsVersion(this.db, actor.orgId);
     return created;
   }
 
@@ -102,6 +104,7 @@ export class RolesService {
       .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
+    await bumpPermissionsVersion(this.db, actor.orgId);
 
     this.audit.log({
       action: "role.changed",
