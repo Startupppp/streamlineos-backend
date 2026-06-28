@@ -18,6 +18,7 @@ export const setupSchema = z.object({
   language: z.string().optional(),
   fiscalYearStart: z.coerce.number().int().min(1).max(12).optional(),
   businessHours: z.record(z.string(), z.object({ open: z.string(), close: z.string(), enabled: z.boolean() })).optional(),
+  holidays: z.array(z.object({ name: z.string().min(1), date: z.string().min(1) })).optional(),
   invitees: z.array(z.object({ email: z.string().email(), role: z.string() })).optional(),
   enabledModules: z.array(z.string()).optional(),
 });

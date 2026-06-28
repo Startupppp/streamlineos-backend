@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import { organizations, users, invitations } from "../../db/schema";
+import { organizations, users, invitations, orgHolidays } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -60,6 +60,20 @@ export class OrgSetupService {
         })
         .where(eq(users.id, u.userId));
     });
+
+    if (input.holidays?.length) {
+      await Promise.allSettled(
+        input.holidays.map((h) =>
+          this.db.insert(orgHolidays).values({
+            id: randomUUID(),
+            orgId: u.orgId,
+            name: h.name,
+            date: h.date,
+            createdBy: u.userId,
+          }),
+        ),
+      );
+    }
 
     if (input.invitees?.length) {
       const org = await this.db.query.organizations.findFirst({ where: eq(organizations.id, u.orgId), columns: { name: true } });
