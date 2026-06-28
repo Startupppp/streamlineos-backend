@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, desc } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -15,18 +15,26 @@ import type { UpdateProfileInput } from "./dto/me.schemas";
 const SPECIAL_CHARS = "@$!%*?&#^_+=\\-";
 const PASSWORD_HISTORY_LIMIT = 5;
 
+const passwordRules = z.string()
+  .min(8, "Password must be at least 8 characters")
+  .max(128, "Password must not exceed 128 characters")
+  .regex(/[a-z]/, "At least one lowercase letter required")
+  .regex(/[A-Z]/, "At least one uppercase letter required")
+  .regex(/\d/, "At least one number required")
+  .regex(new RegExp(`[${SPECIAL_CHARS.replace(/[-\\]/g, "\\$&")}]`), "At least one special character required");
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .max(128, "Password must not exceed 128 characters")
-    .regex(/[a-z]/, "At least one lowercase letter required")
-    .regex(/[A-Z]/, "At least one uppercase letter required")
-    .regex(/\d/, "At least one number required")
-    .regex(new RegExp(`[${SPECIAL_CHARS.replace(/[-\\]/g, "\\$&")}]`), "At least one special character required"),
+  newPassword: passwordRules,
 });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const forceChangePasswordSchema = z.object({
+  newPassword: passwordRules,
+});
+
+export type ForceChangePasswordInput = z.infer<typeof forceChangePasswordSchema>;
 
 @Injectable()
 export class MeService {
