@@ -1,7 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
-  organizationMembers,
   rolePermissionGrants,
   rolePermissions,
   roles,
@@ -14,12 +13,16 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
 import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
+import { AccessService } from "../access/access.service";
 
 const CATALOG_KEYS = new Set(PERMISSIONS.map((p) => p.name));
 
 @Injectable()
 export class RbacService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   getAllPermissions(): Permission[] {
     return PERMISSIONS;
@@ -154,53 +157,8 @@ export class RbacService {
 
   private async checkActorAccess(actor: CurrentUserContext): Promise<boolean> {
     if (actor.isPlatformAdmin || actor.isOrgOwner) return true;
-    return this.checkPermission(actor.userId, actor.orgId, actor.role, "settings:rbac:manage");
-  }
-
-  private async checkPermission(
-    userId: string,
-    orgId: string,
-    role: string | undefined,
-    permissionName: string,
-  ): Promise<boolean> {
-    const member = await this.db.query.organizationMembers
-      .findFirst({
-        where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-        columns: { isOwner: true },
-      })
-      .catch(() => null);
-    if (member?.isOwner) return true;
-
-    const userPerms = await this.db.query.userPermissions.findMany({
-      where: and(eq(userPermissions.userId, userId), eq(userPermissions.orgId, orgId)),
-      with: { permission: true },
-      limit: 500,
-    });
-
-    const matchingUserPerm = userPerms.find((up) => up.permission?.name === permissionName);
-    if (matchingUserPerm) return matchingUserPerm.granted;
-
-    if (role) {
-      const rolePerms = await this.db.query.rolePermissions.findMany({
-        where: and(
-          eq(rolePermissions.role, role),
-          or(eq(rolePermissions.orgId, orgId), isNull(rolePermissions.orgId)),
-        ),
-        with: { permission: true },
-        limit: 500,
-      });
-      if (rolePerms.some((rp) => rp.permission?.name === permissionName)) return true;
-    }
-
-    if (role) {
-      const dbRole = await this.db.query.roles.findFirst({
-        where: and(eq(roles.slug, role), eq(roles.orgId, orgId)),
-      });
-      if (dbRole?.permissions && Array.isArray(dbRole.permissions)) {
-        if (dbRole.permissions.includes(permissionName)) return true;
-      }
-    }
-
-    return false;
+    const resolved = await this.access.resolveUserPermissions(actor.orgId, actor.userId);
+    const scope = resolved.get("settings:rbac:manage");
+    return !!scope && scope !== "none";
   }
 }

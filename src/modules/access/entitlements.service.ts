@@ -51,20 +51,6 @@ export class EntitlementsService {
     }, 30);
   }
 
-  async enabledModules(orgId: string): Promise<string[]> {
-    const key = `entitlements:modules:${orgId}`;
-    return this.cache.cached(key, async () => {
-      const rows = await this.safeRead(
-        () =>
-          this.db.query.orgModules.findMany({
-            where: and(eq(orgModules.orgId, orgId), eq(orgModules.enabled, true)),
-          }),
-        [] as Array<{ moduleKey: string; enabled: boolean }>,
-      );
-      return rows.map((r) => r.moduleKey);
-    }, 30);
-  }
-
   async setModuleEnabled(
     orgId: string,
     moduleKey: string,

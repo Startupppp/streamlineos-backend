@@ -1,6 +1,5 @@
-import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { authorize, requirePermission, type AccessResolver } from "./authorize";
+import { authorize, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
 
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -85,30 +84,3 @@ describe("authorize", () => {
   });
 });
 
-describe("requirePermission", () => {
-  it("returns the granted scope on allow", async () => {
-    const resolver = makeResolver(new Map([["hr:employees:view", "own"]]), ["hr"]);
-    await expect(requirePermission(resolver, makeCtx(), "hr:employees:view")).resolves.toBe("own");
-  });
-
-  it("throws UnauthorizedException when unauthenticated", async () => {
-    const resolver = makeResolver(new Map(), ["hr"]);
-    await expect(requirePermission(resolver, null, "hr:employees:view")).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-  });
-
-  it("throws ForbiddenException when forbidden", async () => {
-    const resolver = makeResolver(new Map(), ["hr"]);
-    await expect(requirePermission(resolver, makeCtx(), "hr:employees:view")).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-  });
-
-  it("throws ForbiddenException when the module is disabled", async () => {
-    const resolver = makeResolver(new Map([["hr:employees:view", "all"]]), ["crm"]);
-    await expect(requirePermission(resolver, makeCtx(), "hr:employees:view")).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-  });
-});

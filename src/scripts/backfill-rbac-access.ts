@@ -183,11 +183,12 @@ async function main(): Promise<void> {
   });
   const db = drizzle(client, { schema });
   try {
-    await backfill(db);
+    const summary = await backfill(db);
+    process.stdout.write(JSON.stringify({ backfill: "complete", ...summary }, null, 2) + "\n");
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("42P01")) {
-      console.error("[backfill-rbac-access] Required tables are missing. Run migrations first (pnpm db:push or pnpm migrate).");
+      process.stderr.write("[backfill-rbac-access] Required tables are missing. Run migrations first (pnpm db:push or pnpm migrate).\n");
       process.exit(2);
     }
     throw err;
@@ -199,6 +200,6 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((error: unknown) => {
-    console.error("[backfill-rbac-access] failed:", error);
+    process.stderr.write(`[backfill-rbac-access] failed: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   });

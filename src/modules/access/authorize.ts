@@ -1,4 +1,3 @@
-import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isInternalModule, moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
@@ -29,18 +28,3 @@ export async function authorize(
   return { allow: true, scope };
 }
 
-export async function requirePermission(
-  access: AccessResolver,
-  ctx: CurrentUserContext | null,
-  permissionKey: string,
-): Promise<DataScope> {
-  const result = await authorize(access, ctx, permissionKey);
-  if (!result.allow) {
-    if (result.reason === "UNAUTHENTICATED") throw new UnauthorizedException("Unauthorized");
-    if (result.reason === "NO_MODULE") {
-      throw new ForbiddenException("Module not available on this plan");
-    }
-    throw new ForbiddenException("Permission denied");
-  }
-  return result.scope;
-}
