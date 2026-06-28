@@ -1,5 +1,7 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   invPurchaseOrders,
   invPoLines,
@@ -58,15 +60,21 @@ export class InvPurchaseOrdersService {
     return `GRN-${year}-${String(cnt + 1).padStart(4, "0")}`;
   }
 
-  async listPos(orgId: string, filters: ListPoInput) {
+  async listPos(orgId: string, filters: ListPoInput, scope: DataScope = "all", userId?: string) {
+    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+
     const { status, vendorId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}`;
+    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
+    const hash = `${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}${scopeSuffix}`;
 
     return this.cache.cached(CACHE_KEYS.invPoList(orgId, hash), async () => {
       const conditions = [eq(invPurchaseOrders.orgId, orgId)];
       if (status) conditions.push(eq(invPurchaseOrders.status, status));
       if (vendorId) conditions.push(eq(invPurchaseOrders.vendorId, vendorId));
+      if (scope !== "all" && userId) {
+        conditions.push(applyScope(scope, userId, { ownerColumn: invPurchaseOrders.createdBy }));
+      }
       const where = and(...conditions);
 
       const [items, countResult] = await Promise.all([

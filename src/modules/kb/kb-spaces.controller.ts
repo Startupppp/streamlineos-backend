@@ -17,7 +17,9 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { KbSpacesService } from "./kb-spaces.service";
+import { resolveKbSpacesViewScope } from "./kb-scope";
 import {
   createSpaceSchema,
   updateSpaceSchema,
@@ -29,12 +31,16 @@ import {
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequireModule("kb")
 export class KbSpacesController {
-  constructor(private readonly spaces: KbSpacesService) {}
+  constructor(
+    private readonly spaces: KbSpacesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @RequirePermission("kb:spaces:view")
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return await this.spaces.list(u);
+    const scope = await resolveKbSpacesViewScope(this.access, u);
+    return await this.spaces.list(u, scope);
   }
 
   @Post()

@@ -7,6 +7,8 @@ import {
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, ilike, isNull, lte } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../db/schema";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
@@ -91,7 +93,7 @@ export class AccountingLedgerService {
     return updated[0];
   }
 
-  async listJournal(orgId: string, query: ListJournalQuery) {
+  async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string) {
     const { page, pageSize, from, to, sourceType } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
@@ -100,6 +102,7 @@ export class AccountingLedgerService {
     if (fromStr) conds.push(gte(journalEntries.entryDate, fromStr));
     if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
+    conds.push(applyScope(scope, userId, { ownerColumn: journalEntries.createdBy }));
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });

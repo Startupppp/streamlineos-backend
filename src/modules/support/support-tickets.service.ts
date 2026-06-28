@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, lt, sql, type SQL } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketMessages,
@@ -13,6 +13,8 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import type {
   CreateTicketInput,
   ListTicketsInput,
@@ -21,6 +23,8 @@ import type {
   TicketStatus,
   UpdateTicketInput,
 } from "./dto/support.schemas";
+
+type ListTicketsQuery = ListTicketsInput & { scope?: DataScope; userId?: string };
 
 const TICKET_PRIORITIES: readonly TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
@@ -62,17 +66,22 @@ export class SupportTicketsService {
     private readonly notifications: SupportNotificationsService,
   ) {}
 
-  listTickets(orgId: string, query: ListTicketsInput) {
-    const { status, priority, assigneeId, page, limit } = query;
-    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${page}:${limit}`;
+  listTickets(orgId: string, query: ListTicketsQuery) {
+    const { status, priority, assigneeId, page, limit, scope, userId } = query;
+    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
     return this.cache.cached(
       key,
       async () => {
         const offset = (page - 1) * limit;
-        const conditions = [eq(supportTickets.orgId, orgId)];
+        const conditions: SQL[] = [eq(supportTickets.orgId, orgId)];
         if (status) conditions.push(eq(supportTickets.status, status));
         if (priority) conditions.push(eq(supportTickets.priority, priority));
         if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
+        if (scope && scope !== "none" && userId) {
+          conditions.push(applyScope(scope, userId, { ownerColumn: supportTickets.assigneeId }));
+        } else if (scope === "none") {
+          return { items: [], total: 0, page, totalPages: 0 };
+        }
 
         const [items, [countResult]] = await Promise.all([
           this.db.query.supportTickets.findMany({

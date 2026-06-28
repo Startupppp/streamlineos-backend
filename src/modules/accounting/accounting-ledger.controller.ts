@@ -15,10 +15,12 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccountingLedgerService } from "./accounting-ledger.service";
+import { resolveAccountingJournalViewScope } from "./accounting-scope";
 import {
   createAccountSchema,
   createJournalEntrySchema,
@@ -35,7 +37,10 @@ import {
 @Controller("accounting")
 @UseGuards(JwtAuthGuard)
 export class AccountingLedgerController {
-  constructor(private readonly ledger: AccountingLedgerService) {}
+  constructor(
+    private readonly ledger: AccountingLedgerService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("accounts")
   @UseGuards(PermissionGuard)
@@ -72,11 +77,12 @@ export class AccountingLedgerController {
   @Get("journal")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
-  listJournal(
+  async listJournal(
     @Query(new ZodValidationPipe(listJournalQuerySchema)) query: ListJournalQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ledger.listJournal(u.orgId, query);
+    const scope = await resolveAccountingJournalViewScope(this.access, u);
+    return this.ledger.listJournal(u.orgId, query, scope, u.userId);
   }
 
   @Post("journal")

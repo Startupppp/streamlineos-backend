@@ -2,10 +2,12 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Query,
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvProductsService } from "./inv-products.service";
+import { resolveInvProductsScope } from "../inventory/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
   createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,
@@ -16,16 +18,20 @@ import {
 @Controller("inventory/products")
 @UseGuards(JwtAuthGuard)
 export class InvProductsController {
-  constructor(private readonly products: InvProductsService) {}
+  constructor(
+    private readonly products: InvProductsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
-  list(
+  async list(
     @Query(new ZodValidationPipe(listProductsSchema)) filters: ListProductsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.listProducts(u.orgId, filters);
+    const scope = await resolveInvProductsScope(this.access, u);
+    return this.products.listProducts(u.orgId, filters, scope, u.userId);
   }
 
   @Get("categories")

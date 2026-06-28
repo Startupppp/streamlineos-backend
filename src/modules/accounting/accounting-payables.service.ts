@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import {
   clients,
   ledgerAccounts,
@@ -89,12 +91,13 @@ export class AccountingPayablesService {
     private readonly posting: JournalPostingService,
   ) {}
 
-  async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery) {
+  async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
     const { page, pageSize, q, status, vendorId } = query;
     const conds = [eq(purchaseBills.orgId, orgId)];
     if (status) conds.push(eq(purchaseBills.status, status));
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
+    conds.push(applyScope(scope, userId, { ownerColumn: purchaseBills.createdBy }));
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });

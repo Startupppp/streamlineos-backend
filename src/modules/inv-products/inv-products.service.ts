@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import type { CreateProductInput, UpdateProductInput, ListProductsInput, CreateVariantInput, UpdateVariantInput, CreateCategoryInput, CreateUomInput } from "./dto/inv-products.schemas";
 
 @Injectable()
@@ -14,10 +16,13 @@ export class InvProductsService {
     private readonly cache: CacheService,
   ) {}
 
-  async listProducts(orgId: string, filters: ListProductsInput) {
+  async listProducts(orgId: string, filters: ListProductsInput, scope: DataScope = "all", userId?: string) {
+    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+
     const { status, categoryId, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
+    const hash = `${status ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
     const key = CACHE_KEYS.invProductsList(orgId, hash);
 
     return this.cache.cached(key, async () => {
@@ -29,6 +34,9 @@ export class InvProductsService {
           ilike(invProducts.name, `%${search}%`),
           ilike(invProducts.sku, `%${search}%`),
         )!);
+      }
+      if (scope !== "all" && userId) {
+        conditions.push(applyScope(scope, userId, { ownerColumn: invProducts.createdBy }));
       }
       const where = and(...conditions);
 

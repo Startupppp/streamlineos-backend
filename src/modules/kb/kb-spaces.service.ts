@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { KbAccessService } from "./kb-access.service";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { kbSlugify } from "./kb.util";
 import type { CreateSpaceInput, UpdateSpaceInput } from "./dto/kb.schemas";
 
@@ -22,9 +24,17 @@ export class KbSpacesService {
     private readonly access: KbAccessService,
   ) {}
 
-  async list(user: CurrentUserContext): Promise<SpaceListItem[]> {
+  async list(user: CurrentUserContext, scope?: DataScope): Promise<SpaceListItem[]> {
+    if (scope === "none") return [];
+
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) return [];
+
+    const baseConditions = [eq(kbSpaces.orgId, user.orgId), inArray(kbSpaces.id, ids), isNull(kbSpaces.deletedAt)];
+    if (scope && scope !== "all") {
+      baseConditions.push(applyScope(scope, user.userId, { ownerColumn: kbSpaces.createdById }));
+    }
+
     const spaces = await this.db
       .select({
         id: kbSpaces.id,
@@ -38,7 +48,7 @@ export class KbSpacesService {
         updatedAt: kbSpaces.updatedAt,
       })
       .from(kbSpaces)
-      .where(and(eq(kbSpaces.orgId, user.orgId), inArray(kbSpaces.id, ids), isNull(kbSpaces.deletedAt)))
+      .where(and(...baseConditions))
       .orderBy(desc(kbSpaces.updatedAt));
     const counts = await this.db
       .select({ spaceId: kbArticles.spaceId, count: sql<number>`count(*)::int` })

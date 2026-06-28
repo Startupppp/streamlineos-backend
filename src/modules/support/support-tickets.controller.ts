@@ -16,7 +16,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { SupportTicketsService } from "./support-tickets.service";
+import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import {
   createTicketSchema,
   listTicketsSchema,
@@ -31,14 +33,18 @@ import {
 @Controller("support")
 @UseGuards(JwtAuthGuard)
 export class SupportTicketsController {
-  constructor(private readonly tickets: SupportTicketsService) {}
+  constructor(
+    private readonly tickets: SupportTicketsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  listTickets(
+  async listTickets(
     @Query(new ZodValidationPipe(listTicketsSchema)) query: ListTicketsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.listTickets(u.orgId, query);
+    const scope = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.listTickets(u.orgId, { ...query, scope, userId: u.userId });
   }
 
   @Post()

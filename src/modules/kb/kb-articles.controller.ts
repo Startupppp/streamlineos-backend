@@ -19,7 +19,9 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { KbArticlesService } from "./kb-articles.service";
+import { resolveKbArticlesViewScope } from "./kb-scope";
 import {
   createArticleSchema,
   listArticlesSchema,
@@ -37,7 +39,10 @@ import {
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequireModule("kb")
 export class KbArticlesController {
-  constructor(private readonly articles: KbArticlesService) {}
+  constructor(
+    private readonly articles: KbArticlesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("articles")
   @RequirePermission("kb:articles:view")
@@ -45,7 +50,8 @@ export class KbArticlesController {
     @Query(new ZodValidationPipe(listArticlesSchema)) query: ListArticlesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.articles.list(u, query);
+    const scope = await resolveKbArticlesViewScope(this.access, u);
+    return await this.articles.list(u, query, scope);
   }
 
   @Post("articles")

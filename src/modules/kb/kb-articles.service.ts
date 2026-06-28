@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleVersions } from "../../db/schema";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
@@ -59,13 +61,20 @@ export class KbArticlesService {
     private readonly indexing: KbIndexingService,
   ) {}
 
-  async list(user: CurrentUserContext, query: ListArticlesInput): Promise<ArticleListResult> {
+  async list(user: CurrentUserContext, query: ListArticlesInput, scope?: DataScope): Promise<ArticleListResult> {
+    if (scope === "none") {
+      return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
+    }
+
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
       return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
     }
 
     const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
+    if (scope && scope !== "all") {
+      conditions.push(applyScope(scope, user.userId, { ownerColumn: kbArticles.ownerId }));
+    }
     if (query.spaceId) conditions.push(eq(kbArticles.spaceId, query.spaceId));
     if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
     if (query.status) conditions.push(eq(kbArticles.status, query.status));
