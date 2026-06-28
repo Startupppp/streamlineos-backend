@@ -99,27 +99,22 @@ export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   }),
 }));
 
-export const orgModules = pgTable("org_modules", {
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  moduleKey: text("module_key").notNull(),
-  enabled: boolean("enabled").default(true).notNull(),
-  enabledBy: text("enabled_by").references(() => users.id, { onDelete: "set null" }),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  uniqueIndex("uniq_org_modules_org_key").on(table.orgId, table.moduleKey),
-  index("idx_org_modules_org").on(table.orgId),
-]);
+export const orgModules = pgTable(
+  "org_modules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: varchar("org_id", { length: 36 }).notNull(),
+    moduleKey: varchar("module_key", { length: 64 }).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    enabledAt: timestamp("enabled_at").defaultNow().notNull(),
+    enabledBy: varchar("enabled_by", { length: 36 }),
+  },
+  (t) => [
+    uniqueIndex("org_modules_unique_idx").on(t.orgId, t.moduleKey),
+    index("org_modules_org_idx").on(t.orgId),
+  ],
+);
 
-export const orgModulesRelations = relations(orgModules, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [orgModules.orgId],
-    references: [organizations.id],
-  }),
-  enabledByUser: one(users, {
-    fields: [orgModules.enabledBy],
-    references: [users.id],
-  }),
-}));
 
 export const resourceGrants = pgTable(
   "resource_grants",

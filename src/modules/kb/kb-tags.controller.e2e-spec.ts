@@ -7,8 +7,6 @@ import { signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../../modules/access/access.service";
 import { KbIndexingService } from "../../modules/kb/kb-indexing.service";
 import { KbTagsService } from "../../modules/kb/kb-tags.service";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
-
 describe("KB Tags auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
@@ -18,8 +16,7 @@ describe("KB Tags auth/RBAC (e2e)", () => {
       .overrideProvider(AccessService)
       .useValue({
         resolveUserPermissions: async () => new Map(),
-        getModuleEnabled: (ctx: CurrentUserContext, moduleKey: string) =>
-          ctx.enabledModules?.includes(moduleKey) ?? true,
+        isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
       })
       .overrideProvider(KbIndexingService)
       .useValue({})
