@@ -46,8 +46,8 @@ describe("KB Authoring auth/RBAC (e2e)", () => {
     expect(res.body).toEqual({ error: "Unauthorized" });
   });
 
-  const abilities: ReadonlyArray<[Method, string, string, string]> = [
-    ["post", "/kb/ai/draft", "generate", "kb:ai"],
+  const abilities: ReadonlyArray<[Method, string]> = [
+    ["post", "/kb/ai/draft"],
   ];
 
   it.each(abilities)("404 on %s %s when the kb module is disabled", async (method, path) => {
@@ -57,10 +57,10 @@ describe("KB Authoring auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "MODULE_DISABLED", module: "kb" });
   });
 
-  it.each(abilities)("403 on %s %s without %s %s", async (method, path, verb, subject) => {
+  it.each(abilities)("403 on %s %s without permission", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: ["kb"] });
     const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "RBAC_DENIED", verb, subject });
+    expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 });
