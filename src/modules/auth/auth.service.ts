@@ -654,18 +654,7 @@ export class AuthService {
   }
 }
 
-interface AccessBootstrap {
-  permissions: string[];
-  modules: Record<string, boolean>;
-  scopes: Record<string, "all" | "team" | "own" | "none">;
-  isOrgOwner: boolean;
-  seats: Record<string, string>;
-  limits: Record<string, { limit: number; used: number }>;
-  featureFlags: Record<string, boolean>;
-  version: number;
-}
-
-interface AccessBootstrap {
+export interface AccessBootstrap {
   permissions: string[];
   modules: Record<string, boolean>;
   scopes: Record<string, "all" | "team" | "own" | "none">;

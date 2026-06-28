@@ -4,7 +4,7 @@ import { CurrentUser } from "../common/auth/current-user.decorator";
 import { AbilityGuard } from "../common/rbac/ability.guard";
 import { CheckAbility } from "../common/rbac/check-ability.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
-import { AuthService } from "../modules/auth/auth.service";
+import { AuthService, type AccessBootstrap } from "../modules/auth/auth.service";
 
 @Controller("me")
 @UseGuards(JwtAuthGuard, AbilityGuard)
@@ -17,7 +17,7 @@ export class MeController {
   }
 
   @Get("access")
-  access(@CurrentUser() user: CurrentUserContext) {
+  access(@CurrentUser() user: CurrentUserContext): Promise<AccessBootstrap> {
     return this.authService.getAccessBootstrap(user.userId, user.orgId);
   }
 

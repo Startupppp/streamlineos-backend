@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { organizationMembers, roles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/access/invalidate";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import type { CloneTemplateInput, CreateRoleInput, UpdateRoleInput } from "./dto/rbac.schemas";
+import { RbacService } from "./rbac.service";
 
 @Injectable()
 export class RolesService {
@@ -24,6 +25,7 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly rbac: RbacService,
   ) {}
 
   private assertCanManageAll(actor: CurrentUserContext, message: string): void {
@@ -179,9 +181,7 @@ export class RolesService {
   async getAnalytics(orgId: string) {
     const [allRoles, memberCount] = await Promise.all([
       this.db.query.roles.findMany({ where: eq(roles.orgId, orgId) }),
-      this.db.select({ value: count() }).from(organizationMembers).where(
-        and(eq(organizationMembers.orgId, orgId), isNull(organizationMembers.leftAt)),
-      ),
+      this.db.select({ value: count() }).from(organizationMembers).where(eq(organizationMembers.orgId, orgId)),
     ]);
 
     const customRoles = allRoles.filter((r) => !r.isSystem);
@@ -204,22 +204,27 @@ export class RolesService {
       where: and(
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.userId, targetUserId),
-        isNull(organizationMembers.leftAt),
       ),
     });
 
     if (!member) throw new ForbiddenException("Target user not found in this organization");
 
+    const permissions = await this.rbac.getUserPermissions(targetUserId, actor.orgId);
+
     const targetCtx: CurrentUserContext = {
       userId: targetUserId,
       orgId: actor.orgId,
+      branchId: actor.branchId,
       role: member.role,
-      permissions: member.permissions ?? [],
-      isOrgOwner: member.role === "OWNER",
+      permissions,
+      enabledModules: actor.enabledModules,
+      plan: actor.plan,
+      isPlatformAdmin: false,
+      isOrgOwner: member.isOwner,
+      sessionId: actor.sessionId,
     };
 
     const ability = defineAbilityFor(targetCtx);
-    const permissions: string[] = targetCtx.permissions;
 
     const effectivePermissions = permissions.map((p) => {
       const [module, action] = p.split(":");

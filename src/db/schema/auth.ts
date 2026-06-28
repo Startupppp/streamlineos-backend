@@ -449,6 +449,32 @@ export const loginHistoryRelations = relations(loginHistory, ({ one }) => ({
   organization: one(organizations, { fields: [loginHistory.orgId], references: [organizations.id] }),
 }));
 
+export const serviceAccounts = pgTable("service_accounts", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_service_accounts_org").on(table.orgId),
+]);
+
+export const magicLinkTokens = pgTable("magic_link_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_magic_link_tokens_user").on(table.userId),
+  uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
+]);
+
 export const userApiTokens = pgTable("user_api_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -463,6 +489,15 @@ export const userApiTokens = pgTable("user_api_tokens", {
   uniqueIndex("uniq_user_api_tokens_hash").on(table.tokenHash),
   index("idx_user_api_tokens_user").on(table.userId),
 ]);
+
+export const serviceAccountsRelations = relations(serviceAccounts, ({ one }) => ({
+  organization: one(organizations, { fields: [serviceAccounts.orgId], references: [organizations.id] }),
+  creator: one(users, { fields: [serviceAccounts.createdBy], references: [users.id] }),
+}));
+
+export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => ({
+  user: one(users, { fields: [magicLinkTokens.userId], references: [users.id] }),
+}));
 
 export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
   user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),

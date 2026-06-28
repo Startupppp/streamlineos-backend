@@ -37,6 +37,17 @@ type OrgSettingsUpdate = {
   mfaEnforced?: boolean;
   allowedEmailDomains?: string[];
   settings?: Record<string, unknown>;
+  industry?: string | null;
+  website?: string | null;
+  legalName?: string | null;
+  orgCode?: string | null;
+  registrationNumber?: string | null;
+  taxNumber?: string | null;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
+  favicon?: string | null;
+  secondaryColor?: string | null;
+  businessHours?: Record<string, { open: string; close: string; enabled: boolean }> | null;
 };
 
 @Injectable()

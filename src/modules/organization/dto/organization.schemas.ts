@@ -55,7 +55,7 @@ export const updateOrgSettingsSchema = z.object({
   timeFormat: z.enum(["12h", "24h"]).optional(),
   numberFormat: z.string().min(1).optional(),
   weekStartDay: z.enum(["monday", "sunday", "saturday"]).optional(),
-  businessHours: z.record(z.object({ open: z.string(), close: z.string(), enabled: z.boolean() })).optional(),
+  businessHours: z.record(z.string(), z.object({ open: z.string(), close: z.string(), enabled: z.boolean() })).optional(),
 });
 
 export const securitySettingsSchema = z.object({
