@@ -48,6 +48,7 @@ export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
   @Get()
+  @RequirePermission("tasks:read")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +69,7 @@ export class TasksController {
   }
 
   @Get("analytics")
+  @RequirePermission("tasks:read")
   analytics(
     @Query(new ZodValidationPipe(analyticsSchema)) query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -76,11 +78,13 @@ export class TasksController {
   }
 
   @Get("my-queue")
+  @RequirePermission("tasks:read")
   myQueue(@CurrentUser() u: CurrentUserContext) {
     return this.tasks.myQueue(u.orgId, u.userId);
   }
 
   @Get("overdue")
+  @RequirePermission("tasks:read")
   overdue(
     @Query(new ZodValidationPipe(overdueSchema)) query: OverdueInput,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +93,7 @@ export class TasksController {
   }
 
   @Get("sequences")
+  @RequirePermission("tasks:read")
   listSequences(
     @Query(new ZodValidationPipe(sequenceListSchema)) query: SequenceListInput,
     @CurrentUser() u: CurrentUserContext,

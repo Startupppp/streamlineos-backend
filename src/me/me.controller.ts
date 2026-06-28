@@ -2,7 +2,6 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Use
 import { CurrentUser } from "../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 import { PermissionGuard } from "../modules/access/permission.guard";
-import { RequirePermission } from "../modules/access/require-permission.decorator";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
@@ -25,12 +24,6 @@ export class MeController {
   @Get("access")
   getAccess(@CurrentUser() u: CurrentUserContext): Promise<AccessSnapshot> {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
-  }
-
-  @Get("protected")
-  @RequirePermission("crm:leads:delete")
-  protected(@CurrentUser() user: CurrentUserContext): { ok: true; userId: string } {
-    return { ok: true, userId: user.userId };
   }
 
   @Get("profile")

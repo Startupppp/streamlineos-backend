@@ -27,6 +27,7 @@ import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { AccessService } from "../access/access.service";
 import { userCan } from "./ability.helpers";
+import { resolveEmployeesScope } from "./employees-scope";
 import { buildEmployeeProfileHtml } from "./profile-pdf.html";
 import {
   availabilitySchema,
@@ -66,7 +67,7 @@ export class EmployeesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:read")
-  listEmployees(
+  async listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -75,12 +76,13 @@ export class EmployeesController {
       branchId: u.branchId ?? null,
       userId: u.userId,
     };
+    const scope = await resolveEmployeesScope(this.access, u);
     const search = query.search ?? query.q;
     return this.employees.listEmployees(u.orgId, branch, {
       page: query.page,
       limit: query.limit,
       search,
-    });
+    }, scope);
   }
 
   @Get("stats")

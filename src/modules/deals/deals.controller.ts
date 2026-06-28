@@ -122,6 +122,8 @@ export class DealsController {
   }
 
   @Get(":dealId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
   async getDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -21,7 +21,7 @@ import { AiUsageService } from "../services/ai-usage.service";
 import { chatRequestSchema } from "../dto/request.schemas";
 
 @Controller("chat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatAssistantController {
   constructor(
     private readonly chat: ChatAssistantService,
@@ -30,6 +30,7 @@ export class ChatAssistantController {
   ) {}
 
   @Post()
+  @RequirePermission("ai:chat:use")
   async chatAssistant(
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,

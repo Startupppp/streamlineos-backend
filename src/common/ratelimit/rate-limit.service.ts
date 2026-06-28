@@ -14,6 +14,8 @@ const TIERS: Record<string, Tier> = {
   "auth:forgot-password": { limit: 3, windowSecs: 60 },
   "auth:verify-email": { limit: 10, windowSecs: 60 },
   "auth:resend-verification": { limit: 3, windowSecs: 60 },
+  "auth:magic-link": { limit: 3, windowSecs: 60 },
+  "auth:magic-link-verify": { limit: 10, windowSecs: 60 },
 };
 
 export interface RateLimitResult {

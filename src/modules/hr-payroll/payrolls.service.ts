@@ -15,6 +15,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { decrypt } from "./lib/encryption";
 import type { GenerateSinglePayrollInput } from "./dto/payroll.schemas";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 
 type PayrollRow = typeof payrolls.$inferSelect;
 type UserRow = typeof users.$inferSelect;
@@ -170,11 +172,14 @@ export class PayrollsService {
     return { generated: newPayrolls.length, hadMembers: true };
   }
 
-  async getAllPayrolls(orgId: string, filter: { month?: string; year?: string }) {
+  async getAllPayrolls(orgId: string, filter: { month?: string; year?: string }, scope: DataScope, userId: string) {
     const generatorUser = alias(users, "generator_user");
     const approverUser = alias(users, "approver_user");
 
-    const conditions = [eq(payrolls.orgId, orgId)];
+    const conditions = [
+      eq(payrolls.orgId, orgId),
+      applyScope(scope, userId, { ownerColumn: payrolls.userId }),
+    ];
     if (filter.month) {
       conditions.push(eq(payrolls.month, filter.month));
     } else if (filter.year) {

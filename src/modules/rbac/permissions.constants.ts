@@ -16,7 +16,7 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:leaves:view", resource: "hr:leaves", action: "view", description: "View leave requests" },
   { name: "hr:leaves:create", resource: "hr:leaves", action: "create", description: "Create leave requests" },
   { name: "hr:leaves:approve", resource: "hr:leaves", action: "approve", description: "Approve/reject leave requests", scopable: true },
-  { name: "hr:payroll:view", resource: "hr:payroll", action: "view", description: "View payroll information" },
+  { name: "hr:payroll:view", resource: "hr:payroll", action: "view", description: "View payroll information", scopable: true },
   { name: "hr:payroll:generate", resource: "hr:payroll", action: "generate", description: "Generate payroll" },
   { name: "hr:payroll:approve", resource: "hr:payroll", action: "approve", description: "Approve payroll" },
   { name: "hr:payroll:read", resource: "hr:payroll", action: "read", description: "Read payroll data for reporting and analytics" },
@@ -33,7 +33,7 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:performance:manage", resource: "hr:performance", action: "manage", description: "Manage performance reviews" },
   { name: "hr:goals:view", resource: "hr:goals", action: "view", description: "View goals" },
   { name: "hr:goals:manage", resource: "hr:goals", action: "manage", description: "Manage goals" },
-  { name: "hr:employees:read", resource: "hr:employees", action: "read", description: "Read employee records" },
+  { name: "hr:employees:read", resource: "hr:employees", action: "read", description: "Read employee records", scopable: true },
   { name: "hr:employees:manage", resource: "hr:employees", action: "manage", description: "Manage employees", scopable: true },
   { name: "hr:leaves:read", resource: "hr:leaves", action: "read", description: "Read leave requests" },
   { name: "hr:leaves:manage", resource: "hr:leaves", action: "manage", description: "Manage leave requests" },
@@ -89,6 +89,8 @@ const CRM_PERMISSIONS: Permission[] = [
 ];
 
 const SHARED_PERMISSIONS: Permission[] = [
+  { name: "tasks:read", resource: "tasks", action: "read", description: "View tasks, sequences, analytics, and queue" },
+  { name: "tasks:write", resource: "tasks", action: "write", description: "Create, update, delete, and complete tasks and sequences" },
   { name: "accounting:view", resource: "accounting", action: "view", description: "View chart of accounts, journal entries, and accounting reports" },
   { name: "accounting:manage", resource: "accounting", action: "manage", description: "Create and edit accounts and post manual journal entries" },
   { name: "accounting:report", resource: "accounting", action: "report", description: "Generate Trial Balance, P&L, and other accounting reports" },
@@ -253,6 +255,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   HR: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "hr:employees:view",
     "hr:employees:create",
     "hr:employees:update",
@@ -314,6 +318,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   SALES: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "crm:leads:view",
     "crm:leads:create",
     "crm:leads:update",
@@ -341,6 +347,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   CUSTOMER_SUPPORT: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "dashboard:support:view",
     "dashboard:customer-executive:view",
     "support:kb:view",
@@ -368,6 +376,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   ENGINEERING: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "projects:view",
     "projects:tickets:view",
     "projects:tickets:create",
@@ -383,6 +393,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   DESIGN: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "projects:view",
     "projects:tickets:view",
     "projects:tickets:create",
@@ -393,6 +405,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   VIDEO_EDITOR: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "projects:view",
     "projects:tickets:view",
     "projects:tickets:create",
@@ -403,6 +417,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   DIGITAL_MARKETING: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "blog:posts:manage",
     "blog:categories:manage",
     "dm:leads:create",
@@ -427,12 +443,16 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   BLOG_EDITOR: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "blog:posts:manage",
     "blog:categories:manage",
   ],
 
   BRANCH_MANAGER: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "hr:employees:view",
     "hr:employees:create",
     "hr:employees:update",
@@ -509,6 +529,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   BRANCH_HR: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "hr:employees:view",
     "hr:employees:create",
     "hr:employees:update",
@@ -560,6 +582,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   INVENTORY_MANAGER: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "inventory:products:read",
     "inventory:products:create",
     "inventory:products:update",
@@ -586,6 +610,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   ACCOUNTANT: [
     ...EMPLOYEE_SELF_SERVICE,
+    "tasks:read",
+    "tasks:write",
     "accounting:view",
     "accounting:manage",
     "accounting:report",

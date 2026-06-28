@@ -25,6 +25,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
+import { resolvePayrollsViewScope } from "./payrolls-scope";
 import { PayrollsService } from "./payrolls.service";
 import { PayrollStatusService } from "./payrolls-status.service";
 import { renderPayslipHtml } from "./lib/payslip-html";
@@ -55,14 +56,15 @@ export class PayrollsController {
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("hr:payroll:view")
-  listAll(
+  async listAll(
     @Query(new ZodValidationPipe(allPayrollsQuerySchema)) query: AllPayrollsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!query.month && !query.year) {
       throw new BadRequestException("Either month (YYYY-MM) or year (YYYY) query param is required.");
     }
-    return this.payrolls.getAllPayrolls(u.orgId, { month: query.month, year: query.year });
+    const scope = await resolvePayrollsViewScope(this.access, u);
+    return this.payrolls.getAllPayrolls(u.orgId, { month: query.month, year: query.year }, scope, u.userId);
   }
 
   @Post()

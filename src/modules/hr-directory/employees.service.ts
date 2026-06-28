@@ -16,6 +16,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { branchIdFilter, type BranchContext } from "../leads/branch-filter";
 import { formatDateOnly, subDays } from "./date.helpers";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 
 const EMPLOYEE_USER_COLUMNS = {
   id: true,
@@ -50,26 +52,31 @@ export class EmployeesService {
     private readonly cache: CacheService,
   ) {}
 
-  listEmployees(orgId: string, branch: BranchContext, opts: { page?: number; limit?: number; search?: string }) {
+  listEmployees(
+    orgId: string,
+    branch: BranchContext,
+    opts: { page?: number; limit?: number; search?: string },
+    scope: DataScope,
+  ) {
     const branchKey = `${branch.role}:${branch.branchId ?? ""}:${branch.userId}`;
     const search = opts.search;
 
     if (opts.page || opts.limit || search) {
       const pageN = opts.page ?? 1;
       const limitN = opts.limit ?? 20;
-      const key = `hr:employees:paginated:${orgId}:${branchKey}:${pageN}:${limitN}:${search ?? ""}`;
+      const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}`;
       return this.cache.cached(
         key,
-        () => this.getEmployeesPaginated(orgId, pageN, limitN, search, branch),
+        () => this.getEmployeesPaginated(orgId, pageN, limitN, search, branch, scope),
         CACHE_TTL.SHORT,
       );
     }
 
-    const key = `hr:employees:all:${orgId}:${branchKey}`;
-    return this.cache.cached(key, () => this.getEmployeesAll(orgId, branch), CACHE_TTL.MEDIUM);
+    const key = `hr:employees:all:${orgId}:${branchKey}:${scope}`;
+    return this.cache.cached(key, () => this.getEmployeesAll(orgId, branch, scope), CACHE_TTL.MEDIUM);
   }
 
-  private async getEmployeesAll(orgId: string, branch: BranchContext) {
+  private async getEmployeesAll(orgId: string, branch: BranchContext, scope: DataScope) {
     const members = await this.db.query.organizationMembers.findMany({
       where: eq(organizationMembers.orgId, orgId),
       with: {
@@ -82,19 +89,21 @@ export class EmployeesService {
     });
 
     return members
-      .map((m) => m.user)
-      .filter((u) => {
-        if (u.isActive === false) return false;
+      .map((m) => ({ member: m, user: m.user }))
+      .filter(({ member, user }) => {
+        if (user.isActive === false) return false;
+        if (scope === "none") return false;
+        if (scope === "own" && member.userId !== branch.userId) return false;
         if (
           branch.branchId !== null &&
           branch.branchId !== undefined &&
           ["BRANCH_MANAGER", "BRANCH_HR"].includes(branch.role)
         ) {
-          return u.branchId === branch.branchId;
+          return user.branchId === branch.branchId;
         }
         return true;
       })
-      .map((u) => ({
+      .map(({ user: u }) => ({
         id: u.id,
         name: u.name,
         firstName: u.firstName,
@@ -127,10 +136,15 @@ export class EmployeesService {
     limit: number,
     search: string | undefined,
     branch: BranchContext,
+    scope: DataScope,
   ) {
     const offset = (page - 1) * limit;
 
-    const baseConditions: SQL[] = [eq(organizationMembers.orgId, orgId), eq(users.isActive, true)];
+    const baseConditions: SQL[] = [
+      eq(organizationMembers.orgId, orgId),
+      eq(users.isActive, true),
+      applyScope(scope, branch.userId, { ownerColumn: organizationMembers.userId }),
+    ];
     const branchCond = branchIdFilter(users.branchId, branch);
     if (branchCond) baseConditions.push(branchCond);
 

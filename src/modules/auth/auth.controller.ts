@@ -14,6 +14,8 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -214,6 +216,8 @@ export class AuthController {
   }
 
   @Get("audit/analytics")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
   getAuditAnalytics() {
     return this.authService.getAuditAnalytics();
   }
