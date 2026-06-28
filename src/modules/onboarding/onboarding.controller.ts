@@ -9,9 +9,11 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Request } from "express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -84,6 +86,17 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
+  }
+
+  @Post("reminders")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  @HttpCode(201)
+  sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "http";
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:3000";
+    const appUrl = `${String(protocol)}://${String(host)}`;
+    return this.onboarding.sendReminders(u.orgId, appUrl);
   }
 
   @Patch("personal-details")

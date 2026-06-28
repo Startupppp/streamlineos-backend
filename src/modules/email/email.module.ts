@@ -5,6 +5,7 @@ import { TwilioGateway } from "./dispatch/twilio.gateway";
 import { NotificationsDispatchController } from "./controllers/notifications-dispatch.controller";
 import { OrganizationInvitationsController } from "./controllers/organization-invitations.controller";
 import { EmailTemplatesController } from "./controllers/email-templates.controller";
+import { HrSendEmailController } from "./controllers/hr-send-email.controller";
 
 @Global()
 @Module({
@@ -12,6 +13,7 @@ import { EmailTemplatesController } from "./controllers/email-templates.controll
     NotificationsDispatchController,
     OrganizationInvitationsController,
     EmailTemplatesController,
+    HrSendEmailController,
   ],
   providers: [EmailService, EmailRoutesService, TwilioGateway],
   exports: [EmailService],

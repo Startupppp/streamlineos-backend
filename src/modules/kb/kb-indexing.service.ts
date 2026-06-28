@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { and, count, eq, max, sql } from "drizzle-orm";
 import { kbArticles, kbArticleChunks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -111,5 +111,40 @@ export class KbIndexingService {
     }
 
     return { reindexed: articles.length };
+  }
+
+  async getArticleIndexStatus(
+    orgId: string,
+    articleId: number,
+  ): Promise<{ chunks: number; lastIndexedAt: string | null }> {
+    const article = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+
+    const [row] = await this.db
+      .select({
+        chunks: count(),
+        lastIndexedAt: sql<string | null>`max(${kbArticleChunks.createdAt})::text`,
+      })
+      .from(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
+
+    return {
+      chunks: row?.chunks ?? 0,
+      lastIndexedAt: row?.lastIndexedAt ?? null,
+    };
+  }
+
+  async reindexArticle(orgId: string, articleId: number): Promise<{ reindexed: boolean }> {
+    const article = await this.db.query.kbArticles.findFirst({
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!article) throw new NotFoundException("Article not found");
+
+    await this.indexArticle(orgId, articleId);
+    return { reindexed: true };
   }
 }

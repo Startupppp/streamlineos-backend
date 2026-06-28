@@ -1,9 +1,10 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   departmentMembers,
   leaveBalances,
   leaveTypes,
+  notifications,
   onboardingSteps,
   onboardingTasks,
   onboardingTemplates,
@@ -457,6 +458,68 @@ export class OnboardingService {
         ),
       );
     })().catch(() => undefined);
+  }
+
+  async sendReminders(orgId: string, appUrl: string): Promise<{ sent: number; total: number }> {
+    const incompleteUsers = await this.db
+      .select({
+        userId: onboardingTasks.userId,
+        userName: users.name,
+        userEmail: users.email,
+        totalTasks: count(),
+        pendingTasks: sql<number>`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END)::int`,
+      })
+      .from(onboardingTasks)
+      .innerJoin(users, eq(onboardingTasks.userId, users.id))
+      .where(eq(onboardingTasks.orgId, orgId))
+      .groupBy(onboardingTasks.userId, users.name, users.email)
+      .having(sql`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END) > 0`);
+
+    if (incompleteUsers.length === 0) {
+      return { sent: 0, total: 0 };
+    }
+
+    let sentCount = 0;
+
+    for (const user of incompleteUsers) {
+      await this.db.insert(notifications).values({
+        orgId,
+        userId: user.userId,
+        type: "WARNING",
+        title: "Onboarding Reminder",
+        message: `You have ${user.pendingTasks} pending onboarding task(s). Please complete them at your earliest convenience.`,
+        link: "/hr/onboarding/my-tasks",
+      });
+
+      if (user.userEmail) {
+        const html = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f2b7f;">Onboarding Reminder</h2>
+            <p>Hi ${user.userName ?? "there"},</p>
+            <p>You have <strong>${user.pendingTasks}</strong> pending onboarding task(s) out of <strong>${user.totalTasks}</strong> total.</p>
+            <p>Please log in and complete your remaining tasks to finish your onboarding process.</p>
+            <a href="${appUrl}/hr/onboarding/my-tasks"
+               style="display: inline-block; padding: 10px 24px; background: #bd882c; color: white; text-decoration: none; border-radius: 6px; margin-top: 10px;">
+              Complete Tasks
+            </a>
+            <p style="color: #666; margin-top: 20px; font-size: 12px;">
+              This is an automated reminder from your HR team.
+            </p>
+          </div>
+        `;
+        try {
+          await this.email.sendEmail({
+            to: user.userEmail,
+            subject: "Onboarding Reminder — Pending Tasks",
+            html,
+          });
+          sentCount++;
+        } catch {
+        }
+      }
+    }
+
+    return { sent: sentCount, total: incompleteUsers.length };
   }
 
   private async upsertOnboardingStep(userId: string, orgId: string, stepName: string) {
