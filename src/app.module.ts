@@ -71,6 +71,7 @@ import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module
 import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
 import { ServiceAccountsModule } from "./modules/service-accounts/service-accounts.module";
 import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.module";
+import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 
@@ -148,6 +149,7 @@ import { MeController } from "./me/me.controller";
     ApiTokensModule,
     ServiceAccountsModule,
     UserApiTokensModule,
+    ResourceGrantsModule,
   ],
   controllers: [HealthController, MeController],
 })

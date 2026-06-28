@@ -614,6 +614,34 @@ export class OrgHierarchyService {
     };
   }
 
+  async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
+    const dept = await this.db.query.orgDepartments.findFirst({
+      where: and(eq(orgDepartments.id, departmentId), eq(orgDepartments.orgId, orgId)),
+    });
+    if (!dept) throw new Error("Department not found");
+
+    await this.db
+      .update(orgDepartments)
+      .set({ branchId: newBranchId, updatedAt: new Date() })
+      .where(and(eq(orgDepartments.id, departmentId), eq(orgDepartments.orgId, orgId)));
+
+    return { success: true };
+  }
+
+  async moveTeam(orgId: string, teamId: string, newDepartmentId: string | null) {
+    const team = await this.db.query.orgTeams.findFirst({
+      where: and(eq(orgTeams.id, teamId), eq(orgTeams.orgId, orgId)),
+    });
+    if (!team) throw new Error("Team not found");
+
+    await this.db
+      .update(orgTeams)
+      .set({ departmentId: newDepartmentId, updatedAt: new Date() })
+      .where(and(eq(orgTeams.id, teamId), eq(orgTeams.orgId, orgId)));
+
+    return { success: true };
+  }
+
   async getTree(orgId: string) {
     const [bus, branches, depts, teams] = await Promise.all([
       this.db.select().from(orgBusinessUnits).where(and(eq(orgBusinessUnits.orgId, orgId), isNull(orgBusinessUnits.deletedAt))),

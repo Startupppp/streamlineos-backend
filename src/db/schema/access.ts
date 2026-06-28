@@ -11,6 +11,8 @@ export const userRoles = pgTable("user_roles", {
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
   assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
+  expiresAt: timestamp("expires_at"),
+  reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_user_roles_org_user_role").on(table.orgId, table.userId, table.roleId),
@@ -99,7 +101,31 @@ export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   }),
 }));
 
+export const resourceGrants = pgTable("resource_grants", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id").notNull(),
+  principalType: text("principal_type").notNull().default("user"),
+  principalId: text("principal_id").notNull(),
+  permissionKey: text("permission_key").notNull(),
+  grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_resource_grants_all").on(table.orgId, table.resourceType, table.resourceId, table.principalType, table.principalId, table.permissionKey),
+  index("idx_resource_grants_org_resource").on(table.orgId, table.resourceType, table.resourceId),
+  index("idx_resource_grants_principal").on(table.orgId, table.principalType, table.principalId),
+]);
+
+export const resourceGrantsRelations = relations(resourceGrants, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [resourceGrants.orgId],
+    references: [organizations.id],
+  }),
+}));
+
 export type UserRole = typeof userRoles.$inferSelect;
 export type RolePermissionGrant = typeof rolePermissionGrants.$inferSelect;
 export type GroupRole = typeof groupRoles.$inferSelect;
 export type AccessVersion = typeof accessVersions.$inferSelect;
+export type ResourceGrant = typeof resourceGrants.$inferSelect;

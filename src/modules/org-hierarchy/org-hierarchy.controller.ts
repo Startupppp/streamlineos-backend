@@ -302,4 +302,24 @@ export class OrgHierarchyController {
     await this.service.deleteCostCenter(u.orgId, u.userId, id);
     return { message: "Cost center deleted" };
   }
+
+  @Patch("departments/:id/move")
+  moveDepartment(
+    @Param("id") id: string,
+    @Body() body: { branchId: string | null },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertCanManage(u);
+    return this.service.moveDepartment(u.orgId, id, body.branchId ?? null);
+  }
+
+  @Patch("teams/:id/move")
+  moveTeam(
+    @Param("id") id: string,
+    @Body() body: { departmentId: string | null },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertCanManage(u);
+    return this.service.moveTeam(u.orgId, id, body.departmentId ?? null);
+  }
 }
