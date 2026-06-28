@@ -17,6 +17,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { BonusesService } from "./bonuses.service";
 import {
   createBonusSchema,
@@ -28,11 +29,18 @@ import {
 @Controller("hr/bonuses")
 @UseGuards(JwtAuthGuard)
 export class BonusesController {
-  constructor(private readonly bonuses: BonusesService) {}
+  constructor(
+    private readonly bonuses: BonusesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:approve");
+  async list(@CurrentUser() u: CurrentUserContext) {
+    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    if (!isAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      isAdmin = perms.has("hr:payroll:approve");
+    }
     return this.bonuses.listBonuses(u.orgId, u.userId, isAdmin);
   }
 

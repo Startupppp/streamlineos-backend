@@ -77,7 +77,10 @@ export class KbService {
         helpfulCount: kbArticles.helpfulCount,
         notHelpfulCount: kbArticles.notHelpfulCount,
         tags: kbArticles.tags,
+        seoTitle: kbArticles.seoTitle,
+        seoDescription: kbArticles.seoDescription,
         publishedAt: kbArticles.publishedAt,
+        updatedAt: kbArticles.updatedAt,
       })
       .from(kbArticles)
       .leftJoin(kbCategories, eq(kbArticles.categoryId, kbCategories.id))

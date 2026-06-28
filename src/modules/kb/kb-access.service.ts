@@ -9,12 +9,18 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ResourceGrantsService } from "../access/resource-grants.service";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
+const KB_SPACE_RESOURCE_TYPE = "kb:space";
+const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
 
 @Injectable()
 export class KbAccessService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly resourceGrants: ResourceGrantsService,
+  ) {}
 
   isAdmin(user: CurrentUserContext): boolean {
     return (
@@ -48,7 +54,7 @@ export class KbAccessService {
     const granted = new Set(grantedRows.map((m) => m.spaceId));
     const restricted = new Set(restrictedRows.map((m) => m.spaceId));
 
-    return spaces
+    const memberAccessIds = spaces
       .filter(
         (s) =>
           s.audience === "public" ||
@@ -57,6 +63,22 @@ export class KbAccessService {
           !restricted.has(s.id),
       )
       .map((s) => s.id);
+
+    const grantedSpaceIdStrings = await Promise.all(
+      spaces.map(async (s) => {
+        const has = await this.resourceGrants.hasGrant(
+          user.orgId,
+          user.userId,
+          KB_SPACE_RESOURCE_TYPE,
+          String(s.id),
+          KB_SPACE_VIEWER_PERMISSION,
+        );
+        return has ? s.id : null;
+      }),
+    );
+    const resourceGrantedIds = grantedSpaceIdStrings.filter((id): id is number => id !== null);
+
+    return [...new Set([...memberAccessIds, ...resourceGrantedIds])];
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {

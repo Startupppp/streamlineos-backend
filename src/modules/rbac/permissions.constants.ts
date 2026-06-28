@@ -478,6 +478,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "settings:custom-fields:manage",
     "settings:webhooks:manage",
     "dashboard:support:view",
+    "support:kb:view",
+    "support:macros:view",
   ],
 
   BRANCH_HR: [

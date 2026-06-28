@@ -7,8 +7,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { isBranchScoped, getBranchUserIds, type BranchContext } from "../leads/branch-filter";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
-import { ADMIN_ROLES } from "./roles.constants";
 import type { CreateInput, ListInput, UpdateInput } from "./dto/target.schemas";
 
 export type TargetsForbidden = { error: "forbidden"; message: string; status: 403 | 400 };
@@ -35,6 +33,7 @@ export function isNotFound(value: unknown): value is TargetNotFound {
 interface CreateContext {
   role: string;
   callerId: string;
+  permissions: string[];
   isOrgOwner: boolean;
   isPlatformAdmin: boolean;
 }
@@ -43,6 +42,7 @@ interface ManageContext {
   role: string;
   callerId: string;
   branchId: number | null;
+  permissions: string[];
   isOrgOwner: boolean;
   isPlatformAdmin: boolean;
 }
@@ -140,7 +140,7 @@ export class TargetsService {
       return { error: "forbidden", message: "At least one user is required", status: 400 } as TargetsForbidden;
     }
 
-    if (!hasRoleOrPrivileged(ctx, ADMIN_ROLES) && ctx.role !== "BRANCH_MANAGER") {
+    if (!ctx.isOrgOwner && !ctx.isPlatformAdmin && !ctx.permissions.includes("crm:targets:manage") && ctx.role !== "BRANCH_MANAGER") {
       const targetUsers = await this.db
         .select({ id: users.id, reportingTo: users.reportingTo })
         .from(users)
@@ -321,11 +321,11 @@ export class TargetsService {
   }
 
   private async assertCanManage(
-    caller: { isOrgOwner: boolean; isPlatformAdmin: boolean; role: string },
+    caller: { isOrgOwner: boolean; isPlatformAdmin: boolean; permissions: string[] },
     callerId: string,
     userIds: string[],
   ) {
-    if (hasRoleOrPrivileged(caller, ADMIN_ROLES)) return true;
+    if (caller.isOrgOwner || caller.isPlatformAdmin || caller.permissions.includes("crm:targets:manage")) return true;
     const targetUsers = await this.db
       .select({ id: users.id, reportingTo: users.reportingTo })
       .from(users)

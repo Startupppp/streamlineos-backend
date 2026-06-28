@@ -13,13 +13,11 @@ import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { candidateDocumentsVault, vaultAccessLogs } from "../../db/schema";
 import { StorageService } from "./storage.service";
 
-const VAULT_ROLES: readonly string[] = ["CEO", "HR", "ADMIN"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
 @Controller("hr/recruitment/candidates/:candidateId/vault")
@@ -36,7 +34,9 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, VAULT_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:documents:manage")) {
+      throw new ForbiddenException("Forbidden");
+    }
 
     const doc = await this.db.query.candidateDocumentsVault.findFirst({
       where: and(
@@ -71,7 +71,9 @@ export class StorageVaultController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!hasRoleOrPrivileged(u, VAULT_ROLES)) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:documents:manage")) {
+      throw new ForbiddenException("Forbidden");
+    }
 
     const doc = await this.db.query.candidateDocumentsVault.findFirst({
       where: and(

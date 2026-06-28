@@ -13,8 +13,8 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { PayrollsService } from "./payrolls.service";
 import { CompensationService } from "./compensation.service";
 import {
@@ -28,14 +28,13 @@ import {
   type TaxCalcInput,
 } from "./dto/payroll.schemas";
 
-const SALARY_BAND_ROLES = ["CEO", "ADMIN", "HR", "BRANCH_HR"];
-
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class PayrollReportsController {
   constructor(
     private readonly payrolls: PayrollsService,
     private readonly compensation: CompensationService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("payroll-reports")
@@ -51,11 +50,15 @@ export class PayrollReportsController {
   }
 
   @Get("payslips")
-  payslips(
+  async payslips(
     @Query(new ZodValidationPipe(payslipsQuerySchema)) query: PayslipsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const canViewAll = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:read");
+    let canViewAll = u.isOrgOwner || u.isPlatformAdmin;
+    if (!canViewAll) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      canViewAll = perms.has("hr:payroll:read");
+    }
     const requestedId = query.userId;
 
     if (requestedId && requestedId !== u.userId && !canViewAll) {
@@ -74,9 +77,12 @@ export class PayrollReportsController {
   }
 
   @Get("dashboard/salary-bands")
-  salaryBands(@CurrentUser() u: CurrentUserContext) {
-    if (!hasRoleOrPrivileged(u, SALARY_BAND_ROLES)) {
-      throw new ForbiddenException("Forbidden");
+  async salaryBands(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:salary:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     return this.compensation.getSalaryBands(u.orgId);
   }

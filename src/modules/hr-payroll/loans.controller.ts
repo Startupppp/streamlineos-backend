@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { LoansService } from "./loans.service";
 import {
   createLoanSchema,
@@ -23,27 +24,32 @@ import {
   type UpdateLoanInput,
 } from "./dto/payroll.schemas";
 
-function isLoanAdmin(u: CurrentUserContext): boolean {
-  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve");
-}
-
 @Controller("hr/loans")
 @UseGuards(JwtAuthGuard)
 export class LoansController {
-  constructor(private readonly loans: LoansService) {}
+  constructor(
+    private readonly loans: LoansService,
+    private readonly access: AccessService,
+  ) {}
+
+  private async isLoanAdmin(u: CurrentUserContext): Promise<boolean> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return perms.has("hr:expenses:approve");
+  }
 
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.loans.listLoans(u.orgId, u.userId, isLoanAdmin(u));
+  async list(@CurrentUser() u: CurrentUserContext) {
+    return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u));
   }
 
   @Post()
   @HttpCode(201)
-  create(
+  async create(
     @Body(new ZodValidationPipe(createLoanSchema)) body: CreateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.loans.createLoan(u.orgId, u.userId, isLoanAdmin(u), body);
+    return this.loans.createLoan(u.orgId, u.userId, await this.isLoanAdmin(u), body);
   }
 
   @Patch(":loanId")
@@ -52,7 +58,7 @@ export class LoansController {
     @Body(new ZodValidationPipe(updateLoanSchema)) body: UpdateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!isLoanAdmin(u)) throw new ForbiddenException("Only admins can manage loans.");
+    if (!(await this.isLoanAdmin(u))) throw new ForbiddenException("Only admins can manage loans.");
 
     const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
     if (!result.ok) throw new NotFoundException("Loan not found.");

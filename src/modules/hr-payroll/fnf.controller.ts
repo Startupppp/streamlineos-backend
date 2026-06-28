@@ -16,6 +16,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { FnfService } from "./fnf.service";
 import {
   createFnfSchema,
@@ -27,11 +28,18 @@ import {
 @Controller("hr/fnf")
 @UseGuards(JwtAuthGuard)
 export class FnfController {
-  constructor(private readonly fnf: FnfService) {}
+  constructor(
+    private readonly fnf: FnfService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:payroll:approve");
+  async list(@CurrentUser() u: CurrentUserContext) {
+    let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    if (!isAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      isAdmin = perms.has("hr:payroll:approve");
+    }
     return this.fnf.listFnf(u.orgId, u.userId, isAdmin);
   }
 

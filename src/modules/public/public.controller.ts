@@ -19,6 +19,7 @@ import { RoadmapService } from "./roadmap.service";
 import { KbService } from "./kb.service";
 import { CrmService } from "./crm.service";
 import { IntakeService } from "./intake.service";
+import { OrgService } from "./org.service";
 import {
   applySchema,
   intakeSchema,
@@ -60,6 +61,7 @@ export class PublicController {
     private readonly kb: KbService,
     private readonly crm: CrmService,
     private readonly intake: IntakeService,
+    private readonly org: OrgService,
   ) {}
 
   @Get("application-status/:token")
@@ -172,6 +174,15 @@ export class PublicController {
     @Body(new ZodValidationPipe(roadmapFeedbackSchema)) body: RoadmapFeedbackInput,
   ) {
     return this.roadmap.submitFeedback(query.org, body);
+  }
+
+  @Get("org/:orgId")
+  @Header(
+    "Cache-Control",
+    "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+  )
+  getOrgName(@Param("orgId") orgId: string) {
+    return this.org.getOrgName(orgId);
   }
 
   @Get("kb")

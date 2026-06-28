@@ -17,7 +17,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import { type DashboardActor, type DashboardForbidden } from "./dashboard.errors";
 
 @Injectable()
@@ -46,7 +45,7 @@ export class DashboardCrmService {
   }
 
   async getExecutiveDashboard(orgId: string, actor: DashboardActor) {
-    if (!hasRoleOrPrivileged(actor, ["OWNER", "CEO", "HR", "ADMIN"])) {
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && !actor.permissions.includes("hr:analytics:read")) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
@@ -134,7 +133,7 @@ export class DashboardCrmService {
   }
 
   async getBranchOverview(orgId: string, actor: DashboardActor) {
-    if (!hasRoleOrPrivileged(actor, ["CEO", "HR", "ADMIN"])) {
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin && !actor.permissions.includes("hr:analytics:read")) {
       return {
         error: "forbidden",
         message: "Only CEO/HR/Admin can access branch overview",

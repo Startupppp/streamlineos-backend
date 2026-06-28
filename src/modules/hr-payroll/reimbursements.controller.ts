@@ -54,8 +54,11 @@ export class ReimbursementsController {
     @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:expenses:approve"))) {
-      throw new ForbiddenException("Only admins can process reimbursements.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:expenses:approve")) {
+        throw new ForbiddenException("Only admins can process reimbursements.");
+      }
     }
 
     const result = await this.reimbursements.updateStatus(u.orgId, u.userId, reimbursementId, body);

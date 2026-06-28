@@ -54,6 +54,7 @@ export class TargetsController {
       {
         role: u.role,
         callerId: u.userId,
+        permissions: u.permissions,
         isOrgOwner: u.isOrgOwner,
         isPlatformAdmin: u.isPlatformAdmin,
       },
@@ -99,6 +100,7 @@ export class TargetsController {
         role: u.role,
         callerId: u.userId,
         branchId: u.branchId,
+        permissions: u.permissions,
         isOrgOwner: u.isOrgOwner,
         isPlatformAdmin: u.isPlatformAdmin,
       },
@@ -121,6 +123,7 @@ export class TargetsController {
         role: u.role,
         callerId: u.userId,
         branchId: u.branchId,
+        permissions: u.permissions,
         isOrgOwner: u.isOrgOwner,
         isPlatformAdmin: u.isPlatformAdmin,
       },

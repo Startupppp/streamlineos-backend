@@ -19,13 +19,11 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { hasRoleOrPrivileged } from "../../common/auth/role-access";
 import type { CompOffInput } from "./dto/leaves.schemas";
 import { resolveLeavesViewScope } from "./leaves-scope";
 
 const COMP_OFF_LEAVE_NAME = "Compensatory Off";
 const TEAM_LEAVES_CAP = 500;
-const ANALYTICS_ROLES = ["CEO", "ADMIN", "HR", "BRANCH_HR", "BRANCH_MANAGER"];
 
 const TEAM_RELATIONS = {
   user: {
@@ -183,10 +181,9 @@ export class LeavesService {
     });
   }
 
-  analytics(u: CurrentUserContext, year: number) {
-    if (!hasRoleOrPrivileged(u, ANALYTICS_ROLES)) {
-      throw new ForbiddenException("Forbidden");
-    }
+  async analytics(u: CurrentUserContext, year: number) {
+    const scope = await resolveLeavesViewScope(this.access, u);
+    if (scope === "none") throw new ForbiddenException("Forbidden");
 
     const cacheKey = `hr:leave-analytics:${u.orgId}:${year}`;
     return this.cache.cached(cacheKey, () => this.queryAnalytics(u.orgId, year), CACHE_TTL.MEDIUM);
@@ -351,9 +348,8 @@ export class LeavesService {
   }
 
   async compOff(u: CurrentUserContext, input: CompOffInput) {
-    if (!hasRoleOrPrivileged(u, ANALYTICS_ROLES)) {
-      throw new ForbiddenException("Forbidden");
-    }
+    const scope = await resolveLeavesViewScope(this.access, u);
+    if (scope === "none") throw new ForbiddenException("Not authorized to grant comp-off");
 
     let compOffType = await this.db.query.leaveTypes.findFirst({
       where: and(eq(leaveTypes.orgId, u.orgId), eq(leaveTypes.name, COMP_OFF_LEAVE_NAME)),
