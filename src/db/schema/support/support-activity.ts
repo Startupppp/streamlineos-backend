@@ -46,13 +46,16 @@ export const kbArticleComments = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id"),
-    body: text("body").notNull(),
+    authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
+    parentId: integer("parent_id"),
+    content: text("content").notNull(),
+    resolvedAt: timestamp("resolved_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
     index("idx_kb_article_comments_article").on(table.articleId),
+    index("idx_kb_comments_org_article").on(table.orgId, table.articleId),
   ],
 );
 
@@ -63,7 +66,6 @@ export const supportTicketActivityRelations = relations(supportTicketActivity, (
 }));
 
 export const kbArticleCommentsRelations = relations(kbArticleComments, ({ one }) => ({
-  organization: one(organizations, { fields: [kbArticleComments.orgId], references: [organizations.id] }),
   article: one(kbArticles, { fields: [kbArticleComments.articleId], references: [kbArticles.id] }),
-  user: one(users, { fields: [kbArticleComments.userId], references: [users.id] }),
+  author: one(users, { fields: [kbArticleComments.authorId], references: [users.id] }),
 }));

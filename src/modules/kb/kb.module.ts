@@ -13,6 +13,9 @@ import { KbMembersService } from "./kb-members.service";
 import { KbAuthoringService } from "./kb-authoring.service";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbFromTicketService } from "./kb-from-ticket.service";
+import { KbTagsService } from "./kb-tags.service";
+import { KbTranslationsService } from "./kb-translations.service";
+import { KbCommentsService } from "./kb-comments.service";
 import { KbSpacesController } from "./kb-spaces.controller";
 import { KbCategoriesController } from "./kb-categories.controller";
 import { KbArticlesController } from "./kb-articles.controller";
@@ -23,6 +26,9 @@ import { KbMembersController } from "./kb-members.controller";
 import { KbAuthoringController } from "./kb-authoring.controller";
 import { KbIndexingController } from "./kb-indexing.controller";
 import { KbFromTicketController } from "./kb-from-ticket.controller";
+import { KbTagsController } from "./kb-tags.controller";
+import { KbTranslationsController } from "./kb-translations.controller";
+import { KbCommentsController } from "./kb-comments.controller";
 
 @Module({
   imports: [AiModule],
@@ -37,6 +43,9 @@ import { KbFromTicketController } from "./kb-from-ticket.controller";
     KbAuthoringController,
     KbIndexingController,
     KbFromTicketController,
+    KbTagsController,
+    KbTranslationsController,
+    KbCommentsController,
   ],
   providers: [
     KbCreditsService,
@@ -52,6 +61,9 @@ import { KbFromTicketController } from "./kb-from-ticket.controller";
     KbAuthoringService,
     KbIndexingService,
     KbFromTicketService,
+    KbTagsService,
+    KbTranslationsService,
+    KbCommentsService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService],
 })
