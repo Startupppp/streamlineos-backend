@@ -20,6 +20,34 @@ type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
 
+type ArticleRow = typeof kbArticles.$inferSelect;
+
+type ArticleListItem = Pick<
+  ArticleRow,
+  | "id"
+  | "spaceId"
+  | "categoryId"
+  | "title"
+  | "slug"
+  | "excerpt"
+  | "status"
+  | "visibility"
+  | "tags"
+  | "ownerId"
+  | "helpfulCount"
+  | "notHelpfulCount"
+  | "lastVerifiedAt"
+  | "updatedAt"
+>;
+
+type ArticleListResult = {
+  items: ArticleListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 @Injectable()
 export class KbArticlesService {
   private readonly logger = new Logger(KbArticlesService.name);
@@ -31,7 +59,7 @@ export class KbArticlesService {
     private readonly indexing: KbIndexingService,
   ) {}
 
-  async list(user: CurrentUserContext, query: ListArticlesInput) {
+  async list(user: CurrentUserContext, query: ListArticlesInput): Promise<ArticleListResult> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
       return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
@@ -87,7 +115,7 @@ export class KbArticlesService {
     };
   }
 
-  async get(user: CurrentUserContext, articleId: number) {
+  async get(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
       with: { category: { columns: { id: true, name: true, slug: true } } },
@@ -97,7 +125,7 @@ export class KbArticlesService {
     return article;
   }
 
-  async recordView(user: CurrentUserContext, articleId: number) {
+  async recordView(user: CurrentUserContext, articleId: number): Promise<{ success: boolean }> {
     await this.access.assertArticleViewable(user, articleId);
     await this.db
       .update(kbArticles)
@@ -107,7 +135,7 @@ export class KbArticlesService {
     return { success: true };
   }
 
-  async create(user: CurrentUserContext, input: CreateArticleInput) {
+  async create(user: CurrentUserContext, input: CreateArticleInput): Promise<ArticleRow> {
     const orgId = user.orgId;
     await this.access.assertSpaceAccessible(user, input.spaceId);
 
@@ -153,7 +181,7 @@ export class KbArticlesService {
     return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
   }
 
-  async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput) {
+  async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
@@ -209,7 +237,7 @@ export class KbArticlesService {
     return updated;
   }
 
-  async archive(user: CurrentUserContext, articleId: number) {
+  async archive(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const [updated] = await this.db
@@ -228,7 +256,7 @@ export class KbArticlesService {
     return updated;
   }
 
-  async publish(user: CurrentUserContext, articleId: number) {
+  async publish(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const updated = await this.db.transaction(async (tx) => {
@@ -257,7 +285,7 @@ export class KbArticlesService {
     return updated;
   }
 
-  async unpublish(user: CurrentUserContext, articleId: number) {
+  async unpublish(user: CurrentUserContext, articleId: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const [updated] = await this.db
@@ -276,7 +304,7 @@ export class KbArticlesService {
     return updated;
   }
 
-  async verify(user: CurrentUserContext, articleId: number, input: VerifyArticleInput) {
+  async verify(user: CurrentUserContext, articleId: number, input: VerifyArticleInput): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
@@ -296,7 +324,7 @@ export class KbArticlesService {
     return updated;
   }
 
-  async vote(user: CurrentUserContext, articleId: number, input: VoteArticleInput) {
+  async vote(user: CurrentUserContext, articleId: number, input: VoteArticleInput): Promise<{ success: boolean }> {
     await this.access.assertArticleViewable(user, articleId);
     const orgId = user.orgId;
 
@@ -322,7 +350,7 @@ export class KbArticlesService {
     return { success: true };
   }
 
-  async listVersions(user: CurrentUserContext, articleId: number) {
+  async listVersions(user: CurrentUserContext, articleId: number): Promise<(typeof kbArticleVersions.$inferSelect)[]> {
     await this.access.assertArticleViewable(user, articleId);
     return this.db.query.kbArticleVersions.findMany({
       where: and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, user.orgId)),
@@ -330,7 +358,7 @@ export class KbArticlesService {
     });
   }
 
-  async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number) {
+  async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
     return this.db.transaction(async (tx) => {

@@ -6,11 +6,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { UpsertTranslationInput } from "./dto/kb-translations.schemas";
 
+type TranslationRow = typeof kbArticleTranslations.$inferSelect;
+
 @Injectable()
 export class KbTranslationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, articleId: number) {
+  async list(orgId: string, articleId: number): Promise<TranslationRow[]> {
     await this.assertArticleExists(orgId, articleId);
     return this.db
       .select()
@@ -23,7 +25,7 @@ export class KbTranslationsService {
       );
   }
 
-  async get(orgId: string, articleId: number, locale: string) {
+  async get(orgId: string, articleId: number, locale: string): Promise<TranslationRow> {
     const [row] = await this.db
       .select()
       .from(kbArticleTranslations)
@@ -39,7 +41,7 @@ export class KbTranslationsService {
     return row;
   }
 
-  async upsert(orgId: string, articleId: number, locale: string, input: UpsertTranslationInput) {
+  async upsert(orgId: string, articleId: number, locale: string, input: UpsertTranslationInput): Promise<TranslationRow> {
     await this.assertArticleExists(orgId, articleId);
     const [row] = await this.db
       .insert(kbArticleTranslations)
@@ -68,7 +70,7 @@ export class KbTranslationsService {
     return row;
   }
 
-  async remove(orgId: string, articleId: number, locale: string) {
+  async remove(orgId: string, articleId: number, locale: string): Promise<TranslationRow> {
     const [deleted] = await this.db
       .delete(kbArticleTranslations)
       .where(

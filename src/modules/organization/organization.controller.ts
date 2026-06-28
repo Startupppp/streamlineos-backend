@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Public } from "../../common/auth/public.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -21,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrganizationService } from "./organization.service";
 import {
+  acceptInvitationSchema,
   cancelInvitationSchema,
   createOrganizationSchema,
   inviteMemberSchema,
@@ -28,6 +30,7 @@ import {
   securitySettingsSchema,
   updateMemberRoleSchema,
   updateOrgSettingsSchema,
+  type AcceptInvitationInput,
   type CancelInvitationInput,
   type CreateOrganizationInput,
   type InviteMemberInput,
@@ -143,5 +146,14 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.updateSecuritySettings(u.orgId, u.userId, body);
+  }
+
+  @Public()
+  @Post("invitations/accept")
+  @HttpCode(200)
+  acceptInvitation(
+    @Body(new ZodValidationPipe(acceptInvitationSchema)) body: AcceptInvitationInput,
+  ) {
+    return this.organization.acceptInvitation(body);
   }
 }

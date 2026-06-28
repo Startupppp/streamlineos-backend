@@ -66,6 +66,7 @@ import { AiModule } from "./modules/ai/ai.module";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
+import { CalendarConnectionsModule } from "./modules/calendar-connections/calendar-connections.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
@@ -142,6 +143,7 @@ import { MeService } from "./me/me.service";
     StorageModule,
     BillingModule,
     GoogleCalendarModule,
+    CalendarConnectionsModule,
     RealtimeModule,
     AutomationModule,
     SessionsModule,

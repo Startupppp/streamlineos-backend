@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq, asc } from "drizzle-orm";
-import { supportTickets, supportTicketMessages } from "../../db/schema";
+import { supportTickets, supportTicketMessages, kbArticles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { LlmService } from "../ai/providers/llm.service";
@@ -22,7 +22,11 @@ export class KbFromTicketService {
     private readonly articles: KbArticlesService,
   ) {}
 
-  async draftFromTicket(user: CurrentUserContext, ticketId: number, input: FromTicketInput) {
+  async draftFromTicket(
+    user: CurrentUserContext,
+    ticketId: number,
+    input: FromTicketInput,
+  ): Promise<typeof kbArticles.$inferSelect> {
     const orgId = user.orgId;
 
     const ticket = await this.db.query.supportTickets.findFirst({

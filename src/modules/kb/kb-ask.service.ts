@@ -26,7 +26,14 @@ export class KbAskService {
     private readonly search: KbSearchService,
   ) {}
 
-  async ask(user: CurrentUserContext, input: AskInput) {
+  async ask(
+    user: CurrentUserContext,
+    input: AskInput,
+  ): Promise<{
+    answer: string;
+    citations: { articleId: number; title: string; slug: string; spaceId: number | null }[];
+    hasContext: boolean;
+  }> {
     if (!this.llm.isConfigured()) {
       return { answer: "The AI assistant isn't available right now.", citations: [], hasContext: false };
     }

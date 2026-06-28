@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
 import { organizations, organizationMembers, invitations, users } from "../../db/schema";
@@ -9,6 +10,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import type {
+  AcceptInvitationInput,
   CreateOrganizationInput,
   InviteMemberInput,
   ListMembersInput,
@@ -452,6 +454,56 @@ export class OrganizationService {
     });
 
     return { success: true };
+  }
+
+  async acceptInvitation(input: AcceptInvitationInput): Promise<{ ok: boolean }> {
+    const invitation = await this.db.query.invitations.findFirst({
+      where: and(
+        eq(invitations.token, input.token),
+        gt(invitations.expiresAt, new Date()),
+        isNull(invitations.acceptedAt),
+      ),
+    });
+
+    if (!invitation) throw new NotFoundException("Invalid or expired invitation");
+
+    const existingUser = await this.db.query.users.findFirst({
+      where: eq(users.email, invitation.email),
+    });
+
+    if (existingUser) throw new ConflictException("An account with this email already exists");
+
+    const hashedPassword = await bcrypt.hash(input.password, 12);
+    const userId = randomUUID();
+    const fullName =
+      input.firstName && input.lastName
+        ? `${input.firstName} ${input.lastName}`
+        : input.firstName || input.lastName || null;
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        email: invitation.email,
+        password: hashedPassword,
+        name: fullName,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        emailVerified: new Date(),
+        role: invitation.role,
+      });
+
+      await tx
+        .insert(organizationMembers)
+        .values({ userId, orgId: invitation.orgId, role: invitation.role })
+        .onConflictDoNothing();
+
+      await tx
+        .update(invitations)
+        .set({ acceptedAt: new Date() })
+        .where(eq(invitations.id, invitation.id));
+    });
+
+    return { ok: true };
   }
 
   async getSettings(orgId: string) {

@@ -29,7 +29,26 @@ export class KbSearchService {
     private readonly events: KbEventsService,
   ) {}
 
-  async search(user: CurrentUserContext, input: SearchInput) {
+  async search(
+    user: CurrentUserContext,
+    input: SearchInput,
+  ): Promise<{
+    items: {
+      id: number;
+      spaceId: number | null;
+      categoryId: number | null;
+      title: string;
+      slug: string;
+      excerpt: string | null;
+      status: "draft" | "in_review" | "published" | "archived";
+      updatedAt: Date;
+      snippet: string;
+    }[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };

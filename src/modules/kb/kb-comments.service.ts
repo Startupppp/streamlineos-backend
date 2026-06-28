@@ -5,11 +5,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateCommentInput, UpdateCommentInput } from "./dto/kb-comments.schemas";
 
+type CommentRow = typeof kbArticleComments.$inferSelect;
+
 @Injectable()
 export class KbCommentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, articleId: number) {
+  list(orgId: string, articleId: number): Promise<CommentRow[]> {
     return this.db
       .select()
       .from(kbArticleComments)
@@ -17,7 +19,7 @@ export class KbCommentsService {
       .orderBy(asc(kbArticleComments.createdAt));
   }
 
-  async create(orgId: string, articleId: number, authorId: string, input: CreateCommentInput) {
+  async create(orgId: string, articleId: number, authorId: string, input: CreateCommentInput): Promise<CommentRow> {
     const [article] = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)
@@ -33,7 +35,7 @@ export class KbCommentsService {
     return comment;
   }
 
-  async update(orgId: string, commentId: number, authorId: string, input: UpdateCommentInput) {
+  async update(orgId: string, commentId: number, authorId: string, input: UpdateCommentInput): Promise<CommentRow> {
     const [updated] = await this.db
       .update(kbArticleComments)
       .set({ content: input.content, updatedAt: new Date() })
@@ -51,7 +53,7 @@ export class KbCommentsService {
     return updated;
   }
 
-  async remove(orgId: string, commentId: number, authorId: string) {
+  async remove(orgId: string, commentId: number, authorId: string): Promise<void> {
     const [deleted] = await this.db
       .delete(kbArticleComments)
       .where(
@@ -66,7 +68,7 @@ export class KbCommentsService {
     if (!deleted) throw new NotFoundException("Comment not found or you are not the author");
   }
 
-  async resolve(orgId: string, commentId: number) {
+  async resolve(orgId: string, commentId: number): Promise<CommentRow> {
     const [updated] = await this.db
       .update(kbArticleComments)
       .set({ resolvedAt: new Date(), updatedAt: new Date() })

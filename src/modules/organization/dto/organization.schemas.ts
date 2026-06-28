@@ -57,6 +57,13 @@ export const updateMemberRoleSchema = z.object({
   role: z.string().min(1),
 });
 
+export const acceptInvitationSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8).max(128),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type CancelInvitationInput = z.infer<typeof cancelInvitationSchema>;
@@ -64,3 +71,4 @@ export type UpdateOrgSettingsInput = z.infer<typeof updateOrgSettingsSchema>;
 export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
+export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;

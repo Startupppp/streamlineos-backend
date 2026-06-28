@@ -5,11 +5,51 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { RangeInput } from "./dto/kb-analytics.schemas";
 
+type TopArticle = {
+  id: number;
+  title: string;
+  slug: string;
+  spaceId: number | null;
+  viewCount: number;
+  helpfulCount: number;
+  notHelpfulCount: number;
+};
+
+type OverviewResult = {
+  totalCount: number;
+  publishedCount: number;
+  archivedCount: number;
+  totalViews: number;
+  helpfulUp: number;
+  helpfulDown: number;
+  helpfulRatio: number;
+  searches: number;
+  noResults: number;
+  searchSuccessRate: number;
+  aiAnswers: number;
+  views: number;
+  verifiedPublished: number;
+  trustScore: number;
+  topArticles: TopArticle[];
+};
+
+type NoResultsRow = { query: string | null; count: number };
+
+type VerificationQueueRow = {
+  id: number;
+  title: string;
+  slug: string;
+  spaceId: number | null;
+  ownerId: string | null;
+  lastVerifiedAt: Date | null;
+  reviewIntervalDays: number | null;
+};
+
 @Injectable()
 export class KbAnalyticsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async overview(orgId: string, range: RangeInput) {
+  async overview(orgId: string, range: RangeInput): Promise<OverviewResult> {
     const eventConditions: SQL[] = [eq(kbEvents.orgId, orgId)];
     if (range.from) eventConditions.push(gte(kbEvents.occurredAt, new Date(range.from)));
     if (range.to) eventConditions.push(lte(kbEvents.occurredAt, new Date(range.to)));
@@ -88,7 +128,7 @@ export class KbAnalyticsService {
     };
   }
 
-  async noResults(orgId: string, range: RangeInput) {
+  async noResults(orgId: string, range: RangeInput): Promise<NoResultsRow[]> {
     const conditions: SQL[] = [
       eq(kbEvents.orgId, orgId),
       eq(kbEvents.eventType, "search_no_results"),
@@ -108,7 +148,7 @@ export class KbAnalyticsService {
       .limit(20);
   }
 
-  async verificationQueue(orgId: string) {
+  async verificationQueue(orgId: string): Promise<VerificationQueueRow[]> {
     return this.db
       .select({
         id: kbArticles.id,

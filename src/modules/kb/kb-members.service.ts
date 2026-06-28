@@ -11,11 +11,19 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
 
+type MemberRow = typeof kbSpaceMembers.$inferSelect;
+
+type MemberListItem = MemberRow & {
+  userName: string | null;
+  userEmail: string | null;
+  userImage: string | null;
+};
+
 @Injectable()
 export class KbMembersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async assertSpaceExists(orgId: string, spaceId: number) {
+  private async assertSpaceExists(orgId: string, spaceId: number): Promise<void> {
     const space = await this.db.query.kbSpaces.findFirst({
       where: and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)),
       columns: { id: true },
@@ -23,16 +31,18 @@ export class KbMembersService {
     if (!space) throw new NotFoundException("Space not found");
   }
 
-  async list(orgId: string, spaceId: number) {
+  async list(orgId: string, spaceId: number): Promise<MemberListItem[]> {
     await this.assertSpaceExists(orgId, spaceId);
     return this.db
       .select({
         id: kbSpaceMembers.id,
+        orgId: kbSpaceMembers.orgId,
         spaceId: kbSpaceMembers.spaceId,
         userId: kbSpaceMembers.userId,
         role: kbSpaceMembers.role,
         team: kbSpaceMembers.team,
         spaceRole: kbSpaceMembers.spaceRole,
+        createdAt: kbSpaceMembers.createdAt,
         userName: users.name,
         userEmail: users.email,
         userImage: users.image,
@@ -43,7 +53,7 @@ export class KbMembersService {
       .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt));
   }
 
-  async add(orgId: string, spaceId: number, input: AddMemberInput) {
+  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow> {
     await this.assertSpaceExists(orgId, spaceId);
     if (input.userId) {
       const existing = await this.db.query.kbSpaceMembers.findFirst({
@@ -72,7 +82,7 @@ export class KbMembersService {
     return member;
   }
 
-  async remove(orgId: string, spaceId: number, memberId: number) {
+  async remove(orgId: string, spaceId: number, memberId: number): Promise<{ success: boolean }> {
     const member = await this.db.query.kbSpaceMembers.findFirst({
       where: and(
         eq(kbSpaceMembers.id, memberId),

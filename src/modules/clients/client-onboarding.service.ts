@@ -101,7 +101,8 @@ export class ClientOnboardingService {
     return this.db
       .select()
       .from(clientOnboardingTemplates)
-      .where(eq(clientOnboardingTemplates.orgId, orgId));
+      .where(eq(clientOnboardingTemplates.orgId, orgId))
+      .limit(100);
   }
 
   async createTemplate(orgId: string, userId: string, input: CreateTemplateInput) {

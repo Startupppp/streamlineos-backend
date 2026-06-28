@@ -32,7 +32,8 @@ export class ClientOpportunitiesService {
       .from(clientOpportunities)
       .leftJoin(clients, eq(clientOpportunities.clientId, clients.id))
       .where(and(...conditions))
-      .orderBy(clientOpportunities.createdAt);
+      .orderBy(clientOpportunities.createdAt)
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, input: CreateOpportunityInput) {

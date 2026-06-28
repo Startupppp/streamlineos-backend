@@ -78,6 +78,7 @@ export class TargetsService {
     return this.db.query.targets.findMany({
       where: and(eq(targets.orgId, orgId), eq(targets.userId, userId)),
       orderBy: [desc(targets.startDate)],
+      limit: 50,
     });
   }
 
@@ -89,6 +90,7 @@ export class TargetsService {
       where: and(...f),
       with: { user: { columns: { id: true, name: true, image: true } } },
       orderBy: [desc(targets.currentValue)],
+      limit: 500,
     });
 
     const userMap = new Map<
@@ -126,6 +128,7 @@ export class TargetsService {
       where: and(eq(targetHistory.targetId, targetId), eq(targetHistory.orgId, orgId)),
       with: { changedBy: { columns: { id: true, name: true, image: true } } },
       orderBy: [desc(targetHistory.createdAt)],
+      limit: 100,
     });
   }
 
@@ -175,16 +178,18 @@ export class TargetsService {
       .returning();
 
     const metricLabel = input.metricType.replace(/_/g, " ");
-    for (const uid of resolvedUserIds) {
-      if (uid === ctx.callerId) continue;
-      await this.db.insert(notifications).values({
+    const notifValues = resolvedUserIds
+      .filter((uid) => uid !== ctx.callerId)
+      .map((uid) => ({
         orgId,
         userId: uid,
-        type: "INFO",
+        type: "INFO" as const,
         title: "New target assigned",
         message: `You have a new ${input.period} target: ${input.targetValue} ${metricLabel}`,
         link: "/crm/targets",
-      });
+      }));
+    if (notifValues.length > 0) {
+      await this.db.insert(notifications).values(notifValues);
     }
 
     for (const t of created) {

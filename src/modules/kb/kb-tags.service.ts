@@ -6,11 +6,15 @@ import { kbArticles, kbArticleTags, kbTags } from "../../db/schema";
 import { kbSlugify } from "./kb.util";
 import type { CreateTagInput, SetArticleTagsInput } from "./dto/kb-tags.schemas";
 
+type TagRow = typeof kbTags.$inferSelect;
+
+type ArticleTagRow = Pick<TagRow, "id" | "orgId" | "name" | "slug" | "createdAt">;
+
 @Injectable()
 export class KbTagsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string) {
+  list(orgId: string): Promise<TagRow[]> {
     return this.db
       .select()
       .from(kbTags)
@@ -18,7 +22,7 @@ export class KbTagsService {
       .orderBy(asc(kbTags.name));
   }
 
-  async create(orgId: string, input: CreateTagInput) {
+  async create(orgId: string, input: CreateTagInput): Promise<TagRow> {
     const slug = kbSlugify(input.name);
     const existing = await this.db.query.kbTags.findFirst({
       where: and(eq(kbTags.orgId, orgId), eq(kbTags.slug, slug)),
@@ -32,7 +36,7 @@ export class KbTagsService {
     return tag;
   }
 
-  async remove(orgId: string, tagId: number) {
+  async remove(orgId: string, tagId: number): Promise<{ success: boolean }> {
     const [deleted] = await this.db
       .delete(kbTags)
       .where(and(eq(kbTags.id, tagId), eq(kbTags.orgId, orgId)))
@@ -41,7 +45,7 @@ export class KbTagsService {
     return { success: true };
   }
 
-  getArticleTags(orgId: string, articleId: number) {
+  getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
     return this.db
       .select({
         id: kbTags.id,
@@ -56,7 +60,7 @@ export class KbTagsService {
       .orderBy(asc(kbTags.name));
   }
 
-  async setArticleTags(orgId: string, articleId: number, input: SetArticleTagsInput) {
+  async setArticleTags(orgId: string, articleId: number, input: SetArticleTagsInput): Promise<ArticleTagRow[]> {
     return this.db.transaction(async (tx) => {
       await tx.delete(kbArticleTags).where(eq(kbArticleTags.articleId, articleId));
 
@@ -66,7 +70,7 @@ export class KbTagsService {
           .values(input.tagIds.map((tagId) => ({ articleId, tagId })));
       }
 
-      const resolvedTags =
+      const resolvedTags: ArticleTagRow[] =
         input.tagIds.length > 0
           ? await tx
               .select({ id: kbTags.id, orgId: kbTags.orgId, name: kbTags.name, slug: kbTags.slug, createdAt: kbTags.createdAt })

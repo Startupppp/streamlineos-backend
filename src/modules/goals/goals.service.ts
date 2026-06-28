@@ -39,7 +39,7 @@ const STATUS_KEYS: GoalStatus[] = [
   "completed",
 ];
 
-interface GoalStats {
+export interface GoalStats {
   total: number;
   byStatus: Record<GoalStatus, number>;
   avgProgress: number;
@@ -47,14 +47,14 @@ interface GoalStats {
   completed: number;
 }
 
-interface GoalOwner {
+export interface GoalOwner {
   id: string;
   name: string | null;
   email: string;
   image: string | null;
 }
 
-interface GoalProject {
+export interface GoalProject {
   id: number;
   name: string;
   key: string;
@@ -71,7 +71,7 @@ export interface GoalLinkRow {
   projectKey: string | null;
 }
 
-interface GoalUpdateRow {
+export interface GoalUpdateRow {
   id: number;
   keyResultId: number | null;
   note: string | null;

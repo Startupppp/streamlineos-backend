@@ -15,13 +15,13 @@ export interface CreditLedgerOptions {
 export class KbCreditsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  getBalance(orgId: string) {
+  getBalance(orgId: string): Promise<typeof tenantAiCredits.$inferSelect | undefined> {
     return this.db.query.tenantAiCredits.findFirst({
       where: eq(tenantAiCredits.orgId, orgId),
     });
   }
 
-  async ensure(orgId: string) {
+  async ensure(orgId: string): Promise<typeof tenantAiCredits.$inferSelect | undefined> {
     const existing = await this.getBalance(orgId);
     if (existing) return existing;
     await this.db

@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { subMonths, startOfMonth, endOfMonth } from "./date.helpers";
+import { subMonths, startOfMonth } from "./date.helpers";
 
 export interface CohortRow {
   cohortMonth: string;
@@ -58,37 +58,40 @@ export class SalesAnalyticsService {
   }
 
   private async computeCohort(orgId: string, numMonths: number): Promise<CohortRow[]> {
-    const rows: CohortRow[] = [];
+    const rangeStart = startOfMonth(subMonths(new Date(), numMonths - 1));
 
+    const dbRows = await this.db
+      .select({
+        cohortMonth: sql<string>`to_char(date_trunc('month', ${leads.createdAt}), 'YYYY-MM')`,
+        created: count(leads.id),
+        converted: sql<number>`count(*) filter (where ${leads.convertedAt} is not null)`,
+        avgDays: sql<number | null>`
+          round(avg(
+            extract(epoch from ${leads.convertedAt} - ${leads.createdAt}) / 86400.0
+          ) filter (where ${leads.convertedAt} is not null))
+        `,
+      })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.orgId, orgId),
+          gte(leads.createdAt, rangeStart),
+          sql`${leads.deletedAt} IS NULL`,
+        ),
+      )
+      .groupBy(sql`date_trunc('month', ${leads.createdAt})`)
+      .orderBy(sql`date_trunc('month', ${leads.createdAt})`);
+
+    const statsMap = new Map(dbRows.map((r) => [r.cohortMonth, r]));
+
+    const result: CohortRow[] = [];
     for (let i = numMonths - 1; i >= 0; i--) {
       const monthStart = startOfMonth(subMonths(new Date(), i));
-      const monthEnd = endOfMonth(subMonths(new Date(), i));
       const label = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
-
-      const [stats] = await this.db
-        .select({
-          created: count(leads.id),
-          converted: sql<number>`count(*) filter (where ${leads.convertedAt} is not null)`,
-          avgDays: sql<number | null>`
-            round(avg(
-              extract(epoch from ${leads.convertedAt} - ${leads.createdAt}) / 86400.0
-            ) filter (where ${leads.convertedAt} is not null))
-          `,
-        })
-        .from(leads)
-        .where(
-          and(
-            eq(leads.orgId, orgId),
-            gte(leads.createdAt, monthStart),
-            lte(leads.createdAt, monthEnd),
-            sql`${leads.deletedAt} IS NULL`,
-          ),
-        );
-
+      const stats = statsMap.get(label);
       const created = Number(stats?.created ?? 0);
       const converted = Number(stats?.converted ?? 0);
-
-      rows.push({
+      result.push({
         cohortMonth: label,
         created,
         converted,
@@ -97,7 +100,7 @@ export class SalesAnalyticsService {
       });
     }
 
-    return rows;
+    return result;
   }
 
   getCycleLength(orgId: string, repId?: string) {
@@ -255,31 +258,25 @@ export class SalesAnalyticsService {
       lte(crmDeals.createdAt, to),
     );
 
-    const [wonStats] = await this.db
-      .select({
-        deals: count(),
-        revenue: sql<number>`COALESCE(sum(${crmDeals.value}::numeric), 0)::float`,
-      })
-      .from(crmDeals)
-      .where(and(baseWhere, eq(crmDeals.stage, "Closed Won")));
+    const monthlyRangeStart = startOfMonth(subMonths(new Date(), 5));
 
-    const [totalStats] = await this.db
-      .select({ total: count() })
-      .from(crmDeals)
-      .where(baseWhere);
-
-    const dealsWon = wonStats?.deals ?? 0;
-    const totalDeals = totalStats?.total ?? 0;
-    const revenue = Number(wonStats?.revenue ?? 0);
-
-    const monthly: RepMonthStat[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const mStart = startOfMonth(subMonths(new Date(), i));
-      const mEnd = endOfMonth(subMonths(new Date(), i));
-      const label = `${mStart.toLocaleString("en", { month: "short" })} '${String(mStart.getFullYear()).slice(2)}`;
-
-      const [mStats] = await this.db
+    const [wonStats, totalStats, monthlyRows] = await Promise.all([
+      this.db
         .select({
+          deals: count(),
+          revenue: sql<number>`COALESCE(sum(${crmDeals.value}::numeric), 0)::float`,
+        })
+        .from(crmDeals)
+        .where(and(baseWhere, eq(crmDeals.stage, "Closed Won"))),
+
+      this.db
+        .select({ total: count() })
+        .from(crmDeals)
+        .where(baseWhere),
+
+      this.db
+        .select({
+          monthKey: sql<string>`to_char(date_trunc('month', ${crmDeals.createdAt}), 'YYYY-MM')`,
           deals: count(),
           revenue: sql<number>`COALESCE(sum(${crmDeals.value}::numeric), 0)::float`,
         })
@@ -289,11 +286,25 @@ export class SalesAnalyticsService {
             eq(crmDeals.orgId, orgId),
             eq(crmDeals.salesRepId, repId),
             eq(crmDeals.stage, "Closed Won"),
-            gte(crmDeals.createdAt, mStart),
-            lte(crmDeals.createdAt, mEnd),
+            gte(crmDeals.createdAt, monthlyRangeStart),
           ),
-        );
+        )
+        .groupBy(sql`date_trunc('month', ${crmDeals.createdAt})`)
+        .orderBy(sql`date_trunc('month', ${crmDeals.createdAt})`),
+    ]);
 
+    const dealsWon = wonStats[0]?.deals ?? 0;
+    const totalDeals = totalStats[0]?.total ?? 0;
+    const revenue = Number(wonStats[0]?.revenue ?? 0);
+
+    const monthlyMap = new Map(monthlyRows.map((r) => [r.monthKey, r]));
+
+    const monthly: RepMonthStat[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const mStart = startOfMonth(subMonths(new Date(), i));
+      const key = `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, "0")}`;
+      const label = `${mStart.toLocaleString("en", { month: "short" })} '${String(mStart.getFullYear()).slice(2)}`;
+      const mStats = monthlyMap.get(key);
       monthly.push({ month: label, dealsWon: mStats?.deals ?? 0, revenue: Number(mStats?.revenue ?? 0) });
     }
 
