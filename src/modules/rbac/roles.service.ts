@@ -426,6 +426,36 @@ export class RolesService {
     return { success: true };
   }
 
+  async getPermissionsMatrix(
+    orgId: string,
+  ): Promise<{ roleId: number; roleName: string; roleSlug: string; permissions: string[] }[]> {
+    const orgRoles = await this.db
+      .select({ id: roles.id, name: roles.name, slug: roles.slug, permissions: roles.permissions })
+      .from(roles)
+      .where(eq(roles.orgId, orgId))
+      .orderBy(asc(roles.name));
+
+    const allGrants = await this.db
+      .select({ roleId: rolePermissionGrants.roleId, permissionKey: rolePermissionGrants.permissionKey })
+      .from(rolePermissionGrants)
+      .where(eq(rolePermissionGrants.orgId, orgId));
+
+    const grantsByRole = new Map<number, string[]>();
+    for (const grant of allGrants) {
+      const existing = grantsByRole.get(grant.roleId) ?? [];
+      existing.push(grant.permissionKey);
+      grantsByRole.set(grant.roleId, existing);
+    }
+
+    return orgRoles.map((role) => {
+      const explicit = grantsByRole.get(role.id);
+      const permissions =
+        explicit ??
+        (role.permissions.length > 0 ? role.permissions : ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
+      return { roleId: role.id, roleName: role.name, roleSlug: role.slug, permissions };
+    });
+  }
+
   listTemplates(): readonly RoleTemplate[] {
     return ROLE_TEMPLATES;
   }

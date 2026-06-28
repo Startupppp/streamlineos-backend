@@ -297,6 +297,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:analytics:read",
     "hr:headcount:read",
     "settings:onboarding:manage",
+    "settings:email-templates:manage",
     "reports:generate",
     "reports:schedule",
     "audit-log:read",
@@ -470,6 +471,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "settings:view",
     "dashboard:sales:view",
     "dashboard:customer-executive:view",
+    "branch:create",
+    "branch:update",
+    "branch:manage_targets",
+    "settings:automations:manage",
+    "settings:custom-fields:manage",
+    "settings:webhooks:manage",
+    "dashboard:support:view",
   ],
 
   BRANCH_HR: [
@@ -519,6 +527,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:view",
     "projects:tickets:view",
     "reports:view",
+    "settings:email-templates:manage",
+    "settings:onboarding:manage",
   ],
 
   INVENTORY_MANAGER: [
@@ -550,6 +560,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ACCOUNTANT: [
     ...EMPLOYEE_SELF_SERVICE,
     "accounting:view",
+    "accounting:manage",
     "accounting:report",
     "accounting:read",
     "accounting:create",

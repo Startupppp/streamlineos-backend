@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -16,6 +17,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
+import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
 import {
   cloneTemplateSchema,
@@ -30,10 +33,20 @@ import {
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
 
+interface SimulateAccessResponse {
+  userId: string;
+  permissions: string[];
+  scopes: Record<string, DataScope>;
+  isOrgOwner: boolean;
+}
+
 @Controller("roles")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RolesController {
-  constructor(private readonly roles: RolesService) {}
+  constructor(
+    private readonly roles: RolesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @RequirePermission("settings:rbac:manage")
@@ -48,6 +61,30 @@ export class RolesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.createRole(u, body);
+  }
+
+  @Get("permissions/matrix")
+  @RequirePermission("settings:rbac:manage")
+  getPermissionsMatrix(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.getPermissionsMatrix(u.orgId);
+  }
+
+  @Get("simulate/:targetUserId")
+  @RequirePermission("settings:rbac:manage")
+  async simulateAccess(
+    @Param("targetUserId") targetUserId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<SimulateAccessResponse> {
+    if (!targetUserId) throw new NotFoundException("targetUserId is required");
+    const resolved = await this.access.resolveUserPermissions(u.orgId, targetUserId);
+    const permissions: string[] = [];
+    const scopes: Record<string, DataScope> = {};
+    for (const [key, scope] of resolved) {
+      if (scope === "none") continue;
+      permissions.push(key);
+      scopes[key] = scope;
+    }
+    return { userId: targetUserId, permissions, scopes, isOrgOwner: false };
   }
 
   @Get("templates")

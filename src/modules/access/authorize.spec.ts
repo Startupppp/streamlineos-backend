@@ -22,7 +22,7 @@ function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext 
 function makeResolver(map: Map<string, DataScope>, enabledModules: string[]): AccessResolver {
   return {
     resolveUserPermissions: () => Promise.resolve(map),
-    getModuleEnabled: (_ctx, moduleKey) => enabledModules.includes(moduleKey),
+    isModuleEnabled: (_orgId, moduleKey) => Promise.resolve(enabledModules.includes(moduleKey)),
   };
 }
 

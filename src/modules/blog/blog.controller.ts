@@ -79,6 +79,20 @@ export class BlogController {
   }
 
   @Public()
+  @Get("by-slug/:slug")
+  async getPostBySlug(@Param("slug") slug: string) {
+    const post = await this.blog.getPublishedPostBySlug(slug);
+    if (!post) throw new NotFoundException("Post not found");
+    return post;
+  }
+
+  @Public()
+  @Get("by-slug/:slug/adjacent")
+  getAdjacentPosts(@Param("slug") slug: string) {
+    return this.blog.getAdjacentPosts(slug);
+  }
+
+  @Public()
   @Get("categories")
   listCategories() {
     return this.blog.getCategories();

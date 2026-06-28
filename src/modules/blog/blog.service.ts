@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { blogCategories, blogPosts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -206,10 +206,52 @@ export class BlogService {
     return { success: true };
   }
 
+  getPublishedPostBySlug(slug: string) {
+    return this.db.query.blogPosts.findFirst({
+      where: and(eq(blogPosts.slug, slug), eq(blogPosts.status, "published")),
+      with: POST_WITH,
+    });
+  }
+
+  async getAdjacentPosts(slug: string) {
+    const post = await this.db.query.blogPosts.findFirst({
+      where: and(eq(blogPosts.slug, slug), eq(blogPosts.status, "published")),
+      columns: { publishedAt: true },
+    });
+
+    if (!post?.publishedAt) return { prev: null, next: null };
+
+    const [prev] = await this.db.query.blogPosts.findMany({
+      where: and(
+        eq(blogPosts.status, "published"),
+        lt(blogPosts.publishedAt, post.publishedAt),
+      ),
+      orderBy: [desc(blogPosts.publishedAt)],
+      limit: 1,
+      columns: { slug: true, title: true },
+    });
+
+    const [next] = await this.db.query.blogPosts.findMany({
+      where: and(
+        eq(blogPosts.status, "published"),
+        gt(blogPosts.publishedAt, post.publishedAt),
+      ),
+      orderBy: [asc(blogPosts.publishedAt)],
+      limit: 1,
+      columns: { slug: true, title: true },
+    });
+
+    return { prev: prev ?? null, next: next ?? null };
+  }
+
   async getPublishedPosts(input: FeedInput) {
     const limit = Math.min(input.limit ?? 9, 50);
 
     const conditions = [eq(blogPosts.status, "published")];
+
+    if (input.featured === true) {
+      conditions.push(eq(blogPosts.isFeatured, true));
+    }
 
     if (input.category) {
       const category = await this.db.query.blogCategories.findFirst({

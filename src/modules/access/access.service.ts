@@ -20,6 +20,7 @@ import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions.constants";
 import type { AccessSnapshot, DataScope } from "./access.types";
+import { EntitlementsService } from "./entitlements.service";
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
@@ -58,6 +59,7 @@ export class AccessService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   private noteMissingAccessTables(error: unknown): void {
@@ -100,11 +102,8 @@ export class AccessService {
     return new Map(Object.entries(resolved));
   }
 
-  getModuleEnabled(ctx: CurrentUserContext, moduleKey: string): boolean {
-    if (ctx.isPlatformAdmin || ctx.isOrgOwner) return true;
-    const modules = ctx.enabledModules;
-    if (!modules || modules.length === 0) return true;
-    return modules.includes(moduleKey);
+  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+    return this.entitlements.isModuleEnabled(orgId, moduleKey);
   }
 
   async getAccessSnapshot(
@@ -138,7 +137,9 @@ export class AccessService {
 
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      modules[moduleKey] = isInternalModule(moduleKey) ? true : this.getModuleEnabled(ctx, moduleKey);
+      modules[moduleKey] = isInternalModule(moduleKey)
+        ? true
+        : await this.entitlements.isModuleEnabled(orgId, moduleKey);
     }
 
     return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };

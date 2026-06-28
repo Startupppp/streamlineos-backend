@@ -5,7 +5,7 @@ import type { AuthResult, DataScope } from "./access.types";
 
 export interface AccessResolver {
   resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>>;
-  getModuleEnabled(ctx: CurrentUserContext, moduleKey: string): boolean;
+  isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean>;
 }
 
 export async function authorize(
@@ -18,7 +18,7 @@ export async function authorize(
   if (ctx.isPlatformAdmin || ctx.isOrgOwner) return { allow: true, scope: "all" };
 
   const moduleKey = moduleOf(permissionKey);
-  if (!isInternalModule(moduleKey) && !access.getModuleEnabled(ctx, moduleKey)) {
+  if (!isInternalModule(moduleKey) && !(await access.isModuleEnabled(ctx.orgId, moduleKey))) {
     return { allow: false, scope: "none", reason: "NO_MODULE" };
   }
 

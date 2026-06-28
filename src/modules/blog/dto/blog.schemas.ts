@@ -44,6 +44,10 @@ export const feedSchema = z.object({
   category: z.string().optional(),
   tag: z.string().optional(),
   search: z.string().optional(),
+  featured: z
+    .string()
+    .optional()
+    .transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
 });
 
 export type PostCreateInput = z.infer<typeof postCreateSchema>;

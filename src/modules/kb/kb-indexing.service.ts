@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, count, eq, max, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { kbArticles, kbArticleChunks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
