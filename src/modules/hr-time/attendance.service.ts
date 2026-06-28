@@ -7,6 +7,7 @@ import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
 import type { CheckInInput } from "./dto/attendance.schemas";
+import { resolveAttendanceScope } from "./attendance-scope";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
@@ -281,9 +282,8 @@ export class AttendanceService {
 
   async logs(u: CurrentUserContext, requestedUserId: string | undefined, year?: number, month?: number) {
     const userId = requestedUserId ?? u.userId;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
-    if (userId !== u.userId && !isAdmin) {
+    const scope = await resolveAttendanceScope(this.access, u);
+    if (scope !== "all" && userId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' logs.");
     }
     return this.getAttendanceLogs(u.orgId, userId, year, month);
@@ -394,10 +394,8 @@ export class AttendanceService {
   }
 
   async teamStatus(u: CurrentUserContext) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (!(u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage"))) {
-      throw new ForbiddenException("Only admins can view team attendance.");
-    }
+    const scope = await resolveAttendanceScope(this.access, u);
+    if (scope !== "all") throw new ForbiddenException("Only admins can view team attendance.");
 
     const today = getTodayString();
 

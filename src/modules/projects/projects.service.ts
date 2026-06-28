@@ -26,8 +26,10 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { AccessService } from "../access/access.service";
+import type { DataScope } from "../access/access.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { hasRoleOrPrivileged } from "../../common/auth/role-access";
+import { resolveProjectsScope } from "./projects-scope";
 import type {
   CreateProjectInput,
   FromDealInput,
@@ -59,14 +61,13 @@ export class ProjectsService {
   ) {}
 
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isOwnerOrAdmin = perms.has("projects:manage");
+    const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const key = `projects:list:${orgId}:${userId}:${isOwnerOrAdmin ? "all" : "scoped"}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
+    const key = `projects:list:${orgId}:${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}`;
     return this.cache.cached(
       key,
-      () => this.queryProjects(orgId, userId, isOwnerOrAdmin, input),
+      () => this.queryProjects(orgId, userId, scope, input),
       CACHE_TTL.SHORT,
     );
   }
@@ -74,7 +75,7 @@ export class ProjectsService {
   private async queryProjects(
     orgId: string,
     userId: string,
-    isOwnerOrAdmin: boolean,
+    scope: DataScope,
     input: ListProjectsInput,
   ) {
     const { search, status, page, limit } = input;
@@ -82,7 +83,7 @@ export class ProjectsService {
 
     const conditions = [eq(projects.orgId, orgId)];
 
-    if (!isOwnerOrAdmin) {
+    if (scope !== "all") {
       const memberOf = await this.db
         .select({ projectId: projectMembers.projectId })
         .from(projectMembers)

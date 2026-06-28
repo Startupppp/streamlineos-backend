@@ -51,6 +51,7 @@ import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
 import { SearchModule } from "./modules/search/search.module";
 import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
 import { CronModule } from "./modules/cron/cron.module";
+import { HrHelpdeskModule } from "./modules/hr-helpdesk/hr-helpdesk.module";
 import { HrRecruitmentModule } from "./modules/hr-recruitment/hr-recruitment.module";
 import { HrInterviewsModule } from "./modules/hr-interviews/hr-interviews.module";
 import { InvProductsModule } from "./modules/inv-products/inv-products.module";
@@ -67,8 +68,10 @@ import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { SessionsModule } from "./modules/sessions/sessions.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
+import { MeService } from "./me/me.service";
 
 @Module({
   imports: [
@@ -124,6 +127,7 @@ import { MeController } from "./me/me.controller";
     SearchModule,
     IntegrationsGitModule,
     CronModule,
+    HrHelpdeskModule,
     HrRecruitmentModule,
     HrInterviewsModule,
     InvProductsModule,
@@ -140,7 +144,9 @@ import { MeController } from "./me/me.controller";
     GoogleCalendarModule,
     RealtimeModule,
     AutomationModule,
+    SessionsModule,
   ],
   controllers: [HealthController, MeController],
+  providers: [MeService],
 })
 export class AppModule {}

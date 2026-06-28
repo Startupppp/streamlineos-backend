@@ -6,3 +6,4 @@ export * from "./hr/payroll";
 export * from "./hr/recruitment";
 export * from "./hr/performance";
 export * from "./hr/documents";
+export * from "./hr/offboarding";

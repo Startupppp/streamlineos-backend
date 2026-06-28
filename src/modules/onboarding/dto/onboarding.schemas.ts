@@ -10,6 +10,14 @@ export const personalDetailsSchema = z.object({
   dateOfBirth: z.string().optional(),
   experienceYears: z.string().optional(),
   skills: z.array(z.string()).or(z.string()).optional(),
+  emergencyName: z.string().optional(),
+  emergencyRelation: z.string().optional(),
+  emergencyPhone: z.string().optional(),
+  addressLine1: z.string().optional(),
+  addressCity: z.string().optional(),
+  addressState: z.string().optional(),
+  addressPostalCode: z.string().optional(),
+  addressCountry: z.string().optional(),
 });
 
 export const bankDetailsSchema = z.object({

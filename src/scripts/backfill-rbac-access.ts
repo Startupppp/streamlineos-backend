@@ -29,6 +29,8 @@ const SYSTEM_ROLE_NAMES: Record<string, string> = {
   BLOG_EDITOR: "Blog Editor",
   BRANCH_MANAGER: "Branch Manager",
   BRANCH_HR: "Branch HR",
+  INVENTORY_MANAGER: "Inventory Manager",
+  ACCOUNTANT: "Accountant",
 };
 
 function systemRoleName(slug: string): string {
@@ -117,9 +119,20 @@ async function backfill(db: Database): Promise<BackfillSummary> {
         const rawKeys = role.isSystem ? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [] : role.permissions;
         const keys = [...new Set(rawKeys)].filter((key) => catalog.has(key));
         if (keys.length === 0) continue;
+        const SALES_OWN_SCOPE_KEYS = new Set(["crm:leads:view", "crm:leads:update"]);
         const inserted = await tx
           .insert(rolePermissionGrants)
-          .values(keys.map((permissionKey) => ({ orgId: org.id, roleId: role.id, permissionKey })))
+          .values(
+            keys.map((permissionKey) => ({
+              orgId: org.id,
+              roleId: role.id,
+              permissionKey,
+              scope:
+                role.slug === "SALES" && SALES_OWN_SCOPE_KEYS.has(permissionKey)
+                  ? ("own" as const)
+                  : ("all" as const),
+            })),
+          )
           .onConflictDoNothing({
             target: [rolePermissionGrants.roleId, rolePermissionGrants.permissionKey],
           })

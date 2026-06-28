@@ -100,6 +100,28 @@ export const attendanceAnalyticsQuerySchema = z.object({
   month: z.coerce.number().int().optional(),
 });
 
+export const listOnboardingDocsQuerySchema = z.object({
+  userId: z.string().optional(),
+});
+
+export const createOnboardingDocSchema = z.object({
+  documentTypeId: z.number().int().positive("documentTypeId is required"),
+  fileUrl: z.string().url("fileUrl must be a valid URL"),
+  fileName: z.string().min(1, "fileName is required"),
+  fileSize: z.number().int().positive().optional(),
+  mimeType: z.string().optional(),
+  targetUserId: z.string().optional(),
+});
+
+export const reviewOnboardingDocSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]),
+  remarks: z.string().optional(),
+});
+
+export type ListOnboardingDocsQueryInput = z.infer<typeof listOnboardingDocsQuerySchema>;
+export type CreateOnboardingDocInput = z.infer<typeof createOnboardingDocSchema>;
+export type ReviewOnboardingDocInput = z.infer<typeof reviewOnboardingDocSchema>;
+
 export type ResignationCreateInput = z.infer<typeof resignationCreateSchema>;
 export type ResignationUpdateInput = z.infer<typeof resignationUpdateSchema>;
 export type ResignationCeoReviewInput = z.infer<typeof resignationCeoReviewSchema>;

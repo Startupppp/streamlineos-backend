@@ -1,7 +1,9 @@
-import { createCipheriv, createHash, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { z } from "zod";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
 const PREFIX = "enc:v1:";
 
 function getKey(): Buffer | null {
@@ -37,4 +39,38 @@ export interface BankDetails {
 
 export function encryptBankDetails(details: BankDetails): string {
   return encrypt(JSON.stringify(details));
+}
+
+export function decrypt(ciphertext: string): string {
+  const key = getKey();
+  if (!key || !ciphertext.startsWith(PREFIX)) return ciphertext;
+
+  const data = Buffer.from(ciphertext.slice(PREFIX.length), "base64");
+  const iv = data.subarray(0, IV_LENGTH);
+  const tag = data.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
+  const encrypted = data.subarray(IV_LENGTH + TAG_LENGTH);
+
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
+
+const bankDetailsDecodeSchema = z.object({
+  accountNumber: z.string(),
+  bankName: z.string(),
+  branch: z.string(),
+  ifsc: z.string(),
+  accountHolder: z.string(),
+  pfUanNumber: z.string().optional(),
+});
+
+export function decryptBankDetails(encrypted: string | null | undefined): BankDetails | null {
+  if (!encrypted) return null;
+  try {
+    const parsed = bankDetailsDecodeSchema.safeParse(JSON.parse(decrypt(encrypted)));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }

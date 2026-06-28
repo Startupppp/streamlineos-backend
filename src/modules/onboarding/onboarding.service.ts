@@ -291,6 +291,15 @@ export class OnboardingService {
         ? input.skills.split(",").map((s) => s.trim()).filter(Boolean)
         : undefined;
 
+    const emergencyContact =
+      input.emergencyName && input.emergencyRelation && input.emergencyPhone
+        ? {
+            name: input.emergencyName,
+            relation: input.emergencyRelation,
+            phone: input.emergencyPhone,
+          }
+        : undefined;
+
     await this.db
       .update(users)
       .set({
@@ -299,6 +308,7 @@ export class OnboardingService {
         ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
         ...(input.experienceYears ? { experienceYears: input.experienceYears } : {}),
         ...(skillsArray ? { skills: skillsArray } : {}),
+        ...(emergencyContact ? { emergencyContact } : {}),
       })
       .where(eq(users.id, userId));
 
@@ -329,6 +339,11 @@ export class OnboardingService {
 
   async submit(orgId: string, userId: string) {
     await this.upsertOnboardingStep(userId, orgId, "Final Review");
+
+    await this.db
+      .update(users)
+      .set({ onboardingCompletedAt: new Date() })
+      .where(eq(users.id, userId));
 
     const currentYear = new Date().getFullYear();
     const existingBalance = await this.db.query.leaveBalances.findFirst({

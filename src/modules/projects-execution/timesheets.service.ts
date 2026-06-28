@@ -12,6 +12,8 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { applyScope } from "../access/apply-scope";
+import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "./date.helpers";
 import type {
   BillingSummaryQuery,
@@ -47,13 +49,12 @@ export class TimesheetsService {
     const limit = query.limit ?? 50;
     const offset = (page - 1) * limit;
 
-    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
-    const isOwnerOrAdmin = perms.has("projects:timesheets:manage");
+    const scope = await resolveTimesheetsScope(this.access, user);
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId) conditions.push(eq(timesheets.ticketId, query.ticketId));
     if (query.userId) conditions.push(eq(timesheets.userId, query.userId));
-    else if (!isOwnerOrAdmin) conditions.push(eq(timesheets.userId, user.userId));
+    else conditions.push(applyScope(scope, user.userId, { ownerColumn: timesheets.userId }));
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
 

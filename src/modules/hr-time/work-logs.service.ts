@@ -13,6 +13,7 @@ import type {
   PatchWorkLogStatusInput,
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
+import { resolveWorkLogsScope } from "./worklogs-scope";
 
 @Injectable()
 export class WorkLogsService {
@@ -23,10 +24,8 @@ export class WorkLogsService {
   ) {}
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
-
-    if (query.userId && query.userId !== u.userId && !isAdmin) {
+    const scope = await resolveWorkLogsScope(this.access, u);
+    if (scope !== "all" && query.userId && query.userId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' work logs.");
     }
 
@@ -151,12 +150,11 @@ export class WorkLogsService {
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:attendance:manage");
+    const scope = await resolveWorkLogsScope(this.access, u);
 
     const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
 
-    if (!isAdmin) {
+    if (scope !== "all") {
       conditions.push(eq(timesheets.userId, u.userId));
     } else if (query.userId) {
       conditions.push(eq(timesheets.userId, query.userId));
