@@ -46,6 +46,11 @@ export class RolesController {
     return this.roles.listTemplates();
   }
 
+  @Get("analytics")
+  analytics(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.getAnalytics(u.orgId);
+  }
+
   @Post("templates")
   cloneTemplate(
     @Body(new ZodValidationPipe(cloneTemplateSchema)) body: CloneTemplateInput,

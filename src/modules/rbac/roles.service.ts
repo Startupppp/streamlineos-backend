@@ -176,6 +176,29 @@ export class RolesService {
     return created;
   }
 
+  async getAnalytics(orgId: string) {
+    const [allRoles, memberCount] = await Promise.all([
+      this.db.query.roles.findMany({ where: eq(roles.orgId, orgId) }),
+      this.db.select({ value: count() }).from(organizationMembers).where(
+        and(eq(organizationMembers.orgId, orgId), isNull(organizationMembers.leftAt)),
+      ),
+    ]);
+
+    const customRoles = allRoles.filter((r) => !r.isSystem);
+    const systemRoles = allRoles.filter((r) => r.isSystem);
+    const totalPermissions = allRoles.reduce((sum, r) => sum + (r.permissions?.length ?? 0), 0);
+    const totalMembers = Number(memberCount[0]?.value ?? 0);
+
+    return {
+      totalRoles: allRoles.length,
+      customRoles: customRoles.length,
+      systemRoles: systemRoles.length,
+      totalPermissions,
+      usersAssigned: totalMembers,
+      recentChanges: 0,
+    };
+  }
+
   async simulatePermissions(actor: CurrentUserContext, targetUserId: string) {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
