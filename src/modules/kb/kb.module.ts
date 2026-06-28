@@ -29,6 +29,9 @@ import { KbFromTicketController } from "./kb-from-ticket.controller";
 import { KbTagsController } from "./kb-tags.controller";
 import { KbTranslationsController } from "./kb-translations.controller";
 import { KbCommentsController } from "./kb-comments.controller";
+import { KbVerificationController } from "./kb-verification.controller";
+import { KbVerificationService } from "./kb-verification.service";
+import { KbWidgetController } from "./kb-widget.controller";
 
 @Module({
   imports: [AiModule],
@@ -46,6 +49,8 @@ import { KbCommentsController } from "./kb-comments.controller";
     KbTagsController,
     KbTranslationsController,
     KbCommentsController,
+    KbVerificationController,
+    KbWidgetController,
   ],
   providers: [
     KbCreditsService,
@@ -64,6 +69,7 @@ import { KbCommentsController } from "./kb-comments.controller";
     KbTagsService,
     KbTranslationsService,
     KbCommentsService,
+    KbVerificationService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService],
 })
