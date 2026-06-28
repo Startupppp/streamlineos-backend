@@ -3,7 +3,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { authorize, requirePermission, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
 
-
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",

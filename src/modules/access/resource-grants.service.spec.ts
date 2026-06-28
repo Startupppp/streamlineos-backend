@@ -1,6 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
 import { ResourceGrantsService, type GrantResourceInput } from "./resource-grants.service";
-import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 
@@ -218,7 +217,6 @@ describe("ResourceGrantsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
       const svc = new ResourceGrantsService(db, cache);
-      // Simulates DB returning no row because orgId filter eliminates the cross-org grant
       mocks.findFirst.mockResolvedValue(null);
 
       await expect(svc.revoke("org-attacker", "grant-from-org-victim")).rejects.toBeInstanceOf(NotFoundException);

@@ -166,7 +166,6 @@ export class AccessService {
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
 
-    // Scope by orgId via join to prevent cross-org department ID collisions from leaking roles
     const deptRows = await this.db
       .select({ departmentId: departmentMembers.departmentId })
       .from(departmentMembers)

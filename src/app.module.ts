@@ -70,6 +70,7 @@ import { CalendarConnectionsModule } from "./modules/calendar-connections/calend
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
+import { MfaModule } from "./modules/mfa/mfa.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -147,6 +148,7 @@ import { MeService } from "./me/me.service";
     RealtimeModule,
     AutomationModule,
     SessionsModule,
+    MfaModule,
   ],
   controllers: [HealthController, MeController],
   providers: [MeService],

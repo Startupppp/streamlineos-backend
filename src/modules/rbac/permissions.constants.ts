@@ -579,3 +579,5 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "audit-log:read",
   ],
 };
+
+export const ALL_ROLES: readonly string[] = Object.keys(ROLE_DEFAULT_PERMISSIONS);

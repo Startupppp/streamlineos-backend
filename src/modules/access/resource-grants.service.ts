@@ -80,9 +80,6 @@ export class ResourceGrantsService {
     return !!grant;
   }
 
-  // Invalidate the resolved-permissions cache for the affected principal.
-  // For user principals: clears only that user's cached permission map.
-  // For role principals: clears all users in the org since any may hold that role.
   private async invalidateGrantCache(
     orgId: string,
     principalType: string,
