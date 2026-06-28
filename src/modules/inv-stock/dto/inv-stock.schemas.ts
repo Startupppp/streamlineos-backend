@@ -60,3 +60,9 @@ export const completeTransferSchema = z.object({
   })).min(1),
 });
 export type CompleteTransferInput = z.infer<typeof completeTransferSchema>;
+
+export const listTransfersSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ListTransfersInput = z.infer<typeof listTransfersSchema>;

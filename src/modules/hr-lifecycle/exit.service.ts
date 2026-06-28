@@ -53,6 +53,7 @@ export class ExitService {
       where: and(...conditions),
       with: { user: true, checklists: true, hrReviewer: true, ceoReviewer: true },
       orderBy: [desc(resignations.createdAt)],
+      limit: 500,
     });
   }
 
@@ -155,6 +156,10 @@ export class ExitService {
   async getProgress(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
+      with: {
+        hrReviewer: { columns: { name: true } },
+        ceoReviewer: { columns: { name: true } },
+      },
     });
     if (!record) throw new NotFoundException("Not found.");
 
@@ -174,13 +179,10 @@ export class ExitService {
     });
 
     if (record.hrReviewedAt) {
-      const hrUser = record.hrReviewedBy
-        ? await this.db.query.users.findFirst({ where: eq(users.id, record.hrReviewedBy) })
-        : null;
       steps.push({
         label: "HR Review",
         status: record.status === "REJECTED" && !record.ceoReviewedAt ? "rejected" : "completed",
-        actor: hrUser?.name ?? "HR",
+        actor: record.hrReviewer?.name ?? "HR",
         timestamp: formatDdMmmYyyyTime(record.hrReviewedAt),
         remarks: record.hrRemarks ?? undefined,
       });
@@ -191,13 +193,10 @@ export class ExitService {
     }
 
     if (record.ceoReviewedAt) {
-      const ceoUser = record.ceoReviewedBy
-        ? await this.db.query.users.findFirst({ where: eq(users.id, record.ceoReviewedBy) })
-        : null;
       steps.push({
         label: "CEO Approval",
         status: record.status === "REJECTED" ? "rejected" : "completed",
-        actor: ceoUser?.name ?? "CEO",
+        actor: record.ceoReviewer?.name ?? "CEO",
         timestamp: formatDdMmmYyyyTime(record.ceoReviewedAt),
         remarks: record.ceoRemarks ?? undefined,
       });

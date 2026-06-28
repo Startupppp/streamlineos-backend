@@ -47,6 +47,7 @@ export class DocumentsService {
     return this.db.query.documents.findMany({
       where: and(...conditions),
       orderBy: [desc(documents.createdAt)],
+      limit: 100,
     });
   }
 

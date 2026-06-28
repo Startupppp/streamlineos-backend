@@ -1,8 +1,8 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lte, sql, or, gte } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql, gte } from "drizzle-orm";
 import {
   invStockLevels, invStockTransactions, invStockAdjustments, invStockAdjustmentLines,
-  invStockTransfers, invStockTransferLines, invProducts, invProductVariants, invLocations,
+  invStockTransfers, invStockTransferLines,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -97,39 +97,43 @@ export class InvStockService {
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
-  async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput) {
+  async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput): Promise<void> {
     const referenceNumber = nextRefNumber("ADJ");
+
+    const adjVariantIds = [...new Set(data.lines.map((l) => l.productVariantId))];
+    const existingLevels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, adjVariantIds),
+      ),
+      columns: { productVariantId: true, locationId: true, onHand: true },
+    });
+    const levelMap = new Map(existingLevels.map((l) => [`${l.productVariantId}:${l.locationId}`, parseFloat(l.onHand)]));
 
     await this.db.transaction(async (tx) => {
       const [adj] = await tx.insert(invStockAdjustments).values({
         orgId, referenceNumber, reason: data.reason, notes: data.notes, createdBy: userId,
       }).returning();
 
-      for (const line of data.lines) {
-        await tx.insert(invStockAdjustmentLines).values({
+      await tx.insert(invStockAdjustmentLines).values(
+        data.lines.map((line) => ({
           adjustmentId: adj.id,
           productVariantId: line.productVariantId,
           locationId: line.locationId,
           quantityChange: line.quantityChange.toString(),
           notes: line.notes,
-        });
+        }))
+      );
 
-        const qtyStr = line.quantityChange.toString();
-        const currentLevel = await tx.query.invStockLevels.findFirst({
-          where: and(
-            eq(invStockLevels.productVariantId, line.productVariantId),
-            eq(invStockLevels.locationId, line.locationId),
-          ),
-          columns: { onHand: true },
-        });
-        const before = parseFloat(currentLevel?.onHand ?? "0");
+      for (const line of data.lines) {
+        const before = levelMap.get(`${line.productVariantId}:${line.locationId}`) ?? 0;
         const after = before + line.quantityChange;
 
         await tx.insert(invStockLevels).values({
           orgId,
           productVariantId: line.productVariantId,
           locationId: line.locationId,
-          onHand: qtyStr,
+          onHand: line.quantityChange.toString(),
         }).onConflictDoUpdate({
           target: [invStockLevels.productVariantId, invStockLevels.locationId],
           set: { onHand: sql`${invStockLevels.onHand} + ${line.quantityChange}`, updatedAt: new Date() },
@@ -140,7 +144,7 @@ export class InvStockService {
           productVariantId: line.productVariantId,
           locationId: line.locationId,
           transactionType: line.quantityChange > 0 ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT",
-          quantityChange: qtyStr,
+          quantityChange: line.quantityChange.toString(),
           quantityBefore: before.toString(),
           quantityAfter: after.toString(),
           referenceType: "inv_adjustment",
@@ -171,13 +175,15 @@ export class InvStockService {
       createdBy: userId,
     }).returning();
 
-    for (const line of data.lines) {
-      await this.db.insert(invStockTransferLines).values({
+    await this.db.insert(invStockTransferLines).values(
+      data.lines.map((line) => ({
         transferId: transfer.id,
         productVariantId: line.productVariantId,
         quantity: line.quantity.toString(),
-      });
+      }))
+    );
 
+    for (const line of data.lines) {
       await this.db.insert(invStockLevels).values({
         orgId,
         productVariantId: line.productVariantId,
@@ -192,7 +198,7 @@ export class InvStockService {
     return transfer;
   }
 
-  async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput) {
+  async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput): Promise<void> {
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
       with: { lines: true },
@@ -202,13 +208,25 @@ export class InvStockService {
       throw new BadRequestException("Transfer cannot be completed in its current status");
     }
 
+    const transferVariantIds = transfer.lines.map((l) => l.productVariantId);
+    const sourceLevels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, transferVariantIds),
+        eq(invStockLevels.locationId, transfer.fromLocationId),
+      ),
+      columns: { productVariantId: true, onHand: true },
+    });
+    const sourceLevelMap = new Map(sourceLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
+
     await this.db.transaction(async (tx) => {
       for (const completion of data.lines) {
         const line = transfer.lines.find((l) => l.id === completion.transferLineId);
         if (!line) continue;
 
         const qtyReceived = completion.quantityReceived;
-        const before = 0;
+        const quantityMoved = parseFloat(line.quantity);
+        const sourceOnHand = sourceLevelMap.get(line.productVariantId) ?? 0;
 
         await tx.update(invStockTransferLines)
           .set({ quantityReceived: qtyReceived.toString() })
@@ -241,8 +259,8 @@ export class InvStockService {
         await tx.insert(invStockTransactions).values([
           {
             orgId, productVariantId: line.productVariantId, locationId: transfer.fromLocationId,
-            transactionType: "TRANSFER_OUT", quantityChange: `-${line.quantity}`,
-            quantityBefore: before.toString(), quantityAfter: before.toString(),
+            transactionType: "TRANSFER_OUT", quantityChange: `-${quantityMoved}`,
+            quantityBefore: sourceOnHand.toString(), quantityAfter: (sourceOnHand - quantityMoved).toString(),
             referenceType: "inv_transfer", referenceId: transferId.toString(), createdBy: userId,
           },
           {
@@ -263,17 +281,27 @@ export class InvStockService {
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
   }
 
-  listTransfers(orgId: string) {
-    return this.db.query.invStockTransfers.findMany({
-      where: eq(invStockTransfers.orgId, orgId),
-      orderBy: [desc(invStockTransfers.createdAt)],
-      with: {
-        fromLocation: { columns: { id: true, name: true, code: true } },
-        toLocation: { columns: { id: true, name: true, code: true } },
-        creator: { columns: { id: true, name: true } },
-        lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
-      },
-    });
+  async listTransfers(orgId: string, filters: { page: number; limit: number }) {
+    const { page, limit } = filters;
+    const offset = (page - 1) * limit;
+
+    const [items, countResult] = await Promise.all([
+      this.db.query.invStockTransfers.findMany({
+        where: eq(invStockTransfers.orgId, orgId),
+        orderBy: [desc(invStockTransfers.createdAt)],
+        limit,
+        offset,
+        with: {
+          fromLocation: { columns: { id: true, name: true, code: true } },
+          toLocation: { columns: { id: true, name: true, code: true } },
+          creator: { columns: { id: true, name: true } },
+          lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
+        },
+      }),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(eq(invStockTransfers.orgId, orgId)),
+    ]);
+
+    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
   getTransfer(orgId: string, transferId: number) {

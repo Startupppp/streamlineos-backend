@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, avg, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
@@ -38,6 +38,60 @@ const STATUS_KEYS: GoalStatus[] = [
   "off_track",
   "completed",
 ];
+
+interface GoalStats {
+  total: number;
+  byStatus: Record<GoalStatus, number>;
+  avgProgress: number;
+  atRisk: number;
+  completed: number;
+}
+
+interface GoalOwner {
+  id: string;
+  name: string | null;
+  email: string;
+  image: string | null;
+}
+
+interface GoalProject {
+  id: number;
+  name: string;
+  key: string;
+}
+
+export interface GoalLinkRow {
+  id: number;
+  ticketId: number | null;
+  projectId: number | null;
+  createdAt: Date;
+  ticketTitle: string | null;
+  ticketProjectId: number | null;
+  projectName: string | null;
+  projectKey: string | null;
+}
+
+interface GoalUpdateRow {
+  id: number;
+  keyResultId: number | null;
+  note: string | null;
+  previousValue: string | null;
+  newValue: string;
+  createdAt: Date;
+  userId: string;
+  userName: string | null;
+  userImage: string | null;
+}
+
+type GoalListItem = typeof okrGoals.$inferSelect & { owner: GoalOwner | null; keyResultCount: number };
+
+type GoalDetail = typeof okrGoals.$inferSelect & {
+  owner: GoalOwner | null;
+  project: GoalProject | null;
+  keyResults: Array<typeof okrKeyResults.$inferSelect>;
+  updates: GoalUpdateRow[];
+  links: GoalLinkRow[];
+};
 
 function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
@@ -107,7 +161,7 @@ export class GoalsService {
     });
   }
 
-  async list(u: CurrentUserContext, filters: ListInput) {
+  async list(u: CurrentUserContext, filters: ListInput): Promise<GoalListItem[]> {
     const { orgId, userId } = u;
     const scope = await resolveGoalsScope(this.access, u);
 
@@ -126,18 +180,26 @@ export class GoalsService {
     if (filters.search)
       conditions.push(ilike(okrGoals.title, `%${filters.search}%`));
 
+    const limit = Math.min(filters.limit, 100);
+    const offset = (filters.page - 1) * limit;
+
     const goals = await this.db.query.okrGoals.findMany({
       where: and(...conditions),
       orderBy: [desc(okrGoals.createdAt)],
       with: {
         owner: { columns: { id: true, name: true, email: true, image: true } },
       },
+      limit,
+      offset,
     });
 
+    if (goals.length === 0) return [];
+
+    const goalIds = goals.map((g) => g.id);
     const counts = await this.db
       .select({ goalId: okrKeyResults.goalId, total: count() })
       .from(okrKeyResults)
-      .where(eq(okrKeyResults.orgId, orgId))
+      .where(and(eq(okrKeyResults.orgId, orgId), inArray(okrKeyResults.goalId, goalIds)))
       .groupBy(okrKeyResults.goalId);
 
     const countMap = new Map(counts.map((c) => [c.goalId, c.total]));
@@ -148,7 +210,7 @@ export class GoalsService {
     }));
   }
 
-  create(orgId: string, userId: string, input: CreateInput) {
+  create(orgId: string, userId: string, input: CreateInput): Promise<typeof okrGoals.$inferSelect> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(okrGoals)
@@ -186,7 +248,7 @@ export class GoalsService {
     });
   }
 
-  async getStats(orgId: string) {
+  async getStats(orgId: string): Promise<GoalStats> {
     const rows = await this.db
       .select({
         status: okrGoals.status,
@@ -224,7 +286,7 @@ export class GoalsService {
     };
   }
 
-  async getGoal(orgId: string, goalId: number) {
+  async getGoal(orgId: string, goalId: number): Promise<GoalDetail | null> {
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
       with: {
@@ -265,7 +327,7 @@ export class GoalsService {
     return { ...goal, keyResults, updates, links };
   }
 
-  async update(orgId: string, goalId: number, input: UpdateInput) {
+  async update(orgId: string, goalId: number, input: UpdateInput): Promise<typeof okrGoals.$inferSelect | null> {
     const [updated] = await this.db
       .update(okrGoals)
       .set({ ...input, updatedAt: new Date() })
@@ -276,7 +338,7 @@ export class GoalsService {
     return updated;
   }
 
-  async remove(orgId: string, goalId: number) {
+  async remove(orgId: string, goalId: number): Promise<{ success: true } | null> {
     const [deleted] = await this.db
       .delete(okrGoals)
       .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)))
@@ -291,7 +353,7 @@ export class GoalsService {
     userId: string,
     goalId: number,
     input: CheckInInput,
-  ) {
+  ): Promise<typeof okrGoals.$inferSelect | null> {
     const keyResult = await this.db.query.okrKeyResults.findFirst({
       where: and(
         eq(okrKeyResults.id, input.keyResultId),
@@ -336,7 +398,7 @@ export class GoalsService {
     return goal;
   }
 
-  listKeyResults(orgId: string, goalId: number) {
+  listKeyResults(orgId: string, goalId: number): Promise<Array<typeof okrKeyResults.$inferSelect>> {
     return this.db.query.okrKeyResults.findMany({
       where: and(
         eq(okrKeyResults.goalId, goalId),
@@ -350,7 +412,7 @@ export class GoalsService {
     orgId: string,
     goalId: number,
     input: CreateKeyResultInput,
-  ) {
+  ): Promise<typeof okrKeyResults.$inferSelect | null> {
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
       columns: { id: true },
@@ -381,7 +443,7 @@ export class GoalsService {
     orgId: string,
     keyResultId: number,
     input: UpdateKeyResultInput,
-  ) {
+  ): Promise<typeof okrKeyResults.$inferSelect | null> {
     const existing = await this.db.query.okrKeyResults.findFirst({
       where: and(
         eq(okrKeyResults.id, keyResultId),
@@ -391,21 +453,20 @@ export class GoalsService {
     });
     if (!existing) return null;
 
-    const fields: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.title !== undefined) fields.title = input.title;
-    if (input.metricType !== undefined) fields.metricType = input.metricType;
-    if (input.startValue !== undefined)
-      fields.startValue = input.startValue.toString();
-    if (input.targetValue !== undefined)
-      fields.targetValue = input.targetValue.toString();
-    if (input.currentValue !== undefined)
-      fields.currentValue = input.currentValue.toString();
-    if (input.unit !== undefined) fields.unit = input.unit;
-    if (input.status !== undefined) fields.status = input.status;
+    const patch: Partial<typeof okrKeyResults.$inferInsert> & { updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+    if (input.title !== undefined) patch.title = input.title;
+    if (input.metricType !== undefined) patch.metricType = input.metricType;
+    if (input.startValue !== undefined) patch.startValue = input.startValue.toString();
+    if (input.targetValue !== undefined) patch.targetValue = input.targetValue.toString();
+    if (input.currentValue !== undefined) patch.currentValue = input.currentValue.toString();
+    if (input.unit !== undefined) patch.unit = input.unit;
+    if (input.status !== undefined) patch.status = input.status;
 
     const [updated] = await this.db
       .update(okrKeyResults)
-      .set(fields)
+      .set(patch)
       .where(
         and(eq(okrKeyResults.id, keyResultId), eq(okrKeyResults.orgId, orgId)),
       )
@@ -413,10 +474,10 @@ export class GoalsService {
 
     await this.recomputeGoalProgress(existing.goalId, orgId);
 
-    return updated;
+    return updated ?? null;
   }
 
-  async removeKeyResult(orgId: string, keyResultId: number) {
+  async removeKeyResult(orgId: string, keyResultId: number): Promise<{ success: true } | null> {
     const existing = await this.db.query.okrKeyResults.findFirst({
       where: and(
         eq(okrKeyResults.id, keyResultId),
@@ -437,7 +498,7 @@ export class GoalsService {
     return { success: true };
   }
 
-  getLinks(orgId: string, goalId: number) {
+  getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
     return this.db
       .select({
         id: okrLinks.id,
@@ -453,10 +514,11 @@ export class GoalsService {
       .leftJoin(tickets, eq(okrLinks.ticketId, tickets.id))
       .leftJoin(projects, eq(okrLinks.projectId, projects.id))
       .where(and(eq(okrLinks.goalId, goalId), eq(okrLinks.orgId, orgId)))
-      .orderBy(desc(okrLinks.createdAt));
+      .orderBy(desc(okrLinks.createdAt))
+      .limit(100);
   }
 
-  async createLink(orgId: string, goalId: number, input: CreateLinkInput) {
+  async createLink(orgId: string, goalId: number, input: CreateLinkInput): Promise<CreateLinkResult> {
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
       columns: { id: true },
@@ -492,7 +554,7 @@ export class GoalsService {
     return link;
   }
 
-  async removeLink(orgId: string, goalId: number, linkId: number) {
+  async removeLink(orgId: string, goalId: number, linkId: number): Promise<{ success: true } | null> {
     const [deleted] = await this.db
       .delete(okrLinks)
       .where(
@@ -509,7 +571,11 @@ export class GoalsService {
   }
 }
 
-export type CreateLinkResult = Awaited<ReturnType<GoalsService["createLink"]>>;
+export type CreateLinkResult =
+  | typeof okrLinks.$inferSelect
+  | { error: "goal_not_found" }
+  | { error: "ticket_not_found" }
+  | { error: "project_not_found" };
 
 export function isLinkGoalNotFound(
   result: CreateLinkResult,

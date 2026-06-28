@@ -85,7 +85,7 @@ export class BranchesController {
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("branch:update")) {
+      if (!perms.has("branch:delete")) {
         throw new ForbiddenException("Forbidden");
       }
     }

@@ -1,12 +1,13 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
-import { attendance, departments, organizationMembers, users } from "../../db/schema";
+import { attendance, departments, organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
+import { EmailService } from "../email/email.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { getTodayString } from "./date.helpers";
-import type { CheckInInput } from "./dto/attendance.schemas";
+import { formatDateOnly, getTodayString } from "./date.helpers";
+import type { AttendanceEmailReportInput, CheckInInput } from "./dto/attendance.schemas";
 import { resolveAttendanceScope } from "./attendance-scope";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
@@ -16,7 +17,6 @@ export class AttendanceService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
-    private readonly email: EmailService,
   ) {}
 
   async checkIn(orgId: string, userId: string, body: CheckInInput) {
@@ -212,6 +212,7 @@ export class AttendanceService {
         eq(attendance.date, today),
         eq(attendance.orgId, orgId),
       ),
+      orderBy: [desc(attendance.createdAt)],
     });
 
     let dailyWorkHours = 0;
@@ -236,14 +237,7 @@ export class AttendanceService {
       if (log.isOvertime) isDailyOvertime = true;
     }
 
-    const todayLog = await this.db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.userId, userId),
-        eq(attendance.date, today),
-        eq(attendance.orgId, orgId),
-      ),
-      orderBy: [desc(attendance.createdAt)],
-    });
+    const todayLog = todayLogs[0] ?? null;
 
     let status: AttendanceStatus = "OFFLINE";
     if (todayLog) {
@@ -271,7 +265,7 @@ export class AttendanceService {
     return {
       status,
       logs,
-      todayLog: todayLog ?? null,
+      todayLog,
       dailyStats: {
         workHours: dailyWorkHours.toFixed(2),
         breakHours: dailyBreakHours.toFixed(2),
@@ -281,7 +275,12 @@ export class AttendanceService {
     };
   }
 
-  async logs(u: CurrentUserContext, requestedUserId: string | undefined, year?: number, month?: number) {
+  async logs(
+    u: CurrentUserContext,
+    requestedUserId: string | undefined,
+    year?: number,
+    month?: number,
+  ) {
     const userId = requestedUserId ?? u.userId;
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all" && userId !== u.userId) {
@@ -451,11 +450,11 @@ export class AttendanceService {
 
     const result = activeMembers.map((m) => {
       const log = logsByUser.get(m.userId);
-      let status: AttendanceStatus = "OFFLINE";
+      let memberStatus: AttendanceStatus = "OFFLINE";
       if (log) {
-        if (log.checkOut) status = "CHECKED_OUT";
-        else if (log.status === "ON_BREAK") status = "ON_BREAK";
-        else status = "PRESENT";
+        if (log.checkOut) memberStatus = "CHECKED_OUT";
+        else if (log.status === "ON_BREAK") memberStatus = "ON_BREAK";
+        else memberStatus = "PRESENT";
       }
 
       const name =
@@ -469,7 +468,7 @@ export class AttendanceService {
         email: m.userEmail,
         image: m.userImage,
         department: m.departmentId ? (deptMap.get(m.departmentId) ?? null) : null,
-        status,
+        status: memberStatus,
         checkIn: log?.checkIn ?? null,
         checkOut: log?.checkOut ?? null,
         workHours: log?.workHours ?? null,
@@ -485,145 +484,5 @@ export class AttendanceService {
     result.sort((a, b) => order[a.status] - order[b.status]);
 
     return result;
-  }
-
-  async emailReport(u: CurrentUserContext, input: AttendanceEmailReportInput) {
-    const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all") {
-      throw new ForbiddenException("Only HR and CEO can send attendance reports");
-    }
-
-    const { to, cc, bcc, startDate, endDate } = input;
-
-    const today = new Date();
-    const todayStr = formatDateOnly(today);
-    const resolvedStart = startDate ?? formatDateOnly(new Date(today.getFullYear(), today.getMonth(), 1));
-    const resolvedEnd = endDate ?? todayStr;
-
-    if (resolvedStart > resolvedEnd) {
-      throw new BadRequestException("Start date must be before or equal to end date");
-    }
-    if (resolvedEnd > todayStr) {
-      throw new BadRequestException("End date cannot be in the future");
-    }
-
-    const allRecipients = [...to, ...cc, ...bcc];
-    const uniqueSet = new Set(allRecipients.map((e) => e.toLowerCase()));
-    if (uniqueSet.size < allRecipients.length) {
-      throw new BadRequestException("Duplicate email addresses found across To, CC, and BCC fields");
-    }
-
-    const [members, org, allRecords] = await Promise.all([
-      this.db.query.organizationMembers.findMany({
-        where: eq(organizationMembers.orgId, u.orgId),
-        with: { user: true },
-      }),
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, u.orgId),
-        columns: { name: true },
-      }),
-      this.db.query.attendance.findMany({
-        where: and(
-          eq(attendance.orgId, u.orgId),
-          gte(attendance.date, resolvedStart),
-          lte(attendance.date, resolvedEnd),
-        ),
-      }),
-    ]);
-
-    const orgName = org?.name ?? "Organization";
-    const activeMembers = members.filter((m) => m.user?.isActive !== false);
-
-    const deptIds = [
-      ...new Set(
-        activeMembers
-          .map((m) => m.user?.departmentId)
-          .filter((id): id is number => id !== null && id !== undefined),
-      ),
-    ];
-    const deptMap = new Map<number, string>();
-    if (deptIds.length > 0) {
-      const deptRows = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(inArray(departments.id, deptIds));
-      for (const d of deptRows) deptMap.set(d.id, d.name);
-    }
-
-    const recordsByUser = new Map<string, (typeof allRecords)>();
-    for (const record of allRecords) {
-      const existing = recordsByUser.get(record.userId) ?? [];
-      existing.push(record);
-      recordsByUser.set(record.userId, existing);
-    }
-
-    const rows: {
-      department: string;
-      name: string;
-      totalHours: string;
-      daysPresent: number;
-      overtimeDays: number;
-      autoCheckoutDays: number;
-    }[] = [];
-
-    for (const member of activeMembers) {
-      const user = member.user;
-      if (!user) continue;
-      const records = recordsByUser.get(user.id) ?? [];
-
-      let totalHours = 0;
-      let autoCheckoutDays = 0;
-      let overtimeDays = 0;
-      const uniqueDates = new Set<string>();
-
-      for (const record of records) {
-        totalHours += Number(record.workHours ?? 0);
-        if (record.autoCheckedOut) autoCheckoutDays++;
-        if (record.isOvertime) overtimeDays++;
-        uniqueDates.add(record.date);
-      }
-
-      if (uniqueDates.size === 0) continue;
-
-      const name =
-        user.firstName && user.lastName
-          ? `${user.firstName} ${user.lastName}`
-          : user.name ?? user.email ?? "Unknown";
-      const department = user.departmentId ? (deptMap.get(user.departmentId) ?? "—") : "—";
-
-      rows.push({
-        department,
-        name,
-        totalHours: totalHours.toFixed(1),
-        daysPresent: uniqueDates.size,
-        overtimeDays,
-        autoCheckoutDays,
-      });
-    }
-
-    if (rows.length === 0) {
-      throw new BadRequestException("No attendance data found for the selected period");
-    }
-
-    rows.sort((a, b) => {
-      if (a.department < b.department) return -1;
-      if (a.department > b.department) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    const fmt = (d: string) =>
-      new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const periodLabel = `${fmt(resolvedStart)} - ${new Date(`${resolvedEnd}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-
-    await this.email.sendWeeklyAttendanceReportEmail(periodLabel, orgName, rows, to);
-
-    if (cc.length > 0) {
-      await this.email.sendWeeklyAttendanceReportEmail(periodLabel, orgName, rows, cc);
-    }
-    if (bcc.length > 0) {
-      await this.email.sendWeeklyAttendanceReportEmail(periodLabel, orgName, rows, bcc);
-    }
-
-    return { success: true };
   }
 }

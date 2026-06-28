@@ -14,6 +14,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -28,7 +30,7 @@ import {
 } from "./dto/organizations.schemas";
 
 @Controller("crm/organizations")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmOrganizationsController {
   constructor(private readonly orgs: CrmOrganizationsService) {}
 
@@ -41,6 +43,7 @@ export class CrmOrganizationsController {
   }
 
   @Post()
+  @RequirePermission("crm:organizations:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(organizationCreateSchema)) body: OrganizationCreateInput,
@@ -60,6 +63,7 @@ export class CrmOrganizationsController {
   }
 
   @Patch(":organizationId")
+  @RequirePermission("crm:organizations:manage")
   async update(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @Body(new ZodValidationPipe(organizationUpdateSchema)) body: OrganizationUpdateInput,
@@ -81,6 +85,7 @@ export class CrmOrganizationsController {
   }
 
   @Delete(":organizationId")
+  @RequirePermission("crm:organizations:manage")
   async remove(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,

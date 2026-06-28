@@ -62,6 +62,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Post()
+  @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(createCandidateSchema)) body: CreateCandidateInput,
@@ -114,6 +115,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Patch(":candidateId")
+  @RequirePermission("hr:employees:manage")
   update(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateCandidateSchema)) body: UpdateCandidateInput,
@@ -123,6 +125,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Delete(":candidateId")
+  @RequirePermission("hr:employees:manage")
   remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +134,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Patch(":candidateId/stage")
+  @RequirePermission("hr:employees:manage")
   moveStage(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(stageSchema)) body: StageInput,
@@ -148,6 +152,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Patch(":candidateId/sla")
+  @RequirePermission("hr:employees:manage")
   resetSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(slaResetSchema)) body: SlaResetInput,
@@ -157,6 +162,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Post(":candidateId/applications")
+  @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   createApplication(
     @Param("candidateId", ParseIntPipe) candidateId: number,

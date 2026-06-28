@@ -21,6 +21,7 @@ export class FnfService {
         : and(eq(fnfSettlements.orgId, orgId), eq(fnfSettlements.userId, userId)),
       orderBy: [desc(fnfSettlements.createdAt)],
       with: { user: { columns: { name: true, email: true } } },
+      limit: 100,
     });
   }
 

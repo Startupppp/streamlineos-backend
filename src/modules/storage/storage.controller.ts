@@ -25,7 +25,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, organizationMembers } from "../../db/schema";
-import { StorageService } from "./storage.service";
+import { StorageService, type FileStreamResult } from "./storage.service";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -200,7 +200,7 @@ export class StorageController {
     this.pipe(stream.body, res);
   }
 
-  private async openStream(key: string, notFoundMessage: string) {
+  private async openStream(key: string, notFoundMessage: string): Promise<FileStreamResult> {
     try {
       return await this.storage.getFileStream(key);
     } catch {

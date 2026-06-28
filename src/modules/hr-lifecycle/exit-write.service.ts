@@ -292,8 +292,8 @@ export class ExitWriteService {
 
       for (const admin of adminUsers) {
         if (admin.email && admin.email !== submittingUser?.email) {
-          this.email
-            .sendResignationSubmittedEmail(
+          try {
+            await this.email.sendResignationSubmittedEmail(
               admin.email,
               admin.name ?? "HR",
               submittingUser?.name ?? "Employee",
@@ -302,8 +302,8 @@ export class ExitWriteService {
               lastWorkingDate,
               input.noticePeriodDays,
               input.reason,
-            )
-            .catch(() => undefined);
+            );
+          } catch {}
         }
       }
 

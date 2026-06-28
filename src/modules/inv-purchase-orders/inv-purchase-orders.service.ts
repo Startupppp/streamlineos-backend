@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invPurchaseOrders,
   invPoLines,
@@ -138,8 +138,8 @@ export class InvPurchaseOrdersService {
       createdBy: userId,
     }).returning();
 
-    for (const line of data.lines) {
-      await this.db.insert(invPoLines).values({
+    await this.db.insert(invPoLines).values(
+      data.lines.map((line) => ({
         poId: po.id,
         productVariantId: line.productVariantId,
         quantity: line.quantity.toString(),
@@ -147,8 +147,8 @@ export class InvPurchaseOrdersService {
         taxRate: line.taxRate,
         amount: (line.quantity * parseFloat(line.unitCost)).toFixed(4),
         lineOrder: line.lineOrder,
-      });
-    }
+      }))
+    );
 
     await this.cache.invalidatePattern(`inv:po:list:${orgId}:*`);
     return po;
@@ -204,9 +204,30 @@ export class InvPurchaseOrdersService {
 
     const grnNumber = await this.nextGrnNumber(orgId);
     let totalValue = 0;
-    let grnId = 0;
+    const locationId = data.locationId ?? 1;
 
-    await this.db.transaction(async (tx) => {
+    const acceptedGrnLines = data.lines.filter((l) => l.qualityStatus === "ACCEPTED");
+    const acceptedVariantIds = [
+      ...new Set(
+        acceptedGrnLines
+          .map((l) => po.lines.find((p) => p.id === l.poLineId)?.productVariantId)
+          .filter((id): id is number => id !== undefined),
+      ),
+    ];
+
+    const existingLevels = acceptedVariantIds.length > 0
+      ? await this.db.query.invStockLevels.findMany({
+          where: and(
+            eq(invStockLevels.orgId, orgId),
+            inArray(invStockLevels.productVariantId, acceptedVariantIds),
+            eq(invStockLevels.locationId, locationId),
+          ),
+          columns: { productVariantId: true, onHand: true },
+        })
+      : [];
+    const levelMap = new Map(existingLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
+
+    const grnId = await this.db.transaction(async (tx) => {
       const [grn] = await tx.insert(invGrns).values({
         orgId,
         poId,
@@ -216,34 +237,27 @@ export class InvPurchaseOrdersService {
         notes: data.notes,
         createdBy: userId,
       }).returning();
-      grnId = grn.id;
 
-      for (const grnLine of data.lines) {
-        const poLine = po.lines.find((l) => l.id === grnLine.poLineId);
-        if (!poLine) continue;
-
-        await tx.insert(invGrnLines).values({
+      await tx.insert(invGrnLines).values(
+        data.lines.map((grnLine) => ({
           grnId: grn.id,
           poLineId: grnLine.poLineId,
           quantityReceived: grnLine.quantityReceived.toString(),
           qualityStatus: grnLine.qualityStatus,
           rejectionReason: grnLine.rejectionReason,
-        });
+        }))
+      );
+
+      for (const grnLine of data.lines) {
+        const poLine = po.lines.find((l) => l.id === grnLine.poLineId);
+        if (!poLine) continue;
 
         await tx.update(invPoLines)
           .set({ quantityReceived: sql`${invPoLines.quantityReceived} + ${grnLine.quantityReceived}` })
           .where(eq(invPoLines.id, grnLine.poLineId));
 
         if (grnLine.qualityStatus === "ACCEPTED") {
-          const locationId = data.locationId ?? 1;
-          const currentLevel = await tx.query.invStockLevels.findFirst({
-            where: and(
-              eq(invStockLevels.productVariantId, poLine.productVariantId),
-              eq(invStockLevels.locationId, locationId),
-            ),
-            columns: { onHand: true },
-          });
-          const before = parseFloat(currentLevel?.onHand ?? "0");
+          const before = levelMap.get(poLine.productVariantId) ?? 0;
           const after = before + grnLine.quantityReceived;
 
           await tx.insert(invStockLevels).values({
@@ -284,6 +298,8 @@ export class InvPurchaseOrdersService {
       await tx.update(invPurchaseOrders)
         .set({ status: allReceived ? "RECEIVED" : "PARTIAL", updatedAt: new Date() })
         .where(eq(invPurchaseOrders.id, poId));
+
+      return grn.id;
     });
 
     if (totalValue > 0) {

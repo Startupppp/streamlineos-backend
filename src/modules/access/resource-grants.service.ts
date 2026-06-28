@@ -1,9 +1,9 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { resourceGrants } from "../../db/schema";
+import { resourceGrants, type ResourceGrant } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { CacheService } from "../../common/cache/cache.service";
 
 export interface GrantResourceInput {
   resourceType: string;
@@ -15,9 +15,12 @@ export interface GrantResourceInput {
 
 @Injectable()
 export class ResourceGrantsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
-  async listGrants(orgId: string, resourceType: string, resourceId: string) {
+  async listGrants(orgId: string, resourceType: string, resourceId: string): Promise<ResourceGrant[]> {
     return this.db.query.resourceGrants.findMany({
       where: and(
         eq(resourceGrants.orgId, orgId),
@@ -27,7 +30,7 @@ export class ResourceGrantsService {
     });
   }
 
-  async grant(orgId: string, input: GrantResourceInput, grantedBy: string) {
+  async grant(orgId: string, input: GrantResourceInput, grantedBy: string): Promise<ResourceGrant | null> {
     const [created] = await this.db
       .insert(resourceGrants)
       .values({
@@ -41,15 +44,19 @@ export class ResourceGrantsService {
       })
       .onConflictDoNothing()
       .returning();
+    if (created) {
+      await this.invalidateGrantCache(orgId, input.principalType, input.principalId);
+    }
     return created ?? null;
   }
 
-  async revoke(orgId: string, grantId: string, _u: CurrentUserContext) {
+  async revoke(orgId: string, grantId: string): Promise<{ success: boolean }> {
     const existing = await this.db.query.resourceGrants.findFirst({
       where: and(eq(resourceGrants.id, grantId), eq(resourceGrants.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Grant not found");
     await this.db.delete(resourceGrants).where(eq(resourceGrants.id, grantId));
+    await this.invalidateGrantCache(orgId, existing.principalType, existing.principalId);
     return { success: true };
   }
 
@@ -71,5 +78,20 @@ export class ResourceGrantsService {
       ),
     });
     return !!grant;
+  }
+
+  // Invalidate the resolved-permissions cache for the affected principal.
+  // For user principals: clears only that user's cached permission map.
+  // For role principals: clears all users in the org since any may hold that role.
+  private async invalidateGrantCache(
+    orgId: string,
+    principalType: string,
+    principalId: string,
+  ): Promise<void> {
+    if (principalType === "user") {
+      await this.cache.invalidatePattern(`access:perms:${orgId}:${principalId}:*`);
+    } else {
+      await this.cache.invalidatePattern(`access:perms:${orgId}:*`);
+    }
   }
 }

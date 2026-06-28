@@ -122,6 +122,18 @@ export class ExpensesController {
     return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
   }
 
+  @Get("export-data")
+  async exportData(
+    @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.expenses.getExportRows(
+      u.orgId,
+      { userId: u.userId, isAdmin: await this.canApprove(u) },
+      filters,
+    );
+  }
+
   @Get("export")
   async export(
     @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,

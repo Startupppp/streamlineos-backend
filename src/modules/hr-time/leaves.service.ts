@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
   departmentMembers,
   departments,
@@ -63,6 +63,7 @@ export class LeavesService {
         eq(leaveBalances.orgId, orgId),
         eq(leaveBalances.year, new Date().getFullYear()),
       ),
+      limit: 50,
     });
   }
 
@@ -75,6 +76,7 @@ export class LeavesService {
           approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
         },
         orderBy: [desc(leaveRequests.createdAt)],
+        limit: 200,
       }),
       this.db.query.leaveBalances.findMany({
         where: and(

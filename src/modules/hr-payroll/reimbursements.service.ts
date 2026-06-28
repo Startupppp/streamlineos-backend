@@ -26,6 +26,7 @@ export class ReimbursementsService {
       where: and(...conditions),
       with: { user: true },
       orderBy: [desc(reimbursements.createdAt)],
+      limit: 100,
     });
   }
 

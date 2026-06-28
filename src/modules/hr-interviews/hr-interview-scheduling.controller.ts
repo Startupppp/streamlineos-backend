@@ -9,10 +9,8 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -44,10 +42,14 @@ export class HrInterviewSchedulingController {
 
   @Post()
   @HttpCode(201)
-  create(
+  async create(
     @Body(new ZodValidationPipe(createInterviewSchema)) body: CreateInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.scheduling.createInterview(u.orgId, body);
   }
 
@@ -78,38 +80,48 @@ export class HrInterviewSchedulingController {
   }
 
   @Patch(":interviewId")
-  update(
+  async update(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @Body(new ZodValidationPipe(updateInterviewSchema)) body: UpdateInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.results.updateInterview(u.orgId, interviewId, body);
   }
 
   @Delete(":interviewId")
-  remove(
+  async remove(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.scheduling.deleteInterview(u.orgId, interviewId);
   }
 
   @Get(":interviewId/scorecard")
-  async getScorecard(
+  getScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
   ) {
-    const scorecard = await this.results.getScorecard(u.orgId, u.userId, interviewId);
-    res.json(scorecard);
+    return this.results.getScorecard(u.orgId, u.userId, interviewId);
   }
 
   @Post(":interviewId/scorecard")
-  submitScorecard(
+  async submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @Body(new ZodValidationPipe(submitScorecardSchema)) body: SubmitScorecardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.results.submitScorecard(u.orgId, u.userId, interviewId, body);
   }
 }

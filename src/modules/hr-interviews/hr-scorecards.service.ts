@@ -67,10 +67,12 @@ export class HrScorecardsService {
   }
 
   async deleteTemplate(orgId: string, id: number) {
-    await this.db
+    const [deleted] = await this.db
       .delete(scorecardTemplates)
-      .where(and(eq(scorecardTemplates.id, id), eq(scorecardTemplates.orgId, orgId)));
+      .where(and(eq(scorecardTemplates.id, id), eq(scorecardTemplates.orgId, orgId)))
+      .returning({ id: scorecardTemplates.id });
 
+    if (!deleted) throw new NotFoundException("Template not found.");
     return { success: true };
   }
 

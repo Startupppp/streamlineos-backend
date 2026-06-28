@@ -69,7 +69,7 @@ export class InvProductsController {
     @Query(new ZodValidationPipe(listVariantsSchema)) filters: ListVariantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.listVariants(u.orgId, filters.activeOnly);
+    return this.products.listVariants(u.orgId, filters);
   }
 
   @Get(":productId")

@@ -26,7 +26,7 @@ export class EntitlementsController {
 
   @Get()
   @RequirePermission("settings:manage")
-  listModules(@CurrentUser() u: CurrentUserContext) {
+  listModules(@CurrentUser() u: CurrentUserContext): Promise<Array<{ moduleKey: string; enabled: boolean }>> {
     return this.entitlements.listModules(u.orgId);
   }
 
@@ -36,7 +36,7 @@ export class EntitlementsController {
     @Param(new ZodValidationPipe(moduleKeyParamSchema)) params: ModuleKeyParam,
     @Body(new ZodValidationPipe(toggleModuleSchema)) body: ToggleModuleInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {
+  ): Promise<void> {
     return this.entitlements.setModuleEnabled(u.orgId, params.moduleKey, body.enabled, u.userId);
   }
 }

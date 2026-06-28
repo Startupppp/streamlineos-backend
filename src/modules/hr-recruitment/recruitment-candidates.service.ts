@@ -198,7 +198,7 @@ export class RecruitmentCandidatesService {
     if (input.rating !== undefined) updateFields.rating = input.rating;
     if (input.resumeUrl !== undefined) updateFields.resumeUrl = input.resumeUrl || null;
 
-    await this.db.update(candidates).set(updateFields).where(eq(candidates.id, candidateId));
+    await this.db.update(candidates).set(updateFields).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     if (input.status === "REJECTED" && existing.status !== "REJECTED") {
       await this.notifyByRoles(orgId, ["HR_MANAGER", "CEO", "HR"], {
@@ -266,7 +266,7 @@ export class RecruitmentCandidatesService {
     const [updated] = await this.db
       .update(candidates)
       .set({ status: newStage, updatedAt: new Date() })
-      .where(eq(candidates.id, candidateId))
+      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
       .returning();
 
     this.audit.log({

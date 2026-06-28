@@ -4,8 +4,9 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   onboardingTasks,
@@ -42,12 +43,6 @@ function randomEmployeeCode(length: number): string {
 
 function randomToken(length: number): string {
   return randomBytes(length).toString("base64url").slice(0, length);
-}
-
-function addDays(date: Date, amount: number): Date {
-  const result = new Date(date.getTime());
-  result.setDate(result.getDate() + amount);
-  return result;
 }
 
 function toBankDetails(input: BankDetailsInput): BankDetails {
@@ -247,18 +242,16 @@ export class EmployeeMutationsService {
         const newDate = new Date(body.joiningDate);
         if (oldDate && oldDate.getTime() !== newDate.getTime()) {
           const dayDiff = differenceInDays(newDate, oldDate);
-          const tasks = await tx.query.onboardingTasks.findMany({
-            where: and(eq(onboardingTasks.userId, targetUserId), eq(onboardingTasks.status, "PENDING")),
-            columns: { id: true, dueDate: true },
-          });
-          for (const task of tasks) {
-            if (task.dueDate) {
-              await tx
-                .update(onboardingTasks)
-                .set({ dueDate: addDays(task.dueDate, dayDiff) })
-                .where(eq(onboardingTasks.id, task.id));
-            }
-          }
+          await tx
+            .update(onboardingTasks)
+            .set({ dueDate: sql<Date>`${onboardingTasks.dueDate} + (${dayDiff} * interval '1 day')` })
+            .where(
+              and(
+                eq(onboardingTasks.userId, targetUserId),
+                eq(onboardingTasks.status, "PENDING"),
+                isNotNull(onboardingTasks.dueDate),
+              ),
+            );
         }
       }
     });
@@ -339,7 +332,7 @@ export class EmployeeMutationsService {
         })
         .returning();
 
-      if (!created) throw new Error("Failed to create user");
+      if (!created) throw new InternalServerErrorException("Failed to create user record.");
 
       await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: created.id, role });
 

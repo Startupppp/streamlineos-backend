@@ -17,6 +17,7 @@ const MAX_SALARY = 999_999_999;
 export const jobListSchema = z.object({
   status: z.enum(JOB_STATUSES).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 export type JobListInput = z.infer<typeof jobListSchema>;
 

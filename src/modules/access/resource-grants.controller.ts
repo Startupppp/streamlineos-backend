@@ -6,6 +6,7 @@ import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
 import { ResourceGrantsService, type GrantResourceInput } from "./resource-grants.service";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import type { ResourceGrant } from "../../db/schema";
 import { z } from "zod";
 
 const grantInputSchema = z.object({
@@ -27,7 +28,7 @@ export class ResourceGrantsController {
     @CurrentUser() u: CurrentUserContext,
     @Query("resourceType") resourceType: string,
     @Query("resourceId") resourceId: string,
-  ) {
+  ): Promise<ResourceGrant[]> {
     return this.resourceGrantsService.listGrants(u.orgId, resourceType, resourceId);
   }
 
@@ -36,7 +37,7 @@ export class ResourceGrantsController {
   grant(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(grantInputSchema)) body: GrantResourceInput,
-  ) {
+  ): Promise<ResourceGrant | null> {
     return this.resourceGrantsService.grant(u.orgId, body, u.userId);
   }
 
@@ -45,7 +46,7 @@ export class ResourceGrantsController {
   revoke(
     @CurrentUser() u: CurrentUserContext,
     @Param("grantId") grantId: string,
-  ) {
-    return this.resourceGrantsService.revoke(u.orgId, grantId, u);
+  ): Promise<{ success: boolean }> {
+    return this.resourceGrantsService.revoke(u.orgId, grantId);
   }
 }

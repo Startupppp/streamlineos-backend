@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Readable } from "stream";
 import { extname } from "path";
 import {
@@ -137,7 +137,7 @@ export class StorageService {
     );
     const body = response.Body;
     if (!body || !(body instanceof Readable)) {
-      throw new Error("File not found or empty");
+      throw new NotFoundException("File not found or empty");
     }
     return {
       body,

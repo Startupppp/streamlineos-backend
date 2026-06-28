@@ -226,6 +226,7 @@ export class HrInterviewersService {
     return this.db.query.interviewBookingLinks.findMany({
       where: eq(interviewBookingLinks.orgId, orgId),
       orderBy: [desc(interviewBookingLinks.createdAt)],
+      limit: 100,
       with: {
         candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
         jobPosting: { columns: { id: true, title: true } },

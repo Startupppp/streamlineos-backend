@@ -72,17 +72,17 @@ export class CrmTerritoriesService {
     return Boolean(row);
   }
 
-  update(id: number, input: TerritoryUpdateInput) {
+  update(orgId: string, id: number, input: TerritoryUpdateInput) {
     return this.db
       .update(territories)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(territories.id, id))
+      .where(and(eq(territories.id, id), eq(territories.orgId, orgId)))
       .returning()
       .then((rows) => rows[0]);
   }
 
-  async remove(id: number) {
-    await this.db.delete(territories).where(eq(territories.id, id));
+  async remove(orgId: string, id: number) {
+    await this.db.delete(territories).where(and(eq(territories.id, id), eq(territories.orgId, orgId)));
     return { success: true };
   }
 }

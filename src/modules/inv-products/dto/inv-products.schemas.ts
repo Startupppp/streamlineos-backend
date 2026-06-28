@@ -61,5 +61,7 @@ export const listVariantsSchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type ListVariantsInput = z.infer<typeof listVariantsSchema>;

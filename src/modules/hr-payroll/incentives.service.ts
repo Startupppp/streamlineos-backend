@@ -17,7 +17,7 @@ export class IncentivesService {
 
   async getIncentives(orgId: string, params: IncentivesQueryInput) {
     const page = params.page ?? 1;
-    const limit = params.limit ?? 20;
+    const limit = Math.min(params.limit ?? 20, 100);
     const offset = (page - 1) * limit;
 
     const conditions = [eq(incentives.orgId, orgId)];
@@ -81,9 +81,10 @@ export class IncentivesService {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
     const [allRows, monthRows] = await Promise.all([
-      this.db.query.incentives.findMany({ where: eq(incentives.orgId, orgId) }),
+      this.db.query.incentives.findMany({ where: eq(incentives.orgId, orgId), limit: 10000 }),
       this.db.query.incentives.findMany({
         where: and(eq(incentives.orgId, orgId), gte(incentives.createdAt, new Date(monthStart))),
+        limit: 10000,
       }),
     ]);
 
@@ -124,7 +125,8 @@ export class IncentivesService {
       .from(incentiveConfig)
       .leftJoin(users, eq(incentiveConfig.createdBy, users.id))
       .where(and(eq(incentiveConfig.orgId, orgId), eq(incentiveConfig.isActive, true)))
-      .orderBy(desc(incentiveConfig.effectiveFrom));
+      .orderBy(desc(incentiveConfig.effectiveFrom))
+      .limit(100);
   }
 
   async createConfig(orgId: string, userId: string, incentiveRate: string) {

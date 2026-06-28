@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -16,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
+import { AccessService } from "../access/access.service";
 import {
   createHiringFlowSchema,
   createRoundSchema,
@@ -32,7 +34,10 @@ import {
 @Controller("hr/recruitment/hiring-flows")
 @UseGuards(JwtAuthGuard)
 export class HrHiringFlowsController {
-  constructor(private readonly flows: HrHiringFlowsService) {}
+  constructor(
+    private readonly flows: HrHiringFlowsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   list(
@@ -44,10 +49,14 @@ export class HrHiringFlowsController {
 
   @Post()
   @HttpCode(201)
-  create(
+  async create(
     @Body(new ZodValidationPipe(createHiringFlowSchema)) body: CreateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.createFlow(u.orgId, u.userId, body);
   }
 
@@ -60,19 +69,27 @@ export class HrHiringFlowsController {
   }
 
   @Patch(":flowId")
-  update(
+  async update(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(updateHiringFlowSchema)) body: UpdateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.updateFlow(u.orgId, flowId, body);
   }
 
   @Delete(":flowId")
-  remove(
+  async remove(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.deleteFlow(u.orgId, flowId);
   }
 
@@ -86,30 +103,42 @@ export class HrHiringFlowsController {
 
   @Post(":flowId/rounds")
   @HttpCode(201)
-  createRound(
+  async createRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(createRoundSchema)) body: CreateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.createRound(u.orgId, flowId, body);
   }
 
   @Patch(":flowId/rounds/:roundId")
-  updateRound(
+  async updateRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
     @Body(new ZodValidationPipe(updateRoundSchema)) body: UpdateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.updateRound(u.orgId, flowId, roundId, body);
   }
 
   @Delete(":flowId/rounds/:roundId")
-  removeRound(
+  async removeRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.flows.deleteRound(u.orgId, flowId, roundId);
   }
 }

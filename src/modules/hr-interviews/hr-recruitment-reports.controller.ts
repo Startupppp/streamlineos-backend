@@ -33,10 +33,14 @@ export class HrRecruitmentReportsController {
 
   @Post("reports/generate")
   @HttpCode(200)
-  generateReport(
+  async generateReport(
     @Body(new ZodValidationPipe(generateReportSchema)) body: GenerateReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.reports.generateReport(u.orgId, body);
   }
 

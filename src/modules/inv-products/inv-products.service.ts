@@ -151,7 +151,9 @@ export class InvProductsService {
     return updated;
   }
 
-  listVariants(orgId: string, activeOnly: boolean) {
+  listVariants(orgId: string, filters: { activeOnly: boolean; page: number; limit: number }) {
+    const { activeOnly, page, limit } = filters;
+    const offset = (page - 1) * limit;
     const conditions = [eq(invProductVariants.orgId, orgId)];
     if (activeOnly) conditions.push(eq(invProductVariants.isActive, true));
     return this.db
@@ -167,30 +169,34 @@ export class InvProductsService {
       .from(invProductVariants)
       .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
       .where(and(...conditions))
-      .orderBy(asc(invProducts.name), asc(invProductVariants.name));
+      .orderBy(asc(invProducts.name), asc(invProductVariants.name))
+      .limit(limit)
+      .offset(offset);
   }
 
   listCategories(orgId: string) {
-    return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId) + ":cats", () =>
-      this.db.query.invCategories.findMany({ where: eq(invCategories.orgId, orgId), orderBy: [desc(invCategories.name)] }),
+    return this.cache.cached(`inv:products:categories:${orgId}`, () =>
+      this.db.query.invCategories.findMany({ where: eq(invCategories.orgId, orgId), orderBy: [asc(invCategories.name)] }),
       CACHE_TTL.MEDIUM
     );
   }
 
   async createCategory(orgId: string, data: CreateCategoryInput) {
     const [cat] = await this.db.insert(invCategories).values({ orgId, ...data }).returning();
+    await this.cache.del(`inv:products:categories:${orgId}`);
     return cat;
   }
 
   listUom(orgId: string) {
-    return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId) + ":uom", () =>
-      this.db.query.invUom.findMany({ where: eq(invUom.orgId, orgId), orderBy: [desc(invUom.name)] }),
+    return this.cache.cached(`inv:products:uom:${orgId}`, () =>
+      this.db.query.invUom.findMany({ where: eq(invUom.orgId, orgId), orderBy: [asc(invUom.name)] }),
       CACHE_TTL.MEDIUM
     );
   }
 
   async createUom(orgId: string, data: CreateUomInput) {
     const [uom] = await this.db.insert(invUom).values({ orgId, ...data }).returning();
+    await this.cache.del(`inv:products:uom:${orgId}`);
     return uom;
   }
 }

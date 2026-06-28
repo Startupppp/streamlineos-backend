@@ -71,8 +71,8 @@ export class ComplianceService {
     const now = new Date();
     const thirtyDaysAhead = new Date();
     thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
-    const todayStr = formatDateString(now);
-    const futureStr = formatDateString(thirtyDaysAhead);
+    const todayStr = formatDateOnly(now);
+    const futureStr = formatDateOnly(thirtyDaysAhead);
 
     const [totalEmployees, pendingAcks, expiringCerts, pendingBgv, payrollsMissing] =
       await Promise.all([

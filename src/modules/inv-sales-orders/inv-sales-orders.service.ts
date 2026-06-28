@@ -5,7 +5,7 @@ import {
   NotFoundException,
   ConflictException,
 } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invSalesOrders,
   invSoLines,
@@ -140,29 +140,31 @@ export class InvSalesOrdersService {
       createdBy: userId,
     }).returning();
 
-    for (const line of data.lines) {
-      const variant = await this.db.query.invProductVariants.findFirst({
-        where: eq(invProductVariants.id, line.productVariantId),
-        columns: { costPrice: true },
-      });
+    const variantIds = data.lines.map((l) => l.productVariantId);
+    const variants = await this.db.query.invProductVariants.findMany({
+      where: inArray(invProductVariants.id, variantIds),
+      columns: { id: true, costPrice: true },
+    });
+    const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
 
-      await this.db.insert(invSoLines).values({
+    await this.db.insert(invSoLines).values(
+      data.lines.map((line) => ({
         soId: so.id,
         productVariantId: line.productVariantId,
         quantity: line.quantity.toString(),
         unitPrice: line.unitPrice,
         taxRate: line.taxRate,
         amount: (line.quantity * parseFloat(line.unitPrice)).toFixed(4),
-        costAtTime: variant?.costPrice ?? "0",
+        costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
         lineOrder: line.lineOrder,
-      });
-    }
+      }))
+    );
 
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
     return so;
   }
 
-  async confirmSo(orgId: string, soId: number, userId: string) {
+  async confirmSo(orgId: string, soId: number, userId: string): Promise<void> {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: { lines: true },
@@ -170,13 +172,19 @@ export class InvSalesOrdersService {
     if (!so) throw new NotFoundException("Sales order not found");
     if (so.status !== "DRAFT") throw new BadRequestException("Only DRAFT sales orders can be confirmed");
 
+    const soVariantIds = so.lines.map((l) => l.productVariantId);
+    const stockLevels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, soVariantIds),
+      ),
+      columns: { productVariantId: true, onHand: true, committed: true },
+    });
+    const stockMap = new Map(stockLevels.map((s) => [s.productVariantId, s]));
+
     for (const line of so.lines) {
-      const stockLevel = await this.db.query.invStockLevels.findFirst({
-        where: eq(invStockLevels.productVariantId, line.productVariantId),
-        columns: { onHand: true, committed: true },
-      });
-      const available =
-        parseFloat(stockLevel?.onHand ?? "0") - parseFloat(stockLevel?.committed ?? "0");
+      const level = stockMap.get(line.productVariantId);
+      const available = parseFloat(level?.onHand ?? "0") - parseFloat(level?.committed ?? "0");
       if (available < parseFloat(line.quantity)) {
         throw new BadRequestException(
           `Insufficient stock for variant ${line.productVariantId}. Available: ${available}`,
@@ -184,9 +192,9 @@ export class InvSalesOrdersService {
       }
     }
 
+    const locationId = so.warehouseId ?? 1;
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
-        const locationId = so.warehouseId ?? 1;
         await tx.insert(invStockLevels).values({
           orgId,
           productVariantId: line.productVariantId,
@@ -211,7 +219,7 @@ export class InvSalesOrdersService {
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
   }
 
-  async shipSo(orgId: string, soId: number, userId: string, data: ShipSoInput) {
+  async shipSo(orgId: string, soId: number, userId: string, data: ShipSoInput): Promise<void> {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
       with: { lines: true },
@@ -219,19 +227,23 @@ export class InvSalesOrdersService {
     if (!so) throw new NotFoundException("Sales order not found");
     if (so.status !== "CONFIRMED") throw new BadRequestException("Only CONFIRMED sales orders can be shipped");
 
+    const locationId = so.warehouseId ?? 1;
+    const shipVariantIds = so.lines.map((l) => l.productVariantId);
+    const preLevels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, shipVariantIds),
+        eq(invStockLevels.locationId, locationId),
+      ),
+      columns: { productVariantId: true, onHand: true },
+    });
+    const preLevelMap = new Map(preLevels.map((s) => [s.productVariantId, parseFloat(s.onHand)]));
+
     let cogsTotal = 0;
 
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
-        const locationId = so.warehouseId ?? 1;
-        const currentLevel = await tx.query.invStockLevels.findFirst({
-          where: and(
-            eq(invStockLevels.productVariantId, line.productVariantId),
-            eq(invStockLevels.locationId, locationId),
-          ),
-          columns: { onHand: true },
-        });
-        const before = parseFloat(currentLevel?.onHand ?? "0");
+        const before = preLevelMap.get(line.productVariantId) ?? 0;
         const qty = parseFloat(line.quantity);
         const after = before - qty;
 
@@ -392,22 +404,28 @@ export class InvSalesOrdersService {
   }
 
   async getAtp(orgId: string, productVariantIds: number[]) {
-    return Promise.all(
-      productVariantIds.map(async (id) => {
-        const level = await this.db.query.invStockLevels.findFirst({
-          where: eq(invStockLevels.productVariantId, id),
-          columns: { onHand: true, committed: true, onOrder: true },
-        });
-        const onHand = parseFloat(level?.onHand ?? "0");
-        const committed = parseFloat(level?.committed ?? "0");
-        return {
-          productVariantId: id,
-          onHand,
-          committed,
-          onOrder: parseFloat(level?.onOrder ?? "0"),
-          available: onHand - committed,
-        };
-      }),
-    );
+    if (productVariantIds.length === 0) return [];
+
+    const levels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, productVariantIds),
+      ),
+      columns: { productVariantId: true, onHand: true, committed: true, onOrder: true },
+    });
+    const levelMap = new Map(levels.map((l) => [l.productVariantId, l]));
+
+    return productVariantIds.map((id) => {
+      const level = levelMap.get(id);
+      const onHand = parseFloat(level?.onHand ?? "0");
+      const committed = parseFloat(level?.committed ?? "0");
+      return {
+        productVariantId: id,
+        onHand,
+        committed,
+        onOrder: parseFloat(level?.onOrder ?? "0"),
+        available: onHand - committed,
+      };
+    });
   }
 }

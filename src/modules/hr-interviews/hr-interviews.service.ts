@@ -33,6 +33,7 @@ export class HrInterviewsService {
       with: { candidate: true, interviewer: true },
       orderBy: [desc(interviews.scheduledAt)],
       limit: query.limit,
+      offset: query.offset,
     });
   }
 

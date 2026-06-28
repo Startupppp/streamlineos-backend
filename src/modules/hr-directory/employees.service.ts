@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { SQL, and, avg, count, desc, eq, gte, ilike, lte, or } from "drizzle-orm";
+import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import {
   attendance,
   leaveRequests,
@@ -390,33 +390,33 @@ export class EmployeesService {
 
     const reportIds = reports.map((r) => r.id);
 
-    const ratingsPerReport = await Promise.all(
-      reportIds.map(async (userId) => {
-        const [r] = await this.db
-          .select({ avg: avg(performanceReviews.overallRating) })
-          .from(performanceReviews)
-          .where(and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.userId, userId)));
-        return { userId, avg: r?.avg ? parseFloat(String(r.avg)) : null };
-      }),
-    );
+    const [ratingsResult, attendanceResult] = await Promise.all([
+      this.db
+        .select({ userId: performanceReviews.userId, avg: avg(performanceReviews.overallRating) })
+        .from(performanceReviews)
+        .where(and(eq(performanceReviews.orgId, orgId), inArray(performanceReviews.userId, reportIds)))
+        .groupBy(performanceReviews.userId),
+      this.db
+        .select({ userId: attendance.userId, cnt: count() })
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.orgId, orgId),
+            inArray(attendance.userId, reportIds),
+            gte(attendance.date, formatDateOnly(subDays(new Date(), 30))),
+          ),
+        )
+        .groupBy(attendance.userId),
+    ]);
 
-    const thirtyDaysAgo = formatDateOnly(subDays(new Date(), 30));
-    const attendanceCounts = await Promise.all(
-      reportIds.map(async (userId) => {
-        const [r] = await this.db
-          .select({ cnt: count() })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              eq(attendance.userId, userId),
-              gte(attendance.date, thirtyDaysAgo),
-            ),
-          );
-        return r?.cnt ?? 0;
-      }),
-    );
-    const totalPresent = attendanceCounts.reduce((a, b) => a + b, 0);
+    const ratingsMap = new Map(ratingsResult.map((r) => [r.userId, r.avg]));
+    const ratingsPerReport = reportIds.map((userId) => {
+      const raw = ratingsMap.get(userId);
+      return { userId, avg: raw ? parseFloat(String(raw)) : null };
+    });
+
+    const attendanceMap = new Map(attendanceResult.map((r) => [r.userId, r.cnt]));
+    const totalPresent = reportIds.reduce((sum, id) => sum + (attendanceMap.get(id) ?? 0), 0);
     const maxPossible = reportIds.length * 30;
     const teamAttendanceRate = maxPossible > 0 ? Math.round((totalPresent / maxPossible) * 100) : null;
 

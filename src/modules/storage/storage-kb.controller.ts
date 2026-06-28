@@ -8,6 +8,11 @@ import { kbArticleAttachments, kbArticles } from "../../db/schema";
 import { StorageService } from "./storage.service";
 import { kbAttachmentsQuerySchema, type KbAttachmentsQueryInput } from "./dto/storage.schemas";
 
+type AttachmentResponse = Pick<
+  typeof kbArticleAttachments.$inferSelect,
+  "id" | "fileName" | "fileSize" | "mimeType" | "createdAt"
+> & { downloadUrl: string | null };
+
 const DOWNLOAD_EXPIRY_SECONDS = 3600;
 
 @Public()
@@ -22,8 +27,9 @@ export class StorageKbController {
   async listAttachments(
     @Param("slug") slug: string,
     @Query(new ZodValidationPipe(kbAttachmentsQuerySchema)) query: KbAttachmentsQueryInput,
-  ) {
-    const { org } = query;
+  ): Promise<AttachmentResponse[]> {
+    const { org, page, limit } = query;
+    const offset = (page - 1) * limit;
 
     const [article] = await this.db
       .select({ id: kbArticles.id })
@@ -50,12 +56,14 @@ export class StorageKbController {
       })
       .from(kbArticleAttachments)
       .where(and(eq(kbArticleAttachments.articleId, article.id), eq(kbArticleAttachments.orgId, org)))
-      .orderBy(desc(kbArticleAttachments.createdAt));
+      .orderBy(desc(kbArticleAttachments.createdAt))
+      .limit(limit)
+      .offset(offset);
 
     const storageReady = this.storage.isConfigured();
 
     return Promise.all(
-      rows.map(async (row) => ({
+      rows.map(async (row): Promise<AttachmentResponse> => ({
         id: row.id,
         fileName: row.fileName,
         fileSize: row.fileSize,

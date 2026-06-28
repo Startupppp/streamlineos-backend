@@ -165,7 +165,8 @@ export class CompensationService {
       const allSalaries = await this.db
         .select({ basicSalary: salaryStructures.basicSalary })
         .from(salaryStructures)
-        .where(eq(salaryStructures.orgId, orgId));
+        .where(eq(salaryStructures.orgId, orgId))
+        .limit(10000);
 
       const annualSalaries = allSalaries.map((r) => Number(r.basicSalary) * 12);
 

@@ -55,17 +55,17 @@ export class CrmWebFormsService {
     return Boolean(row);
   }
 
-  update(id: number, input: WebFormUpdateInput) {
+  update(orgId: string, id: number, input: WebFormUpdateInput) {
     return this.db
       .update(webLeadForms)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(webLeadForms.id, id))
+      .where(and(eq(webLeadForms.id, id), eq(webLeadForms.orgId, orgId)))
       .returning()
       .then((rows) => rows[0]);
   }
 
-  async remove(id: number) {
-    await this.db.delete(webLeadForms).where(eq(webLeadForms.id, id));
+  async remove(orgId: string, id: number) {
+    await this.db.delete(webLeadForms).where(and(eq(webLeadForms.id, id), eq(webLeadForms.orgId, orgId)));
     return { success: true };
   }
 }

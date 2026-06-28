@@ -17,6 +17,7 @@ export class LoansService {
       where: and(...conditions),
       with: { user: true },
       orderBy: [desc(salaryLoans.createdAt)],
+      limit: 100,
     });
   }
 

@@ -7,8 +7,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvStockService } from "./inv-stock.service";
 import {
-  listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema, createTransferSchema, completeTransferSchema,
-  type ListStockLevelsInput, type ListTransactionsInput, type ListAdjustmentsInput, type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput,
+  listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema,
+  createTransferSchema, completeTransferSchema, listTransfersSchema,
+  type ListStockLevelsInput, type ListTransactionsInput, type ListAdjustmentsInput,
+  type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput, type ListTransfersInput,
 } from "./dto/inv-stock.schemas";
 
 @Controller("inventory/stock")
@@ -59,8 +61,11 @@ export class InvStockController {
   @Get("transfers")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-  listTransfers(@CurrentUser() u: CurrentUserContext) {
-    return this.stock.listTransfers(u.orgId);
+  listTransfers(
+    @Query(new ZodValidationPipe(listTransfersSchema)) filters: ListTransfersInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.stock.listTransfers(u.orgId, filters);
   }
 
   @Get("transfers/:transferId")

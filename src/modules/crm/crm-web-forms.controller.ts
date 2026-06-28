@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -24,7 +26,7 @@ import {
 } from "./dto/web-forms.schemas";
 
 @Controller("crm/web-forms")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmWebFormsController {
   constructor(private readonly forms: CrmWebFormsService) {}
 
@@ -34,6 +36,7 @@ export class CrmWebFormsController {
   }
 
   @Post()
+  @RequirePermission("crm:web-forms:manage")
   @HttpCode(201)
   create(
     @Body(new ZodValidationPipe(webFormCreateSchema)) body: WebFormCreateInput,
@@ -53,6 +56,7 @@ export class CrmWebFormsController {
   }
 
   @Patch(":formId")
+  @RequirePermission("crm:web-forms:manage")
   async update(
     @Param("formId", ParseIntPipe) formId: number,
     @Body(new ZodValidationPipe(webFormUpdateSchema)) body: WebFormUpdateInput,
@@ -60,16 +64,17 @@ export class CrmWebFormsController {
   ) {
     const exists = await this.forms.exists(u.orgId, formId);
     if (!exists) throw new NotFoundException("Form not found");
-    return this.forms.update(formId, body);
+    return this.forms.update(u.orgId, formId, body);
   }
 
   @Delete(":formId")
+  @RequirePermission("crm:web-forms:manage")
   async remove(
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const exists = await this.forms.exists(u.orgId, formId);
     if (!exists) throw new NotFoundException("Form not found");
-    return this.forms.remove(formId);
+    return this.forms.remove(u.orgId, formId);
   }
 }

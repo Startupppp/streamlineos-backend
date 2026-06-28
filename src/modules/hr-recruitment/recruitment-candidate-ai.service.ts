@@ -102,7 +102,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
         aiScoreGeneratedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(candidates.id, candidateId));
+      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     return scored;
   }
@@ -213,7 +213,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     await this.db
       .update(candidates)
       .set({ resumeText: text.slice(0, 100000), updatedAt: new Date() })
-      .where(eq(candidates.id, candidateId));
+      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     return {
       parsed,

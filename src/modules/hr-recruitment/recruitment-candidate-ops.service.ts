@@ -129,7 +129,7 @@ export class RecruitmentCandidateOpsService {
     await this.db
       .update(candidates)
       .set({ status: "REJECTED", updatedAt: new Date() })
-      .where(inArray(candidates.id, toRejectIds));
+      .where(and(inArray(candidates.id, toRejectIds), eq(candidates.orgId, orgId)));
 
     for (const c of toReject) {
       this.audit.log({
@@ -235,8 +235,7 @@ export class RecruitmentCandidateOpsService {
       })
       .returning();
 
-    const jobPostingId = input.jobPostingId;
-    void this.dispatchApplicationAutomation(orgId, candidateId, candidate, jobPostingId, application.appliedAt).catch(
+    void this.dispatchApplicationAutomation(orgId, candidateId, candidate, input.jobPostingId, application.appliedAt).catch(
       () => undefined,
     );
 
@@ -283,7 +282,7 @@ export class RecruitmentCandidateOpsService {
       updateFields.bgvCompletedAt = now;
     }
 
-    await this.db.update(candidates).set(updateFields).where(eq(candidates.id, candidateId));
+    await this.db.update(candidates).set(updateFields).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
 
     void this.automation
       .runAutomationsForEvent(orgId, "candidate.bgv_status_changed", {

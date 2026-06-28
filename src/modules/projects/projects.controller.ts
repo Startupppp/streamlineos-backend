@@ -66,6 +66,8 @@ export class ProjectsController {
   }
 
   @Post("from-deal")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:create")
   @HttpCode(201)
   createFromDeal(
     @Body(new ZodValidationPipe(fromDealSchema)) body: FromDealInput,
@@ -80,6 +82,8 @@ export class ProjectsController {
   }
 
   @Post("labels")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   createLabel(
     @Body(new ZodValidationPipe(createLabelSchema)) body: CreateLabelInput,
@@ -94,6 +98,8 @@ export class ProjectsController {
   }
 
   @Post(":projectId/members")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -103,6 +109,8 @@ export class ProjectsController {
   }
 
   @Delete(":projectId/members")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
@@ -119,6 +127,8 @@ export class ProjectsController {
   }
 
   @Post(":projectId/custom-states")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -134,6 +144,8 @@ export class ProjectsController {
   }
 
   @Post(":projectId/labels")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   createProjectLabel(
     @Body(new ZodValidationPipe(createLabelSchema)) body: CreateLabelInput,

@@ -230,6 +230,6 @@ export class ProjectsTicketsController {
     @Query("force") force: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.deleteTicket(u.orgId, ticketId, force === "true");
+    return this.tickets.deleteTicket(u.orgId, u.userId, ticketId, force === "true");
   }
 }

@@ -54,25 +54,25 @@ export class ProjectsTicketsService {
     private readonly access: AccessService,
   ) {}
 
-  private async checkProjectAccess(u: CurrentUserContext, projectId: number): Promise<boolean> {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+  private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
+    const perms = await this.access.resolveUserPermissions(orgId, userId);
     if (perms.has("projects:manage")) return true;
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
       columns: { managerId: true },
     });
     if (!project) return false;
-    if (project.managerId === u.userId) return true;
+    if (project.managerId === userId) return true;
     const membership = await this.db
       .select({ id: projectMembers.id })
       .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, u.userId)))
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
     return membership.length > 0;
   }
 
   async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
-    const hasAccess = await this.checkProjectAccess(u, projectId);
+    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const { page, limit, search } = query;
@@ -118,7 +118,7 @@ export class ProjectsTicketsService {
   }
 
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
-    const hasAccess = await this.checkProjectAccess(u, projectId);
+    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const [ticket] = await this.db.transaction(async (tx) => {
@@ -247,8 +247,12 @@ export class ProjectsTicketsService {
 
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true },
+      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true },
     });
+    if (!before) throw new NotFoundException("Ticket not found");
+
+    const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
+    if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     await this.db
       .update(tickets)
@@ -319,7 +323,7 @@ export class ProjectsTicketsService {
     if (notifyIds.size === 0) return;
 
     const ticketData = await this.db.query.tickets.findFirst({
-      where: eq(tickets.id, ticketId),
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
       columns: { title: true, projectId: true },
     });
 
@@ -344,12 +348,15 @@ export class ProjectsTicketsService {
       .catch(() => undefined);
   }
 
-  async deleteTicket(orgId: string, ticketId: number, force: boolean) {
+  async deleteTicket(orgId: string, userId: string, ticketId: number, force: boolean) {
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { id: true },
+      columns: { id: true, projectId: true },
     });
     if (!existing) throw new NotFoundException("Ticket not found");
+
+    const hasAccess = await this.checkProjectAccess(orgId, userId, existing.projectId);
+    if (!hasAccess) throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {
       const blockedBy = await this.db.query.workItemRelations.findMany({
@@ -401,7 +408,7 @@ export class ProjectsTicketsService {
     const updated = await this.db
       .update(tickets)
       .set(updateData)
-      .where(and(eq(tickets.projectId, projectId), inArray(tickets.id, body.ticketIds)))
+      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId), inArray(tickets.id, body.ticketIds)))
       .returning({ id: tickets.id });
 
     return { updated: updated.length, ticketIds: updated.map((t) => t.id) };

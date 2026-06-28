@@ -30,12 +30,12 @@ export class StorageVaultController {
     private readonly access: AccessService,
   ) {}
 
-  @Get(":documentId(\\d+)")
+  @Post(":documentId(\\d+)/url")
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
+  ): Promise<typeof candidateDocumentsVault.$inferSelect & { signedUrl: string | null }> {
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:documents:manage")) {
@@ -75,7 +75,7 @@ export class StorageVaultController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
+  ): Promise<{ success: boolean }> {
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:documents:manage")) {
@@ -96,7 +96,7 @@ export class StorageVaultController {
       await tx.insert(vaultAccessLogs).values({
         vaultDocumentId: documentId,
         accessedBy: u.userId,
-        action: "DOWNLOAD",
+        action: "DELETE",
       });
       await tx.delete(candidateDocumentsVault).where(eq(candidateDocumentsVault.id, documentId));
     });

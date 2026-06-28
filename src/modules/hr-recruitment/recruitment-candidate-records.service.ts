@@ -221,7 +221,7 @@ export class RecruitmentCandidateRecordsService {
     return this.db
       .select()
       .from(candidateDocuments)
-      .where(eq(candidateDocuments.candidateId, candidateId))
+      .where(and(eq(candidateDocuments.candidateId, candidateId), eq(candidateDocuments.orgId, orgId)))
       .orderBy(desc(candidateDocuments.createdAt));
   }
 
@@ -281,12 +281,7 @@ export class RecruitmentCandidateRecordsService {
       .limit(1);
     if (!doc) throw new NotFoundException("Document not found");
 
-    void this.db
-      .update(candidateDocuments)
-      .set({ viewedAt: new Date() })
-      .where(eq(candidateDocuments.id, documentId))
-      .then(() => undefined)
-      .catch(() => undefined);
+    void this.markDocumentViewed(documentId);
 
     return { htmlContent: doc.htmlContent, title: doc.title };
   }
@@ -309,7 +304,7 @@ export class RecruitmentCandidateRecordsService {
       })
       .from(candidateDocuments)
       .leftJoin(documentTemplates, eq(candidateDocuments.templateId, documentTemplates.id))
-      .where(eq(candidateDocuments.candidateId, candidateId))
+      .where(and(eq(candidateDocuments.candidateId, candidateId), eq(candidateDocuments.orgId, orgId)))
       .orderBy(desc(candidateDocuments.createdAt));
   }
 
@@ -346,6 +341,7 @@ export class RecruitmentCandidateRecordsService {
 
     const generatedDocs: (typeof candidateDocuments.$inferSelect)[] = [];
     const missingVarErrors: string[] = [];
+    const docsToInsert: (typeof candidateDocuments.$inferInsert)[] = [];
 
     for (const template of templates) {
       const { result, missing } = substituteVariables(template.htmlContent, input.variables);
@@ -353,24 +349,25 @@ export class RecruitmentCandidateRecordsService {
         missingVarErrors.push(`"${template.title}": missing ${missing.join(", ")}`);
         continue;
       }
-      const [doc] = await this.db
-        .insert(candidateDocuments)
-        .values({
-          candidateId,
-          orgId,
-          templateId: template.id,
-          title: template.title,
-          htmlContent: result,
-          status: "GENERATED",
-          createdBy: userId,
-          ...(input.acceptanceDeadline && { acceptanceDeadline: new Date(input.acceptanceDeadline) }),
-        })
-        .returning();
-      if (doc) generatedDocs.push(doc);
+      docsToInsert.push({
+        candidateId,
+        orgId,
+        templateId: template.id,
+        title: template.title,
+        htmlContent: result,
+        status: "GENERATED" as const,
+        createdBy: userId,
+        ...(input.acceptanceDeadline && { acceptanceDeadline: new Date(input.acceptanceDeadline) }),
+      });
     }
 
     if (missingVarErrors.length > 0) {
       throw new BadRequestException(`Variable substitution failed for: ${missingVarErrors.join("; ")}`);
+    }
+
+    if (docsToInsert.length > 0) {
+      const inserted = await this.db.insert(candidateDocuments).values(docsToInsert).returning();
+      generatedDocs.push(...inserted);
     }
 
     if (input.sendEmail && generatedDocs.length > 0 && candidate.email) {
@@ -481,6 +478,15 @@ export class RecruitmentCandidateRecordsService {
           ? `${l.accessorFirstName} ${l.accessorLastName}`
           : (l.accessorName ?? "Unknown"),
     }));
+  }
+
+  private async markDocumentViewed(documentId: number): Promise<void> {
+    try {
+      await this.db
+        .update(candidateDocuments)
+        .set({ viewedAt: new Date() })
+        .where(eq(candidateDocuments.id, documentId));
+    } catch {}
   }
 
   private async ensureCandidate(orgId: string, candidateId: number, message = "Candidate not found.") {

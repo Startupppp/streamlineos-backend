@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { aliasedTable, and, desc, eq } from "drizzle-orm";
 import {
   documentAuditLogs,
@@ -147,7 +147,8 @@ export class OnboardingViewsService {
         .innerJoin(users, eq(onboardingDocuments.userId, users.id))
         .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
         .where(conditions)
-        .orderBy(desc(onboardingDocuments.createdAt));
+        .orderBy(desc(onboardingDocuments.createdAt))
+        .limit(500);
     }
 
     return this.db
@@ -175,7 +176,8 @@ export class OnboardingViewsService {
       .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
       .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
       .where(and(eq(onboardingDocuments.orgId, orgId), eq(onboardingDocuments.userId, userId)))
-      .orderBy(desc(onboardingDocuments.createdAt));
+      .orderBy(desc(onboardingDocuments.createdAt))
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, isAdmin: boolean, body: CreateOnboardingDocInput) {
@@ -233,7 +235,7 @@ export class OnboardingViewsService {
       })
       .returning();
 
-    if (!record) throw new Error("Failed to create onboarding document.");
+    if (!record) throw new InternalServerErrorException("Failed to create onboarding document.");
 
     const metadata: Record<string, unknown> = {
       fileName: body.fileName,

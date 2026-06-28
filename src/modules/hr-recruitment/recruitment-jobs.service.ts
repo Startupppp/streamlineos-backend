@@ -39,7 +39,7 @@ export class RecruitmentJobsService {
   ) {}
 
   list(orgId: string, input: JobListInput) {
-    const key = `hr:jobs:list:${orgId}:${input.status ?? ""}:${input.limit}`;
+    const key = `hr:jobs:list:${orgId}:${input.status ?? ""}:${input.limit}:${input.offset ?? 0}`;
     return this.cache.cached(
       key,
       () => {
@@ -49,6 +49,7 @@ export class RecruitmentJobsService {
           where: and(...conditions),
           orderBy: [desc(jobPostings.createdAt)],
           limit: input.limit,
+          offset: input.offset,
         });
       },
       CACHE_TTL.MEDIUM,
@@ -131,7 +132,7 @@ export class RecruitmentJobsService {
     if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(new Date(input.applicationDeadline));
     if (input.hiringFlowId !== undefined) updateData.hiringFlowId = input.hiringFlowId;
 
-    await this.db.update(jobPostings).set(updateData).where(eq(jobPostings.id, jobId));
+    await this.db.update(jobPostings).set(updateData).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
     return { success: true };
   }
 
@@ -271,6 +272,7 @@ export class RecruitmentJobsService {
         applicationDeadline: true,
         createdAt: true,
       },
+      limit: 200,
     });
   }
 

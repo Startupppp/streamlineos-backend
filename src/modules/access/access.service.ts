@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, innerJoin } from "drizzle-orm";
 import {
   accessVersions,
   departmentMembers,
+  departments,
   groupRoles,
   organizationMembers,
   rolePermissionGrants,
@@ -15,7 +16,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions.constants";
@@ -58,7 +58,6 @@ export class AccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
   ) {}
 
@@ -167,10 +166,12 @@ export class AccessService {
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
 
+    // Scope by orgId via join to prevent cross-org department ID collisions from leaking roles
     const deptRows = await this.db
       .select({ departmentId: departmentMembers.departmentId })
       .from(departmentMembers)
-      .where(eq(departmentMembers.userId, userId));
+      .innerJoin(departments, eq(departmentMembers.departmentId, departments.id))
+      .where(and(eq(departmentMembers.userId, userId), eq(departments.orgId, orgId)));
     const departmentIds = deptRows.map((row) => row.departmentId);
 
     if (departmentIds.length > 0) {

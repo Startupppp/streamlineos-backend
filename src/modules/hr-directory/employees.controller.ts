@@ -81,7 +81,11 @@ export class EmployeesController {
 
   @Get("stats")
   stats(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    return this.employees.getStats(u.orgId, userId || u.userId);
+    const targetId = userId ?? u.userId;
+    if (targetId !== u.userId && !userCan(u, "read", "hr:employees")) {
+      throw new ForbiddenException("Access denied.");
+    }
+    return this.employees.getStats(u.orgId, targetId);
   }
 
   @Get("anniversary-feed")

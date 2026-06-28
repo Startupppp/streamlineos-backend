@@ -214,7 +214,8 @@ export class PayrollsService {
       .leftJoin(generatorUser, eq(payrolls.generatedBy, generatorUser.id))
       .leftJoin(approverUser, eq(payrolls.approvedBy, approverUser.id))
       .where(and(...conditions))
-      .orderBy(desc(payrolls.createdAt));
+      .orderBy(desc(payrolls.createdAt))
+      .limit(1000);
 
     return rows.map((r) => ({
       id: r.id,
@@ -357,7 +358,8 @@ export class PayrollsService {
       })
       .from(payrolls)
       .where(and(eq(payrolls.orgId, orgId), eq(payrolls.userId, userId)))
-      .orderBy(desc(payrolls.month));
+      .orderBy(desc(payrolls.month))
+      .limit(120);
   }
 
   async getPayrollReports(orgId: string, year: number, reportType: string) {
@@ -380,7 +382,8 @@ export class PayrollsService {
         .from(payrolls)
         .innerJoin(users, eq(payrolls.userId, users.id))
         .where(and(eq(payrolls.orgId, orgId), gte(payrolls.month, yearStart), lte(payrolls.month, yearEnd)))
-        .groupBy(payrolls.userId, users.firstName, users.lastName, users.email, users.taxId);
+        .groupBy(payrolls.userId, users.firstName, users.lastName, users.email, users.taxId)
+        .limit(1000);
 
       return {
         type: "form16",
@@ -409,7 +412,8 @@ export class PayrollsService {
       .from(payrolls)
       .where(and(eq(payrolls.orgId, orgId), gte(payrolls.month, yearStart), lte(payrolls.month, yearEnd)))
       .groupBy(payrolls.month)
-      .orderBy(payrolls.month);
+      .orderBy(payrolls.month)
+      .limit(12);
 
     return {
       type: "summary",

@@ -88,11 +88,11 @@ export class ProjectsService {
         .from(projectMembers)
         .where(eq(projectMembers.userId, userId));
       const memberProjectIds = memberOf.map((m) => m.projectId);
-      const scope = or(
+      const memberScopeCondition = or(
         eq(projects.managerId, userId),
         memberProjectIds.length > 0 ? inArray(projects.id, memberProjectIds) : sql`false`,
       );
-      if (scope) conditions.push(scope);
+      if (memberScopeCondition) conditions.push(memberScopeCondition);
     }
 
     if (search?.trim()) {
@@ -423,9 +423,15 @@ export class ProjectsService {
                 ne(tickets.status, "CANCELLED"),
               ),
             );
+          const byNewAssignee = new Map<string | null, number[]>();
           for (const ticket of openTickets) {
             const newAssignee = ticket.assigneeId ? (reassignments[ticket.assigneeId] ?? null) : null;
-            await tx.update(tickets).set({ assigneeId: newAssignee }).where(eq(tickets.id, ticket.id));
+            const ids = byNewAssignee.get(newAssignee) ?? [];
+            ids.push(ticket.id);
+            byNewAssignee.set(newAssignee, ids);
+          }
+          for (const [newAssignee, ids] of byNewAssignee) {
+            await tx.update(tickets).set({ assigneeId: newAssignee }).where(inArray(tickets.id, ids));
           }
         } else if (removedMembers.length > 0) {
           await tx

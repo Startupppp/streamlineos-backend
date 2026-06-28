@@ -67,7 +67,7 @@ export class HrRecruitmentReportsService {
       }
       if (filters.dateFrom) conditions.push(gte(candidates.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(candidates.createdAt, new Date(filters.dateTo)));
-      const result = await this.db.select().from(candidates).where(and(...conditions));
+      const result = await this.db.select().from(candidates).where(and(...conditions)).limit(1000);
       rows = result.map((r) => pickFields(r, validFields.length ? validFields : [...CANDIDATE_FIELDS]));
     }
 
@@ -77,7 +77,7 @@ export class HrRecruitmentReportsService {
       if (filters.dateFrom) conditions.push(gte(jobPostings.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(jobPostings.createdAt, new Date(filters.dateTo)));
       if (filters.departmentId) conditions.push(eq(jobPostings.departmentId, filters.departmentId));
-      const result = await this.db.select().from(jobPostings).where(and(...conditions));
+      const result = await this.db.select().from(jobPostings).where(and(...conditions)).limit(1000);
       rows = result.map((r) => pickFields(r, validFields.length ? validFields : [...JOB_FIELDS]));
     }
 
@@ -86,7 +86,7 @@ export class HrRecruitmentReportsService {
       const conditions = [eq(interviews.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(interviews.scheduledAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(interviews.scheduledAt, new Date(filters.dateTo)));
-      const result = await this.db.select().from(interviews).where(and(...conditions));
+      const result = await this.db.select().from(interviews).where(and(...conditions)).limit(1000);
       rows = result.map((r) => pickFields(r, validFields.length ? validFields : [...INTERVIEW_FIELDS]));
     }
 
@@ -95,7 +95,7 @@ export class HrRecruitmentReportsService {
       const conditions = [eq(candidateOffers.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(candidateOffers.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(candidateOffers.createdAt, new Date(filters.dateTo)));
-      const result = await this.db.select().from(candidateOffers).where(and(...conditions));
+      const result = await this.db.select().from(candidateOffers).where(and(...conditions)).limit(1000);
       rows = result.map((r) => pickFields(r, validFields.length ? validFields : [...OFFER_FIELDS]));
     }
 
@@ -106,6 +106,7 @@ export class HrRecruitmentReportsService {
     return this.db.query.scheduledReports.findMany({
       where: eq(scheduledReports.orgId, orgId),
       orderBy: (t, { desc }) => [desc(t.createdAt)],
+      limit: 100,
     });
   }
 

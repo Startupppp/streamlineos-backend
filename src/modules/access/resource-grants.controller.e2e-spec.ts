@@ -6,6 +6,7 @@ import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../../modules/access/access.service";
 import { ResourceGrantsService } from "../../modules/access/resource-grants.service";
+import type { DataScope } from "../../modules/access/access.types";
 
 const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
 

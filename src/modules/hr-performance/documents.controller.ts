@@ -154,6 +154,7 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(createRichDocumentSchema)) body: CreateRichDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can create rich documents.");
     return this.richDocuments.create(u.orgId, u.userId, body);
   }
 
@@ -170,6 +171,7 @@ export class DocumentsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can publish documents.");
     return this.richDocuments.togglePublish(u.orgId, documentId);
   }
 
@@ -179,6 +181,7 @@ export class DocumentsController {
     @Body(new ZodValidationPipe(updateRichDocumentSchema)) body: UpdateRichDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can update rich documents.");
     return this.richDocuments.update(u.orgId, u.userId, documentId, body);
   }
 
@@ -187,6 +190,7 @@ export class DocumentsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can delete rich documents.");
     return this.richDocuments.remove(u.orgId, documentId);
   }
 }

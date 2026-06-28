@@ -114,18 +114,13 @@ export class EmployeeSkillsService {
 
     if (query.department) {
       const deptRows = await this.db
-        .select({ name: departments.name })
+        .select({ id: departments.id, name: departments.name })
         .from(departments)
         .where(and(eq(departments.orgId, orgId), ilike(departments.name, `%${query.department}%`)));
 
       if (deptRows.length === 0) return [];
 
-      const deptIds = await this.db
-        .select({ departmentId: departments.id })
-        .from(departments)
-        .where(and(eq(departments.orgId, orgId), ilike(departments.name, `%${query.department}%`)));
-
-      const deptIdValues = deptIds.map((d) => d.departmentId);
+      const deptIdValues = deptRows.map((d) => d.id);
 
       const deptMemberRows = await this.db
         .select({ userId: departmentMembers.userId })

@@ -87,11 +87,17 @@ export class HrOffersController {
 
   @Post("offer-templates/:templateId/generate-pdf")
   @HttpCode(200)
-  generatePdf(
+  async generatePdf(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(generateOfferPdfSchema)) body: GenerateOfferPdfInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
+    }
     return this.offers.generatePdf(u.orgId, templateId, body);
   }
 

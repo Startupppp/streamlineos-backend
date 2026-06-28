@@ -51,7 +51,7 @@ export class RecruitmentSourcingService {
 
   async createReferral(orgId: string, userId: string, input: CreateReferralSubmissionInput) {
     const existing = await this.db.query.candidates.findFirst({
-      where: eq(candidates.email, input.email),
+      where: and(eq(candidates.email, input.email), eq(candidates.orgId, orgId)),
       columns: { id: true },
     });
 
@@ -266,7 +266,9 @@ export class RecruitmentSourcingService {
       .leftJoin(departments, eq(headcountRequests.departmentId, departments.id))
       .leftJoin(users, eq(headcountRequests.requestedBy, users.id))
       .where(and(...conditions))
-      .orderBy(desc(headcountRequests.createdAt));
+      .orderBy(desc(headcountRequests.createdAt))
+      .limit(input.limit)
+      .offset(input.offset);
   }
 
   async createHeadcount(orgId: string, userId: string, input: CreateHeadcountInput) {

@@ -68,7 +68,8 @@ export class TerminationService {
       .from(terminations)
       .leftJoin(users, eq(terminations.userId, users.id))
       .where(eq(terminations.orgId, orgId))
-      .orderBy(desc(terminations.createdAt));
+      .orderBy(desc(terminations.createdAt))
+      .limit(500);
   }
 
   async create(orgId: string, actorUserId: string, actorRole: string, input: TerminationCreateInput) {
@@ -333,41 +334,47 @@ export class TerminationService {
     if (!existing) throw new NotFoundException("Termination not found.");
     if (existing.status !== "SENT") throw new BadRequestException("Termination letter must be sent first.");
 
-    await this.db
-      .update(terminations)
-      .set({ status: "COMPLETED", updatedAt: new Date() })
-      .where(eq(terminations.id, terminationId));
+    const assignedAssets = await this.db.transaction(async (tx) => {
+      await tx
+        .update(terminations)
+        .set({ status: "COMPLETED", updatedAt: new Date() })
+        .where(eq(terminations.id, terminationId));
 
-    await this.db.update(users).set({ isActive: false }).where(eq(users.id, existing.userId));
+      await tx.update(users).set({ isActive: false }).where(eq(users.id, existing.userId));
 
-    await this.db
-      .insert(fnfSettlements)
-      .values({ orgId, userId: existing.userId, status: "DRAFT" })
-      .onConflictDoNothing();
+      await tx
+        .insert(fnfSettlements)
+        .values({ orgId, userId: existing.userId, status: "DRAFT" })
+        .onConflictDoNothing();
 
-    const assignedAssets = await this.db.query.assets.findMany({
-      where: and(
-        eq(assets.orgId, orgId),
-        eq(assets.assignedTo, existing.userId),
-        eq(assets.status, "ASSIGNED"),
-      ),
+      const found = await tx.query.assets.findMany({
+        where: and(eq(assets.orgId, orgId), eq(assets.assignedTo, existing.userId), eq(assets.status, "ASSIGNED")),
+      });
+
+      if (found.length > 0) {
+        await tx.insert(assetReturns).values(
+          found.map((asset) => ({
+            orgId,
+            userId: existing.userId,
+            assetId: asset.id,
+            assetName: asset.name,
+            status: "PENDING",
+          })),
+        );
+      }
+
+      return found;
     });
-
-    if (assignedAssets.length > 0) {
-      await this.db.insert(assetReturns).values(
-        assignedAssets.map((asset) => ({
-          orgId,
-          userId: existing.userId,
-          assetId: asset.id,
-          assetName: asset.name,
-          status: "PENDING",
-        })),
-      );
-    }
 
     await this.invalidateHrDashboardCache(orgId);
 
-    this.dispatchEmployeeTerminated(orgId, terminationId, existing.userId);
+    this.dispatchEmployeeTerminated(
+      orgId,
+      terminationId,
+      existing.userId,
+      existing.reasons ?? [],
+      existing.noticePeriodWaived ?? false,
+    );
 
     this.audit.log({
       action: "TERMINATION_COMPLETED",
@@ -395,7 +402,13 @@ export class TerminationService {
     ]);
   }
 
-  private dispatchEmployeeTerminated(orgId: string, terminationId: number, employeeId: string): void {
+  private dispatchEmployeeTerminated(
+    orgId: string,
+    terminationId: number,
+    employeeId: string,
+    reasons: string[],
+    noticePeriodWaived: boolean,
+  ): void {
     void (async () => {
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
@@ -406,8 +419,8 @@ export class TerminationService {
         userId: employeeId,
         employeeName: employee?.name ?? "Employee",
         effectiveDate: new Date().toISOString(),
-        reasons: [],
-        noticePeriodWaived: false,
+        reasons,
+        noticePeriodWaived,
       });
     })().catch(() => undefined);
   }

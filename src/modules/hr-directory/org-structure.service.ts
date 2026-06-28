@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import {
   departmentMembers,
   departments,
@@ -59,6 +59,10 @@ export class OrgStructureService {
     const deptMemberships =
       depts.length > 0
         ? await this.db.query.departmentMembers.findMany({
+            where: inArray(
+              departmentMembers.departmentId,
+              depts.map((d) => d.id),
+            ),
             columns: { userId: true, departmentId: true },
           })
         : [];
