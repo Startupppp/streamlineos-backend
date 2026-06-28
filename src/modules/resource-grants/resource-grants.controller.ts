@@ -33,6 +33,6 @@ export class ResourceGrantsController {
 
   @Delete(":grantId")
   remove(@Param("grantId") grantId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.service.remove(u, Number(grantId));
+    return this.service.remove(u, grantId);
   }
 }

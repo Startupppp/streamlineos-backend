@@ -45,7 +45,6 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly rbac: RbacService,
   ) {}
 
   async getRoles(orgId: string) {
@@ -93,7 +92,7 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
+    await bumpPermissionsVersion(this.db, actor.orgId);
     return created;
   }
 
@@ -127,7 +126,7 @@ export class RolesService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await bumpPermissionsVersion(this.db, actor.orgId, this.cache);
+    await bumpPermissionsVersion(this.db, actor.orgId);
 
     this.audit.log({
       action: "role.changed",

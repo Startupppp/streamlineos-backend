@@ -2,11 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
-<<<<<<< HEAD
-import { organizations, organizationMembers, invitations, users, passwordResetTokens } from "../../db/schema";
-=======
-import { organizations, organizationMembers, invitations, users, orgHolidays, orgCustomDomains } from "../../db/schema";
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
+import { organizations, organizationMembers, invitations, users, passwordResetTokens, orgHolidays, orgCustomDomains } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -14,11 +10,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import type {
-<<<<<<< HEAD
   AcceptInvitationInput,
-=======
   AddCustomDomainInput,
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   CreateOrganizationInput,
   CreateHolidayInput,
   InviteMemberInput,
@@ -592,7 +585,6 @@ export class OrganizationService {
     };
   }
 
-<<<<<<< HEAD
   async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
@@ -640,7 +632,8 @@ export class OrganizationService {
       email: tokenRecord.email,
       name: user?.name ?? "New Employee",
     };
-=======
+  }
+
   async listHolidays(orgId: string) {
     return this.db.select().from(orgHolidays).where(eq(orgHolidays.orgId, orgId)).orderBy(orgHolidays.date);
   }
@@ -711,6 +704,5 @@ export class OrganizationService {
     await this.cache.invalidate(CACHE_KEYS.userSession(input.newOwnerUserId));
     this.audit.log({ action: "org.ownership_transferred", userId: currentOwnerId, orgId, targetId: input.newOwnerUserId, targetType: "user", metadata: { from: currentOwnerId, to: input.newOwnerUserId } });
     return { success: true };
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   }
 }

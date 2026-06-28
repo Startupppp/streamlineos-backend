@@ -1,14 +1,10 @@
 import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-<<<<<<< HEAD
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { requireAuthorize } from "../../common/access/authorize";
 import { InvStockService } from "./inv-stock.service";
 import {
   listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema,
@@ -23,63 +19,46 @@ export class InvStockController {
   constructor(private readonly stock: InvStockService) {}
 
   @Get()
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   listLevels(
     @Query(new ZodValidationPipe(listStockLevelsSchema)) filters: ListStockLevelsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:products:view", requiredModule: "inventory" });
     return this.stock.listStockLevels(u.orgId, filters);
   }
 
   @Get("transactions")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   listTransactions(
     @Query(new ZodValidationPipe(listTransactionsSchema)) filters: ListTransactionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:products:view", requiredModule: "inventory" });
     return this.stock.listTransactions(u.orgId, filters);
   }
 
   @Get("adjustments")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   listAdjustments(
     @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:products:view", requiredModule: "inventory" });
     return this.stock.listAdjustments(u.orgId, filters);
   }
 
   @Post("adjustments")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   createAdjustment(
     @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:products:manage", requiredModule: "inventory" });
     return this.stock.createAdjustment(u.orgId, u.userId, body);
   }
 
   @Get("transfers")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   listTransfers(
@@ -92,45 +71,28 @@ export class InvStockController {
   @Get("transfers/:transferId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-=======
-  listTransfers(@CurrentUser() u: CurrentUserContext) {
-    requireAuthorize(u, { permission: "inventory:orders:view", requiredModule: "inventory" });
-    return this.stock.listTransfers(u.orgId);
-  }
-
-  @Get("transfers/:transferId")
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   getTransfer(@Param("transferId", ParseIntPipe) transferId: number, @CurrentUser() u: CurrentUserContext) {
-    requireAuthorize(u, { permission: "inventory:orders:view", requiredModule: "inventory" });
     return this.stock.getTransfer(u.orgId, transferId);
   }
 
   @Post("transfers")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   createTransfer(
     @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:orders:manage", requiredModule: "inventory" });
     return this.stock.createTransfer(u.orgId, u.userId, body);
   }
 
   @Post("transfers/:transferId/complete")
-<<<<<<< HEAD
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   completeTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, { permission: "inventory:orders:manage", requiredModule: "inventory" });
     return this.stock.completeTransfer(u.orgId, u.userId, transferId, body);
   }
 }

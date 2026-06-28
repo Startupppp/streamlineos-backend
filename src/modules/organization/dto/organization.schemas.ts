@@ -100,3 +100,26 @@ export type SecuritySettingsInput = z.infer<typeof securitySettingsSchema>;
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
+
+export const switchOrgSchema = z.object({
+  orgId: z.string().min(1),
+});
+
+export const transferOwnershipSchema = z.object({
+  newOwnerUserId: z.string().min(1),
+});
+
+export const createHolidaySchema = z.object({
+  name: z.string().min(1).max(100),
+  date: z.string().min(1),
+  recurring: z.boolean().optional(),
+});
+
+export const addCustomDomainSchema = z.object({
+  domain: z.string().min(1).max(253),
+});
+
+export type SwitchOrgInput = z.infer<typeof switchOrgSchema>;
+export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;
+export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;

@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { pgTable, text, serial, integer, timestamp, index, uniqueIndex, pgEnum, uuid, varchar, boolean } from "drizzle-orm/pg-core";
-=======
-import { pgTable, text, serial, integer, timestamp, index, uniqueIndex, pgEnum } from "drizzle-orm/pg-core";
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 import { relations } from "drizzle-orm";
 import { organizations, users, roles, permissions } from "./auth";
 
@@ -15,11 +11,8 @@ export const userRoles = pgTable("user_roles", {
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
   assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
-<<<<<<< HEAD
-=======
   expiresAt: timestamp("expires_at"),
   reason: text("reason"),
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_user_roles_org_user_role").on(table.orgId, table.userId, table.roleId),
@@ -56,7 +49,6 @@ export const accessVersions = pgTable("access_versions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
 
-<<<<<<< HEAD
 export const orgModules = pgTable(
   "org_modules",
   {
@@ -73,8 +65,7 @@ export const orgModules = pgTable(
   ],
 );
 
-=======
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
+
 export const userRolesRelations = relations(userRoles, ({ one }) => ({
   organization: one(organizations, {
     fields: [userRoles.orgId],
@@ -127,7 +118,6 @@ export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   }),
 }));
 
-<<<<<<< HEAD
 export const resourceGrants = pgTable(
   "resource_grants",
   {
@@ -149,23 +139,6 @@ export const resourceGrants = pgTable(
     index("resource_grants_principal_idx").on(t.orgId, t.principalType, t.principalId),
   ],
 );
-=======
-export const resourceGrants = pgTable("resource_grants", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  resourceType: text("resource_type").notNull(),
-  resourceId: text("resource_id").notNull(),
-  principalType: text("principal_type").notNull().default("user"),
-  principalId: text("principal_id").notNull(),
-  permissionKey: text("permission_key").notNull(),
-  grantedBy: text("granted_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_resource_grants_all").on(table.orgId, table.resourceType, table.resourceId, table.principalType, table.principalId, table.permissionKey),
-  index("idx_resource_grants_org_resource").on(table.orgId, table.resourceType, table.resourceId),
-  index("idx_resource_grants_principal").on(table.orgId, table.principalType, table.principalId),
-]);
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 
 export const resourceGrantsRelations = relations(resourceGrants, ({ one }) => ({
   organization: one(organizations, {
@@ -174,8 +147,6 @@ export const resourceGrantsRelations = relations(resourceGrants, ({ one }) => ({
   }),
 }));
 
-<<<<<<< HEAD
-=======
 export const userSeats = pgTable("user_seats", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -220,16 +191,12 @@ export const userDelegations = pgTable("user_delegations", {
   index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
 ]);
 
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8
 export type UserRole = typeof userRoles.$inferSelect;
 export type RolePermissionGrant = typeof rolePermissionGrants.$inferSelect;
 export type GroupRole = typeof groupRoles.$inferSelect;
 export type AccessVersion = typeof accessVersions.$inferSelect;
 export type ResourceGrant = typeof resourceGrants.$inferSelect;
-<<<<<<< HEAD
 export type OrgModule = typeof orgModules.$inferSelect;
-=======
 export type UserSeat = typeof userSeats.$inferSelect;
 export type OrgLimit = typeof orgLimits.$inferSelect;
 export type UserDelegation = typeof userDelegations.$inferSelect;
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8

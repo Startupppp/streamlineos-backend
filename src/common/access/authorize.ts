@@ -1,5 +1,4 @@
 import { ForbiddenException } from "@nestjs/common";
-import { defineAbilityFor } from "../rbac/abilities.factory";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import { PERMISSION_CATALOG, type PermissionTier } from "./catalog";
 
@@ -10,6 +9,12 @@ function meetsMinTier(orgTier: string | undefined, minTier: PermissionTier): boo
   const orgIdx = TIER_ORDER.indexOf(orgTier as PermissionTier);
   const minIdx = TIER_ORDER.indexOf(minTier);
   return orgIdx >= minIdx;
+}
+
+function hasPermission(permissions: string[], permissionKey: string): boolean {
+  const [subject, verb] = permissionKey.split(":");
+  const altKey = `${subject}:${verb}`;
+  return permissions.includes(permissionKey) || permissions.includes(altKey);
 }
 
 export type DenyReason =
@@ -53,15 +58,7 @@ export function authorize(ctx: CurrentUserContext, input: AuthorizeInput): Autho
     return { allow: true, scope: "all" };
   }
 
-  const [subject, verb] = permission.split(":");
-  const ability = defineAbilityFor({
-    isPlatformAdmin: ctx.isPlatformAdmin,
-    isOrgOwner: ctx.isOrgOwner,
-    permissions: ctx.permissions,
-    enabledModules: ctx.enabledModules,
-  });
-
-  if (!ability.can(verb ?? "manage", subject ?? permission)) {
+  if (!hasPermission(ctx.permissions, permission)) {
     return { allow: false, reason: "FORBIDDEN", scope: "none" };
   }
 

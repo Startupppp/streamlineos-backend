@@ -450,8 +450,6 @@ export const loginHistoryRelations = relations(loginHistory, ({ one }) => ({
   user: one(users, { fields: [loginHistory.userId], references: [users.id] }),
   organization: one(organizations, { fields: [loginHistory.orgId], references: [organizations.id] }),
 }));
-<<<<<<< HEAD
-=======
 
 export const serviceAccounts = pgTable("service_accounts", {
   id: text("id").primaryKey(),
@@ -506,4 +504,3 @@ export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => 
 export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
   user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
 }));
->>>>>>> 8268f32a22460c71f19892e240ad061afc54b8c8

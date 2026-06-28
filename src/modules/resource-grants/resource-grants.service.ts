@@ -55,7 +55,7 @@ export class ResourceGrantsService {
     return grant ?? null;
   }
 
-  async remove(actor: CurrentUserContext, grantId: number) {
+  async remove(actor: CurrentUserContext, grantId: string) {
     if (!actor.isOrgOwner && !actor.permissions.includes("settings:rbac:manage")) {
       throw new ForbiddenException("Only org owners or RBAC managers can revoke resource access");
     }

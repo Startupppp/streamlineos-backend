@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AbilityGuard } from "../../common/rbac/ability.guard";
-import { CheckAbility } from "../../common/rbac/check-ability.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -16,8 +16,8 @@ import {
 } from "./dto/service-accounts.schemas";
 
 @Controller("service-accounts")
-@UseGuards(JwtAuthGuard, AbilityGuard)
-@CheckAbility("manage", "settings")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermission("settings:manage")
 export class ServiceAccountsController {
   constructor(private readonly svc: ServiceAccountsService) {}
 
