@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -22,7 +24,7 @@ import {
 } from "./dto/projects.schemas";
 
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsReportsController {
   constructor(
     private readonly reports: ProjectsReportsService,
@@ -78,6 +80,7 @@ export class ProjectsReportsController {
 
   @Post(":projectId/reports/snapshot")
   @HttpCode(200)
+  @RequirePermission("projects:read")
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

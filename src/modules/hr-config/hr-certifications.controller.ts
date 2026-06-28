@@ -1,5 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -12,7 +14,7 @@ import {
 } from "./dto/competencies.schemas";
 
 @Controller("hr/certifications")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrCertificationsController {
   constructor(private readonly competencies: HrCompetenciesService) {}
 
@@ -26,6 +28,7 @@ export class HrCertificationsController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:employees:manage")
   create(
     @Body(new ZodValidationPipe(createCertificationSchema)) body: CreateCertificationInput,
     @CurrentUser() u: CurrentUserContext,

@@ -30,6 +30,7 @@ export class ProjectsBudgetController {
   }
 
   @Patch(":projectId/budget")
+  @RequirePermission("projects:manage")
   updateBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,

@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -13,7 +15,7 @@ import {
 } from "./dto/competencies.schemas";
 
 @Controller("hr/skills")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSkillsController {
   constructor(private readonly competencies: HrCompetenciesService) {}
 
@@ -26,6 +28,7 @@ export class HrSkillsController {
   }
 
   @Post()
+  @RequirePermission("hr:employees:manage")
   async create(
     @Body(new ZodValidationPipe(createSkillSchema)) body: CreateSkillInput,
     @CurrentUser() u: CurrentUserContext,

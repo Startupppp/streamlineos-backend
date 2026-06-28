@@ -10,6 +10,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -29,7 +31,7 @@ import {
 } from "./dto/dashboard.schemas";
 
 @Controller("dashboard")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class DashboardController {
   constructor(
     private readonly hr: DashboardHrService,
@@ -62,6 +64,7 @@ export class DashboardController {
 
   @Post("announcements")
   @HttpCode(201)
+  @RequirePermission("dashboard:announcements:write")
   async createAnnouncement(
     @Body(new ZodValidationPipe(createAnnouncementSchema)) body: CreateAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +80,7 @@ export class DashboardController {
   }
 
   @Delete("announcements")
+  @RequirePermission("dashboard:announcements:write")
   async deleteAnnouncement(
     @Query(new ZodValidationPipe(deleteAnnouncementSchema)) query: DeleteAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
