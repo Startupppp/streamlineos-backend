@@ -259,19 +259,17 @@ export class ProjectsTicketsService {
       .set(updateData)
       .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
 
-    if (before) {
-      try {
-        await this.activity.logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
-          title: input.title,
-          status: input.status,
-          priority: input.priority,
-          assigneeId: resolveAssigneeId(input.assigneeId),
-          sprintId: input.sprintId,
-          dueDate: input.dueDate,
-        });
-      } catch (error) {
-        logger.error("Failed to log ticket activity", { error });
-      }
+    try {
+      await this.activity.logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
+        title: input.title,
+        status: input.status,
+        priority: input.priority,
+        assigneeId: resolveAssigneeId(input.assigneeId),
+        sprintId: input.sprintId,
+        dueDate: input.dueDate,
+      });
+    } catch (error) {
+      logger.error("Failed to log ticket activity", { error });
     }
 
     await this.syncAssignees(ticketId, actingUserId, input);

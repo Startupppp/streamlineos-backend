@@ -109,6 +109,7 @@ export class EngagementService {
       where: eq(skillAssessments.orgId, orgId),
       with: { attempts: true },
       orderBy: [desc(skillAssessments.createdAt)],
+      limit: 100,
     });
   }
 

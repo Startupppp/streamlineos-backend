@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, sum } from "drizzle-orm";
-import { projectMembers, projects, timesheets } from "../../db/schema";
+import { and, eq, inArray, sum } from "drizzle-orm";
+import { projectMembers, projects, tickets, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -55,30 +55,52 @@ export class ProjectsBudgetService {
     const memberRates = new Map(
       members.map((m): [string, number] => [m.userId, Number(m.hourlyRate ?? 0)]),
     );
+    const memberIds = [...memberRates.keys()];
 
-    const [{ value: totalHours }] = await this.db
-      .select({ value: sum(timesheets.hours) })
-      .from(timesheets)
-      .where(and(eq(timesheets.orgId, orgId), eq(timesheets.isBillable, true)));
-
-    const memberCosts: MemberCost[] = [];
-    for (const [userId, rate] of memberRates) {
-      const [{ value: hrs }] = await this.db
+    const [hoursPerMemberRows, totalHoursResult] = await Promise.all([
+      memberIds.length > 0
+        ? this.db
+            .select({ userId: timesheets.userId, hours: sum(timesheets.hours) })
+            .from(timesheets)
+            .innerJoin(tickets, eq(timesheets.ticketId, tickets.id))
+            .where(
+              and(
+                eq(timesheets.orgId, orgId),
+                eq(tickets.projectId, projectId),
+                eq(timesheets.isBillable, true),
+                inArray(timesheets.userId, memberIds),
+              ),
+            )
+            .groupBy(timesheets.userId)
+        : Promise.resolve([] as Array<{ userId: string | null; hours: string | null }>),
+      this.db
         .select({ value: sum(timesheets.hours) })
         .from(timesheets)
+        .innerJoin(tickets, eq(timesheets.ticketId, tickets.id))
         .where(
           and(
             eq(timesheets.orgId, orgId),
-            eq(timesheets.userId, userId),
+            eq(tickets.projectId, projectId),
             eq(timesheets.isBillable, true),
           ),
-        );
-      const hours = Number(hrs ?? 0);
+        ),
+    ]);
+
+    const hoursByUser = new Map<string, number>(
+      hoursPerMemberRows
+        .filter((r): r is { userId: string; hours: string | null } => r.userId !== null)
+        .map((r) => [r.userId, Number(r.hours ?? 0)]),
+    );
+
+    const memberCosts: MemberCost[] = [];
+    for (const [userId, rate] of memberRates) {
+      const hours = hoursByUser.get(userId) ?? 0;
       memberCosts.push({ userId, hours, cost: hours * rate });
     }
 
     const actualCost = memberCosts.reduce((acc, m) => acc + m.cost, 0);
     const plannedBudget = Number(project.budget ?? 0);
+    const totalHours = Number(totalHoursResult[0]?.value ?? 0);
 
     return {
       projectId,
@@ -86,7 +108,7 @@ export class ProjectsBudgetService {
       actualCost,
       remaining: plannedBudget - actualCost,
       utilizationPct: plannedBudget > 0 ? Math.round((actualCost / plannedBudget) * 100) : 0,
-      totalHours: Number(totalHours ?? 0),
+      totalHours,
       memberBreakdown: memberCosts,
     };
   }

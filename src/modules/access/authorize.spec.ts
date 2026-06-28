@@ -3,6 +3,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { authorize, requirePermission, type AccessResolver } from "./authorize";
 import type { DataScope } from "./access.types";
 
+
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",
@@ -69,6 +70,19 @@ describe("authorize", () => {
     const resolver = makeResolver(new Map([["settings:rbac:manage", "all"]]), []);
     const result = await authorize(resolver, makeCtx(), "settings:rbac:manage");
     expect(result).toEqual({ allow: true, scope: "all" });
+  });
+
+  it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {
+    const capturedOrgIds: string[] = [];
+    const resolver: AccessResolver = {
+      resolveUserPermissions: async (orgId) => {
+        capturedOrgIds.push(orgId);
+        return new Map([["hr:employees:view", "all" as DataScope]]);
+      },
+      isModuleEnabled: async () => true,
+    };
+    await authorize(resolver, makeCtx({ orgId: "org-legitimate" }), "hr:employees:view");
+    expect(capturedOrgIds).toEqual(["org-legitimate"]);
   });
 });
 

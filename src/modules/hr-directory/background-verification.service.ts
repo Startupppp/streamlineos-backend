@@ -27,6 +27,7 @@ export class BackgroundVerificationService {
         },
       },
       orderBy: [desc(backgroundVerifications.createdAt)],
+      limit: 500,
     });
   }
 

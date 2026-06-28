@@ -4,7 +4,6 @@ import {
 } from "./assets-scope";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
-import { AccessService } from "../access/access.service";
 import * as permissionsConstants from "../rbac/permissions.constants";
 
 jest.mock("../rbac/permissions.constants", () => ({
@@ -31,10 +30,10 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   };
 }
 
-function makeAccess(scopeMap: Map<string, DataScope> = new Map()): AccessService {
+function makeAccess(scopeMap: Map<string, DataScope> = new Map()) {
   return {
     resolveUserPermissions: jest.fn().mockResolvedValue(scopeMap),
-  } as unknown as AccessService;
+  };
 }
 
 describe("resolveAssetsScope", () => {

@@ -176,6 +176,7 @@ export class PerformanceReviewsService {
       where: and(...conditions),
       with: { manager: true, employee: true },
       orderBy: [desc(oneOnOneMeetings.scheduledAt)],
+      limit: 100,
     });
 
     return data.map((m) => ({
@@ -236,7 +237,7 @@ export class PerformanceReviewsService {
         ...(input.meetingLink !== undefined && { meetingLink: input.meetingLink }),
         updatedAt: new Date(),
       })
-      .where(eq(oneOnOneMeetings.id, meetingId));
+      .where(and(eq(oneOnOneMeetings.id, meetingId), eq(oneOnOneMeetings.orgId, orgId)));
 
     return { success: true };
   }
@@ -258,6 +259,7 @@ export class PerformanceReviewsService {
       where: and(...conditions),
       with: { user: true, manager: true, hrRep: true },
       orderBy: [desc(performanceImprovementPlans.createdAt)],
+      limit: 100,
     });
   }
 
@@ -386,7 +388,7 @@ export class PerformanceReviewsService {
         ...(input.cycleId !== undefined && { cycleId: input.cycleId }),
         updatedAt: new Date(),
       })
-      .where(eq(performanceReviews.id, reviewId));
+      .where(and(eq(performanceReviews.id, reviewId), eq(performanceReviews.orgId, orgId)));
 
     return { success: true };
   }
@@ -395,6 +397,7 @@ export class PerformanceReviewsService {
     return this.db.query.reviewCycles.findMany({
       where: eq(reviewCycles.orgId, orgId),
       orderBy: [desc(reviewCycles.createdAt)],
+      limit: 100,
     });
   }
 
@@ -425,7 +428,7 @@ export class PerformanceReviewsService {
         ...(input.description !== undefined && { description: input.description }),
         updatedAt: new Date(),
       })
-      .where(eq(reviewCycles.id, cycleId));
+      .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)));
 
     return { success: true };
   }

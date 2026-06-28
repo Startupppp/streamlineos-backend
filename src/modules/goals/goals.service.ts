@@ -76,9 +76,9 @@ interface GoalUpdateRow {
   keyResultId: number | null;
   note: string | null;
   previousValue: string | null;
-  newValue: string;
+  newValue: string | null;
   createdAt: Date;
-  userId: string;
+  userId: string | null;
   userName: string | null;
   userImage: string | null;
 }
@@ -244,7 +244,7 @@ export class GoalsService {
         );
       }
 
-      return created;
+      return created!;
     });
   }
 
@@ -395,7 +395,7 @@ export class GoalsService {
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
     });
 
-    return goal;
+    return goal ?? null;
   }
 
   listKeyResults(orgId: string, goalId: number): Promise<Array<typeof okrKeyResults.$inferSelect>> {
@@ -436,7 +436,7 @@ export class GoalsService {
 
     await this.recomputeGoalProgress(goalId, orgId);
 
-    return keyResult;
+    return keyResult ?? null;
   }
 
   async updateKeyResult(

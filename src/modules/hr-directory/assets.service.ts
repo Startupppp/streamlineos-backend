@@ -28,7 +28,8 @@ export class AssetsService {
       .select()
       .from(assetReturns)
       .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
-      .orderBy(desc(assetReturns.createdAt));
+      .orderBy(desc(assetReturns.createdAt))
+      .limit(500);
   }
 
   async createAssetReturn(orgId: string, body: CreateAssetReturnInput) {

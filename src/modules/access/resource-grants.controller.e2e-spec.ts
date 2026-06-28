@@ -28,7 +28,7 @@ const permittedAccessService = {
 };
 
 const forbiddenAccessService = {
-  resolveUserPermissions: async () => new Map<string, string>(),
+  resolveUserPermissions: async () => new Map<string, DataScope>(),
   isModuleEnabled: async (_orgId: string, _moduleKey: string) => true,
 };
 

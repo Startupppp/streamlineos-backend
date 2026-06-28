@@ -8,7 +8,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListStockLevelsInput, ListTransactionsInput, ListAdjustmentsInput, CreateAdjustmentInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
+import type { ListStockLevelsInput, ListTransactionsInput, ListAdjustmentsInput, CreateAdjustmentInput, CreateTransferInput, CompleteTransferInput, ListTransfersInput } from "./dto/inv-stock.schemas";
 
 function nextRefNumber(prefix: string): string {
   const now = new Date();
@@ -281,7 +281,7 @@ export class InvStockService {
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
   }
 
-  async listTransfers(orgId: string, filters: { page: number; limit: number }) {
+  async listTransfers(orgId: string, filters: ListTransfersInput) {
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
 

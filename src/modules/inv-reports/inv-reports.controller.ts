@@ -4,7 +4,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvReportsService } from "./inv-reports.service";
+import { movementsQuerySchema, type MovementsQueryInput } from "./dto/inv-reports.schemas";
 
 @Controller("inventory/reports")
 @UseGuards(JwtAuthGuard)
@@ -36,10 +38,9 @@ export class InvReportsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   getMovements(
-    @Query("fromDate") fromDate: string | undefined,
-    @Query("toDate") toDate: string | undefined,
+    @Query(new ZodValidationPipe(movementsQuerySchema)) query: MovementsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getMovementsReport(u.orgId, fromDate, toDate);
+    return this.reports.getMovementsReport(u.orgId, query);
   }
 }

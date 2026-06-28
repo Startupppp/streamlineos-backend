@@ -18,6 +18,7 @@ export class AssetInventoryService {
     return this.db.query.assets.findMany({
       where: eq(assets.orgId, orgId),
       orderBy: [desc(assets.createdAt)],
+      limit: 500,
     });
   }
 

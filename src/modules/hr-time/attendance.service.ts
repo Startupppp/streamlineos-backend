@@ -17,6 +17,7 @@ export class AttendanceService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly email: EmailService,
   ) {}
 
   async checkIn(orgId: string, userId: string, body: CheckInInput) {
@@ -484,5 +485,56 @@ export class AttendanceService {
     result.sort((a, b) => order[a.status] - order[b.status]);
 
     return result;
+  }
+
+  async emailReport(u: CurrentUserContext, input: AttendanceEmailReportInput): Promise<{ sent: number }> {
+    const now = new Date();
+    const startDate = input.startDate ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const endDate = input.endDate ?? formatDateOnly(now);
+
+    const [orgRow, rows] = await Promise.all([
+      this.db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, u.orgId))
+        .then((r) => r[0]),
+      this.db
+        .select({
+          date: attendance.date,
+          userName: sql<string>`coalesce(${users.name}, ${users.email}, 'Unknown')`,
+          workHours: attendance.workHours,
+          autoCheckout: attendance.autoCheckedOut,
+        })
+        .from(attendance)
+        .innerJoin(users, eq(users.id, attendance.userId))
+        .where(
+          and(
+            eq(attendance.orgId, u.orgId),
+            gte(attendance.date, startDate),
+            lte(attendance.date, endDate),
+          ),
+        )
+        .orderBy(asc(attendance.date), asc(users.name)),
+    ]);
+
+    const orgName = orgRow?.name ?? "Your Organisation";
+    const dateRange = `${startDate} to ${endDate}`;
+    const recipients = [...input.to, ...input.cc, ...input.bcc];
+
+    await this.email.sendWeeklyAttendanceReportEmail(
+      dateRange,
+      orgName,
+      rows.map((r) => ({
+        department: "",
+        name: r.userName,
+        totalHours: r.workHours ?? "0",
+        autoCheckoutDays: r.autoCheckout ? 1 : 0,
+        overtimeDays: 0,
+        daysPresent: 1,
+      })),
+      recipients,
+    );
+
+    return { sent: recipients.length };
   }
 }

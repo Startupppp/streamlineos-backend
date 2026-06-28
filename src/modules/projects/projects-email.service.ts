@@ -66,13 +66,17 @@ export class ProjectsEmailService {
     });
     if (!ticketData?.projectId) return;
     const projectId = ticketData.projectId;
-    const actorName = await this.resolveActorName(actingUserId);
+    const [actorName, assigneeRows] = await Promise.all([
+      this.resolveActorName(actingUserId),
+      this.db
+        .select({ id: users.id, email: users.email, name: users.name })
+        .from(users)
+        .where(and(inArray(users.id, targets))),
+    ]);
+    const assigneeMap = new Map(assigneeRows.map((u) => [u.id, u]));
 
     for (const userId of targets) {
-      const assignee = await this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { email: true, name: true },
-      });
+      const assignee = assigneeMap.get(userId);
       if (!assignee?.email) continue;
       await this.email.sendTicketAssignmentEmail(
         assignee.email,

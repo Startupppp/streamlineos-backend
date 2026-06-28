@@ -20,6 +20,9 @@ export class ProjectsRoadmapService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listRoadmap(orgId: string, query: RoadmapListQuery) {
+    const { page, limit } = query;
+    const effectiveLimit = Math.min(limit, 100);
+    const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(roadmapItems.orgId, orgId)];
     if (query.status) conditions.push(eq(roadmapItems.status, query.status));
     if (query.search) {
@@ -30,6 +33,8 @@ export class ProjectsRoadmapService {
     return this.db.query.roadmapItems.findMany({
       where: and(...conditions),
       orderBy: [asc(roadmapItems.sortOrder), asc(roadmapItems.id)],
+      limit: effectiveLimit,
+      offset,
     });
   }
 
@@ -81,6 +86,9 @@ export class ProjectsRoadmapService {
   }
 
   listFeedback(orgId: string, query: FeedbackListQuery) {
+    const { page, limit } = query;
+    const effectiveLimit = Math.min(limit, 100);
+    const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(feedbackPosts.orgId, orgId)];
     if (query.status) conditions.push(eq(feedbackPosts.status, query.status));
     if (query.search) {
@@ -91,6 +99,8 @@ export class ProjectsRoadmapService {
     return this.db.query.feedbackPosts.findMany({
       where: and(...conditions),
       orderBy: [desc(feedbackPosts.votes), asc(feedbackPosts.id)],
+      limit: effectiveLimit,
+      offset,
     });
   }
 
@@ -140,11 +150,16 @@ export class ProjectsRoadmapService {
   }
 
   listChangelog(orgId: string, query: ChangelogListQuery) {
+    const { page, limit } = query;
+    const effectiveLimit = Math.min(limit, 100);
+    const offset = (page - 1) * effectiveLimit;
     const conditions = [eq(changelogEntries.orgId, orgId)];
     if (query.type) conditions.push(eq(changelogEntries.type, query.type));
     return this.db.query.changelogEntries.findMany({
       where: and(...conditions),
       orderBy: [desc(changelogEntries.createdAt), desc(changelogEntries.id)],
+      limit: effectiveLimit,
+      offset,
     });
   }
 

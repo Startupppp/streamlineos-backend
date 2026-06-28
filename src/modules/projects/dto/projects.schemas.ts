@@ -196,6 +196,8 @@ export const cfdQuerySchema = z.object({
 export const roadmapListQuerySchema = z.object({
   status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
   search: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createRoadmapSchema = z.object({
@@ -225,6 +227,8 @@ export const updateRoadmapSchema = z.object({
 export const feedbackListQuerySchema = z.object({
   status: z.enum(["open", "planned", "in_progress", "completed", "declined"]).optional(),
   search: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createFeedbackSchema = z.object({
@@ -247,6 +251,8 @@ export const updateFeedbackSchema = z.object({
 
 export const changelogListQuerySchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createChangelogSchema = z.object({

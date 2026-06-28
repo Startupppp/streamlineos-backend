@@ -267,7 +267,11 @@ export class AutomationService {
     }
   }
 
-  async testRule(orgId: string, ruleId: number, payload: EventPayload) {
+  async testRule(
+    orgId: string,
+    ruleId: number,
+    payload: EventPayload,
+  ): Promise<{ runId: number; matched: boolean; status: "skipped" | "success" | "failed"; actionResults: ActionResult[] }> {
     const rule = await this.db.query.automationRules.findFirst({
       where: and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)),
       columns: { id: true, triggerEvent: true, conditions: true, actions: true },

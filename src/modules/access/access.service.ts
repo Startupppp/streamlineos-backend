@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, innerJoin } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   accessVersions,
   departmentMembers,

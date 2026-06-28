@@ -5,13 +5,11 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AttendanceService } from "./attendance.service";
 import {
-  attendanceEmailReportSchema,
   attendanceLogsQuerySchema,
   checkInSchema,
   checkOutSchema,
   heatmapQuerySchema,
   monthlyQuerySchema,
-  type AttendanceEmailReportInput,
   type AttendanceLogsQuery,
   type CheckInInput,
   type CheckOutInput,
@@ -66,7 +64,7 @@ export class AttendanceController {
     @Query(new ZodValidationPipe(monthlyQuerySchema)) query: MonthlyQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.attendance.monthly(u.orgId, query.userId ?? u.userId, query.year, query.month);
+    return this.attendance.monthly(u, query.userId ?? u.userId, query.year, query.month);
   }
 
   @Get("heatmap")
@@ -74,23 +72,11 @@ export class AttendanceController {
     @Query(new ZodValidationPipe(heatmapQuerySchema)) query: HeatmapQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.attendance.heatmap(
-      u.orgId,
-      query.userId ?? u.userId,
-      query.year ?? new Date().getFullYear(),
-    );
+    return this.attendance.heatmap(u, query.userId ?? u.userId, query.year ?? new Date().getFullYear());
   }
 
   @Get("team-status")
   teamStatus(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.teamStatus(u);
-  }
-
-  @Post("email-report")
-  emailReport(
-    @Body(new ZodValidationPipe(attendanceEmailReportSchema)) body: AttendanceEmailReportInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.attendance.emailReport(u, body);
   }
 }

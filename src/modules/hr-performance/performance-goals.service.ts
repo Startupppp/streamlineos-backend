@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { goals, keyResults } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -28,7 +28,7 @@ export class PerformanceGoalsService {
     const allKeyResults =
       goalIds.length > 0
         ? await this.db.query.keyResults.findMany({
-            where: eq(keyResults.goalId, goalIds[0]),
+            where: inArray(keyResults.goalId, goalIds),
           })
         : [];
 
@@ -46,6 +46,7 @@ export class PerformanceGoalsService {
     return this.db.query.goals.findMany({
       where: and(...conditions),
       orderBy: [desc(goals.createdAt)],
+      limit: 100,
     });
   }
 
@@ -126,6 +127,7 @@ export class PerformanceGoalsService {
 
     return this.db.query.keyResults.findMany({
       where: eq(keyResults.goalId, goalId),
+      limit: 100,
     });
   }
 

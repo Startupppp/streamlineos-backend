@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import type { MovementsQueryInput } from "./dto/inv-reports.schemas";
 import {
   invStockLevels,
   invStockTransactions,
@@ -132,7 +133,9 @@ export class InvReportsService {
     );
   }
 
-  getMovementsReport(orgId: string, fromDate?: string, toDate?: string) {
+  async getMovementsReport(orgId: string, query: MovementsQueryInput) {
+    const { fromDate, toDate, page, limit } = query;
+    const offset = (page - 1) * limit;
     const conditions = [eq(invStockTransactions.orgId, orgId)];
     if (fromDate) {
       conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
@@ -140,21 +143,28 @@ export class InvReportsService {
     if (toDate) {
       conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
     }
+    const where = and(...conditions);
 
-    return this.db.query.invStockTransactions.findMany({
-      where: and(...conditions),
-      orderBy: [desc(invStockTransactions.createdAt)],
-      limit: 500,
-      with: {
-        productVariant: {
-          with: { product: { columns: { id: true, name: true, sku: true } } },
+    const [items, countResult] = await Promise.all([
+      this.db.query.invStockTransactions.findMany({
+        where,
+        orderBy: [desc(invStockTransactions.createdAt)],
+        limit,
+        offset,
+        with: {
+          productVariant: {
+            with: { product: { columns: { id: true, name: true, sku: true } } },
+          },
+          location: {
+            columns: { id: true, name: true, code: true },
+            with: { warehouse: { columns: { id: true, name: true } } },
+          },
+          creator: { columns: { id: true, name: true } },
         },
-        location: {
-          columns: { id: true, name: true, code: true },
-          with: { warehouse: { columns: { id: true, name: true } } },
-        },
-        creator: { columns: { id: true, name: true } },
-      },
-    });
+      }),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
+    ]);
+
+    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 }
