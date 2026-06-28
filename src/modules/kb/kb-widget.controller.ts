@@ -1,31 +1,61 @@
-import { Controller, Get, Header, Param, Res } from "@nestjs/common";
+import { Controller, Get, Param, Res } from "@nestjs/common";
 import type { Response } from "express";
+import { Public } from "../../common/auth/public.decorator";
 
+@Public()
 @Controller("public/kb/widget")
 export class KbWidgetController {
   @Get(":orgId")
-  getWidgetInfo(@Param("orgId") orgId: string) {
+  config(@Param("orgId") orgId: string) {
     return {
       orgId,
-      url: `https://app.streamlineos.com/help/${orgId}`,
+      helpCenterUrl: `https://app.streamlineos.com/help/${orgId}`,
+      buttonLabel: "Help",
+      primaryColor: "#6366f1",
+      position: "bottom-right",
     };
   }
 
   @Get(":orgId/script")
-  @Header("Content-Type", "application/javascript")
-  getWidgetScript(@Param("orgId") orgId: string, @Res() res: Response) {
-    const script = `(function(){
-  var w=window;
-  if(w.__slKb)return;
-  w.__slKb=true;
-  var base="https://app.streamlineos.com/help/${orgId}";
-  var btn=document.createElement("button");
-  btn.setAttribute("aria-label","Help");
-  btn.style.cssText="position:fixed;bottom:24px;right:24px;z-index:9999;background:#4f46e5;color:#fff;border:none;border-radius:50%;width:52px;height:52px;font-size:22px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2)";
-  btn.textContent="?";
-  btn.addEventListener("click",function(){window.open(base,"_blank","noopener,noreferrer");});
+  script(@Param("orgId") orgId: string, @Res() res: Response) {
+    const helpUrl = `https://app.streamlineos.com/help/${encodeURIComponent(orgId)}`;
+    const snippet = `(function () {
+  if (document.getElementById('sleos-help-widget')) return;
+  var btn = document.createElement('button');
+  btn.id = 'sleos-help-widget';
+  btn.textContent = 'Help';
+  btn.setAttribute('aria-label', 'Open help center');
+  btn.style.cssText = [
+    'position:fixed',
+    'bottom:24px',
+    'right:24px',
+    'z-index:9999',
+    'background:#6366f1',
+    'color:#fff',
+    'border:none',
+    'border-radius:9999px',
+    'padding:10px 20px',
+    'font-size:14px',
+    'font-weight:600',
+    'cursor:pointer',
+    'box-shadow:0 4px 14px rgba(99,102,241,0.4)',
+    'transition:transform 0.15s ease,box-shadow 0.15s ease',
+    'font-family:system-ui,sans-serif',
+  ].join(';');
+  btn.addEventListener('mouseover', function () {
+    btn.style.transform = 'scale(1.05)';
+    btn.style.boxShadow = '0 6px 20px rgba(99,102,241,0.5)';
+  });
+  btn.addEventListener('mouseout', function () {
+    btn.style.transform = 'scale(1)';
+    btn.style.boxShadow = '0 4px 14px rgba(99,102,241,0.4)';
+  });
+  btn.addEventListener('click', function () {
+    window.open(${JSON.stringify(helpUrl)}, '_blank', 'noopener,noreferrer');
+  });
   document.body.appendChild(btn);
 })();`;
-    res.send(script);
+
+    res.type("application/javascript").send(snippet);
   }
 }
