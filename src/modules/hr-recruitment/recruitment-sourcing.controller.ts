@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
+import { AccessService } from "../access/access.service";
 import {
   createHeadcountSchema,
   createReferralSubmissionSchema,
@@ -45,7 +46,10 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentSourcingController {
-  constructor(private readonly sourcing: RecruitmentSourcingService) {}
+  constructor(
+    private readonly sourcing: RecruitmentSourcingService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("referrals")
   listReferrals(@CurrentUser() u: CurrentUserContext) {
@@ -62,13 +66,15 @@ export class RecruitmentSourcingController {
   }
 
   @Patch("referrals/:referralId")
-  updateReferral(
+  async updateReferral(
     @Param("referralId", ParseIntPipe) referralId: number,
     @Body(new ZodValidationPipe(updateReferralStatusSchema)) body: UpdateReferralStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.updateReferralStatus(u.orgId, referralId, body);
   }
 
@@ -79,33 +85,39 @@ export class RecruitmentSourcingController {
 
   @Post("vendors")
   @HttpCode(201)
-  createVendor(
+  async createVendor(
     @Body(new ZodValidationPipe(createVendorSchema)) body: CreateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.createVendor(u.orgId, u.userId, body);
   }
 
   @Patch("vendors/:vendorId")
-  updateVendor(
+  async updateVendor(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Body(new ZodValidationPipe(updateVendorSchema)) body: UpdateVendorInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.updateVendor(u.orgId, vendorId, body);
   }
 
   @Delete("vendors/:vendorId")
-  deleteVendor(
+  async deleteVendor(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.deleteVendor(u.orgId, vendorId);
   }
 
@@ -119,25 +131,29 @@ export class RecruitmentSourcingController {
 
   @Post("vendors/:vendorId/submissions")
   @HttpCode(201)
-  createSubmission(
+  async createSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Body(new ZodValidationPipe(createSubmissionSchema)) body: CreateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.createSubmission(u.orgId, vendorId, body);
   }
 
   @Patch("vendors/:vendorId/submissions")
-  updateSubmission(
+  async updateSubmission(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Query(new ZodValidationPipe(submissionIdQuerySchema)) query: SubmissionIdQueryInput,
     @Body(new ZodValidationPipe(updateSubmissionSchema)) body: UpdateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.updateSubmission(vendorId, query.submissionId, body);
   }
 
@@ -176,34 +192,40 @@ export class RecruitmentSourcingController {
   }
 
   @Post("headcount/:requestId/approve")
-  approveHeadcount(
+  async approveHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId);
   }
 
   @Post("headcount/:requestId/reject")
-  rejectHeadcount(
+  async rejectHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(rejectHeadcountSchema)) body: RejectHeadcountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.rejectHeadcount(u.orgId, requestId, body.reason);
   }
 
   @Post("headcount/:requestId/create-job")
   @HttpCode(201)
-  createJobFromHeadcount(
+  async createJobFromHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
   }
 }

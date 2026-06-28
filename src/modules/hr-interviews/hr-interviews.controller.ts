@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewsService } from "./hr-interviews.service";
+import { AccessService } from "../access/access.service";
 import {
   interviewListSchema,
   upsertSlaSchema,
@@ -27,7 +28,10 @@ import {
 @Controller("hr/recruitment/interviews")
 @UseGuards(JwtAuthGuard)
 export class HrInterviewsController {
-  constructor(private readonly interviews: HrInterviewsService) {}
+  constructor(
+    private readonly interviews: HrInterviewsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   list(
@@ -43,12 +47,13 @@ export class HrInterviewsController {
   }
 
   @Put("slas")
-  upsertSla(
+  async upsertSla(
     @Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.interviews.upsertSla(u.orgId, body);
   }
@@ -63,8 +68,9 @@ export class HrInterviewsController {
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     const result = await this.interviews.scorecardSummary(u.orgId, interviewId);
     if (!result) throw new NotFoundException("Interview not found.");

@@ -5,6 +5,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { decrypt } from "./crypto.helpers";
@@ -28,6 +29,7 @@ export class HrDashboardController {
   constructor(
     private readonly dashboard: HrDashboardService,
     private readonly reports: HrDashboardReportsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get("metrics")
@@ -73,17 +75,23 @@ export class HrDashboardController {
   }
 
   @Get("compliance")
-  compliance(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:compliance:manage")) {
-      throw new ForbiddenException("Forbidden");
+  async compliance(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:compliance:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     return this.dashboard.compliance(u.orgId);
   }
 
   @Get("export")
   async export(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:analytics:read")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:analytics:read")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
 
     const rows = await this.reports.exportRows(u.orgId);

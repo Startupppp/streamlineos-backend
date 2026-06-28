@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentJobsService } from "./recruitment-jobs.service";
+import { AccessService } from "../access/access.service";
 import {
   assignRecruiterSchema,
   createJobSchema,
@@ -37,7 +38,10 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentJobsController {
-  constructor(private readonly jobs: RecruitmentJobsService) {}
+  constructor(
+    private readonly jobs: RecruitmentJobsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("jobs")
   list(
@@ -85,12 +89,15 @@ export class RecruitmentJobsController {
   }
 
   @Post("jobs/:jobId/publish")
-  publish(
+  async publish(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(publishJobSchema)) body: PublishJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.jobs.publish(u.orgId, jobId, body);
   }
 
@@ -104,22 +111,28 @@ export class RecruitmentJobsController {
 
   @Post("jobs/:jobId/recruiters")
   @HttpCode(201)
-  assignRecruiter(
+  async assignRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.jobs.assignRecruiter(u.orgId, u.userId, jobId, body);
   }
 
   @Delete("jobs/:jobId/recruiters")
-  removeRecruiter(
+  async removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.jobs.removeRecruiter(jobId, body);
   }
 

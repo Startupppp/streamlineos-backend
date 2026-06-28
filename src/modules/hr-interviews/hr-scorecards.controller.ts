@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrScorecardsService } from "./hr-scorecards.service";
+import { AccessService } from "../access/access.service";
 import {
   createScorecardTemplateSchema,
   scorecardAnalyticsQuerySchema,
@@ -29,7 +30,10 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class HrScorecardsController {
-  constructor(private readonly scorecards: HrScorecardsService) {}
+  constructor(
+    private readonly scorecards: HrScorecardsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("scorecard-templates")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
@@ -38,35 +42,38 @@ export class HrScorecardsController {
 
   @Post("scorecard-templates")
   @HttpCode(201)
-  createTemplate(
+  async createTemplate(
     @Body(new ZodValidationPipe(createScorecardTemplateSchema)) body: CreateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.createTemplate(u.orgId, u.userId, body);
   }
 
   @Patch("scorecard-templates/:templateId")
-  updateTemplate(
+  async updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateScorecardTemplateSchema)) body: UpdateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.updateTemplate(u.orgId, templateId, body);
   }
 
   @Delete("scorecard-templates/:templateId")
-  deleteTemplate(
+  async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.scorecards.deleteTemplate(u.orgId, templateId);
   }

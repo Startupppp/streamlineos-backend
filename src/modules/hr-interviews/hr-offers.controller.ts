@@ -43,35 +43,44 @@ export class HrOffersController {
 
   @Post("offer-templates")
   @HttpCode(201)
-  createTemplate(
+  async createTemplate(
     @Body(new ZodValidationPipe(createOfferTemplateSchema)) body: CreateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     return this.offers.createTemplate(u.orgId, u.userId, body);
   }
 
   @Patch("offer-templates/:templateId")
-  updateTemplate(
+  async updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     return this.offers.updateTemplate(u.orgId, templateId, body);
   }
 
   @Delete("offer-templates/:templateId")
-  deleteTemplate(
+  async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) {
+        throw new ForbiddenException("Forbidden");
+      }
     }
     return this.offers.deleteTemplate(u.orgId, templateId);
   }

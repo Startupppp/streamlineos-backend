@@ -15,6 +15,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrRecruitmentReportsService } from "./hr-recruitment-reports.service";
+import { AccessService } from "../access/access.service";
 import {
   createScheduledReportSchema,
   generateReportSchema,
@@ -25,7 +26,10 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class HrRecruitmentReportsController {
-  constructor(private readonly reports: HrRecruitmentReportsService) {}
+  constructor(
+    private readonly reports: HrRecruitmentReportsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("reports/generate")
   @HttpCode(200)
@@ -37,32 +41,35 @@ export class HrRecruitmentReportsController {
   }
 
   @Get("reports/scheduled")
-  listScheduled(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+  async listScheduled(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.reports.listScheduledReports(u.orgId);
   }
 
   @Post("reports/scheduled")
   @HttpCode(201)
-  createScheduled(
+  async createScheduled(
     @Body(new ZodValidationPipe(createScheduledReportSchema)) body: CreateScheduledReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.reports.createScheduledReport(u.orgId, u.userId, body);
   }
 
   @Delete("reports/scheduled/:reportId")
-  deleteScheduled(
+  async deleteScheduled(
     @Param("reportId", ParseIntPipe) reportId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.reports.deleteScheduledReport(u.orgId, reportId);
   }

@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewSchedulingService } from "./hr-interview-scheduling.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
+import { AccessService } from "../access/access.service";
 import {
   createInterviewSchema,
   scheduleInterviewSchema,
@@ -38,6 +39,7 @@ export class HrInterviewSchedulingController {
   constructor(
     private readonly scheduling: HrInterviewSchedulingService,
     private readonly results: HrInterviewResultsService,
+    private readonly access: AccessService,
   ) {}
 
   @Post()
@@ -51,21 +53,27 @@ export class HrInterviewSchedulingController {
 
   @Post("schedule")
   @HttpCode(201)
-  schedule(
+  async schedule(
     @Body(new ZodValidationPipe(scheduleInterviewSchema)) body: ScheduleInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.scheduling.scheduleInterview(u.orgId, u.userId, body);
   }
 
   @Post("self-schedule")
   @HttpCode(201)
-  selfSchedule(
+  async selfSchedule(
     @Body(new ZodValidationPipe(selfScheduleSchema)) body: SelfScheduleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.scheduling.selfSchedule(u.orgId, u.userId, body);
   }
 

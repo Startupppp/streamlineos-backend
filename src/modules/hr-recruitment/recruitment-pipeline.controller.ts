@@ -4,12 +4,16 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
+import { AccessService } from "../access/access.service";
 import { diversityReportQuerySchema, type DiversityReportQueryInput } from "./dto/candidates.schemas";
 
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentPipelineController {
-  constructor(private readonly pipeline: RecruitmentPipelineService) {}
+  constructor(
+    private readonly pipeline: RecruitmentPipelineService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("pipeline")
   getPipeline(@CurrentUser() u: CurrentUserContext) {
@@ -25,9 +29,11 @@ export class RecruitmentPipelineController {
   }
 
   @Get("bgv-compliance")
-  bgvCompliance(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage"))
-      throw new ForbiddenException("Forbidden");
+  async bgvCompliance(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.pipeline.bgvCompliance(u.orgId);
   }
 }

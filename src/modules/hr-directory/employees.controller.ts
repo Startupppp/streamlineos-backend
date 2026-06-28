@@ -25,6 +25,7 @@ import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
+import { AccessService } from "../access/access.service";
 import { userCan } from "./ability.helpers";
 import { buildEmployeeProfileHtml } from "./profile-pdf.html";
 import {
@@ -40,8 +41,6 @@ import {
   type UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
 
-const PROFILE_PDF_ROLES = ["CEO", "HR", "ADMIN", "HR_MANAGER"];
-
 @Controller("hr/employees")
 @UseGuards(JwtAuthGuard)
 export class EmployeesController {
@@ -50,6 +49,7 @@ export class EmployeesController {
     private readonly mutations: EmployeeMutationsService,
     private readonly celebrations: CelebrationsService,
     private readonly skills: EmployeeSkillsService,
+    private readonly access: AccessService,
   ) {}
 
   @Post("onboard")
@@ -144,7 +144,10 @@ export class EmployeesController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
 
     const employee = await this.employees.getEmployee(u.orgId, employeeId);
     if (!employee) throw new NotFoundException("Employee not found");

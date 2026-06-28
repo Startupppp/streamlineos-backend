@@ -456,8 +456,11 @@ export class ProjectsService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("projects:delete")) {
-      throw new ForbiddenException("Only organization owners can delete projects");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("projects:delete")) {
+        throw new ForbiddenException("Only organization owners can delete projects");
+      }
     }
     const orgId = u.orgId;
 

@@ -16,6 +16,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
+import { AccessService } from "../access/access.service";
 import {
   recruiterActivityQuerySchema,
   recruiterActivitySchema,
@@ -28,11 +29,17 @@ import {
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentRecruitersController {
-  constructor(private readonly recruiters: RecruitmentRecruitersService) {}
+  constructor(
+    private readonly recruiters: RecruitmentRecruitersService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("portals")
-  listPortals(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+  async listPortals(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.recruiters.listPortals(u.orgId);
   }
 
@@ -42,18 +49,24 @@ export class RecruitmentRecruitersController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden: Admin role required");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: Admin role required");
+    }
     const { record, created } = await this.recruiters.upsertPortal(u.orgId, u.userId, body);
     res.status(created ? 201 : 200);
     return record;
   }
 
   @Post("portals/:platform/sync")
-  syncPortal(
+  async syncPortal(
     @Param("platform") platform: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.recruiters.syncPortal(u.orgId, platform);
   }
 

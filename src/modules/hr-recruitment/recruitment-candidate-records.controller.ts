@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
+import { AccessService } from "../access/access.service";
 import {
   addVaultDocumentSchema,
   createCalibrationSchema,
@@ -49,35 +50,45 @@ export class RecruitmentCandidateRecordsController {
   constructor(
     private readonly records: RecruitmentCandidateRecordsService,
     private readonly ai: RecruitmentCandidateAiService,
+    private readonly access: AccessService,
   ) {}
 
   @Post("ai-score")
-  aiScore(
+  async aiScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.ai.aiScore(u.orgId, candidateId);
   }
 
   @Post("composite-score")
-  compositeScore(
+  async compositeScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.ai.compositeScore(u.orgId, candidateId);
   }
 
   @Post("resume-parse")
   @UseInterceptors(FileInterceptor("file"))
-  resumeParse(
+  async resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.ai.parseResume(u.orgId, candidateId, file, body);
   }
 
@@ -91,13 +102,14 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("rollout-documents")
   @HttpCode(201)
-  generateRolloutDocuments(
+  async generateRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(rolloutDocumentsSchema)) body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) {
-      throw new ForbiddenException("Forbidden: HR/Admin role required");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR/Admin role required");
     }
     return this.records.generateRolloutDocuments(u.orgId, u.userId, candidateId, body);
   }
@@ -112,22 +124,28 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("calibration")
   @HttpCode(201)
-  createCalibration(
+  async createCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createCalibrationSchema)) body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.createCalibration(u.orgId, u.userId, candidateId, body);
   }
 
   @Patch("calibration")
-  updateCalibration(
+  async updateCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateCalibrationSchema)) body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.updateCalibration(u.orgId, candidateId, body);
   }
 
@@ -229,31 +247,40 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Get("vault")
-  listVault(
+  async listVault(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.listVault(u.orgId, candidateId);
   }
 
   @Post("vault")
   @HttpCode(201)
-  addVaultDocument(
+  async addVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(addVaultDocumentSchema)) body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);
   }
 
   @Get("vault/access-logs")
-  listVaultAccessLogs(
+  async listVaultAccessLogs(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin && !u.permissions.includes("hr:employees:manage")) throw new ForbiddenException("Access denied — HR only");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Access denied — HR only");
+    }
     return this.records.listVaultAccessLogs(u.orgId, candidateId);
   }
 }
