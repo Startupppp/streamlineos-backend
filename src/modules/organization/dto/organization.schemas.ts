@@ -55,6 +55,7 @@ export const updateOrgSettingsSchema = z.object({
   timeFormat: z.enum(["12h", "24h"]).optional(),
   numberFormat: z.string().min(1).optional(),
   weekStartDay: z.enum(["monday", "sunday", "saturday"]).optional(),
+  businessHours: z.record(z.object({ open: z.string(), close: z.string(), enabled: z.boolean() })).optional(),
 });
 
 export const securitySettingsSchema = z.object({
@@ -76,6 +77,26 @@ export const updateMemberRoleSchema = z.object({
 export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
 });
+
+export const transferOwnershipSchema = z.object({
+  newOwnerUserId: z.string().min(1),
+});
+
+export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;
+
+export const addCustomDomainSchema = z.object({
+  domain: z.string().min(3).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Invalid domain format"),
+});
+
+export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
+
+export const createHolidaySchema = z.object({
+  name: z.string().min(1).max(200),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  recurring: z.boolean().optional(),
+});
+
+export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;

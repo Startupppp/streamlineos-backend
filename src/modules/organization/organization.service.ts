@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
-import { organizations, organizationMembers, invitations, users } from "../../db/schema";
+import { organizations, organizationMembers, invitations, users, orgHolidays, orgCustomDomains } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -9,10 +9,13 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import type {
+  AddCustomDomainInput,
   CreateOrganizationInput,
+  CreateHolidayInput,
   InviteMemberInput,
   ListMembersInput,
   SecuritySettingsInput,
+  TransferOwnershipInput,
   UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
 
@@ -295,6 +298,7 @@ export class OrganizationService {
     if (input.supportPhone !== undefined) updateData.supportPhone = input.supportPhone;
     if (input.favicon !== undefined) updateData.favicon = input.favicon;
     if (input.secondaryColor !== undefined) updateData.secondaryColor = input.secondaryColor;
+    if (input.businessHours !== undefined) updateData.businessHours = input.businessHours;
 
     const hasSettingsUpdate =
       input.directoryPublic !== undefined ||
@@ -516,5 +520,77 @@ export class OrganizationService {
       directoryPublic:
         typeof settings.directoryPublic === "boolean" ? settings.directoryPublic : false,
     };
+  }
+
+  async listHolidays(orgId: string) {
+    return this.db.select().from(orgHolidays).where(eq(orgHolidays.orgId, orgId)).orderBy(orgHolidays.date);
+  }
+
+  async createHoliday(orgId: string, userId: string, input: CreateHolidayInput) {
+    const id = randomUUID();
+    const [holiday] = await this.db.insert(orgHolidays).values({ id, orgId, name: input.name, date: input.date, recurring: input.recurring ?? false, createdBy: userId }).returning();
+    this.audit.log({ action: "org.holiday.created", userId, orgId, targetId: id, targetType: "org_holiday", metadata: input });
+    return holiday;
+  }
+
+  async deleteHoliday(orgId: string, userId: string, holidayId: string) {
+    await this.db.delete(orgHolidays).where(and(eq(orgHolidays.id, holidayId), eq(orgHolidays.orgId, orgId)));
+    this.audit.log({ action: "org.holiday.deleted", userId, orgId, targetId: holidayId, targetType: "org_holiday" });
+    return { success: true };
+  }
+
+  async listCustomDomains(orgId: string) {
+    return this.db.select().from(orgCustomDomains).where(eq(orgCustomDomains.orgId, orgId)).orderBy(orgCustomDomains.createdAt);
+  }
+
+  async addCustomDomain(orgId: string, userId: string, input: AddCustomDomainInput) {
+    const existing = await this.db.query.orgCustomDomains.findFirst({ where: eq(orgCustomDomains.domain, input.domain) });
+    if (existing) throw new ConflictException("Domain already registered");
+    const id = randomUUID();
+    const verificationToken = `streamline-verify=${randomUUID().replace(/-/g, "")}`;
+    const [domain] = await this.db.insert(orgCustomDomains).values({ id, orgId, domain: input.domain, verificationToken, createdBy: userId }).returning();
+    this.audit.log({ action: "org.domain.added", userId, orgId, targetId: id, targetType: "org_custom_domain", metadata: { domain: input.domain } });
+    return domain;
+  }
+
+  async verifyCustomDomain(orgId: string, userId: string, domainId: string) {
+    const record = await this.db.query.orgCustomDomains.findFirst({ where: and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)) });
+    if (!record) throw new BadRequestException("Domain not found");
+    this.audit.log({ action: "org.domain.verified", userId, orgId, targetId: domainId, targetType: "org_custom_domain" });
+    await this.db.update(orgCustomDomains).set({ verifiedAt: new Date() }).where(eq(orgCustomDomains.id, domainId));
+    return { success: true, verified: true };
+  }
+
+  async removeCustomDomain(orgId: string, userId: string, domainId: string) {
+    await this.db.delete(orgCustomDomains).where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)));
+    this.audit.log({ action: "org.domain.removed", userId, orgId, targetId: domainId, targetType: "org_custom_domain" });
+    return { success: true };
+  }
+
+  async archiveOrg(orgId: string, userId: string) {
+    await this.db.update(organizations).set({ status: "ARCHIVED", deletedAt: new Date() }).where(eq(organizations.id, orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    this.audit.log({ action: "org.archived", userId, orgId, targetId: orgId, targetType: "organization" });
+    return { success: true };
+  }
+
+  async restoreOrg(orgId: string, userId: string) {
+    await this.db.update(organizations).set({ status: "ACTIVE", deletedAt: null }).where(eq(organizations.id, orgId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    this.audit.log({ action: "org.restored", userId, orgId, targetId: orgId, targetType: "organization" });
+    return { success: true };
+  }
+
+  async transferOwnership(orgId: string, currentOwnerId: string, input: TransferOwnershipInput) {
+    const member = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.newOwnerUserId)) });
+    if (!member) throw new BadRequestException("New owner must be an existing org member");
+    await this.db.transaction(async (tx) => {
+      await tx.update(organizationMembers).set({ isOwner: false }).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, currentOwnerId)));
+      await tx.update(organizationMembers).set({ isOwner: true, role: "ADMIN" }).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.newOwnerUserId)));
+    });
+    await this.cache.invalidate(CACHE_KEYS.userSession(currentOwnerId));
+    await this.cache.invalidate(CACHE_KEYS.userSession(input.newOwnerUserId));
+    this.audit.log({ action: "org.ownership_transferred", userId: currentOwnerId, orgId, targetId: input.newOwnerUserId, targetType: "user", metadata: { from: currentOwnerId, to: input.newOwnerUserId } });
+    return { success: true };
   }
 }
