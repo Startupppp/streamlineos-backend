@@ -82,6 +82,16 @@ export const listLoginHistorySchema = z.object({
 });
 export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;
 
+export const importUsersRowSchema = z.object({
+  email: z.string().email(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  role: z.string().default("MEMBER"),
+  designation: z.string().optional(),
+  phone: z.string().optional(),
+});
+export type ImportUsersRow = z.infer<typeof importUsersRowSchema>;
+
 export const bulkUpdateUsersSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),
   role: z.string().optional(),

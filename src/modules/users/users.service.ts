@@ -27,6 +27,7 @@ import type {
   ListLoginHistoryInput,
   BulkUpdateUsersInput,
   ListAuditInput,
+  ImportUsersRow,
 } from "./dto/users.schemas";
 
 @Injectable()
@@ -748,6 +749,26 @@ export class UsersService {
       data,
       pagination: { page, limit, total: countResult[0]?.total ?? 0, totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit) },
     };
+  }
+
+  async importUsers(orgId: string, rows: ImportUsersRow[], actorUserId: string) {
+    const results: Array<{ email: string; success: boolean; error?: string; invitationId?: string }> = [];
+
+    for (const row of rows) {
+      try {
+        const result = await this.inviteUser(orgId, row.email, row.role ?? "MEMBER", actorUserId);
+        results.push({ email: row.email, success: true, invitationId: result.invitationId });
+      } catch (err) {
+        results.push({ email: row.email, success: false, error: err instanceof Error ? err.message : "Unknown error" });
+      }
+    }
+
+    const succeeded = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    this.audit.log({ action: "user.bulk_imported", userId: actorUserId, orgId, metadata: { total: rows.length, succeeded, failed } });
+
+    return { results, succeeded, failed, total: rows.length };
   }
 
   async getUserAuditLog(orgId: string, userId: string, params: ListAuditInput) {

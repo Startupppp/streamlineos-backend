@@ -11,12 +11,13 @@ import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
   updateMembershipSchema, bulkActionSchema, listLoginHistorySchema,
-  bulkUpdateUsersSchema, listAuditSchema,
+  bulkUpdateUsersSchema, listAuditSchema, importUsersRowSchema,
   type ListUsersInput, type UpdateUserInput, type UpdateUserStatusInput,
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
   type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
-  type BulkUpdateUsersInput, type ListAuditInput,
+  type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow,
 } from "./dto/users.schemas";
+import { z } from "zod";
 
 @Controller("users")
 @UseGuards(JwtAuthGuard)
@@ -207,6 +208,15 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("import")
+  importUsers(
+    @Body(new ZodValidationPipe(z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) })))
+    body: { rows: ImportUsersRow[] },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.importUsers(u.orgId, body.rows, u.userId);
   }
 
   @Post("bulk-update")
