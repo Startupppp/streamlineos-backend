@@ -371,6 +371,24 @@ export class ChatChannelsService {
     return { ok: true };
   }
 
+  async archiveChannel(channelId: number, userId: string) {
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+    });
+    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can archive channels");
+    await this.db.update(chatChannels).set({ isArchived: true }).where(eq(chatChannels.id, channelId));
+    return { ok: true };
+  }
+
+  async unarchiveChannel(channelId: number, userId: string) {
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+    });
+    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can unarchive channels");
+    await this.db.update(chatChannels).set({ isArchived: false }).where(eq(chatChannels.id, channelId));
+    return { ok: true };
+  }
+
   async markRead(channelId: number, userId: string) {
     await this.db
       .update(chatChannelMembers)

@@ -136,6 +136,20 @@ export class ChatChannelsController {
     return this.channels.leaveChannel(channelId, u.userId);
   }
 
+  @Post(":channelId/archive")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  archive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.channels.archiveChannel(channelId, u.userId);
+  }
+
+  @Post(":channelId/unarchive")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  unarchive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.channels.unarchiveChannel(channelId, u.userId);
+  }
+
   @Post(":channelId/read")
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
