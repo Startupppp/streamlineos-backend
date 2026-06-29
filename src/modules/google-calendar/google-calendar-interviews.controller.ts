@@ -5,7 +5,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { GoogleCalendarService } from "./google-calendar.service";
 import { syncInterviewSchema, type SyncInterviewInput } from "./dto/google-calendar.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("calendar")
 @Controller("hr/integrations/google-calendar")
 @UseGuards(JwtAuthGuard)
 export class GoogleCalendarInterviewsController {

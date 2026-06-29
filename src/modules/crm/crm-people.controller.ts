@@ -3,7 +3,9 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CrmPeopleService } from "./crm-people.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm")
 @UseGuards(JwtAuthGuard)
 export class CrmPeopleController {

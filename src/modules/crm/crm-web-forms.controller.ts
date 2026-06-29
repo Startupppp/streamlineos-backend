@@ -24,7 +24,9 @@ import {
   type WebFormCreateInput,
   type WebFormUpdateInput,
 } from "./dto/web-forms.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm/web-forms")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmWebFormsController {

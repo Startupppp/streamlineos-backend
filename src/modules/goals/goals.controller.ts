@@ -38,7 +38,9 @@ import {
   type ListInput,
   type UpdateInput,
 } from "./dto/goal.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("goals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class GoalsController {

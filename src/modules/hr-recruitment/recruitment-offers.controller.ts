@@ -25,7 +25,9 @@ import {
   type CreateOfferInput,
   type UpdateOfferInput,
 } from "./dto/candidate-records.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId/offers")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentOffersController {

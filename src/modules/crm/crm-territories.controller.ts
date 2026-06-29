@@ -27,7 +27,9 @@ import {
   type TerritoryListInput,
   type TerritoryUpdateInput,
 } from "./dto/territories.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm/territories")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmTerritoriesController {

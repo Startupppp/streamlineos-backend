@@ -33,7 +33,9 @@ import {
   type ImportInput,
   type TopMergeInput,
 } from "./dto/lead-mutations.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("leads")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsOpsController {

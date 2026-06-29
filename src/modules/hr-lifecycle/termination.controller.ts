@@ -23,7 +23,9 @@ import {
   type TerminationCreateInput,
   type TerminationReviewInput,
 } from "./dto/hr-lifecycle.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/termination")
 @UseGuards(JwtAuthGuard)
 export class TerminationController {

@@ -26,7 +26,9 @@ import {
   type ListOnboardingDocsQueryInput,
   type ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/onboarding-docs")
 @UseGuards(JwtAuthGuard)
 export class OnboardingViewsController {

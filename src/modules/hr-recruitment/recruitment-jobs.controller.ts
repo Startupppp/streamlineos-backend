@@ -34,7 +34,9 @@ import {
   type PublishJobInput,
   type UpdateJobInput,
 } from "./dto/jobs.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentJobsController {

@@ -7,7 +7,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrAnalyticsService } from "./hr-analytics.service";
 import { attendanceAnalyticsQuerySchema, type AttendanceAnalyticsQuery } from "./dto/hr-lifecycle.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/analytics")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @RequirePermission("hr:analytics:read")

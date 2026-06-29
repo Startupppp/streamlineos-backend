@@ -20,7 +20,9 @@ import {
   type SearchQuery,
   type StatusInput,
 } from "./dto/chat.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard)
 export class ChatPresenceController {

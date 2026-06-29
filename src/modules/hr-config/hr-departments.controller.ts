@@ -7,7 +7,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrDepartmentsService } from "./hr-departments.service";
 import { createDepartmentSchema, type CreateDepartmentInput } from "./dto/departments.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/departments")
 @UseGuards(JwtAuthGuard)
 export class HrDepartmentsController {

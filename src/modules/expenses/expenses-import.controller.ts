@@ -6,7 +6,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { ExpensesImportService } from "./expenses-import.service";
 import { importSchema, type ImportInput } from "./dto/expense-import.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("accounting")
 @Controller("hr/expenses/import")
 @UseGuards(JwtAuthGuard)
 export class ExpensesImportController {

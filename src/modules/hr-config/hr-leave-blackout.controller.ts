@@ -25,7 +25,9 @@ import {
   type BlackoutListQuery,
   type CreateBlackoutInput,
 } from "./dto/leave-blackout.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/leaves/blackout")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @RequirePermission("hr:leaves:manage")

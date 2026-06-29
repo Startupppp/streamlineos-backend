@@ -30,7 +30,9 @@ import {
   type TemplateListQuery,
   type UpdateTemplateInput,
 } from "./dto/document-templates.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/documents/templates")
 @UseGuards(JwtAuthGuard)
 export class HrDocumentTemplatesController {

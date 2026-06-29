@@ -30,7 +30,9 @@ import {
   type SearchInput,
   type UpdateInput,
 } from "./dto/contact.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("contacts")
 @UseGuards(JwtAuthGuard)
 export class ContactsController {

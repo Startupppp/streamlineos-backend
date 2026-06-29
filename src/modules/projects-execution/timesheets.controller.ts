@@ -30,7 +30,9 @@ import {
   type TimeEntriesListQuery,
   type UpdateEntryInput,
 } from "./dto/timesheets.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects/time-entries")
 @UseGuards(JwtAuthGuard)
 export class TimeEntriesController {

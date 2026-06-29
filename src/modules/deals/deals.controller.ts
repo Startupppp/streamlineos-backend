@@ -34,7 +34,9 @@ import {
   type PatchCustomDataInput,
   type UpdateDealInput,
 } from "./dto/deals.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("deals")
 @UseGuards(JwtAuthGuard)
 export class DealsController {

@@ -22,7 +22,9 @@ import {
   type CreateWfhInput,
   type UpdateWfhInput,
 } from "./dto/wfh.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/wfh")
 @UseGuards(JwtAuthGuard)
 export class WfhController {

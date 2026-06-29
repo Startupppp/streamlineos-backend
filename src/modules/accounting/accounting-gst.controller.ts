@@ -12,7 +12,9 @@ import {
   type Gstr1Query,
   type Gstr3BQuery,
 } from "./dto/accounting.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("accounting")
 @Controller("accounting/reports")
 @UseGuards(JwtAuthGuard)
 export class AccountingGstController {

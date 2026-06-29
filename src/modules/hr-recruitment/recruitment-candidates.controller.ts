@@ -43,7 +43,9 @@ import {
   type StageInput,
   type UpdateCandidateInput,
 } from "./dto/candidates.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/candidates")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentCandidatesController {

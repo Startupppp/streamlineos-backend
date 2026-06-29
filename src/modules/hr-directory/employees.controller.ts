@@ -41,7 +41,9 @@ import {
   type OnboardEmployeeInput,
   type UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/employees")
 @UseGuards(JwtAuthGuard)
 export class EmployeesController {

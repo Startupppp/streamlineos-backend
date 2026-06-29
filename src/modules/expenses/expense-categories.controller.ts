@@ -7,7 +7,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ExpensesService } from "./expenses.service";
 import { createCategorySchema, type CreateCategoryInput } from "./dto/expense.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("accounting")
 @Controller("hr/expenses/categories")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpenseCategoriesController {

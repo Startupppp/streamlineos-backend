@@ -10,7 +10,9 @@ import {
   listVendorsSchema, createVendorSchema, updateVendorSchema,
   type ListVendorsInput, type CreateVendorInput, type UpdateVendorInput,
 } from "./dto/inv-vendors.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/vendors")
 @UseGuards(JwtAuthGuard)
 export class InvVendorsController {

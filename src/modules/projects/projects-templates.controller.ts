@@ -22,7 +22,9 @@ import {
   type ApplyTemplateInput,
   type CreateTemplateInput,
 } from "./dto/projects.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTemplatesController {

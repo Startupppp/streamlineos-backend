@@ -38,7 +38,9 @@ import {
   type UpdateKbArticleInput,
   type UpdateKbCategoryInput,
 } from "./dto/support.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("support")
 @Controller("support/kb")
 @UseGuards(JwtAuthGuard)
 export class SupportKbController {

@@ -18,7 +18,9 @@ import {
   type HeatmapQuery,
   type MonthlyQuery,
 } from "./dto/attendance.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/attendance")
 @UseGuards(JwtAuthGuard)
 export class AttendanceController {

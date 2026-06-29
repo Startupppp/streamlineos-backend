@@ -40,7 +40,9 @@ import {
   type UpdateDocumentInput,
   type UpdateRichDocumentInput,
 } from "./dto/documents.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class DocumentsController {

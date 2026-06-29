@@ -27,7 +27,9 @@ import {
   type CreateSoInput,
   type ShipSoInput,
 } from "./dto/inv-sales-orders.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/sales-orders")
 @UseGuards(JwtAuthGuard)
 export class InvSalesOrdersController {

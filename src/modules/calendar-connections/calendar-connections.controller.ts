@@ -27,7 +27,9 @@ import {
   type FreeBusyInput,
   type UpsertConnectionInput,
 } from "./dto/calendar-connections.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("calendar")
 @Controller("calendar/connections")
 @UseGuards(JwtAuthGuard)
 export class CalendarConnectionsController {

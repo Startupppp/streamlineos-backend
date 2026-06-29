@@ -32,7 +32,9 @@ import {
   type ListInput,
   type UpdateInput,
 } from "./dto/quote.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("quotes")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class QuotesController {

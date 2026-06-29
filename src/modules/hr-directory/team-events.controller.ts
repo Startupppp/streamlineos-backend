@@ -16,7 +16,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TeamEventsService } from "./team-events.service";
 import { userCan } from "./ability.helpers";
 import { createTeamEventSchema, type CreateTeamEventInput } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/team-events")
 @UseGuards(JwtAuthGuard)
 export class TeamEventsController {

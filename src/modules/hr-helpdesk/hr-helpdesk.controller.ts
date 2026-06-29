@@ -19,11 +19,13 @@ import {
   type CreateInput,
   type ListInput,
 } from "./dto/hr-helpdesk.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 function isHrAdmin(u: CurrentUserContext): boolean {
   return u.isOrgOwner || u.isPlatformAdmin || ["HR", "ADMIN", "CEO", "BRANCH_HR", "BRANCH_MANAGER"].includes(u.role);
 }
 
+@RequireModule("hr")
 @Controller("hr/helpdesk")
 @UseGuards(JwtAuthGuard)
 export class HrHelpdeskController {

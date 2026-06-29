@@ -14,7 +14,9 @@ import {
   type ListStockLevelsInput, type ListTransactionsInput, type ListAdjustmentsInput,
   type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput, type ListTransfersInput,
 } from "./dto/inv-stock.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/stock")
 @UseGuards(JwtAuthGuard)
 export class InvStockController {

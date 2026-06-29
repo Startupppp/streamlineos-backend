@@ -17,7 +17,9 @@ import {
   type PatchWorkLogStatusInput,
   type PostWorkLogInput,
 } from "./dto/work-logs.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/work-logs")
 @UseGuards(JwtAuthGuard)
 export class WorkLogsController {

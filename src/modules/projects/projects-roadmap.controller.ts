@@ -38,7 +38,9 @@ import {
   type UpdateFeedbackInput,
   type UpdateRoadmapInput,
 } from "./dto/projects.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsRoadmapController {

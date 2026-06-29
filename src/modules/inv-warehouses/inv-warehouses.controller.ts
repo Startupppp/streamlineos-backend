@@ -10,7 +10,9 @@ import {
   createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema,
   type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput,
 } from "./dto/inv-warehouses.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/warehouses")
 @UseGuards(JwtAuthGuard)
 export class InvWarehousesController {

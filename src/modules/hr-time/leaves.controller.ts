@@ -38,7 +38,9 @@ import {
   type RejectLeaveInput,
   type UpdateLeaveInput,
 } from "./dto/leaves.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/leaves")
 @UseGuards(JwtAuthGuard)
 export class LeavesController {

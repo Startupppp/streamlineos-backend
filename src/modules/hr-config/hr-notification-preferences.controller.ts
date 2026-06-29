@@ -8,7 +8,9 @@ import {
   updateNotificationPreferencesSchema,
   type UpdateNotificationPreferencesInput,
 } from "./dto/notification-preferences.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/notification-preferences")
 @UseGuards(JwtAuthGuard)
 export class HrNotificationPreferencesController {

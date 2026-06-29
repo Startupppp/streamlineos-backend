@@ -3,7 +3,9 @@ import Ably from "ably";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard)
 export class ChatTokenController {

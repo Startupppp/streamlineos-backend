@@ -34,7 +34,9 @@ import {
   type ScoringRuleCreateInput,
   type ScoringRuleUpdateInput,
 } from "./dto/rules.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm")
 @UseGuards(JwtAuthGuard)
 export class CrmRulesController {
