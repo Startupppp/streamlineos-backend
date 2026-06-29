@@ -250,4 +250,28 @@ export class OrganizationController {
   deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext) {
     return this.organization.deleteHoliday(u.orgId, u.userId, holidayId);
   }
+
+  @Post("archive")
+  @RequirePermission("settings:manage")
+  archiveOrg(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.archiveOrg(u.orgId, u.userId);
+  }
+
+  @Post("restore")
+  @RequirePermission("settings:manage")
+  restoreOrg(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.restoreOrg(u.orgId, u.userId);
+  }
+
+  @Post("transfer-ownership")
+  @RequirePermission("settings:manage")
+  transferOwnership(
+    @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.transferOwnership(u.orgId, u.userId, body);
+  }
 }
