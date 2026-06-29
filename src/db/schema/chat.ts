@@ -15,6 +15,7 @@ export const chatChannels = pgTable("chat_channels", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   isArchived: boolean("is_archived").default(false).notNull(),
   isPinned: boolean("is_pinned").default(false).notNull(),
+  isPrivate: boolean("is_private").default(false).notNull(),
   linkedDealId: integer("linked_deal_id").references(() => deals.id, { onDelete: "set null" }),
   lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

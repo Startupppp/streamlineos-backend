@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   NotFoundException,
@@ -21,8 +22,10 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatTypingService } from "./chat-typing.service";
 import {
+  addMemberSchema,
   createChannelSchema,
   updateChannelSchema,
+  type AddMemberInput,
   type CreateChannelInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
@@ -41,6 +44,12 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:read")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.channels.getMyChannels(u.userId, u.orgId);
+  }
+
+  @Get("public")
+  @RequirePermission("chat:channels:read")
+  listPublic(@CurrentUser() u: CurrentUserContext) {
+    return this.channels.listPublicChannels(u.orgId, u.userId);
   }
 
   @Post()
@@ -83,6 +92,48 @@ export class ChatChannelsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.channels.listMembers(channelId, u.userId);
+  }
+
+  @Post(":channelId/members")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  addMember(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.addMember(channelId, body.userId, u.userId);
+  }
+
+  @Delete(":channelId/members/:userId")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  removeMember(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Param("userId") targetUserId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.removeMember(channelId, targetUserId, u.userId);
+  }
+
+  @Post(":channelId/join")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  join(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.joinPublicChannel(channelId, u.userId);
+  }
+
+  @Post(":channelId/leave")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  leave(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.leaveChannel(channelId, u.userId);
   }
 
   @Post(":channelId/read")

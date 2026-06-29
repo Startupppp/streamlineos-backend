@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, ne } from "drizzle-orm";
 import {
   chatChannels,
@@ -23,6 +23,12 @@ export class ChatChannelsService {
       ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
+    return member;
+  }
+
+  private async assertAdmin(channelId: number, userId: string) {
+    const member = await this.assertMember(channelId, userId);
+    if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
     return member;
   }
 
@@ -105,6 +111,34 @@ export class ChatChannelsService {
       });
       return [];
     }
+  }
+
+  async listPublicChannels(orgId: string, userId: string) {
+    const publicChannels = await this.db.query.chatChannels.findMany({
+      where: and(
+        eq(chatChannels.orgId, orgId),
+        eq(chatChannels.type, "PUBLIC"),
+        eq(chatChannels.isArchived, false),
+      ),
+      orderBy: [desc(chatChannels.lastMessageAt)],
+      with: {
+        members: {
+          columns: { userId: true },
+        },
+      },
+    });
+
+    return publicChannels.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      description: ch.description,
+      avatarUrl: ch.avatarUrl,
+      type: ch.type,
+      memberCount: ch.members.length,
+      isMember: ch.members.some((m) => m.userId === userId),
+      createdAt: ch.createdAt,
+      lastMessageAt: ch.lastMessageAt,
+    }));
   }
 
   async getChannel(channelId: number, userId: string) {
@@ -199,6 +233,8 @@ export class ChatChannelsService {
 
     const { name, description, avatarUrl, memberIds } = body;
     const allMembers = [...new Set([userId, ...memberIds])];
+    const channelType = body.type;
+    const isPrivate = channelType === "PRIVATE";
 
     const channel = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -206,10 +242,11 @@ export class ChatChannelsService {
         .values({
           orgId,
           name,
-          type: "GROUP",
+          type: channelType,
           description,
           avatarUrl,
           createdBy: userId,
+          isPrivate,
         })
         .returning();
 
@@ -225,6 +262,90 @@ export class ChatChannelsService {
     });
 
     return { channel, created: true };
+  }
+
+  async joinPublicChannel(channelId: number, userId: string) {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(
+        eq(chatChannels.id, channelId),
+        eq(chatChannels.type, "PUBLIC"),
+        eq(chatChannels.isArchived, false),
+      ),
+    });
+
+    if (!channel) throw new NotFoundException("Public channel not found");
+
+    const existing = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
+    });
+
+    if (existing) return { ok: true };
+
+    await this.db.insert(chatChannelMembers).values({
+      channelId,
+      userId,
+      role: "MEMBER",
+    });
+
+    return { ok: true };
+  }
+
+  async leaveChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+
+    await this.db
+      .delete(chatChannelMembers)
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+
+    return { ok: true };
+  }
+
+  async addMember(channelId: number, targetUserId: string, requesterId: string) {
+    await this.assertAdmin(channelId, requesterId);
+
+    const existing = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, targetUserId),
+      ),
+    });
+
+    if (existing) throw new ConflictException("User is already a member of this channel");
+
+    await this.db.insert(chatChannelMembers).values({
+      channelId,
+      userId: targetUserId,
+      role: "MEMBER",
+    });
+
+    return { ok: true };
+  }
+
+  async removeMember(channelId: number, targetUserId: string, requesterId: string) {
+    const requester = await this.assertMember(channelId, requesterId);
+
+    if (requesterId !== targetUserId && requester.role !== "ADMIN") {
+      throw new ForbiddenException("Only channel admins can remove other members");
+    }
+
+    await this.db
+      .delete(chatChannelMembers)
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, targetUserId),
+        ),
+      );
+
+    return { ok: true };
   }
 
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput) {
