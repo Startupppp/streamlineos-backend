@@ -1,4 +1,5 @@
 ﻿import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -23,6 +24,7 @@ import {
   listMessagesQuerySchema,
   markStatusBodySchema,
   markRepliedBodySchema,
+  replyMessageSchema,
   contactFormSchema,
   type ContactFormInput,
 } from "./dto/platform.schemas";
@@ -139,6 +141,20 @@ export class PlatformController {
       throw new NotFoundException("Invalid body");
     }
     return this.platform.markMessageReplied(code, parsed.data.repliedById, parsed.data.replyBody);
+  }
+
+  @UseGuards(PlatformOwnerGuard)
+  @Post("messages/:code/reply")
+  @HttpCode(200)
+  async replyToMessage(
+    @Param("code") code: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const parsed = replyMessageSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException("Invalid body");
+    }
+    return this.platform.replyToMessage(code, parsed.data.body, parsed.data.repliedById);
   }
 
   @UseGuards(PlatformOwnerGuard)

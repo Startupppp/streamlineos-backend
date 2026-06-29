@@ -37,3 +37,9 @@ export const contactFormSchema = z.object({
   topic: z.enum(["sales", "support", "partnership", "press", "other"]).optional(),
 });
 export type ContactFormInput = z.infer<typeof contactFormSchema>;
+
+export const replyMessageSchema = z.object({
+  body: z.string().min(1).max(10_000),
+  repliedById: z.string().min(1),
+});
+export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;

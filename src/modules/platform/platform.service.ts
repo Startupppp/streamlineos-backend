@@ -120,6 +120,25 @@ function buildCustomerAutoreplyHtml(data: ContactFormInput): string {
 </body></html>`;
 }
 
+function buildReplyHtml(name: string, body: string): string {
+  const firstName = name.split(" ")[0] ?? name;
+  const safeBody = escapeHtml(body).replace(/\n/g, "<br/>");
+  return `<!doctype html>
+<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:560px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="padding:20px 28px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
+      <p style="margin:0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">${BRAND_NAME} · Re: your message</p>
+    </div>
+    <div style="padding:24px 28px;color:#0b1220;font-size:14px;line-height:1.65;">
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>
+      <div style="white-space:pre-wrap;">${safeBody}</div>
+      <p style="margin:24px 0 4px;color:#94a3b8;font-size:12px;">— The ${BRAND_NAME} team</p>
+      <p style="margin:0;color:#94a3b8;font-size:12px;">Reply to this email to reach us directly.</p>
+    </div>
+  </div>
+</body></html>`;
+}
+
 @Injectable()
 export class PlatformService {
   constructor(
@@ -399,6 +418,22 @@ export class PlatformService {
     await this.db
       .update(platformMessages)
       .set({ status: "REPLIED", repliedAt: new Date(), repliedById, replyBody })
+      .where(eq(platformMessages.publicCode, code));
+    return { ok: true };
+  }
+
+  async replyToMessage(code: string, body: string, repliedById: string): Promise<{ ok: true }> {
+    const message = await this.getMessageByPublicCode(code);
+    const html = buildReplyHtml(message.name, body);
+    await this.email.sendEmail({
+      to: message.email,
+      subject: `Re: your message to ${BRAND_NAME}`,
+      html,
+      replyTo: BRAND_SUPPORT_EMAIL,
+    });
+    await this.db
+      .update(platformMessages)
+      .set({ status: "REPLIED", repliedAt: new Date(), repliedById, replyBody: body })
       .where(eq(platformMessages.publicCode, code));
     return { ok: true };
   }
