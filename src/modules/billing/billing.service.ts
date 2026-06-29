@@ -4,8 +4,11 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
+  coupons,
+  couponRedemptions,
+  invoices,
   organizations,
   platformPayments,
   subscriptionPayments,
@@ -18,6 +21,7 @@ import { logger } from "../../common/logger/logger.service";
 import { RazorpayService } from "./razorpay.service";
 import {
   webhookEventSchema,
+  type BillingCycle,
   type Plan,
   type RazorpayPayment,
   type VerifyPaymentInput,
@@ -61,18 +65,36 @@ export class BillingService {
     };
   }
 
-  async createOrder(orgId: string, userId: string, plan: Plan) {
+  async createOrder(orgId: string, userId: string, plan: Plan, billingCycle: BillingCycle = "monthly", couponId?: number) {
     if (!this.razorpay.isConfigured()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const amount = PLAN_PRICES[plan];
-    if (!amount) throw new BadRequestException("Invalid plan");
+    const monthlyPrice = PLAN_PRICES[plan];
+    if (!monthlyPrice) throw new BadRequestException("Invalid plan");
+
+    let amount = billingCycle === "annual"
+      ? Math.round(monthlyPrice * 12 * 0.8)
+      : monthlyPrice;
+
+    let couponDiscountAmount = 0;
+    if (couponId) {
+      const coupon = await this.db.query.coupons.findFirst({
+        where: and(eq(coupons.id, couponId), eq(coupons.isActive, true)),
+      });
+      if (coupon) {
+        const couponValue = parseFloat(coupon.value);
+        couponDiscountAmount = coupon.type === "PERCENTAGE"
+          ? Math.round(amount * (couponValue / 100))
+          : Math.round(Math.min(couponValue * 100, amount));
+        amount = Math.max(100, amount - couponDiscountAmount);
+      }
+    }
 
     const order = await this.razorpay.createOrder({
       amount,
       receipt: `sub_${orgId}_${Date.now()}`,
-      notes: { orgId, plan, userId },
+      notes: { orgId, plan, userId, billingCycle },
     });
 
     return {
@@ -81,6 +103,8 @@ export class BillingService {
       currency: order.currency,
       keyId: this.razorpay.getKeyId(),
       plan,
+      billingCycle,
+      discountAmount: couponDiscountAmount,
     };
   }
 
@@ -158,6 +182,64 @@ export class BillingService {
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
+  async validateCoupon(code: string, orgId: string, plan: Plan): Promise<{
+    valid: boolean;
+    couponId: number | null;
+    type: "PERCENTAGE" | "FIXED" | null;
+    value: number | null;
+    discountAmount: number | null;
+    message: string;
+  }> {
+    const normalizedCode = code.trim().toUpperCase();
+    const coupon = await this.db.query.coupons.findFirst({
+      where: and(
+        eq(coupons.code, normalizedCode),
+        eq(coupons.isActive, true),
+      ),
+    });
+
+    if (!coupon) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "Invalid coupon code" };
+    }
+
+    if (coupon.expiresAt && coupon.expiresAt < new Date()) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has expired" };
+    }
+
+    if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has reached its usage limit" };
+    }
+
+    if (coupon.applicablePlans && coupon.applicablePlans.length > 0 && !coupon.applicablePlans.includes(plan)) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon is not applicable to the selected plan" };
+    }
+
+    const alreadyUsed = await this.db.query.couponRedemptions.findFirst({
+      where: and(eq(couponRedemptions.couponId, coupon.id), eq(couponRedemptions.orgId, orgId)),
+    });
+    if (alreadyUsed) {
+      return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has already been used by your organization" };
+    }
+
+    const baseAmount = PLAN_PRICES[plan];
+    const couponValue = parseFloat(coupon.value);
+    const discountAmount =
+      coupon.type === "PERCENTAGE"
+        ? Math.round(baseAmount * (couponValue / 100))
+        : Math.round(Math.min(couponValue * 100, baseAmount));
+
+    return {
+      valid: true,
+      couponId: coupon.id,
+      type: coupon.type as "PERCENTAGE" | "FIXED",
+      value: couponValue,
+      discountAmount,
+      message: coupon.type === "PERCENTAGE"
+        ? `${couponValue}% discount applied`
+        : `₹${couponValue} discount applied`,
+    };
+  }
+
   async handleRazorpayWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
     if (!this.razorpay.verifyWebhookSignature(rawBody, signature)) {
       logger.warn("[razorpay] invalid webhook signature");
@@ -227,5 +309,56 @@ export class BillingService {
       columns: { id: true },
     });
     return org ?? null;
+  }
+
+  async getSummary(orgId: string) {
+    const [subscription, invoiceStats] = await Promise.all([
+      this.db.query.subscriptions.findFirst({
+        where: eq(subscriptions.orgId, orgId),
+        columns: { plan: true, status: true, trialEndsAt: true, currentPeriodEnd: true },
+      }),
+      this.db
+        .select({
+          totalPaid: sql<string>`coalesce(sum(case when ${invoices.status} = 'PAID' then ${invoices.total}::numeric else 0 end), 0)::text`,
+          totalOutstanding: sql<string>`coalesce(sum(case when ${invoices.status} in ('SENT','OVERDUE') then ${invoices.total}::numeric else 0 end), 0)::text`,
+          draft: sql<number>`count(case when ${invoices.status} = 'DRAFT' then 1 end)::int`,
+          sent: sql<number>`count(case when ${invoices.status} = 'SENT' then 1 end)::int`,
+          paid: sql<number>`count(case when ${invoices.status} = 'PAID' then 1 end)::int`,
+          overdue: sql<number>`count(case when ${invoices.status} = 'OVERDUE' then 1 end)::int`,
+          cancelled: sql<number>`count(case when ${invoices.status} = 'CANCELLED' then 1 end)::int`,
+        })
+        .from(invoices)
+        .where(eq(invoices.orgId, orgId)),
+    ]);
+
+    const now = Date.now();
+    const trialDaysRemaining =
+      subscription?.status === "TRIAL" && subscription.trialEndsAt
+        ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt).getTime() - now) / 86_400_000))
+        : null;
+
+    return {
+      subscription: subscription
+        ? {
+            plan: subscription.plan,
+            status: subscription.status,
+            trialEndsAt: subscription.trialEndsAt ?? null,
+            trialDaysRemaining,
+            currentPeriodEnd: subscription.currentPeriodEnd ?? null,
+            isActive: subscription.status === "ACTIVE",
+            isTrial: subscription.status === "TRIAL",
+          }
+        : null,
+      invoiceStats: invoiceStats[0] ?? {
+        totalPaid: "0",
+        totalOutstanding: "0",
+        draft: 0,
+        sent: 0,
+        paid: 0,
+        overdue: 0,
+        cancelled: 0,
+      },
+      isConfigured: this.razorpay.isConfigured(),
+    };
   }
 }

@@ -15,6 +15,7 @@ import { CronNotificationsService } from "./cron-notifications.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 
 @Public()
@@ -22,6 +23,7 @@ import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 export class CronController {
   constructor(
     private readonly attendance: CronAttendanceService,
+    private readonly billing: CronBillingService,
     private readonly leave: CronLeaveService,
     private readonly notifications: CronNotificationsService,
     private readonly holiday: CronHolidayService,
@@ -29,6 +31,17 @@ export class CronController {
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
   ) {}
+
+  @Get("trial-expiry")
+  getTrialExpiry(@Headers("authorization") authorization?: string) {
+    return this.runTrialExpiry(authorization);
+  }
+
+  @Post("trial-expiry")
+  @HttpCode(200)
+  postTrialExpiry(@Headers("authorization") authorization?: string) {
+    return this.runTrialExpiry(authorization);
+  }
 
   @Get("auto-checkout")
   getAutoCheckout(@Headers("authorization") authorization?: string) {
@@ -94,6 +107,21 @@ export class CronController {
   @HttpCode(200)
   postInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
+  }
+
+  private async runTrialExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.billing.processTrialExpiry();
+      return {
+        success: true,
+        message: `Expired ${result.expired} trials, sent ${result.reminded} reminders`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Trial expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runAutoCheckout(authorization?: string) {

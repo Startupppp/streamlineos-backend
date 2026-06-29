@@ -3,8 +3,13 @@ import { z } from "zod";
 export const planSchema = z.enum(["STARTER", "PROFESSIONAL", "ENTERPRISE"]);
 export type Plan = z.infer<typeof planSchema>;
 
+export const billingCycleSchema = z.enum(["monthly", "annual"]).default("monthly");
+export type BillingCycle = z.infer<typeof billingCycleSchema>;
+
 export const createOrderSchema = z.object({
   plan: planSchema,
+  billingCycle: billingCycleSchema.optional(),
+  couponId: z.number().int().positive().optional(),
 });
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
