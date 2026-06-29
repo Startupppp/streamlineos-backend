@@ -29,7 +29,7 @@ import { EmailService } from "../email/email.service";
 import { PasswordService } from "./password.service";
 import { DeviceService } from "./device.service";
 import { SessionService } from "./session.service";
-import { addDays, addHours, subDays } from "date-fns";
+import { addDays, addHours, addMinutes, subDays } from "date-fns";
 import { verifySync } from "otplib";
 import type {
   LoginInput,
@@ -435,7 +435,7 @@ export class AuthService {
     this.audit.log({ action: "auth.password_reset_completed", userId: user.id });
   }
 
-  async verifyEmail(input: VerifyEmailInput): Promise<void> {
+  async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
     const record = await this.db.query.verificationTokens.findFirst({
       where: and(
         eq(verificationTokens.token, input.token),
@@ -444,14 +444,32 @@ export class AuthService {
     });
     if (!record) throw new BadRequestException("Invalid or expired verification token");
 
-    await this.db
-      .update(users)
-      .set({ emailVerified: new Date() })
-      .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`);
+    const [updatedUsers] = await Promise.all([
+      this.db
+        .update(users)
+        .set({ emailVerified: new Date() })
+        .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`)
+        .returning({ id: users.id }),
+      this.db
+        .delete(verificationTokens)
+        .where(eq(verificationTokens.identifier, record.identifier)),
+    ]);
 
-    await this.db
-      .delete(verificationTokens)
-      .where(eq(verificationTokens.identifier, record.identifier));
+    const userId = updatedUsers[0]?.id;
+    if (!userId) throw new BadRequestException("User not found");
+
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = addMinutes(new Date(), 5);
+
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId,
+      tokenHash,
+      expiresAt,
+    });
+
+    return { autoLoginToken: rawToken };
   }
 
   async resendVerification(email: string): Promise<void> {

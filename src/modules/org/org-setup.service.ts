@@ -34,7 +34,7 @@ export class OrgSetupService {
       await tx
         .update(organizations)
         .set({
-          name: input.companyName,
+          ...(input.companyName ? { name: input.companyName } : {}),
           industry: input.industry,
           companySize: input.companySize,
           country: input.country,
@@ -54,7 +54,7 @@ export class OrgSetupService {
         .set({
           firstName: input.firstName,
           lastName: input.lastName,
-          name: `${input.firstName} ${input.lastName}`,
+          name: [input.firstName, input.lastName].filter(Boolean).join(" ").trim() || undefined,
           designation: input.jobTitle,
           ...(input.phone ? { phone: input.phone } : {}),
         })

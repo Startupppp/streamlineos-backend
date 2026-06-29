@@ -93,7 +93,7 @@ export class BillingService {
 
     const order = await this.razorpay.createOrder({
       amount,
-      receipt: `sub_${orgId}_${Date.now()}`,
+      receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
       notes: { orgId, plan, userId, billingCycle },
     });
 

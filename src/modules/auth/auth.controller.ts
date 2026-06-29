@@ -148,7 +148,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:verify-email", this.getIp(req));
-    return this.authService.verifyEmail(body).then(() => ({ message: "Email verified successfully" }));
+    return this.authService.verifyEmail(body);
   }
 
   @Post("resend-verification")
