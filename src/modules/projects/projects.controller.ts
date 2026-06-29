@@ -23,7 +23,6 @@ import {
   addMemberSchema,
   createLabelSchema,
   createProjectSchema,
-  createStateSchema,
   fromDealSchema,
   listProjectsSchema,
   removeMemberSchema,
@@ -31,7 +30,6 @@ import {
   type AddMemberInput,
   type CreateLabelInput,
   type CreateProjectInput,
-  type CreateStateInput,
   type FromDealInput,
   type ListProjectsInput,
   type RemoveMemberInput,
@@ -124,18 +122,6 @@ export class ProjectsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.listCustomStates(u.orgId, projectId);
-  }
-
-  @Post(":projectId/custom-states")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("projects:manage")
-  @HttpCode(201)
-  createCustomState(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createStateSchema)) body: CreateStateInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.members.createCustomState(u.orgId, projectId, body);
   }
 
   @Get(":projectId/labels")

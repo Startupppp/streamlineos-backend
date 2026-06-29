@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -27,21 +26,17 @@ import {
 } from "./goals.service";
 import {
   checkInSchema,
-  createKeyResultSchema,
   createLinkSchema,
   createSchema,
   deleteLinkSchema,
   listSchema,
-  updateKeyResultSchema,
   updateSchema,
   type CheckInInput,
   type CreateInput,
-  type CreateKeyResultInput,
   type CreateLinkInput,
   type DeleteLinkInput,
   type ListInput,
   type UpdateInput,
-  type UpdateKeyResultInput,
 } from "./dto/goal.schemas";
 
 @Controller("goals")
@@ -72,29 +67,6 @@ export class GoalsController {
   @RequirePermission("projects:goals:view")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.goals.getStats(u.orgId);
-  }
-
-  @Patch("key-results/:keyResultId")
-  @RequirePermission("projects:goals:manage")
-  async updateKeyResult(
-    @Param("keyResultId", ParseIntPipe) keyResultId: number,
-    @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const updated = await this.goals.updateKeyResult(u.orgId, keyResultId, body);
-    if (!updated) throw new NotFoundException("Key result not found");
-    return updated;
-  }
-
-  @Delete("key-results/:keyResultId")
-  @RequirePermission("projects:goals:manage")
-  async removeKeyResult(
-    @Param("keyResultId", ParseIntPipe) keyResultId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const result = await this.goals.removeKeyResult(u.orgId, keyResultId);
-    if (!result) throw new NotFoundException("Key result not found");
-    return result;
   }
 
   @Get(":goalId")
@@ -141,28 +113,6 @@ export class GoalsController {
     const goal = await this.goals.checkIn(u.orgId, u.userId, goalId, body);
     if (!goal) throw new NotFoundException("Key result not found");
     return goal;
-  }
-
-  @Get(":goalId/key-results")
-  @RequirePermission("projects:goals:view")
-  listKeyResults(
-    @Param("goalId", ParseIntPipe) goalId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.goals.listKeyResults(u.orgId, goalId);
-  }
-
-  @Post(":goalId/key-results")
-  @RequirePermission("projects:goals:manage")
-  @HttpCode(201)
-  async createKeyResult(
-    @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(createKeyResultSchema)) body: CreateKeyResultInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const keyResult = await this.goals.createKeyResult(u.orgId, goalId, body);
-    if (!keyResult) throw new NotFoundException("Goal not found");
-    return keyResult;
   }
 
   @Get(":goalId/links")

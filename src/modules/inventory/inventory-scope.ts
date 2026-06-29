@@ -3,10 +3,10 @@ import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { isScopable } from "../rbac/permissions.constants";
 
-export const INV_PRODUCTS_READ = "inventory:products:read";
-export const INV_PO_READ = "inventory:purchase-orders:read";
-export const INV_SO_READ = "inventory:sales-orders:read";
-export const INV_STOCK_READ = "inventory:stock:read";
+const INV_PRODUCTS_READ = "inventory:products:read";
+const INV_PO_READ = "inventory:purchase-orders:read";
+const INV_SO_READ = "inventory:sales-orders:read";
+const INV_STOCK_READ = "inventory:stock:read";
 
 async function resolveInventoryScope(
   permission: string,

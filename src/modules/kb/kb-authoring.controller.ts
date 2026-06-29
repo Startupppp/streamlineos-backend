@@ -12,11 +12,9 @@ import {
   draftSchema,
   improveSchema,
   summarizeSchema,
-  translateSchema,
   type DraftInput,
   type ImproveInput,
   type SummarizeInput,
-  type TranslateInput,
 } from "./dto/kb-authoring.schemas";
 
 @Controller("kb/ai")
@@ -55,13 +53,4 @@ export class KbAuthoringController {
     return await this.authoring.summarize(u.orgId, u.userId, body);
   }
 
-  @Post("translate")
-  @HttpCode(200)
-  @RequirePermission("kb:ai:generate")
-  async translate(
-    @Body(new ZodValidationPipe(translateSchema)) body: TranslateInput,
-    @CurrentUser() u: CurrentUserContext,
-  ): Promise<unknown> {
-    return await this.authoring.translate(u.orgId, u.userId, body);
-  }
 }

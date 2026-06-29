@@ -24,7 +24,6 @@ import { KbAskController } from "./kb-ask.controller";
 import { KbAnalyticsController } from "./kb-analytics.controller";
 import { KbMembersController } from "./kb-members.controller";
 import { KbAuthoringController } from "./kb-authoring.controller";
-import { KbIndexingController } from "./kb-indexing.controller";
 import { KbFromTicketController } from "./kb-from-ticket.controller";
 import { KbTagsController } from "./kb-tags.controller";
 import { KbTranslationsController } from "./kb-translations.controller";
@@ -44,7 +43,6 @@ import { KbWidgetController } from "./kb-widget.controller";
     KbAnalyticsController,
     KbMembersController,
     KbAuthoringController,
-    KbIndexingController,
     KbFromTicketController,
     KbTagsController,
     KbTranslationsController,

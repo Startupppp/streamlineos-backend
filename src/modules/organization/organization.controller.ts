@@ -28,7 +28,6 @@ import {
   createOrganizationSchema,
   createHolidaySchema,
   inviteMemberSchema,
-  transferOwnershipSchema,
   listMembersSchema,
   securitySettingsSchema,
   switchOrgSchema,
@@ -39,7 +38,6 @@ import {
   type CancelInvitationInput,
   type CreateHolidayInput,
   type CreateOrganizationInput,
-  type TransferOwnershipInput,
   type InviteMemberInput,
   type ListMembersInput,
   type SecuritySettingsInput,
@@ -91,13 +89,6 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.organization.switchOrg(u.userId, body.orgId);
-  }
-
-  @Get("profile")
-  async getProfile(@CurrentUser() u: CurrentUserContext) {
-    const profile = await this.organization.getProfile(u.userId, u.orgId);
-    if (!profile) throw new NotFoundException("User not found");
-    return profile;
   }
 
   @Get("members")
@@ -186,30 +177,6 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(acceptInvitationSchema)) body: AcceptInvitationInput,
   ) {
     return this.organization.acceptInvitation(body);
-  }
-
-  @Post("archive")
-  @RequirePermission("settings:manage")
-  archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can archive");
-    return this.organization.archiveOrg(u.orgId, u.userId);
-  }
-
-  @Post("restore")
-  @RequirePermission("settings:manage")
-  restoreOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can restore");
-    return this.organization.restoreOrg(u.orgId, u.userId);
-  }
-
-  @Post("transfer-ownership")
-  @RequirePermission("settings:manage")
-  transferOwnership(
-    @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the current owner can transfer ownership");
-    return this.organization.transferOwnership(u.orgId, u.userId, body);
   }
 
   @Get("custom-domains")

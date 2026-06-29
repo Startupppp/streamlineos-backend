@@ -45,16 +45,6 @@ export class CrmWebFormsController {
     return this.forms.create(u.orgId, u.userId, body);
   }
 
-  @Get(":formId")
-  async getOne(
-    @Param("formId", ParseIntPipe) formId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const form = await this.forms.getOne(u.orgId, formId);
-    if (!form) throw new NotFoundException("Form not found");
-    return form;
-  }
-
   @Patch(":formId")
   @RequirePermission("crm:web-forms:manage")
   async update(

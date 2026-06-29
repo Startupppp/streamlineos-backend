@@ -6,7 +6,6 @@ import {
   getExpenseApprovedEmailTemplate,
   getExpenseRejectedEmailTemplate,
   getExpensePaidEmailTemplate,
-  getDocumentExpiryReminderEmailTemplate,
   getProjectAssignmentEmailTemplate,
   getTicketAssignmentEmailTemplate,
   getTicketReviewRequestEmailTemplate,
@@ -92,27 +91,6 @@ export class EmailService extends EmailSendersBase {
       to: employeeEmail,
       subject: `Expense Reimbursed - ₹${amount}`,
       html: getExpensePaidEmailTemplate(employeeName, category, amount, transactionRef),
-    });
-  }
-
-  sendDocumentExpiryReminderEmail(
-    email: string,
-    employeeName: string,
-    documentName: string,
-    documentType: string,
-    expiryDate: string,
-    daysRemaining: number,
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Document Expiring Soon: ${documentName}`,
-      html: getDocumentExpiryReminderEmailTemplate(
-        employeeName,
-        documentName,
-        documentType,
-        expiryDate,
-        daysRemaining,
-      ),
     });
   }
 

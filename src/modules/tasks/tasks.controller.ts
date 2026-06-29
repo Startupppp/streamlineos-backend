@@ -26,7 +26,6 @@ import {
   completeSchema,
   createSchema,
   listSchema,
-  overdueSchema,
   sequenceApplySchema,
   sequenceCreateSchema,
   sequenceListSchema,
@@ -35,7 +34,6 @@ import {
   type CompleteInput,
   type CreateInput,
   type ListInput,
-  type OverdueInput,
   type SequenceApplyInput,
   type SequenceCreateInput,
   type SequenceListInput,
@@ -75,21 +73,6 @@ export class TasksController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.analytics(u.orgId, query);
-  }
-
-  @Get("my-queue")
-  @RequirePermission("tasks:read")
-  myQueue(@CurrentUser() u: CurrentUserContext) {
-    return this.tasks.myQueue(u.orgId, u.userId);
-  }
-
-  @Get("overdue")
-  @RequirePermission("tasks:read")
-  overdue(
-    @Query(new ZodValidationPipe(overdueSchema)) query: OverdueInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.tasks.overdue(u.orgId, query.countOnly);
   }
 
   @Get("sequences")

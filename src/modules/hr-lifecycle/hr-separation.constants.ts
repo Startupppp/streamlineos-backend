@@ -17,8 +17,6 @@ export const TERMINATION_REASONS = [
 
 export const TERMINATION_REASON_OTHER = "Other";
 
-export type TerminationReason = (typeof TERMINATION_REASONS)[number];
-
 export const RESIGNATION_REASONS = [
   "Career growth opportunities",
   "Higher education or further studies",
@@ -34,5 +32,3 @@ export const RESIGNATION_REASONS = [
 ] as const;
 
 export const RESIGNATION_REASON_OTHER = "Other";
-
-export type ResignationReason = (typeof RESIGNATION_REASONS)[number];

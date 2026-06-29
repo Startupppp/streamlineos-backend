@@ -63,15 +63,6 @@ export class ProjectsRoadmapController {
     return this.roadmap.createRoadmap(u.orgId, u.userId, body);
   }
 
-  @Get("roadmap/:itemId")
-  @RequirePermission("projects:roadmap:view")
-  getRoadmap(
-    @Param("itemId", ParseIntPipe) itemId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.roadmap.getRoadmap(u.orgId, itemId);
-  }
-
   @Patch("roadmap/:itemId")
   @RequirePermission("projects:roadmap:manage")
   updateRoadmap(
@@ -110,15 +101,6 @@ export class ProjectsRoadmapController {
     return this.roadmap.createFeedback(u.orgId, u.userId, body);
   }
 
-  @Get("feedback/:postId")
-  @RequirePermission("projects:roadmap:view")
-  getFeedback(
-    @Param("postId", ParseIntPipe) postId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.roadmap.getFeedback(u.orgId, postId);
-  }
-
   @Patch("feedback/:postId")
   @RequirePermission("projects:roadmap:manage")
   updateFeedback(
@@ -155,15 +137,6 @@ export class ProjectsRoadmapController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roadmap.createChangelog(u.orgId, u.userId, body);
-  }
-
-  @Get("changelog/:entryId")
-  @RequirePermission("projects:roadmap:view")
-  getChangelog(
-    @Param("entryId", ParseIntPipe) entryId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.roadmap.getChangelog(u.orgId, entryId);
   }
 
   @Patch("changelog/:entryId")

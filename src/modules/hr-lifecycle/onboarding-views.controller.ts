@@ -66,19 +66,6 @@ export class OnboardingViewsController {
     );
   }
 
-  @Get(":docId")
-  getDetail(
-    @Param("docId", ParseIntPipe) docId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.onboardingViews.getDetail(
-      u.orgId,
-      u.userId,
-      userCan(u, "manage", "hr:documents"),
-      docId,
-    );
-  }
-
   @Patch(":docId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")

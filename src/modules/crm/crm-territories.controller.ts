@@ -51,16 +51,6 @@ export class CrmTerritoriesController {
     return this.territories.create(u.orgId, u.userId, body);
   }
 
-  @Get(":territoryId")
-  async getOne(
-    @Param("territoryId", ParseIntPipe) territoryId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const row = await this.territories.getOne(u.orgId, territoryId);
-    if (!row) throw new NotFoundException("Territory not found");
-    return row;
-  }
-
   @Patch(":territoryId")
   @RequirePermission("crm:territories:manage")
   async update(

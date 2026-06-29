@@ -183,14 +183,6 @@ export class RecruitmentSourcingController {
     return this.sourcing.updateHeadcount(u.orgId, u.userId, requestId, body);
   }
 
-  @Delete("headcount/:requestId")
-  deleteHeadcount(
-    @Param("requestId", ParseIntPipe) requestId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.sourcing.deleteHeadcount(u.orgId, u.userId, requestId);
-  }
-
   @Post("headcount/:requestId/approve")
   async approveHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,

@@ -16,14 +16,14 @@ export interface GstSplit {
   total: number;
 }
 
-export interface GstContext {
+interface GstContext {
   supplierStateCode: string;
   placeOfSupplyStateCode: string;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-export function isIntraState(ctx: GstContext): boolean {
+function isIntraState(ctx: GstContext): boolean {
   return ctx.supplierStateCode === ctx.placeOfSupplyStateCode;
 }
 

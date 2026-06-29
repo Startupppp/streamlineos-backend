@@ -1,20 +1,14 @@
 export const CACHE_KEYS = {
 
   dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
-  userProfile: (userId: string) => `user:profile:${userId}`,
   userSession: (userId: string) => `user:session:${userId}`,
-  userPermissions: (userId: string) => `user:permissions:${userId}`,
-  unreadNotifications: (userId: string) => `notifications:unread:${userId}`,
 
-  orgSettings: (orgId: string) => `org:settings:${orgId}`,
-  rolePermissions: (orgId: string, role: string) => `org:roles:${orgId}:${role}`,
   rolesList: (orgId: string) => `org:roles:${orgId}`,
 
   accessVersion: (orgId: string) => `access:version:${orgId}`,
   accessPerms: (orgId: string, userId: string, version: number) =>
     `access:perms:${orgId}:${userId}:v${version}`,
 
-  leadsCount: (orgId: string) => `leads:count:${orgId}`,
   leadsList: (orgId: string, hash: string) => `leads:list:${orgId}:${hash}`,
   leadDetail: (orgId: string, id: number) => `leads:detail:${orgId}:${id}`,
 
@@ -87,7 +81,6 @@ export const CACHE_KEYS = {
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
 
   featureFlags: () => "feature-flags:all",
-  featureFlagsOrg: (orgId: string) => `feature-flags:org:${orgId}`,
 
   orgBusinessUnits: (orgId: string) => `org:bu:${orgId}`,
   orgBranches: (orgId: string) => `org:branches:${orgId}`,

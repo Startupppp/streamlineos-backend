@@ -1,11 +1,5 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 
-export class AbilityDeniedException extends HttpException {
-  constructor(verb: string, subject: string) {
-    super({ error: "Forbidden", code: "RBAC_DENIED", verb, subject }, HttpStatus.FORBIDDEN);
-  }
-}
-
 export class ModuleDisabledException extends HttpException {
   constructor(module: string) {
     super(

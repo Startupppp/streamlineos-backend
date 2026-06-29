@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -34,16 +34,6 @@ type OverviewResult = {
 };
 
 type NoResultsRow = { query: string | null; count: number };
-
-type VerificationQueueRow = {
-  id: number;
-  title: string;
-  slug: string;
-  spaceId: number | null;
-  ownerId: string | null;
-  lastVerifiedAt: Date | null;
-  reviewIntervalDays: number | null;
-};
 
 @Injectable()
 export class KbAnalyticsService {
@@ -148,27 +138,4 @@ export class KbAnalyticsService {
       .limit(20);
   }
 
-  async verificationQueue(orgId: string): Promise<VerificationQueueRow[]> {
-    return this.db
-      .select({
-        id: kbArticles.id,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        spaceId: kbArticles.spaceId,
-        ownerId: kbArticles.ownerId,
-        lastVerifiedAt: kbArticles.lastVerifiedAt,
-        reviewIntervalDays: kbArticles.reviewIntervalDays,
-      })
-      .from(kbArticles)
-      .where(
-        and(
-          eq(kbArticles.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          isNotNull(kbArticles.reviewIntervalDays),
-          sql`(${kbArticles.lastVerifiedAt} is null or ${kbArticles.lastVerifiedAt} + (${kbArticles.reviewIntervalDays} || ' days')::interval <= now())`,
-        ),
-      )
-      .orderBy(sql`${kbArticles.lastVerifiedAt} asc nulls first`)
-      .limit(100);
-  }
 }

@@ -14,11 +14,6 @@ export function formatDdMmmYyyyTime(input: Date | string): string {
   return `${pad(d.getDate())} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatDdMmYyyy(input: Date | string): string {
-  const d = new Date(input);
-  return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
-}
-
 export function formatLongInIN(input: Date | string): string {
   return new Date(input).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
 }

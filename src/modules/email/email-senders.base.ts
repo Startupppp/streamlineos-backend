@@ -6,10 +6,7 @@ import {
   getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
   getPasswordChangeConfirmationEmailTemplate,
-  getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
-  getNewDeviceLoginEmailTemplate,
-  getPasswordExpiryWarningEmailTemplate,
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
@@ -20,12 +17,8 @@ import {
   getResignationApprovedEmailTemplate,
   getTerminationEmailTemplate,
   getReviewAssignedEmailTemplate,
-  getOnboardingWelcomeEmailTemplate,
-  getOnboardingTaskEmailTemplate,
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
-  getWorkLogApprovedEmailTemplate,
-  getWorkLogRejectedEmailTemplate,
 } from "./templates";
 
 export abstract class EmailSendersBase extends EmailBase {
@@ -61,26 +54,6 @@ export abstract class EmailSendersBase extends EmailBase {
     });
   }
 
-  sendNewDeviceLoginEmail(
-    email: string,
-    name: string,
-    deviceInfo: { userAgent: string; ipAddress: string; time: string },
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "New Device Sign-In Detected - StreamlineOS",
-      html: getNewDeviceLoginEmailTemplate(name, deviceInfo),
-    });
-  }
-
-  sendPasswordExpiryWarningEmail(email: string, name: string, daysLeft: number): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Your Password Expires in ${daysLeft} Days - StreamlineOS`,
-      html: getPasswordExpiryWarningEmailTemplate(name, daysLeft),
-    });
-  }
-
   sendInvitationEmail(
     email: string,
     token: string,
@@ -99,19 +72,6 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Welcome to StreamlineOS — Set Up Your Account",
       html: getWelcomeEmailTemplate(name, email, setupUrl),
-    });
-  }
-
-  sendAccountDeactivationEmail(
-    email: string,
-    employeeName: string,
-    deactivatedBy: string,
-    reason?: string,
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Account Deactivated - StreamlineOS",
-      html: getAccountDeactivationEmailTemplate(employeeName, deactivatedBy, reason),
     });
   }
 
@@ -149,17 +109,6 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     await Promise.allSettled(
       emails.map((email) => this.sendHolidayAnnouncementEmail(email, holidayName, holidayDate, message)),
-    );
-  }
-
-  async sendBulkCompanyAnnouncement(
-    emails: string[],
-    subject: string,
-    message: string,
-    announcedBy: string,
-  ): Promise<void> {
-    await Promise.allSettled(
-      emails.map((email) => this.sendCompanyAnnouncementEmail(email, subject, message, announcedBy)),
     );
   }
 
@@ -296,53 +245,6 @@ export abstract class EmailSendersBase extends EmailBase {
         "hr@streamlineos.app",
       ),
       attachments,
-    });
-  }
-
-  sendWorkLogStatusEmail(
-    email: string,
-    employeeName: string,
-    date: string,
-    status: "APPROVED" | "REJECTED",
-    approverName: string,
-    rejectionReason?: string,
-  ): Promise<void> {
-    const html =
-      status === "APPROVED"
-        ? getWorkLogApprovedEmailTemplate(employeeName, date, approverName)
-        : getWorkLogRejectedEmailTemplate(employeeName, date, approverName, rejectionReason);
-    return this.sendEmail({
-      to: email,
-      subject: `Work Log ${status === "APPROVED" ? "Approved" : "Rejected"} — ${date}`,
-      html,
-    });
-  }
-
-  sendOnboardingWelcomeEmail(
-    email: string,
-    employeeName: string,
-    designation: string,
-    joiningDate: string,
-    taskCount: number,
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Welcome to StreamlineOS — Your Onboarding Starts Now!",
-      html: getOnboardingWelcomeEmailTemplate(employeeName, designation, joiningDate, taskCount),
-    });
-  }
-
-  sendOnboardingTaskEmail(
-    email: string,
-    recipientName: string,
-    employeeName: string,
-    taskRole: string,
-    taskCount: number,
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Onboarding Tasks Assigned: ${employeeName}`,
-      html: getOnboardingTaskEmailTemplate(recipientName, employeeName, taskRole, taskCount),
     });
   }
 

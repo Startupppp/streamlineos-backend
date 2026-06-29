@@ -74,10 +74,6 @@ export class AutomationEmailService {
     else this.provider = "none";
   }
 
-  getProvider(): Provider {
-    return this.provider;
-  }
-
   private fromAddress(): string {
     const name = process.env.EMAIL_FROM_NAME?.trim();
     const email = process.env.EMAIL_FROM_ADDRESS?.trim();
