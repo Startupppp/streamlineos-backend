@@ -63,6 +63,10 @@ export const searchQuerySchema = z.object({
   limit: z.coerce.number().int().optional(),
 });
 
+export const pinMessageSchema = z.object({
+  messageId: z.number().int().positive(),
+});
+
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
@@ -72,3 +76,4 @@ export type StatusInput = z.infer<typeof statusSchema>;
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 export type PollQuery = z.infer<typeof pollQuerySchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type PinMessageInput = z.infer<typeof pinMessageSchema>;

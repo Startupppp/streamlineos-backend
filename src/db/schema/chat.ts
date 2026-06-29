@@ -84,9 +84,21 @@ export const chatUserPresence = pgTable("chat_user_presence", {
   index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
 ]);
 
+export const chatPinnedMessages = pgTable("chat_pinned_messages", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").references(() => chatMessages.id, { onDelete: "cascade" }).notNull(),
+  pinnedBy: text("pinned_by").references(() => users.id).notNull(),
+  pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_chat_pinned_msg").on(table.channelId, table.messageId),
+  index("idx_chat_pinned_channel").on(table.channelId),
+]);
+
 export const chatChannelsRelations = relations(chatChannels, ({ many, one }) => ({
   members: many(chatChannelMembers),
   messages: many(chatMessages),
+  pins: many(chatPinnedMessages),
   creator: one(users, { fields: [chatChannels.createdBy], references: [users.id] }),
 }));
 
@@ -99,9 +111,16 @@ export const chatMessagesRelations = relations(chatMessages, ({ one, many }) => 
   channel: one(chatChannels, { fields: [chatMessages.channelId], references: [chatChannels.id] }),
   sender: one(users, { fields: [chatMessages.senderId], references: [users.id] }),
   attachments: many(chatAttachments),
+  pins: many(chatPinnedMessages),
   replyTo: one(chatMessages, { fields: [chatMessages.replyToId], references: [chatMessages.id] }),
 }));
 
 export const chatAttachmentsRelations = relations(chatAttachments, ({ one }) => ({
   message: one(chatMessages, { fields: [chatAttachments.messageId], references: [chatMessages.id] }),
+}));
+
+export const chatPinnedMessagesRelations = relations(chatPinnedMessages, ({ one }) => ({
+  channel: one(chatChannels, { fields: [chatPinnedMessages.channelId], references: [chatChannels.id] }),
+  message: one(chatMessages, { fields: [chatPinnedMessages.messageId], references: [chatMessages.id] }),
+  pinnedByUser: one(users, { fields: [chatPinnedMessages.pinnedBy], references: [users.id] }),
 }));
