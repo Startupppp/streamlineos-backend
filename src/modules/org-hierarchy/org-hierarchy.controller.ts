@@ -299,6 +299,26 @@ export class OrgHierarchyController {
     return { message: "Cost center deleted" };
   }
 
+  @Patch("business-units/:id/move")
+  moveBusinessUnit(
+    @Param("id") id: string,
+    @Body() body: { parentId: string | null },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertCanManage(u);
+    return this.service.moveBusinessUnit(u.orgId, id, body.parentId ?? null);
+  }
+
+  @Patch("branches/:id/move")
+  moveBranch(
+    @Param("id") id: string,
+    @Body() body: { businessUnitId: string | null },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    assertCanManage(u);
+    return this.service.moveBranch(u.orgId, id, body.businessUnitId ?? null);
+  }
+
   @Patch("departments/:id/move")
   moveDepartment(
     @Param("id") id: string,
