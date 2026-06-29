@@ -100,6 +100,7 @@ export const chatChannelsRelations = relations(chatChannels, ({ many, one }) => 
   members: many(chatChannelMembers),
   messages: many(chatMessages),
   pins: many(chatPinnedMessages),
+  huddles: many(chatHuddles),
   creator: one(users, { fields: [chatChannels.createdBy], references: [users.id] }),
 }));
 
@@ -124,4 +125,40 @@ export const chatPinnedMessagesRelations = relations(chatPinnedMessages, ({ one 
   channel: one(chatChannels, { fields: [chatPinnedMessages.channelId], references: [chatChannels.id] }),
   message: one(chatMessages, { fields: [chatPinnedMessages.messageId], references: [chatMessages.id] }),
   pinnedByUser: one(users, { fields: [chatPinnedMessages.pinnedBy], references: [users.id] }),
+}));
+
+export const chatHuddles = pgTable("chat_huddles", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  startedBy: text("started_by").references(() => users.id).notNull(),
+  status: text("status").default("active").notNull(),
+  calendarEventId: integer("calendar_event_id"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+}, (table) => [
+  index("idx_chat_huddles_channel").on(table.channelId, table.status),
+]);
+
+export const chatHuddleParticipants = pgTable("chat_huddle_participants", {
+  id: serial("id").primaryKey(),
+  huddleId: integer("huddle_id").references(() => chatHuddles.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  leftAt: timestamp("left_at"),
+  isMuted: boolean("is_muted").default(false).notNull(),
+  handRaised: boolean("hand_raised").default(false).notNull(),
+}, (table) => [
+  uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
+  index("idx_huddle_participants_huddle").on(table.huddleId),
+]);
+
+export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({
+  channel: one(chatChannels, { fields: [chatHuddles.channelId], references: [chatChannels.id] }),
+  startedByUser: one(users, { fields: [chatHuddles.startedBy], references: [users.id] }),
+  participants: many(chatHuddleParticipants),
+}));
+
+export const chatHuddleParticipantsRelations = relations(chatHuddleParticipants, ({ one }) => ({
+  huddle: one(chatHuddles, { fields: [chatHuddleParticipants.huddleId], references: [chatHuddles.id] }),
+  user: one(users, { fields: [chatHuddleParticipants.userId], references: [users.id] }),
 }));

@@ -20,6 +20,8 @@ export class AblyService {
   createChatTokenRequest(clientId: string, orgId: string): Promise<Ably.TokenRequest> {
     const capability: Ably.TokenParams["capability"] = {
       [`chat:${orgId}:*`]: ["subscribe", "publish", "history"],
+      [`huddle:${orgId}:*`]: ["subscribe", "publish"],
+      [`huddle-signal:${orgId}:*`]: ["subscribe", "publish"],
     };
     return this.rest().auth.createTokenRequest({ clientId, capability, ttl: CHAT_TOKEN_TTL_MS });
   }
@@ -33,6 +35,22 @@ export class AblyService {
     await this.rest()
       .channels.get(this.channelName(orgId, channelId))
       .publish("message", payload)
+      .catch(() => undefined);
+  }
+
+  async publishHuddleEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
+    if (!this.apiKey) return;
+    await this.rest()
+      .channels.get(`huddle:${orgId}:${channelId}`)
+      .publish(event, data)
+      .catch(() => undefined);
+  }
+
+  async publishHuddleSignal(orgId: string, channelId: number, targetUserId: string, data: unknown): Promise<void> {
+    if (!this.apiKey) return;
+    await this.rest()
+      .channels.get(`huddle-signal:${orgId}:${channelId}:${targetUserId}`)
+      .publish("signal", data)
       .catch(() => undefined);
   }
 
