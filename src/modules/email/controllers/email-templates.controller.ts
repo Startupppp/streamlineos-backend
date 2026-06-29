@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -10,6 +10,13 @@ import { emailTemplateTestSchema, type EmailTemplateTestInput } from "../dto/ema
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class EmailTemplatesController {
   constructor(private readonly routes: EmailRoutesService) {}
+
+  @Get("preview")
+  @HttpCode(200)
+  @RequirePermission("settings:email-templates:manage")
+  preview() {
+    return this.routes.getTemplatePreviews();
+  }
 
   @Post("test")
   @HttpCode(200)

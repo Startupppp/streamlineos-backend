@@ -123,6 +123,16 @@ export class EmailRoutesService {
     return { success: true };
   }
 
+  getTemplatePreviews(): { id: string; category: string; name: string; subject: string; html: string }[] {
+    return Object.entries(TEMPLATE_MAP).map(([id, entry]) => ({
+      id,
+      category: entry.category,
+      name: entry.name,
+      subject: entry.subject,
+      html: entry.generateHtml(),
+    }));
+  }
+
   async sendTemplateTest(
     templateId: string,
     testEmail: string,
