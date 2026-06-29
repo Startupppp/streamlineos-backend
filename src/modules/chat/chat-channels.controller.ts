@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -24,9 +25,11 @@ import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
   createChannelSchema,
+  muteChannelSchema,
   updateChannelSchema,
   type AddMemberInput,
   type CreateChannelInput,
+  type MuteChannelInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -50,6 +53,16 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:read")
   listPublic(@CurrentUser() u: CurrentUserContext) {
     return this.channels.listPublicChannels(u.orgId, u.userId);
+  }
+
+  @Get("entity/:entityType/:entityId")
+  @RequirePermission("chat:channels:read")
+  getByEntity(
+    @Param("entityType") entityType: string,
+    @Param("entityId") entityId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.getOrCreateEntityChannel(entityType, entityId, u.userId, u.orgId);
   }
 
   @Post()
@@ -165,6 +178,41 @@ export class ChatChannelsController {
   @RequirePermission("chat:messages:write")
   markUnread(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     return this.channels.markChannelUnread(channelId, u.userId);
+  }
+
+  @Post(":channelId/mute")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  mute(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Body(new ZodValidationPipe(muteChannelSchema)) body: MuteChannelInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.muteChannel(channelId, u.userId, body.duration);
+  }
+
+  @Post(":channelId/unmute")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  unmute(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.unmuteChannel(channelId, u.userId);
+  }
+
+  @Get(":channelId/files")
+  @RequirePermission("chat:messages:read")
+  listFiles(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Query("cursor") cursor: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.listChannelFiles(
+      channelId,
+      u.userId,
+      cursor !== undefined ? parseInt(cursor, 10) : undefined,
+    );
   }
 
   @Post(":channelId/typing")

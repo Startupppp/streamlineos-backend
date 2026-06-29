@@ -5,6 +5,8 @@ const channelBaseSchema = z.object({
   description: z.string().optional(),
   avatarUrl: z.string().optional(),
   memberIds: z.array(z.string()).min(1),
+  entityType: z.enum(["project", "client", "task"]).optional(),
+  entityId: z.string().optional(),
 });
 
 export const createChannelSchema = z.discriminatedUnion("type", [
@@ -73,6 +75,11 @@ export const pinMessageSchema = z.object({
 export const addMemberSchema = z.object({ userId: z.string().min(1) });
 export const removeMemberSchema = z.object({ userId: z.string().min(1) });
 
+export const muteChannelSchema = z.object({
+  duration: z.enum(["15m", "1h", "8h", "24h", "forever"]),
+});
+
+export type MuteChannelInput = z.infer<typeof muteChannelSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
