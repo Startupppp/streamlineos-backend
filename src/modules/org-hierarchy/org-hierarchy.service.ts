@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -620,10 +621,9 @@ export class OrgHierarchyService {
     });
     if (!bu) throw new Error("Business unit not found");
 
-    await this.db
-      .update(orgBusinessUnits)
-      .set({ parentId: newParentId, updatedAt: new Date() })
-      .where(and(eq(orgBusinessUnits.id, buId), eq(orgBusinessUnits.orgId, orgId)));
+    if (newParentId !== null) {
+      throw new BadRequestException("Business units cannot be reparented");
+    }
 
     return { success: true };
   }

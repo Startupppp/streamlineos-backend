@@ -6,7 +6,7 @@
   "scripts": {
     "build": "nest build",
     "start": "nest start",
-    "start:dev": "node --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --watch",
+    "start:dev": "node --max-old-space-size=4096 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start:prod": "node dist/main.js",
     "sync:schema": "node scripts/sync-schema.mjs",
     "check:schema": "node scripts/sync-schema.mjs --check",

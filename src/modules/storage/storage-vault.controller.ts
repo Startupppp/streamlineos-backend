@@ -30,7 +30,7 @@ export class StorageVaultController {
     private readonly access: AccessService,
   ) {}
 
-  @Post(":documentId(\\d+)/url")
+  @Post(":documentId/url")
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -70,7 +70,7 @@ export class StorageVaultController {
     return { ...doc, signedUrl };
   }
 
-  @Delete(":documentId(\\d+)")
+  @Delete(":documentId")
   async remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,

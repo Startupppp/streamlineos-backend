@@ -103,4 +103,26 @@ export class ChatMessagesController {
   ) {
     return this.messages.react(channelId, messageId, u.userId, body.emoji);
   }
+
+  @Get(":messageId/thread")
+  @RequirePermission("chat:messages:read")
+  listThread(
+    @Param("messageId", ParseIntPipe) messageId: number,
+    @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.messages.listThreadReplies(messageId, u.userId, query.cursor, query.limit ?? 50);
+  }
+
+  @Post(":messageId/thread")
+  @HttpCode(201)
+  @RequirePermission("chat:messages:write")
+  sendThreadReply(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Param("messageId", ParseIntPipe) messageId: number,
+    @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.messages.sendThreadReply(channelId, messageId, u.userId, u.orgId, body);
+  }
 }

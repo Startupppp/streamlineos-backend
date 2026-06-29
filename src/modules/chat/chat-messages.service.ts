@@ -201,6 +201,73 @@ export class ChatMessagesService {
     return { ok: true };
   }
 
+  async listThreadReplies(
+    parentMessageId: number,
+    userId: string,
+    cursor: number | undefined,
+    limit: number,
+  ) {
+    const parentMessage = await this.db.query.chatMessages.findFirst({
+      where: eq(chatMessages.id, parentMessageId),
+      with: {
+        sender: { columns: { id: true, name: true, image: true } },
+        attachments: true,
+        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+      },
+    });
+
+    if (!parentMessage) throw new NotFoundException("Message not found");
+
+    if (!(await this.isMember(parentMessage.channelId, userId))) {
+      throw new ForbiddenException("You are not a member of this channel");
+    }
+
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+
+    const conditions = [eq(chatMessages.replyToId, parentMessageId)];
+    if (cursor) conditions.push(lt(chatMessages.id, cursor));
+
+    const replies = await this.db.query.chatMessages.findMany({
+      where: and(...conditions),
+      orderBy: [desc(chatMessages.createdAt)],
+      limit: safeLimit + 1,
+      with: {
+        sender: { columns: { id: true, name: true, image: true } },
+        attachments: true,
+        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+      },
+    });
+
+    let nextCursor: number | undefined;
+    if (replies.length > safeLimit) {
+      const next = replies.pop();
+      nextCursor = next?.id;
+    }
+
+    return { parentMessage, replies: replies.reverse(), nextCursor };
+  }
+
+  async sendThreadReply(
+    channelId: number,
+    parentMessageId: number,
+    userId: string,
+    orgId: string,
+    body: SendMessageInput,
+  ) {
+    const parentMessage = await this.db.query.chatMessages.findFirst({
+      where: and(
+        eq(chatMessages.id, parentMessageId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.isDeleted, false),
+      ),
+      columns: { id: true, channelId: true },
+    });
+
+    if (!parentMessage) throw new NotFoundException("Message not found");
+
+    return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
+  }
+
   async react(channelId: number, messageId: number, userId: string, emoji: string) {
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(

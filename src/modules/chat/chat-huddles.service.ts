@@ -79,6 +79,7 @@ export class ChatHuddlesService {
           title: `Huddle in #${channel?.name ?? "channel"}`,
           category: "huddle",
           entityType: "huddle",
+          entityId: channelId.toString(),
           startDate: now,
           endDate: estimatedEnd,
           allDay: false,
