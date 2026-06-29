@@ -16,6 +16,8 @@ const TIERS: Record<string, Tier> = {
   "auth:resend-verification": { limit: 3, windowSecs: 60 },
   "auth:magic-link": { limit: 3, windowSecs: 60 },
   "auth:magic-link-verify": { limit: 10, windowSecs: 60 },
+  "chat:send-message": { limit: 30, windowSecs: 60 },
+  "chat:huddle": { limit: 20, windowSecs: 60 },
 };
 
 export interface RateLimitResult {

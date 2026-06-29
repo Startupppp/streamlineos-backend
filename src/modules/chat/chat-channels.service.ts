@@ -1,6 +1,7 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import {
+  chatAttachments,
   chatChannels,
   chatChannelMembers,
   chatMessages,
@@ -23,6 +24,12 @@ export class ChatChannelsService {
       ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
+    return member;
+  }
+
+  private async assertAdmin(channelId: number, userId: string) {
+    const member = await this.assertMember(channelId, userId);
+    if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
     return member;
   }
 
@@ -105,6 +112,34 @@ export class ChatChannelsService {
       });
       return [];
     }
+  }
+
+  async listPublicChannels(orgId: string, userId: string) {
+    const publicChannels = await this.db.query.chatChannels.findMany({
+      where: and(
+        eq(chatChannels.orgId, orgId),
+        eq(chatChannels.type, "PUBLIC"),
+        eq(chatChannels.isArchived, false),
+      ),
+      orderBy: [desc(chatChannels.lastMessageAt)],
+      with: {
+        members: {
+          columns: { userId: true },
+        },
+      },
+    });
+
+    return publicChannels.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      description: ch.description,
+      avatarUrl: ch.avatarUrl,
+      type: ch.type,
+      memberCount: ch.members.length,
+      isMember: ch.members.some((m) => m.userId === userId),
+      createdAt: ch.createdAt,
+      lastMessageAt: ch.lastMessageAt,
+    }));
   }
 
   async getChannel(channelId: number, userId: string) {
@@ -197,8 +232,10 @@ export class ChatChannelsService {
       return { channel, created: true };
     }
 
-    const { name, description, avatarUrl, memberIds } = body;
+    const { name, description, avatarUrl, memberIds, entityType, entityId } = body;
     const allMembers = [...new Set([userId, ...memberIds])];
+    const channelType = body.type;
+    const isPrivate = channelType === "PRIVATE";
 
     const channel = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -206,10 +243,13 @@ export class ChatChannelsService {
         .values({
           orgId,
           name,
-          type: "GROUP",
+          type: channelType,
           description,
           avatarUrl,
           createdBy: userId,
+          isPrivate,
+          ...(entityType ? { entityType } : {}),
+          ...(entityId ? { entityId } : {}),
         })
         .returning();
 
@@ -225,6 +265,90 @@ export class ChatChannelsService {
     });
 
     return { channel, created: true };
+  }
+
+  async joinPublicChannel(channelId: number, userId: string) {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(
+        eq(chatChannels.id, channelId),
+        eq(chatChannels.type, "PUBLIC"),
+        eq(chatChannels.isArchived, false),
+      ),
+    });
+
+    if (!channel) throw new NotFoundException("Public channel not found");
+
+    const existing = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, userId),
+      ),
+    });
+
+    if (existing) return { ok: true };
+
+    await this.db.insert(chatChannelMembers).values({
+      channelId,
+      userId,
+      role: "MEMBER",
+    });
+
+    return { ok: true };
+  }
+
+  async leaveChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+
+    await this.db
+      .delete(chatChannelMembers)
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+
+    return { ok: true };
+  }
+
+  async addMember(channelId: number, targetUserId: string, requesterId: string) {
+    await this.assertAdmin(channelId, requesterId);
+
+    const existing = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, targetUserId),
+      ),
+    });
+
+    if (existing) throw new ConflictException("User is already a member of this channel");
+
+    await this.db.insert(chatChannelMembers).values({
+      channelId,
+      userId: targetUserId,
+      role: "MEMBER",
+    });
+
+    return { ok: true };
+  }
+
+  async removeMember(channelId: number, targetUserId: string, requesterId: string) {
+    const requester = await this.assertMember(channelId, requesterId);
+
+    if (requesterId !== targetUserId && requester.role !== "ADMIN") {
+      throw new ForbiddenException("Only channel admins can remove other members");
+    }
+
+    await this.db
+      .delete(chatChannelMembers)
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, targetUserId),
+        ),
+      );
+
+    return { ok: true };
   }
 
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput) {
@@ -250,6 +374,24 @@ export class ChatChannelsService {
     return { ok: true };
   }
 
+  async archiveChannel(channelId: number, userId: string) {
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+    });
+    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can archive channels");
+    await this.db.update(chatChannels).set({ isArchived: true }).where(eq(chatChannels.id, channelId));
+    return { ok: true };
+  }
+
+  async unarchiveChannel(channelId: number, userId: string) {
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+    });
+    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can unarchive channels");
+    await this.db.update(chatChannels).set({ isArchived: false }).where(eq(chatChannels.id, channelId));
+    return { ok: true };
+  }
+
   async markRead(channelId: number, userId: string) {
     await this.db
       .update(chatChannelMembers)
@@ -261,6 +403,154 @@ export class ChatChannelsService {
         ),
       );
 
+    return { ok: true };
+  }
+
+  async markChannelUnread(channelId: number, userId: string) {
+    await this.db
+      .update(chatChannelMembers)
+      .set({ lastReadAt: new Date(0) })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+
+    return { ok: true };
+  }
+
+  async getOrCreateEntityChannel(entityType: string, entityId: string, userId: string, orgId: string) {
+    const existing = await this.db.query.chatChannels.findFirst({
+      where: and(
+        eq(chatChannels.entityType, entityType),
+        eq(chatChannels.entityId, entityId),
+        eq(chatChannels.orgId, orgId),
+      ),
+      with: {
+        members: {
+          with: { user: { columns: { id: true, name: true, image: true } } },
+        },
+      },
+    });
+
+    if (existing) {
+      const isMember = existing.members.some((m) => m.userId === userId);
+      if (!isMember) {
+        await this.db.insert(chatChannelMembers).values({
+          channelId: existing.id,
+          userId,
+          role: "MEMBER",
+        });
+      }
+      return existing;
+    }
+
+    const channel = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(chatChannels)
+        .values({
+          orgId,
+          name: `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`,
+          type: "GROUP",
+          createdBy: userId,
+          entityType,
+          entityId,
+        })
+        .returning();
+
+      await tx.insert(chatChannelMembers).values({
+        channelId: created.id,
+        userId,
+        role: "ADMIN",
+      });
+
+      return created;
+    });
+
+    return channel;
+  }
+
+  async muteChannel(channelId: number, userId: string, duration: string) {
+    const until =
+      duration === "forever"
+        ? new Date("2099-12-31")
+        : duration === "24h"
+          ? new Date(Date.now() + 86400_000)
+          : duration === "8h"
+            ? new Date(Date.now() + 28800_000)
+            : duration === "1h"
+              ? new Date(Date.now() + 3600_000)
+              : new Date(Date.now() + 900_000);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ mutedUntil: until })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true, mutedUntil: until };
+  }
+
+  async unmuteChannel(channelId: number, userId: string) {
+    await this.db
+      .update(chatChannelMembers)
+      .set({ mutedUntil: null })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async listChannelFiles(channelId: number, userId: string, cursor?: number, limit = 20) {
+    await this.assertMember(channelId, userId);
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+
+    const rows = await this.db
+      .select({
+        id: chatAttachments.id,
+        messageId: chatAttachments.messageId,
+        fileName: chatAttachments.fileName,
+        fileUrl: chatAttachments.fileUrl,
+        fileSize: chatAttachments.fileSize,
+        mimeType: chatAttachments.mimeType,
+        createdAt: chatAttachments.createdAt,
+      })
+      .from(chatAttachments)
+      .innerJoin(chatMessages, eq(chatAttachments.messageId, chatMessages.id))
+      .where(
+        cursor !== undefined
+          ? and(
+              eq(chatMessages.channelId, channelId),
+              eq(chatMessages.isDeleted, false),
+              lt(chatAttachments.id, cursor),
+            )
+          : and(
+              eq(chatMessages.channelId, channelId),
+              eq(chatMessages.isDeleted, false),
+            ),
+      )
+      .orderBy(desc(chatAttachments.id))
+      .limit(safeLimit + 1);
+
+    const hasMore = rows.length > safeLimit;
+    if (hasMore) rows.pop();
+    return { files: rows, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
+  }
+
+  async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, role: string) {
+    const requester = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, requesterId)),
+    });
+    if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
+    await this.db.update(chatChannelMembers)
+      .set({ role })
+      .where(and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, targetUserId)));
     return { ok: true };
   }
 }

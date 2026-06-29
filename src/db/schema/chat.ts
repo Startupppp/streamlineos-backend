@@ -14,7 +14,10 @@ export const chatChannels = pgTable("chat_channels", {
   avatarUrl: text("avatar_url"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   isArchived: boolean("is_archived").default(false).notNull(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
   isPinned: boolean("is_pinned").default(false).notNull(),
+  isPrivate: boolean("is_private").default(false).notNull(),
   linkedDealId: integer("linked_deal_id").references(() => deals.id, { onDelete: "set null" }),
   lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -84,9 +87,32 @@ export const chatUserPresence = pgTable("chat_user_presence", {
   index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
 ]);
 
+export const chatPinnedMessages = pgTable("chat_pinned_messages", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").references(() => chatMessages.id, { onDelete: "cascade" }).notNull(),
+  pinnedBy: text("pinned_by").references(() => users.id).notNull(),
+  pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_chat_pinned_msg").on(table.channelId, table.messageId),
+  index("idx_chat_pinned_channel").on(table.channelId),
+]);
+
+export const chatSavedMessages = pgTable("chat_saved_messages", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").references(() => chatMessages.id, { onDelete: "cascade" }).notNull(),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_saved_message").on(table.userId, table.messageId),
+  index("idx_saved_messages_user").on(table.userId),
+]);
+
 export const chatChannelsRelations = relations(chatChannels, ({ many, one }) => ({
   members: many(chatChannelMembers),
   messages: many(chatMessages),
+  pins: many(chatPinnedMessages),
+  huddles: many(chatHuddles),
   creator: one(users, { fields: [chatChannels.createdBy], references: [users.id] }),
 }));
 
@@ -99,9 +125,62 @@ export const chatMessagesRelations = relations(chatMessages, ({ one, many }) => 
   channel: one(chatChannels, { fields: [chatMessages.channelId], references: [chatChannels.id] }),
   sender: one(users, { fields: [chatMessages.senderId], references: [users.id] }),
   attachments: many(chatAttachments),
+  pins: many(chatPinnedMessages),
   replyTo: one(chatMessages, { fields: [chatMessages.replyToId], references: [chatMessages.id] }),
+  savedBy: many(chatSavedMessages),
 }));
 
 export const chatAttachmentsRelations = relations(chatAttachments, ({ one }) => ({
   message: one(chatMessages, { fields: [chatAttachments.messageId], references: [chatMessages.id] }),
+}));
+
+export const chatPinnedMessagesRelations = relations(chatPinnedMessages, ({ one }) => ({
+  channel: one(chatChannels, { fields: [chatPinnedMessages.channelId], references: [chatChannels.id] }),
+  message: one(chatMessages, { fields: [chatPinnedMessages.messageId], references: [chatMessages.id] }),
+  pinnedByUser: one(users, { fields: [chatPinnedMessages.pinnedBy], references: [users.id] }),
+}));
+
+export const chatSavedMessagesRelations = relations(chatSavedMessages, ({ one }) => ({
+  user: one(users, { fields: [chatSavedMessages.userId], references: [users.id] }),
+  message: one(chatMessages, { fields: [chatSavedMessages.messageId], references: [chatMessages.id] }),
+}));
+
+export const chatHuddles = pgTable("chat_huddles", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  startedBy: text("started_by").references(() => users.id).notNull(),
+  status: text("status").default("active").notNull(),
+  calendarEventId: integer("calendar_event_id"),
+  hasVideo: boolean("has_video").default(false).notNull(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+}, (table) => [
+  index("idx_chat_huddles_channel").on(table.channelId, table.status),
+]);
+
+export const chatHuddleParticipants = pgTable("chat_huddle_participants", {
+  id: serial("id").primaryKey(),
+  huddleId: integer("huddle_id").references(() => chatHuddles.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  leftAt: timestamp("left_at"),
+  isMuted: boolean("is_muted").default(false).notNull(),
+  handRaised: boolean("hand_raised").default(false).notNull(),
+  isCameraOff: boolean("is_camera_off").default(false).notNull(),
+  isScreenSharing: boolean("is_screen_sharing").default(false).notNull(),
+  isDeafened: boolean("is_deafened").default(false).notNull(),
+}, (table) => [
+  uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
+  index("idx_huddle_participants_huddle").on(table.huddleId),
+]);
+
+export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({
+  channel: one(chatChannels, { fields: [chatHuddles.channelId], references: [chatChannels.id] }),
+  startedByUser: one(users, { fields: [chatHuddles.startedBy], references: [users.id] }),
+  participants: many(chatHuddleParticipants),
+}));
+
+export const chatHuddleParticipantsRelations = relations(chatHuddleParticipants, ({ one }) => ({
+  huddle: one(chatHuddles, { fields: [chatHuddleParticipants.huddleId], references: [chatHuddles.id] }),
+  user: one(users, { fields: [chatHuddleParticipants.userId], references: [users.id] }),
 }));

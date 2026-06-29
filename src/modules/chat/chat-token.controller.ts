@@ -1,4 +1,5 @@
 import { Controller, Get, InternalServerErrorException, ServiceUnavailableException, UseGuards } from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import Ably from "ably";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -7,10 +8,14 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@ApiTags("Chat Token")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatTokenController {
+  @ApiOperation({ summary: "Get a scoped Ably token request for the current user" })
+  @ApiResponse({ status: 200, description: "Ably token request object" })
   @Get("ably-token")
   @RequirePermission("chat:messages:read")
   async getAblyToken(@CurrentUser() u: CurrentUserContext) {

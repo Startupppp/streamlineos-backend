@@ -1,17 +1,22 @@
 import { z } from "zod";
 
+const channelBaseSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  avatarUrl: z.string().optional(),
+  memberIds: z.array(z.string()).min(1),
+  entityType: z.enum(["project", "client", "task"]).optional(),
+  entityId: z.string().optional(),
+});
+
 export const createChannelSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("DIRECT"),
     targetUserId: z.string().min(1),
   }),
-  z.object({
-    type: z.literal("GROUP"),
-    name: z.string().min(1),
-    description: z.string().optional(),
-    avatarUrl: z.string().optional(),
-    memberIds: z.array(z.string()).min(1),
-  }),
+  channelBaseSchema.extend({ type: z.literal("GROUP") }),
+  channelBaseSchema.extend({ type: z.literal("PUBLIC") }),
+  channelBaseSchema.extend({ type: z.literal("PRIVATE") }),
 ]);
 
 export const updateChannelSchema = z.object({
@@ -63,6 +68,18 @@ export const searchQuerySchema = z.object({
   limit: z.coerce.number().int().optional(),
 });
 
+export const pinMessageSchema = z.object({
+  messageId: z.number().int().positive(),
+});
+
+export const addMemberSchema = z.object({ userId: z.string().min(1) });
+export const removeMemberSchema = z.object({ userId: z.string().min(1) });
+
+export const muteChannelSchema = z.object({
+  duration: z.enum(["15m", "1h", "8h", "24h", "forever"]),
+});
+
+export type MuteChannelInput = z.infer<typeof muteChannelSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
@@ -72,3 +89,6 @@ export type StatusInput = z.infer<typeof statusSchema>;
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 export type PollQuery = z.infer<typeof pollQuerySchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type PinMessageInput = z.infer<typeof pinMessageSchema>;
+export type AddMemberInput = z.infer<typeof addMemberSchema>;
+export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
