@@ -104,6 +104,16 @@ export class ChatHuddlesService {
       startedBy: userId,
     });
 
+    for (const member of channelMembers) {
+      if (member.userId !== userId) {
+        void this.ably.publishToUser(orgId, member.userId, "huddle:started", {
+          huddleId: huddle.id,
+          channelId,
+          startedBy: userId,
+        }).catch(() => {});
+      }
+    }
+
     return huddle;
   }
 
@@ -299,6 +309,47 @@ export class ChatHuddlesService {
       payload,
     });
 
+    return { ok: true };
+  }
+
+  async setCameraState(huddleId: number, userId: string, isCameraOff: boolean, orgId: string) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+    await this.db
+      .update(chatHuddleParticipants)
+      .set({ isCameraOff })
+      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId), isNull(chatHuddleParticipants.leftAt)));
+    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isCameraOff });
+    return { ok: true };
+  }
+
+  async setScreenShare(huddleId: number, userId: string, isScreenSharing: boolean, orgId: string) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+    await this.db
+      .update(chatHuddleParticipants)
+      .set({ isScreenSharing })
+      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId), isNull(chatHuddleParticipants.leftAt)));
+    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isScreenSharing });
+    return { ok: true };
+  }
+
+  async kickParticipant(huddleId: number, userId: string, targetUserId: string, orgId: string) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+    if (huddle.startedBy !== userId) throw new ForbiddenException("Only the huddle host can remove participants");
+    await this.db
+      .update(chatHuddleParticipants)
+      .set({ leftAt: new Date() })
+      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, targetUserId), isNull(chatHuddleParticipants.leftAt)));
+    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId: targetUserId, kicked: true });
+    void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch(() => {});
     return { ok: true };
   }
 }

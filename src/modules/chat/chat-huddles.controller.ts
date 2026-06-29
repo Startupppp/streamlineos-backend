@@ -21,9 +21,15 @@ import {
   huddleSignalSchema,
   muteSchema,
   raiseHandSchema,
+  cameraSchema,
+  screenShareSchema,
+  kickSchema,
   type HuddleSignalInput,
   type MuteInput,
   type RaiseHandInput,
+  type CameraInput,
+  type ScreenShareInput,
+  type KickInput,
 } from "./dto/huddle.schemas";
 import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
 
@@ -124,5 +130,38 @@ export class ChatHuddlesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.huddles.sendMeetingSignal(huddleId, u.userId, u.orgId, body.targetUserId, body.type, body.payload);
+  }
+
+  @Patch("huddles/:huddleId/camera")
+  @HttpCode(200)
+  @RequirePermission("chat:messages:write")
+  setCameraState(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(cameraSchema)) body: CameraInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.setCameraState(huddleId, u.userId, body.isCameraOff, u.orgId);
+  }
+
+  @Patch("huddles/:huddleId/screenshare")
+  @HttpCode(200)
+  @RequirePermission("chat:messages:write")
+  setScreenShare(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(screenShareSchema)) body: ScreenShareInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.setScreenShare(huddleId, u.userId, body.isScreenSharing, u.orgId);
+  }
+
+  @Post("huddles/:huddleId/kick")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  kickParticipant(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(kickSchema)) body: KickInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.kickParticipant(huddleId, u.userId, body.targetUserId, u.orgId);
   }
 }

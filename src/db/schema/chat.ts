@@ -164,6 +164,8 @@ export const chatHuddleParticipants = pgTable("chat_huddle_participants", {
   leftAt: timestamp("left_at"),
   isMuted: boolean("is_muted").default(false).notNull(),
   handRaised: boolean("hand_raised").default(false).notNull(),
+  isCameraOff: boolean("is_camera_off").default(false).notNull(),
+  isScreenSharing: boolean("is_screen_sharing").default(false).notNull(),
 }, (table) => [
   uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
   index("idx_huddle_participants_huddle").on(table.huddleId),
