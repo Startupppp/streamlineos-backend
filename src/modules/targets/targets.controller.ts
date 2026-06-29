@@ -15,6 +15,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -31,11 +33,12 @@ import {
 } from "./dto/target.schemas";
 
 @Controller("targets")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TargetsController {
   constructor(private readonly targets: TargetsService) {}
 
   @Get()
+  @RequirePermission("crm:targets:view")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -45,6 +48,7 @@ export class TargetsController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("crm:targets:manage")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -68,11 +72,13 @@ export class TargetsController {
   }
 
   @Get("my")
+  @RequirePermission("crm:targets:view")
   myTargets(@CurrentUser() u: CurrentUserContext) {
     return this.targets.getMyTargets(u.orgId, u.userId);
   }
 
   @Get("leaderboard")
+  @RequirePermission("crm:targets:view")
   leaderboard(
     @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +87,7 @@ export class TargetsController {
   }
 
   @Get(":targetId/history")
+  @RequirePermission("crm:targets:view")
   history(
     @Param("targetId", ParseIntPipe) targetId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +96,7 @@ export class TargetsController {
   }
 
   @Patch(":targetId")
+  @RequirePermission("crm:targets:manage")
   async update(
     @Param("targetId", ParseIntPipe) targetId: number,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
@@ -113,6 +121,7 @@ export class TargetsController {
   }
 
   @Delete(":targetId")
+  @RequirePermission("crm:targets:manage")
   async remove(
     @Param("targetId", ParseIntPipe) targetId: number,
     @CurrentUser() u: CurrentUserContext,
