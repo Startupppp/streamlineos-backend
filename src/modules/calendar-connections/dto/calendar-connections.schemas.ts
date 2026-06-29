@@ -23,6 +23,13 @@ export const createEventSchema = z.object({
   conferenceLink: z.string().optional(),
 });
 
+export const exchangeOAuthCodeSchema = z.object({
+  provider: z.enum(["GOOGLE", "MICROSOFT"]),
+  code: z.string().min(1),
+  redirectUri: z.string().url(),
+});
+
 export type UpsertConnectionInput = z.infer<typeof upsertConnectionSchema>;
 export type FreeBusyInput = z.infer<typeof freeBusySchema>;
 export type CreateEventInput = z.infer<typeof createEventSchema>;
+export type ExchangeOAuthCodeInput = z.infer<typeof exchangeOAuthCodeSchema>;

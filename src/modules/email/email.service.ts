@@ -375,4 +375,21 @@ export class EmailService extends EmailSendersBase {
       html: getLeadAssignedEmailTemplate(repName, leadName, source, priority, assignedBy),
     });
   }
+
+  sendTrialReminderEmail(email: string, orgName: string, daysLeft: number, upgradeUrl: string): Promise<void> {
+    const urgency = daysLeft === 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`;
+    const subject =
+      daysLeft === 0
+        ? "Your StreamlineOS trial expires today"
+        : `Your StreamlineOS trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+    const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;line-height:1.6;color:#1a1a1a;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">Your trial ends ${urgency}</h2>
+      <p>Hi ${orgName} team,</p>
+      <p>Your StreamlineOS free trial ${daysLeft === 0 ? "expires today" : `expires ${urgency}`}. Upgrade now to keep full access to all your data and features.</p>
+      <p style="margin:24px 0"><a href="${upgradeUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">Upgrade now</a></p>
+      <p style="color:#6b7280;font-size:14px">Questions? Just reply to this email — we're here to help.</p>
+      <p style="color:#6b7280;font-size:14px">— StreamlineOS Team</p>
+    </body></html>`;
+    return this.sendEmail({ to: email, subject, html });
+  }
 }

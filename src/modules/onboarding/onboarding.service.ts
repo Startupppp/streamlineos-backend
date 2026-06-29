@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nest
 import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   departmentMembers,
+  documents,
   leaveBalances,
   leaveTypes,
   notifications,
@@ -540,6 +541,41 @@ export class OnboardingService {
     }
 
     return { sent: sentCount, total: incompleteUsers.length };
+  }
+
+  async getStatus(userId: string, orgId: string): Promise<{
+    personalDetails: boolean;
+    bankDetails: boolean;
+    documents: number;
+    submitted: boolean;
+  }> {
+    const [stepsResult, docCountResult, userRow] = await Promise.all([
+      this.db
+        .select({ stepName: onboardingSteps.stepName, status: onboardingSteps.status })
+        .from(onboardingSteps)
+        .where(and(eq(onboardingSteps.userId, userId), eq(onboardingSteps.orgId, orgId))),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(documents)
+        .where(and(eq(documents.userId, userId), eq(documents.orgId, orgId))),
+      this.db
+        .select({ onboardingCompletedAt: users.onboardingCompletedAt })
+        .from(users)
+        .where(eq(users.id, userId)),
+    ]);
+
+    const completedSteps = new Set(
+      stepsResult
+        .filter((s) => s.status === "COMPLETED")
+        .map((s) => s.stepName),
+    );
+
+    return {
+      personalDetails: completedSteps.has("Personal Details"),
+      bankDetails: completedSteps.has("Bank Details"),
+      documents: docCountResult[0]?.count ?? 0,
+      submitted: Boolean(userRow[0]?.onboardingCompletedAt),
+    };
   }
 
   private async upsertOnboardingStep(userId: string, orgId: string, stepName: string) {

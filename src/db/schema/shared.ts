@@ -268,3 +268,45 @@ export const userCalendarConnections = pgTable("user_calendar_connections", {
 export const userCalendarConnectionsRelations = relations(userCalendarConnections, ({ one }) => ({
   user: one(users, { fields: [userCalendarConnections.userId], references: [users.id] }),
 }));
+
+export type CouponType = "PERCENTAGE" | "FIXED";
+
+export const coupons = pgTable("coupons", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  type: text("type").$type<CouponType>().notNull(),
+  value: numeric("value", { precision: 10, scale: 2 }).notNull(),
+  maxUses: integer("max_uses"),
+  usedCount: integer("used_count").default(0).notNull(),
+  applicablePlans: text("applicable_plans").array(),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_coupons_code").on(table.code),
+  index("idx_coupons_code").on(table.code),
+  index("idx_coupons_active").on(table.isActive),
+]);
+
+export const couponRedemptions = pgTable("coupon_redemptions", {
+  id: serial("id").primaryKey(),
+  couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_coupon_redemptions_org_coupon").on(table.couponId, table.orgId),
+  index("idx_coupon_redemptions_coupon").on(table.couponId),
+  index("idx_coupon_redemptions_org").on(table.orgId),
+]);
+
+export const couponsRelations = relations(coupons, ({ many }) => ({
+  redemptions: many(couponRedemptions),
+}));
+
+export const couponRedemptionsRelations = relations(couponRedemptions, ({ one }) => ({
+  coupon: one(coupons, { fields: [couponRedemptions.couponId], references: [coupons.id] }),
+  org: one(organizations, { fields: [couponRedemptions.orgId], references: [organizations.id] }),
+}));
+
+export type Coupon = typeof coupons.$inferSelect;
+export type CouponRedemption = typeof couponRedemptions.$inferSelect;
