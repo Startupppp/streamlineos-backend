@@ -107,3 +107,48 @@ export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "S
 export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);
 export const invLocationTypeEnum = pgEnum("inv_location_type", ["ZONE", "AISLE", "RACK", "BIN"]);
 export const invGrnQualityEnum = pgEnum("inv_grn_quality", ["ACCEPTED", "REJECTED"]);
+
+export const appInstallStatusEnum = pgEnum("app_install_status", [
+  "TRIALING",
+  "ACTIVE",
+  "CANCELLED",
+]);
+
+export const aiCreditTxnTypeEnum = pgEnum("ai_credit_txn_type", [
+  "PURCHASE",
+  "USAGE",
+  "REFUND",
+  "PLAN_GRANT",
+  "EXPIRY",
+]);
+
+export const affiliateStatusEnum = pgEnum("affiliate_status", [
+  "PENDING",
+  "ACTIVE",
+  "SUSPENDED",
+]);
+
+export const commissionStatusEnum = pgEnum("commission_status", [
+  "PENDING",
+  "APPROVED",
+  "PAID",
+  "CANCELLED",
+]);
+
+export const referralStatusEnum = pgEnum("referral_status", [
+  "PENDING",
+  "SIGNED_UP",
+  "ACTIVATED",
+  "REWARDED",
+  "EXPIRED",
+]);
+
+export const revenueEventTypeEnum = pgEnum("revenue_event_type", [
+  "new_subscription",
+  "upgrade",
+  "downgrade",
+  "churn",
+  "reactivation",
+  "addon_purchase",
+  "refund",
+]);

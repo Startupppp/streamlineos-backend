@@ -6,9 +6,11 @@ import {
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
+  billingProfiles,
   coupons,
   couponRedemptions,
   invoices,
+  organizationMembers,
   organizations,
   platformPayments,
   subscriptionPayments,
@@ -19,6 +21,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { RazorpayService } from "./razorpay.service";
+import { AiCreditsService } from "./ai-credits.service";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -45,6 +48,7 @@ export class BillingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly razorpay: RazorpayService,
     private readonly audit: AuditService,
+    private readonly aiCredits: AiCreditsService,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -345,8 +349,79 @@ export class BillingService {
     return { apps: [], addons: [] };
   }
 
-  purchaseAddon(_orgId: string, _userId: string, _addonId: string, _quantity: number) {
-    throw new BadRequestException("No addons available for purchase at this time");
+  async purchaseAddon(orgId: string, _userId: string, addonId: string, quantity: number) {
+    if (addonId.startsWith("ai_pack_")) {
+      const packId = parseInt(addonId.replace("ai_pack_", ""), 10);
+      const packs = await this.aiCredits.listPacks();
+      const pack = packs.find((p) => p.id === packId);
+      if (!pack) throw new BadRequestException("AI credit pack not found");
+      return this.razorpay.createOrder({
+        amount: pack.priceInPaise * quantity,
+        receipt: `ai_pack_${packId}_${orgId}`,
+        notes: {
+          orgId: String(orgId),
+          packId: String(packId),
+          quantity: String(quantity),
+        },
+      });
+    }
+    throw new BadRequestException("Unknown addon type");
+  }
+
+  async getBillingProfile(orgId: string) {
+    const numericOrgId = parseInt(orgId, 10);
+    const [existing] = await this.db
+      .select()
+      .from(billingProfiles)
+      .where(eq(billingProfiles.orgId, numericOrgId));
+    if (existing) return existing;
+    const [profile] = await this.db
+      .insert(billingProfiles)
+      .values({ orgId: numericOrgId })
+      .returning();
+    return profile;
+  }
+
+  async updateBillingProfile(
+    orgId: string,
+    data: Partial<{
+      gstin: string | null;
+      pan: string | null;
+      billingName: string | null;
+      billingEmail: string | null;
+      addressLine1: string | null;
+      addressLine2: string | null;
+      city: string | null;
+      state: string | null;
+      pincode: string | null;
+      isTaxExempt: boolean;
+    }>,
+  ) {
+    await this.getBillingProfile(orgId);
+    const numericOrgId = parseInt(orgId, 10);
+    const [updated] = await this.db
+      .update(billingProfiles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(billingProfiles.orgId, numericOrgId))
+      .returning();
+    return updated;
+  }
+
+  async getSeatInfo(orgId: string) {
+    const { subscription } = await this.getSubscription(orgId);
+    const PLAN_SEATS: Record<string, number> = {
+      STARTER: 10,
+      PROFESSIONAL: 50,
+      ENTERPRISE: 500,
+    };
+    const plan = subscription?.plan ?? "STARTER";
+    const total = PLAN_SEATS[plan] ?? 10;
+    const [usedResult] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
+    const used = Number(usedResult?.count ?? 0);
+    return { total, used, available: Math.max(0, total - used) };
   }
 
   async getSummary(orgId: string) {

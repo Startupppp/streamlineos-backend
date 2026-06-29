@@ -220,6 +220,16 @@ const API_TOKEN_PERMISSIONS: Permission[] = [
   { name: "settings:api-tokens:write", resource: "settings:api-tokens", action: "write", description: "Create and revoke personal API tokens" },
 ];
 
+const BILLING_PERMISSIONS: Permission[] = [
+  { name: "billing:marketplace:view", resource: "billing:marketplace", action: "view", description: "View marketplace apps", scopable: false },
+  { name: "billing:marketplace:install", resource: "billing:marketplace", action: "install", description: "Install and uninstall marketplace apps", scopable: false },
+  { name: "billing:ai-credits:view", resource: "billing:ai-credits", action: "view", description: "View AI credits wallet and history", scopable: false },
+  { name: "billing:ai-credits:purchase", resource: "billing:ai-credits", action: "purchase", description: "Purchase AI credit packs", scopable: false },
+  { name: "billing:analytics:view", resource: "billing:analytics", action: "view", description: "View revenue analytics (platform admin only)", scopable: false },
+  { name: "billing:affiliate:manage", resource: "billing:affiliate", action: "manage", description: "Manage affiliate program", scopable: false },
+  { name: "billing:profile:update", resource: "billing:profile", action: "update", description: "Update billing profile and GST details", scopable: false },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -232,6 +242,7 @@ export const PERMISSIONS: Permission[] = [
   ...SUPPORT_PERMISSIONS,
   ...CHAT_PERMISSIONS,
   ...API_TOKEN_PERMISSIONS,
+  ...BILLING_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));

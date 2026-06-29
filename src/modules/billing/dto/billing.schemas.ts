@@ -47,6 +47,20 @@ export const razorpayOrderErrorSchema = z.object({
   error: z.object({ description: z.string().optional() }).optional(),
 });
 
+export const updateBillingProfileSchema = z.object({
+  gstin: z.string().max(15).nullable().optional(),
+  pan: z.string().max(10).nullable().optional(),
+  billingName: z.string().max(255).nullable().optional(),
+  billingEmail: z.string().email().max(255).nullable().optional(),
+  addressLine1: z.string().nullable().optional(),
+  addressLine2: z.string().nullable().optional(),
+  city: z.string().max(100).nullable().optional(),
+  state: z.string().max(100).nullable().optional(),
+  pincode: z.string().max(10).nullable().optional(),
+  isTaxExempt: z.boolean().optional(),
+}).partial();
+export type UpdateBillingProfileInput = z.infer<typeof updateBillingProfileSchema>;
+
 const razorpayPaymentSchema = z.object({
   id: z.string().min(1),
   order_id: z.string().optional(),
