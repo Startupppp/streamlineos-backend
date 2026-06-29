@@ -35,7 +35,7 @@ describe("JwtAuthGuard", () => {
   });
 
   it("accepts a valid token and attaches req.user", async () => {
-    const token = await signToken({ sub: "user_42", orgId: "org_9" });
+    const token = await signToken({ sub: "user_42", orgId: "org_9", sessionId: "sess_1" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const req = ctx.switchToHttp().getRequest<{ user: { userId: string } }>();
@@ -84,7 +84,7 @@ describe("JwtAuthGuard", () => {
   });
 
   it("accepts a platform-admin token with no orgId", async () => {
-    const token = await signToken({ isPlatformAdmin: true, orgId: null });
+    const token = await signToken({ isPlatformAdmin: true, orgId: null, sessionId: "sess_admin" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const req = ctx.switchToHttp().getRequest<{ user: { isPlatformAdmin: boolean; orgId: string } }>();

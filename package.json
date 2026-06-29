@@ -11,6 +11,7 @@
     "sync:schema": "node scripts/sync-schema.mjs",
     "check:schema": "node scripts/sync-schema.mjs --check",
     "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
+    "seed:permissions": "node scripts/seed-permissions.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./jest-e2e.json"

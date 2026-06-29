@@ -432,7 +432,7 @@ export class AuthService {
     userId: string,
     query: { success?: boolean; from?: Date; to?: Date; page?: number; limit?: number },
   ) {
-    const { and, desc, eq, gte, lte, sql: drizzleSql } = await import("drizzle-orm");
+    const { and: andFn, desc, lte } = await import("drizzle-orm");
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 20, 100);
     const offset = (page - 1) * limit;
@@ -444,12 +444,12 @@ export class AuthService {
 
     const [data, countResult] = await Promise.all([
       this.db.query.loginHistory.findMany({
-        where: and(...conditions),
+        where: andFn(...conditions),
         orderBy: [desc(loginHistory.createdAt)],
         limit,
         offset,
       }),
-      this.db.select({ count: drizzleSql<number>`count(*)::int` }).from(loginHistory).where(and(...conditions)),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(loginHistory).where(andFn(...conditions)),
     ]);
 
     return { data, total: countResult[0]?.count ?? 0, page, limit };
@@ -526,7 +526,6 @@ export class AuthService {
     if (!user || !user.emailVerified) return;
 
     const token = randomBytes(32).toString("hex");
-    const { createHash } = await import("node:crypto");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const expiresAt = addHours(new Date(), 1);
 
@@ -541,7 +540,6 @@ export class AuthService {
   }
 
   async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
-    const { createHash } = await import("node:crypto");
     const tokenHash = createHash("sha256").update(token).digest("hex");
 
     const row = await this.db.query.magicLinkTokens.findFirst({

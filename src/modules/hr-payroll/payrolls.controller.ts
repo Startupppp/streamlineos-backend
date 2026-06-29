@@ -75,7 +75,7 @@ export class PayrollsController {
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:payroll:generate")) {
+      if (!perms.has("hr:payroll:generate") && !perms.has("hr:payroll:manage")) {
         throw new ForbiddenException("Only admins can generate payroll.");
       }
     }
@@ -146,7 +146,7 @@ export class PayrollsController {
     let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      isAdmin = perms.has("hr:payroll:approve") || perms.has("hr:payroll:generate");
+      isAdmin = perms.has("hr:payroll:approve") || perms.has("hr:payroll:generate") || (u.permissions ?? []).includes("hr:payroll:manage");
     }
 
     const result = await this.payrolls.getPayslipDownload(u.orgId, payrollId, u.userId, isAdmin);

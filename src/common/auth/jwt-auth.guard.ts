@@ -68,20 +68,26 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     if (claims !== null) {
-      if (!claims.sub || !claims.orgId) {
+      if (!claims.sub) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+      if (!claims.sessionId) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+      if (!claims.orgId && !claims.isPlatformAdmin) {
         throw new UnauthorizedException("Organization not found");
       }
 
       req.user = {
         userId: claims.sub,
-        orgId: claims.orgId,
+        orgId: claims.orgId ?? "",
         branchId: claims.branchId ?? null,
         role: claims.role,
-        permissions: claims.permissions ?? [],
-        enabledModules: claims.enabledModules ?? [],
-        plan: claims.plan ?? null,
-        isPlatformAdmin: claims.isPlatformAdmin === true,
-        isOrgOwner: claims.isOrgOwner === true,
+        permissions: claims.permissions,
+        enabledModules: claims.enabledModules,
+        plan: claims.plan,
+        isPlatformAdmin: claims.isPlatformAdmin,
+        isOrgOwner: claims.isOrgOwner,
         sessionId: claims.sessionId,
       };
       return true;

@@ -83,6 +83,7 @@ import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.m
 import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.module";
 import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
+import { UsersModule } from "./modules/users/users.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -170,6 +171,7 @@ import { MeService } from "./me/me.service";
     ResourceGrantsModule,
     TemporaryAccessModule,
     DelegationsModule,
+    UsersModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

@@ -57,7 +57,7 @@ export class PayrollReportsController {
     let canViewAll = u.isOrgOwner || u.isPlatformAdmin;
     if (!canViewAll) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      canViewAll = perms.has("hr:payroll:read");
+      canViewAll = perms.has("hr:payroll:read") || (u.permissions ?? []).includes("hr:payroll:view");
     }
     const requestedId = query.userId;
 

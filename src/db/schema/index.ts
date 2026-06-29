@@ -16,6 +16,7 @@ export * from "./accounting";
 export * from "./support";
 export * from "./kb";
 export * from "./automation";
-export * from "./feature-flags";
 export * from "./inventory";
 export * from "./organization";
+export * from "./user-management";
+export * from "./feature-flags";
