@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
+import { ChatNotificationsService } from "./chat-notifications.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
 const CEO = "CEO";
@@ -37,6 +38,7 @@ export class ChatMessagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
+    private readonly notifications: ChatNotificationsService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -106,7 +108,9 @@ export class ChatMessagesService {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
-    if (!body.content?.trim() && (!body.attachments || body.attachments.length === 0)) {
+    const sanitizedContent = body.content ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000) : null;
+
+    if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0)) {
       throw new BadRequestException("Message must have content or attachments");
     }
 
@@ -116,7 +120,7 @@ export class ChatMessagesService {
         .values({
           channelId,
           senderId: userId,
-          content: body.content?.trim() || null,
+          content: sanitizedContent?.trim() || null,
           replyToId: body.replyToId,
         })
         .returning();
@@ -142,7 +146,7 @@ export class ChatMessagesService {
       return created;
     });
 
-    void this.dispatchMessageSideEffects(orgId, channelId, message).catch(() => undefined);
+    void this.dispatchMessageSideEffects(orgId, channelId, message, body).catch(() => undefined);
 
     return message;
   }
@@ -151,6 +155,7 @@ export class ChatMessagesService {
     orgId: string,
     channelId: number,
     message: PersistedMessage,
+    body: SendMessageInput,
   ): Promise<void> {
     if (!this.ably.configured && !this.webPush.configured) return;
 
@@ -176,6 +181,52 @@ export class ChatMessagesService {
       body: message.content?.slice(0, 80) ?? "Sent an attachment",
       url: `/chat?channel=${channelId}`,
     });
+
+    const channelData = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      columns: { type: true },
+    });
+
+    if (channelData?.type === "DIRECT") {
+      await this.notifications.publishNewMessageNotification(orgId, channelId, {
+        id: message.id,
+        content: message.content,
+        senderId: message.senderId,
+        senderName,
+      }, channelData.type);
+    }
+
+    if (body?.content) {
+      const mentionPattern = /@([^\s@]+(?:\s[^\s@]+)*)/g;
+      const matches = [...body.content.matchAll(mentionPattern)].map(m => m[1].toLowerCase());
+      if (matches.length > 0) {
+        const channelMembers = await this.db.query.chatChannelMembers.findMany({
+          where: eq(chatChannelMembers.channelId, channelId),
+          with: { user: { columns: { id: true, name: true } } },
+        });
+        const userId = message.senderId;
+        if (matches.some(m => m === "channel" || m === "everyone" || m === "here")) {
+          const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
+          for (const memberId of memberIds) {
+            await this.notifications.publishMentionNotification(orgId, channelId, {
+              id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
+            }, [memberId]);
+          }
+        }
+        for (const member of channelMembers) {
+          if (!member.user || member.userId === userId) continue;
+          const memberName = member.user.name?.toLowerCase() ?? "";
+          if (matches.some(m => memberName.includes(m) || m.includes(memberName.split(" ")[0]))) {
+            await this.notifications.publishMentionNotification(orgId, channelId, {
+              id: message.id,
+              content: body.content!,
+              senderId: userId,
+              senderName: senderName ?? "Someone",
+            }, [member.userId]);
+          }
+        }
+      }
+    }
   }
 
   async edit(messageId: number, userId: string, content: string) {
@@ -199,6 +250,73 @@ export class ChatMessagesService {
       .where(and(...conditions));
 
     return { ok: true };
+  }
+
+  async listThreadReplies(
+    parentMessageId: number,
+    userId: string,
+    cursor: number | undefined,
+    limit: number,
+  ) {
+    const parentMessage = await this.db.query.chatMessages.findFirst({
+      where: eq(chatMessages.id, parentMessageId),
+      with: {
+        sender: { columns: { id: true, name: true, image: true } },
+        attachments: true,
+        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+      },
+    });
+
+    if (!parentMessage) throw new NotFoundException("Message not found");
+
+    if (!(await this.isMember(parentMessage.channelId, userId))) {
+      throw new ForbiddenException("You are not a member of this channel");
+    }
+
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+
+    const conditions = [eq(chatMessages.replyToId, parentMessageId)];
+    if (cursor) conditions.push(lt(chatMessages.id, cursor));
+
+    const replies = await this.db.query.chatMessages.findMany({
+      where: and(...conditions),
+      orderBy: [desc(chatMessages.createdAt)],
+      limit: safeLimit + 1,
+      with: {
+        sender: { columns: { id: true, name: true, image: true } },
+        attachments: true,
+        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
+      },
+    });
+
+    let nextCursor: number | undefined;
+    if (replies.length > safeLimit) {
+      const next = replies.pop();
+      nextCursor = next?.id;
+    }
+
+    return { parentMessage, replies: replies.reverse(), nextCursor };
+  }
+
+  async sendThreadReply(
+    channelId: number,
+    parentMessageId: number,
+    userId: string,
+    orgId: string,
+    body: SendMessageInput,
+  ) {
+    const parentMessage = await this.db.query.chatMessages.findFirst({
+      where: and(
+        eq(chatMessages.id, parentMessageId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.isDeleted, false),
+      ),
+      columns: { id: true, channelId: true },
+    });
+
+    if (!parentMessage) throw new NotFoundException("Message not found");
+
+    return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
   }
 
   async react(channelId: number, messageId: number, userId: string, emoji: string) {
