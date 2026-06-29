@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "crypto";
+import { appUrl } from "../email/app-url";
 
 export const VALID_API_KEY_SCOPES = [
   "leads:read",
@@ -28,15 +29,6 @@ const DEFAULT_FEATURE_FLAGS: OrgFeatureFlags = {
   aiWeeklyRecap: true,
 };
 
-function resolveAppUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000";
-}
-
-const APP_URL = resolveAppUrl();
-
 export function generateWebhookSecret(): string {
   return randomBytes(30).toString("base64url").slice(0, 40);
 }
@@ -58,7 +50,7 @@ export function maskSecret(secret: string): string {
 }
 
 export function gitWebhookUrl(connectionId: number): string {
-  return `${APP_URL}/api/integrations/git/webhook?connectionId=${connectionId}`;
+  return `${appUrl}/api/integrations/git/webhook?connectionId=${connectionId}`;
 }
 
 export function parseOrgFeatureFlags(

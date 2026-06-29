@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { APP_CONFIG } from "../../config/config.module";
 import { type AppConfig } from "../../config/env.validation";
+import { appUrl } from "../email/app-url";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
@@ -55,15 +56,10 @@ export class GoogleCalendarService {
       where: eq(users.id, userId),
       columns: { googleRefreshToken: true, googleEmail: true },
     });
-    const base =
-      process.env.APP_URL ??
-      process.env.NEXT_PUBLIC_APP_URL ??
-      this.config.corsOrigins[0] ??
-      "http://localhost:1000";
     return {
       connected: !!user?.googleRefreshToken,
       googleEmail: user?.googleEmail ?? null,
-      authUrl: `${base}/api/integrations/google/auth`,
+      authUrl: `${appUrl}/api/integrations/google/auth`,
     };
   }
 

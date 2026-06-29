@@ -94,7 +94,7 @@ export class OnboardingController {
   @HttpCode(201)
   sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "http";
-    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:3000";
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:1000";
     const appUrl = `${String(protocol)}://${String(host)}`;
     return this.onboarding.sendReminders(u.orgId, appUrl);
   }

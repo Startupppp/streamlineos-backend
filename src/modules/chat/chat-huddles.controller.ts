@@ -3,11 +3,12 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
   Post,
-  TooManyRequestsException,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -59,7 +60,7 @@ export class ChatHuddlesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const rl = await this.rateLimit.check("chat:huddle", u.userId);
-    if (!rl.allowed) throw new TooManyRequestsException(`Rate limited. Retry after ${rl.retryAfterSecs}s`);
+    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.huddles.startHuddle(channelId, u.userId, u.orgId);
   }
 
