@@ -181,30 +181,6 @@ export class OrganizationController {
     return this.organization.acceptInvitation(body);
   }
 
-  @Post("archive")
-  @RequirePermission("settings:manage")
-  archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can archive");
-    return this.organization.archiveOrg(u.orgId, u.userId);
-  }
-
-  @Post("restore")
-  @RequirePermission("settings:manage")
-  restoreOrg(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the org owner can restore");
-    return this.organization.restoreOrg(u.orgId, u.userId);
-  }
-
-  @Post("transfer-ownership")
-  @RequirePermission("settings:manage")
-  transferOwnership(
-    @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isOrgOwner) throw new ForbiddenException("Only the current owner can transfer ownership");
-    return this.organization.transferOwnership(u.orgId, u.userId, body);
-  }
-
   @Get("custom-domains")
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listCustomDomains(u.orgId);
