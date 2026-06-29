@@ -50,7 +50,8 @@ export class UsersController {
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.inviteUser(u.orgId, body.email, body.role, u.userId);
+    const { email, role, employeeId, branchId, departmentId, teamId, managerUserId, startDate, welcomeMessage } = body;
+    return this.users.inviteUser(u.orgId, email, role, u.userId, { employeeId, branchId, departmentId, teamId, managerUserId, startDate, welcomeMessage });
   }
 
   @Post("bulk-invite")

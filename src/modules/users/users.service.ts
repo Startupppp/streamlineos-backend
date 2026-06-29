@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, gt } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addDays } from "date-fns";
@@ -39,7 +39,7 @@ export class UsersService {
   ) {}
 
   async listUsers(orgId: string, params: ListUsersInput) {
-    const { page, limit, search, status, role, departmentId, branchId, sortBy, sortOrder } = params;
+    const { page, limit, search, status, role, departmentId, branchId, teamId, managerUserId, sortBy, sortOrder } = params;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(organizationMembers.orgId, orgId)];
@@ -65,6 +65,14 @@ export class UsersService {
 
     if (branchId !== undefined) {
       conditions.push(eq(users.branchId, branchId));
+    }
+
+    if (teamId !== undefined) {
+      conditions.push(eq(users.team, teamId));
+    }
+
+    if (managerUserId !== undefined) {
+      conditions.push(eq(users.reportingTo, managerUserId));
     }
 
     if (status === "active") {
@@ -197,12 +205,36 @@ export class UsersService {
   }
 
   async updateUserStatus(orgId: string, userId: string, status: "active" | "suspended" | "archived", actorUserId: string, reason?: string) {
-    await this.getUser(orgId, userId);
+    const user = await this.getUser(orgId, userId);
+
+    if (!user.isActive && status !== "active") {
+      const lastStatusEvent = await this.db
+        .select({ action: userActivity.action })
+        .from(userActivity)
+        .where(
+          and(
+            eq(userActivity.orgId, orgId),
+            eq(userActivity.userId, userId),
+            or(
+              eq(userActivity.action, "user.status.suspended"),
+              eq(userActivity.action, "user.status.archived"),
+            )!,
+          ),
+        )
+        .orderBy(desc(userActivity.createdAt))
+        .limit(1);
+
+      const currentState = lastStatusEvent[0]?.action === "user.status.archived" ? "archived" : "suspended";
+
+      if (currentState === "archived" && status === "suspended") {
+        throw new BadRequestException("Cannot suspend an archived user. Restore the user first.");
+      }
+    }
 
     const update: Record<string, unknown> = {};
     if (status === "active") {
       update.isActive = true;
-    } else if (status === "suspended" || status === "archived") {
+    } else {
       update.isActive = false;
     }
 
@@ -353,6 +385,13 @@ export class UsersService {
     if (data.timezone !== undefined) updateData.timezone = data.timezone;
     if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
     if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
+    if (data.numberFormat !== undefined) updateData.numberFormat = data.numberFormat;
+    if (data.weekStartDay !== undefined) updateData.weekStartDay = data.weekStartDay;
+    if (data.accentColor !== undefined) updateData.accentColor = data.accentColor;
+    if (data.density !== undefined) updateData.density = data.density;
+    if (data.fontSize !== undefined) updateData.fontSize = data.fontSize;
+    if (data.reducedMotion !== undefined) updateData.reducedMotion = data.reducedMotion;
+    if (data.highContrast !== undefined) updateData.highContrast = data.highContrast;
     if (data.notificationPreferences !== undefined) updateData.notificationPreferences = data.notificationPreferences;
     if (data.dashboardPreferences !== undefined) updateData.dashboardPreferences = data.dashboardPreferences;
 
@@ -377,7 +416,21 @@ export class UsersService {
     return { success: true };
   }
 
-  async inviteUser(orgId: string, email: string, role: string, invitedByUserId: string) {
+  async inviteUser(
+    orgId: string,
+    email: string,
+    role: string,
+    invitedByUserId: string,
+    extra?: {
+      employeeId?: string;
+      branchId?: number;
+      departmentId?: number;
+      teamId?: string;
+      managerUserId?: string;
+      startDate?: string;
+      welcomeMessage?: string;
+    },
+  ) {
     const token = randomBytes(32).toString("hex");
     const invitationId = randomUUID();
     const expiresAt = addDays(new Date(), 7);
@@ -397,7 +450,7 @@ export class UsersService {
       expiresAt,
     });
 
-    this.audit.log({ action: "user.invited", userId: invitedByUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email, role } });
+    this.audit.log({ action: "user.invited", userId: invitedByUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email, role, ...extra } });
 
     return { success: true, invitationId, token, organizationName: org?.name ?? "" };
   }
@@ -457,7 +510,7 @@ export class UsersService {
     const cacheKey = `users:stats:${orgId}`;
 
     return this.cache.cached(cacheKey, async () => {
-      const [totalResult, activeResult, suspendedResult, pendingResult] = await Promise.all([
+      const [totalResult, activeResult, suspendedResult, pendingResult, newThisMonthResult] = await Promise.all([
         this.db
           .select({ count: count() })
           .from(organizationMembers)
@@ -476,6 +529,15 @@ export class UsersService {
           .select({ count: count() })
           .from(invitations)
           .where(and(eq(invitations.orgId, orgId), isNull(invitations.acceptedAt))),
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              gte(organizationMembers.joinedAt, sql`DATE_TRUNC('month', NOW())`),
+            ),
+          ),
       ]);
 
       return {
@@ -483,6 +545,7 @@ export class UsersService {
         active: activeResult[0]?.count ?? 0,
         suspended: suspendedResult[0]?.count ?? 0,
         pendingInvitations: pendingResult[0]?.count ?? 0,
+        newThisMonth: newThisMonthResult[0]?.count ?? 0,
       };
     }, 60);
   }

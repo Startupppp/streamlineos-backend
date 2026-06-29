@@ -8,6 +8,8 @@ export const listUsersSchema = z.object({
   role: z.string().optional(),
   departmentId: z.coerce.number().int().optional(),
   branchId: z.coerce.number().int().optional(),
+  teamId: z.string().optional(),
+  managerUserId: z.string().optional(),
   sortBy: z.enum(["name", "joinedAt", "status"]).default("joinedAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -47,6 +49,13 @@ export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 export const inviteUserSchema = z.object({
   email: z.string().email(),
   role: z.string().default("ENGINEERING"),
+  employeeId: z.string().optional(),
+  branchId: z.coerce.number().int().optional(),
+  departmentId: z.coerce.number().int().optional(),
+  teamId: z.string().optional(),
+  managerUserId: z.string().optional(),
+  startDate: z.string().optional(),
+  welcomeMessage: z.string().optional(),
 });
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
@@ -62,6 +71,13 @@ export const updatePreferencesSchema = z.object({
   timezone: z.string().optional(),
   dateFormat: z.string().optional(),
   timeFormat: z.enum(["12h", "24h"]).optional(),
+  numberFormat: z.string().optional(),
+  weekStartDay: z.enum(["sunday", "monday", "saturday"]).optional(),
+  accentColor: z.string().optional(),
+  density: z.enum(["compact", "comfortable", "spacious"]).optional(),
+  fontSize: z.enum(["small", "medium", "large"]).optional(),
+  reducedMotion: z.boolean().optional(),
+  highContrast: z.boolean().optional(),
   notificationPreferences: z.record(z.string(), z.boolean()).optional(),
   dashboardPreferences: z.record(z.string(), z.unknown()).optional(),
 });
