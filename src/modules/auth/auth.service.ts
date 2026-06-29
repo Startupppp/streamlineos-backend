@@ -132,9 +132,9 @@ export class AuthService {
       await tx.insert(users).values({
         id: userId,
         email: normalizedEmail,
-        name: `${input.firstName} ${input.lastName}`,
+        name: input.lastName ? `${input.firstName} ${input.lastName}` : input.firstName,
         firstName: input.firstName,
-        lastName: input.lastName,
+        lastName: input.lastName ?? "",
         password: passwordHash,
         role: "OWNER",
         isActive: true,

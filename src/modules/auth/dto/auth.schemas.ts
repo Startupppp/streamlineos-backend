@@ -10,7 +10,7 @@ const passwordSchema = z
 
 export const registerSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
+  lastName: z.string().optional().default(""),
   email: z.string().email("Valid email required"),
   password: passwordSchema,
   companyName: z.string().min(1, "Company name is required"),

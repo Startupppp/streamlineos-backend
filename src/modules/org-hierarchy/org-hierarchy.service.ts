@@ -622,7 +622,7 @@ export class OrgHierarchyService {
 
     await this.db
       .update(orgBusinessUnits)
-      .set({ parentId: newParentId, updatedAt: new Date() })
+      .set({ updatedAt: new Date() })
       .where(and(eq(orgBusinessUnits.id, buId), eq(orgBusinessUnits.orgId, orgId)));
 
     return { success: true };
