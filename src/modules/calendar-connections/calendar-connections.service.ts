@@ -4,7 +4,7 @@ import { userCalendarConnections } from "../../db/schema";
 import type { CalendarProvider } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { UpsertConnectionInput, CreateEventInput } from "./dto/calendar-connections.schemas";
+import type { UpsertConnectionInput, CreateEventInput, ExchangeOAuthCodeInput } from "./dto/calendar-connections.schemas";
 
 type ConnectionRow = typeof userCalendarConnections.$inferSelect;
 
@@ -72,6 +72,64 @@ export class CalendarConnectionsService {
           ...(expiresAt ? { expiresAt } : {}),
         },
       });
+  }
+
+  async exchangeOAuthCode(userId: string, input: ExchangeOAuthCodeInput): Promise<void> {
+    const { code, provider, redirectUri } = input;
+    let tokens: TokenResponse;
+    let email: string;
+
+    if (provider === "GOOGLE") {
+      const res = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: process.env.GOOGLE_CALENDAR_CLIENT_ID ?? "",
+          client_secret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET ?? "",
+          redirect_uri: redirectUri,
+          code,
+          grant_type: "authorization_code",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to exchange Google authorization code");
+      tokens = (await res.json()) as TokenResponse;
+
+      const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const userInfo = (await userRes.json()) as { email: string };
+      email = userInfo.email;
+    } else {
+      const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: process.env.MICROSOFT_CALENDAR_CLIENT_ID ?? "",
+          client_secret: process.env.MICROSOFT_CALENDAR_CLIENT_SECRET ?? "",
+          redirect_uri: redirectUri,
+          code,
+          grant_type: "authorization_code",
+          scope: "https://graph.microsoft.com/Calendars.ReadWrite offline_access email",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to exchange Microsoft authorization code");
+      tokens = (await res.json()) as TokenResponse;
+
+      const meRes = await fetch(
+        "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName",
+        { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+      );
+      const me = (await meRes.json()) as { mail: string; userPrincipalName: string };
+      email = me.mail ?? me.userPrincipalName;
+    }
+
+    await this.upsertConnection(userId, {
+      provider,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      providerEmail: email,
+    });
   }
 
   async disconnect(connectionId: number, userId: string): Promise<boolean> {

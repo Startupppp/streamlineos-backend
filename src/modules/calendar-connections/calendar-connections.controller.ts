@@ -19,9 +19,11 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarConnectionsService } from "./calendar-connections.service";
 import {
   createEventSchema,
+  exchangeOAuthCodeSchema,
   freeBusySchema,
   upsertConnectionSchema,
   type CreateEventInput,
+  type ExchangeOAuthCodeInput,
   type FreeBusyInput,
   type UpsertConnectionInput,
 } from "./dto/calendar-connections.schemas";
@@ -34,6 +36,16 @@ export class CalendarConnectionsController {
   @Get()
   getConnections(@CurrentUser() u: CurrentUserContext) {
     return this.service.getConnections(u.userId);
+  }
+
+  @Post("oauth/exchange")
+  @HttpCode(200)
+  async exchangeOAuthCode(
+    @Body(new ZodValidationPipe(exchangeOAuthCodeSchema)) body: ExchangeOAuthCodeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.service.exchangeOAuthCode(u.userId, body);
+    return { success: true };
   }
 
   @Post()
