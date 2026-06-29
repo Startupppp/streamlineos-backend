@@ -34,7 +34,10 @@ import {
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 
+@ApiTags("Chat Messages")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -44,6 +47,8 @@ export class ChatMessagesController {
     private readonly rateLimit: RateLimitService,
   ) {}
 
+  @ApiOperation({ summary: "List messages in a channel (cursor-paginated)" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
   list(
@@ -54,6 +59,9 @@ export class ChatMessagesController {
     return this.messages.list(channelId, u.userId, query.cursor, query.limit ?? 50);
   }
 
+  @ApiOperation({ summary: "Send a message to a channel" })
+  @ApiResponse({ status: 201, description: "Message created" })
+  @ApiResponse({ status: 429, description: "Rate limited" })
   @Post()
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
@@ -67,6 +75,8 @@ export class ChatMessagesController {
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
+  @ApiOperation({ summary: "Poll for new messages since a timestamp (fallback for realtime)" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
   @RequirePermission("chat:messages:read")
   poll(
@@ -80,6 +90,8 @@ export class ChatMessagesController {
     return this.messages.poll(channelId, u.userId, since);
   }
 
+  @ApiOperation({ summary: "Edit message content" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
   @RequirePermission("chat:messages:write")
   edit(
@@ -90,6 +102,8 @@ export class ChatMessagesController {
     return this.messages.edit(messageId, u.userId, body.content);
   }
 
+  @ApiOperation({ summary: "Soft-delete a message" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
   remove(
@@ -99,6 +113,8 @@ export class ChatMessagesController {
     return this.messages.remove(messageId, u.userId, u.role);
   }
 
+  @ApiOperation({ summary: "Toggle an emoji reaction on a message" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId/reactions")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -111,6 +127,8 @@ export class ChatMessagesController {
     return this.messages.react(channelId, messageId, u.userId, body.emoji);
   }
 
+  @ApiOperation({ summary: "List thread replies for a message" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
   @RequirePermission("chat:messages:read")
   listThread(
@@ -121,6 +139,8 @@ export class ChatMessagesController {
     return this.messages.listThreadReplies(messageId, u.userId, query.cursor, query.limit ?? 50);
   }
 
+  @ApiOperation({ summary: "Send a reply in a message thread" })
+  @ApiResponse({ status: 201, description: "Created" })
   @Post(":messageId/thread")
   @HttpCode(201)
   @RequirePermission("chat:messages:write")

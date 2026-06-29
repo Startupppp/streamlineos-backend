@@ -34,7 +34,10 @@ import {
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 
+@ApiTags("Chat Channels")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat/channels")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -44,18 +47,24 @@ export class ChatChannelsController {
     private readonly typing: ChatTypingService,
   ) {}
 
+  @ApiOperation({ summary: "List channels the current user is a member of" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:channels:read")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.channels.getMyChannels(u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "List public channels available to join" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("public")
   @RequirePermission("chat:channels:read")
   listPublic(@CurrentUser() u: CurrentUserContext) {
     return this.channels.listPublicChannels(u.orgId, u.userId);
   }
 
+  @ApiOperation({ summary: "Get or create the entity-linked channel for a given entity" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("entity/:entityType/:entityId")
   @RequirePermission("chat:channels:read")
   getByEntity(
@@ -66,6 +75,9 @@ export class ChatChannelsController {
     return this.channels.getOrCreateEntityChannel(entityType, entityId, u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Create a new channel or return existing DM/entity channel" })
+  @ApiResponse({ status: 201, description: "Channel created" })
+  @ApiResponse({ status: 200, description: "Existing channel returned" })
   @Post()
   @RequirePermission("chat:channels:write")
   async create(
@@ -78,6 +90,9 @@ export class ChatChannelsController {
     return channel;
   }
 
+  @ApiOperation({ summary: "Get a single channel by ID" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @ApiResponse({ status: 404, description: "Not found" })
   @Get(":channelId")
   @RequirePermission("chat:channels:read")
   async getOne(
@@ -89,6 +104,8 @@ export class ChatChannelsController {
     return channel;
   }
 
+  @ApiOperation({ summary: "Update channel name, description or type" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId")
   @RequirePermission("chat:channels:write")
   update(
@@ -99,6 +116,8 @@ export class ChatChannelsController {
     return this.channels.updateChannel(channelId, u.userId, body);
   }
 
+  @ApiOperation({ summary: "List members of a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/members")
   @RequirePermission("chat:channels:read")
   members(
@@ -108,6 +127,8 @@ export class ChatChannelsController {
     return this.channels.listMembers(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Add a member to a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/members")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -119,6 +140,8 @@ export class ChatChannelsController {
     return this.channels.addMember(channelId, body.userId, u.userId);
   }
 
+  @ApiOperation({ summary: "Remove a member from a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Delete(":channelId/members/:userId")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -130,6 +153,8 @@ export class ChatChannelsController {
     return this.channels.removeMember(channelId, targetUserId, u.userId);
   }
 
+  @ApiOperation({ summary: "Join a public channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/join")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -140,6 +165,8 @@ export class ChatChannelsController {
     return this.channels.joinPublicChannel(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Leave a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/leave")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -150,6 +177,8 @@ export class ChatChannelsController {
     return this.channels.leaveChannel(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Archive a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/archive")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -157,6 +186,8 @@ export class ChatChannelsController {
     return this.channels.archiveChannel(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Unarchive a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unarchive")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -164,6 +195,8 @@ export class ChatChannelsController {
     return this.channels.unarchiveChannel(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Mark a channel as read up to now" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/read")
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
@@ -174,6 +207,8 @@ export class ChatChannelsController {
     return this.channels.markRead(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Mark a channel as unread" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/mark-unread")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -181,6 +216,8 @@ export class ChatChannelsController {
     return this.channels.markChannelUnread(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Mute a channel for the current user" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/mute")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -192,6 +229,8 @@ export class ChatChannelsController {
     return this.channels.muteChannel(channelId, u.userId, body.duration);
   }
 
+  @ApiOperation({ summary: "Unmute a channel for the current user" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unmute")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -202,6 +241,8 @@ export class ChatChannelsController {
     return this.channels.unmuteChannel(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "List files shared in a channel with cursor pagination" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/files")
   @RequirePermission("chat:messages:read")
   listFiles(
@@ -216,6 +257,8 @@ export class ChatChannelsController {
     );
   }
 
+  @ApiOperation({ summary: "Set current user as typing in a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/typing")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -227,6 +270,8 @@ export class ChatChannelsController {
     return { ok: true };
   }
 
+  @ApiOperation({ summary: "Get users currently typing in a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/typing")
   @RequirePermission("chat:messages:read")
   getTyping(
@@ -236,6 +281,8 @@ export class ChatChannelsController {
     return this.typing.getTyping(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Update a channel member's role (ADMIN/MEMBER)" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId/members/:userId/role")
   @RequirePermission("chat:channels:write")
   updateRole(

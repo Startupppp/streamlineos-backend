@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -24,12 +25,16 @@ import {
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@ApiTags("Chat Presence")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatPresenceController {
   constructor(private readonly presence: ChatPresenceService) {}
 
+  @ApiOperation({ summary: "Update presence heartbeat to mark user as online" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("presence/heartbeat")
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
@@ -37,12 +42,16 @@ export class ChatPresenceController {
     return this.presence.heartbeat(u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Get currently online users in the organisation" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("presence/online")
   @RequirePermission("chat:messages:read")
   online(@CurrentUser() u: CurrentUserContext) {
     return this.presence.getOnlineUsers(u.orgId);
   }
 
+  @ApiOperation({ summary: "Set the current user's status message and emoji" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Put("status")
   @RequirePermission("chat:messages:write")
   setStatus(
@@ -52,6 +61,8 @@ export class ChatPresenceController {
     return this.presence.setStatus(u.userId, u.orgId, body);
   }
 
+  @ApiOperation({ summary: "Get total unread message count across all channels" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("unread")
   @RequirePermission("chat:messages:read")
   async unread(@CurrentUser() u: CurrentUserContext) {
@@ -59,6 +70,8 @@ export class ChatPresenceController {
     return { total };
   }
 
+  @ApiOperation({ summary: "Full-text search across chat messages" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("search")
   @RequirePermission("chat:messages:read")
   search(
@@ -71,6 +84,8 @@ export class ChatPresenceController {
     return this.presence.searchMessages(u.userId, query.query, query.channelId, query.limit ?? 20);
   }
 
+  @ApiOperation({ summary: "List all users in the organisation for mentions and invites" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get("users")
   @RequirePermission("chat:channels:read")
   users(@CurrentUser() u: CurrentUserContext) {

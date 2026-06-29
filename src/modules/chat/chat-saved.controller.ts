@@ -1,4 +1,5 @@
 import { Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -7,12 +8,16 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSavedService } from "./chat-saved.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@ApiTags("Chat Saved Messages")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat/saved")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatSavedController {
   constructor(private readonly saved: ChatSavedService) {}
 
+  @ApiOperation({ summary: "List saved messages for the current user" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:messages:read")
   list(
@@ -23,6 +28,8 @@ export class ChatSavedController {
     return this.saved.list(u.userId, cursor ? parseInt(cursor) : undefined, limit ? parseInt(limit) : 30);
   }
 
+  @ApiOperation({ summary: "Save a message to the current user's saved list" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -30,6 +37,8 @@ export class ChatSavedController {
     return this.saved.save(u.userId, messageId);
   }
 
+  @ApiOperation({ summary: "Remove a message from the current user's saved list" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
   @RequirePermission("chat:messages:write")
   unsave(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {

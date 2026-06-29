@@ -1,4 +1,5 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -12,10 +13,14 @@ interface LinkMeta {
   siteName: string | null;
 }
 
+@ApiTags("Chat Link Preview")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat/link-preview")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatLinkPreviewController {
+  @ApiOperation({ summary: "Fetch Open Graph metadata for a URL to render a link preview card" })
+  @ApiResponse({ status: 200, description: "Link metadata" })
   @Get()
   @RequirePermission("chat:messages:read")
   async preview(@Query("url") url: string): Promise<LinkMeta> {

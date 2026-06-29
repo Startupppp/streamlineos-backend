@@ -35,7 +35,10 @@ import {
 import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
 import { z } from "zod";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 
+@ApiTags("Chat Huddles & Video")
+@ApiBearerAuth()
 @RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,6 +48,9 @@ export class ChatHuddlesController {
     private readonly rateLimit: RateLimitService,
   ) {}
 
+  @ApiOperation({ summary: "Start a voice huddle in a channel" })
+  @ApiResponse({ status: 201, description: "Huddle started" })
+  @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("channels/:channelId/huddle/start")
   @HttpCode(201)
   @RequirePermission("chat:channels:write")
@@ -57,6 +63,8 @@ export class ChatHuddlesController {
     return this.huddles.startHuddle(channelId, u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Get the currently active huddle for a channel" })
+  @ApiResponse({ status: 200, description: "Active huddle or null" })
   @Get("channels/:channelId/huddle")
   @RequirePermission("chat:channels:read")
   getActiveHuddle(
@@ -66,6 +74,8 @@ export class ChatHuddlesController {
     return this.huddles.getActiveHuddle(channelId, u.userId);
   }
 
+  @ApiOperation({ summary: "Join an active huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/join")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -76,6 +86,8 @@ export class ChatHuddlesController {
     return this.huddles.joinHuddle(huddleId, u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Leave a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/leave")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -86,6 +98,8 @@ export class ChatHuddlesController {
     return this.huddles.leaveHuddle(huddleId, u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Set mute state for self in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/mute")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -97,6 +111,8 @@ export class ChatHuddlesController {
     return this.huddles.setMute(huddleId, u.userId, body.muted, u.orgId);
   }
 
+  @ApiOperation({ summary: "Raise or lower hand in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/hand")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -108,6 +124,8 @@ export class ChatHuddlesController {
     return this.huddles.raiseHand(huddleId, u.userId, body.raised, u.orgId);
   }
 
+  @ApiOperation({ summary: "Set deafen state for self in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/deafen")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -119,6 +137,8 @@ export class ChatHuddlesController {
     return this.huddles.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
   }
 
+  @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/signal")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -130,6 +150,8 @@ export class ChatHuddlesController {
     return this.huddles.sendSignal(huddleId, u.userId, body, u.orgId);
   }
 
+  @ApiOperation({ summary: "Start a video meeting in a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("channels/:channelId/meeting/start")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -140,6 +162,8 @@ export class ChatHuddlesController {
     return this.huddles.startVideoMeeting(channelId, u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a video meeting" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/meeting-signal")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -151,6 +175,8 @@ export class ChatHuddlesController {
     return this.huddles.sendMeetingSignal(huddleId, u.userId, u.orgId, body.targetUserId, body.type, body.payload);
   }
 
+  @ApiOperation({ summary: "Toggle camera on/off in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/camera")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -162,6 +188,8 @@ export class ChatHuddlesController {
     return this.huddles.setCameraState(huddleId, u.userId, body.isCameraOff, u.orgId);
   }
 
+  @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/screenshare")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -173,6 +201,8 @@ export class ChatHuddlesController {
     return this.huddles.setScreenShare(huddleId, u.userId, body.isScreenSharing, u.orgId);
   }
 
+  @ApiOperation({ summary: "Kick a participant from a huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/kick")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -184,6 +214,8 @@ export class ChatHuddlesController {
     return this.huddles.kickParticipant(huddleId, u.userId, body.targetUserId, u.orgId);
   }
 
+  @ApiOperation({ summary: "Invite users to an active huddle" })
+  @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
