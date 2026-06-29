@@ -13,6 +13,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -28,7 +30,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("chat")
 @Controller("chat/channels")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatChannelsController {
   constructor(
     private readonly channels: ChatChannelsService,
@@ -36,11 +38,13 @@ export class ChatChannelsController {
   ) {}
 
   @Get()
+  @RequirePermission("chat:channels:read")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.channels.getMyChannels(u.userId, u.orgId);
   }
 
   @Post()
+  @RequirePermission("chat:channels:write")
   async create(
     @Body(new ZodValidationPipe(createChannelSchema)) body: CreateChannelInput,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +56,7 @@ export class ChatChannelsController {
   }
 
   @Get(":channelId")
+  @RequirePermission("chat:channels:read")
   async getOne(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +67,7 @@ export class ChatChannelsController {
   }
 
   @Patch(":channelId")
+  @RequirePermission("chat:channels:write")
   update(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
@@ -71,6 +77,7 @@ export class ChatChannelsController {
   }
 
   @Get(":channelId/members")
+  @RequirePermission("chat:channels:read")
   members(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +87,7 @@ export class ChatChannelsController {
 
   @Post(":channelId/read")
   @HttpCode(200)
+  @RequirePermission("chat:messages:read")
   read(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +97,7 @@ export class ChatChannelsController {
 
   @Post(":channelId/typing")
   @HttpCode(200)
+  @RequirePermission("chat:messages:write")
   async setTyping(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +107,7 @@ export class ChatChannelsController {
   }
 
   @Get(":channelId/typing")
+  @RequirePermission("chat:messages:read")
   getTyping(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,

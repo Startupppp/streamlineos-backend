@@ -13,6 +13,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -33,11 +35,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatMessagesController {
   constructor(private readonly messages: ChatMessagesService) {}
 
   @Get()
+  @RequirePermission("chat:messages:read")
   list(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
@@ -48,6 +51,7 @@ export class ChatMessagesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("chat:messages:write")
   send(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
@@ -57,6 +61,7 @@ export class ChatMessagesController {
   }
 
   @Get("poll")
+  @RequirePermission("chat:messages:read")
   poll(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Query(new ZodValidationPipe(pollQuerySchema)) query: PollQuery,
@@ -69,6 +74,7 @@ export class ChatMessagesController {
   }
 
   @Patch(":messageId")
+  @RequirePermission("chat:messages:write")
   edit(
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body(new ZodValidationPipe(editMessageSchema)) body: EditMessageInput,
@@ -78,6 +84,7 @@ export class ChatMessagesController {
   }
 
   @Delete(":messageId")
+  @RequirePermission("chat:messages:write")
   remove(
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +94,7 @@ export class ChatMessagesController {
 
   @Post(":messageId/reactions")
   @HttpCode(200)
+  @RequirePermission("chat:messages:write")
   react(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,

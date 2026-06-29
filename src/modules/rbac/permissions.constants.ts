@@ -207,6 +207,18 @@ const SALES_PERMISSIONS: Permission[] = [
   { name: "sales:manage", resource: "sales", action: "manage", description: "Manage sales module" },
 ];
 
+const CHAT_PERMISSIONS: Permission[] = [
+  { name: "chat:channels:read", resource: "chat:channels", action: "read", description: "View chat channels" },
+  { name: "chat:channels:write", resource: "chat:channels", action: "write", description: "Create and update chat channels" },
+  { name: "chat:messages:read", resource: "chat:messages", action: "read", description: "Read chat messages" },
+  { name: "chat:messages:write", resource: "chat:messages", action: "write", description: "Send and edit chat messages" },
+];
+
+const API_TOKEN_PERMISSIONS: Permission[] = [
+  { name: "settings:api-tokens:read", resource: "settings:api-tokens", action: "read", description: "View personal API tokens" },
+  { name: "settings:api-tokens:write", resource: "settings:api-tokens", action: "write", description: "Create and revoke personal API tokens" },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -217,6 +229,8 @@ export const PERMISSIONS: Permission[] = [
   ...SALES_PERMISSIONS,
   ...SHARED_PERMISSIONS,
   ...SUPPORT_PERMISSIONS,
+  ...CHAT_PERMISSIONS,
+  ...API_TOKEN_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));
@@ -232,6 +246,11 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:payslips",
   "hr:leaves:create",
   "hr:expenses:create",
+  "chat:channels:read",
+  "chat:messages:read",
+  "chat:messages:write",
+  "settings:api-tokens:read",
+  "settings:api-tokens:write",
 ];
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);

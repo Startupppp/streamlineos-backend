@@ -1,15 +1,18 @@
 import { Controller, Get, InternalServerErrorException, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import Ably from "ably";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("chat")
 @Controller("chat")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatTokenController {
   @Get("ably-token")
+  @RequirePermission("chat:messages:read")
   async getAblyToken(@CurrentUser() u: CurrentUserContext) {
     const apiKey = process.env.ABLY_API_KEY;
     if (!apiKey) throw new ServiceUnavailableException("Ably is not configured");
