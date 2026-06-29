@@ -8,9 +8,12 @@ import { ResponseTransformInterceptor } from "./common/interceptors/response-tra
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
-  const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: false,
+    rawBody: true,
+  });
   app.use(helmet());
-  app.enableCors({ origin: config.corsOrigins, credentials: false });
+  app.enableCors({ origin: config.corsOrigins, credentials: true });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
   app.enableShutdownHooks();
