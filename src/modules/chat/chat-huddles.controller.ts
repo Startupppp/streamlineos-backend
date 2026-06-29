@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  TooManyRequestsException,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -33,20 +34,26 @@ import {
 } from "./dto/huddle.schemas";
 import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
 import { z } from "zod";
+import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 
 @RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatHuddlesController {
-  constructor(private readonly huddles: ChatHuddlesService) {}
+  constructor(
+    private readonly huddles: ChatHuddlesService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
 
   @Post("channels/:channelId/huddle/start")
   @HttpCode(201)
   @RequirePermission("chat:channels:write")
-  startHuddle(
+  async startHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const rl = await this.rateLimit.check("chat:huddle", u.userId);
+    if (!rl.allowed) throw new TooManyRequestsException(`Rate limited. Retry after ${rl.retryAfterSecs}s`);
     return this.huddles.startHuddle(channelId, u.userId, u.orgId);
   }
 

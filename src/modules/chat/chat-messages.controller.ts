@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  TooManyRequestsException,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -32,12 +33,16 @@ import {
   type SendMessageInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 
 @RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatMessagesController {
-  constructor(private readonly messages: ChatMessagesService) {}
+  constructor(
+    private readonly messages: ChatMessagesService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
 
   @Get()
   @RequirePermission("chat:messages:read")
@@ -52,11 +57,13 @@ export class ChatMessagesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
-  send(
+  async send(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const rl = await this.rateLimit.check("chat:send-message", u.userId);
+    if (!rl.allowed) throw new TooManyRequestsException(`Rate limited. Retry after ${rl.retryAfterSecs}s`);
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
