@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { RbacService } from "./rbac.service";
 import {
   assignRolePermissionSchema,
@@ -18,7 +19,10 @@ import {
 @Controller("rbac")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RbacController {
-  constructor(private readonly rbac: RbacService) {}
+  constructor(
+    private readonly rbac: RbacService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("permissions")
   getPermissions() {
@@ -57,5 +61,10 @@ export class RbacController {
   @Get("user-permissions")
   getUserPermissions(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getUserPermissions(u.userId, u.orgId);
+  }
+
+  @Get("access-snapshot")
+  getAccessSnapshot(@CurrentUser() u: CurrentUserContext) {
+    return this.access.getAccessSnapshot(u.orgId, u.userId, u);
   }
 }
