@@ -50,6 +50,9 @@ type OrgSettingsUpdate = {
   favicon?: string | null;
   secondaryColor?: string | null;
   businessHours?: Record<string, { open: string; close: string; enabled: boolean }> | null;
+  companySize?: string | null;
+  country?: string | null;
+  enabledModules?: string[];
 };
 
 @Injectable()
@@ -312,6 +315,9 @@ export class OrganizationService {
     if (input.favicon !== undefined) updateData.favicon = input.favicon;
     if (input.secondaryColor !== undefined) updateData.secondaryColor = input.secondaryColor;
     if (input.businessHours !== undefined) updateData.businessHours = input.businessHours;
+    if (input.companySize !== undefined) updateData.companySize = input.companySize;
+    if (input.country !== undefined) updateData.country = input.country;
+    if (input.enabledModules !== undefined) updateData.enabledModules = input.enabledModules;
 
     const hasSettingsUpdate =
       input.directoryPublic !== undefined ||

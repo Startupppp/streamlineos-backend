@@ -84,6 +84,7 @@ import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.
 import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { UsersModule } from "./modules/users/users.module";
+import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/workspace-onboarding.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -172,6 +173,7 @@ import { MeService } from "./me/me.service";
     TemporaryAccessModule,
     DelegationsModule,
     UsersModule,
+    WorkspaceOnboardingModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

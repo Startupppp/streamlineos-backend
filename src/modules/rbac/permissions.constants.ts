@@ -128,6 +128,7 @@ const SHARED_PERMISSIONS: Permission[] = [
   { name: "settings:email-templates:manage", resource: "settings:email-templates", action: "manage", description: "Manage email templates" },
   { name: "settings:onboarding:manage", resource: "settings:onboarding", action: "manage", description: "Manage onboarding settings" },
   { name: "settings:webhooks:manage", resource: "settings:webhooks", action: "manage", description: "Manage webhooks" },
+  { name: "settings:organization:manage", resource: "settings:organization", action: "manage", description: "Manage workspace onboarding and organization setup", scopable: false },
   { name: "audit-log:read", resource: "audit-log", action: "read", description: "View the audit log" },
   { name: "dashboard:sales:view", resource: "dashboard:sales", action: "view", description: "View Sales dashboard" },
   { name: "dashboard:customer-executive:view", resource: "dashboard:customer-executive", action: "view", description: "View Customer Executive dashboard" },
