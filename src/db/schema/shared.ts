@@ -227,6 +227,53 @@ export const subscriptionPaymentsRelations = relations(subscriptionPayments, ({ 
   subscription: one(subscriptions, { fields: [subscriptionPayments.subscriptionId], references: [subscriptions.id] }),
 }));
 
+export const coupons = pgTable("coupons", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  type: text("type").$type<"PERCENTAGE" | "FIXED">().notNull(),
+  value: numeric("value", { precision: 15, scale: 2 }).notNull(),
+  minPurchase: numeric("min_purchase", { precision: 15, scale: 2 }),
+  maxUses: integer("max_uses"),
+  usedCount: integer("used_count").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  applicablePlans: jsonb("applicable_plans").$type<string[]>(),
+  expiresAt: timestamp("expires_at"),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_coupons_code").on(table.code),
+  index("idx_coupons_is_active").on(table.isActive),
+  index("idx_coupons_org").on(table.orgId),
+]);
+
+export const couponRedemptions = pgTable("coupon_redemptions", {
+  id: serial("id").primaryKey(),
+  couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  amount: numeric("amount", { precision: 15, scale: 2 }),
+  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
+  index("idx_coupon_redemptions_coupon").on(table.couponId),
+  index("idx_coupon_redemptions_org").on(table.orgId),
+]);
+
+export const couponsRelations = relations(coupons, ({ one, many }) => ({
+  organization: one(organizations, { fields: [coupons.orgId], references: [organizations.id] }),
+  redemptions: many(couponRedemptions),
+}));
+
+export const couponRedemptionsRelations = relations(couponRedemptions, ({ one }) => ({
+  coupon: one(coupons, { fields: [couponRedemptions.couponId], references: [coupons.id] }),
+  organization: one(organizations, { fields: [couponRedemptions.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [couponRedemptions.userId], references: [users.id] }),
+}));
+
+export type Coupon = typeof coupons.$inferSelect;
+export type CouponRedemption = typeof couponRedemptions.$inferSelect;
+
 export const aiUsageLogs = pgTable("ai_usage_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
