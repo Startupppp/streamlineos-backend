@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { chatChannelMembers, chatChannels, chatMessages, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -8,7 +8,7 @@ import type { Db } from "../../db/drizzle.module";
 export class ChatSearchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async searchMessages(orgId: string, userId: string, query: string, limit = 20, cursor?: number) {
+  async searchMessages(orgId: string, userId: string, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
     if (!query.trim()) return { results: [], nextCursor: undefined };
     const q = `%${query.trim()}%`;
 
@@ -26,6 +26,9 @@ export class ChatSearchService {
       eq(chatMessages.isDeleted, false),
     ];
     if (cursor) conditions.push(sql`${chatMessages.id} < ${cursor}`);
+    if (from) conditions.push(gte(chatMessages.createdAt, new Date(from)));
+    if (to) conditions.push(lte(chatMessages.createdAt, new Date(to)));
+    if (sender) conditions.push(eq(chatMessages.senderId, sender));
 
     const rows = await this.db.query.chatMessages.findMany({
       where: and(...conditions),

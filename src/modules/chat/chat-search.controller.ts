@@ -18,9 +18,12 @@ export class ChatSearchController {
   searchMessages(
     @Query("q") q: string,
     @Query("cursor") cursor: string | undefined,
+    @Query("from") from: string | undefined,
+    @Query("to") to: string | undefined,
+    @Query("sender") sender: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.search.searchMessages(u.orgId, u.userId, q ?? "", 20, cursor ? parseInt(cursor) : undefined);
+    return this.search.searchMessages(u.orgId, u.userId, q ?? "", 20, cursor ? parseInt(cursor) : undefined, from, to, sender);
   }
 
   @Get("channels")

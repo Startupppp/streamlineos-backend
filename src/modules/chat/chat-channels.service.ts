@@ -542,4 +542,15 @@ export class ChatChannelsService {
     if (hasMore) rows.pop();
     return { files: rows, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
   }
+
+  async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, role: string) {
+    const requester = await this.db.query.chatChannelMembers.findFirst({
+      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, requesterId)),
+    });
+    if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
+    await this.db.update(chatChannelMembers)
+      .set({ role })
+      .where(and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, targetUserId)));
+    return { ok: true };
+  }
 }

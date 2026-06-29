@@ -32,6 +32,7 @@ import {
   type KickInput,
 } from "./dto/huddle.schemas";
 import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
+import { z } from "zod";
 
 @RequireModule("chat")
 @Controller("chat")
@@ -100,6 +101,17 @@ export class ChatHuddlesController {
     return this.huddles.raiseHand(huddleId, u.userId, body.raised, u.orgId);
   }
 
+  @Patch("huddles/:huddleId/deafen")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  deafen(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(z.object({ deafened: z.boolean() }))) body: { deafened: boolean },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
+  }
+
   @Post("huddles/:huddleId/signal")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -163,5 +175,16 @@ export class ChatHuddlesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.huddles.kickParticipant(huddleId, u.userId, body.targetUserId, u.orgId);
+  }
+
+  @Post("huddles/:huddleId/invite")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  invite(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(z.object({ userIds: z.array(z.string().min(1)).min(1) }))) body: { userIds: string[] },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.inviteToHuddle(huddleId, u.userId, u.orgId, body.userIds);
   }
 }

@@ -33,6 +33,7 @@ import {
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { z } from "zod";
 
 @RequireModule("chat")
 @Controller("chat/channels")
@@ -233,5 +234,16 @@ export class ChatChannelsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.typing.getTyping(channelId, u.userId);
+  }
+
+  @Patch(":channelId/members/:userId/role")
+  @RequirePermission("chat:channels:write")
+  updateRole(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Param("userId") targetUserId: string,
+    @Body(new ZodValidationPipe(z.object({ role: z.enum(["ADMIN", "MEMBER"]) }))) body: { role: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.updateMemberRole(channelId, targetUserId, u.userId, body.role);
   }
 }

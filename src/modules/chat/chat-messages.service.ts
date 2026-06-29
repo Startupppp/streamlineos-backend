@@ -108,7 +108,9 @@ export class ChatMessagesService {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
-    if (!body.content?.trim() && (!body.attachments || body.attachments.length === 0)) {
+    const sanitizedContent = body.content ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000) : null;
+
+    if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0)) {
       throw new BadRequestException("Message must have content or attachments");
     }
 
@@ -118,7 +120,7 @@ export class ChatMessagesService {
         .values({
           channelId,
           senderId: userId,
-          content: body.content?.trim() || null,
+          content: sanitizedContent?.trim() || null,
           replyToId: body.replyToId,
         })
         .returning();

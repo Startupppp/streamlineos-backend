@@ -10,6 +10,8 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
+import { WebPushService } from "../realtime/web-push.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type { HuddleSignalInput } from "./dto/huddle.schemas";
 
 @Injectable()
@@ -17,6 +19,8 @@ export class ChatHuddlesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
+    private readonly webPush: WebPushService,
+    private readonly audit: AuditService,
   ) {}
 
   private async assertMember(channelId: number, userId: string) {
@@ -27,6 +31,11 @@ export class ChatHuddlesService {
       ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      columns: { isArchived: true },
+    });
+    if (channel?.isArchived) throw new ForbiddenException("Channel is archived");
     return member;
   }
 
@@ -44,6 +53,10 @@ export class ChatHuddlesService {
         startedByUser: { columns: { id: true, name: true } },
       },
     });
+    if (huddle && huddle.endedAt) {
+      await this.db.update(chatHuddles).set({ status: "ended" }).where(eq(chatHuddles.id, huddle.id));
+      return null;
+    }
     return huddle ?? null;
   }
 
@@ -114,6 +127,18 @@ export class ChatHuddlesService {
       }
     }
 
+    this.audit.log({ action: "huddle.started", userId, orgId, targetId: String(huddle.id), targetType: "huddle", metadata: { channelId } });
+
+    for (const member of channelMembers) {
+      if (member.userId !== userId) {
+        void this.webPush.sendToUser(member.userId, {
+          title: "Huddle started",
+          body: `Someone started a huddle in the channel. Join now!`,
+          url: `/chat?channel=${channelId}&joinHuddle=1`,
+        }).catch(() => {});
+      }
+    }
+
     return huddle;
   }
 
@@ -138,6 +163,8 @@ export class ChatHuddlesService {
       userId,
       channelId: huddle.channelId,
     });
+
+    this.audit.log({ action: "huddle.joined", userId, orgId, targetId: String(huddleId), targetType: "huddle" });
 
     return { ok: true };
   }
@@ -169,12 +196,21 @@ export class ChatHuddlesService {
       }
 
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:ended", { huddleId, channelId: huddle.channelId });
+      this.audit.log({ action: "huddle.ended", userId, orgId, targetId: String(huddleId), targetType: "huddle" });
     } else {
+      if (huddle.startedBy === userId && remaining.length > 0) {
+        const nextHost = remaining[0];
+        await this.db.update(chatHuddles).set({ startedBy: nextHost.userId }).where(eq(chatHuddles.id, huddleId));
+        await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", {
+          huddleId, hostTransferred: true, newHostId: nextHost.userId,
+        });
+      }
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:user_left", {
         huddleId,
         userId,
         channelId: huddle.channelId,
       });
+      this.audit.log({ action: "huddle.left", userId, orgId, targetId: String(huddleId), targetType: "huddle" });
     }
 
     return { ok: true };
@@ -198,6 +234,17 @@ export class ChatHuddlesService {
       );
 
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isMuted: muted });
+    return { ok: true };
+  }
+
+  async setDeafen(huddleId: number, userId: string, orgId: string, deafened: boolean) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+    await this.db.update(chatHuddleParticipants).set({ isDeafened: deafened })
+      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId)));
+    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isDeafened: deafened });
     return { ok: true };
   }
 
@@ -350,6 +397,21 @@ export class ChatHuddlesService {
       .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, targetUserId), isNull(chatHuddleParticipants.leftAt)));
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId: targetUserId, kicked: true });
     void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch(() => {});
+    return { ok: true };
+  }
+
+  async inviteToHuddle(huddleId: number, fromUserId: string, orgId: string, targetUserIds: string[]) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+    for (const userId of targetUserIds) {
+      await this.ably.publishToUser(orgId, userId, "notification:huddle_invite", {
+        huddleId,
+        channelId: huddle.channelId,
+        fromUserId,
+      });
+    }
     return { ok: true };
   }
 }
