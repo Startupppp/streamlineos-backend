@@ -50,7 +50,9 @@ import {
   type UpdatePipInput,
   type UpdateReviewCycleInput,
 } from "./dto/performance.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/performance")
 @UseGuards(JwtAuthGuard)
 export class PerformanceController {

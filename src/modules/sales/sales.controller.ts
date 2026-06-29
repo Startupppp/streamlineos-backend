@@ -55,6 +55,7 @@ import {
   type RepFilterInput,
   type RepComparisonInput,
 } from "./dto/sales.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 function toRange(input: { from?: string; to?: string }): DateRange {
   return {
@@ -63,6 +64,7 @@ function toRange(input: { from?: string; to?: string }): DateRange {
   };
 }
 
+@RequireModule("crm")
 @Controller("sales")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SalesController {

@@ -32,7 +32,9 @@ import {
   type SubmitFeedbackInput,
   type UpdateSurveyInput,
 } from "./dto/engagement.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class EngagementController {

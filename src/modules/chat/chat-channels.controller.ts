@@ -24,7 +24,9 @@ import {
   type CreateChannelInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("chat")
 @Controller("chat/channels")
 @UseGuards(JwtAuthGuard)
 export class ChatChannelsController {

@@ -14,7 +14,9 @@ import {
   type ProfitLossQuery,
   type TrialBalanceQuery,
 } from "./dto/accounting.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("accounting")
 @Controller("accounting/reports")
 @UseGuards(JwtAuthGuard)
 export class AccountingStatementsController {

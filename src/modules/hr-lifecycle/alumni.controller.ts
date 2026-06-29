@@ -12,7 +12,9 @@ import {
   type AlumniListInput,
   type AlumniCreateInput,
 } from "./dto/hr-lifecycle.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/alumni")
 @UseGuards(JwtAuthGuard)
 export class AlumniController {

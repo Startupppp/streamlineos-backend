@@ -34,7 +34,9 @@ import {
   type UpdateAutomationInput,
   type UpdateSequenceInput,
 } from "./dto/automation.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentAutomationController {

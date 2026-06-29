@@ -6,7 +6,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
 import { AccessService } from "../access/access.service";
 import { diversityReportQuerySchema, type DiversityReportQueryInput } from "./dto/candidates.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentPipelineController {

@@ -30,7 +30,9 @@ import {
   type HolidayListQuery,
   type UpdateHolidayInput,
 } from "./dto/holidays.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/holidays")
 @UseGuards(JwtAuthGuard)
 export class HrHolidaysController {

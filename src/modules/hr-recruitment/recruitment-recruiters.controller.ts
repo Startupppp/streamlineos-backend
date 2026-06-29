@@ -25,7 +25,9 @@ import {
   type RecruiterActivityQueryInput,
   type UpsertPortalInput,
 } from "./dto/jobs.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentRecruitersController {

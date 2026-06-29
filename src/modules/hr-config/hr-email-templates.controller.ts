@@ -23,7 +23,9 @@ import {
   type CreateEmailTemplateInput,
   type UpdateEmailTemplateInput,
 } from "./dto/email-templates.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/email-templates")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @RequirePermission("hr:email-templates:manage")

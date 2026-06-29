@@ -23,7 +23,9 @@ import {
   type CreateMeetingInput,
   type UpdateMeetingInput,
 } from "./dto/deals.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("deals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class DealsMeetingsController {

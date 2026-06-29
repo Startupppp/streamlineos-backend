@@ -24,7 +24,9 @@ import {
   type CreateHandbookInput,
   type UpdateHandbookInput,
 } from "./dto/handbook.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/handbook")
 @UseGuards(JwtAuthGuard)
 export class HrHandbookController {

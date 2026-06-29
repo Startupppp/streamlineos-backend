@@ -39,7 +39,9 @@ import {
   type SequenceListInput,
   type UpdateInput,
 } from "./dto/task.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {

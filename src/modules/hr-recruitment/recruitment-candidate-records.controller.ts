@@ -43,7 +43,9 @@ import {
   type UpdateReferenceCheckInput,
   type UpdateReferralInput,
 } from "./dto/candidate-records.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentCandidateRecordsController {

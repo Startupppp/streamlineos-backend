@@ -22,7 +22,9 @@ import {
   type CreateSalaryStructureInput,
   type SalaryStructureListQuery,
 } from "./dto/salary-structures.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/salary-structures")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSalaryStructuresController {

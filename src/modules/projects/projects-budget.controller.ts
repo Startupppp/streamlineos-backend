@@ -15,7 +15,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { updateBudgetSchema, type UpdateBudgetInput } from "./dto/projects.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsBudgetController {

@@ -7,7 +7,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvReportsService } from "./inv-reports.service";
 import { movementsQuerySchema, type MovementsQueryInput } from "./dto/inv-reports.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/reports")
 @UseGuards(JwtAuthGuard)
 export class InvReportsController {

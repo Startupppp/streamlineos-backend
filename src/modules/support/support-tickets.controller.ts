@@ -29,7 +29,9 @@ import {
   type ReplyMessageInput,
   type UpdateTicketInput,
 } from "./dto/support.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("support")
 @Controller("support")
 @UseGuards(JwtAuthGuard)
 export class SupportTicketsController {

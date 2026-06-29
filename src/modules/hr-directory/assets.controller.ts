@@ -31,7 +31,9 @@ import {
   type PatchAssetReturnInput,
   type PatchDeviceInput,
 } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class AssetsController {

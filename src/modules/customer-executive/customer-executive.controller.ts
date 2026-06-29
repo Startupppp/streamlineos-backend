@@ -27,7 +27,9 @@ import {
   type UpdateHealthConfigInput,
   type UpdateSurveyInput,
 } from "./dto/customer-executive.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("customer-executive")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CustomerExecutiveController {

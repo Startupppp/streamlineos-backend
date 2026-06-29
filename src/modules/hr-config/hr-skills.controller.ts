@@ -13,7 +13,9 @@ import {
   type CreateSkillInput,
   type SkillListQuery,
 } from "./dto/competencies.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/skills")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSkillsController {

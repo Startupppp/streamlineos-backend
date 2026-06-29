@@ -15,11 +15,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvoicesService } from "./invoices.service";
 import { listInvoicesSchema, type ListInvoicesInput } from "./dto/invoice.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+@RequireModule("accounting")
 @Controller("invoices")
 @UseGuards(JwtAuthGuard)
 export class InvoicesController {

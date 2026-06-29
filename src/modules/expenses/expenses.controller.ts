@@ -39,6 +39,7 @@ import {
   type PageDataInput,
   type ReportInput,
 } from "./dto/expense.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 const EXPORT_HEADERS = [
   "Date",
@@ -51,6 +52,7 @@ const EXPORT_HEADERS = [
   "Rejection Reason",
 ] as const;
 
+@RequireModule("accounting")
 @Controller("hr/expenses")
 @UseGuards(JwtAuthGuard)
 export class ExpensesController {

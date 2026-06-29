@@ -7,7 +7,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrGrowthService } from "./hr-growth.service";
 import { createCareerLadderSchema, type CreateCareerLadderInput } from "./dto/growth.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/career-ladders")
 @UseGuards(JwtAuthGuard)
 export class HrCareerLaddersController {

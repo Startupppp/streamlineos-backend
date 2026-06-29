@@ -37,6 +37,7 @@ import {
   type TransitionLeadStatusInput,
   type VerifyInput,
 } from "./dto/lead-mutations.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 function resolveLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
@@ -44,6 +45,7 @@ function resolveLimit(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+@RequireModule("crm")
 @Controller("leads")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsDetailController {

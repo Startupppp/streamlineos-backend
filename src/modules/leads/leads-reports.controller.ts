@@ -27,7 +27,9 @@ import {
   type ExportQuery,
   type FollowUpsQuery,
 } from "./dto/lead-reports.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("leads")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsReportsController {

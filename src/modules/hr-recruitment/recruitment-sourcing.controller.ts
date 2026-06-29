@@ -42,7 +42,9 @@ import {
   type UpdateSubmissionInput,
   type UpdateVendorInput,
 } from "./dto/sourcing.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentSourcingController {

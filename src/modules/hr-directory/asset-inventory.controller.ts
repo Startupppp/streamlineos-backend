@@ -24,7 +24,9 @@ import {
   type CreateAssetInput,
   type PatchAssetInput,
 } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class AssetInventoryController {

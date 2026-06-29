@@ -27,7 +27,9 @@ import {
   type CreatePoInput,
   type CreateGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("inventory")
 @Controller("inventory/purchase-orders")
 @UseGuards(JwtAuthGuard)
 export class InvPurchaseOrdersController {

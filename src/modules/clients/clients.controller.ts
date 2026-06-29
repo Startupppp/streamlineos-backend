@@ -52,7 +52,9 @@ import {
   type CreateTemplateInput,
   type UpdateClientStatusInput,
 } from "./dto/clients.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("clients")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ClientsController {

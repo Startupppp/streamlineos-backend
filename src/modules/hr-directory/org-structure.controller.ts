@@ -8,7 +8,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrgStructureService } from "./org-structure.service";
 import { CelebrationsService } from "./celebrations.service";
 import { headcountSchema, type HeadcountInput } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard)
 export class OrgStructureController {

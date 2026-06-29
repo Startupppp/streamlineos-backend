@@ -24,7 +24,9 @@ import {
   type SlaPolicyCreateInput,
   type SlaPolicyUpdateInput,
 } from "./dto/sla.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm/sla")
 @UseGuards(JwtAuthGuard)
 export class CrmSlaController {

@@ -12,7 +12,9 @@ import {
   type CertificationListQuery,
   type CreateCertificationInput,
 } from "./dto/competencies.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/certifications")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrCertificationsController {

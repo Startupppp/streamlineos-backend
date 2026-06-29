@@ -36,7 +36,9 @@ import {
   type RecordVendorPaymentInput,
   type UpdatePurchaseBillStatusInput,
 } from "./dto/accounting.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("accounting")
 @Controller("accounting")
 @UseGuards(JwtAuthGuard)
 export class AccountingPayablesReceivablesController {

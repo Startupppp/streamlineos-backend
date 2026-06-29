@@ -23,11 +23,13 @@ import {
   type RecordPaymentInput,
   type UpdateInvoiceInput,
 } from "./dto/invoice-write.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+@RequireModule("accounting")
 @Controller("invoices")
 @UseGuards(JwtAuthGuard)
 export class InvoicesWriteController {

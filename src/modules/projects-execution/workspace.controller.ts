@@ -48,7 +48,9 @@ import {
   type UpdateViewInput,
   type UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects/:projectId/milestones")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class MilestonesController {

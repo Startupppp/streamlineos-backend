@@ -29,7 +29,9 @@ import {
   type ResignationCeoReviewInput,
   type ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/exit")
 @UseGuards(JwtAuthGuard)
 export class ExitController {

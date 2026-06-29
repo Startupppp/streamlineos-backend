@@ -29,7 +29,9 @@ import {
   type ListInput,
   type UpdateInput,
 } from "./dto/target.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("targets")
 @UseGuards(JwtAuthGuard)
 export class TargetsController {

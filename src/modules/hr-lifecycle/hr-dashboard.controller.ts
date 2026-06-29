@@ -6,7 +6,9 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/dashboard")
 @UseGuards(JwtAuthGuard)
 export class HrDashboardController {

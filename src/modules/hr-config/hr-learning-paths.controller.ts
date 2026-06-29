@@ -12,7 +12,9 @@ import {
   type CreateLearningPathInput,
   type LearningPathListQuery,
 } from "./dto/growth.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/learning-paths")
 @UseGuards(JwtAuthGuard)
 export class HrLearningPathsController {

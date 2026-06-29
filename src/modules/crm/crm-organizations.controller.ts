@@ -28,7 +28,9 @@ import {
   type OrganizationListInput,
   type OrganizationUpdateInput,
 } from "./dto/organizations.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("crm")
 @Controller("crm/organizations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmOrganizationsController {

@@ -39,7 +39,9 @@ import {
   type TicketsListQuery,
   type UpdateTicketInput,
 } from "./dto/projects.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("projects")
 @Controller("projects")
 @UseGuards(JwtAuthGuard)
 export class ProjectsTicketsController {

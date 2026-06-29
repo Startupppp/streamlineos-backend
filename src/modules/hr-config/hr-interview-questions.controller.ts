@@ -27,7 +27,9 @@ import {
   type InterviewQuestionListQuery,
   type UpdateInterviewQuestionInput,
 } from "./dto/interview-questions.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/interview-questions")
 @UseGuards(JwtAuthGuard)
 export class HrInterviewQuestionsController {

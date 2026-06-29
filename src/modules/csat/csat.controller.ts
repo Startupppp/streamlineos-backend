@@ -35,7 +35,9 @@ import {
   type PatchInput,
   type SubmitResponseInput,
 } from "./dto/csat.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("support")
 @Controller("csat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CsatController {

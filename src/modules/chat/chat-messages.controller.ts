@@ -29,7 +29,9 @@ import {
   type ReactionInput,
   type SendMessageInput,
 } from "./dto/chat.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
 @UseGuards(JwtAuthGuard)
 export class ChatMessagesController {

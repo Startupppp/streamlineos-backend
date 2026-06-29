@@ -20,7 +20,9 @@ import {
   type CreateBgvInput,
   type UpdateBgvInput,
 } from "./dto/hr-directory.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/background-verification")
 @UseGuards(JwtAuthGuard)
 export class BackgroundVerificationController {
