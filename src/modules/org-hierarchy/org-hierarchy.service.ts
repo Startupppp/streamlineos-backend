@@ -614,6 +614,34 @@ export class OrgHierarchyService {
     };
   }
 
+  async moveBusinessUnit(orgId: string, buId: string, newParentId: string | null) {
+    const bu = await this.db.query.orgBusinessUnits.findFirst({
+      where: and(eq(orgBusinessUnits.id, buId), eq(orgBusinessUnits.orgId, orgId)),
+    });
+    if (!bu) throw new Error("Business unit not found");
+
+    await this.db
+      .update(orgBusinessUnits)
+      .set({ parentId: newParentId, updatedAt: new Date() })
+      .where(and(eq(orgBusinessUnits.id, buId), eq(orgBusinessUnits.orgId, orgId)));
+
+    return { success: true };
+  }
+
+  async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {
+    const branch = await this.db.query.orgBranches.findFirst({
+      where: and(eq(orgBranches.id, branchId), eq(orgBranches.orgId, orgId)),
+    });
+    if (!branch) throw new Error("Branch not found");
+
+    await this.db
+      .update(orgBranches)
+      .set({ businessUnitId: newBusinessUnitId, updatedAt: new Date() })
+      .where(and(eq(orgBranches.id, branchId), eq(orgBranches.orgId, orgId)));
+
+    return { success: true };
+  }
+
   async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
     const dept = await this.db.query.orgDepartments.findFirst({
       where: and(eq(orgDepartments.id, departmentId), eq(orgDepartments.orgId, orgId)),
