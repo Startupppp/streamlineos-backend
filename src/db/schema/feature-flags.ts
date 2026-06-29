@@ -15,7 +15,7 @@ export interface OrgOverride {
   enabled: boolean;
 }
 
-export type FeatureFlagType = "boolean" | "percentage";
+export type FeatureFlagType = "global" | "percentage" | "org" | "user";
 
 export const featureFlags = pgTable(
   "feature_flags",
@@ -26,7 +26,7 @@ export const featureFlags = pgTable(
     key: text("key").notNull(),
     name: text("name").notNull(),
     description: text("description"),
-    type: text("type").$type<FeatureFlagType>().default("boolean").notNull(),
+    type: text("type").$type<FeatureFlagType>().default("global").notNull(),
     enabled: boolean("enabled").default(false).notNull(),
     rolloutPercentage: integer("rollout_percentage").default(0).notNull(),
     orgOverrides: jsonb("org_overrides").$type<OrgOverride[]>().default([]).notNull(),
