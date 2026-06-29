@@ -133,6 +133,7 @@ export const chatHuddles = pgTable("chat_huddles", {
   startedBy: text("started_by").references(() => users.id).notNull(),
   status: text("status").default("active").notNull(),
   calendarEventId: integer("calendar_event_id"),
+  hasVideo: boolean("has_video").default(false).notNull(),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   endedAt: timestamp("ended_at"),
 }, (table) => [

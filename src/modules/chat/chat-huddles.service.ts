@@ -90,7 +90,7 @@ export class ChatHuddlesService {
 
       const [created] = await tx
         .insert(chatHuddles)
-        .values({ channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id })
+        .values({ channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
         .returning();
 
       await tx.insert(chatHuddleParticipants).values({ huddleId: created.id, userId });
@@ -222,6 +222,81 @@ export class ChatHuddlesService {
       fromUserId,
       type: signal.type,
       payload: signal.payload,
+    });
+
+    return { ok: true };
+  }
+
+  async startVideoMeeting(channelId: number, userId: string, orgId: string) {
+    await this.assertMember(channelId, userId);
+
+    const existing = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.channelId, channelId), eq(chatHuddles.status, "active")),
+    });
+    if (existing) {
+      await this.joinHuddle(existing.id, userId, orgId);
+      return existing;
+    }
+
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      columns: { name: true },
+    });
+
+    const channelMembers = await this.db
+      .select({ userId: chatChannelMembers.userId })
+      .from(chatChannelMembers)
+      .where(eq(chatChannelMembers.channelId, channelId));
+
+    const now = new Date();
+    const estimatedEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+
+    const huddle = await this.db.transaction(async (tx) => {
+      const [calEvent] = await tx
+        .insert(calendarEvents)
+        .values({
+          orgId,
+          title: `Video Meeting in #${channel?.name ?? "channel"}`,
+          category: "huddle",
+          entityType: "huddle",
+          entityId: channelId.toString(),
+          startDate: now,
+          endDate: estimatedEnd,
+          allDay: false,
+          attendeeIds: channelMembers.map((m) => m.userId),
+          createdBy: userId,
+        })
+        .returning({ id: calendarEvents.id });
+
+      const [created] = await tx
+        .insert(chatHuddles)
+        .values({ channelId, startedBy: userId, status: "active", calendarEventId: calEvent?.id, hasVideo: true })
+        .returning();
+
+      await tx.insert(chatHuddleParticipants).values({ huddleId: created.id, userId });
+
+      return created;
+    });
+
+    await this.ably.publishMeetingEvent(orgId, channelId, "meeting:started", {
+      huddleId: huddle.id,
+      channelId,
+      startedBy: userId,
+    });
+
+    return huddle;
+  }
+
+  async sendMeetingSignal(huddleId: number, fromUserId: string, orgId: string, targetUserId: string, type: string, payload: unknown) {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.status, "active")),
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
+
+    await this.ably.publishMeetingSignal(orgId, huddle.channelId, targetUserId, {
+      fromUserId,
+      type,
+      payload,
     });
 
     return { ok: true };

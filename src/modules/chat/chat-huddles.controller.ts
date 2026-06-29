@@ -25,6 +25,7 @@ import {
   type MuteInput,
   type RaiseHandInput,
 } from "./dto/huddle.schemas";
+import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
 
 @RequireModule("chat")
 @Controller("chat")
@@ -102,5 +103,26 @@ export class ChatHuddlesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.huddles.sendSignal(huddleId, u.userId, body, u.orgId);
+  }
+
+  @Post("channels/:channelId/meeting/start")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  startMeeting(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.startVideoMeeting(channelId, u.userId, u.orgId);
+  }
+
+  @Post("huddles/:huddleId/meeting-signal")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  meetingSignal(
+    @Param("huddleId", ParseIntPipe) huddleId: number,
+    @Body(new ZodValidationPipe(videoSignalSchema)) body: VideoSignalInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.huddles.sendMeetingSignal(huddleId, u.userId, u.orgId, body.targetUserId, body.type, body.payload);
   }
 }

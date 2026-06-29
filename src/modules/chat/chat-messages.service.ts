@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
+import { ChatNotificationsService } from "./chat-notifications.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
 const CEO = "CEO";
@@ -37,6 +38,7 @@ export class ChatMessagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
+    private readonly notifications: ChatNotificationsService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -176,6 +178,20 @@ export class ChatMessagesService {
       body: message.content?.slice(0, 80) ?? "Sent an attachment",
       url: `/chat?channel=${channelId}`,
     });
+
+    const channelData = await this.db.query.chatChannels.findFirst({
+      where: eq(chatChannels.id, channelId),
+      columns: { type: true },
+    });
+
+    if (channelData?.type === "DIRECT") {
+      await this.notifications.publishNewMessageNotification(orgId, channelId, {
+        id: message.id,
+        content: message.content,
+        senderId: message.senderId,
+        senderName,
+      }, channelData.type);
+    }
   }
 
   async edit(messageId: number, userId: string, content: string) {
