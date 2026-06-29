@@ -126,6 +126,19 @@ export const bulkUpdateUsersSchema = z.object({
 });
 export type BulkUpdateUsersInput = z.infer<typeof bulkUpdateUsersSchema>;
 
+export const createUserSchema = z.object({
+  email: z.string().email(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  role: z.string().default("MEMBER"),
+  designation: z.string().optional(),
+  phone: z.string().optional(),
+  departmentId: z.coerce.number().int().optional(),
+  branchId: z.coerce.number().int().optional(),
+  sendInvite: z.boolean().default(true),
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
 export const listAuditSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

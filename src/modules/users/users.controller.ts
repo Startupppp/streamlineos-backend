@@ -11,11 +11,11 @@ import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
   updateMembershipSchema, bulkActionSchema, listLoginHistorySchema,
-  bulkUpdateUsersSchema, listAuditSchema, importUsersRowSchema,
+  bulkUpdateUsersSchema, listAuditSchema, importUsersRowSchema, createUserSchema,
   type ListUsersInput, type UpdateUserInput, type UpdateUserStatusInput,
   type InviteUserInput, type BulkInviteInput, type UpdatePreferencesInput,
   type UpdateMembershipInput, type BulkActionInput, type ListLoginHistoryInput,
-  type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow,
+  type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow, type CreateUserInput,
 } from "./dto/users.schemas";
 import { z } from "zod";
 
@@ -68,6 +68,14 @@ export class UsersController {
   }
 
   // ── Static POST routes ──
+
+  @Post()
+  createUser(
+    @Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.createUser(u.orgId, body, u.userId);
+  }
 
   @Post("invite")
   inviteUser(

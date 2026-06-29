@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, gt } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import { addDays } from "date-fns";
@@ -28,6 +29,7 @@ import type {
   BulkUpdateUsersInput,
   ListAuditInput,
   ImportUsersRow,
+  CreateUserInput,
 } from "./dto/users.schemas";
 
 @Injectable()
@@ -37,6 +39,64 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
   ) {}
+
+  async createUser(orgId: string, input: CreateUserInput, actorUserId: string) {
+    const { email, firstName, lastName, role, designation, phone, departmentId, branchId, sendInvite } = input;
+
+    if (sendInvite) {
+      return this.inviteUser(orgId, email, role, actorUserId, { departmentId, branchId });
+    }
+
+    const existing = await this.db.query.users.findFirst({ where: eq(users.email, email) });
+    if (existing) {
+      const membership = await this.db.query.organizationMembers.findFirst({
+        where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, existing.id)),
+      });
+      if (membership) throw new ConflictException("User is already a member of this organization");
+      await this.db.insert(organizationMembers).values({ userId: existing.id, orgId, role }).onConflictDoNothing();
+      return { userId: existing.id, created: false };
+    }
+
+    const userId = randomUUID();
+    const tempPassword = randomBytes(16).toString("hex");
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+    const fullName = firstName && lastName ? `${firstName} ${lastName}`.trim() : firstName ?? lastName ?? null;
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        email,
+        password: hashedPassword,
+        name: fullName,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        emailVerified: new Date(),
+        designation: designation ?? null,
+        phone: phone ?? null,
+        departmentId: departmentId ?? null,
+        branchId: branchId ?? null,
+        userStatus: "active",
+        activatedAt: new Date(),
+        isActive: true,
+      });
+      await tx.insert(organizationMembers).values({ userId, orgId, role }).onConflictDoNothing();
+    });
+
+    await this.db.insert(userActivity).values({
+      id: randomUUID(),
+      orgId,
+      userId,
+      actorUserId,
+      action: "user.created",
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { email, role },
+    });
+
+    this.audit.log({ action: "user.created", userId: actorUserId, orgId, targetId: userId, targetType: "user" });
+
+    return { userId, created: true };
+  }
 
   async listUsers(orgId: string, params: ListUsersInput) {
     const { page, limit, search, status, role, departmentId, branchId, teamId, managerUserId, sortBy, sortOrder } = params;
@@ -231,14 +291,21 @@ export class UsersService {
       }
     }
 
-    const update: Record<string, unknown> = {};
-    if (status === "active") {
-      update.isActive = true;
-    } else {
-      update.isActive = false;
-    }
+    const update: Record<string, unknown> = {
+      isActive: status === "active",
+      userStatus: status,
+    };
+    if (status === "active") update.activatedAt = new Date();
+    if (status === "archived") update.archivedAt = new Date();
 
     await this.db.update(users).set(update).where(eq(users.id, userId));
+
+    if (status === "suspended") {
+      await this.db
+        .update(userSessions)
+        .set({ isRevoked: true })
+        .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)));
+    }
 
     await this.db.insert(userActivity).values({
       id: randomUUID(),
@@ -259,7 +326,19 @@ export class UsersService {
   async deleteUser(orgId: string, userId: string, actorUserId: string) {
     await this.getUser(orgId, userId);
 
-    await this.db.update(users).set({ isActive: false }).where(eq(users.id, userId));
+    await this.db
+      .update(users)
+      .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    await this.db
+      .update(userSessions)
+      .set({ isRevoked: true })
+      .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)));
+
+    await this.db
+      .delete(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
 
     await this.db.insert(userActivity).values({
       id: randomUUID(),

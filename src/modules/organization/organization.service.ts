@@ -533,8 +533,32 @@ export class OrganizationService {
       where: eq(users.email, invitation.email),
     });
 
-    if (existingUser) throw new ConflictException("An account with this email already exists");
+    if (existingUser) {
+      const existingMembership = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, existingUser.id),
+          eq(organizationMembers.orgId, invitation.orgId),
+        ),
+      });
 
+      if (existingMembership) throw new ConflictException("You are already a member of this organization");
+
+      await this.db.transaction(async (tx) => {
+        await tx
+          .insert(organizationMembers)
+          .values({ userId: existingUser.id, orgId: invitation.orgId, role: invitation.role })
+          .onConflictDoNothing();
+
+        await tx
+          .update(invitations)
+          .set({ acceptedAt: new Date() })
+          .where(eq(invitations.id, invitation.id));
+      });
+
+      return { ok: true };
+    }
+
+    if (!input.password) throw new BadRequestException("Password is required for new accounts");
     const hashedPassword = await bcrypt.hash(input.password, 12);
     const userId = randomUUID();
     const fullName =
