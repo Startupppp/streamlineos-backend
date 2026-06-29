@@ -222,6 +222,20 @@ export class AuthController {
     return this.authService.getAuditAnalytics();
   }
 
+  @Public()
+  @Get("session-data/:userId")
+  @HttpCode(200)
+  async getSessionData(
+    @Param("userId") userId: string,
+    @Request() req: { headers: Record<string, string> },
+  ) {
+    const secret = process.env.INTERNAL_API_SECRET;
+    if (!secret || req.headers["x-internal-secret"] !== secret) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    return this.authService.getSessionData(userId);
+  }
+
   @Post("magic-link")
   @Public()
   @HttpCode(200)

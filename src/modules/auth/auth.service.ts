@@ -6,6 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { AccessService } from "../access/access.service";
 import { and, eq, gt, gte, sql } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes, createDecipheriv } from "node:crypto";
 import {
@@ -101,6 +102,7 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
+    private readonly access: AccessService,
   ) {}
 
   private assertPasswordNotEmail(password: string, email: string): void {
@@ -604,6 +606,114 @@ export class AuthService {
     });
 
     await this.email.sendMagicLinkEmail(user.email, token);
+  }
+
+  async getSessionData(userId: string): Promise<{
+    userId: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    name: string | null;
+    image: string | null;
+    role: string | null;
+    isActive: boolean;
+    hasDashboardAccess: boolean;
+    isPasswordChangeRequired: boolean;
+    branchId: number | null;
+    totpEnabled: boolean;
+    orgId: string | null;
+    isOrgOwner: boolean;
+    mfaEnforced: boolean;
+    enabledModules: string[];
+    orgOnboardingCompletedAt: string | null;
+    userOnboardingCompletedAt: string | null;
+    permissions: string[];
+    plan: string | null;
+  }> {
+    const [user, membership] = await Promise.all([
+      this.db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          name: true,
+          image: true,
+          role: true,
+          isActive: true,
+          hasDashboardAccess: true,
+          isPasswordChangeRequired: true,
+          branchId: true,
+          totpEnabled: true,
+          onboardingCompletedAt: true,
+        },
+      }),
+      this.db.query.organizationMembers.findFirst({
+        where: eq(organizationMembers.userId, userId),
+        columns: { orgId: true, isOwner: true },
+      }),
+    ]);
+
+    if (!user) throw new NotFoundException("User not found");
+
+    let mfaEnforced = false;
+    let enabledModules: string[] = [];
+    let orgOnboardingCompletedAt: string | null = null;
+    let plan: string | null = null;
+    let permissions: string[] = [];
+
+    if (membership?.orgId) {
+      const orgId = membership.orgId;
+      const [org, sub] = await Promise.all([
+        this.db.query.organizations.findFirst({
+          where: eq(organizations.id, orgId),
+          columns: { mfaEnforced: true, enabledModules: true, onboardingCompletedAt: true },
+        }),
+        this.db.query.subscriptions.findFirst({
+          where: eq(subscriptions.orgId, orgId),
+          columns: { plan: true, status: true },
+        }),
+      ]);
+
+      mfaEnforced = org?.mfaEnforced ?? false;
+      enabledModules = org?.enabledModules ?? [];
+      orgOnboardingCompletedAt = org?.onboardingCompletedAt?.toISOString() ?? null;
+
+      if (sub) {
+        plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+      }
+
+      try {
+        const permMap = await this.access.resolveUserPermissions(orgId, userId);
+        permissions = [...permMap.keys()];
+      } catch {
+        permissions = [];
+      }
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      name: user.name ?? null,
+      image: user.image ?? null,
+      role: user.role ?? null,
+      isActive: user.isActive,
+      hasDashboardAccess: user.hasDashboardAccess,
+      isPasswordChangeRequired: user.isPasswordChangeRequired,
+      branchId: user.branchId ?? null,
+      totpEnabled: user.totpEnabled,
+      orgId: membership?.orgId ?? null,
+      isOrgOwner: membership?.isOwner ?? false,
+      mfaEnforced,
+      enabledModules,
+      orgOnboardingCompletedAt,
+      userOnboardingCompletedAt: user.onboardingCompletedAt?.toISOString() ?? null,
+      permissions,
+      plan,
+    };
   }
 
   async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
