@@ -160,6 +160,13 @@ export class ChatChannelsController {
     return this.channels.markRead(channelId, u.userId);
   }
 
+  @Post(":channelId/mark-unread")
+  @HttpCode(200)
+  @RequirePermission("chat:messages:write")
+  markUnread(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.channels.markChannelUnread(channelId, u.userId);
+  }
+
   @Post(":channelId/typing")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")

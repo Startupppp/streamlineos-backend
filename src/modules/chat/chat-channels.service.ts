@@ -402,4 +402,18 @@ export class ChatChannelsService {
 
     return { ok: true };
   }
+
+  async markChannelUnread(channelId: number, userId: string) {
+    await this.db
+      .update(chatChannelMembers)
+      .set({ lastReadAt: new Date(0) })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+
+    return { ok: true };
+  }
 }

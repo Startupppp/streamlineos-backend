@@ -144,7 +144,7 @@ export class ChatMessagesService {
       return created;
     });
 
-    void this.dispatchMessageSideEffects(orgId, channelId, message).catch(() => undefined);
+    void this.dispatchMessageSideEffects(orgId, channelId, message, body).catch(() => undefined);
 
     return message;
   }
@@ -153,6 +153,7 @@ export class ChatMessagesService {
     orgId: string,
     channelId: number,
     message: PersistedMessage,
+    body: SendMessageInput,
   ): Promise<void> {
     if (!this.ably.configured && !this.webPush.configured) return;
 
@@ -191,6 +192,38 @@ export class ChatMessagesService {
         senderId: message.senderId,
         senderName,
       }, channelData.type);
+    }
+
+    if (body?.content) {
+      const mentionPattern = /@([^\s@]+(?:\s[^\s@]+)*)/g;
+      const matches = [...body.content.matchAll(mentionPattern)].map(m => m[1].toLowerCase());
+      if (matches.length > 0) {
+        const channelMembers = await this.db.query.chatChannelMembers.findMany({
+          where: eq(chatChannelMembers.channelId, channelId),
+          with: { user: { columns: { id: true, name: true } } },
+        });
+        const userId = message.senderId;
+        if (matches.some(m => m === "channel" || m === "everyone" || m === "here")) {
+          const memberIds = channelMembers.map(m => m.userId).filter(id => id !== userId);
+          for (const memberId of memberIds) {
+            await this.notifications.publishMentionNotification(orgId, channelId, {
+              id: message.id, content: body.content!, senderId: userId, senderName: senderName ?? "Someone",
+            }, [memberId]);
+          }
+        }
+        for (const member of channelMembers) {
+          if (!member.user || member.userId === userId) continue;
+          const memberName = member.user.name?.toLowerCase() ?? "";
+          if (matches.some(m => memberName.includes(m) || m.includes(memberName.split(" ")[0]))) {
+            await this.notifications.publishMentionNotification(orgId, channelId, {
+              id: message.id,
+              content: body.content!,
+              senderId: userId,
+              senderName: senderName ?? "Someone",
+            }, [member.userId]);
+          }
+        }
+      }
     }
   }
 

@@ -35,4 +35,21 @@ export class ChatNotificationsService {
       });
     }
   }
+
+  async publishMentionNotification(
+    orgId: string,
+    channelId: number,
+    message: { id: number; content: string; senderId: string; senderName: string },
+    mentionedUserIds: string[],
+  ) {
+    for (const userId of mentionedUserIds) {
+      await this.ably.publishToUser(orgId, userId, "notification:mention", {
+        channelId,
+        messageId: message.id,
+        content: message.content,
+        senderId: message.senderId,
+        senderName: message.senderName,
+      });
+    }
+  }
 }
