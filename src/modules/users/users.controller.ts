@@ -24,6 +24,8 @@ import { z } from "zod";
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
+  // ── Static GET routes (must be before any :userId parameterized routes) ──
+
   @Get()
   listUsers(
     @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
@@ -45,6 +47,28 @@ export class UsersController {
     res.send(data);
   }
 
+  @Get("invitations")
+  listInvitations(
+    @Query() query: { page?: string; limit?: string; includeAccepted?: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getInvitations(u.orgId, {
+      page: query.page ? Number(query.page) : undefined,
+      limit: query.limit ? Number(query.limit) : undefined,
+      includeAccepted: query.includeAccepted === "true",
+    });
+  }
+
+  @Get("audit")
+  getOrgAuditLog(
+    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.getAuditLog(u.orgId, query);
+  }
+
+  // ── Static POST routes ──
+
   @Post("invite")
   inviteUser(
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
@@ -61,6 +85,61 @@ export class UsersController {
   ) {
     return this.users.bulkInvite(u.orgId, body.emails, body.role, u.userId);
   }
+
+  @Post("bulk-suspend")
+  bulkSuspend(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkSuspend(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-archive")
+  bulkArchive(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkArchive(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-restore")
+  bulkRestore(
+    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
+  }
+
+  @Post("bulk-update")
+  bulkUpdate(
+    @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.bulkUpdateUsers(u.orgId, body, u.userId);
+  }
+
+  @Post("import")
+  importUsers(
+    @Body(new ZodValidationPipe(z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) })))
+    body: { rows: ImportUsersRow[] },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.users.importUsers(u.orgId, body.rows, u.userId);
+  }
+
+  // ── Invitation sub-routes (static prefix "invitations/") ──
+
+  @Post("invitations/:invitationId/resend")
+  resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.resendInvite(u.orgId, invitationId, u.userId);
+  }
+
+  @Delete("invitations/:invitationId")
+  cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.users.cancelInvite(u.orgId, invitationId, u.userId);
+  }
+
+  // ── Parameterized :userId routes (must come after all static routes) ──
 
   @Get(":userId")
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -165,80 +244,9 @@ export class UsersController {
     return this.users.updateMembership(u.orgId, userId, body, u.userId);
   }
 
-  @Get("invitations")
-  listInvitations(
-    @Query() query: { page?: string; limit?: string; includeAccepted?: string },
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.getInvitations(u.orgId, {
-      page: query.page ? Number(query.page) : undefined,
-      limit: query.limit ? Number(query.limit) : undefined,
-      includeAccepted: query.includeAccepted === "true",
-    });
-  }
-
-  @Post("invitations/:invitationId/resend")
-  resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.resendInvite(u.orgId, invitationId, u.userId);
-  }
-
-  @Delete("invitations/:invitationId")
-  cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.cancelInvite(u.orgId, invitationId, u.userId);
-  }
-
-  @Post("bulk-suspend")
-  bulkSuspend(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.bulkSuspend(u.orgId, body.userIds, u.userId);
-  }
-
-  @Post("bulk-archive")
-  bulkArchive(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.bulkArchive(u.orgId, body.userIds, u.userId);
-  }
-
-  @Post("bulk-restore")
-  bulkRestore(
-    @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
-  }
-
-  @Post("import")
-  importUsers(
-    @Body(new ZodValidationPipe(z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) })))
-    body: { rows: ImportUsersRow[] },
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.importUsers(u.orgId, body.rows, u.userId);
-  }
-
-  @Post("bulk-update")
-  bulkUpdate(
-    @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.bulkUpdateUsers(u.orgId, body, u.userId);
-  }
-
   @Post(":userId/reset-password")
   resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.resetPassword(u.orgId, userId, u.userId);
-  }
-
-  @Get("audit")
-  getOrgAuditLog(
-    @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.users.getAuditLog(u.orgId, query);
   }
 
   @Get(":userId/audit")
