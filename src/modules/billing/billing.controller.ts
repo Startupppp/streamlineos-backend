@@ -8,10 +8,12 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import {
   createOrderSchema,
+  purchaseAddonSchema,
   verifyPaymentSchema,
   planSchema,
   type CreateOrderInput,
   type Plan,
+  type PurchaseAddonInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 
@@ -23,6 +25,36 @@ export class BillingController {
   @Get()
   getSubscription(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSubscription(u.orgId);
+  }
+
+  @Get("plans")
+  getPlans() {
+    return this.billing.getPlans();
+  }
+
+  @Get("marketplace")
+  getMarketplace() {
+    return this.billing.getMarketplace();
+  }
+
+  @Post("checkout")
+  @HttpCode(200)
+  @RequirePermission("settings:manage")
+  checkout(
+    @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
+  }
+
+  @Post("addons/purchase")
+  @HttpCode(200)
+  @RequirePermission("settings:manage")
+  purchaseAddon(
+    @Body(new ZodValidationPipe(purchaseAddonSchema)) body: PurchaseAddonInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.purchaseAddon(u.orgId, u.userId, body.addonId, body.quantity);
   }
 
   @Get("summary")

@@ -129,6 +129,11 @@ export class OnboardingController {
     return this.onboarding.updateTask(u, taskId, body);
   }
 
+  @Get("status")
+  getStatus(@CurrentUser() u: CurrentUserContext) {
+    return this.onboarding.getStatus(u.userId, u.orgId);
+  }
+
   @Get(":userId")
   getUserTasks(
     @Param("userId") userId: string,

@@ -311,6 +311,44 @@ export class BillingService {
     return org ?? null;
   }
 
+  getPlans() {
+    const plans = [
+      {
+        id: "STARTER" as Plan,
+        name: "Starter",
+        monthlyPrice: 999,
+        annualPrice: 799,
+        features: ["HR module", "Up to 25 employees", "Basic payroll", "Leave management"],
+        maxEmployees: 25,
+      },
+      {
+        id: "PROFESSIONAL" as Plan,
+        name: "Professional",
+        monthlyPrice: 1999,
+        annualPrice: 1599,
+        features: ["All Starter features", "Up to 200 employees", "Performance management", "Advanced analytics", "CRM module"],
+        maxEmployees: 200,
+      },
+      {
+        id: "ENTERPRISE" as Plan,
+        name: "Enterprise",
+        monthlyPrice: 3999,
+        annualPrice: 3199,
+        features: ["All Professional features", "Unlimited employees", "Custom integrations", "Dedicated support", "All modules"],
+        maxEmployees: null,
+      },
+    ];
+    return { plans };
+  }
+
+  getMarketplace() {
+    return { apps: [], addons: [] };
+  }
+
+  purchaseAddon(_orgId: string, _userId: string, _addonId: string, _quantity: number) {
+    throw new BadRequestException("No addons available for purchase at this time");
+  }
+
   async getSummary(orgId: string) {
     const [subscription, invoiceStats] = await Promise.all([
       this.db.query.subscriptions.findFirst({

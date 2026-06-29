@@ -3,6 +3,21 @@ import { z } from "zod";
 export const planSchema = z.enum(["STARTER", "PROFESSIONAL", "ENTERPRISE"]);
 export type Plan = z.infer<typeof planSchema>;
 
+export interface PlanDefinition {
+  id: Plan;
+  name: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  features: string[];
+  maxEmployees: number | null;
+}
+
+export const purchaseAddonSchema = z.object({
+  addonId: z.string().min(1),
+  quantity: z.number().int().positive().default(1),
+});
+export type PurchaseAddonInput = z.infer<typeof purchaseAddonSchema>;
+
 export const billingCycleSchema = z.enum(["monthly", "annual"]).default("monthly");
 export type BillingCycle = z.infer<typeof billingCycleSchema>;
 
