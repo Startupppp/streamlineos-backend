@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { and, eq, gt, gte, sql } from "drizzle-orm";
-import { randomUUID, createHash, randomBytes } from "node:crypto";
+import { randomUUID, createHash, randomBytes, createDecipheriv } from "node:crypto";
 import {
   loginHistory,
   magicLinkTokens,
@@ -30,6 +30,7 @@ import { PasswordService } from "./password.service";
 import { DeviceService } from "./device.service";
 import { SessionService } from "./session.service";
 import { addDays, addHours, subDays } from "date-fns";
+import { verifySync } from "otplib";
 import type {
   LoginInput,
   RegisterInput,
@@ -61,6 +62,33 @@ function hashToken(token: string): string {
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+const TOTP_ALGORITHM = "aes-256-gcm";
+const TOTP_IV_LENGTH = 12;
+const TOTP_TAG_LENGTH = 16;
+const TOTP_PREFIX = "enc:v1:";
+
+function decryptTotpSecret(ciphertext: string): string {
+  const raw = process.env.ENCRYPTION_KEY;
+  if (!raw || !ciphertext.startsWith(TOTP_PREFIX)) return ciphertext;
+  const key = createHash("sha256").update(raw).digest();
+  const data = Buffer.from(ciphertext.slice(TOTP_PREFIX.length), "base64");
+  const iv = data.subarray(0, TOTP_IV_LENGTH);
+  const tag = data.subarray(TOTP_IV_LENGTH, TOTP_IV_LENGTH + TOTP_TAG_LENGTH);
+  const encrypted = data.subarray(TOTP_IV_LENGTH + TOTP_TAG_LENGTH);
+  const decipher = createDecipheriv(TOTP_ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
+
+function verifyTotpCode(token: string, encryptedSecret: string): boolean {
+  try {
+    const result = verifySync({ secret: decryptTotpSecret(encryptedSecret), token, strategy: "totp" });
+    return result.valid;
+  } catch {
+    return false;
+  }
 }
 
 @Injectable()
@@ -112,7 +140,7 @@ export class AuthService {
         isActive: true,
         hasDashboardAccess: true,
         isPasswordChangeRequired: false,
-        emailVerified: new Date(),
+        emailVerified: null,
       });
 
       await tx.insert(organizationMembers).values({
@@ -160,11 +188,12 @@ export class AuthService {
   ): Promise<{
     userId: string;
     orgId: string;
-    sessionId: string;
-    deviceId: string;
-    isNewDevice: boolean;
-    forceChangePassword: boolean;
+    sessionId?: string;
+    deviceId?: string;
+    isNewDevice?: boolean;
+    forceChangePassword?: boolean;
     daysUntilExpiry?: number;
+    requiresMfa?: boolean;
   }> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
@@ -238,6 +267,26 @@ export class AuthService {
           const days = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / 86_400_000);
           if (days < 14) daysUntilExpiry = Math.max(0, days);
         }
+      }
+    }
+
+    // MFA enforcement: check org policy and per-user setting
+    const mfaRequired = !!user.totpEnabled || !!(await (async () => {
+      if (!orgId) return false;
+      const [org] = await this.db
+        .select({ mfaEnforced: organizations.mfaEnforced })
+        .from(organizations)
+        .where(eq(organizations.id, orgId));
+      return org?.mfaEnforced ?? false;
+    })());
+
+    if (mfaRequired) {
+      if (!input.totpCode) {
+        return { userId: user.id, orgId, requiresMfa: true };
+      }
+      if (!user.totpSecret || !verifyTotpCode(input.totpCode, user.totpSecret)) {
+        await this.logLoginEvent(user.id, orgId, "login.failure", false, "INVALID_MFA_CODE", context);
+        throw new UnauthorizedException("Invalid MFA code");
       }
     }
 

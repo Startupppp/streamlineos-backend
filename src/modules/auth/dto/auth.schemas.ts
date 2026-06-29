@@ -23,6 +23,7 @@ export const loginSchema = z.object({
   password: z.string().min(1),
   rememberMe: z.boolean().optional().default(false),
   fingerprint: z.string().optional(),
+  totpCode: z.string().length(6).optional(),
 }).strict();
 
 export const forgotPasswordSchema = z.object({
