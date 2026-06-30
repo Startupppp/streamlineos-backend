@@ -20,6 +20,12 @@ import {
   ticketWatchers,
   workItemRelations,
   timesheets,
+  ticketChecklists,
+  ticketChecklistItems,
+  projectCustomFields,
+  ticketCustomFieldValues,
+  projectReleases,
+  releaseTickets,
 } from "./tasks";
 import {
   projectStatuses,
@@ -170,4 +176,41 @@ export const pagesRelations = relations(pages, ({ one, many }) => ({
 export const projectMilestonesRelations = relations(projectMilestones, ({ one }) => ({
   project: one(projects, { fields: [projectMilestones.projectId], references: [projects.id] }),
   creator: one(users, { fields: [projectMilestones.createdBy], references: [users.id] }),
+}));
+
+export const ticketChecklistsRelations = relations(ticketChecklists, ({ many }) => ({
+  items: many(ticketChecklistItems),
+}));
+
+export const ticketChecklistItemsRelations = relations(ticketChecklistItems, ({ one }) => ({
+  checklist: one(ticketChecklists, {
+    fields: [ticketChecklistItems.checklistId],
+    references: [ticketChecklists.id],
+  }),
+}));
+
+export const projectCustomFieldsRelations = relations(projectCustomFields, ({ many }) => ({
+  values: many(ticketCustomFieldValues),
+}));
+
+export const ticketCustomFieldValuesRelations = relations(ticketCustomFieldValues, ({ one }) => ({
+  field: one(projectCustomFields, {
+    fields: [ticketCustomFieldValues.fieldId],
+    references: [projectCustomFields.id],
+  }),
+}));
+
+export const projectReleasesRelations = relations(projectReleases, ({ many }) => ({
+  tickets: many(releaseTickets),
+}));
+
+export const releaseTicketsRelations = relations(releaseTickets, ({ one }) => ({
+  release: one(projectReleases, {
+    fields: [releaseTickets.releaseId],
+    references: [projectReleases.id],
+  }),
+  ticket: one(tickets, {
+    fields: [releaseTickets.ticketId],
+    references: [tickets.id],
+  }),
 }));

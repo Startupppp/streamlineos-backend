@@ -39,6 +39,16 @@ import {
   type TicketsListQuery,
   type UpdateTicketInput,
 } from "./dto/projects.schemas";
+import {
+  createChecklistSchema,
+  updateChecklistSchema,
+  createChecklistItemSchema,
+  updateChecklistItemSchema,
+  type CreateChecklistInput,
+  type UpdateChecklistInput,
+  type CreateChecklistItemInput,
+  type UpdateChecklistItemInput,
+} from "./dto/checklist.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("projects")
@@ -207,6 +217,72 @@ export class ProjectsTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.getGitLinks(u.orgId, projectId, ticketId);
+  }
+
+  @Get(":projectId/tickets/:ticketId/checklists")
+  getChecklists(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.getChecklists(u.orgId, projectId, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/checklists")
+  @HttpCode(201)
+  createChecklist(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(createChecklistSchema)) body: CreateChecklistInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.createChecklist(u.orgId, projectId, ticketId, body);
+  }
+
+  @Patch(":projectId/tickets/:ticketId/checklists/:checklistId")
+  updateChecklist(
+    @Param("checklistId", ParseIntPipe) checklistId: number,
+    @Body(new ZodValidationPipe(updateChecklistSchema)) body: UpdateChecklistInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.updateChecklist(u.orgId, checklistId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/checklists/:checklistId")
+  @HttpCode(204)
+  deleteChecklist(
+    @Param("checklistId", ParseIntPipe) checklistId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.deleteChecklist(u.orgId, checklistId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
+  @HttpCode(201)
+  createChecklistItem(
+    @Param("checklistId", ParseIntPipe) checklistId: number,
+    @Body(new ZodValidationPipe(createChecklistItemSchema)) body: CreateChecklistItemInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.createChecklistItem(u.orgId, checklistId, body);
+  }
+
+  @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
+  updateChecklistItem(
+    @Param("itemId", ParseIntPipe) itemId: number,
+    @Body(new ZodValidationPipe(updateChecklistItemSchema)) body: UpdateChecklistItemInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.updateChecklistItem(u.orgId, itemId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
+  @HttpCode(204)
+  deleteChecklistItem(
+    @Param("itemId", ParseIntPipe) itemId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.deleteChecklistItem(u.orgId, itemId);
   }
 
   @Get(":projectId/tickets/:ticketId")

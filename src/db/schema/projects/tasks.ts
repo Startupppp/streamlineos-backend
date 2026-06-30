@@ -151,3 +151,81 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_org_status").on(table.orgId, table.status),
   uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userId, table.date).where(sql`ticket_id IS NULL`),
 ]);
+
+export const ticketChecklists = pgTable("ticket_checklists", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull().default("Checklist"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_ticket_checklists_ticket").on(table.ticketId),
+]);
+
+export const ticketChecklistItems = pgTable("ticket_checklist_items", {
+  id: serial("id").primaryKey(),
+  checklistId: integer("checklist_id").references(() => ticketChecklists.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  dueDate: date("due_date"),
+  order: integer("order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ticket_checklist_items_checklist").on(table.checklistId),
+]);
+
+export const projectCustomFields = pgTable("project_custom_fields", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("text"),
+  options: text("options").array(),
+  required: boolean("required").default(false).notNull(),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_project_custom_fields_project").on(table.projectId),
+  uniqueIndex("uniq_project_custom_fields_name").on(table.projectId, table.name),
+]);
+
+export const ticketCustomFieldValues = pgTable("ticket_custom_field_values", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
+  fieldId: integer("field_id").references(() => projectCustomFields.id, { onDelete: "cascade" }).notNull(),
+  value: text("value"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_ticket_custom_field_values").on(table.ticketId, table.fieldId),
+  index("idx_ticket_custom_field_values_ticket").on(table.ticketId),
+]);
+
+export const projectReleases = pgTable("project_releases", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  version: text("version").notNull(),
+  description: text("description"),
+  status: text("status").default("draft").notNull(),
+  releaseDate: date("release_date"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_project_releases_project").on(table.projectId),
+  index("idx_project_releases_org_status").on(table.orgId, table.status),
+]);
+
+export const releaseTickets = pgTable("release_tickets", {
+  id: serial("id").primaryKey(),
+  releaseId: integer("release_id").references(() => projectReleases.id, { onDelete: "cascade" }).notNull(),
+  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_release_tickets").on(table.releaseId, table.ticketId),
+  index("idx_release_tickets_release").on(table.releaseId),
+]);

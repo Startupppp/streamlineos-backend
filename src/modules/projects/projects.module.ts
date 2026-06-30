@@ -6,6 +6,8 @@ import { ProjectsReportsController } from "./projects-reports.controller";
 import { ProjectsBudgetController } from "./projects-budget.controller";
 import { ProjectsTemplatesController } from "./projects-templates.controller";
 import { ProjectsRoadmapController } from "./projects-roadmap.controller";
+import { ProjectsCustomFieldsController } from "./projects-custom-fields.controller";
+import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsService } from "./projects.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
@@ -17,6 +19,8 @@ import { ProjectsReportsService } from "./projects-reports.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
+import { ProjectsReleasesService } from "./projects-releases.service";
 
 @Module({
   imports: [NotificationsModule],
@@ -26,6 +30,8 @@ import { ProjectsRoadmapService } from "./projects-roadmap.service";
     ProjectsReportsController,
     ProjectsBudgetController,
     ProjectsTicketsController,
+    ProjectsCustomFieldsController,
+    ProjectsReleasesController,
     ProjectsController,
   ],
   providers: [
@@ -40,6 +46,8 @@ import { ProjectsRoadmapService } from "./projects-roadmap.service";
     ProjectsBudgetService,
     ProjectsTemplatesService,
     ProjectsRoadmapService,
+    ProjectsCustomFieldsService,
+    ProjectsReleasesService,
   ],
 })
 export class ProjectsModule {}
