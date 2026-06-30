@@ -81,6 +81,21 @@ export class WorkflowsController {
     return this.workflowsService.handleApproval(u.orgId, u.userId, approvalId, body);
   }
 
+  @Get("executions")
+  @RequirePermission("workflows:executions:view")
+  listAllExecutions(
+    @Query(new ZodValidationPipe(WorkflowExecutionQuerySchema)) query: WorkflowExecutionQueryDto,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.listAllExecutions(u.orgId, query);
+  }
+
+  @Get("schedules")
+  @RequirePermission("workflows:schedules:manage")
+  listAllSchedules(@CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.listAllSchedules(u.orgId);
+  }
+
   @Get(":workflowId")
   @RequirePermission("workflows:workflows:view")
   getWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
-import { and, eq, ilike, desc, sql, count } from "drizzle-orm";
+import { and, eq, ilike, desc, sql, count, gte } from "drizzle-orm";
 import {
   workflows,
   workflowVersions,
@@ -367,6 +367,20 @@ export class WorkflowsService {
     const completedExecutions = executionStats?.completed ?? 0;
     const successRate = totalExecutions > 0 ? Math.round((completedExecutions / totalExecutions) * 100) : 0;
 
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const trendRows = await this.db
+      .select({
+        date: sql<string>`date_trunc('day', ${workflowExecutions.createdAt})::text`,
+        count: sql<number>`count(*)::int`,
+        successCount: sql<number>`sum(case when ${workflowExecutions.status} = 'completed' then 1 else 0 end)::int`,
+      })
+      .from(workflowExecutions)
+      .where(and(eq(workflowExecutions.orgId, orgId), gte(workflowExecutions.createdAt, thirtyDaysAgo)))
+      .groupBy(sql`date_trunc('day', ${workflowExecutions.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${workflowExecutions.createdAt})`);
+
     return {
       totalWorkflows: workflowStats?.total ?? 0,
       activeWorkflows: workflowStats?.active ?? 0,
@@ -374,7 +388,33 @@ export class WorkflowsService {
       successRate,
       avgDuration: executionStats?.avgDuration ?? 0,
       pendingApprovals: pendingApprovalCount?.total ?? 0,
+      executionTrend: trendRows,
     };
+  }
+
+  async listAllExecutions(orgId: string, query: WorkflowExecutionQueryDto) {
+    const { page, limit, status } = query;
+    const offset = (page - 1) * limit;
+
+    const conditions = [eq(workflowExecutions.orgId, orgId)];
+    if (status) conditions.push(eq(workflowExecutions.status, status));
+
+    const where = and(...conditions);
+
+    const [data, [countRow]] = await Promise.all([
+      this.db.select().from(workflowExecutions).where(where).orderBy(desc(workflowExecutions.createdAt)).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(workflowExecutions).where(where),
+    ]);
+
+    return { data, total: countRow?.total ?? 0, page, limit };
+  }
+
+  async listAllSchedules(orgId: string) {
+    return this.db
+      .select()
+      .from(workflowSchedules)
+      .where(eq(workflowSchedules.orgId, orgId))
+      .orderBy(desc(workflowSchedules.createdAt));
   }
 
   async listSchedules(orgId: string, workflowId: string) {
