@@ -34,6 +34,7 @@ import {
   resendVerificationSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
+  googleOAuthSchema,
   type RegisterInput,
   type LoginInput,
   type ForgotPasswordInput,
@@ -42,6 +43,7 @@ import {
   type ChangePasswordInput,
   type MagicLinkRequestInput,
   type MagicLinkVerifyInput,
+  type GoogleOAuthInput,
 } from "./dto/auth.schemas";
 
 const loginHistoryQuerySchema = z.object({
@@ -257,5 +259,19 @@ export class AuthController {
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
     return this.authService.verifyMagicLink(body.token);
+  }
+
+  @Post("google")
+  @Public()
+  @HttpCode(200)
+  async googleOAuth(
+    @Body(new ZodValidationPipe(googleOAuthSchema)) body: GoogleOAuthInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    const secret = process.env.INTERNAL_API_SECRET;
+    if (!secret || req.headers["x-internal-secret"] !== secret) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    return this.authService.googleOAuth(body);
   }
 }

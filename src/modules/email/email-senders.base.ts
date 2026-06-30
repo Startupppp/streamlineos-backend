@@ -26,7 +26,7 @@ export abstract class EmailSendersBase extends EmailBase {
     return this.sendEmail({
       to: email,
       subject: "Verify Your Email - StreamlineOS",
-      html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}`),
+      html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
     });
   }
 

@@ -41,6 +41,7 @@ import type {
   VerifyEmailInput,
   ChangePasswordInput,
   MagicLinkRequestInput,
+  GoogleOAuthInput,
 } from "./dto/auth.schemas";
 
 const LOCK_AFTER_ATTEMPTS = 5;
@@ -750,6 +751,75 @@ export class AuthService {
       orgId: membership?.orgId ?? "",
       forceChangePassword: user?.isPasswordChangeRequired ?? false,
     };
+  }
+
+  async googleOAuth(input: GoogleOAuthInput): Promise<{ userId: string; isNewUser: boolean }> {
+    const normalizedEmail = input.email.toLowerCase().trim();
+
+    const existingAccount = await this.db.query.accounts.findFirst({
+      where: and(
+        eq(accounts.provider, "google"),
+        eq(accounts.providerAccountId, input.googleId),
+      ),
+      columns: { userId: true },
+    });
+
+    if (existingAccount) {
+      return { userId: existingAccount.userId, isNewUser: false };
+    }
+
+    const existingUser = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, emailVerified: true },
+    });
+
+    if (existingUser) {
+      await this.db.insert(accounts).values({
+        userId: existingUser.id,
+        type: "oauth",
+        provider: "google",
+        providerAccountId: input.googleId,
+      }).onConflictDoNothing();
+
+      if (!existingUser.emailVerified) {
+        await this.db.update(users).set({ emailVerified: new Date() }).where(eq(users.id, existingUser.id));
+      }
+
+      return { userId: existingUser.id, isNewUser: false };
+    }
+
+    const userId = randomUUID();
+    const rawName = (input.name ?? normalizedEmail.split("@")[0]).trim();
+    const spaceIdx = rawName.indexOf(" ");
+    const firstName = spaceIdx === -1 ? rawName : rawName.slice(0, spaceIdx);
+    const lastName = spaceIdx === -1 ? "" : rawName.slice(spaceIdx + 1).trim();
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        email: normalizedEmail,
+        name: rawName,
+        firstName,
+        lastName,
+        image: input.image || null,
+        role: "OWNER",
+        isActive: true,
+        hasDashboardAccess: true,
+        isPasswordChangeRequired: false,
+        emailVerified: new Date(),
+      });
+
+      await tx.insert(accounts).values({
+        userId,
+        type: "oauth",
+        provider: "google",
+        providerAccountId: input.googleId,
+      });
+    });
+
+    this.audit.log({ action: "user.registered", userId, metadata: { email: normalizedEmail, provider: "google" } });
+
+    return { userId, isNewUser: true };
   }
 
 }
