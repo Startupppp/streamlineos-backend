@@ -204,6 +204,6 @@ export class OrgSetupService {
       targetType: "organization",
     });
 
-    return { success: true };
+    return { success: true, orgId };
   }
 }
