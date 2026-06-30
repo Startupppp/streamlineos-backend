@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -655,7 +657,9 @@ export class AuthService {
         where: eq(organizationMembers.userId, userId),
         columns: { orgId: true, isOwner: true },
       }),
-    ]);
+    ]).catch(() => {
+      throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+    });
 
     if (!user) throw new NotFoundException("User not found");
 

@@ -30,10 +30,10 @@ function normalizeDatabaseUrl(url: string): string {
         const isDev = process.env.NODE_ENV === "development";
         const client = postgres(connectionString, {
           prepare: false,
-          max: isDev ? 10 : 75,
-          idle_timeout: isDev ? 20 : 60,
-          connect_timeout: isNeon ? 60 : 30,
-          max_lifetime: 60 * 30,
+          max: isDev ? 5 : 20,
+          idle_timeout: isNeon ? 15 : (isDev ? 20 : 60),
+          connect_timeout: isNeon ? 30 : 15,
+          max_lifetime: isNeon ? 60 * 4 : 60 * 30,
           ...(isNeon ? { ssl: "require" as const } : {}),
         });
         const db = drizzle(client, { schema }) as Db;
