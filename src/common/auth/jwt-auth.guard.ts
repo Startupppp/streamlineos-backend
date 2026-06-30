@@ -12,6 +12,7 @@ import type { JWTPayload } from "jose";
 import { eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import { IS_PUBLIC } from "./public.decorator";
+import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
 import type { BackendClaims, CurrentUserContext } from "./backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -74,7 +75,11 @@ export class JwtAuthGuard implements CanActivate {
       if (!claims.sessionId) {
         throw new UnauthorizedException("Unauthorized");
       }
-      if (!claims.orgId && !claims.isPlatformAdmin) {
+      const allowNoOrg = this.reflector.getAllAndOverride<boolean>(ALLOW_NO_ORG_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (!claims.orgId && !claims.isPlatformAdmin && !allowNoOrg) {
         throw new UnauthorizedException("Organization not found");
       }
 

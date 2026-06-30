@@ -1,6 +1,6 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import { organizations, users, invitations, orgHolidays } from "../../db/schema";
+import { organizations, organizationMembers, subscriptions, roles, users, invitations, orgHolidays } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -9,6 +9,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { randomUUID } from "node:crypto";
+import { addDays } from "date-fns";
 import { type SetupInput } from "./dto/org.schemas";
 
 @Injectable()
@@ -20,9 +21,61 @@ export class OrgSetupService {
     private readonly email: EmailService,
   ) {}
 
+  private slugify(name: string): string {
+    return (
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 50) +
+      "-" +
+      Date.now().toString(36)
+    );
+  }
+
+  private async resolveOrCreateOrg(u: CurrentUserContext, input: SetupInput): Promise<string> {
+    if (u.orgId) return u.orgId;
+
+    const existingMember = await this.db.query.organizationMembers.findFirst({
+      where: eq(organizationMembers.userId, u.userId),
+      columns: { orgId: true },
+    });
+    if (existingMember) return existingMember.orgId;
+
+    const orgId = randomUUID();
+    const orgName = input.companyName?.trim() || "My Organization";
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(organizations).values({
+        id: orgId,
+        name: orgName,
+        slug: this.slugify(orgName),
+      });
+      await tx.insert(organizationMembers).values({
+        orgId,
+        userId: u.userId,
+        role: "owner",
+        isOwner: true,
+      });
+      await tx.insert(subscriptions).values({
+        orgId,
+        plan: "STARTER",
+        status: "TRIAL",
+        trialEndsAt: addDays(new Date(), 14),
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: addDays(new Date(), 14),
+      });
+      await tx.insert(roles).values({ name: "Administrator", slug: "ADMIN", isSystem: false, orgId, permissions: [] });
+    });
+
+    this.audit.log({ action: "org.created", userId: u.userId, orgId, targetId: orgId, targetType: "organization" });
+    return orgId;
+  }
+
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Forbidden");
+    const orgId = await this.resolveOrCreateOrg(u, input);
+    if (u.orgId && !u.isOrgOwner) {
+      return { success: true };
     }
 
     const settings: Record<string, unknown> = {};
@@ -47,7 +100,7 @@ export class OrgSetupService {
           ...(Object.keys(settings).length > 0 ? { settings } : {}),
           onboardingCompletedAt: new Date(),
         })
-        .where(eq(organizations.id, u.orgId));
+        .where(eq(organizations.id, orgId));
 
       await tx
         .update(users)
@@ -66,7 +119,7 @@ export class OrgSetupService {
         input.holidays.map((h) =>
           this.db.insert(orgHolidays).values({
             id: randomUUID(),
-            orgId: u.orgId,
+            orgId,
             name: h.name,
             date: h.date,
             createdBy: u.userId,
@@ -76,14 +129,14 @@ export class OrgSetupService {
     }
 
     if (input.invitees?.length) {
-      const org = await this.db.query.organizations.findFirst({ where: eq(organizations.id, u.orgId), columns: { name: true } });
+      const org = await this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } });
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
       await Promise.allSettled(
         input.invitees.map(async (inv) => {
           const invitationId = randomUUID();
           const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
-          await this.db.insert(invitations).values({ id: invitationId, email: inv.email, token, orgId: u.orgId, role: inv.role, invitedBy: u.userId, expiresAt }).catch(() => {});
+          await this.db.insert(invitations).values({ id: invitationId, email: inv.email, token, orgId, role: inv.role, invitedBy: u.userId, expiresAt }).catch(() => {});
           await this.email.sendInvitationEmail(inv.email, token, org?.name ?? "Your Organization").catch(() => {});
         }),
       );
@@ -91,7 +144,7 @@ export class OrgSetupService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
 
-    this.audit.log({ action: "org.setup.completed", userId: u.userId, orgId: u.orgId, targetId: u.orgId, targetType: "organization" });
+    this.audit.log({ action: "org.setup.completed", userId: u.userId, orgId, targetId: orgId, targetType: "organization" });
 
     return { success: true };
   }

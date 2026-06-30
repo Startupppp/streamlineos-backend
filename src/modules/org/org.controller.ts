@@ -7,6 +7,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
 import { setupSchema, type SetupInput } from "./dto/org.schemas";
+import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 
 @Controller("org")
 @UseGuards(JwtAuthGuard)
@@ -23,6 +24,7 @@ export class OrgController {
   }
 
   @Patch("setup")
+  @AllowNoOrg()
   completeSetup(
     @Body(new ZodValidationPipe(setupSchema)) body: SetupInput,
     @CurrentUser() u: CurrentUserContext,
