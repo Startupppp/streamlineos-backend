@@ -1,0 +1,35 @@
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { db } from "../../db";
+import { rosters, rosterEntries } from "../../db/schema";
+import { eq, and, desc } from "drizzle-orm";
+
+@Injectable()
+export class RostersService {
+  async listRosters(orgId: string) {
+    return db.select().from(rosters).where(eq(rosters.orgId, orgId)).orderBy(desc(rosters.weekStart)).limit(52);
+  }
+
+  async createRoster(orgId: string, createdBy: string, data: { name: string; weekStart: string; weekEnd: string }) {
+    const [roster] = await db.insert(rosters).values({ orgId, createdBy, ...data }).returning();
+    return roster;
+  }
+
+  async getRosterEntries(rosterId: number) {
+    return db.select().from(rosterEntries).where(eq(rosterEntries.rosterId, rosterId));
+  }
+
+  async upsertRosterEntry(data: { rosterId: number; userId: string; shiftId?: number; date: string; isDayOff?: boolean; notes?: string }) {
+    const [entry] = await db.insert(rosterEntries).values(data)
+      .onConflictDoUpdate({ target: [rosterEntries.rosterId, rosterEntries.userId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes } })
+      .returning();
+    return entry;
+  }
+
+  async publishRoster(orgId: string, id: number) {
+    const [roster] = await db.update(rosters).set({ status: "PUBLISHED" })
+      .where(and(eq(rosters.id, id), eq(rosters.orgId, orgId)))
+      .returning();
+    if (!roster) throw new NotFoundException("Roster not found");
+    return roster;
+  }
+}

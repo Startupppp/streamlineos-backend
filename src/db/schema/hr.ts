@@ -7,3 +7,8 @@ export * from "./hr/recruitment";
 export * from "./hr/performance";
 export * from "./hr/documents";
 export * from "./hr/offboarding";
+export * from "./hr/shifts";
+export * from "./hr/rosters";
+export * from "./hr/overtime";
+export * from "./hr/geofencing";
+export * from "./hr/biometric";
