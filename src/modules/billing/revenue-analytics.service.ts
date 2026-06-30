@@ -36,24 +36,48 @@ export class RevenueAnalyticsService {
   }
 
   async getMetrics() {
-    const [activeCount, trialCount, churnCount] = await Promise.all([
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(subscriptions)
-        .where(eq(subscriptions.status, "ACTIVE")),
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(subscriptions)
-        .where(eq(subscriptions.status, "TRIAL")),
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(revenueEvents)
-        .where(eq(revenueEvents.type, "churn")),
-    ]);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [activeCount, trialCount, churnCount, expansionResult, refundCount, newSubCount] =
+      await Promise.all([
+        this.db
+          .select({ count: sql<number>`count(*)` })
+          .from(subscriptions)
+          .where(eq(subscriptions.status, "ACTIVE")),
+        this.db
+          .select({ count: sql<number>`count(*)` })
+          .from(subscriptions)
+          .where(eq(subscriptions.status, "TRIAL")),
+        this.db
+          .select({ count: sql<number>`count(*)` })
+          .from(revenueEvents)
+          .where(eq(revenueEvents.type, "churn")),
+        this.db
+          .select({ total: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)` })
+          .from(revenueEvents)
+          .where(
+            and(
+              eq(revenueEvents.type, "upgrade"),
+              gte(revenueEvents.createdAt, thirtyDaysAgo),
+            ),
+          ),
+        this.db
+          .select({ count: sql<number>`count(*)` })
+          .from(revenueEvents)
+          .where(eq(revenueEvents.type, "refund")),
+        this.db
+          .select({ count: sql<number>`count(*)` })
+          .from(revenueEvents)
+          .where(eq(revenueEvents.type, "new_subscription")),
+      ]);
 
     const totalActive = Number(activeCount[0]?.count ?? 0);
     const totalTrial = Number(trialCount[0]?.count ?? 0);
     const totalChurn = Number(churnCount[0]?.count ?? 0);
+    const totalRefunds = Number(refundCount[0]?.count ?? 0);
+    const totalNewSubs = Number(newSubCount[0]?.count ?? 0);
+    const expansionRevenue = Number(expansionResult[0]?.total ?? 0);
 
     const mrrResult = await this.db
       .select({ total: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)` })
@@ -72,6 +96,13 @@ export class RevenueAnalyticsService {
     const churnRate =
       totalActive > 0 ? Math.round((totalChurn / totalActive) * 100) : 0;
 
+    const ltv = churnRate > 0 ? Math.round(arpu / (churnRate / 100)) : arpu * 24;
+    const totalEver = totalActive + totalTrial + totalChurn;
+    const trialConversionRate =
+      totalEver > 0 ? Math.round((totalActive / totalEver) * 100 * 10) / 10 : 0;
+    const refundRate =
+      totalNewSubs > 0 ? Math.round((totalRefunds / totalNewSubs) * 100 * 10) / 10 : 0;
+
     return {
       mrr,
       arr,
@@ -79,6 +110,11 @@ export class RevenueAnalyticsService {
       churnRate,
       activeSubscriptions: totalActive,
       trialSubscriptions: totalTrial,
+      ltv,
+      cac: 0,
+      expansionRevenue,
+      trialConversionRate,
+      refundRate,
     };
   }
 

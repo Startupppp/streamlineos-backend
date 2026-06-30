@@ -1,7 +1,16 @@
 
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, numeric, date } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { notificationTypeEnum, subscriptionStatusEnum, subscriptionPlanEnum } from "./enums";
+import {
+  notificationTypeEnum,
+  notificationPriorityEnum,
+  notificationCategoryEnum,
+  broadcastStatusEnum,
+  deliveryStatusEnum,
+  notificationChannelEnum,
+  subscriptionStatusEnum,
+  subscriptionPlanEnum,
+} from "./enums";
 import { organizations, users } from "./auth";
 
 export const notifications = pgTable("notifications", {
@@ -9,17 +18,99 @@ export const notifications = pgTable("notifications", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").default("INFO").notNull(),
+  priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
+  category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
+  sourceModule: text("source_module"),
   title: text("title").notNull(),
   message: text("message").notNull(),
   link: text("link"),
   isRead: boolean("is_read").default(false).notNull(),
+  pinned: boolean("pinned").default(false).notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  channel: text("channel").default("in_app").notNull(),
+  channel: text("channel").default("IN_APP").notNull(),
   sound: boolean("sound").default(false).notNull(),
+  archivedAt: timestamp("archived_at"),
+  snoozedUntil: timestamp("snoozed_until"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_notifications_user_unread_created").on(table.userId, table.isRead, table.createdAt),
   index("idx_notifications_org_created").on(table.orgId, table.createdAt),
+  index("idx_notifications_user_archived").on(table.userId, table.archivedAt),
+  index("idx_notifications_org_category").on(table.orgId, table.category),
+  index("idx_notifications_priority").on(table.priority),
+]);
+
+export const notificationTemplates = pgTable("notification_templates", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  templateKey: text("template_key").notNull(),
+  name: text("name").notNull(),
+  channel: notificationChannelEnum("channel").notNull(),
+  category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
+  locale: text("locale").default("en").notNull(),
+  subject: text("subject"),
+  body: text("body").notNull(),
+  variables: jsonb("variables").$type<string[]>().default([]).notNull(),
+  version: integer("version").default(1).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("uq_notification_templates_key_locale_version").on(table.orgId, table.templateKey, table.locale, table.version),
+  index("idx_notification_templates_org").on(table.orgId),
+  index("idx_notification_templates_channel").on(table.channel),
+  index("idx_notification_templates_active").on(table.isActive),
+]);
+
+export const broadcasts = pgTable("broadcasts", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  type: notificationTypeEnum("type").default("INFO").notNull(),
+  priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
+  category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
+  channels: jsonb("channels").$type<string[]>().default(["IN_APP"]).notNull(),
+  audience: jsonb("audience").$type<{
+    type: "all" | "roles" | "departments" | "users";
+    roleIds?: string[];
+    departmentIds?: string[];
+    userIds?: string[];
+  }>().notNull(),
+  status: broadcastStatusEnum("status").default("DRAFT").notNull(),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  recipientCount: integer("recipient_count").default(0).notNull(),
+  deliveredCount: integer("delivered_count").default(0).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_broadcasts_org_status").on(table.orgId, table.status),
+  index("idx_broadcasts_scheduled").on(table.scheduledAt),
+  index("idx_broadcasts_created_by").on(table.createdBy),
+]);
+
+export const notificationAuditLogs = pgTable("notification_audit_logs", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  notificationId: integer("notification_id"),
+  broadcastId: integer("broadcast_id"),
+  actorId: text("actor_id").references(() => users.id),
+  action: text("action").notNull(),
+  sourceModule: text("source_module"),
+  channel: text("channel"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_notif_audit_org_action").on(table.orgId, table.action),
+  index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
+  index("idx_notif_audit_notification").on(table.notificationId),
 ]);
 
 export const auditLogs = pgTable("audit_logs", {
@@ -92,9 +183,16 @@ export const notificationPreferences = pgTable("notification_preferences", {
   pushEnabled: boolean("push_enabled").default(true).notNull(),
   smsEnabled: boolean("sms_enabled").default(false).notNull(),
   inAppEnabled: boolean("in_app_enabled").default(true).notNull(),
+  slackEnabled: boolean("slack_enabled").default(false).notNull(),
+  teamsEnabled: boolean("teams_enabled").default(false).notNull(),
+  whatsappEnabled: boolean("whatsapp_enabled").default(false).notNull(),
+  soundEnabled: boolean("sound_enabled").default(true).notNull(),
   quietHoursStart: text("quiet_hours_start"),
   quietHoursEnd: text("quiet_hours_end"),
+  quietHoursTimezone: text("quiet_hours_timezone").default("UTC"),
+  digestMode: text("digest_mode").$type<"disabled" | "hourly" | "daily" | "weekly">().default("disabled").notNull(),
   categories: jsonb("categories").$type<Record<string, boolean>>().default({}).notNull(),
+  channelCategories: jsonb("channel_categories").$type<Record<string, Record<string, boolean>>>().default({}).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
@@ -132,6 +230,22 @@ export const webhookLogs = pgTable("webhook_logs", {
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  organization: one(organizations, { fields: [notifications.orgId], references: [organizations.id] }),
+}));
+
+export const notificationTemplatesRelations = relations(notificationTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationTemplates.orgId], references: [organizations.id] }),
+  createdByUser: one(users, { fields: [notificationTemplates.createdBy], references: [users.id] }),
+}));
+
+export const broadcastsRelations = relations(broadcasts, ({ one }) => ({
+  organization: one(organizations, { fields: [broadcasts.orgId], references: [organizations.id] }),
+  createdByUser: one(users, { fields: [broadcasts.createdBy], references: [users.id] }),
+}));
+
+export const notificationAuditLogsRelations = relations(notificationAuditLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [notificationAuditLogs.orgId], references: [organizations.id] }),
+  actor: one(users, { fields: [notificationAuditLogs.actorId], references: [users.id] }),
 }));
 
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({

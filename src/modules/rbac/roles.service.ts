@@ -6,8 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, like, ne } from "drizzle-orm";
 import {
+  auditLogs,
   departmentMembers,
   departments,
   groupRoles,
@@ -546,7 +547,10 @@ export class RolesService {
     systemRoles: number;
     totalPermissions: number;
     usersAssigned: number;
+    recentChanges: number;
   }> {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
     const orgRoles = await this.db
       .select({ id: roles.id, isSystem: roles.isSystem })
       .from(roles)
@@ -565,12 +569,24 @@ export class RolesService {
           .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, roleIds)))
       : [{ value: 0 }];
 
+    const [changesRow] = await this.db
+      .select({ value: count() })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.orgId, orgId),
+          like(auditLogs.action, "role.%"),
+          gte(auditLogs.createdAt, sevenDaysAgo),
+        ),
+      );
+
     return {
       totalRoles,
       customRoles,
       systemRoles,
       totalPermissions: PERMISSIONS.length,
       usersAssigned: Number(assignedRow.value),
+      recentChanges: Number(changesRow.value),
     };
   }
 

@@ -473,6 +473,19 @@ export class BillingService {
     return { total, used, available: Math.max(0, total - used) };
   }
 
+  async requestAffiliatePayoutRequest(orgId: string) {
+    const affiliate = await this.db.query.affiliates.findFirst({
+      where: (a, { eq }) => eq(a.orgId, parseInt(orgId, 10)),
+    });
+    if (!affiliate) throw new NotFoundException("Affiliate not found");
+    if (affiliate.pendingPayout === 0) throw new BadRequestException("No pending payout available");
+    return {
+      success: true,
+      amount: affiliate.pendingPayout,
+      message: "Payout request submitted. Our team will process it within 5-7 business days.",
+    };
+  }
+
   async getSummary(orgId: string) {
     const [subscription, invoiceStats] = await Promise.all([
       this.db.query.subscriptions.findFirst({

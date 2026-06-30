@@ -76,6 +76,19 @@ export const applicationStatusEnum = pgEnum("application_status", ["APPLIED", "S
 export const chatMessageTypeEnum = pgEnum("chat_message_type", ["text", "lead_submission", "system"]);
 
 export const notificationTypeEnum = pgEnum("notification_type", ["INFO", "SUCCESS", "WARNING", "ERROR"]);
+export const notificationPriorityEnum = pgEnum("notification_priority", ["LOW", "NORMAL", "HIGH", "CRITICAL"]);
+export const notificationCategoryEnum = pgEnum("notification_category", [
+  "SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM",
+]);
+export const broadcastStatusEnum = pgEnum("broadcast_status", [
+  "DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED",
+]);
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "QUEUED", "PROCESSING", "DELIVERED", "FAILED", "EXPIRED",
+]);
+export const notificationChannelEnum = pgEnum("notification_channel", [
+  "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
+]);
 
 export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "ISSUED", "PAID", "FAILED", "VOIDED"]);
 

@@ -223,6 +223,13 @@ export class BillingController {
     return this.affiliate.getDashboard(parseInt(u.userId, 10));
   }
 
+  @Post("affiliate/payout-request")
+  @HttpCode(200)
+  @RequirePermission("billing:affiliate:manage")
+  requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.requestAffiliatePayoutRequest(u.orgId);
+  }
+
   @Post("referrals")
   @RequirePermission("settings:manage")
   async createReferral(
