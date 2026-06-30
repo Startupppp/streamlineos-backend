@@ -41,7 +41,7 @@ export const createInvoiceSchema = z
     currency: z.string().default("INR"),
     dueDate: z.string().optional(),
     notes: z.string().optional(),
-    status: z.enum(["DRAFT", "SENT"]).default("DRAFT"),
+    status: z.enum(["DRAFT", "ISSUED"]).default("DRAFT"),
     placeOfSupply: z.string().regex(/^\d{2}$/).optional(),
     customerGstin: z.string().regex(GSTIN_REGEX).optional(),
     supplierGstin: z.string().regex(GSTIN_REGEX).optional(),
@@ -74,7 +74,7 @@ export const updateInvoiceSchema = z.object({
   currency: z.string().optional(),
   dueDate: z.string().optional(),
   notes: z.string().optional(),
-  status: z.enum(["SENT", "PAID", "OVERDUE", "CANCELLED"]).optional(),
+  status: z.enum(["ISSUED", "PAID", "FAILED", "VOIDED"]).optional(),
 });
 
 export const recordPaymentSchema = z.object({

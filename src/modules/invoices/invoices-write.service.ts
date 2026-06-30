@@ -116,7 +116,7 @@ export class InvoicesWriteService {
       amount: it.amount,
     }));
 
-    if (status === "SENT") {
+    if (status === "ISSUED") {
       await this.posting.seedChartOfAccountsForOrg(orgId);
     }
 
@@ -155,7 +155,7 @@ export class InvoicesWriteService {
           cgstAmount: split.cgst.toFixed(4),
           sgstAmount: split.sgst.toFixed(4),
           igstAmount: split.igst.toFixed(4),
-          sentAt: status === "SENT" ? new Date() : null,
+          sentAt: status === "ISSUED" ? new Date() : undefined,
           createdBy: userId,
         })
         .returning();
@@ -177,7 +177,7 @@ export class InvoicesWriteService {
         );
       }
 
-      if (status === "SENT") {
+      if (status === "ISSUED") {
         const invoiceDate = (inserted.createdAt ?? new Date()).toISOString().slice(0, 10);
         await this.posting.postInvoiceSend(
           {
@@ -200,7 +200,7 @@ export class InvoicesWriteService {
       return inserted;
     });
 
-    return { invoice, posted: status === "SENT" };
+    return { invoice, posted: status === "ISSUED" };
   }
 
   async updateInvoice(
@@ -215,7 +215,7 @@ export class InvoicesWriteService {
     if (!existing) throw new NotFoundException("Invoice not found");
 
     if (input.status) {
-      const willPost = input.status === "SENT" && existing.status !== "SENT";
+      const willPost = input.status === "ISSUED" && existing.status !== "ISSUED";
       if (willPost) await this.posting.seedChartOfAccountsForOrg(orgId);
 
       await this.db.transaction(async (tx) => {
@@ -224,7 +224,7 @@ export class InvoicesWriteService {
           .set({
             status: input.status,
             updatedAt: new Date(),
-            ...(input.status === "SENT" ? { sentAt: new Date() } : {}),
+            ...(input.status === "ISSUED" ? { sentAt: new Date() } : {}),
             ...(input.status === "PAID" ? { paidAt: new Date() } : {}),
           })
           .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
@@ -341,8 +341,8 @@ export class InvoicesWriteService {
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
-    if (invoice.status === "CANCELLED") {
-      throw new BadRequestException("Cannot record payment on cancelled invoice");
+    if (invoice.status === "VOIDED") {
+      throw new BadRequestException("Cannot record payment on voided invoice");
     }
 
     const [{ totalPaid }] = await this.db

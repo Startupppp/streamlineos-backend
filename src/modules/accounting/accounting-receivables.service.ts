@@ -17,7 +17,7 @@ import {
   type ListCustomersOutstandingQuery,
 } from "./dto/accounting.schemas";
 
-const RECEIVABLE_INVOICE_STATUSES = ["SENT", "OVERDUE", "PAID"] as const;
+const RECEIVABLE_INVOICE_STATUSES = ["ISSUED", "FAILED", "PAID"] as const;
 
 function escapeLike(value: string): string {
   return value.replaceAll("%", "\\%").replaceAll("_", "\\_");

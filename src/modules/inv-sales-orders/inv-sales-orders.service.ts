@@ -364,7 +364,7 @@ export class InvSalesOrdersService {
       orgId,
       clientId: so.clientId,
       invoiceNumber,
-      status: "SENT",
+      status: "ISSUED",
       lineItems,
       subtotal: so.subtotal,
       taxRate: "0",

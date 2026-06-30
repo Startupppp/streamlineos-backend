@@ -13,8 +13,8 @@ import type {
 } from "./accounting.types";
 import { type Gstr1Query, type Gstr3BQuery } from "./dto/accounting.schemas";
 
-const GSTR1_STATUSES = ["SENT", "PAID", "OVERDUE"] as const;
-const OUTWARD_STATUSES = ["SENT", "PAID", "OVERDUE"] as const;
+const GSTR1_STATUSES = ["ISSUED", "PAID", "FAILED"] as const;
+const OUTWARD_STATUSES = ["ISSUED", "PAID", "FAILED"] as const;
 const INWARD_STATUSES = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
 
 interface InvoiceRow {

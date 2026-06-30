@@ -108,17 +108,17 @@ export class InvoicesService {
 
     const stats = {
       draft: 0,
-      sent: 0,
+      issued: 0,
       paid: 0,
-      overdue: 0,
-      cancelled: 0,
+      failed: 0,
+      voided: 0,
       totalOutstanding: 0,
       totalPaid: 0,
     };
     for (const r of results) {
       const s = r.status.toLowerCase() as keyof typeof stats;
       if (s in stats) (stats as Record<string, number>)[s] = r.count;
-      if (r.status === "SENT" || r.status === "OVERDUE") stats.totalOutstanding += r.total;
+      if (r.status === "ISSUED" || r.status === "FAILED") stats.totalOutstanding += r.total;
       if (r.status === "PAID") stats.totalPaid += r.total;
     }
     return stats;

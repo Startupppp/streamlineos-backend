@@ -13,15 +13,19 @@ import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import {
+  createCouponSchema,
   createOrderSchema,
   purchaseAddonSchema,
   updateBillingProfileSchema,
+  updateCouponSchema,
   verifyPaymentSchema,
   planSchema,
+  type CreateCouponInput,
   type CreateOrderInput,
   type Plan,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
+  type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { autoTopUpSchema } from "./dto/ai-credits.schemas";
@@ -322,5 +326,38 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.enterpriseQuotes.accept(u.orgId, quoteId);
+  }
+
+  @Get("addons")
+  @RequirePermission("billing:marketplace:view")
+  listAddons() {
+    return this.billing.listAddons();
+  }
+
+  @Get("coupons")
+  @RequirePermission("settings:manage")
+  listCoupons(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listCoupons(u.orgId);
+  }
+
+  @Post("coupons")
+  @RequirePermission("settings:manage")
+  createCoupon(@Body(new ZodValidationPipe(createCouponSchema)) body: CreateCouponInput) {
+    return this.billing.createCoupon(body);
+  }
+
+  @Patch("coupons/:couponId")
+  @RequirePermission("settings:manage")
+  updateCoupon(
+    @Param("couponId", ParseIntPipe) couponId: number,
+    @Body(new ZodValidationPipe(updateCouponSchema)) body: UpdateCouponInput,
+  ) {
+    return this.billing.updateCoupon(couponId, body);
+  }
+
+  @Delete("coupons/:couponId")
+  @RequirePermission("settings:manage")
+  deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
+    return this.billing.deleteCoupon(couponId);
   }
 }

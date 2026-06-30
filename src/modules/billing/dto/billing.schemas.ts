@@ -83,3 +83,18 @@ export const webhookEventSchema = z.object({
 });
 export type WebhookEvent = z.infer<typeof webhookEventSchema>;
 export type RazorpayPayment = z.infer<typeof razorpayPaymentSchema>;
+
+export const createCouponSchema = z.object({
+  code: z.string().min(1).max(50).toUpperCase(),
+  type: z.enum(["PERCENTAGE", "FIXED"]),
+  value: z.number().positive(),
+  maxUses: z.number().int().positive().optional(),
+  applicablePlans: z.array(z.string()).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+export type CreateCouponInput = z.infer<typeof createCouponSchema>;
+
+export const updateCouponSchema = createCouponSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
+export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;

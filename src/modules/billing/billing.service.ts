@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
@@ -25,9 +26,11 @@ import { AiCreditsService } from "./ai-credits.service";
 import {
   webhookEventSchema,
   type BillingCycle,
+  type CreateCouponInput,
   type Plan,
   type RazorpayPayment,
   type UpdateBillingProfileInput,
+  type UpdateCouponInput,
   type VerifyPaymentInput,
   type WebhookEvent,
 } from "./dto/billing.schemas";
@@ -394,6 +397,65 @@ export class BillingService {
     return updated;
   }
 
+  async listCoupons(_orgId: string) {
+    const all = await this.db.query.coupons.findMany({
+      orderBy: (c, { desc: d }) => [d(c.createdAt)],
+      with: { redemptions: true },
+    });
+    return all;
+  }
+
+  async createCoupon(data: CreateCouponInput) {
+    const [created] = await this.db.insert(coupons).values({
+      code: data.code.toUpperCase(),
+      type: data.type,
+      value: String(data.value),
+      maxUses: data.maxUses,
+      applicablePlans: data.applicablePlans,
+      expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
+    }).returning();
+    return created;
+  }
+
+  async updateCoupon(id: number, data: UpdateCouponInput) {
+    const [updated] = await this.db.update(coupons)
+      .set({
+        ...(data.code !== undefined ? { code: data.code.toUpperCase() } : {}),
+        ...(data.type !== undefined ? { type: data.type } : {}),
+        ...(data.value !== undefined ? { value: String(data.value) } : {}),
+        ...(data.maxUses !== undefined ? { maxUses: data.maxUses } : {}),
+        ...(data.applicablePlans !== undefined ? { applicablePlans: data.applicablePlans } : {}),
+        ...(data.expiresAt !== undefined ? { expiresAt: new Date(data.expiresAt) } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(coupons.id, id))
+      .returning();
+    if (!updated) throw new NotFoundException("Coupon not found");
+    return updated;
+  }
+
+  async deleteCoupon(id: number) {
+    await this.db.update(coupons).set({ isActive: false, updatedAt: new Date() }).where(eq(coupons.id, id));
+    return { success: true };
+  }
+
+  listAddons() {
+    return {
+      addons: [
+        { id: "ai_credits", name: "AI Credit Packs", description: "Purchase additional AI processing credits", icon: "Zap", available: true, href: "/billing/ai-credits" },
+        { id: "extra_storage", name: "Extra Storage", description: "Add 100GB of document and file storage", icon: "HardDrive", priceInPaise: 49900, available: true },
+        { id: "whatsapp", name: "WhatsApp Messaging", description: "1000 WhatsApp messages/month", icon: "MessageSquare", priceInPaise: 199900, available: false, comingSoon: true },
+        { id: "sms_credits", name: "SMS Credits", description: "Bulk SMS for notifications and alerts", icon: "Phone", priceInPaise: 99900, available: false, comingSoon: true },
+        { id: "voice_ai", name: "Voice AI", description: "AI-powered voice calling and transcription", icon: "Mic", priceInPaise: 499900, available: false, comingSoon: true },
+        { id: "white_label", name: "White Label", description: "Remove StreamlineOS branding", icon: "Tag", priceInPaise: 999900, available: false, comingSoon: true },
+        { id: "custom_domain", name: "Custom Domain", description: "Use your own domain for the platform", icon: "Globe", priceInPaise: 299900, available: false, comingSoon: true },
+        { id: "premium_support", name: "Premium Support", description: "24/7 dedicated support with SLA guarantees", icon: "HeadphonesIcon", priceInPaise: 1999900, available: false, comingSoon: true },
+        { id: "api_capacity", name: "API Capacity", description: "Higher API rate limits and throughput", icon: "Server", priceInPaise: 149900, available: false, comingSoon: true },
+      ],
+    };
+  }
+
   async getSeatInfo(orgId: string) {
     const { subscription } = await this.getSubscription(orgId);
     const PLAN_SEATS: Record<string, number> = {
@@ -420,12 +482,12 @@ export class BillingService {
       this.db
         .select({
           totalPaid: sql<string>`coalesce(sum(case when ${invoices.status} = 'PAID' then ${invoices.total}::numeric else 0 end), 0)::text`,
-          totalOutstanding: sql<string>`coalesce(sum(case when ${invoices.status} in ('SENT','OVERDUE') then ${invoices.total}::numeric else 0 end), 0)::text`,
+          totalOutstanding: sql<string>`coalesce(sum(case when ${invoices.status} in ('ISSUED','FAILED') then ${invoices.total}::numeric else 0 end), 0)::text`,
           draft: sql<number>`count(case when ${invoices.status} = 'DRAFT' then 1 end)::int`,
-          sent: sql<number>`count(case when ${invoices.status} = 'SENT' then 1 end)::int`,
+          issued: sql<number>`count(case when ${invoices.status} = 'ISSUED' then 1 end)::int`,
           paid: sql<number>`count(case when ${invoices.status} = 'PAID' then 1 end)::int`,
-          overdue: sql<number>`count(case when ${invoices.status} = 'OVERDUE' then 1 end)::int`,
-          cancelled: sql<number>`count(case when ${invoices.status} = 'CANCELLED' then 1 end)::int`,
+          failed: sql<number>`count(case when ${invoices.status} = 'FAILED' then 1 end)::int`,
+          voided: sql<number>`count(case when ${invoices.status} = 'VOIDED' then 1 end)::int`,
         })
         .from(invoices)
         .where(eq(invoices.orgId, orgId)),
@@ -453,10 +515,10 @@ export class BillingService {
         totalPaid: "0",
         totalOutstanding: "0",
         draft: 0,
-        sent: 0,
+        issued: 0,
         paid: 0,
-        overdue: 0,
-        cancelled: 0,
+        failed: 0,
+        voided: 0,
       },
       isConfigured: this.razorpay.isConfigured(),
     };
