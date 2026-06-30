@@ -8,26 +8,37 @@ import {
   Patch,
   Post,
   Query,
+  Sse,
+  UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
+import type { MessageEvent } from "@nestjs/common";
+import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationsService } from "./notifications.service";
+import { NotificationEventService } from "./notification-event.service";
 import {
   listSchema,
   snoozeSchema,
   bulkActionSchema,
+  auditLogsSchema,
   type ListInput,
   type SnoozeInput,
   type BulkActionInput,
+  type AuditLogsInput,
 } from "./dto/notification.schemas";
 
 @Controller("notifications")
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly notifEvents: NotificationEventService,
+  ) {}
 
   @Get()
   list(
@@ -40,6 +51,29 @@ export class NotificationsController {
   @Get("unread-count")
   unreadCount(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.unreadCount(u.orgId, u.userId);
+  }
+
+  @Get("audit")
+  listAuditLogs(
+    @Query(new ZodValidationPipe(auditLogsSchema)) filters: AuditLogsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.notifications.listAuditLogs(u.orgId, filters);
+  }
+
+  @Post("events/token")
+  generateStreamToken(@CurrentUser() u: CurrentUserContext) {
+    const token = this.notifEvents.generateToken(u.userId, u.orgId);
+    return { token };
+  }
+
+  @Get("events")
+  @Sse()
+  @Public()
+  stream(@Query("token") token: string): Observable<MessageEvent> {
+    const user = this.notifEvents.consumeToken(token);
+    if (!user) throw new UnauthorizedException("Invalid or expired stream token");
+    return this.notifEvents.stream(user.userId, user.orgId);
   }
 
   @Patch("read-all")

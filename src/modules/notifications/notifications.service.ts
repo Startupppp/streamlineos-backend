@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, sql, isNull, isNotNull, inArray, lt } from "drizzle-orm";
-import { notifications, notificationAuditLogs } from "../../db/schema";
+import { eq, and, desc, sql, isNull, isNotNull, inArray, lt, gte, lte } from "drizzle-orm";
+import { notifications, notificationAuditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListInput, SnoozeInput, BulkActionInput } from "./dto/notification.schemas";
+import type { ListInput, SnoozeInput, BulkActionInput, AuditLogsInput } from "./dto/notification.schemas";
+import { NotificationEventService } from "./notification-event.service";
 
 export interface CreateNotificationInput {
   orgId: string;
@@ -25,6 +26,7 @@ export class NotificationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly notifEvents: NotificationEventService,
   ) {}
 
   async create(input: CreateNotificationInput) {
@@ -46,6 +48,7 @@ export class NotificationsService {
 
     await this.audit(input.orgId, null, "notification.created", notification?.id);
     await this.invalidateCache(input.userId, input.orgId);
+    this.notifEvents.emit({ userId: input.userId, orgId: input.orgId, type: "count_changed" });
     return notification;
   }
 
@@ -150,6 +153,7 @@ export class NotificationsService {
       );
     await this.audit(orgId, userId, "notification.read", notificationId);
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -167,6 +171,7 @@ export class NotificationsService {
       );
     await this.audit(orgId, userId, "notification.all_read");
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -184,6 +189,7 @@ export class NotificationsService {
       );
     await this.audit(orgId, userId, "notification.archived", notificationId);
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -285,6 +291,7 @@ export class NotificationsService {
       );
     await this.audit(orgId, userId, "notification.bulk_read", undefined, { ids: input.ids });
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -330,7 +337,58 @@ export class NotificationsService {
       );
     await this.audit(orgId, userId, "notification.clear_all");
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
+  }
+
+  async listAuditLogs(orgId: string, filters: AuditLogsInput) {
+    const { page, pageSize, action, dateFrom, dateTo } = filters;
+    const offset = (page - 1) * pageSize;
+
+    const conditions = [eq(notificationAuditLogs.orgId, orgId)];
+    if (action) conditions.push(eq(notificationAuditLogs.action, action));
+    if (dateFrom) conditions.push(gte(notificationAuditLogs.createdAt, new Date(dateFrom)));
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(notificationAuditLogs.createdAt, end));
+    }
+
+    const where = and(...conditions);
+
+    const [rows, [{ count }]] = await Promise.all([
+      this.db
+        .select({
+          id: notificationAuditLogs.id,
+          notificationId: notificationAuditLogs.notificationId,
+          broadcastId: notificationAuditLogs.broadcastId,
+          actorId: notificationAuditLogs.actorId,
+          actorName: users.name,
+          actorEmail: users.email,
+          action: notificationAuditLogs.action,
+          sourceModule: notificationAuditLogs.sourceModule,
+          channel: notificationAuditLogs.channel,
+          metadata: notificationAuditLogs.metadata,
+          createdAt: notificationAuditLogs.createdAt,
+        })
+        .from(notificationAuditLogs)
+        .leftJoin(users, eq(notificationAuditLogs.actorId, users.id))
+        .where(where)
+        .orderBy(desc(notificationAuditLogs.createdAt))
+        .limit(pageSize)
+        .offset(offset),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(notificationAuditLogs)
+        .where(where),
+    ]);
+
+    return {
+      logs: rows,
+      total: count,
+      page,
+      totalPages: Math.ceil(count / pageSize),
+    };
   }
 
   private async audit(

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsService } from "./notifications.service";
+import { NotificationEventService } from "./notification-event.service";
 import { NotificationTemplatesController } from "./notification-templates.controller";
 import { NotificationTemplatesService } from "./notification-templates.service";
 import { BroadcastsController } from "./broadcasts.controller";
@@ -23,12 +24,13 @@ import { NotificationQueueService } from "./notification-queue.service";
   ],
   providers: [
     NotificationsService,
+    NotificationEventService,
     NotificationTemplatesService,
     BroadcastsService,
     NotificationAnalyticsService,
     NotificationPreferencesService,
     NotificationQueueService,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, NotificationEventService],
 })
 export class NotificationsModule {}
