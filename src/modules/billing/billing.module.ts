@@ -8,10 +8,11 @@ import { AiCreditsService } from "./ai-credits.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 
 @Module({
   controllers: [BillingController, RazorpayWebhookController],
-  providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AffiliateService, ReferralService, RevenueAnalyticsService],
+  providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService],
   exports: [AiCreditsService, RevenueAnalyticsService],
 })
 export class BillingModule {}

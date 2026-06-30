@@ -27,6 +27,7 @@ import {
   type BillingCycle,
   type Plan,
   type RazorpayPayment,
+  type UpdateBillingProfileInput,
   type VerifyPaymentInput,
   type WebhookEvent,
 } from "./dto/billing.schemas";
@@ -382,21 +383,7 @@ export class BillingService {
     return profile;
   }
 
-  async updateBillingProfile(
-    orgId: string,
-    data: Partial<{
-      gstin: string | null;
-      pan: string | null;
-      billingName: string | null;
-      billingEmail: string | null;
-      addressLine1: string | null;
-      addressLine2: string | null;
-      city: string | null;
-      state: string | null;
-      pincode: string | null;
-      isTaxExempt: boolean;
-    }>,
-  ) {
+  async updateBillingProfile(orgId: string, data: UpdateBillingProfileInput) {
     await this.getBillingProfile(orgId);
     const numericOrgId = parseInt(orgId, 10);
     const [updated] = await this.db

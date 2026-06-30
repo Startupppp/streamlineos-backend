@@ -65,3 +65,12 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type MagicLinkRequestInput = z.infer<typeof magicLinkRequestSchema>;
 export type MagicLinkVerifyInput = z.infer<typeof magicLinkVerifySchema>;
+
+export const googleOAuthSchema = z.object({
+  email: z.string().email(),
+  googleId: z.string().min(1),
+  name: z.string().optional(),
+  image: z.string().url().optional().or(z.literal("")),
+}).strict();
+
+export type GoogleOAuthInput = z.infer<typeof googleOAuthSchema>;

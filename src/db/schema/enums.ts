@@ -152,3 +152,7 @@ export const revenueEventTypeEnum = pgEnum("revenue_event_type", [
   "addon_purchase",
   "refund",
 ]);
+
+export const enterpriseQuoteStatusEnum = pgEnum("enterprise_quote_status", [
+  "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"
+]);

@@ -228,6 +228,9 @@ const BILLING_PERMISSIONS: Permission[] = [
   { name: "billing:analytics:view", resource: "billing:analytics", action: "view", description: "View revenue analytics (platform admin only)", scopable: false },
   { name: "billing:affiliate:manage", resource: "billing:affiliate", action: "manage", description: "Manage affiliate program", scopable: false },
   { name: "billing:profile:update", resource: "billing:profile", action: "update", description: "Update billing profile and GST details", scopable: false },
+  { name: "billing:enterprise-quotes:view", resource: "billing:enterprise-quotes", action: "view", description: "View enterprise quotes", scopable: false },
+  { name: "billing:enterprise-quotes:create", resource: "billing:enterprise-quotes", action: "create", description: "Create enterprise quotes", scopable: false },
+  { name: "billing:enterprise-quotes:approve", resource: "billing:enterprise-quotes", action: "approve", description: "Approve/reject/send enterprise quotes", scopable: false },
 ];
 
 export const PERMISSIONS: Permission[] = [

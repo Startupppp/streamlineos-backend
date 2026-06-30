@@ -11,6 +11,7 @@ import { AiCreditsService } from "./ai-credits.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import {
   createOrderSchema,
   purchaseAddonSchema,
@@ -26,6 +27,16 @@ import {
 import { autoTopUpSchema } from "./dto/ai-credits.schemas";
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
+import {
+  listEnterpriseQuotesSchema,
+  createEnterpriseQuoteSchema,
+  approveEnterpriseQuoteSchema,
+  rejectEnterpriseQuoteSchema,
+  type ListEnterpriseQuotesQuery,
+  type CreateEnterpriseQuoteInput,
+  type ApproveEnterpriseQuoteInput,
+  type RejectEnterpriseQuoteInput,
+} from "./dto/enterprise-quotes.schemas";
 
 @Controller("billing")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -37,6 +48,7 @@ export class BillingController {
     private readonly affiliate: AffiliateService,
     private readonly referral: ReferralService,
     private readonly analytics: RevenueAnalyticsService,
+    private readonly enterpriseQuotes: EnterpriseQuotesService,
   ) {}
 
   @Get()
@@ -230,5 +242,85 @@ export class BillingController {
       this.analytics.getTimeSeriesData(query.period),
     ]);
     return { metrics, timeSeries };
+  }
+
+  @Get("enterprise-quotes")
+  @RequirePermission("billing:enterprise-quotes:view")
+  listEnterpriseQuotes(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: ListEnterpriseQuotesQuery,
+  ) {
+    const parsed = listEnterpriseQuotesSchema.parse(query);
+    return this.enterpriseQuotes.list(u.orgId, parsed);
+  }
+
+  @Post("enterprise-quotes")
+  @RequirePermission("billing:enterprise-quotes:create")
+  createEnterpriseQuote(
+    @Body(new ZodValidationPipe(createEnterpriseQuoteSchema)) body: CreateEnterpriseQuoteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.create(u.orgId, u.userId, body);
+  }
+
+  @Get("enterprise-quotes/:quoteId")
+  @RequirePermission("billing:enterprise-quotes:view")
+  getEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.findOne(u.orgId, quoteId);
+  }
+
+  @Post("enterprise-quotes/:quoteId/submit")
+  @HttpCode(200)
+  @RequirePermission("billing:enterprise-quotes:create")
+  submitEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.submit(u.orgId, quoteId);
+  }
+
+  @Post("enterprise-quotes/:quoteId/approve")
+  @HttpCode(200)
+  @RequirePermission("billing:enterprise-quotes:approve")
+  approveEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @Body(new ZodValidationPipe(approveEnterpriseQuoteSchema)) body: ApproveEnterpriseQuoteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.approve(u.orgId, quoteId, u.userId, body);
+  }
+
+  @Post("enterprise-quotes/:quoteId/reject")
+  @HttpCode(200)
+  @RequirePermission("billing:enterprise-quotes:approve")
+  rejectEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @Body(new ZodValidationPipe(rejectEnterpriseQuoteSchema)) body: RejectEnterpriseQuoteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.reject(u.orgId, quoteId, u.userId, body);
+  }
+
+  @Post("enterprise-quotes/:quoteId/send")
+  @HttpCode(200)
+  @RequirePermission("billing:enterprise-quotes:approve")
+  sendEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.send(u.orgId, quoteId);
+  }
+
+  @Post("enterprise-quotes/:quoteId/accept")
+  @HttpCode(200)
+  @RequirePermission("billing:enterprise-quotes:view")
+  acceptEnterpriseQuote(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.enterpriseQuotes.accept(u.orgId, quoteId);
   }
 }

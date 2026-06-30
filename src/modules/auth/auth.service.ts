@@ -10,6 +10,7 @@ import { AccessService } from "../access/access.service";
 import { and, eq, gt, gte, sql } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes, createDecipheriv } from "node:crypto";
 import {
+  accounts,
   loginHistory,
   magicLinkTokens,
   organizationMembers,

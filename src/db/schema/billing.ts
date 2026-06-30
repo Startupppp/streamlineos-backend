@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -8,6 +9,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 import {
@@ -15,9 +17,13 @@ import {
   aiCreditTxnTypeEnum,
   appInstallStatusEnum,
   commissionStatusEnum,
+  enterpriseQuoteStatusEnum,
   referralStatusEnum,
   revenueEventTypeEnum,
 } from "./enums";
+import { organizations, users } from "./auth";
+import { clientAccounts } from "./crm/contacts";
+import { deals } from "./crm/deals";
 
 export const billingProfiles = pgTable(
   "billing_profiles",
@@ -242,4 +248,45 @@ export const affiliateCommissionsRelations = relations(affiliateCommissions, ({ 
     fields: [affiliateCommissions.affiliateId],
     references: [affiliates.id],
   }),
+}));
+
+export const enterpriseQuotes = pgTable("enterprise_quotes", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  quoteRef: text("quote_ref").notNull(),
+  subject: text("subject").notNull(),
+  planTier: text("plan_tier").default("ENTERPRISE").notNull(),
+  requestedSeats: integer("requested_seats").default(0).notNull(),
+  negotiatedSeats: integer("negotiated_seats").default(0).notNull(),
+  pricePerSeatInPaise: integer("price_per_seat_in_paise").default(0).notNull(),
+  contractTermMonths: integer("contract_term_months").default(12).notNull(),
+  contractTerms: text("contract_terms"),
+  status: enterpriseQuoteStatusEnum("status").default("DRAFT").notNull(),
+  approverId: text("approver_id").references(() => users.id),
+  approvalNotes: text("approval_notes"),
+  approvedAt: timestamp("approved_at"),
+  sentAt: timestamp("sent_at"),
+  acceptedAt: timestamp("accepted_at"),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  validUntil: date("valid_until").notNull(),
+  notes: text("notes"),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  clientId: integer("client_id").references(() => clientAccounts.id, { onDelete: "set null" }),
+  createdById: text("created_by_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (t) => [
+  index("idx_ent_quotes_org_status").on(t.orgId, t.status),
+  index("idx_ent_quotes_deal").on(t.dealId),
+  index("idx_ent_quotes_client").on(t.clientId),
+  uniqueIndex("idx_ent_quotes_ref").on(t.orgId, t.quoteRef),
+]);
+
+export const enterpriseQuotesRelations = relations(enterpriseQuotes, ({ one }) => ({
+  organization: one(organizations, { fields: [enterpriseQuotes.orgId], references: [organizations.id] }),
+  deal: one(deals, { fields: [enterpriseQuotes.dealId], references: [deals.id] }),
+  client: one(clientAccounts, { fields: [enterpriseQuotes.clientId], references: [clientAccounts.id] }),
+  approver: one(users, { fields: [enterpriseQuotes.approverId], references: [users.id], relationName: "quote_approver" }),
+  createdBy: one(users, { fields: [enterpriseQuotes.createdById], references: [users.id], relationName: "quote_creator" }),
 }));
