@@ -45,7 +45,13 @@ export class OrgSetupService {
     u: CurrentUserContext,
     input: SetupInput,
   ): Promise<string> {
-    if (u.orgId) return u.orgId;
+    if (u.orgId) {
+      const existingOrg = await this.db.query.organizations.findFirst({
+        where: eq(organizations.id, u.orgId),
+        columns: { id: true },
+      });
+      if (existingOrg) return u.orgId;
+    }
 
     const existingMember = await this.db.query.organizationMembers.findFirst({
       where: eq(organizationMembers.userId, u.userId),

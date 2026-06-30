@@ -79,7 +79,9 @@ export class JwtAuthGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]);
-      if (!claims.orgId && !claims.isPlatformAdmin && !allowNoOrg) {
+      const path = req.path ?? req.url?.split("?")[0] ?? "";
+      const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
+      if (!claims.orgId && !claims.isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
         throw new UnauthorizedException("Organization not found");
       }
 

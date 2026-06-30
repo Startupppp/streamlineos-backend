@@ -669,8 +669,11 @@ export class AuthService {
     let plan: string | null = null;
     let permissions: string[] = [];
 
-    if (membership?.orgId) {
-      const orgId = membership.orgId;
+    let resolvedOrgId: string | null = membership?.orgId ?? null;
+    let isOrgOwner = membership?.isOwner ?? false;
+
+    if (resolvedOrgId) {
+      const orgId = resolvedOrgId;
       const [org, sub] = await Promise.all([
         this.db.query.organizations.findFirst({
           where: eq(organizations.id, orgId),
@@ -682,19 +685,24 @@ export class AuthService {
         }),
       ]);
 
-      mfaEnforced = org?.mfaEnforced ?? false;
-      enabledModules = org?.enabledModules ?? [];
-      orgOnboardingCompletedAt = org?.onboardingCompletedAt?.toISOString() ?? null;
+      if (!org) {
+        resolvedOrgId = null;
+        isOrgOwner = false;
+      } else {
+        mfaEnforced = org.mfaEnforced ?? false;
+        enabledModules = org.enabledModules ?? [];
+        orgOnboardingCompletedAt = org.onboardingCompletedAt?.toISOString() ?? null;
 
-      if (sub) {
-        plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
-      }
+        if (sub) {
+          plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+        }
 
-      try {
-        const permMap = await this.access.resolveUserPermissions(orgId, userId);
-        permissions = [...permMap.keys()];
-      } catch {
-        permissions = [];
+        try {
+          const permMap = await this.access.resolveUserPermissions(orgId, userId);
+          permissions = [...permMap.keys()];
+        } catch {
+          permissions = [];
+        }
       }
     }
 
@@ -711,8 +719,8 @@ export class AuthService {
       isPasswordChangeRequired: user.isPasswordChangeRequired,
       branchId: user.branchId ?? null,
       totpEnabled: user.totpEnabled,
-      orgId: membership?.orgId ?? null,
-      isOrgOwner: membership?.isOwner ?? false,
+      orgId: resolvedOrgId,
+      isOrgOwner,
       mfaEnforced,
       enabledModules,
       orgOnboardingCompletedAt,
