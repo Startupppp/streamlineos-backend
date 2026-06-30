@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNotNull, gt, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { userRoles, users, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -21,7 +21,6 @@ export class TemporaryAccessService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    const now = new Date();
     return this.db
       .select({
         id: userRoles.id,
@@ -41,9 +40,9 @@ export class TemporaryAccessService {
         and(
           eq(userRoles.orgId, orgId),
           isNotNull(userRoles.expiresAt),
-          gt(userRoles.expiresAt, now),
         ),
-      );
+      )
+      .orderBy(userRoles.expiresAt);
   }
 
   async create(actor: CurrentUserContext, body: CreateTemporaryAccessInput) {

@@ -4,7 +4,7 @@ export const setupSchema = z.object({
   companyName: z.string().optional(),
   industry: z.string().min(1, "Industry is required"),
   companySize: z.string().min(1, "Company size is required"),
-  country: z.string().min(1, "Country is required"),
+  country: z.string().optional(),
   website: z.string().url().optional().or(z.literal("")),
   firstName: z.string().optional().default(""),
   lastName: z.string().optional().default(""),

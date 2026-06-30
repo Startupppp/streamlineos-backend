@@ -1,6 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import { organizations, organizationMembers, subscriptions, roles, users, invitations, orgHolidays } from "../../db/schema";
+import {
+  organizations,
+  organizationMembers,
+  subscriptions,
+  roles,
+  users,
+  invitations,
+  orgHolidays,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -33,7 +41,10 @@ export class OrgSetupService {
     );
   }
 
-  private async resolveOrCreateOrg(u: CurrentUserContext, input: SetupInput): Promise<string> {
+  private async resolveOrCreateOrg(
+    u: CurrentUserContext,
+    input: SetupInput,
+  ): Promise<string> {
     if (u.orgId) return u.orgId;
 
     const existingMember = await this.db.query.organizationMembers.findFirst({
@@ -65,10 +76,22 @@ export class OrgSetupService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), 14),
       });
-      await tx.insert(roles).values({ name: "Administrator", slug: "ADMIN", isSystem: false, orgId, permissions: [] });
+      await tx.insert(roles).values({
+        name: "Administrator",
+        slug: "ADMIN",
+        isSystem: false,
+        orgId,
+        permissions: [],
+      });
     });
 
-    this.audit.log({ action: "org.created", userId: u.userId, orgId, targetId: orgId, targetType: "organization" });
+    this.audit.log({
+      action: "org.created",
+      userId: u.userId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+    });
     return orgId;
   }
 
@@ -87,17 +110,21 @@ export class OrgSetupService {
       await tx
         .update(organizations)
         .set({
-          ...(input.companyName ? { name: input.companyName } : {}),
           industry: input.industry,
           companySize: input.companySize,
-          country: input.country,
-          ...(input.website ? { website: input.website } : {}),
           ...(input.logo ? { logo: input.logo } : {}),
+          ...(input.country ? { country: input.country } : {}),
+          ...(input.website ? { website: input.website } : {}),
           ...(input.timezone ? { timezone: input.timezone } : {}),
           ...(input.currency ? { currency: input.currency } : {}),
-          ...(input.fiscalYearStart ? { fiscalYearStart: input.fiscalYearStart } : {}),
-          ...(input.enabledModules ? { enabledModules: input.enabledModules } : {}),
+          ...(input.companyName ? { name: input.companyName } : {}),
           ...(Object.keys(settings).length > 0 ? { settings } : {}),
+          ...(input.enabledModules
+            ? { enabledModules: input.enabledModules }
+            : {}),
+          ...(input.fiscalYearStart
+            ? { fiscalYearStart: input.fiscalYearStart }
+            : {}),
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
@@ -107,7 +134,11 @@ export class OrgSetupService {
         .set({
           firstName: input.firstName,
           lastName: input.lastName,
-          name: [input.firstName, input.lastName].filter(Boolean).join(" ").trim() || undefined,
+          name:
+            [input.firstName, input.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim() || undefined,
           designation: input.jobTitle,
           ...(input.phone ? { phone: input.phone } : {}),
         })
@@ -129,22 +160,49 @@ export class OrgSetupService {
     }
 
     if (input.invitees?.length) {
-      const org = await this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } });
+      const org = await this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true },
+      });
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
       await Promise.allSettled(
         input.invitees.map(async (inv) => {
           const invitationId = randomUUID();
-          const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
-          await this.db.insert(invitations).values({ id: invitationId, email: inv.email, token, orgId, role: inv.role, invitedBy: u.userId, expiresAt }).catch(() => {});
-          await this.email.sendInvitationEmail(inv.email, token, org?.name ?? "Your Organization").catch(() => {});
+          const token =
+            randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+          await this.db
+            .insert(invitations)
+            .values({
+              id: invitationId,
+              email: inv.email,
+              token,
+              orgId,
+              role: inv.role,
+              invitedBy: u.userId,
+              expiresAt,
+            })
+            .catch(() => {});
+          await this.email
+            .sendInvitationEmail(
+              inv.email,
+              token,
+              org?.name ?? "Your Organization",
+            )
+            .catch(() => {});
         }),
       );
     }
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
 
-    this.audit.log({ action: "org.setup.completed", userId: u.userId, orgId, targetId: orgId, targetType: "organization" });
+    this.audit.log({
+      action: "org.setup.completed",
+      userId: u.userId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+    });
 
     return { success: true };
   }
