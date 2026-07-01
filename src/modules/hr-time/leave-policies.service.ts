@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { db } from "../../db";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
 import { leavePolicies } from "../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -24,8 +25,10 @@ export type UpdateLeavePolicyInput = Partial<CreateLeavePolicyInput>;
 
 @Injectable()
 export class LeavePoliciesService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
   async list(orgId: string) {
-    return db
+    return this.db
       .select()
       .from(leavePolicies)
       .where(eq(leavePolicies.orgId, orgId))
@@ -34,7 +37,7 @@ export class LeavePoliciesService {
   }
 
   async create(orgId: string, data: CreateLeavePolicyInput) {
-    const [policy] = await db
+    const [policy] = await this.db
       .insert(leavePolicies)
       .values({
         orgId,
@@ -58,7 +61,7 @@ export class LeavePoliciesService {
   }
 
   async update(orgId: string, id: number, data: UpdateLeavePolicyInput) {
-    const [policy] = await db
+    const [policy] = await this.db
       .update(leavePolicies)
       .set(data)
       .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)))
@@ -68,7 +71,7 @@ export class LeavePoliciesService {
   }
 
   async remove(orgId: string, id: number) {
-    await db
+    await this.db
       .update(leavePolicies)
       .set({ isActive: false })
       .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));

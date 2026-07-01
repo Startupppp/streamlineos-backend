@@ -3,6 +3,7 @@ import { appUrl } from "./app-url";
 import { type EmailAttachment } from "./email.provider";
 import {
   getVerificationEmailTemplate,
+  getMagicLinkEmailTemplate,
   getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
   getPasswordChangeConfirmationEmailTemplate,
@@ -283,7 +284,7 @@ export abstract class EmailSendersBase extends EmailBase {
     return this.sendEmail({
       to: email,
       subject: "Your StreamlineOS sign-in link",
-      html: `<p>Click the link below to sign in to StreamlineOS. This link expires in 1 hour and can only be used once.</p><p><a href="${magicLink}">${magicLink}</a></p>`,
+      html: getMagicLinkEmailTemplate(magicLink),
     });
   }
 }
