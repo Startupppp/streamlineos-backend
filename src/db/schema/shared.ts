@@ -276,24 +276,6 @@ export const eventAttendeesRelations = relations(eventAttendees, ({ one }) => ({
   user: one(users, { fields: [eventAttendees.userId], references: [users.id] }),
 }));
 
-export const announcements = pgTable("announcements", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  authorId: text("author_id").notNull().references(() => users.id),
-  content: text("content").notNull(),
-  isPinned: boolean("is_pinned").notNull().default(false),
-  expiresAt: timestamp("expires_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => [
-  index("idx_announcements_org").on(table.orgId, table.expiresAt),
-]);
-
-export const announcementsRelations = relations(announcements, ({ one }) => ({
-  organization: one(organizations, { fields: [announcements.orgId], references: [organizations.id] }),
-  author: one(users, { fields: [announcements.authorId], references: [users.id] }),
-}));
-
-
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

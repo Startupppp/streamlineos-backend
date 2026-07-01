@@ -66,9 +66,11 @@ export class DashboardAnnouncementsService {
       .values({
         orgId,
         authorId,
+        title: input.content.trim().slice(0, 120),
         content: input.content,
         isPinned: input.isPinned ?? false,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+        status: "PUBLISHED",
       })
       .returning();
 

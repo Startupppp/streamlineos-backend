@@ -14,7 +14,21 @@ async function bootstrap(): Promise<void> {
     rawBody: true,
   });
   app.use(helmet());
-  app.enableCors({ origin: config.corsOrigins, credentials: true });
+  const isLocalDevOrigin = (origin: string): boolean =>
+    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+  app.enableCors({
+    origin:
+      config.NODE_ENV === "development"
+        ? (origin, callback) => {
+            if (!origin || isLocalDevOrigin(origin) || config.corsOrigins.includes(origin)) {
+              callback(null, true);
+            } else {
+              callback(null, false);
+            }
+          }
+        : config.corsOrigins,
+    credentials: true,
+  });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
   app.enableShutdownHooks();

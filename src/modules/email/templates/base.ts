@@ -18,202 +18,220 @@ export interface EmailTemplateProps {
 }
 
 export function getEmailTemplate({ title, preheader, content }: EmailTemplateProps): string {
-  return `
-<!DOCTYPE html>
-<html lang="en">
+  const preheaderText = preheader
+    ? `<div style="display:none;font-size:1px;color:#EEF3FB;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="x-apple-disable-message-reformatting">
-  ${preheader ? `<meta name="description" content="${preheader}">` : ''}
   <title>${title}</title>
+  <!--[if mso]>
+  <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+  <![endif]-->
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap');
+
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
 
     body {
       margin: 0;
       padding: 0;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-      background-color: #f6f9fc;
+      background-color: #EEF3FB;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
-    .email-wrapper {
-      width: 100%;
-      background-color: #f6f9fc;
-      padding: 40px 0;
-    }
-
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-    }
-
-    .email-header {
-      background: linear-gradient(135deg, #0f2b7f 0%, #1e40af 100%);
-      padding: 40px 48px;
-      text-align: center;
-    }
-
-    .logo {
-      width: 180px;
-      height: auto;
-      margin-bottom: 16px;
-    }
-
-    .email-body {
-      padding: 48px;
-      color: #334155;
-      line-height: 1.6;
-    }
-
     .email-title {
-      font-size: 24px;
+      font-family: 'Sora', -apple-system, 'Segoe UI', Arial, sans-serif;
+      font-size: 30px;
       font-weight: 700;
-      color: #0f172a;
-      margin: 0 0 24px 0;
-      line-height: 1.3;
+      color: #0b1220;
+      letter-spacing: -0.025em;
+      line-height: 1.18;
+      margin: 0 0 14px 0;
     }
 
     .email-text {
+      font-family: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
       font-size: 16px;
-      color: #475569;
-      margin: 0 0 16px 0;
-      line-height: 1.6;
+      line-height: 1.7;
+      color: #4A5568;
+      margin: 0 0 20px 0;
+    }
+
+    .email-label {
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: #94A3B8;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 0 8px 0;
     }
 
     .email-button {
-      display: inline-block;
-      padding: 14px 32px;
-      background: linear-gradient(135deg, #0f2b7f 0%, #1e40af 100%);
+      display: block;
+      width: 100%;
+      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
       color: #ffffff !important;
       text-decoration: none;
-      border-radius: 8px;
+      font-family: 'Sora', -apple-system, 'Segoe UI', Arial, sans-serif;
+      font-size: 15px;
       font-weight: 600;
-      font-size: 16px;
-      margin: 24px 0;
-      transition: transform 0.2s;
+      letter-spacing: 0.02em;
+      padding: 16px 32px;
+      border-radius: 8px;
+      text-align: center;
+      border: 2px solid #1e40af;
+      margin: 28px 0;
+      box-sizing: border-box;
     }
 
-    .email-button:hover {
-      transform: translateY(-2px);
+    .security-notice {
+      border-left: 4px solid #06b6d4;
+      padding: 14px 18px;
+      background: rgba(6, 182, 212, 0.04);
+      border-radius: 0 6px 6px 0;
+      margin: 24px 0;
+    }
+
+    .security-text {
+      font-family: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: #475569;
+      margin: 0;
     }
 
     .credential-box {
-      background-color: #f8fafc;
-      border-left: 4px solid #0f2b7f;
-      padding: 20px;
-      border-radius: 8px;
+      background-color: #F7F9FF;
+      border-left: 4px solid #3b82f6;
+      padding: 18px 20px;
+      border-radius: 0 8px 8px 0;
       margin: 24px 0;
     }
 
     .credential-item {
       margin: 8px 0;
-      font-size: 15px;
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      font-size: 14px;
+      color: #4A5568;
     }
 
     .credential-label {
       font-weight: 600;
-      color: #0f172a;
+      color: #0b1220;
     }
 
     .credential-value {
-      color: #0f2b7f;
-      font-family: 'Monaco', 'Courier New', monospace;
+      color: #1e40af;
+      font-family: 'Courier New', Courier, monospace;
       background-color: #ffffff;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 4px;
       display: inline-block;
       margin-left: 8px;
+      font-size: 13px;
     }
 
     .divider {
       height: 1px;
-      background-color: #e2e8f0;
-      margin: 32px 0;
+      background-color: #E8E8E8;
+      margin: 28px 0;
+      border: none;
     }
 
-    .email-footer {
-      background-color: #f8fafc;
-      padding: 32px 48px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
+    .fallback-url {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      color: #64748B;
+      word-break: break-all;
+      line-height: 1.5;
+      display: block;
     }
 
-    .footer-text {
-      font-size: 14px;
-      color: #64748b;
-      margin: 8px 0;
-    }
-
-    .footer-link {
-      color: #0f2b7f;
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .security-notice {
-      background-color: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 16px;
-      border-radius: 8px;
-      margin: 24px 0;
-    }
-
-    .security-text {
-      font-size: 14px;
-      color: #92400e;
-      margin: 0;
-    }
-
-    @media only screen and (max-width: 600px) {
-      .email-body, .email-header, .email-footer {
-        padding: 32px 24px !important;
-      }
-
-      .email-title {
-        font-size: 20px;
-      }
-
-      .email-text {
-        font-size: 15px;
-      }
+    @media only screen and (max-width: 640px) {
+      .card-body { padding: 28px 24px 24px !important; }
+      .email-footer { padding: 16px 24px 28px !important; }
+      .email-title { font-size: 24px !important; }
     }
   </style>
 </head>
 <body>
-  <div class="email-wrapper">
-    <div class="email-container">
-      <div class="email-header">
-        <h1 style="color: #ffffff; font-size: 28px; font-weight: 700; margin: 0;">
-          StreamlineOS
-        </h1>
-      </div>
+${preheaderText}
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#EEF3FB;">
+  <tr>
+    <td style="padding:48px 20px;" align="center">
 
-      <div class="email-body">
-        ${content}
-      </div>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(14,30,64,0.08);overflow:hidden;">
 
-      <div class="email-footer">
-        <p class="footer-text">
-          <strong>StreamlineOS</strong><br>
-          Enterprise Resource Management System
-        </p>
-        <p class="footer-text">
-          Need help? Contact us at <a href="mailto:support@streamlineos.app" class="footer-link">support@streamlineos.app</a>
-        </p>
-        <p class="footer-text" style="margin-top: 16px; font-size: 12px; color: #94a3b8;">
-          This is an automated email. Please do not reply to this message.
-        </p>
-      </div>
-    </div>
-  </div>
+        <!-- Top accent stripe -->
+        <tr>
+          <td style="padding:0;font-size:0;line-height:0;">
+            <!--[if mso]>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600"><tr>
+            <td bgcolor="#3b82f6" height="4" style="font-size:0;line-height:0;">&nbsp;</td>
+            </tr></table>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <div style="height:4px;background:linear-gradient(90deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);font-size:0;line-height:0;">&nbsp;</div>
+            <!--<![endif]-->
+          </td>
+        </tr>
+
+        <!-- Card body -->
+        <tr>
+          <td style="padding:40px 48px 32px;" class="card-body">
+
+            <!-- Logo lockup -->
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:36px;">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="${appUrl}/logo-email.svg" alt="StreamlineOS" width="48" height="48" style="display:block;border:0;width:48px;height:48px;border-radius:10px;" border="0">
+                </td>
+                <td style="vertical-align:middle;padding-left:10px;">
+                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:16px;font-weight:600;color:#0b1220;letter-spacing:-0.02em;">StreamlineOS</span>
+                </td>
+              </tr>
+            </table>
+
+            ${content}
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+              <tr><td height="1" bgcolor="#E8E8E8" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+              <tr>
+                <td style="padding:20px 48px 28px;text-align:center;" class="email-footer">
+                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;font-weight:600;color:#64748B;margin:0 0 4px 0;">StreamlineOS</p>
+                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0 0 6px 0;">Enterprise Resource Management &nbsp;·&nbsp; <a href="mailto:support@streamlineos.app" style="color:#94A3B8;text-decoration:underline;">support@streamlineos.app</a></p>
+                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0;">
+                    <a href="https://streamlineos.app/unsubscribe" style="color:#94A3B8;text-decoration:underline;">Unsubscribe</a>
+                    &nbsp;·&nbsp;
+                    <a href="https://streamlineos.app/privacy" style="color:#94A3B8;text-decoration:underline;">Privacy Policy</a>
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
 </body>
-</html>
-  `;
+</html>`;
 }
