@@ -1,9 +1,15 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { customStates, projectMembers, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { AddMemberInput, CreateLabelInput, CreateStateInput } from "./dto/projects.schemas";
+import type {
+  AddMemberInput,
+  CreateLabelInput,
+  CreateStateInput,
+  UpdateLabelInput,
+  UpdateCustomStateInput,
+} from "./dto/projects.schemas";
 
 @Injectable()
 export class ProjectsMembersService {
@@ -114,5 +120,43 @@ export class ProjectsMembersService {
       .values({ orgId, name: body.name, color: body.color ?? "#3B82F6" })
       .returning();
     return label;
+  }
+
+  async updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {
+    const [updated] = await this.db
+      .update(ticketLabels)
+      .set(data)
+      .where(and(eq(ticketLabels.id, labelId), eq(ticketLabels.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Label not found");
+    return updated;
+  }
+
+  async deleteLabel(orgId: string, labelId: number) {
+    const [deleted] = await this.db
+      .delete(ticketLabels)
+      .where(and(eq(ticketLabels.id, labelId), eq(ticketLabels.orgId, orgId)))
+      .returning();
+    if (!deleted) throw new NotFoundException("Label not found");
+    return { success: true };
+  }
+
+  async updateCustomState(orgId: string, stateId: number, data: UpdateCustomStateInput) {
+    const [updated] = await this.db
+      .update(customStates)
+      .set(data)
+      .where(and(eq(customStates.id, stateId), eq(customStates.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("State not found");
+    return updated;
+  }
+
+  async deleteCustomState(orgId: string, stateId: number) {
+    const [deleted] = await this.db
+      .delete(customStates)
+      .where(and(eq(customStates.id, stateId), eq(customStates.orgId, orgId)))
+      .returning();
+    if (!deleted) throw new NotFoundException("State not found");
+    return { success: true };
   }
 }

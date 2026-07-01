@@ -67,9 +67,22 @@ export const createStateSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 
+export const updateCustomStateSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  group: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]).optional(),
+  sequence: z.number().int().min(0).optional(),
+  isDefault: z.boolean().optional(),
+});
+
 export const createLabelSchema = z.object({
   name: z.string().min(1, "Label name is required"),
   color: z.string().optional(),
+});
+
+export const updateLabelSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
 export const ticketsListQuerySchema = z.object({
@@ -273,6 +286,8 @@ export const updateChangelogSchema = z.object({
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
 });
 
+export type UpdateLabelInput = z.infer<typeof updateLabelSchema>;
+export type UpdateCustomStateInput = z.infer<typeof updateCustomStateSchema>;
 export type ListProjectsInput = z.infer<typeof listProjectsSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

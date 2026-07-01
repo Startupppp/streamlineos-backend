@@ -80,6 +80,22 @@ export class ProjectsReportsController {
     return this.reports.velocity(u.orgId, projectId);
   }
 
+  @Get(":projectId/reports/cycle-time")
+  getCycleTime(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getCycleTimeReport(u.orgId, projectId);
+  }
+
+  @Get(":projectId/reports/lead-time")
+  getLeadTime(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getLeadTimeReport(u.orgId, projectId);
+  }
+
   @Post(":projectId/reports/snapshot")
   @HttpCode(200)
   @RequirePermission("projects:read")

@@ -23,16 +23,22 @@ import {
   addMemberSchema,
   createLabelSchema,
   createProjectSchema,
+  createStateSchema,
   fromDealSchema,
   listProjectsSchema,
   removeMemberSchema,
+  updateCustomStateSchema,
+  updateLabelSchema,
   updateProjectSchema,
   type AddMemberInput,
   type CreateLabelInput,
   type CreateProjectInput,
+  type CreateStateInput,
   type FromDealInput,
   type ListProjectsInput,
   type RemoveMemberInput,
+  type UpdateCustomStateInput,
+  type UpdateLabelInput,
   type UpdateProjectInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -92,6 +98,28 @@ export class ProjectsController {
     return this.members.createLabel(u.orgId, body);
   }
 
+  @Patch("labels/:labelId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
+  updateLabel(
+    @Param("labelId", ParseIntPipe) labelId: number,
+    @Body(new ZodValidationPipe(updateLabelSchema)) body: UpdateLabelInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.updateLabel(u.orgId, labelId, body);
+  }
+
+  @Delete("labels/:labelId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
+  @HttpCode(204)
+  deleteLabel(
+    @Param("labelId", ParseIntPipe) labelId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.deleteLabel(u.orgId, labelId);
+  }
+
   @Get(":projectId/members")
   listMembers(@Param("projectId", ParseIntPipe) projectId: number) {
     return this.members.listMembers(projectId);
@@ -124,6 +152,42 @@ export class ProjectsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.listCustomStates(u.orgId, projectId);
+  }
+
+  @Post(":projectId/custom-states")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
+  @HttpCode(201)
+  createCustomState(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body(new ZodValidationPipe(createStateSchema)) body: CreateStateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.createCustomState(u.orgId, projectId, body);
+  }
+
+  @Patch(":projectId/custom-states/:stateId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
+  updateCustomState(
+    @Param("projectId", ParseIntPipe) _projectId: number,
+    @Param("stateId", ParseIntPipe) stateId: number,
+    @Body(new ZodValidationPipe(updateCustomStateSchema)) body: UpdateCustomStateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.updateCustomState(u.orgId, stateId, body);
+  }
+
+  @Delete(":projectId/custom-states/:stateId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("projects:manage")
+  @HttpCode(204)
+  deleteCustomState(
+    @Param("projectId", ParseIntPipe) _projectId: number,
+    @Param("stateId", ParseIntPipe) stateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.deleteCustomState(u.orgId, stateId);
   }
 
   @Get(":projectId/labels")

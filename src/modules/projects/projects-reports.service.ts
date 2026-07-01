@@ -403,6 +403,52 @@ export class ProjectsReportsService {
     return { captured: values.length };
   }
 
+  async getCycleTimeReport(orgId: string, projectId: number) {
+    await this.requireProject(orgId, projectId);
+
+    return this.db
+      .select({
+        week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+        avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+          eq(tickets.status, "DONE"),
+          gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
+        ),
+      )
+      .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
+      .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`);
+  }
+
+  async getLeadTimeReport(orgId: string, projectId: number) {
+    await this.requireProject(orgId, projectId);
+
+    return this.db
+      .select({
+        week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+        avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+        p50Days: sql<number>`ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+        p90Days: sql<number>`ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+          eq(tickets.status, "DONE"),
+          gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
+        ),
+      )
+      .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
+      .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`);
+  }
+
   async criticalPath(orgId: string, projectId: number) {
     await this.requireProject(orgId, projectId);
 
