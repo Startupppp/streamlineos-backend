@@ -1,6 +1,6 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
-import { attendance, departments, organizationMembers, organizations, users } from "../../db/schema";
+import { attendance, departments, organizationMembers, organizations, orgHolidays, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
 import type { AttendanceEmailReportInput, CheckInInput } from "./dto/attendance.schemas";
 import { resolveAttendanceScope } from "./attendance-scope";
+import { randomUUID } from "node:crypto";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
@@ -496,6 +497,39 @@ export class AttendanceService {
     result.sort((a, b) => order[a.status] - order[b.status]);
 
     return result;
+  }
+
+  async listHolidays(orgId: string) {
+    return this.db
+      .select()
+      .from(orgHolidays)
+      .where(eq(orgHolidays.orgId, orgId))
+      .orderBy(asc(orgHolidays.date))
+      .limit(200);
+  }
+
+  async createHoliday(orgId: string, createdBy: string, data: { name: string; date: string; recurring?: boolean }) {
+    const [holiday] = await this.db
+      .insert(orgHolidays)
+      .values({ id: randomUUID(), orgId, createdBy, name: data.name, date: data.date, recurring: data.recurring ?? false })
+      .returning();
+    return holiday;
+  }
+
+  async updateHoliday(orgId: string, id: string, data: { name?: string; date?: string; recurring?: boolean }) {
+    const [holiday] = await this.db
+      .update(orgHolidays)
+      .set(data)
+      .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)))
+      .returning();
+    if (!holiday) throw new NotFoundException("Holiday not found");
+    return holiday;
+  }
+
+  async deleteHoliday(orgId: string, id: string) {
+    await this.db
+      .delete(orgHolidays)
+      .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)));
   }
 
   async emailReport(u: CurrentUserContext, input: AttendanceEmailReportInput): Promise<{ sent: number }> {

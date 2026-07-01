@@ -11,6 +11,7 @@ import { RostersController } from "./rosters.controller";
 import { OvertimeController } from "./overtime.controller";
 import { GeofencingController } from "./geofencing.controller";
 import { BiometricController } from "./biometric.controller";
+import { LeavePoliciesController } from "./leave-policies.controller";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesPageService } from "./leaves-page.service";
@@ -22,6 +23,7 @@ import { RostersService } from "./rosters.service";
 import { OvertimeService } from "./overtime.service";
 import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
+import { LeavePoliciesService } from "./leave-policies.service";
 
 @Module({
   imports: [AutomationModule, WebhooksModule, NotificationsModule],
@@ -36,6 +38,7 @@ import { BiometricService } from "./biometric.service";
     OvertimeController,
     GeofencingController,
     BiometricController,
+    LeavePoliciesController,
   ],
   providers: [
     LeavesService,
@@ -49,6 +52,7 @@ import { BiometricService } from "./biometric.service";
     OvertimeService,
     GeofencingService,
     BiometricService,
+    LeavePoliciesService,
   ],
 })
 export class HrTimeModule {}

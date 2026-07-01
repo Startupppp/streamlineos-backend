@@ -18,3 +18,5 @@ export * from "./hr/feedback";
 export * from "./hr/travel";
 export * from "./hr/career";
 export * from "./hr/signatures";
+export * from "./hr/leave-policies";
+export * from "./hr/announcements";

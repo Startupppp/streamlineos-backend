@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -19,6 +19,14 @@ import {
   type MonthlyQuery,
 } from "./dto/attendance.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+
+interface HolidayCreateBody {
+  name: string;
+  date: string;
+  recurring?: boolean;
+}
+
+type HolidayUpdateBody = Partial<HolidayCreateBody>;
 
 @RequireModule("hr")
 @Controller("hr/attendance")
@@ -90,5 +98,29 @@ export class AttendanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.attendance.emailReport(u, body);
+  }
+
+  @Get("holidays")
+  listHolidays(@CurrentUser() u: CurrentUserContext) {
+    return this.attendance.listHolidays(u.orgId);
+  }
+
+  @Post("holidays")
+  createHoliday(@CurrentUser() u: CurrentUserContext, @Body() body: HolidayCreateBody) {
+    return this.attendance.createHoliday(u.orgId, u.userId, body);
+  }
+
+  @Patch("holidays/:id")
+  updateHoliday(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("id") id: string,
+    @Body() body: HolidayUpdateBody,
+  ) {
+    return this.attendance.updateHoliday(u.orgId, id, body);
+  }
+
+  @Delete("holidays/:id")
+  deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("id") id: string) {
+    return this.attendance.deleteHoliday(u.orgId, id);
   }
 }
