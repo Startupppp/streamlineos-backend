@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, foreignKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, foreignKey, index, uniqueIndex, jsonb, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   ticketTypeEnum,
@@ -228,4 +228,33 @@ export const releaseTickets = pgTable("release_tickets", {
 }, (table) => [
   uniqueIndex("uniq_release_tickets").on(table.releaseId, table.ticketId),
   index("idx_release_tickets_release").on(table.releaseId),
+]);
+
+export const projectWebhooks = pgTable("project_webhooks", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  events: text("events").array().notNull().default([]),
+  secret: text("secret"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_project_webhooks_project_id").on(t.projectId),
+  index("idx_project_webhooks_org_id").on(t.orgId),
+]);
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: serial("id").primaryKey(),
+  webhookId: integer("webhook_id").notNull().references(() => projectWebhooks.id, { onDelete: "cascade" }),
+  event: varchar("event", { length: 100 }).notNull(),
+  payload: jsonb("payload"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  responseCode: integer("response_code"),
+  responseBody: text("response_body"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
+  index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
 ]);

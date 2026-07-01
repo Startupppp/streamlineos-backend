@@ -26,6 +26,8 @@ import {
   ticketCustomFieldValues,
   projectReleases,
   releaseTickets,
+  projectWebhooks,
+  webhookDeliveries,
 } from "./tasks";
 import {
   projectStatuses,
@@ -213,4 +215,13 @@ export const releaseTicketsRelations = relations(releaseTickets, ({ one }) => ({
     fields: [releaseTickets.ticketId],
     references: [tickets.id],
   }),
+}));
+
+export const projectWebhooksRelations = relations(projectWebhooks, ({ one, many }) => ({
+  project: one(projects, { fields: [projectWebhooks.projectId], references: [projects.id] }),
+  deliveries: many(webhookDeliveries),
+}));
+
+export const webhookDeliveriesRelations = relations(webhookDeliveries, ({ one }) => ({
+  webhook: one(projectWebhooks, { fields: [webhookDeliveries.webhookId], references: [projectWebhooks.id] }),
 }));

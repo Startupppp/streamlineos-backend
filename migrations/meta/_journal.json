@@ -43,6 +43,13 @@
       "when": 1782839345954,
       "tag": "0005_complex_firebird",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782885577423,
+      "tag": "0006_first_human_robot",
+      "breakpoints": true
     }
   ]
 }
