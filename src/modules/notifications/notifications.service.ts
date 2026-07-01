@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, sql, isNull, isNotNull, inArray, lt, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull, inArray, lt, gte, lte, ilike, or } from "drizzle-orm";
 import { notifications, notificationAuditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -55,7 +55,7 @@ export class NotificationsService {
   list(orgId: string, userId: string, filters: ListInput) {
     const limit = Math.min(filters.limit ?? 20, 100);
     const section = filters.unreadOnly ? "UNREAD" : (filters.section ?? "ALL");
-    const key = `notifications:list:${userId}:${orgId}:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}`;
+    const key = `notifications:list:${userId}:${orgId}:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}:${filters.search ?? ""}`;
     return this.cache.cached(
       key,
       () => this.queryNotifications(orgId, userId, { ...filters, limit, section }),
@@ -89,12 +89,20 @@ export class NotificationsService {
       case "PINNED":
         conditions.push(eq(notifications.pinned, true));
         break;
+      case "APPROVALS":
+        conditions.push(isNull(notifications.archivedAt));
+        conditions.push(eq(notifications.category, "WORKFLOW"));
+        break;
+      case "BROADCASTS":
+        conditions.push(isNull(notifications.archivedAt));
+        conditions.push(eq(notifications.sourceModule, "broadcast"));
+        break;
       default:
         conditions.push(isNull(notifications.archivedAt));
         break;
     }
 
-    if (filters.category && filters.section !== "SYSTEM") {
+    if (filters.category && filters.section !== "SYSTEM" && filters.section !== "APPROVALS") {
       conditions.push(eq(notifications.category, filters.category));
     }
     if (filters.priority) {
@@ -102,6 +110,11 @@ export class NotificationsService {
     }
     if (filters.sourceModule) {
       conditions.push(eq(notifications.sourceModule, filters.sourceModule));
+    }
+    if (filters.search) {
+      const term = `%${filters.search}%`;
+      const searchCondition = or(ilike(notifications.title, term), ilike(notifications.message, term));
+      if (searchCondition) conditions.push(searchCondition);
     }
     if (filters.cursor) {
       conditions.push(lt(notifications.id, filters.cursor));
@@ -112,6 +125,40 @@ export class NotificationsService {
       orderBy: [desc(notifications.createdAt)],
       limit: filters.limit,
     });
+  }
+
+  async approve(orgId: string, userId: string, notificationId: number) {
+    await this.db
+      .update(notifications)
+      .set({ isRead: true, metadata: { approved: true, approvedAt: new Date().toISOString(), approvedBy: userId } })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId),
+          eq(notifications.orgId, orgId),
+          isNull(notifications.deletedAt),
+        ),
+      );
+    await this.audit(orgId, userId, "notification.approved", notificationId);
+    await this.invalidateCache(userId, orgId);
+    return { success: true };
+  }
+
+  async reject(orgId: string, userId: string, notificationId: number) {
+    await this.db
+      .update(notifications)
+      .set({ isRead: true, metadata: { rejected: true, rejectedAt: new Date().toISOString(), rejectedBy: userId } })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId),
+          eq(notifications.orgId, orgId),
+          isNull(notifications.deletedAt),
+        ),
+      );
+    await this.audit(orgId, userId, "notification.rejected", notificationId);
+    await this.invalidateCache(userId, orgId);
+    return { success: true };
   }
 
   unreadCount(orgId: string, userId: string) {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, or } from "drizzle-orm";
 import { announcements, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -41,6 +41,7 @@ export class DashboardAnnouncementsService {
           .where(
             and(
               eq(announcements.orgId, orgId),
+              ne(announcements.status, "DRAFT"),
               or(isNull(announcements.expiresAt), gt(announcements.expiresAt, now)),
             ),
           )
@@ -66,9 +67,11 @@ export class DashboardAnnouncementsService {
       .values({
         orgId,
         authorId,
+        title: input.title,
         content: input.content,
         isPinned: input.isPinned ?? false,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+        status: "PUBLISHED",
       })
       .returning();
 

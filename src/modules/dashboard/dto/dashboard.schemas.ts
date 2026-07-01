@@ -6,6 +6,7 @@ export const myIssuesSchema = z.object({
 });
 
 export const createAnnouncementSchema = z.object({
+  title: z.string().min(1).max(200),
   content: z.string().min(1).max(2000),
   isPinned: z.boolean().optional(),
   expiresAt: z.string().datetime().optional(),

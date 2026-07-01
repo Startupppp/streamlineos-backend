@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const SECTIONS = ["ALL", "UNREAD", "READ", "ARCHIVED", "SYSTEM", "PINNED"] as const;
+const SECTIONS = ["ALL", "UNREAD", "READ", "MENTIONS", "ASSIGNED_TO_ME", "APPROVALS", "BROADCASTS", "ARCHIVED", "SYSTEM", "PINNED"] as const;
 const CATEGORIES = ["SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM"] as const;
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
 
@@ -9,6 +9,7 @@ export const listSchema = z.object({
   category: z.enum(CATEGORIES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   sourceModule: z.string().optional(),
+  search: z.string().min(1).max(200).optional(),
   limit: z.coerce.number().min(1).max(100).optional().default(20),
   cursor: z.coerce.number().optional(),
   unreadOnly: z

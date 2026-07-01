@@ -166,4 +166,20 @@ export class NotificationsController {
   ) {
     return this.notifications.snooze(u.orgId, u.userId, notificationId, body);
   }
+
+  @Post(":notificationId/approve")
+  approve(
+    @Param("notificationId", ParseIntPipe) notificationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.notifications.approve(u.orgId, u.userId, notificationId);
+  }
+
+  @Post(":notificationId/reject")
+  reject(
+    @Param("notificationId", ParseIntPipe) notificationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.notifications.reject(u.orgId, u.userId, notificationId);
+  }
 }
