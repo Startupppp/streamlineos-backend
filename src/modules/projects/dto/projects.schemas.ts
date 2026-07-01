@@ -91,6 +91,12 @@ export const ticketsListQuerySchema = z.object({
   search: z.string().optional(),
 });
 
+export const searchTicketsQuerySchema = z.object({
+  q: z.string().default(""),
+  limit: z.coerce.number().int().min(1).max(20).default(10),
+});
+export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
+
 export const createTicketSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),

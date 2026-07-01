@@ -26,6 +26,7 @@ import {
   commentSchema,
   createTicketSchema,
   reorderSchema,
+  searchTicketsQuerySchema,
   ticketsListQuerySchema,
   updateTicketSchema,
   type AddLabelInput,
@@ -36,6 +37,7 @@ import {
   type CommentInput,
   type CreateTicketInput,
   type ReorderInput,
+  type SearchTicketsQuery,
   type TicketsListQuery,
   type UpdateTicketInput,
 } from "./dto/projects.schemas";
@@ -59,6 +61,14 @@ export class ProjectsTicketsController {
     private readonly tickets: ProjectsTicketsService,
     private readonly subresources: ProjectsTicketSubresourcesService,
   ) {}
+
+  @Get("search/tickets")
+  searchTickets(
+    @Query(new ZodValidationPipe(searchTicketsQuerySchema)) query: SearchTicketsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
+  }
 
   @Get(":projectId/tickets")
   listTickets(

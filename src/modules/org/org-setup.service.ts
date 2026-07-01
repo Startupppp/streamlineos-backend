@@ -8,6 +8,7 @@ import {
   users,
   invitations,
   orgHolidays,
+  magicLinkTokens,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -16,8 +17,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { randomUUID } from "node:crypto";
-import { addDays } from "date-fns";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { addDays, addHours } from "date-fns";
 import { type SetupInput } from "./dto/org.schemas";
 
 @Injectable()
@@ -210,6 +211,14 @@ export class OrgSetupService {
       targetType: "organization",
     });
 
-    return { success: true, orgId };
+    const autoLoginToken = randomBytes(32).toString("hex");
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId: u.userId,
+      tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+      expiresAt: addHours(new Date(), 1),
+    });
+
+    return { success: true, orgId, autoLoginToken };
   }
 }

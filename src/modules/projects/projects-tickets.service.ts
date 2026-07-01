@@ -432,4 +432,45 @@ export class ProjectsTicketsService {
 
     return { success: true };
   }
+
+  async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {
+    const memberProjectIds = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, userId));
+
+    const ids = memberProjectIds.map((r) => r.projectId);
+    if (ids.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        priority: tickets.priority,
+        ticketNumber: tickets.ticketNumber,
+        projectId: tickets.projectId,
+        projectKey: projects.key,
+        projectName: projects.name,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          inArray(tickets.projectId, ids),
+          q.length > 0
+            ? or(
+                sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
+                sql`CAST(${tickets.ticketNumber} AS TEXT) ILIKE ${"%" + q + "%"}`,
+                sql`CONCAT(${projects.key}, '-', CAST(${tickets.ticketNumber} AS TEXT)) ILIKE ${"%" + q + "%"}`,
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(tickets.updatedAt))
+      .limit(limit);
+
+    return rows;
+  }
 }

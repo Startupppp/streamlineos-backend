@@ -212,41 +212,53 @@ export class ProjectsService {
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
     const projectKey = input.key ?? generateProjectKey(input.name);
 
-    const [project] = await this.db
-      .insert(projects)
-      .values({
-        orgId,
-        key: projectKey,
-        name: input.name,
-        description: input.description,
-        managerId: input.managerId,
-        clientId: input.clientId,
-        startDate: input.startDate ? new Date(input.startDate) : undefined,
-        endDate: input.endDate ? new Date(input.endDate) : undefined,
-        status: "ACTIVE",
-        settings: {
-          modules: input.modules ?? { sprints: true, epics: true, timeTracking: true, wiki: true },
-        },
-      })
-      .returning();
+    const project = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(projects)
+        .values({
+          orgId,
+          key: projectKey,
+          name: input.name,
+          description: input.description,
+          managerId: input.managerId,
+          clientId: input.clientId,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          status: "ACTIVE",
+          settings: {
+            modules: input.modules ?? { sprints: true, epics: true, timeTracking: true, wiki: true },
+          },
+        })
+        .returning();
 
-    await this.db.insert(projectStatuses).values(
-      DEFAULT_STATUSES.map((s) => ({
-        orgId,
-        projectId: project.id,
-        name: s.name,
-        order: s.order,
-        color: s.color,
-      })),
-    );
-
-    if (input.memberIds && input.memberIds.length > 0) {
-      await this.db.insert(projectMembers).values(
-        input.memberIds.map((userId) => ({ projectId: project.id, userId, role: "CONTRIBUTOR" })),
+      await tx.insert(projectStatuses).values(
+        DEFAULT_STATUSES.map((s) => ({
+          orgId,
+          projectId: created.id,
+          name: s.name,
+          order: s.order,
+          color: s.color,
+        })),
       );
 
+      const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
+      const memberRows = [
+        { projectId: created.id, userId: creatorUserId, role: "OWNER" as const },
+        ...additionalMembers.map((userId) => ({
+          projectId: created.id,
+          userId,
+          role: "CONTRIBUTOR" as const,
+        })),
+      ];
+      await tx.insert(projectMembers).values(memberRows);
+
+      return created;
+    });
+
+    const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
+    if (additionalMembers.length > 0) {
       void this.projectsEmail
-        .notifyProjectMembers(creatorUserId, input.memberIds, input.name, projectKey, project.id)
+        .notifyProjectMembers(creatorUserId, additionalMembers, input.name, projectKey, project.id)
         .catch(() => undefined);
     }
 

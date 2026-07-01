@@ -92,3 +92,11 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
 export type PinMessageInput = z.infer<typeof pinMessageSchema>;
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
+
+export const ticketStatusActionSchema = z.object({
+  channelId: z.number().int().positive(),
+  projectId: z.number().int().positive(),
+  ticketId: z.number().int().positive(),
+  nextStatus: z.enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]),
+});
+export type TicketStatusActionInput = z.infer<typeof ticketStatusActionSchema>;
