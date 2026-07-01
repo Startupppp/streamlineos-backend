@@ -148,6 +148,24 @@ async function sendViaSendgrid(options: EmailOptions): Promise<void> {
   logger.info("Email sent (sendgrid)", { to: recipients, subject: options.subject });
 }
 
+function providerStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const code = (error as { statusCode?: number }).statusCode;
+  return typeof code === "number" ? code : undefined;
+}
+
+async function sendWithProvider(provider: Provider, options: EmailOptions): Promise<void> {
+  if (provider === "resend") {
+    await sendViaResend(options);
+    return;
+  }
+  if (provider === "sendgrid") {
+    await sendViaSendgrid(options);
+    return;
+  }
+  throw new Error("No email provider configured");
+}
+
 export async function dispatchEmail(options: EmailOptions): Promise<void> {
   const recipients = normalizeRecipients(options.to);
   if (recipients.length === 0) {
@@ -160,21 +178,52 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
       subject: options.subject,
       hint: "Set EMAIL_PROVIDER + SENDGRID_API_KEY (or RESEND_API_KEY) in .env",
     });
-    return;
+    throw new Error("No email provider configured");
   }
+
+  const fallbackProvider: Provider | null =
+    activeProvider === "resend" && SENDGRID_API_KEY
+      ? "sendgrid"
+      : activeProvider === "sendgrid" && resend
+        ? "resend"
+        : null;
 
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      if (activeProvider === "resend") {
-        await sendViaResend(options);
-      } else {
-        await sendViaSendgrid(options);
-      }
+      await sendWithProvider(activeProvider, options);
       return;
     } catch (error) {
       lastError = error;
+      const status = providerStatusCode(error);
+      if (
+        fallbackProvider &&
+        status !== undefined &&
+        status >= 400 &&
+        status < 500
+      ) {
+        logger.warn("Email primary provider rejected send; trying fallback", {
+          primary: activeProvider,
+          fallback: fallbackProvider,
+          to: recipients,
+          subject: options.subject,
+          status,
+        });
+        try {
+          await sendWithProvider(fallbackProvider, options);
+          return;
+        } catch (fallbackError) {
+          lastError = fallbackError;
+          logger.error("Email fallback provider failed", {
+            fallback: fallbackProvider,
+            to: recipients,
+            subject: options.subject,
+            error: fallbackError,
+          });
+          throw fallbackError;
+        }
+      }
       if (!isTransientError(error)) {
         logger.error("Email send failed (non-retryable)", {
           provider: activeProvider,
