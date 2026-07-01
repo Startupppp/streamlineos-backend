@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
@@ -176,7 +177,13 @@ export class AuthService {
       token: verificationToken,
       expires: addHours(new Date(), 24),
     });
-    void this.email.sendVerificationEmail(normalizedEmail, verificationToken).catch(() => {});
+    try {
+      await this.email.sendVerificationEmail(normalizedEmail, verificationToken);
+    } catch {
+      throw new ServiceUnavailableException(
+        "Account created but we could not send the verification email. Try resend on the signup page.",
+      );
+    }
 
     this.audit.log({
       action: "user.registered",
@@ -498,7 +505,13 @@ export class AuthService {
       expires: addHours(new Date(), 24),
     });
 
-    void this.email.sendVerificationEmail(normalizedEmail, token).catch(() => {});
+    try {
+      await this.email.sendVerificationEmail(normalizedEmail, token);
+    } catch {
+      throw new ServiceUnavailableException(
+        "Could not send verification email. Check email configuration and try again.",
+      );
+    }
   }
 
   async getLoginHistory(
