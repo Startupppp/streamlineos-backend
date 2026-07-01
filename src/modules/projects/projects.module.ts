@@ -9,6 +9,7 @@ import { ProjectsRoadmapController } from "./projects-roadmap.controller";
 import { ProjectsCustomFieldsController } from "./projects-custom-fields.controller";
 import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsWebhooksController } from "./projects-webhooks.controller";
+import { ProjectsAutomationsController } from "./projects-automations.controller";
 import { ProjectsService } from "./projects.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
@@ -23,6 +24,7 @@ import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { ProjectsAutomationsService } from "./projects-automations.service";
 
 @Module({
   imports: [NotificationsModule],
@@ -35,6 +37,7 @@ import { ProjectsWebhooksService } from "./projects-webhooks.service";
     ProjectsCustomFieldsController,
     ProjectsReleasesController,
     ProjectsWebhooksController,
+    ProjectsAutomationsController,
     ProjectsController,
   ],
   providers: [
@@ -52,6 +55,7 @@ import { ProjectsWebhooksService } from "./projects-webhooks.service";
     ProjectsCustomFieldsService,
     ProjectsReleasesService,
     ProjectsWebhooksService,
+    ProjectsAutomationsService,
   ],
 })
 export class ProjectsModule {}

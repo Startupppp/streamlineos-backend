@@ -310,4 +310,24 @@ export class ProjectsTicketsController {
   ) {
     return this.tickets.deleteTicket(u.orgId, u.userId, ticketId, force === "true");
   }
+
+  @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")
+  @HttpCode(200)
+  addReaction(
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @Body() body: { emoji: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
+  @HttpCode(204)
+  removeReaction(
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @Param("emoji") emoji: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.removeReaction(commentId, u.userId, emoji);
+  }
 }

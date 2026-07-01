@@ -37,6 +37,14 @@ export const tickets = pgTable("tickets", {
   sequenceId: text("sequence_id"),
   estimate: integer("estimate"),
   completionPercentage: integer("completion_percentage").default(0).notNull(),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurrenceRule: jsonb("recurrence_rule").$type<{
+    frequency: "daily" | "weekly" | "monthly";
+    interval: number;
+    daysOfWeek?: number[];
+    endDate?: string | null;
+  }>(),
+  recurrenceParentId: integer("recurrence_parent_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
@@ -257,4 +265,40 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
 }, (t) => [
   index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
   index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
+]);
+
+export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
+  id: serial("id").primaryKey(),
+  commentId: integer("comment_id").notNull().references(() => ticketComments.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  orgId: text("org_id").notNull(),
+  emoji: varchar("emoji", { length: 20 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("uq_comment_reaction_user_emoji").on(t.commentId, t.userId, t.emoji),
+  index("idx_comment_reactions_comment_id").on(t.commentId),
+]);
+
+export const projectAutomations = pgTable("project_automations", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 200 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  triggerEvent: varchar("trigger_event", { length: 100 }).notNull(),
+  conditions: jsonb("conditions").$type<Array<{
+    field: string;
+    operator: "equals" | "not_equals" | "contains" | "is_empty" | "is_not_empty";
+    value?: string;
+  }>>().notNull().default([]),
+  actions: jsonb("actions").$type<Array<{
+    type: "set_status" | "set_assignee" | "set_priority" | "add_label" | "add_comment";
+    value: string;
+  }>>().notNull().default([]),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_project_automations_project_id").on(t.projectId),
+  index("idx_project_automations_org_id").on(t.orgId),
 ]);

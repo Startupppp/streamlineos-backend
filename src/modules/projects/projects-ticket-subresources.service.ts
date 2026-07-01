@@ -8,6 +8,7 @@ import {
   ticketAttachments,
   ticketChecklistItems,
   ticketChecklists,
+  ticketCommentReactions,
   ticketComments,
   ticketLabelMappings,
   tickets,
@@ -371,5 +372,33 @@ export class ProjectsTicketSubresourcesService {
       .from(gitTicketLinks)
       .where(and(eq(gitTicketLinks.ticketId, ticketId), eq(gitTicketLinks.orgId, orgId)))
       .orderBy(desc(gitTicketLinks.createdAt));
+  }
+
+  async addReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+    const [reaction] = await this.db
+      .insert(ticketCommentReactions)
+      .values({ commentId, userId, orgId, emoji })
+      .onConflictDoNothing()
+      .returning();
+    return reaction ?? { commentId, userId, emoji };
+  }
+
+  async removeReaction(commentId: number, userId: string, emoji: string) {
+    await this.db
+      .delete(ticketCommentReactions)
+      .where(
+        and(
+          eq(ticketCommentReactions.commentId, commentId),
+          eq(ticketCommentReactions.userId, userId),
+          eq(ticketCommentReactions.emoji, emoji),
+        ),
+      );
+  }
+
+  getCommentReactions(commentId: number) {
+    return this.db
+      .select()
+      .from(ticketCommentReactions)
+      .where(eq(ticketCommentReactions.commentId, commentId));
   }
 }

@@ -28,6 +28,8 @@ import {
   releaseTickets,
   projectWebhooks,
   webhookDeliveries,
+  ticketCommentReactions,
+  projectAutomations,
 } from "./tasks";
 import {
   projectStatuses,
@@ -224,4 +226,12 @@ export const projectWebhooksRelations = relations(projectWebhooks, ({ one, many 
 
 export const webhookDeliveriesRelations = relations(webhookDeliveries, ({ one }) => ({
   webhook: one(projectWebhooks, { fields: [webhookDeliveries.webhookId], references: [projectWebhooks.id] }),
+}));
+
+export const ticketCommentReactionsRelations = relations(ticketCommentReactions, ({ one }) => ({
+  comment: one(ticketComments, { fields: [ticketCommentReactions.commentId], references: [ticketComments.id] }),
+}));
+
+export const projectAutomationsRelations = relations(projectAutomations, ({ one }) => ({
+  project: one(projects, { fields: [projectAutomations.projectId], references: [projects.id] }),
 }));
