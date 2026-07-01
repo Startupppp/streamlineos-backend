@@ -96,6 +96,47 @@ export class WorkflowsController {
     return this.workflowsService.listAllSchedules(u.orgId);
   }
 
+  @Get("secrets")
+  @RequirePermission("workflows:secrets:manage")
+  listGlobalSecrets(@CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.listGlobalSecrets(u.orgId);
+  }
+
+  @Post("secrets")
+  @RequirePermission("workflows:secrets:manage")
+  createGlobalSecret(
+    @Body(new ZodValidationPipe(CreateSecretSchema)) body: CreateSecretDto,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.createGlobalSecret(u.orgId, body);
+  }
+
+  @Delete("secrets/:secretId")
+  @RequirePermission("workflows:secrets:manage")
+  @HttpCode(204)
+  deleteGlobalSecret(
+    @Param("secretId") secretId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.deleteGlobalSecret(u.orgId, secretId);
+  }
+
+  @Get("variables")
+  @RequirePermission("workflows:variables:manage")
+  listGlobalVariables(@CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.listGlobalVariables(u.orgId);
+  }
+
+  @Delete("variables/:variableId")
+  @RequirePermission("workflows:variables:manage")
+  @HttpCode(204)
+  deleteGlobalVariable(
+    @Param("variableId") variableId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.deleteGlobalVariable(u.orgId, variableId);
+  }
+
   @Get(":workflowId")
   @RequirePermission("workflows:workflows:view")
   getWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
@@ -133,6 +174,20 @@ export class WorkflowsController {
   @RequirePermission("workflows:workflows:create")
   duplicateWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.workflowsService.duplicateWorkflow(u.orgId, u.userId, workflowId);
+  }
+
+  @Post(":workflowId/disable")
+  @RequirePermission("workflows:workflows:update")
+  @HttpCode(200)
+  disableWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.disableWorkflow(u.orgId, u.userId, workflowId);
+  }
+
+  @Post(":workflowId/archive")
+  @RequirePermission("workflows:workflows:update")
+  @HttpCode(200)
+  archiveWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.archiveWorkflow(u.orgId, u.userId, workflowId);
   }
 
   @Post(":workflowId/trigger")

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, gte, sql, isNull } from "drizzle-orm";
+import { eq, and, gte, sql, isNull, isNotNull } from "drizzle-orm";
 import { notifications } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -27,7 +27,7 @@ export class NotificationAnalyticsService {
         total: sql<number>`count(*)::int`,
         read: sql<number>`count(*) filter (where ${notifications.isRead} = true)::int`,
         archived: sql<number>`count(*) filter (where ${notifications.archivedAt} is not null)::int`,
-        active: sql<number>`count(*) filter (where ${notifications.deletedAt} is null and ${notifications.archivedAt} is null)::int`,
+        delivered: sql<number>`count(*) filter (where ${notifications.archivedAt} is null)::int`,
       })
       .from(notifications)
       .where(
@@ -41,9 +41,11 @@ export class NotificationAnalyticsService {
     const total = Number(result?.total ?? 0);
     const read = Number(result?.read ?? 0);
     const archived = Number(result?.archived ?? 0);
+    const delivered = Number(result?.delivered ?? 0);
     const readRate = total > 0 ? Math.round((read / total) * 100) : 0;
+    const deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
 
-    return { total, read, archived, readRate, days };
+    return { total, read, archived, delivered, readRate, deliveryRate, days };
   }
 
   getByCategory(orgId: string, days = 30) {
@@ -76,6 +78,43 @@ export class NotificationAnalyticsService {
       category: r.category,
       total: Number(r.total),
       read: Number(r.read),
+      readRate: Number(r.total) > 0 ? Math.round((Number(r.read) / Number(r.total)) * 100) : 0,
+    }));
+  }
+
+  getByChannel(orgId: string, days = 30) {
+    const key = `notification-analytics:by-channel:${orgId}:${days}`;
+    return this.cache.cached(key, () => this.queryByChannel(orgId, days), CACHE_TTL.MEDIUM);
+  }
+
+  private async queryByChannel(orgId: string, days: number) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const rows = await this.db
+      .select({
+        channel: notifications.channel,
+        total: sql<number>`count(*)::int`,
+        read: sql<number>`count(*) filter (where ${notifications.isRead} = true)::int`,
+        archived: sql<number>`count(*) filter (where ${notifications.archivedAt} is not null)::int`,
+      })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.orgId, orgId),
+          gte(notifications.createdAt, since),
+          isNull(notifications.deletedAt),
+          isNotNull(notifications.channel),
+        ),
+      )
+      .groupBy(notifications.channel)
+      .orderBy(sql`count(*) desc`);
+
+    return rows.map((r) => ({
+      channel: r.channel,
+      total: Number(r.total),
+      read: Number(r.read),
+      archived: Number(r.archived),
       readRate: Number(r.total) > 0 ? Math.round((Number(r.read) / Number(r.total)) * 100) : 0,
     }));
   }

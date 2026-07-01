@@ -40,4 +40,12 @@ export class NotificationAnalyticsController {
   ) {
     return this.analytics.getByPriority(u.orgId, q.days);
   }
+
+  @Get("channels")
+  byChannel(
+    @Query(new ZodValidationPipe(daysSchema)) q: DaysInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.analytics.getByChannel(u.orgId, q.days);
+  }
 }

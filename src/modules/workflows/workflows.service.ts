@@ -8,6 +8,7 @@ import {
   workflowApprovals,
   workflowSchedules,
   workflowSecrets,
+  workflowVariables,
   workflowAuditLogs,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -286,17 +287,43 @@ export class WorkflowsService {
   async getApprovals(orgId: string, userId: string) {
     const data = await this.db
       .select({
-        approval: workflowApprovals,
-        step: workflowExecutionSteps,
-        execution: workflowExecutions,
+        id: workflowApprovals.id,
+        executionId: workflowApprovals.executionId,
+        stepId: workflowApprovals.stepId,
+        approverId: workflowApprovals.approverId,
+        status: workflowApprovals.status,
+        comment: workflowApprovals.comment,
+        approvedAt: workflowApprovals.approvedAt,
+        rejectedAt: workflowApprovals.rejectedAt,
+        expiresAt: workflowApprovals.expiresAt,
+        createdAt: workflowApprovals.createdAt,
+        workflowId: workflows.id,
+        workflowName: workflows.name,
       })
       .from(workflowApprovals)
       .innerJoin(workflowExecutionSteps, eq(workflowApprovals.stepId, workflowExecutionSteps.id))
       .innerJoin(workflowExecutions, eq(workflowApprovals.executionId, workflowExecutions.id))
-      .where(and(eq(workflowApprovals.approverId, userId), eq(workflowApprovals.status, "pending"), eq(workflowExecutions.orgId, orgId)))
+      .innerJoin(workflows, eq(workflowExecutions.workflowId, workflows.id))
+      .where(and(
+        eq(workflowApprovals.approverId, userId),
+        eq(workflowApprovals.status, "pending"),
+        eq(workflowExecutions.orgId, orgId),
+      ))
       .orderBy(desc(workflowApprovals.createdAt));
 
-    return data;
+    return data.map((row) => ({
+      id: row.id,
+      executionId: row.executionId,
+      stepId: row.stepId,
+      approverId: row.approverId,
+      status: row.status,
+      comment: row.comment,
+      approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+      rejectedAt: row.rejectedAt ? row.rejectedAt.toISOString() : null,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      createdAt: row.createdAt.toISOString(),
+      workflow: { id: row.workflowId, name: row.workflowName },
+    }));
   }
 
   async handleApproval(orgId: string, userId: string, approvalId: string, dto: ApprovalActionDto) {
@@ -524,5 +551,95 @@ export class WorkflowsService {
     if (!existing) throw new NotFoundException("Secret not found");
 
     await this.db.delete(workflowSecrets).where(eq(workflowSecrets.id, secretId));
+  }
+
+  async disableWorkflow(orgId: string, userId: string, workflowId: string) {
+    const [updated] = await this.db
+      .update(workflows)
+      .set({ status: "disabled", updatedAt: new Date() })
+      .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Workflow not found");
+    await this.db.insert(workflowAuditLogs).values({ orgId, workflowId, actorId: userId, event: "disabled" });
+    return updated;
+  }
+
+  async archiveWorkflow(orgId: string, userId: string, workflowId: string) {
+    const [updated] = await this.db
+      .update(workflows)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Workflow not found");
+    await this.db.insert(workflowAuditLogs).values({ orgId, workflowId, actorId: userId, event: "archived" });
+    return updated;
+  }
+
+  async listGlobalSecrets(orgId: string) {
+    return this.db
+      .select({
+        id: workflowSecrets.id,
+        name: workflowSecrets.name,
+        description: workflowSecrets.description,
+        createdAt: workflowSecrets.createdAt,
+        updatedAt: workflowSecrets.updatedAt,
+      })
+      .from(workflowSecrets)
+      .where(eq(workflowSecrets.orgId, orgId))
+      .orderBy(desc(workflowSecrets.createdAt));
+  }
+
+  async createGlobalSecret(orgId: string, dto: CreateSecretDto) {
+    const [secret] = await this.db
+      .insert(workflowSecrets)
+      .values({ orgId, name: dto.name, encryptedValue: dto.value, description: dto.description })
+      .returning({
+        id: workflowSecrets.id,
+        name: workflowSecrets.name,
+        description: workflowSecrets.description,
+        createdAt: workflowSecrets.createdAt,
+        updatedAt: workflowSecrets.updatedAt,
+      });
+    return secret;
+  }
+
+  async deleteGlobalSecret(orgId: string, secretId: string) {
+    const existing = await this.db.query.workflowSecrets.findFirst({
+      where: and(eq(workflowSecrets.id, secretId), eq(workflowSecrets.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!existing) throw new NotFoundException("Secret not found");
+    await this.db.delete(workflowSecrets).where(eq(workflowSecrets.id, secretId));
+  }
+
+  async listGlobalVariables(orgId: string) {
+    return this.db
+      .select({
+        id: workflowVariables.id,
+        key: workflowVariables.key,
+        valueType: workflowVariables.valueType,
+        defaultValue: workflowVariables.defaultValue,
+        workflowVersionId: workflowVariables.workflowVersionId,
+        createdAt: workflowVariables.createdAt,
+        workflowId: workflows.id,
+        workflowName: workflows.name,
+      })
+      .from(workflowVariables)
+      .innerJoin(workflowVersions, eq(workflowVariables.workflowVersionId, workflowVersions.id))
+      .innerJoin(workflows, eq(workflowVersions.workflowId, workflows.id))
+      .where(eq(workflows.orgId, orgId))
+      .orderBy(desc(workflowVariables.createdAt));
+  }
+
+  async deleteGlobalVariable(orgId: string, variableId: string) {
+    const existing = await this.db
+      .select({ id: workflowVariables.id })
+      .from(workflowVariables)
+      .innerJoin(workflowVersions, eq(workflowVariables.workflowVersionId, workflowVersions.id))
+      .innerJoin(workflows, eq(workflowVersions.workflowId, workflows.id))
+      .where(and(eq(workflowVariables.id, variableId), eq(workflows.orgId, orgId)))
+      .limit(1);
+    if (!existing.length) throw new NotFoundException("Variable not found");
+    await this.db.delete(workflowVariables).where(eq(workflowVariables.id, variableId));
   }
 }
