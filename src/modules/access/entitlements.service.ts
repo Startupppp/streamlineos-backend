@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
-import { orgModules } from "../../db/schema";
+import { organizations, orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -26,6 +26,16 @@ const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
   accounting: "FINANCE",
   support: "HELPDESK",
 };
+
+const CORE_MODULE_KEYS: ReadonlySet<string> = new Set(
+  MODULE_CATALOG.filter((k) => !MODULE_KEY_TO_ORG_MODULE[k]),
+);
+
+export interface ModuleStatus {
+  moduleKey: string;
+  enabled: boolean;
+  core?: true;
+}
 
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -78,6 +88,9 @@ export class EntitlementsService {
     enabled: boolean,
     enabledBy: string,
   ): Promise<void> {
+    if (CORE_MODULE_KEYS.has(moduleKey)) {
+      throw new BadRequestException(`Module "${moduleKey}" is always-on and cannot be toggled`);
+    }
     const orgModuleName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
 
     await this.db.transaction(async (tx) => {
@@ -107,20 +120,21 @@ export class EntitlementsService {
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
   }
 
-  async listModules(orgId: string): Promise<Array<{ moduleKey: string; enabled: boolean }>> {
-    const rows = await this.safeRead(
-      () =>
-        this.db.query.orgModules.findMany({
-          where: eq(orgModules.orgId, orgId),
-          columns: { moduleKey: true, enabled: true },
-          limit: 100,
-        }),
-      [],
-    );
-    const rowMap = new Map(rows.map((r) => [r.moduleKey, r.enabled]));
-    return MODULE_CATALOG.map((moduleKey) => ({
-      moduleKey,
-      enabled: rowMap.has(moduleKey) ? (rowMap.get(moduleKey) ?? true) : true,
-    }));
+  async listModules(orgId: string): Promise<ModuleStatus[]> {
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { enabledModules: true },
+    });
+    const orgArray = org?.enabledModules ?? null;
+    return MODULE_CATALOG.map((moduleKey): ModuleStatus => {
+      const orgName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
+      if (!orgName) {
+        return { moduleKey, enabled: true, core: true };
+      }
+      if (orgArray === null) {
+        return { moduleKey, enabled: true };
+      }
+      return { moduleKey, enabled: orgArray.includes(orgName) };
+    });
   }
 }

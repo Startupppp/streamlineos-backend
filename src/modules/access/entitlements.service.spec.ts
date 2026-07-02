@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -6,8 +7,6 @@ type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
-type OrgModuleRow = { moduleKey: string; enabled: boolean };
-
 function buildMockDb() {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
@@ -15,6 +14,7 @@ function buildMockDb() {
   const execute = jest.fn().mockResolvedValue({ rows: [] });
   const findFirst = jest.fn();
   const findMany = jest.fn();
+  const orgFindFirst = jest.fn();
 
   const txDb = { insert, execute };
   const transaction = jest.fn().mockImplementation(
@@ -24,6 +24,7 @@ function buildMockDb() {
   const db: DeepPartial<Db> = {
     query: {
       orgModules: { findFirst, findMany },
+      organizations: { findFirst: orgFindFirst },
     } as unknown as Db["query"],
     insert,
     execute,
@@ -32,7 +33,7 @@ function buildMockDb() {
 
   return {
     db: db as unknown as Db,
-    mocks: { findFirst, findMany, insert, values, onConflictDoUpdate, execute, transaction },
+    mocks: { findFirst, findMany, orgFindFirst, insert, values, onConflictDoUpdate, execute, transaction },
   };
 }
 
@@ -199,13 +200,22 @@ describe("EntitlementsService", () => {
       expect(mocks.execute).toHaveBeenCalledTimes(1);
     });
 
-    it("skips the org array SQL for unmapped module keys (kb, blog, etc.)", async () => {
-      const { db, mocks } = buildMockDb();
+    it("throws 400 BadRequestException when toggling a core module (kb)", async () => {
+      const { db } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1");
+      await expect(
+        new EntitlementsService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
 
-      expect(mocks.execute).not.toHaveBeenCalled();
+    it("skips the org array SQL for unmapped module keys (kb, blog, etc.)", async () => {
+      const { db } = buildMockDb();
+      const { cache } = buildMockCache();
+
+      await expect(
+        new EntitlementsService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
+      ).rejects.toThrow("always-on");
     });
 
     it("invalidates the module, list, and session caches after the transaction", async () => {
@@ -222,13 +232,22 @@ describe("EntitlementsService", () => {
   });
 
   describe("listModules", () => {
-    it("returns the full catalog with existing row state overlaid", async () => {
+    it("returns all modules enabled when enabledModules is null (new org, array never set)", async () => {
       const { db, mocks } = buildMockDb();
-      const rows: OrgModuleRow[] = [
-        { moduleKey: "hr", enabled: true },
-        { moduleKey: "crm", enabled: false },
-      ];
-      mocks.findMany.mockResolvedValue(rows);
+      mocks.orgFindFirst.mockResolvedValue({ enabledModules: null });
+      const { cache } = buildMockCache();
+
+      const result = await new EntitlementsService(db, cache).listModules("org-1");
+
+      expect(result).toHaveLength(8);
+      expect(result.every((r) => r.enabled)).toBe(true);
+      expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
+    });
+
+    it("derives enabled from the organizations.enabledModules array", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.orgFindFirst.mockResolvedValue({ enabledModules: ["HR", "PROJECTS"] });
       const { cache } = buildMockCache();
 
       const result = await new EntitlementsService(db, cache).listModules("org-1");
@@ -237,33 +256,26 @@ describe("EntitlementsService", () => {
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "projects")?.enabled).toBe(true);
+      expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
     });
 
-    it("returns the full catalog all enabled when the org has no module rows", async () => {
+    it("marks kb and blog as core: true regardless of enabledModules", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findMany.mockResolvedValue([]);
+      mocks.orgFindFirst.mockResolvedValue({ enabledModules: [] });
       const { cache } = buildMockCache();
 
       const result = await new EntitlementsService(db, cache).listModules("org-1");
 
       expect(result).toHaveLength(8);
-      expect(result.every((r) => r.enabled)).toBe(true);
+      expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);
     });
 
-    it("returns the full catalog all enabled on 42P01 error (graceful degradation)", async () => {
+    it("re-throws non-missing-table errors from the org query", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findMany.mockRejectedValue({ code: "42P01" });
-      const { cache } = buildMockCache();
-
-      const result = await new EntitlementsService(db, cache).listModules("org-1");
-
-      expect(result).toHaveLength(8);
-      expect(result.every((r) => r.enabled)).toBe(true);
-    });
-
-    it("re-throws errors that are not missing-table errors", async () => {
-      const { db, mocks } = buildMockDb();
-      mocks.findMany.mockRejectedValue(new Error("query error"));
+      mocks.orgFindFirst.mockRejectedValue(new Error("query error"));
       const { cache } = buildMockCache();
 
       await expect(

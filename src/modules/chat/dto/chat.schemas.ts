@@ -123,6 +123,6 @@ export const ticketStatusActionSchema = z.object({
   channelId: z.number().int().positive(),
   projectId: z.number().int().positive(),
   ticketId: z.number().int().positive(),
-  nextStatus: z.enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]),
+  nextStatus: z.string().min(1).max(100),
 });
 export type TicketStatusActionInput = z.infer<typeof ticketStatusActionSchema>;

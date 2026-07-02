@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { requireAuthorize } from "../../common/access/authorize";
@@ -50,8 +52,9 @@ function assertCanManage(u: CurrentUserContext) {
   requireAuthorize(u, { permission: "settings:org:manage" });
 }
 
+@RequireModule("HR")
 @Controller("org-hierarchy")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class OrgHierarchyController {
   constructor(private readonly service: OrgHierarchyService) {}
 

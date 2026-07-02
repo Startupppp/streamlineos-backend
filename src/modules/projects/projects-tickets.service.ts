@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   projectMembers,
+  projectStatuses,
   projects,
   ticketAssignees,
   ticketAttachments,
@@ -25,6 +26,7 @@ import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import {
   ProjectsForbiddenTicketException,
+  ProjectsInvalidTicketStatusException,
   ProjectsTicketConflictException,
   ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
@@ -60,6 +62,18 @@ export class ProjectsTicketsService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
+
+  private readonly CANONICAL_STATUSES = new Set(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
+
+  private async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
+    if (this.CANONICAL_STATUSES.has(status)) return;
+    const rows = await this.db
+      .select({ name: projectStatuses.name })
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
+    const validNames = new Set(rows.map((r) => r.name));
+    if (!validNames.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+  }
 
   private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
     const perms = await this.access.resolveUserPermissions(orgId, userId);
@@ -127,6 +141,10 @@ export class ProjectsTicketsService {
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
     const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
+
+    if (body.status !== undefined) {
+      await this.validateTicketStatus(projectId, u.orgId, body.status);
+    }
 
     const [ticket] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
@@ -277,6 +295,10 @@ export class ProjectsTicketsService {
     const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
+    if (input.status !== undefined) {
+      await this.validateTicketStatus(before.projectId, orgId, input.status);
+    }
+
     await this.db
       .update(tickets)
       .set(updateData)
@@ -419,6 +441,10 @@ export class ProjectsTicketsService {
       where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, u.userId)),
     });
     if (!member) throw new ForbiddenException("Not a project member.");
+
+    if (body.status !== undefined) {
+      await this.validateTicketStatus(projectId, u.orgId, body.status);
+    }
 
     const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
     if (body.assigneeId !== undefined) updateData.assigneeId = body.assigneeId;

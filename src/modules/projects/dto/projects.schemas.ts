@@ -62,17 +62,15 @@ export const removeMemberSchema = z.object({
 export const createStateSchema = z.object({
   name: z.string().min(1).max(50),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
-  group: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]),
-  sequence: z.number().int().min(0),
-  isDefault: z.boolean().default(false),
+  order: z.number().int().min(0).optional(),
+  type: z.string().optional(),
 });
 
 export const updateCustomStateSchema = z.object({
   name: z.string().min(1).max(50).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  group: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]).optional(),
-  sequence: z.number().int().min(0).optional(),
-  isDefault: z.boolean().optional(),
+  order: z.number().int().min(0).optional(),
+  type: z.string().optional(),
 });
 
 export const createLabelSchema = z.object({
