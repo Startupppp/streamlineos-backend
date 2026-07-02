@@ -18,6 +18,10 @@ export const userMemberships = pgTable("user_memberships", {
   uniqueIndex("uniq_user_memberships_user_org").on(table.userId, table.orgId),
   index("idx_user_memberships_org").on(table.orgId),
   index("idx_user_memberships_manager").on(table.managerUserId),
+  index("idx_user_memberships_dept").on(table.departmentId),
+  index("idx_user_memberships_branch").on(table.branchId),
+  index("idx_user_memberships_team").on(table.teamId),
+  index("idx_user_memberships_bu").on(table.businessUnitId),
 ]);
 
 export const userPreferences = pgTable("user_preferences", {

@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, gt } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
+import { hashToken } from "../../common/security/token.util";
 import { addDays } from "date-fns";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -516,7 +517,7 @@ export class UsersService {
     });
     if (existingInvitation) throw new ConflictException("An invitation has already been sent to this email");
 
-    const token = randomBytes(32).toString("hex");
+    const rawToken = randomBytes(32).toString("hex");
     const invitationId = randomUUID();
     const expiresAt = addDays(new Date(), 7);
 
@@ -528,14 +529,14 @@ export class UsersService {
     await this.db.insert(invitations).values({
       id: invitationId,
       email,
-      token,
+      token: hashToken(rawToken),
       orgId,
       role,
       invitedBy: invitedByUserId,
       expiresAt,
     });
 
-    void this.email.sendInvitationEmail(email, token, org?.name ?? "Your Organization").catch(() => {});
+    void this.email.sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization").catch(() => {});
 
     this.audit.log({ action: "user.invited", userId: invitedByUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email, role, ...extra } });
 
@@ -681,7 +682,7 @@ export class UsersService {
     });
     if (!invitation) throw new NotFoundException("Invitation not found");
 
-    const newToken = randomBytes(32).toString("hex");
+    const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
 
     const org = await this.db.query.organizations.findFirst({
@@ -691,10 +692,10 @@ export class UsersService {
 
     await this.db
       .update(invitations)
-      .set({ token: newToken, expiresAt: newExpiresAt })
+      .set({ token: hashToken(rawToken), expiresAt: newExpiresAt })
       .where(eq(invitations.id, invitationId));
 
-    void this.email.sendInvitationEmail(invitation.email, newToken, org?.name ?? "Your Organization").catch(() => {});
+    void this.email.sendInvitationEmail(invitation.email, rawToken, org?.name ?? "Your Organization").catch(() => {});
 
     this.audit.log({ action: "user.invitation.resent", userId: actorUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email: invitation.email } });
 

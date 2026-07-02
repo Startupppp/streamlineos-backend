@@ -1,8 +1,8 @@
 
-
 export * from "./enums";
 
 export * from "./auth";
+export * from "./email";
 export * from "./access";
 
 export * from "./projects";

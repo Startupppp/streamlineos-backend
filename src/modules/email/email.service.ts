@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
 import { EmailSendersBase } from "./email-senders.base";
+import { EmailOutboxService } from "./email-outbox.service";
+import { type EmailOptions } from "./email.provider";
 import {
   getExpenseSubmittedEmailTemplate,
   getExpenseApprovedEmailTemplate,
@@ -29,6 +31,14 @@ export type { EmailOptions, EmailAttachment } from "./email.provider";
 
 @Injectable()
 export class EmailService extends EmailSendersBase {
+  constructor(private readonly outbox: EmailOutboxService) {
+    super();
+  }
+
+  override sendEmail(options: EmailOptions): Promise<void> {
+    return this.outbox.enqueueAndTry(options);
+  }
+
   sendExpenseSubmittedEmail(
     approverEmail: string,
     approverName: string,

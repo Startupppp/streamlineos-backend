@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
 import { organizations, organizationMembers, invitations, users, passwordResetTokens, orgHolidays, orgCustomDomains, magicLinkTokens } from "../../db/schema";
-import { addHours } from "date-fns";
+import { addMinutes } from "date-fns";
+import { hashToken } from "../../common/security/token.util";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -467,14 +468,14 @@ export class OrganizationService {
     }
 
     const invitationId = randomUUID();
-    const invitationToken = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    const rawToken = randomBytes(32).toString("hex");
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.db.insert(invitations).values({
       id: invitationId,
       email: input.email,
-      token: invitationToken,
+      token: hashToken(rawToken),
       orgId,
       role: input.role,
       invitedBy: actorUserId,
@@ -483,7 +484,7 @@ export class OrganizationService {
 
     await this.email.sendInvitationEmail(
       input.email,
-      invitationToken,
+      rawToken,
       org?.name ?? "Unknown Organization",
     );
 
@@ -533,7 +534,7 @@ export class OrganizationService {
   async acceptInvitation(input: AcceptInvitationInput): Promise<{ ok: boolean; autoLoginToken?: string }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
-        eq(invitations.token, input.token),
+        eq(invitations.token, hashToken(input.token)),
         gt(invitations.expiresAt, new Date()),
         isNull(invitations.acceptedAt),
       ),
@@ -577,7 +578,7 @@ export class OrganizationService {
         id: randomUUID(),
         userId: existingUser.id,
         tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-        expiresAt: addHours(new Date(), 1),
+        expiresAt: addMinutes(new Date(), 10),
       });
       await this.cache.invalidate(CACHE_KEYS.userSession(existingUser.id));
 
@@ -622,7 +623,7 @@ export class OrganizationService {
       id: randomUUID(),
       userId,
       tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-      expiresAt: addHours(new Date(), 1),
+      expiresAt: addMinutes(new Date(), 10),
     });
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
@@ -649,7 +650,7 @@ export class OrganizationService {
   async validateInvitationToken(token: string): Promise<{ email: string; organizationName: string; role: string; userExists: boolean }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
-        eq(invitations.token, token),
+        eq(invitations.token, hashToken(token)),
         gt(invitations.expiresAt, new Date()),
         isNull(invitations.acceptedAt),
       ),

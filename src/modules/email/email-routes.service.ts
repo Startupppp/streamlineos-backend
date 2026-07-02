@@ -5,7 +5,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { hashToken } from "../../common/security/token.util";
 import { invitations, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -90,11 +92,12 @@ export class EmailRoutesService {
     if (!invitation) throw new NotFoundException("Invitation not found");
     if (invitation.acceptedAt) throw new BadRequestException("Invitation already accepted");
 
+    const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
     await this.db
       .update(invitations)
-      .set({ expiresAt: newExpiresAt })
+      .set({ token: hashToken(rawToken), expiresAt: newExpiresAt })
       .where(eq(invitations.id, invitationId));
 
     const [org, inviter] = await Promise.all([
@@ -115,7 +118,7 @@ export class EmailRoutesService {
 
     await this.email.sendInvitationEmail(
       invitation.email,
-      invitation.token,
+      rawToken,
       org?.name ?? "StreamlineOS",
       inviterName,
     );

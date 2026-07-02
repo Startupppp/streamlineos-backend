@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -32,6 +33,7 @@ import {
   verifyEmailSchema,
   changePasswordSchema,
   resendVerificationSchema,
+  forceChangePasswordSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
   googleOAuthSchema,
@@ -43,6 +45,7 @@ import {
   type ChangePasswordInput,
   type MagicLinkRequestInput,
   type MagicLinkVerifyInput,
+  type ForceChangePasswordInput,
   type GoogleOAuthInput,
 } from "./dto/auth.schemas";
 
@@ -171,6 +174,16 @@ export class AuthController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.authService.changePassword(u.userId, body).then(() => ({ message: "Password changed successfully" }));
+  }
+
+  @Post("force-change-password")
+  @HttpCode(200)
+  @AllowNoOrg()
+  forceChangePassword(
+    @Body(new ZodValidationPipe(forceChangePasswordSchema)) body: ForceChangePasswordInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.authService.forceChangePassword(u.userId, body.password, u.sessionId ?? "");
   }
 
   @Get("session")

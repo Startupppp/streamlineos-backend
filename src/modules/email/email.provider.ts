@@ -66,7 +66,7 @@ function htmlToText(html: string): string {
     .trim();
 }
 
-function isTransientError(error: unknown): boolean {
+export function isTransientError(error: unknown): boolean {
   if (!error || typeof error !== "object") return true;
   const code = (error as { code?: number | string }).code;
   if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "ENOTFOUND" || code === "EAI_AGAIN") {
@@ -164,6 +164,15 @@ async function sendWithProvider(provider: Provider, options: EmailOptions): Prom
     return;
   }
   throw new Error("No email provider configured");
+}
+
+export async function sendEmailOnceDirect(options: EmailOptions): Promise<void> {
+  const recipients = normalizeRecipients(options.to);
+  if (recipients.length === 0) {
+    logger.warn("EMAIL_SKIPPED: no recipients", { subject: options.subject });
+    return;
+  }
+  await sendWithProvider(activeProvider, { ...options, to: recipients });
 }
 
 export async function dispatchEmail(options: EmailOptions): Promise<void> {

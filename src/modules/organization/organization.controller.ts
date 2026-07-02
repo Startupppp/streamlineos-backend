@@ -6,13 +6,17 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
+  HttpException,
+  HttpStatus,
   NotFoundException,
   Param,
   Patch,
   Post,
   Query,
+  Request,
   UseGuards,
 } from "@nestjs/common";
+import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -51,12 +55,37 @@ import {
 @Controller("organization")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class OrganizationController {
-  constructor(private readonly organization: OrganizationService) {}
+  constructor(
+    private readonly organization: OrganizationService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
+
+  private getIp(req: { ip?: string; headers: Record<string, string> }): string {
+    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+  }
+
+  private async enforceRateLimit(tier: string, identifier: string): Promise<void> {
+    const result = await this.rateLimit.check(tier, identifier);
+    if (!result.allowed) {
+      throw new HttpException(
+        {
+          code: "AUTH_RATE_LIMITED",
+          message: "Too many attempts. Try again later.",
+          details: { retryAfterSeconds: result.retryAfterSecs },
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   @Public()
   @Get("invitations/validate")
-  validateInvitationToken(@Query("token") token: string) {
+  async validateInvitationToken(
+    @Query("token") token: string,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
     if (!token) throw new BadRequestException("Missing token");
+    await this.enforceRateLimit("invite:validate", this.getIp(req));
     return this.organization.validateInvitationToken(token);
   }
 
@@ -175,9 +204,11 @@ export class OrganizationController {
   @Public()
   @Post("invitations/accept")
   @HttpCode(200)
-  acceptInvitation(
+  async acceptInvitation(
     @Body(new ZodValidationPipe(acceptInvitationSchema)) body: AcceptInvitationInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
+    await this.enforceRateLimit("invite:accept", this.getIp(req));
     return this.organization.acceptInvitation(body);
   }
 

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   HttpException,
   HttpStatus,
   Inject,
@@ -116,13 +115,27 @@ export class AuthService {
     }
   }
 
-  async register(input: RegisterInput): Promise<{ userId: string; orgId: string }> {
+  async register(input: RegisterInput): Promise<{ success: true }> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
     const existing = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, emailVerified: true },
     });
-    if (existing) throw new ConflictException("An account with this email already exists");
+
+    if (existing) {
+      if (!existing.emailVerified) {
+        const rawToken = generateToken();
+        await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
+        await this.db.insert(verificationTokens).values({
+          identifier: normalizedEmail,
+          token: hashToken(rawToken),
+          expires: addHours(new Date(), 24),
+        });
+        void this.email.sendVerificationEmail(normalizedEmail, rawToken).catch(() => {});
+      }
+      return { success: true };
+    }
 
     this.assertPasswordNotEmail(input.password, normalizedEmail);
     const passwordHash = await this.passwordService.hash(input.password);
@@ -171,15 +184,15 @@ export class AuthService {
       await tx.insert(roles).values({ ...adminRole, orgId, permissions: [] });
     });
 
-    const verificationToken = generateToken();
+    const rawToken = generateToken();
     await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
     await this.db.insert(verificationTokens).values({
       identifier: normalizedEmail,
-      token: verificationToken,
+      token: hashToken(rawToken),
       expires: addHours(new Date(), 24),
     });
     try {
-      await this.email.sendVerificationEmail(normalizedEmail, verificationToken);
+      await this.email.sendVerificationEmail(normalizedEmail, rawToken);
     } catch {
       throw new ServiceUnavailableException(
         "Account created but we could not send the verification email. Try resend on the signup page.",
@@ -193,7 +206,7 @@ export class AuthService {
       metadata: { email: normalizedEmail, companyName: input.companyName },
     });
 
-    return { userId, orgId };
+    return { success: true };
   }
 
   async login(
@@ -386,6 +399,28 @@ export class AuthService {
       .catch(() => {});
   }
 
+  async forceChangePassword(userId: string, password: string, sessionId: string): Promise<{ success: true }> {
+    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user) throw new NotFoundException("User not found");
+
+    this.assertPasswordNotEmail(password, user.email);
+    await this.passwordService.checkPasswordHistory(userId, password);
+
+    const newHash = await this.passwordService.hash(password);
+    await this.db
+      .update(users)
+      .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
+      .where(eq(users.id, userId));
+    await this.passwordService.recordPasswordHistory(userId, newHash);
+
+    await this.sessionService.revokeAll(userId, sessionId);
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+
+    this.audit.log({ action: "auth.password_changed", userId, metadata: { forced: true } });
+
+    return { success: true };
+  }
+
   async forgotPassword(input: ForgotPasswordInput): Promise<void> {
     const normalizedEmail = input.email.toLowerCase().trim();
     const user = await this.db.query.users.findFirst({
@@ -450,7 +485,7 @@ export class AuthService {
 
   async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
     const record = await this.db.query.verificationTokens.findFirst({
-      where: eq(verificationTokens.token, input.token),
+      where: eq(verificationTokens.token, hashToken(input.token)),
     });
     if (!record) {
       throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid verification token" });
@@ -495,7 +530,7 @@ export class AuthService {
     if (!user) return;
     if (user.emailVerified) return;
 
-    const token = generateToken();
+    const rawToken = generateToken();
 
     await this.db
       .delete(verificationTokens)
@@ -503,12 +538,12 @@ export class AuthService {
 
     await this.db.insert(verificationTokens).values({
       identifier: normalizedEmail,
-      token,
+      token: hashToken(rawToken),
       expires: addHours(new Date(), 24),
     });
 
     try {
-      await this.email.sendVerificationEmail(normalizedEmail, token);
+      await this.email.sendVerificationEmail(normalizedEmail, rawToken);
     } catch {
       throw new ServiceUnavailableException(
         "Could not send verification email. Check email configuration and try again.",

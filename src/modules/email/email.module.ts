@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { EmailService } from "./email.service";
+import { EmailOutboxService } from "./email-outbox.service";
 import { EmailRoutesService } from "./email-routes.service";
 import { TwilioGateway } from "./dispatch/twilio.gateway";
 import { NotificationsDispatchController } from "./controllers/notifications-dispatch.controller";
@@ -15,7 +16,7 @@ import { HrSendEmailController } from "./controllers/hr-send-email.controller";
     EmailTemplatesController,
     HrSendEmailController,
   ],
-  providers: [EmailService, EmailRoutesService, TwilioGateway],
-  exports: [EmailService],
+  providers: [EmailOutboxService, EmailService, EmailRoutesService, TwilioGateway],
+  exports: [EmailOutboxService, EmailService],
 })
 export class EmailModule {}

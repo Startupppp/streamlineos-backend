@@ -17,6 +17,7 @@ import { CronHrService } from "./cron-hr.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
+import { CronEmailOutboxService } from "./cron-email-outbox.service";
 
 @Public()
 @Controller("cron")
@@ -30,6 +31,7 @@ export class CronController {
     private readonly recruitment: CronRecruitmentService,
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
+    private readonly emailOutbox: CronEmailOutboxService,
   ) {}
 
   @Get("trial-expiry")
@@ -272,6 +274,32 @@ export class CronController {
       return { success: true, ...result };
     } catch (error) {
       logger.error("Weekly CEO recap cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("email-outbox-flush")
+  getEmailOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runEmailOutboxFlush(authorization);
+  }
+
+  @Post("email-outbox-flush")
+  @HttpCode(200)
+  postEmailOutboxFlush(@Headers("authorization") authorization?: string) {
+    return this.runEmailOutboxFlush(authorization);
+  }
+
+  private async runEmailOutboxFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.emailOutbox.flushOutbox();
+      return {
+        success: true,
+        message: `Processed ${result.processed} outbox emails: ${result.sent} sent, ${result.dead} dead`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Email outbox flush cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

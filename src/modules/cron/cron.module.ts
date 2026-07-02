@@ -11,6 +11,7 @@ import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
+import { CronEmailOutboxService } from "./cron-email-outbox.service";
 
 @Module({
   imports: [AutomationModule, AiModule, EmailModule],
@@ -24,6 +25,7 @@ import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
     CronRecruitmentService,
     CronHrService,
     CronWeeklyRecapService,
+    CronEmailOutboxService,
   ],
 })
 export class CronModule {}

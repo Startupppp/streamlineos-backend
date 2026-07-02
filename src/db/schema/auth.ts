@@ -142,6 +142,7 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_users_email").on(table.email),
+  index("idx_users_last_active_org").on(table.lastActiveOrgId),
   foreignKey({ columns: [table.reportingTo], foreignColumns: [table.id] }),
 ]);
 
