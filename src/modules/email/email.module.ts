@@ -4,7 +4,6 @@ import { EmailOutboxService } from "./email-outbox.service";
 import { EmailRoutesService } from "./email-routes.service";
 import { TwilioGateway } from "./dispatch/twilio.gateway";
 import { NotificationsDispatchController } from "./controllers/notifications-dispatch.controller";
-import { OrganizationInvitationsController } from "./controllers/organization-invitations.controller";
 import { EmailTemplatesController } from "./controllers/email-templates.controller";
 import { HrSendEmailController } from "./controllers/hr-send-email.controller";
 
@@ -12,7 +11,6 @@ import { HrSendEmailController } from "./controllers/hr-send-email.controller";
 @Module({
   controllers: [
     NotificationsDispatchController,
-    OrganizationInvitationsController,
     EmailTemplatesController,
     HrSendEmailController,
   ],

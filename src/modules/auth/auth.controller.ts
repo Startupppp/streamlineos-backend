@@ -1,18 +1,15 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpException,
   HttpStatus,
   Param,
   Post,
-  Query,
   Request,
   UseGuards,
 } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -23,15 +20,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
-import { SessionService } from "./session.service";
-import { DeviceService } from "./device.service";
+import { AuthTokensService } from "./auth-tokens.service";
 import {
   registerSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   verifyEmailSchema,
-  changePasswordSchema,
   resendVerificationSchema,
   forceChangePasswordSchema,
   magicLinkRequestSchema,
@@ -42,33 +37,18 @@ import {
   type ForgotPasswordInput,
   type ResetPasswordInput,
   type VerifyEmailInput,
-  type ChangePasswordInput,
   type MagicLinkRequestInput,
   type MagicLinkVerifyInput,
   type ForceChangePasswordInput,
   type GoogleOAuthInput,
 } from "./dto/auth.schemas";
 
-const loginHistoryQuerySchema = z.object({
-  success: z
-    .string()
-    .optional()
-    .transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
-
-type LoginHistoryQuery = z.infer<typeof loginHistoryQuerySchema>;
-
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly sessionService: SessionService,
-    private readonly deviceService: DeviceService,
+    private readonly authTokensService: AuthTokensService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -121,12 +101,6 @@ export class AuthController {
     return this.authService.logout(u.sessionId ?? "", u.userId);
   }
 
-  @Post("logout-all")
-  @HttpCode(200)
-  logoutAll(@CurrentUser() u: CurrentUserContext) {
-    return this.authService.logoutAll(u.userId, u.sessionId);
-  }
-
   @Post("forgot-password")
   @Public()
   @HttpCode(200)
@@ -135,14 +109,18 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:forgot-password", this.getIp(req));
-    return this.authService.forgotPassword(body).then(() => ({ message: "If an account exists, a reset email has been sent" }));
+    return this.authTokensService.forgotPassword(body).then(() => ({ message: "If an account exists, a reset email has been sent" }));
   }
 
   @Post("reset-password")
   @Public()
   @HttpCode(200)
-  resetPassword(@Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput) {
-    return this.authService.resetPassword(body).then(() => ({ message: "Password reset successfully" }));
+  async resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:reset-password", this.getIp(req));
+    return this.authTokensService.resetPassword(body).then(() => ({ message: "Password reset successfully" }));
   }
 
   @Post("verify-email")
@@ -153,7 +131,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:verify-email", this.getIp(req));
-    return this.authService.verifyEmail(body);
+    return this.authTokensService.verifyEmail(body);
   }
 
   @Post("resend-verification")
@@ -164,16 +142,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
-    return this.authService.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
-  }
-
-  @Post("change-password")
-  @HttpCode(200)
-  changePassword(
-    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authService.changePassword(u.userId, body).then(() => ({ message: "Password changed successfully" }));
+    return this.authTokensService.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
   }
 
   @Post("force-change-password")
@@ -186,55 +155,11 @@ export class AuthController {
     return this.authService.forceChangePassword(u.userId, body.password, u.sessionId ?? "");
   }
 
-  @Get("session")
-  getSession(@CurrentUser() u: CurrentUserContext) {
-    return { userId: u.userId, orgId: u.orgId, role: u.role, permissions: u.permissions };
-  }
-
-  @Get("sessions")
-  listSessions(@CurrentUser() u: CurrentUserContext) {
-    return this.sessionService.listActive(u.userId);
-  }
-
-  @Delete("sessions")
-  revokeAllSessions(@CurrentUser() u: CurrentUserContext) {
-    return this.authService.logoutAll(u.userId, u.sessionId).then(() => ({ message: "All other sessions revoked" }));
-  }
-
-  @Delete("sessions/:id")
-  revokeSession(@Param("id") id: string, @CurrentUser() u: CurrentUserContext) {
-    return this.authService.logout(id, u.userId).then(() => ({ message: "Session revoked" }));
-  }
-
-  @Get("devices")
-  listDevices(@CurrentUser() u: CurrentUserContext) {
-    return this.deviceService.list(u.userId);
-  }
-
-  @Post("devices/:id/trust")
-  @HttpCode(200)
-  trustDevice(@Param("id") id: string, @CurrentUser() u: CurrentUserContext) {
-    return this.deviceService.trust(id, u.userId).then(() => ({ message: "Device trusted" }));
-  }
-
-  @Delete("devices/:id")
-  removeDevice(@Param("id") id: string, @CurrentUser() u: CurrentUserContext) {
-    return this.deviceService.remove(id, u.userId).then(() => ({ message: "Device removed" }));
-  }
-
-  @Get("login-history")
-  loginHistory(
-    @Query(new ZodValidationPipe(loginHistoryQuerySchema)) query: LoginHistoryQuery,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authService.getLoginHistory(u.userId, query);
-  }
-
   @Get("audit/analytics")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   getAuditAnalytics() {
-    return this.authService.getAuditAnalytics();
+    return this.authTokensService.getAuditAnalytics();
   }
 
   @Public()
@@ -259,7 +184,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link", this.getIp(req));
-    await this.authService.requestMagicLink(body);
+    await this.authTokensService.requestMagicLink(body);
     return { message: "If an account exists, a sign-in link has been sent" };
   }
 
@@ -271,7 +196,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
-    return this.authService.verifyMagicLink(body.token);
+    return this.authTokensService.verifyMagicLink(body.token);
   }
 
   @Post("google")
@@ -285,6 +210,6 @@ export class AuthController {
     if (!secret || req.headers["x-internal-secret"] !== secret) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
-    return this.authService.googleOAuth(body);
+    return this.authTokensService.googleOAuth(body);
   }
 }

@@ -1,14 +1,9 @@
 import {
-  BadRequestException,
   Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { hashToken } from "../../common/security/token.util";
-import { invitations, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "./email.service";
@@ -82,48 +77,6 @@ export class EmailRoutesService {
 
     const allFailed = results.every((r) => !r.sent);
     return { results, allFailed };
-  }
-
-  async resendInvitation(orgId: string, actorUserId: string, invitationId: string): Promise<{ success: true }> {
-    const invitation = await this.db.query.invitations.findFirst({
-      where: and(eq(invitations.id, invitationId), eq(invitations.orgId, orgId)),
-    });
-
-    if (!invitation) throw new NotFoundException("Invitation not found");
-    if (invitation.acceptedAt) throw new BadRequestException("Invitation already accepted");
-
-    const rawToken = randomBytes(32).toString("hex");
-    const newExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
-    await this.db
-      .update(invitations)
-      .set({ token: hashToken(rawToken), expiresAt: newExpiresAt })
-      .where(eq(invitations.id, invitationId));
-
-    const [org, inviter] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, orgId),
-        columns: { name: true },
-      }),
-      this.db.query.users.findFirst({
-        where: eq(users.id, actorUserId),
-        columns: { name: true, firstName: true, lastName: true },
-      }),
-    ]);
-
-    const inviterName =
-      inviter?.firstName && inviter?.lastName
-        ? `${inviter.firstName} ${inviter.lastName}`
-        : inviter?.name ?? undefined;
-
-    await this.email.sendInvitationEmail(
-      invitation.email,
-      rawToken,
-      org?.name ?? "StreamlineOS",
-      inviterName,
-    );
-
-    return { success: true };
   }
 
   getTemplatePreviews(): { id: string; category: string; name: string; subject: string; html: string }[] {

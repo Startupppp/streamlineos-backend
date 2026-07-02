@@ -25,6 +25,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OrganizationService } from "./organization.service";
+import { OrganizationSettingsService } from "./organization-settings.service";
+import { InvitationsService } from "./invitations.service";
 import {
   acceptInvitationSchema,
   addCustomDomainSchema,
@@ -57,6 +59,8 @@ import {
 export class OrganizationController {
   constructor(
     private readonly organization: OrganizationService,
+    private readonly settings: OrganizationSettingsService,
+    private readonly invitations: InvitationsService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -86,7 +90,7 @@ export class OrganizationController {
   ) {
     if (!token) throw new BadRequestException("Missing token");
     await this.enforceRateLimit("invite:validate", this.getIp(req));
-    return this.organization.validateInvitationToken(token);
+    return this.invitations.validate(token);
   }
 
   @Public()
@@ -137,7 +141,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.inviteMember(u.orgId, u.userId, body);
+    return this.invitations.invite(u.orgId, u.userId, body.email, body.role);
   }
 
   @Patch("members/:memberId")
@@ -164,7 +168,7 @@ export class OrganizationController {
   @Get("invitations")
   @RequirePermission("settings:manage")
   listInvitations(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.listInvitations(u.orgId);
+    return this.invitations.listPending(u.orgId);
   }
 
   @Delete("invitations")
@@ -173,14 +177,14 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(cancelInvitationSchema)) body: CancelInvitationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.cancelInvitation(u.orgId, body.invitationId);
+    return this.invitations.cancel(u.orgId, body.invitationId, u.userId);
   }
 
   @Get("settings")
   async getSettings(@CurrentUser() u: CurrentUserContext) {
-    const settings = await this.organization.getSettings(u.orgId);
-    if (!settings) throw new NotFoundException("Organization not found");
-    return settings;
+    const result = await this.settings.getSettings(u.orgId);
+    if (!result) throw new NotFoundException("Organization not found");
+    return result;
   }
 
   @Patch("settings")
@@ -189,7 +193,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(updateOrgSettingsSchema)) body: UpdateOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.updateSettings(u.orgId, u.userId, body);
+    return this.settings.updateSettings(u.orgId, u.userId, body);
   }
 
   @Patch("security")
@@ -198,7 +202,7 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(securitySettingsSchema)) body: SecuritySettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.updateSecuritySettings(u.orgId, u.userId, body);
+    return this.settings.updateSecuritySettings(u.orgId, u.userId, body);
   }
 
   @Public()
@@ -209,12 +213,12 @@ export class OrganizationController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("invite:accept", this.getIp(req));
-    return this.organization.acceptInvitation(body);
+    return this.invitations.accept(body);
   }
 
   @Get("custom-domains")
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.listCustomDomains(u.orgId);
+    return this.settings.listCustomDomains(u.orgId);
   }
 
   @Post("custom-domains")
@@ -223,24 +227,30 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(addCustomDomainSchema)) body: AddCustomDomainInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.addCustomDomain(u.orgId, u.userId, body);
+    return this.settings.addCustomDomain(u.orgId, u.userId, body);
   }
 
   @Post("custom-domains/:domainId/verify")
   @RequirePermission("settings:manage")
-  verifyCustomDomain(@Param("domainId") domainId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.organization.verifyCustomDomain(u.orgId, u.userId, domainId);
+  verifyCustomDomain(
+    @Param("domainId") domainId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.settings.verifyCustomDomain(u.orgId, u.userId, domainId);
   }
 
   @Delete("custom-domains/:domainId")
   @RequirePermission("settings:manage")
-  removeCustomDomain(@Param("domainId") domainId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.organization.removeCustomDomain(u.orgId, u.userId, domainId);
+  removeCustomDomain(
+    @Param("domainId") domainId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
   }
 
   @Get("holidays")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.listHolidays(u.orgId);
+    return this.settings.listHolidays(u.orgId);
   }
 
   @Post("holidays")
@@ -249,13 +259,13 @@ export class OrganizationController {
     @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.createHoliday(u.orgId, u.userId, body);
+    return this.settings.createHoliday(u.orgId, u.userId, body);
   }
 
   @Delete("holidays/:holidayId")
   @RequirePermission("settings:manage")
   deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.organization.deleteHoliday(u.orgId, u.userId, holidayId);
+    return this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
   }
 
   @Post("archive")

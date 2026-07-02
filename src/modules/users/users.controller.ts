@@ -7,6 +7,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UsersService } from "./users.service";
+import { UserProfileService } from "./user-profile.service";
+import { InvitationsService } from "../organization/invitations.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
   inviteUserSchema, bulkInviteSchema, updatePreferencesSchema,
@@ -22,7 +24,11 @@ import { z } from "zod";
 @Controller("users")
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly userProfile: UserProfileService,
+    private readonly invitations: InvitationsService,
+  ) {}
 
   // ── Static GET routes (must be before any :userId parameterized routes) ──
 
@@ -52,7 +58,7 @@ export class UsersController {
     @Query() query: { page?: string; limit?: string; includeAccepted?: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.getInvitations(u.orgId, {
+    return this.invitations.listPaginated(u.orgId, {
       page: query.page ? Number(query.page) : undefined,
       limit: query.limit ? Number(query.limit) : undefined,
       includeAccepted: query.includeAccepted === "true",
@@ -64,7 +70,7 @@ export class UsersController {
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.getAuditLog(u.orgId, query);
+    return this.userProfile.getAuditLog(u.orgId, query);
   }
 
   // ── Static POST routes ──
@@ -83,7 +89,9 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const { email, role, employeeId, branchId, departmentId, teamId, managerUserId, startDate, welcomeMessage } = body;
-    return this.users.inviteUser(u.orgId, email, role, u.userId, { employeeId, branchId, departmentId, teamId, managerUserId, startDate, welcomeMessage });
+    return this.invitations.invite(u.orgId, u.userId, email, role, {
+      employeeId, branchId, departmentId, teamId, managerUserId, startDate, welcomeMessage,
+    });
   }
 
   @Post("bulk-invite")
@@ -91,7 +99,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.bulkInvite(u.orgId, body.emails, body.role, u.userId);
+    return this.invitations.bulkInvite(u.orgId, u.userId, body.emails, body.role);
   }
 
   @Post("bulk-suspend")
@@ -139,12 +147,12 @@ export class UsersController {
 
   @Post("invitations/:invitationId/resend")
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.resendInvite(u.orgId, invitationId, u.userId);
+    return this.invitations.resend(u.orgId, invitationId, u.userId);
   }
 
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.cancelInvite(u.orgId, invitationId, u.userId);
+    return this.invitations.cancel(u.orgId, invitationId, u.userId);
   }
 
   // ── Parameterized :userId routes (must come after all static routes) ──
@@ -179,7 +187,7 @@ export class UsersController {
 
   @Get(":userId/sessions")
   getSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.getUserSessions(u.orgId, userId);
+    return this.userProfile.getUserSessions(u.orgId, userId);
   }
 
   @Delete(":userId/sessions/:sessionId")
@@ -188,17 +196,17 @@ export class UsersController {
     @Param("sessionId") sessionId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.revokeSession(u.orgId, userId, sessionId, u.userId);
+    return this.userProfile.revokeSession(u.orgId, userId, sessionId, u.userId);
   }
 
   @Delete(":userId/sessions")
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.revokeAllSessions(u.orgId, userId, u.userId);
+    return this.userProfile.revokeAllSessions(u.orgId, userId, u.userId);
   }
 
   @Get(":userId/devices")
   getDevices(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.getUserDevices(u.orgId, userId);
+    return this.userProfile.getUserDevices(u.orgId, userId);
   }
 
   @Delete(":userId/devices/:deviceId")
@@ -207,26 +215,25 @@ export class UsersController {
     @Param("deviceId") deviceId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.removeDevice(u.orgId, userId, deviceId, u.userId);
+    return this.userProfile.removeDevice(u.orgId, userId, deviceId, u.userId);
   }
 
   @Get(":userId/activity")
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.getUserActivity(u.orgId, userId);
+    return this.userProfile.getUserActivity(u.orgId, userId);
   }
 
   @Get(":userId/preferences")
-  getPreferences(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.getPreferences(userId);
+  getPreferences(@Param("userId") userId: string) {
+    return this.userProfile.getPreferences(userId);
   }
 
   @Patch(":userId/preferences")
   updatePreferences(
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(updatePreferencesSchema)) body: UpdatePreferencesInput,
-    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.updatePreferences(userId, body);
+    return this.userProfile.updatePreferences(userId, body);
   }
 
   @Get(":userId/login-history")
@@ -235,12 +242,12 @@ export class UsersController {
     @Query(new ZodValidationPipe(listLoginHistorySchema)) query: ListLoginHistoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.getLoginHistory(u.orgId, userId, query);
+    return this.userProfile.getLoginHistory(u.orgId, userId, query);
   }
 
   @Get(":userId/membership")
   getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.getMembership(u.orgId, userId);
+    return this.userProfile.getMembership(u.orgId, userId);
   }
 
   @Patch(":userId/membership")
@@ -249,7 +256,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(updateMembershipSchema)) body: UpdateMembershipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.updateMembership(u.orgId, userId, body, u.userId);
+    return this.userProfile.updateMembership(u.orgId, userId, body, u.userId);
   }
 
   @Post(":userId/reset-password")
@@ -263,6 +270,6 @@ export class UsersController {
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.getUserAuditLog(u.orgId, userId, query);
+    return this.userProfile.getUserAuditLog(u.orgId, userId, query);
   }
 }

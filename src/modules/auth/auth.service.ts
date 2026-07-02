@@ -9,19 +9,14 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
-import { and, desc, eq, gt, gte, sql } from "drizzle-orm";
-import { randomUUID, createHash, randomBytes, createDecipheriv } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
+import { randomUUID, randomBytes } from "node:crypto";
 import {
-  accounts,
-  loginHistory,
-  magicLinkTokens,
   organizationMembers,
   organizations,
-  passwordResetTokens,
   roles,
   subscriptions,
   users,
-  userSessions,
   verificationTokens,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -33,17 +28,14 @@ import { EmailService } from "../email/email.service";
 import { PasswordService } from "./password.service";
 import { DeviceService } from "./device.service";
 import { SessionService } from "./session.service";
-import { addDays, addHours, addMinutes, subDays } from "date-fns";
-import { verifySync } from "otplib";
+import { AuthTokensService } from "./auth-tokens.service";
+import { decryptTotpSecret, verifyTotpCode } from "./totp.util";
+import { hashToken } from "../../common/security/token.util";
+import { addDays, addHours } from "date-fns";
 import type {
   LoginInput,
   RegisterInput,
-  ForgotPasswordInput,
-  ResetPasswordInput,
-  VerifyEmailInput,
   ChangePasswordInput,
-  MagicLinkRequestInput,
-  GoogleOAuthInput,
 } from "./dto/auth.schemas";
 
 const LOCK_AFTER_ATTEMPTS = 5;
@@ -61,39 +53,8 @@ function slugify(name: string): string {
   );
 }
 
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
 function generateToken(): string {
   return randomBytes(32).toString("hex");
-}
-
-const TOTP_ALGORITHM = "aes-256-gcm";
-const TOTP_IV_LENGTH = 12;
-const TOTP_TAG_LENGTH = 16;
-const TOTP_PREFIX = "enc:v1:";
-
-function decryptTotpSecret(ciphertext: string): string {
-  const raw = process.env.ENCRYPTION_KEY;
-  if (!raw || !ciphertext.startsWith(TOTP_PREFIX)) return ciphertext;
-  const key = createHash("sha256").update(raw).digest();
-  const data = Buffer.from(ciphertext.slice(TOTP_PREFIX.length), "base64");
-  const iv = data.subarray(0, TOTP_IV_LENGTH);
-  const tag = data.subarray(TOTP_IV_LENGTH, TOTP_IV_LENGTH + TOTP_TAG_LENGTH);
-  const encrypted = data.subarray(TOTP_IV_LENGTH + TOTP_TAG_LENGTH);
-  const decipher = createDecipheriv(TOTP_ALGORITHM, key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-}
-
-function verifyTotpCode(token: string, encryptedSecret: string): boolean {
-  try {
-    const result = verifySync({ secret: decryptTotpSecret(encryptedSecret), token, strategy: "totp" });
-    return result.valid;
-  } catch {
-    return false;
-  }
 }
 
 @Injectable()
@@ -107,6 +68,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly access: AccessService,
+    private readonly authTokens: AuthTokensService,
   ) {}
 
   private assertPasswordNotEmail(password: string, email: string): void {
@@ -229,23 +191,23 @@ export class AuthService {
     });
 
     if (!user || !user.password) {
-      await this.logLoginEvent(null, null, "login.failure", false, "INVALID_CREDENTIALS", context);
+      await this.authTokens.logLoginEvent(null, null, "login.failure", false, "INVALID_CREDENTIALS", context);
       throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
     }
 
     if (!user.isActive) {
-      await this.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_DEACTIVATED", context);
+      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_DEACTIVATED", context);
       throw new UnauthorizedException("Account is deactivated");
     }
 
     if (!user.emailVerified) {
-      await this.logLoginEvent(user.id, null, "login.failure", false, "EMAIL_NOT_VERIFIED", context);
+      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "EMAIL_NOT_VERIFIED", context);
       throw new UnauthorizedException({ code: "AUTH_EMAIL_NOT_VERIFIED", message: "Please verify your email before signing in" });
     }
 
     if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
       const remainingSeconds = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 1000);
-      await this.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_LOCKED", context);
+      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_LOCKED", context);
       throw new UnauthorizedException({ code: "AUTH_ACCOUNT_LOCKED", message: "Account locked. Try again later.", details: { retryAfterSeconds: remainingSeconds } });
     }
 
@@ -258,7 +220,7 @@ export class AuthService {
         void this.email.sendAccountLockedEmail?.(user.email, user.name ?? user.email).catch(() => {});
       }
       await this.db.update(users).set(update).where(eq(users.id, user.id));
-      await this.logLoginEvent(user.id, null, "login.failure", false, "INVALID_CREDENTIALS", context);
+      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "INVALID_CREDENTIALS", context);
       throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
     }
 
@@ -266,7 +228,7 @@ export class AuthService {
       await this.db.update(users).set({ loginAttempts: 0, lockedUntil: null }).where(eq(users.id, user.id));
     }
 
-    const membership = await this.resolveActiveMembership(user.id, user.lastActiveOrgId ?? null);
+    const membership = await this.authTokens.resolveActiveMembership(user.id, user.lastActiveOrgId ?? null);
     const orgId = membership?.orgId ?? "";
 
     let daysUntilExpiry: number | undefined;
@@ -282,7 +244,7 @@ export class AuthService {
           (sub.status === "TRIAL" && sub.trialEndsAt != null && new Date(sub.trialEndsAt) < new Date());
 
         if (isExpired) {
-          await this.logLoginEvent(user.id, orgId, "login.failure", false, "SUBSCRIPTION_INACTIVE", context);
+          await this.authTokens.logLoginEvent(user.id, orgId, "login.failure", false, "SUBSCRIPTION_INACTIVE", context);
           throw new UnauthorizedException({ code: "AUTH_SUBSCRIPTION_INACTIVE", message: "Your subscription is inactive. Please renew to continue." });
         }
 
@@ -294,7 +256,6 @@ export class AuthService {
       }
     }
 
-    // MFA enforcement: check org policy and per-user setting
     const mfaRequired = !!user.totpEnabled || !!(await (async () => {
       if (!orgId) return false;
       const [org] = await this.db
@@ -309,7 +270,7 @@ export class AuthService {
         return { userId: user.id, orgId, requiresMfa: true };
       }
       if (!user.totpSecret || !verifyTotpCode(input.totpCode, user.totpSecret)) {
-        await this.logLoginEvent(user.id, orgId, "login.failure", false, "INVALID_MFA_CODE", context);
+        await this.authTokens.logLoginEvent(user.id, orgId, "login.failure", false, "INVALID_MFA_CODE", context);
         throw new UnauthorizedException({ code: "AUTH_INVALID_MFA_CODE", message: "Invalid MFA code" });
       }
     }
@@ -339,7 +300,7 @@ export class AuthService {
       }
     }
 
-    await this.logLoginEvent(user.id, orgId, "login.success", true, null, context);
+    await this.authTokens.logLoginEvent(user.id, orgId, "login.success", true, null, context);
 
     this.audit.log({
       action: "auth.login",
@@ -421,277 +382,6 @@ export class AuthService {
     return { success: true };
   }
 
-  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
-    const normalizedEmail = input.email.toLowerCase().trim();
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-    });
-
-    if (!user) return;
-
-    const token = generateToken();
-    const tokenHash = hashToken(token);
-
-    await this.db
-      .delete(passwordResetTokens)
-      .where(eq(passwordResetTokens.email, normalizedEmail));
-
-    await this.db.insert(passwordResetTokens).values({
-      id: randomUUID(),
-      email: normalizedEmail,
-      token: tokenHash,
-      expiresAt: addHours(new Date(), 1),
-    });
-
-    this.audit.log({ action: "auth.password_reset_requested", userId: user.id });
-
-    void this.email.sendPasswordResetEmail(normalizedEmail, token).catch(() => {});
-  }
-
-  async resetPassword(input: ResetPasswordInput): Promise<void> {
-    const tokenHash = hashToken(input.token);
-
-    const record = await this.db.query.passwordResetTokens.findFirst({
-      where: eq(passwordResetTokens.token, tokenHash),
-    });
-    if (!record) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid reset token" });
-    }
-    if (new Date(record.expiresAt) <= new Date()) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Password reset token has expired" });
-    }
-
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${record.email.toLowerCase()}`,
-    });
-    if (!user) throw new NotFoundException("User not found");
-
-    this.assertPasswordNotEmail(input.newPassword, record.email);
-    await this.passwordService.checkPasswordHistory(user.id, input.newPassword);
-
-    const newHash = await this.passwordService.hash(input.newPassword);
-    await this.db
-      .update(users)
-      .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
-      .where(eq(users.id, user.id));
-    await this.passwordService.recordPasswordHistory(user.id, newHash);
-
-    await this.db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, record.id));
-    await this.sessionService.revokeAll(user.id);
-    await this.cache.invalidate(CACHE_KEYS.userSession(user.id));
-
-    this.audit.log({ action: "auth.password_reset_completed", userId: user.id });
-  }
-
-  async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
-    const record = await this.db.query.verificationTokens.findFirst({
-      where: eq(verificationTokens.token, hashToken(input.token)),
-    });
-    if (!record) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid verification token" });
-    }
-    if (new Date(record.expires) <= new Date()) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Verification token has expired" });
-    }
-
-    const [updatedUsers] = await Promise.all([
-      this.db
-        .update(users)
-        .set({ emailVerified: new Date() })
-        .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`)
-        .returning({ id: users.id }),
-      this.db
-        .delete(verificationTokens)
-        .where(eq(verificationTokens.identifier, record.identifier)),
-    ]);
-
-    const userId = updatedUsers[0]?.id;
-    if (!userId) throw new BadRequestException("User not found");
-
-    const rawToken = randomBytes(32).toString("hex");
-    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = addMinutes(new Date(), 5);
-
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId,
-      tokenHash,
-      expiresAt,
-    });
-
-    return { autoLoginToken: rawToken };
-  }
-
-  async resendVerification(email: string): Promise<void> {
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-    });
-    if (!user) return;
-    if (user.emailVerified) return;
-
-    const rawToken = generateToken();
-
-    await this.db
-      .delete(verificationTokens)
-      .where(eq(verificationTokens.identifier, normalizedEmail));
-
-    await this.db.insert(verificationTokens).values({
-      identifier: normalizedEmail,
-      token: hashToken(rawToken),
-      expires: addHours(new Date(), 24),
-    });
-
-    try {
-      await this.email.sendVerificationEmail(normalizedEmail, rawToken);
-    } catch {
-      throw new ServiceUnavailableException(
-        "Could not send verification email. Check email configuration and try again.",
-      );
-    }
-  }
-
-  async getLoginHistory(
-    userId: string,
-    query: { success?: boolean; from?: Date; to?: Date; page?: number; limit?: number },
-  ) {
-    const { and: andFn, desc, lte } = await import("drizzle-orm");
-    const page = query.page ?? 1;
-    const limit = Math.min(query.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
-
-    const conditions = [eq(loginHistory.userId, userId)];
-    if (query.success !== undefined) conditions.push(eq(loginHistory.success, query.success));
-    if (query.from) conditions.push(gte(loginHistory.createdAt, query.from));
-    if (query.to) conditions.push(lte(loginHistory.createdAt, query.to));
-
-    const [data, countResult] = await Promise.all([
-      this.db.query.loginHistory.findMany({
-        where: andFn(...conditions),
-        orderBy: [desc(loginHistory.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(loginHistory).where(andFn(...conditions)),
-    ]);
-
-    return { data, total: countResult[0]?.count ?? 0, page, limit };
-  }
-
-  async getAuditAnalytics() {
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const sevenDaysAgo = subDays(now, 7);
-
-    const [loginsTodayResult, failedLoginsResult, activeSessionsResult, passwordResetsResult] =
-      await Promise.all([
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(loginHistory)
-          .where(and(eq(loginHistory.success, true), gte(loginHistory.createdAt, startOfToday))),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(loginHistory)
-          .where(and(eq(loginHistory.success, false), gte(loginHistory.createdAt, sevenDaysAgo))),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(userSessions)
-          .where(
-            and(eq(userSessions.isRevoked, false), gt(userSessions.expiresAt, now)),
-          ),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(loginHistory)
-          .where(
-            and(
-              eq(loginHistory.event, "auth.password_reset_requested"),
-              gte(loginHistory.createdAt, sevenDaysAgo),
-            ),
-          ),
-      ]);
-
-    return {
-      loginsToday: loginsTodayResult[0]?.count ?? 0,
-      failedLoginsLast7Days: failedLoginsResult[0]?.count ?? 0,
-      activeSessions: activeSessionsResult[0]?.count ?? 0,
-      passwordResetsLast7Days: passwordResetsResult[0]?.count ?? 0,
-    };
-  }
-
-  private async logLoginEvent(
-    userId: string | null,
-    orgId: string | null,
-    event: string,
-    success: boolean,
-    failureReason: string | null,
-    context: { ipAddress?: string; userAgent?: string },
-  ): Promise<void> {
-    if (!userId) return;
-    await this.db.insert(loginHistory).values({
-      id: randomUUID(),
-      userId,
-      orgId,
-      event,
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
-      success,
-      failureReason,
-    }).catch(() => {});
-  }
-
-  async requestMagicLink(input: MagicLinkRequestInput): Promise<void> {
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${input.email.toLowerCase()}`,
-      columns: { id: true, email: true, emailVerified: true },
-    });
-
-    if (!user || !user.emailVerified) return;
-
-    const token = randomBytes(32).toString("hex");
-    const tokenHash = createHash("sha256").update(token).digest("hex");
-    const expiresAt = addHours(new Date(), 1);
-
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-    });
-
-    await this.email.sendMagicLinkEmail(user.email, token);
-  }
-
-  private async resolveActiveMembership(
-    userId: string,
-    preferredOrgId: string | null,
-  ): Promise<{
-    orgId: string;
-    isOwner: boolean;
-    mfaEnforced: boolean;
-    enabledModules: string[] | null;
-    orgOnboardingCompletedAt: Date | null;
-  } | null> {
-    const rows = await this.db
-      .select({
-        orgId: organizationMembers.orgId,
-        isOwner: organizationMembers.isOwner,
-        mfaEnforced: organizations.mfaEnforced,
-        enabledModules: organizations.enabledModules,
-        orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(eq(organizationMembers.userId, userId))
-      .orderBy(desc(organizationMembers.joinedAt));
-
-    if (preferredOrgId) {
-      const preferred = rows.find((r) => r.orgId === preferredOrgId);
-      if (preferred) return preferred;
-    }
-    return rows[0] ?? null;
-  }
-
   async getSessionData(userId: string): Promise<{
     userId: string;
     email: string;
@@ -714,187 +404,91 @@ export class AuthService {
     permissions: string[];
     plan: string | null;
   }> {
-    const user = await this.db.query.users
-      .findFirst({
-        where: eq(users.id, userId),
-        columns: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          name: true,
-          image: true,
-          role: true,
-          isActive: true,
-          hasDashboardAccess: true,
-          isPasswordChangeRequired: true,
-          branchId: true,
-          totpEnabled: true,
-          onboardingCompletedAt: true,
-          lastActiveOrgId: true,
-        },
-      })
-      .catch(() => {
-        throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
-      });
+    return this.cache.cached(
+      CACHE_KEYS.userSession(userId),
+      async () => {
+        const user = await this.db.query.users
+          .findFirst({
+            where: eq(users.id, userId),
+            columns: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              name: true,
+              image: true,
+              role: true,
+              isActive: true,
+              hasDashboardAccess: true,
+              isPasswordChangeRequired: true,
+              branchId: true,
+              totpEnabled: true,
+              onboardingCompletedAt: true,
+              lastActiveOrgId: true,
+            },
+          })
+          .catch(() => {
+            throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+          });
 
-    if (!user) throw new NotFoundException("User not found");
+        if (!user) throw new NotFoundException("User not found");
 
-    const membership = await this.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
+        const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
 
-    let mfaEnforced = false;
-    let enabledModules: string[] = [];
-    let orgOnboardingCompletedAt: string | null = null;
-    let plan: string | null = null;
-    let permissions: string[] = [];
+        let mfaEnforced = false;
+        let enabledModules: string[] = [];
+        let orgOnboardingCompletedAt: string | null = null;
+        let plan: string | null = null;
+        let permissions: string[] = [];
 
-    const resolvedOrgId = membership?.orgId ?? null;
-    const isOrgOwner = membership?.isOwner ?? false;
+        const resolvedOrgId = membership?.orgId ?? null;
+        const isOrgOwner = membership?.isOwner ?? false;
 
-    if (membership) {
-      mfaEnforced = membership.mfaEnforced;
-      enabledModules = membership.enabledModules ?? [];
-      orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
+        if (membership) {
+          mfaEnforced = membership.mfaEnforced;
+          enabledModules = membership.enabledModules ?? [];
+          orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
-      const sub = await this.db.query.subscriptions.findFirst({
-        where: eq(subscriptions.orgId, membership.orgId),
-        columns: { plan: true, status: true },
-      });
-      if (sub) {
-        plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
-      }
+          const sub = await this.db.query.subscriptions.findFirst({
+            where: eq(subscriptions.orgId, membership.orgId),
+            columns: { plan: true, status: true },
+          });
+          if (sub) {
+            plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+          }
 
-      try {
-        const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
-        permissions = [...permMap.keys()];
-      } catch {
-        permissions = [];
-      }
-    }
+          try {
+            const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
+            permissions = [...permMap.keys()];
+          } catch {
+            permissions = [];
+          }
+        }
 
-    return {
-      userId: user.id,
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-      name: user.name ?? null,
-      image: user.image ?? null,
-      role: user.role ?? null,
-      isActive: user.isActive,
-      hasDashboardAccess: user.hasDashboardAccess,
-      isPasswordChangeRequired: user.isPasswordChangeRequired,
-      branchId: user.branchId ?? null,
-      totpEnabled: user.totpEnabled,
-      orgId: resolvedOrgId,
-      isOrgOwner,
-      mfaEnforced,
-      enabledModules,
-      orgOnboardingCompletedAt,
-      userOnboardingCompletedAt: user.onboardingCompletedAt?.toISOString() ?? null,
-      permissions,
-      plan,
-    };
+        return {
+          userId: user.id,
+          email: user.email,
+          firstName: user.firstName ?? null,
+          lastName: user.lastName ?? null,
+          name: user.name ?? null,
+          image: user.image ?? null,
+          role: user.role ?? null,
+          isActive: user.isActive,
+          hasDashboardAccess: user.hasDashboardAccess,
+          isPasswordChangeRequired: user.isPasswordChangeRequired,
+          branchId: user.branchId ?? null,
+          totpEnabled: user.totpEnabled,
+          orgId: resolvedOrgId,
+          isOrgOwner,
+          mfaEnforced,
+          enabledModules,
+          orgOnboardingCompletedAt,
+          userOnboardingCompletedAt: user.onboardingCompletedAt?.toISOString() ?? null,
+          permissions,
+          plan,
+        };
+      },
+      60,
+    );
   }
-
-  async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
-    const tokenHash = createHash("sha256").update(token).digest("hex");
-
-    const row = await this.db.query.magicLinkTokens.findFirst({
-      where: eq(magicLinkTokens.tokenHash, tokenHash),
-    });
-
-    if (!row) {
-      throw new UnauthorizedException({ code: "AUTH_TOKEN_INVALID", message: "Invalid magic link" });
-    }
-    if (row.usedAt || new Date(row.expiresAt) <= new Date()) {
-      throw new UnauthorizedException({ code: "AUTH_TOKEN_EXPIRED", message: "Magic link has expired or has already been used" });
-    }
-
-    await this.db.update(magicLinkTokens).set({ usedAt: new Date() }).where(eq(magicLinkTokens.id, row.id));
-
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, row.userId),
-      columns: { isPasswordChangeRequired: true, lastActiveOrgId: true },
-    });
-
-    const membership = await this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null);
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(row.userId));
-
-    return {
-      userId: row.userId,
-      orgId: membership?.orgId ?? "",
-      forceChangePassword: user?.isPasswordChangeRequired ?? false,
-    };
-  }
-
-  async googleOAuth(input: GoogleOAuthInput): Promise<{ userId: string; isNewUser: boolean }> {
-    const normalizedEmail = input.email.toLowerCase().trim();
-
-    const existingAccount = await this.db.query.accounts.findFirst({
-      where: and(
-        eq(accounts.provider, "google"),
-        eq(accounts.providerAccountId, input.googleId),
-      ),
-      columns: { userId: true },
-    });
-
-    if (existingAccount) {
-      return { userId: existingAccount.userId, isNewUser: false };
-    }
-
-    const existingUser = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, emailVerified: true },
-    });
-
-    if (existingUser) {
-      await this.db.insert(accounts).values({
-        userId: existingUser.id,
-        type: "oauth",
-        provider: "google",
-        providerAccountId: input.googleId,
-      }).onConflictDoNothing();
-
-      if (!existingUser.emailVerified) {
-        await this.db.update(users).set({ emailVerified: new Date() }).where(eq(users.id, existingUser.id));
-      }
-
-      return { userId: existingUser.id, isNewUser: false };
-    }
-
-    const userId = randomUUID();
-    const rawName = (input.name ?? normalizedEmail.split("@")[0]).trim();
-    const spaceIdx = rawName.indexOf(" ");
-    const firstName = spaceIdx === -1 ? rawName : rawName.slice(0, spaceIdx);
-    const lastName = spaceIdx === -1 ? "" : rawName.slice(spaceIdx + 1).trim();
-
-    await this.db.transaction(async (tx) => {
-      await tx.insert(users).values({
-        id: userId,
-        email: normalizedEmail,
-        name: rawName,
-        firstName,
-        lastName,
-        image: input.image || null,
-        role: "OWNER",
-        isActive: true,
-        hasDashboardAccess: true,
-        isPasswordChangeRequired: false,
-        emailVerified: new Date(),
-      });
-
-      await tx.insert(accounts).values({
-        userId,
-        type: "oauth",
-        provider: "google",
-        providerAccountId: input.googleId,
-      });
-    });
-
-    this.audit.log({ action: "user.registered", userId, metadata: { email: normalizedEmail, provider: "google" } });
-
-    return { userId, isNewUser: true };
-  }
-
 }

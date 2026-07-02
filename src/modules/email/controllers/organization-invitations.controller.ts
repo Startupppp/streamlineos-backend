@@ -5,13 +5,13 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { EmailRoutesService } from "../email-routes.service";
+import { InvitationsService } from "../../organization/invitations.service";
 import { resendInvitationSchema, type ResendInvitationInput } from "../dto/email.schemas";
 
 @Controller("organization/invitations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class OrganizationInvitationsController {
-  constructor(private readonly routes: EmailRoutesService) {}
+  constructor(private readonly invitations: InvitationsService) {}
 
   @Post("resend")
   @HttpCode(200)
@@ -20,6 +20,6 @@ export class OrganizationInvitationsController {
     @Body(new ZodValidationPipe(resendInvitationSchema)) body: ResendInvitationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.routes.resendInvitation(u.orgId, u.userId, body.invitationId);
+    return this.invitations.resend(u.orgId, body.invitationId, u.userId);
   }
 }
