@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { ChatOrgSettingsService } from "./chat-org-settings.service";
 
 const mockDb = {
   query: {
@@ -29,12 +30,16 @@ const mockDb = {
 const mockAbly = { publishHuddleEvent: jest.fn().mockResolvedValue(undefined), publishToUser: jest.fn().mockResolvedValue(undefined) };
 const mockWebPush = { sendToUser: jest.fn().mockResolvedValue(undefined) };
 const mockAudit = { log: jest.fn() };
+const mockOrgSettings = {
+  getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }),
+};
 
 describe("ChatHuddlesService", () => {
   let service: ChatHuddlesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatHuddlesService,
@@ -42,6 +47,7 @@ describe("ChatHuddlesService", () => {
         { provide: AblyService, useValue: mockAbly },
         { provide: WebPushService, useValue: mockWebPush },
         { provide: AuditService, useValue: mockAudit },
+        { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
       ],
     }).compile();
     service = module.get(ChatHuddlesService);
@@ -93,6 +99,45 @@ describe("ChatHuddlesService", () => {
     it("throws NotFoundException if huddle not found", async () => {
       mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
       await expect(service.setDeafen(1, "user1", "org1", true)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("joinHuddle", () => {
+    it("throws NotFoundException if huddle not found or inactive", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
+      await expect(service.joinHuddle(1, "user1", "org1")).rejects.toThrow(NotFoundException);
+    });
+
+    it("rejects joining once the org's max participant cap is reached", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user2", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([
+        { userId: "user1" },
+        { userId: "user3" },
+      ]);
+      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 2 });
+      await expect(service.joinHuddle(1, "user2", "org1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("allows a participant already in the call to rejoin even when the cap is reached", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ userId: "user1" }]);
+      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 1 });
+      const result = await service.joinHuddle(1, "user1", "org1");
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("allows joining when under the cap", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user2", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ userId: "user1" }]);
+      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
+      const result = await service.joinHuddle(1, "user2", "org1");
+      expect(result).toEqual({ ok: true });
     });
   });
 });
