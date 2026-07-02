@@ -1,4 +1,4 @@
-import { escapeHtml, getEmailTemplate } from "./base";
+﻿import { escapeHtml, getEmailTemplate } from "./base";
 import { renderButton, renderCallout, renderKeyValueRows } from "./components";
 
 interface InterviewInviteParams {
@@ -67,7 +67,7 @@ ${notes ? renderCallout(notes, "info") : ""}
 ${cta}`;
 
   const subject = isCandidate
-    ? `Interview invitation — ${params.jobTitle} at ${params.companyName}`
+    ? `Interview invitation â€” ${params.jobTitle} at ${params.companyName}`
     : `You're interviewing ${params.candidateName} on ${scheduledAtFormatted}`;
 
   return {
@@ -131,10 +131,10 @@ ${renderKeyValueRows(rows)}`;
 }
 
 function feedbackRatingButton(ratingLabel: string, bgColor: string): string {
-  const subject = encodeURIComponent(`Interview Feedback — ${ratingLabel}`);
+  const subject = encodeURIComponent(`Interview Feedback â€” ${ratingLabel}`);
   const body = encodeURIComponent(`Hi, I would rate my interview experience as ${ratingLabel}. (Add your comments here)`);
   const href = `mailto:hr@streamlineos.app?subject=${subject}&body=${body}`;
-  return `<td style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${bgColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;font-family:'DM Sans',-apple-system,sans-serif;">${escapeHtml(ratingLabel)}</a></td>`;
+  return `<td style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${bgColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(ratingLabel)}</a></td>`;
 }
 
 export function getCandidateFeedbackEmail(params: {

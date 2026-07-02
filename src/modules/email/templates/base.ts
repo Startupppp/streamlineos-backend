@@ -1,5 +1,5 @@
 import { appUrl } from "../app-url";
-import { getSupportEmail } from "../email.constants";
+import { getBrandUrl, getSupportEmail } from "../email.constants";
 
 export { appUrl };
 
@@ -18,8 +18,26 @@ export interface EmailTemplateProps {
   content: string;
 }
 
+function buildLogoLockup(): string {
+  const emailAssetsBase = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim();
+  if (emailAssetsBase) {
+    return (
+      `<td width="40" height="40" style="width:40px;height:40px;vertical-align:middle;">` +
+      `<img src="${emailAssetsBase}/email-assets/logo-v2.png" alt="StreamlineOS" width="40" height="40" style="display:block;border:0;width:40px;height:40px;border-radius:9px;">` +
+      `</td>`
+    );
+  }
+  return (
+    `<td width="36" height="36" align="center" valign="middle" bgcolor="#000000" style="width:36px;height:36px;border-radius:9px;background:#000000;">` +
+    `<span style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:18px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;">S</span>` +
+    `</td>`
+  );
+}
+
 export function getEmailTemplate({ title, preheader, content }: EmailTemplateProps): string {
   const supportEmail = getSupportEmail();
+  const brandUrl = getBrandUrl();
+  const logoCell = buildLogoLockup();
   const preheaderText = preheader
     ? `<div style="display:none;font-size:1px;color:#EEF3FB;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
     : "";
@@ -36,7 +54,7 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
 
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
     table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
@@ -46,31 +64,31 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
       margin: 0;
       padding: 0;
       background-color: #EEF3FB;
-      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
     .email-title {
-      font-family: 'Sora', -apple-system, 'Segoe UI', Arial, sans-serif;
-      font-size: 30px;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 24px;
       font-weight: 700;
       color: #0b1220;
-      letter-spacing: -0.025em;
-      line-height: 1.18;
-      margin: 0 0 14px 0;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin: 0 0 10px 0;
     }
 
     .email-text {
-      font-family: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
-      font-size: 16px;
-      line-height: 1.7;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
       color: #4A5568;
-      margin: 0 0 20px 0;
+      margin: 0 0 14px 0;
     }
 
     .email-label {
-      font-family: 'DM Sans', -apple-system, sans-serif;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
       font-size: 11px;
       font-weight: 600;
       color: #94A3B8;
@@ -85,30 +103,30 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
       background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
       color: #ffffff !important;
       text-decoration: none;
-      font-family: 'Sora', -apple-system, 'Segoe UI', Arial, sans-serif;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
       font-size: 15px;
       font-weight: 600;
       letter-spacing: 0.02em;
-      padding: 16px 32px;
+      padding: 13px 28px;
       border-radius: 8px;
       text-align: center;
       border: 2px solid #1e40af;
-      margin: 28px 0;
+      margin: 20px 0;
       box-sizing: border-box;
     }
 
     .security-notice {
       border-left: 4px solid #06b6d4;
-      padding: 14px 18px;
+      padding: 11px 14px;
       background: rgba(6, 182, 212, 0.04);
       border-radius: 0 6px 6px 0;
-      margin: 24px 0;
+      margin: 16px 0;
     }
 
     .security-text {
-      font-family: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
       font-size: 13.5px;
-      line-height: 1.6;
+      line-height: 1.55;
       color: #475569;
       margin: 0;
     }
@@ -116,14 +134,14 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
     .credential-box {
       background-color: #F7F9FF;
       border-left: 4px solid #3b82f6;
-      padding: 18px 20px;
+      padding: 13px 16px;
       border-radius: 0 8px 8px 0;
-      margin: 24px 0;
+      margin: 16px 0;
     }
 
     .credential-item {
-      margin: 8px 0;
-      font-family: 'DM Sans', -apple-system, sans-serif;
+      margin: 6px 0;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
       font-size: 14px;
       color: #4A5568;
     }
@@ -135,10 +153,11 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
 
     .credential-value {
       color: #1e40af;
-      font-family: 'Courier New', Courier, monospace;
-      background-color: #ffffff;
-      padding: 3px 8px;
-      border-radius: 4px;
+      font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-weight: 600;
+      background-color: #EEF3FF;
+      padding: 2px 9px;
+      border-radius: 6px;
       display: inline-block;
       margin-left: 8px;
       font-size: 13px;
@@ -147,12 +166,12 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
     .divider {
       height: 1px;
       background-color: #E8E8E8;
-      margin: 28px 0;
+      margin: 20px 0;
       border: none;
     }
 
     .fallback-url {
-      font-family: 'Courier New', Courier, monospace;
+      font-family: 'Geist Mono', 'Courier New', Courier, monospace;
       font-size: 12px;
       color: #64748B;
       word-break: break-all;
@@ -161,9 +180,9 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
     }
 
     @media only screen and (max-width: 640px) {
-      .card-body { padding: 28px 24px 24px !important; }
-      .email-footer { padding: 16px 24px 28px !important; }
-      .email-title { font-size: 24px !important; }
+      .card-body { padding: 22px 18px 18px !important; }
+      .email-footer { padding: 12px 18px 16px !important; }
+      .email-title { font-size: 21px !important; }
     }
   </style>
 </head>
@@ -171,7 +190,7 @@ export function getEmailTemplate({ title, preheader, content }: EmailTemplatePro
 ${preheaderText}
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#EEF3FB;">
   <tr>
-    <td style="padding:48px 20px;" align="center">
+    <td style="padding:28px 16px;" align="center">
 
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(14,30,64,0.08);overflow:hidden;">
 
@@ -191,15 +210,13 @@ ${preheaderText}
 
         <!-- Card body -->
         <tr>
-          <td style="padding:40px 48px 32px;" class="card-body">
+          <td style="padding:28px 32px 22px;" class="card-body">
 
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:36px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 22px;">
               <tr>
-                <td width="36" height="36" align="center" valign="middle" bgcolor="#1e40af" style="width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);">
-                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:18px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;">S</span>
-                </td>
-                <td style="vertical-align:middle;padding-left:11px;">
-                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:17px;font-weight:600;color:#0b1220;letter-spacing:-0.02em;">Streamline<span style="color:#1e40af;">OS</span></span>
+                ${logoCell}
+                <td style="vertical-align:middle;padding-left:10px;">
+                  <span style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:17px;font-weight:600;color:#0b1220;letter-spacing:-0.02em;">Streamline<span style="color:#1e40af;">OS</span></span>
                 </td>
               </tr>
             </table>
@@ -215,10 +232,10 @@ ${preheaderText}
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
               <tr><td height="1" bgcolor="#E8E8E8" style="font-size:0;line-height:0;">&nbsp;</td></tr>
               <tr>
-                <td style="padding:20px 48px 28px;text-align:center;" class="email-footer">
-                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;font-weight:600;color:#64748B;margin:0 0 4px 0;">StreamlineOS</p>
-                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0 0 6px 0;">Enterprise Resource Management &nbsp;&middot;&nbsp; <a href="mailto:${supportEmail}" style="color:#94A3B8;text-decoration:underline;">${supportEmail}</a></p>
-                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0;"><a href="${appUrl}/privacy" style="color:#94A3B8;text-decoration:underline;">Privacy Policy</a></p>
+                <td style="padding:14px 32px 18px;text-align:center;" class="email-footer">
+                  <p style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;font-weight:600;color:#64748B;margin:0 0 3px 0;">StreamlineOS</p>
+                  <p style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#999;margin:0 0 4px 0;">Enterprise Resource Management &nbsp;&middot;&nbsp; <a href="mailto:${supportEmail}" style="color:#94A3B8;text-decoration:underline;">${supportEmail}</a></p>
+                  <p style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#999;margin:0;"><a href="${brandUrl}/legal/privacy" style="color:#94A3B8;text-decoration:underline;">Privacy Policy</a></p>
                 </td>
               </tr>
             </table>

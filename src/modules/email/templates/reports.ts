@@ -1,4 +1,4 @@
-import { getEmailTemplate, escapeHtml } from "./base";
+﻿import { getEmailTemplate, escapeHtml } from "./base";
 import { renderCallout } from "./components";
 
 export interface MonthlyExpenseReportRow {
@@ -32,7 +32,7 @@ export function getWeeklyAttendanceReportTemplate(
     .join("");
 
   const content = `
-    <p class="email-text">Attendance for <strong>${sOrgName}</strong> — week of <strong>${sWeekRange}</strong>.</p>
+    <p class="email-text">Attendance for <strong>${sOrgName}</strong> â€” week of <strong>${sWeekRange}</strong>.</p>
 
     <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
       <thead>
@@ -52,8 +52,8 @@ export function getWeeklyAttendanceReportTemplate(
   `;
 
   return getEmailTemplate({
-    title: `Attendance report — week of ${sWeekRange}`,
-    preheader: `Attendance summary for ${sOrgName} — week of ${sWeekRange}`,
+    title: `Attendance report â€” week of ${sWeekRange}`,
+    preheader: `Attendance summary for ${sOrgName} â€” week of ${sWeekRange}`,
     content,
   });
 }
@@ -80,7 +80,7 @@ export function getMonthlyExpenseReportTemplate(
     .join("");
 
   const content = `
-    <p class="email-text">Expenses for <strong>${sOrgName}</strong> — <strong>${sMonthLabel}</strong>.</p>
+    <p class="email-text">Expenses for <strong>${sOrgName}</strong> â€” <strong>${sMonthLabel}</strong>.</p>
 
     <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
       <thead>
@@ -98,14 +98,14 @@ export function getMonthlyExpenseReportTemplate(
     </table>
 
     <div style="background-color:#F7F9FF;border-left:4px solid #3b82f6;padding:16px 20px;border-radius:0 8px 8px 0;margin:24px 0;">
-      <p style="font-family:'DM Sans',-apple-system,sans-serif;font-size:14px;color:#0b1220;margin:0 0 4px 0;font-weight:600;">Summary</p>
-      <p style="font-family:'DM Sans',-apple-system,sans-serif;font-size:14px;color:#4A5568;margin:0;">Total: <strong style="color:#1e40af;">&#8377;${escapeHtml(summary.totalAmount)}</strong> &nbsp;&middot;&nbsp; ${summary.totalCount} expense${summary.totalCount !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Pending: ${summary.pendingCount} &nbsp;&middot;&nbsp; Approved: ${summary.approvedCount} &nbsp;&middot;&nbsp; Paid: ${summary.paidCount} &nbsp;&middot;&nbsp; Rejected: ${summary.rejectedCount}</p>
+      <p style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;color:#0b1220;margin:0 0 4px 0;font-weight:600;">Summary</p>
+      <p style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;color:#4A5568;margin:0;">Total: <strong style="color:#1e40af;">&#8377;${escapeHtml(summary.totalAmount)}</strong> &nbsp;&middot;&nbsp; ${summary.totalCount} expense${summary.totalCount !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Pending: ${summary.pendingCount} &nbsp;&middot;&nbsp; Approved: ${summary.approvedCount} &nbsp;&middot;&nbsp; Paid: ${summary.paidCount} &nbsp;&middot;&nbsp; Rejected: ${summary.rejectedCount}</p>
     </div>
   `;
 
   return getEmailTemplate({
-    title: `Expense report — ${sMonthLabel}`,
-    preheader: `Expense summary for ${sOrgName} — ${sMonthLabel}`,
+    title: `Expense report â€” ${sMonthLabel}`,
+    preheader: `Expense summary for ${sOrgName} â€” ${sMonthLabel}`,
     content,
   });
 }
@@ -138,28 +138,28 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
       <tr>
         <td width="50%" style="padding:0 6px 12px 0;">
           <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Sora',-apple-system,sans-serif;">${data.newLeads}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;">New leads</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.newLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">New leads</p>
           </div>
         </td>
         <td width="50%" style="padding:0 0 12px 6px;">
           <div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#166534;font-family:'Sora',-apple-system,sans-serif;">${data.convertedLeads}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;">Conversions</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#166534;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.convertedLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Conversions</p>
           </div>
         </td>
       </tr>
       <tr>
         <td width="50%" style="padding:0 6px 0 0;">
           <div style="background:#fefce8;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#92400e;font-family:'Sora',-apple-system,sans-serif;">${data.totalActivities}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;">Activities logged</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#92400e;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.totalActivities}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Activities logged</p>
           </div>
         </td>
         <td width="50%" style="padding:0 0 0 6px;">
           <div style="background:#faf5ff;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Sora',-apple-system,sans-serif;">${data.closedTickets}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;">Tickets closed</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.closedTickets}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tickets closed</p>
           </div>
         </td>
       </tr>
@@ -167,13 +167,13 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
 
   const statsTable = `
     <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">Total employees</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">${data.totalEmployees}</td></tr>
-      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">Open tickets</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">${data.openTickets}</td></tr>
-      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'DM Sans',-apple-system,sans-serif;">Pending leave requests</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;">${data.pendingLeaves}</td></tr>
+      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;border-bottom:1px solid #f1f5f9;">Total employees</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;border-bottom:1px solid #f1f5f9;">${data.totalEmployees}</td></tr>
+      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;border-bottom:1px solid #f1f5f9;">Open tickets</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;border-bottom:1px solid #f1f5f9;">${data.openTickets}</td></tr>
+      <tr><td style="padding:8px 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Pending leave requests</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.pendingLeaves}</td></tr>
     </table>`;
 
   const topPerformersSection = data.topPerformers.length > 0
-    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Sales leaderboard</p>
+    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Sales leaderboard</p>
        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
          <thead><tr style="background-color:#f8fafc;">
            <th style="padding:8px 12px;text-align:left;font-size:12px;color:#4A5568;font-weight:600;">Rank</th>
@@ -187,7 +187,7 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
     : "";
 
   const pipelineSection = data.pipelineSummary.length > 0
-    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Lead pipeline</p>
+    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Lead pipeline</p>
        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
          <thead><tr style="background-color:#f8fafc;">
            <th style="padding:6px 12px;text-align:left;font-size:12px;color:#4A5568;font-weight:600;">Status</th>
@@ -200,7 +200,7 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
     : "";
 
   const content = `
-    <p class="email-text">Your weekly overview for <strong>${sOrgName}</strong> — week of <strong>${sWeekRange}</strong>.</p>
+    <p class="email-text">Your weekly overview for <strong>${sOrgName}</strong> â€” week of <strong>${sWeekRange}</strong>.</p>
     ${narrativeBlock}
     ${kpiRows}
     ${statsTable}
@@ -210,7 +210,7 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
 
   return getEmailTemplate({
     title: `Your week at ${sOrgName}`,
-    preheader: `Weekly recap for ${sOrgName} — ${sWeekRange}: ${data.newLeads} new leads, ${data.convertedLeads} conversions.`,
+    preheader: `Weekly recap for ${sOrgName} â€” ${sWeekRange}: ${data.newLeads} new leads, ${data.convertedLeads} conversions.`,
     content,
   });
 }

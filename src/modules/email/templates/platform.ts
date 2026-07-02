@@ -80,7 +80,7 @@ export interface ContactReplyEmailParams {
 
 export function getContactReplyEmail(params: ContactReplyEmailParams): { subject: string; html: string } {
   const { name, replyBody, originalMessage, originalTopic } = params;
-  const subject = `Re: your ${escapeHtml(originalTopic)} message to StreamlineOS`;
+  const subject = `Re: your ${originalTopic} message to StreamlineOS`;
   const firstName = escapeHtml(name.split(" ")[0] ?? name);
   const escapedReply = escapeHtml(replyBody).replace(/\n/g, "<br>");
   const escapedOriginal = escapeHtml(originalMessage).replace(/\n/g, "<br>");
@@ -96,7 +96,7 @@ export function getContactReplyEmail(params: ContactReplyEmailParams): { subject
   return {
     subject,
     html: getEmailTemplate({
-      title: subject,
+      title: escapeHtml(subject),
       preheader: "A reply to your message from the StreamlineOS team.",
       content,
     }),

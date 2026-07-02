@@ -29,3 +29,8 @@ export function getFromAddress(): string {
 export function getSupportEmail(): string {
   return getFromEmail();
 }
+
+export function getBrandUrl(): string {
+  const configured = process.env.BRAND_URL?.trim();
+  return (configured || "https://www.streamlineos.in").replace(/\/$/, "");
+}

@@ -1,4 +1,4 @@
-import { escapeHtml, getEmailTemplate } from "./base";
+﻿import { escapeHtml, getEmailTemplate } from "./base";
 import { renderButton, renderCallout, renderKeyValueRows } from "./components";
 
 interface RejectionEmailParams {
@@ -85,7 +85,7 @@ export function getInterviewNoShowRescheduleEmail(
     subject: "Let's reschedule your interview",
     html: getEmailTemplate({
       title: "Let's reschedule",
-      preheader: "We missed you at your interview — reply to arrange a new time.",
+      preheader: "We missed you at your interview â€” reply to arrange a new time.",
       content,
     }),
   };
@@ -107,17 +107,17 @@ export function getCandidateDocumentRolloutEmail(
   const content = `
     <p class="email-text">Hi ${name},</p>
     <p class="email-text">The following document${params.documentLinks.length !== 1 ? "s have" : " has"} been prepared for you as part of your application process. Please review and sign them before the application deadline.</p>
-    <ul style="margin:16px 0;padding-left:24px;font-family:'DM Sans',-apple-system,sans-serif;font-size:15px;line-height:1.7;color:#4A5568;">
+    <ul style="margin:16px 0;padding-left:24px;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.7;color:#4A5568;">
       ${linksHtml}
     </ul>
     ${renderButton("View documents", params.documentLinks[0] ? escapeHtml(params.documentLinks[0].url) : "")}
   `;
 
   return {
-    subject: "Your documents are ready — please review",
+    subject: "Your documents are ready â€” please review",
     html: getEmailTemplate({
       title: "Your documents are ready",
-      preheader: `${params.documentLinks.length} document${params.documentLinks.length !== 1 ? "s" : ""} prepared for your review — please sign before the application deadline.`,
+      preheader: `${params.documentLinks.length} document${params.documentLinks.length !== 1 ? "s" : ""} prepared for your review â€” please sign before the application deadline.`,
       content,
     }),
   };
