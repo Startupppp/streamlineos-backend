@@ -369,6 +369,7 @@ export class PlatformService {
       name: message.name,
       replyBody: body,
       originalMessage: message.message,
+      originalTopic: message.topic,
     });
     await this.email.sendEmail({
       to: message.email,

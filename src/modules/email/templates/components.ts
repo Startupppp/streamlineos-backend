@@ -34,5 +34,5 @@ export function renderBadge(label: string, tone: Tone): string {
 }
 
 export function renderFallbackLink(url: string): string {
-  return `<p class="email-text" style="font-size:13px;margin:0 0 8px 0;">If the button doesn't work, copy this link into your browser:</p><span class="fallback-url" style="font-family:'Courier New',Courier,monospace;font-size:12px;color:#64748B;word-break:break-all;line-height:1.5;display:block;">${url}</span>`;
+  return `<p class="email-text" style="font-size:13px;margin:0 0 8px 0;">If the button doesn't work, copy this link into your browser:</p><span class="fallback-url" style="font-family:'Courier New',Courier,monospace;font-size:12px;color:#64748B;word-break:break-all;line-height:1.5;display:block;">${escapeHtml(url)}</span>`;
 }

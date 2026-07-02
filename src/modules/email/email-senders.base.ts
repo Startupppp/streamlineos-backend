@@ -33,7 +33,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendVerificationEmail(email: string, token: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Verify Your Email - StreamlineOS",
+      subject: "Verify your email address",
       html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
     });
   }
@@ -41,7 +41,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendPasswordResetEmail(email: string, token: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Reset Your Password - StreamlineOS",
+      subject: "Reset your password",
       html: getPasswordResetEmailTemplate(`${appUrl}/reset-password?token=${token}`),
     });
   }
@@ -49,7 +49,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendPasswordChangeConfirmationEmail(email: string, userName: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Password Changed Successfully - StreamlineOS",
+      subject: "Your password was changed",
       html: getPasswordChangeConfirmationEmailTemplate(userName),
     });
   }
@@ -57,7 +57,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendAccountLockedEmail(email: string, name: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Account Locked - StreamlineOS",
+      subject: "Your account is temporarily locked",
       html: getAccountLockedEmailTemplate(name),
     });
   }
@@ -70,7 +70,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Invitation to join ${organizationName} - StreamlineOS`,
+      subject: `You've been invited to join ${organizationName}`,
       html: getInvitationEmailTemplate(`${appUrl}/invitation/${token}`, organizationName, inviterName),
     });
   }
@@ -78,7 +78,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendWelcomeEmail(email: string, name: string, setupUrl: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Welcome to StreamlineOS — Set Up Your Account",
+      subject: "Your StreamlineOS account is ready",
       html: getWelcomeEmailTemplate(name, email, setupUrl),
     });
   }
@@ -91,7 +91,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Holiday Tomorrow: ${holidayName} - StreamlineOS`,
+      subject: `Upcoming holiday: ${holidayName}`,
       html: getHolidayAnnouncementEmailTemplate(holidayName, holidayDate, message),
     });
   }
@@ -104,7 +104,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Announcement: ${subject} - StreamlineOS`,
+      subject: `Announcement: ${subject}`,
       html: getCompanyAnnouncementEmailTemplate(subject, message, announcedBy),
     });
   }
@@ -131,7 +131,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Leave Request: ${employeeName} - StreamlineOS`,
+      subject: `Leave request from ${employeeName}`,
       html: getLeaveRequestEmailTemplate(
         approverName,
         employeeName,
@@ -156,7 +156,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Leave Request ${status}: ${leaveType} - StreamlineOS`,
+      subject: status === "APPROVED" ? "Your leave request was approved" : "Your leave request was rejected",
       html: getLeaveStatusUpdateEmailTemplate(
         employeeName,
         leaveType,
@@ -179,7 +179,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Leave Cancelled: ${employeeName} - StreamlineOS`,
+      subject: `Leave request cancelled by ${employeeName}`,
       html: getLeaveCancellationEmailTemplate(approverName, employeeName, leaveType, startDate, endDate),
     });
   }
@@ -196,7 +196,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: hrEmail,
-      subject: `Resignation Submitted: ${employeeName} - StreamlineOS`,
+      subject: `Resignation submitted by ${employeeName}`,
       html: getResignationSubmittedEmailTemplate(
         hrName,
         employeeName,
@@ -220,7 +220,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: employeeEmail,
-      subject: `Resignation Accepted - StreamlineOS`,
+      subject: "Your resignation has been accepted",
       html: getResignationApprovedEmailTemplate(
         employeeName,
         approverName,
@@ -243,7 +243,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: employeeEmail,
-      subject: `Employment Termination Notice - StreamlineOS`,
+      subject: "Notice of employment termination",
       html: getTerminationEmailTemplate(
         employeeName,
         employeeDesignation,
@@ -259,7 +259,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendOnboardingCompleteEmployeeEmail(email: string, employeeName: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Onboarding Complete — Welcome to the Team!",
+      subject: "Onboarding complete",
       html: getOnboardingCompleteEmployeeEmailTemplate(employeeName),
     });
   }
@@ -267,7 +267,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendOnboardingCompleteHrEmail(email: string, hrName: string, employeeName: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Onboarding Complete: ${employeeName}`,
+      subject: `${employeeName} completed onboarding`,
       html: getOnboardingCompleteHrEmailTemplate(hrName, employeeName),
     });
   }
@@ -281,7 +281,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Performance Review Assigned — StreamlineOS",
+      subject: "Performance review assigned",
       html: getReviewAssignedEmailTemplate(employeeName, reviewerName, periodStart, periodEnd),
     });
   }
@@ -290,7 +290,7 @@ export abstract class EmailSendersBase extends EmailBase {
     const magicLink = `${appUrl}/magic-link?token=${token}`;
     return this.sendEmail({
       to: email,
-      subject: "Your StreamlineOS sign-in link",
+      subject: "Your sign-in link",
       html: getMagicLinkEmailTemplate(magicLink),
     });
   }
@@ -334,7 +334,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Welcome — your onboarding has started",
+      subject: "Welcome to StreamlineOS",
       html: getOnboardingWelcomeEmailTemplate(employeeName, designation, joiningDate, taskCount),
     });
   }

@@ -12,7 +12,7 @@ export function getClientInvestmentEmailTemplate(params: {
   const { recipientName, clientName, amount, date, recordedBy, clientUrl } = params;
   const subject = `Investment recorded for ${clientName}`;
   const content = `
-    <h2 class="email-title">Investment recorded</h2>
+    <h1 class="email-title">Investment recorded</h1>
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">An investment has been recorded for ${escapeHtml(clientName)}.</p>
     ${renderKeyValueRows([
@@ -46,7 +46,7 @@ export function getLeadStatusChangeEmailTemplate(params: {
   if (fromStatus) rows.push({ label: "From", value: fromStatus });
   rows.push({ label: "To", value: toStatus });
   const content = `
-    <h2 class="email-title">Lead status updated</h2>
+    <h1 class="email-title">Lead status updated</h1>
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">The status of ${escapeHtml(leadName)} has been updated.</p>
     ${renderKeyValueRows(rows)}
@@ -74,7 +74,7 @@ export function getLeadDistributionEmailTemplate(params: {
   const plural = leadCount === 1 ? "" : "s";
   const subject = `${leadCount} lead${plural} assigned to you`;
   const content = `
-    <h2 class="email-title">${leadCount} lead${plural} assigned</h2>
+    <h1 class="email-title">${leadCount} lead${plural} assigned</h1>
     <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
     <p class="email-text">${escapeHtml(assignerName)} has assigned ${leadCount === 1 ? "a lead" : `${leadCount} leads`} to you.</p>
     ${renderKeyValueRows([

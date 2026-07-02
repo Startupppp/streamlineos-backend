@@ -18,6 +18,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
+import { getOnboardingReminderEmailTemplate } from "../email/templates/notifications-misc";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   BankDetailsInput,
@@ -115,7 +116,7 @@ export class OnboardingService {
     }
 
     const [targetUser] = await this.db
-      .select({ id: users.id, joiningDate: users.joiningDate })
+      .select({ id: users.id, joiningDate: users.joiningDate, email: users.email, name: users.name, designation: users.designation })
       .from(users)
       .where(eq(users.id, input.userId));
 
@@ -202,6 +203,8 @@ export class OnboardingService {
           };
         });
         await this.db.insert(onboardingTasks).values(taskInserts);
+        const ownerRoles = [...new Set(taskInserts.map((t) => t.ownerRole))];
+        void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, ownerRoles).catch(() => undefined);
         return { success: true, tasksCreated: taskInserts.length, fromTemplate: true };
       }
     }
@@ -220,7 +223,58 @@ export class OnboardingService {
       };
     });
     await this.db.insert(onboardingTasks).values(defaultInserts);
+    const defaultOwnerRoles = [...new Set(defaultInserts.map((t) => t.ownerRole))];
+    void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, defaultOwnerRoles).catch(() => undefined);
     return { success: true, tasksCreated: defaultInserts.length, fromTemplate: false };
+  }
+
+  private async dispatchOnboardingInitiatedEmails(
+    orgId: string,
+    employeeUserId: string,
+    targetUser: { email: string | null; name: string | null; designation: string | null; joiningDate: string | null } | undefined,
+    ownerRoles: string[],
+  ): Promise<void> {
+    if (targetUser?.email) {
+      const joiningDate = targetUser.joiningDate
+        ? new Date(targetUser.joiningDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+        : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      const taskCount = ownerRoles.length;
+      await this.email.sendOnboardingWelcomeEmail(
+        targetUser.email,
+        targetUser.name ?? "there",
+        targetUser.designation ?? "Employee",
+        joiningDate,
+        taskCount,
+      );
+    }
+
+    const assignableRoles = ownerRoles.filter((r) => r === "HR" || r === "MANAGER");
+    if (assignableRoles.length === 0) return;
+
+    const tasksByRole = new Map<string, number>();
+    for (const role of assignableRoles) {
+      tasksByRole.set(role, ownerRoles.filter((r) => r === role).length);
+    }
+
+    const membersRaw = await this.db
+      .select({ userId: organizationMembers.userId, role: organizationMembers.role, email: users.email, name: users.name })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          inArray(organizationMembers.role, assignableRoles),
+        ),
+      );
+
+    const employeeName = targetUser?.name ?? "the new joiner";
+    const seen = new Set<string>();
+    for (const member of membersRaw) {
+      if (!member.email || member.userId === employeeUserId || seen.has(member.userId)) continue;
+      seen.add(member.userId);
+      const count = tasksByRole.get(member.role) ?? 1;
+      await this.email.sendOnboardingTaskEmail(member.email, member.name ?? "there", employeeName, member.role, count);
+    }
   }
 
   async listTemplates(orgId: string) {
@@ -505,26 +559,11 @@ export class OnboardingService {
       });
 
       if (user.userEmail) {
-        const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #0f2b7f;">Onboarding Reminder</h2>
-            <p>Hi ${user.userName ?? "there"},</p>
-            <p>You have <strong>${user.pendingTasks}</strong> pending onboarding task(s) out of <strong>${user.totalTasks}</strong> total.</p>
-            <p>Please log in and complete your remaining tasks to finish your onboarding process.</p>
-            <a href="${appUrl}/hr/onboarding/my-tasks"
-               style="display: inline-block; padding: 10px 24px; background: #bd882c; color: white; text-decoration: none; border-radius: 6px; margin-top: 10px;">
-              Complete Tasks
-            </a>
-            <p style="color: #666; margin-top: 20px; font-size: 12px;">
-              This is an automated reminder from your HR team.
-            </p>
-          </div>
-        `;
         try {
           await this.email.sendEmail({
             to: user.userEmail,
-            subject: "Onboarding Reminder — Pending Tasks",
-            html,
+            subject: "Onboarding reminder — pending tasks",
+            html: getOnboardingReminderEmailTemplate(user.userName ?? "there", user.pendingTasks, user.totalTasks),
           });
           sentCount++;
         } catch {

@@ -290,6 +290,9 @@ export class EmployeeMutationsService {
             "Termination as per company policy.",
           )
           .catch(() => undefined);
+        void this.email
+          .sendAccountDeactivationEmail(targetUser.email, targetUser.name ?? "Employee", actorUser?.name ?? "HR")
+          .catch(() => undefined);
       }
     }
 

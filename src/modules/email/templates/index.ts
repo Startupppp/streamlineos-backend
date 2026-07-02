@@ -39,22 +39,56 @@ export {
 } from "./project";
 
 export {
-  getSelfReviewReminderEmail,
-  getManagerReviewReminderEmail,
-  getReviewPublishedEmail,
-  getGoalSettingReminderEmail,
-} from "./appraisal";
+  renderButton,
+  renderKeyValueRows,
+  renderCallout,
+  renderBadge,
+  renderFallbackLink,
+} from "./components";
+export type { Tone } from "./components";
 
 export {
-  getLeadWelcomeEmail,
-  getFollowUpReminderEmail,
-  getDealWonEmail,
-  getSlaBreachAlertEmail,
-  getClientOnboardingEmail,
+  getClientInvestmentEmailTemplate,
+  getLeadStatusChangeEmailTemplate,
+  getLeadDistributionEmailTemplate,
 } from "./crm";
 
-export { getWeeklyAttendanceReportTemplate, getMonthlyExpenseReportTemplate } from "./reports";
-export type { MonthlyExpenseReportRow } from "./reports";
+export {
+  getCandidateRejectionEmail,
+  getOfferDeadlineReminderEmail,
+  getInterviewNoShowRescheduleEmail,
+  getCandidateDocumentRolloutEmail,
+} from "./recruitment";
+
+export {
+  getInterviewInviteEmail,
+  getSelfScheduleBookingEmail,
+  getBookingConfirmationEmail,
+  getCandidateFeedbackEmail,
+} from "./interviews";
+
+export { getPayslipEmailTemplate } from "./payroll";
+export type { PayslipEmailParams } from "./payroll";
+
+export {
+  getContactAdminNotificationEmail,
+  getContactAutoreplyEmail,
+  getContactReplyEmail,
+  getTrialReminderEmail,
+} from "./platform";
+export type {
+  ContactAdminEmailParams,
+  ContactAutoreplyEmailParams,
+  ContactReplyEmailParams,
+  TrialReminderEmailParams,
+} from "./platform";
+
+export {
+  getWeeklyAttendanceReportTemplate,
+  getMonthlyExpenseReportTemplate,
+  getWeeklyRecapEmailTemplate,
+} from "./reports";
+export type { MonthlyExpenseReportRow, WeeklyRecapData } from "./reports";
 
 export {
   getTaskAssignedEmailTemplate,
@@ -62,7 +96,6 @@ export {
   getLeadAssignedEmailTemplate,
   getReviewAssignedEmailTemplate,
   getAssetAssignedEmailTemplate,
-  getPayrollApprovedEmailTemplate,
 } from "./notifications-crm-hr";
 
 export {
@@ -76,6 +109,7 @@ export {
   getHelpdeskTicketEmailTemplate,
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
+  getOnboardingReminderEmailTemplate,
 } from "./notifications-misc";
 
 export { generateMonthlyExpenseReportXlsx } from "./xlsx";

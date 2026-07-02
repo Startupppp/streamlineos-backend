@@ -278,6 +278,28 @@ export class CronController {
     }
   }
 
+  @Get("document-expiry")
+  getDocumentExpiry(@Headers("authorization") authorization?: string) {
+    return this.runDocumentExpiry(authorization);
+  }
+
+  @Post("document-expiry")
+  @HttpCode(200)
+  postDocumentExpiry(@Headers("authorization") authorization?: string) {
+    return this.runDocumentExpiry(authorization);
+  }
+
+  private async runDocumentExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.hr.processDocumentExpiry();
+      return { success: true, message: `Processed ${result.fired} document expiry reminders`, ...result };
+    } catch (error) {
+      logger.error("Document expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   @Get("email-outbox-flush")
   getEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);

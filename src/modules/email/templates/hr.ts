@@ -157,7 +157,8 @@ export function getDocumentExpiryReminderEmailTemplate(
   documentName: string,
   documentType: string,
   expiryDate: string,
-  daysRemaining: number
+  daysRemaining: number,
+  documentsUrl?: string
 ): string {
   const content = `<p class="email-text">Hi ${escapeHtml(employeeName)},</p>
 <p class="email-text">The following document is expiring soon and requires renewal to avoid compliance issues.</p>
@@ -167,7 +168,8 @@ ${renderKeyValueRows([
   { label: "Expires on", value: expiryDate },
   { label: "Days remaining", value: `${daysRemaining}` },
 ])}
-${renderCallout("Renew or update this document before the expiry date to maintain compliance.", "warning")}`;
+${renderCallout("Renew or update this document before the expiry date to maintain compliance.", "warning")}
+${documentsUrl !== undefined ? renderButton("Update document", documentsUrl) : ""}`;
   return getEmailTemplate({
     title: `Action needed: ${escapeHtml(documentName)} expires soon`,
     preheader: `${escapeHtml(documentName)} expires in ${daysRemaining} days. Update it before ${escapeHtml(expiryDate)}.`,

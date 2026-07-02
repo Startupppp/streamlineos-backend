@@ -13,7 +13,7 @@ export function getPayslipEmailTemplate(params: PayslipEmailParams): { subject: 
   const subject = `Your payslip for ${month}`;
   const firstName = escapeHtml(employeeName.split(" ")[0] ?? employeeName);
   const content = `
-<h2 class="email-title">Your payslip for ${escapeHtml(month)}</h2>
+<h1 class="email-title">Your payslip for ${escapeHtml(month)}</h1>
 <p class="email-text">Hi ${firstName}, your payslip for ${escapeHtml(month)} is attached to this email as a PDF.</p>
 ${renderKeyValueRows([
   { label: "Period", value: month },

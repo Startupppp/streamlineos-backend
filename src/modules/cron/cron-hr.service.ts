@@ -1,10 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { addDays, format } from "date-fns";
-import { certifications, onboardingTasks, users } from "../../db/schema";
+import { certifications, documents, onboardingTasks, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { EmailService } from "../email/email.service";
+import { getDocumentExpiryReminderEmailTemplate } from "../email/templates/hr";
+import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 
 @Injectable()
@@ -12,6 +15,7 @@ export class CronHrService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
+    private readonly email: EmailService,
   ) {}
 
   async processCertificationExpiry(): Promise<{ fired: number }> {
@@ -122,6 +126,80 @@ export class CronHrService {
     }
 
     logger.info("Onboarding completion sweep done", { fired });
+    return { fired };
+  }
+
+  async processDocumentExpiry(): Promise<{ fired: number }> {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const thirtyDaysStr = format(addDays(now, 30), "yyyy-MM-dd");
+
+    const expiring = await this.db
+      .select({
+        id: documents.id,
+        orgId: documents.orgId,
+        userId: documents.userId,
+        name: documents.name,
+        type: documents.type,
+        expiryDate: documents.expiryDate,
+        userEmail: users.email,
+        userName: users.name,
+      })
+      .from(documents)
+      .innerJoin(users, eq(users.id, documents.userId))
+      .where(
+        and(
+          eq(documents.isActive, true),
+          eq(documents.expiryReminderSent, false),
+          isNotNull(documents.expiryDate),
+          gte(documents.expiryDate, todayStr),
+          lte(documents.expiryDate, thirtyDaysStr),
+        ),
+      )
+      .limit(500);
+
+    if (expiring.length === 0) return { fired: 0 };
+
+    let fired = 0;
+    for (const doc of expiring) {
+      if (!doc.userEmail || !doc.expiryDate) continue;
+
+      const daysRemaining = Math.ceil(
+        (new Date(doc.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const expiryLabel = new Date(`${doc.expiryDate}T12:00:00Z`).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      const html = getDocumentExpiryReminderEmailTemplate(
+        doc.userName ?? "Employee",
+        doc.name,
+        doc.type ?? "Document",
+        expiryLabel,
+        daysRemaining,
+        `${appUrl}/hr/documents`,
+      );
+
+      try {
+        await this.email.sendEmail({
+          to: doc.userEmail,
+          subject: `Action needed: ${doc.name} expires soon`,
+          html,
+        });
+        await this.db
+          .update(documents)
+          .set({ expiryReminderSent: true })
+          .where(eq(documents.id, doc.id));
+        fired++;
+      } catch (error) {
+        logger.error("Document expiry reminder failed", { documentId: doc.id, error });
+      }
+    }
+
+    logger.info("Document expiry check complete", { fired });
     return { fired };
   }
 }

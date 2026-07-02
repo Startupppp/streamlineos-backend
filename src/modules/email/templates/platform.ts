@@ -30,7 +30,7 @@ export function getContactAdminNotificationEmail(params: ContactAdminEmailParams
   const escapedMessage = escapeHtml(message).replace(/\n/g, "<br>");
 
   const content = `
-<h2 class="email-title">${escapeHtml(subject)}</h2>
+<h1 class="email-title">${escapeHtml(subject)}</h1>
 ${renderKeyValueRows(rows)}
 ${renderCallout(escapedMessage, "info")}
 ${renderButton("Open inbox", inboxUrl)}
@@ -57,7 +57,7 @@ export function getContactAutoreplyEmail(params: ContactAutoreplyEmailParams): {
   const escapedMessage = escapeHtml(message).replace(/\n/g, "<br>");
 
   const content = `
-<h2 class="email-title">We received your message</h2>
+<h1 class="email-title">We received your message</h1>
 <p class="email-text">Hi ${firstName}, we received your message and a member of our team will reply within one business day.</p>
 ${renderCallout(escapedMessage, "info")}
 `;
@@ -75,17 +75,18 @@ export interface ContactReplyEmailParams {
   name: string;
   replyBody: string;
   originalMessage: string;
+  originalTopic: string;
 }
 
 export function getContactReplyEmail(params: ContactReplyEmailParams): { subject: string; html: string } {
-  const { name, replyBody, originalMessage } = params;
-  const subject = "Re: your message to StreamlineOS";
+  const { name, replyBody, originalMessage, originalTopic } = params;
+  const subject = `Re: your ${escapeHtml(originalTopic)} message to StreamlineOS`;
   const firstName = escapeHtml(name.split(" ")[0] ?? name);
   const escapedReply = escapeHtml(replyBody).replace(/\n/g, "<br>");
   const escapedOriginal = escapeHtml(originalMessage).replace(/\n/g, "<br>");
 
   const content = `
-<h2 class="email-title">Re: your message</h2>
+<h1 class="email-title">Re: your message</h1>
 <p class="email-text">Hi ${firstName},</p>
 <p class="email-text">${escapedReply}</p>
 <hr class="divider" style="height:1px;background-color:#E8E8E8;margin:28px 0;border:none;">
@@ -135,7 +136,7 @@ export function getTrialReminderEmail(params: TrialReminderEmailParams): { subje
     daysLeft === 0 ? "expires today" : daysLeft === 1 ? "ends tomorrow" : `ends in ${daysLeft} days`;
 
   const content = `
-<h2 class="email-title">${escapeHtml(subject)}</h2>
+<h1 class="email-title">${escapeHtml(subject)}</h1>
 <p class="email-text">Hi ${escapeHtml(orgName)} team, your StreamlineOS free trial ${expiryPhrase}. Upgrade to keep full access to all your data and features.</p>
 ${renderKeyValueRows(rows)}
 ${renderButton("Choose a plan", upgradeUrl)}

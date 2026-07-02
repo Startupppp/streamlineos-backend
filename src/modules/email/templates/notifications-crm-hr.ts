@@ -132,24 +132,3 @@ export function getAssetAssignedEmailTemplate(
   });
 }
 
-export function getPayrollApprovedEmailTemplate(
-  employeeName: string,
-  month: string,
-  approverName: string
-): string {
-  const rows: Array<{ label: string; value: string }> = [
-    { label: "Period", value: month },
-    { label: "Approved by", value: approverName },
-  ];
-  const content = `
-    <p class="email-text">Hi ${escapeHtml(employeeName)},</p>
-    <p class="email-text">Your payroll for <strong>${escapeHtml(month)}</strong> has been approved and is being processed. Your payslip will be available once payment is complete.</p>
-    ${renderKeyValueRows(rows)}
-    ${renderButton("View payslips", `${appUrl}/hr/my-payslips`)}
-  `;
-  return getEmailTemplate({
-    title: `Payroll approved for ${escapeHtml(month)}`,
-    preheader: `Your payroll for ${escapeHtml(month)} was approved by ${escapeHtml(approverName)}`,
-    content,
-  });
-}

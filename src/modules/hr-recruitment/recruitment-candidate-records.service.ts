@@ -22,6 +22,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
+import { getCandidateDocumentRolloutEmail } from "../email/templates/recruitment";
 import { substituteVariables } from "./document-variables.util";
 import type {
   AddVaultDocumentInput,
@@ -415,30 +416,15 @@ export class RecruitmentCandidateRecordsService {
 
     if (input.sendEmail && generatedDocs.length > 0 && candidate.email) {
       const candidateName = `${candidate.firstName} ${candidate.lastName}`;
-      const documentLinks = generatedDocs
-        .map(
-          (doc) =>
-            `<li><a href="${appUrl}/api/hr/recruitment/candidates/${candidateId}/documents/${doc.id}/view" style="color:#bd882c">${doc.title}</a></li>`,
-        )
-        .join("\n");
-      const emailHtml = `
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-          <h2 style="color:#0f2b7f">Your Documents Are Ready</h2>
-          <p>Dear ${candidateName},</p>
-          <p>The following document(s) have been prepared for you as part of your application process:</p>
-          <ul style="margin:16px 0;padding-left:24px">
-            ${documentLinks}
-          </ul>
-          <p>Please review and sign the documents at your earliest convenience.</p>
-          <p style="color:#666;font-size:12px;margin-top:32px">
-            This is an automated message from StreamlineOS HR system.
-          </p>
-        </div>
-      `;
+      const documentLinks = generatedDocs.map((doc) => ({
+        title: doc.title,
+        url: `${appUrl}/api/hr/recruitment/candidates/${candidateId}/documents/${doc.id}/view`,
+      }));
+      const { subject, html: emailHtml } = getCandidateDocumentRolloutEmail({ candidateName, documentLinks });
       try {
         await this.email.sendEmail({
           to: candidate.email,
-          subject: "Your Documents Are Ready — Please Review",
+          subject,
           html: emailHtml,
         });
         const docIds = generatedDocs.map((d) => d.id);

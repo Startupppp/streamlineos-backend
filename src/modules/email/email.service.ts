@@ -19,7 +19,6 @@ import {
   getDealStageChangeEmailTemplate,
   getLeadAssignedEmailTemplate,
   getAssetAssignedEmailTemplate,
-  getPayrollApprovedEmailTemplate,
   getTicketCreatedEmailTemplate,
   getTicketReplyEmailTemplate,
   getTicketStatusEmailTemplate,
@@ -50,7 +49,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: approverEmail,
-      subject: `New Expense Claim from ${employeeName}`,
+      subject: `New expense claim from ${employeeName}`,
       html: getExpenseSubmittedEmailTemplate(
         approverName,
         employeeName,
@@ -71,7 +70,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: employeeEmail,
-      subject: `Expense Claim Approved - ₹${amount}`,
+      subject: "Your expense claim was approved",
       html: getExpenseApprovedEmailTemplate(employeeName, category, amount, approverName),
     });
   }
@@ -86,7 +85,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: employeeEmail,
-      subject: `Expense Claim Rejected - ₹${amount}`,
+      subject: "Your expense claim was rejected",
       html: getExpenseRejectedEmailTemplate(employeeName, category, amount, approverName, reason),
     });
   }
@@ -100,7 +99,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: employeeEmail,
-      subject: `Expense Reimbursed - ₹${amount}`,
+      subject: "Your expense reimbursement was paid",
       html: getExpensePaidEmailTemplate(employeeName, category, amount, transactionRef),
     });
   }
@@ -112,7 +111,7 @@ export class EmailService extends EmailSendersBase {
     recipientEmails: string[],
   ): Promise<void> {
     if (recipientEmails.length === 0) return;
-    const subject = `Attendance Report - ${weekRange}`;
+    const subject = `Attendance report — week of ${weekRange}`;
     const html = getWeeklyAttendanceReportTemplate(weekRange, orgName, rows);
     for (const email of recipientEmails) {
       await this.sendEmail({ to: email, subject, html });
@@ -127,7 +126,7 @@ export class EmailService extends EmailSendersBase {
     recipientEmails: string[],
   ): Promise<void> {
     if (recipientEmails.length === 0) return;
-    const subject = `Monthly Expense Report - ${monthLabel}`;
+    const subject = `Expense report — ${monthLabel}`;
     const html = getMonthlyExpenseReportTemplate(monthLabel, orgName, rows, summary);
     const xlsxBuffer = await generateMonthlyExpenseReportXlsx(monthLabel, orgName, rows, summary);
     const xlsxFilename = `Monthly-Expense-Report-${monthLabel.replace(/\s+/g, "-")}.xlsx`;
@@ -156,21 +155,8 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Asset Assigned: ${assetName}`,
+      subject: `Asset assigned: ${assetName}`,
       html: getAssetAssignedEmailTemplate(employeeName, assetName, assetType, serialNumber),
-    });
-  }
-
-  sendPayrollApprovedEmail(
-    email: string,
-    employeeName: string,
-    month: string,
-    approverName: string,
-  ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Payroll Approved — ${month}`,
-      html: getPayrollApprovedEmailTemplate(employeeName, month, approverName),
     });
   }
 
@@ -184,7 +170,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Added to Project: ${projectName} - StreamlineOS`,
+      subject: `You've been added to ${projectName}`,
       html: getProjectAssignmentEmailTemplate(
         memberName,
         projectName,
@@ -208,7 +194,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Ticket Assigned: ${ticketTitle} - StreamlineOS`,
+      subject: `Ticket assigned: ${ticketTitle}`,
       html: getTicketAssignmentEmailTemplate(
         assigneeName,
         ticketTitle,
@@ -234,7 +220,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Review Requested: ${ticketTitle} - StreamlineOS`,
+      subject: `Ready for review: ${ticketTitle}`,
       html: getTicketReviewRequestEmailTemplate(
         reviewerName,
         ticketTitle,
@@ -259,7 +245,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Changes Requested: ${ticketTitle} - StreamlineOS`,
+      subject: `Changes requested: ${ticketTitle}`,
       html: getTicketChangesRequestedEmailTemplate(
         assigneeName,
         ticketTitle,
@@ -281,7 +267,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Support Ticket Assigned: #${ticketId} — ${ticketTitle}`,
+      subject: `New support ticket: ${ticketTitle}`,
       html: getTicketCreatedEmailTemplate(assigneeName, ticketTitle, priority, creatorName, ticketId),
     });
   }
@@ -296,7 +282,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `New Reply on Ticket #${ticketId}: ${ticketTitle}`,
+      subject: `New reply on ticket #${ticketId}`,
       html: getTicketReplyEmailTemplate(recipientName, ticketTitle, ticketId, authorName, messagePreview),
     });
   }
@@ -311,7 +297,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Ticket #${ticketId} ${newStatus}: ${ticketTitle}`,
+      subject: `Ticket #${ticketId} status: ${newStatus}`,
       html: getTicketStatusEmailTemplate(recipientName, ticketTitle, ticketId, newStatus, updatedBy),
     });
   }
@@ -327,7 +313,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Task Assigned: ${taskTitle}`,
+      subject: `Task assigned: ${taskTitle}`,
       html: getTaskAssignedEmailTemplate(assigneeName, taskTitle, taskType, dueDate, creatorName, entityLabel),
     });
   }
@@ -342,7 +328,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Helpdesk Ticket: ${ticketTitle}`,
+      subject: `New helpdesk ticket: ${ticketTitle}`,
       html: getHelpdeskTicketEmailTemplate(recipientName, ticketTitle, category, priority, creatorName),
     });
   }
@@ -359,7 +345,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `Deal ${newStage === "WON" ? "Won" : newStage === "LOST" ? "Lost" : "Updated"}: ${dealName}`,
+      subject: `Deal stage updated: ${dealName}`,
       html: getDealStageChangeEmailTemplate(
         recipientName,
         dealName,
@@ -382,7 +368,7 @@ export class EmailService extends EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: `New Lead Assigned: ${leadName}`,
+      subject: `Lead assigned: ${leadName}`,
       html: getLeadAssignedEmailTemplate(repName, leadName, source, priority, assignedBy),
     });
   }

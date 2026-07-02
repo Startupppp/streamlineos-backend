@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { LlmService } from "../ai/providers/llm.service";
+import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
 import { logger } from "../../common/logger/logger.service";
 
 interface RecapData {
@@ -152,13 +153,26 @@ export class CronWeeklyRecapService {
         };
 
         const aiNarrative = await this.generateNarrative(recapData, weekRange);
-        const html = this.buildHtml(recapData, weekRange, aiNarrative);
+        const html = getWeeklyRecapEmailTemplate({
+          orgName: recapData.orgName,
+          weekRange,
+          totalEmployees: recapData.totalEmployees,
+          newLeads: recapData.newLeads,
+          convertedLeads: recapData.convertedLeads,
+          totalActivities: recapData.totalActivities,
+          openTickets: recapData.openTickets,
+          closedTickets: recapData.closedTickets,
+          pendingLeaves: recapData.pendingLeaves,
+          topPerformers: recapData.topPerformers,
+          pipelineSummary: recapData.pipelineSummary,
+          aiNarrative,
+        });
 
         for (const owner of owners) {
           if (!owner.email) continue;
           await this.email.sendEmail({
             to: owner.email,
-            subject: `Weekly Recap — ${weekRange} | ${org.name}`,
+            subject: `Your week at ${org.name} — ${weekRange}`,
             html,
           });
         }
@@ -203,36 +217,4 @@ export class CronWeeklyRecapService {
     }
   }
 
-  private buildHtml(data: RecapData, weekRange: string, aiNarrative: string): string {
-    const topPerformersRows = data.topPerformers
-      .slice(0, 5)
-      .map(
-        (p, i) =>
-          `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${p.name}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:bold;">${p.score} pts</td></tr>`,
-      )
-      .join("");
-
-    const pipelineRows = data.pipelineSummary
-      .map(
-        (s) =>
-          `<tr><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;">${s.status}</td><td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:bold;">${s.count}</td></tr>`,
-      )
-      .join("");
-
-    const narrativeBlock = aiNarrative
-      ? `<div style="background:#f8f3e8;border-left:4px solid #bd882c;padding:16px 20px;margin-bottom:24px;border-radius:4px;"><p style="font-size:14px;color:#333;line-height:1.7;margin:0;">${aiNarrative.replace(/\n\n/g, '</p><p style="font-size:14px;color:#333;line-height:1.7;margin:12px 0 0 0;">').replace(/\n/g, " ")}</p></div>`
-      : "";
-
-    const topPerformersSection =
-      data.topPerformers.length > 0
-        ? `<h3 style="color:#0f2b7f;border-bottom:2px solid #bd882c;padding-bottom:8px;">Sales Leaderboard</h3><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="background:#f9fafb;"><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;">Rank</th><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;">Name</th><th style="padding:8px 12px;text-align:right;font-size:12px;color:#6b7280;">Score</th></tr></thead><tbody>${topPerformersRows}</tbody></table>`
-        : "";
-
-    const pipelineSection =
-      data.pipelineSummary.length > 0
-        ? `<h3 style="color:#0f2b7f;border-bottom:2px solid #bd882c;padding-bottom:8px;">Lead Pipeline</h3><table style="width:100%;border-collapse:collapse;margin-bottom:20px;"><thead><tr style="background:#f9fafb;"><th style="padding:6px 12px;text-align:left;font-size:12px;color:#6b7280;">Status</th><th style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280;">Count</th></tr></thead><tbody>${pipelineRows}</tbody></table>`
-        : "";
-
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Weekly CEO Recap</title></head><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:650px;margin:0 auto;padding:20px;background:#f9fafb;"><div style="background:linear-gradient(135deg,#0f2b7f 0%,#1e40af 100%);padding:30px;text-align:center;border-radius:10px 10px 0 0;"><h1 style="color:#bd882c;margin:0;font-size:26px;font-family:Georgia,serif;">StreamlineOS</h1><p style="color:#dbeafe;margin:8px 0 0 0;font-size:16px;">Weekly CEO Recap — ${weekRange}</p></div><div style="background:#ffffff;padding:30px;border:1px solid #e5e7eb;border-top:none;"><p style="margin-top:0;">Good morning! Here's your weekly overview for <strong>${data.orgName}</strong>.</p>${narrativeBlock}<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;"><div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;"><p style="margin:0;font-size:28px;font-weight:bold;color:#1e40af;">${data.newLeads}</p><p style="margin:4px 0 0;font-size:13px;color:#6b7280;">New Leads</p></div><div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;"><p style="margin:0;font-size:28px;font-weight:bold;color:#166534;">${data.convertedLeads}</p><p style="margin:4px 0 0;font-size:13px;color:#6b7280;">Conversions</p></div><div style="background:#fefce8;border-radius:8px;padding:16px;text-align:center;"><p style="margin:0;font-size:28px;font-weight:bold;color:#854d0e;">${data.totalActivities}</p><p style="margin:4px 0 0;font-size:13px;color:#6b7280;">Activities Logged</p></div><div style="background:#faf5ff;border-radius:8px;padding:16px;text-align:center;"><p style="margin:0;font-size:28px;font-weight:bold;color:#7c3aed;">${data.closedTickets}</p><p style="margin:4px 0 0;font-size:13px;color:#6b7280;">Tickets Closed</p></div></div><table style="width:100%;border-collapse:collapse;margin:20px 0;"><tr><td style="padding:8px 0;font-size:13px;color:#6b7280;">Total Employees</td><td style="text-align:right;font-weight:bold;">${data.totalEmployees}</td></tr><tr><td style="padding:8px 0;font-size:13px;color:#6b7280;">Open Tickets</td><td style="text-align:right;font-weight:bold;">${data.openTickets}</td></tr><tr><td style="padding:8px 0;font-size:13px;color:#6b7280;">Pending Leave Requests</td><td style="text-align:right;font-weight:bold;">${data.pendingLeaves}</td></tr></table>${topPerformersSection}${pipelineSection}</div><div style="text-align:center;padding:16px;border-radius:0 0 10px 10px;background:#f9fafb;"><p style="color:#9ca3af;font-size:12px;margin:0;">This is an automated weekly recap from StreamlineOS.</p></div></body></html>`;
-  }
 }
