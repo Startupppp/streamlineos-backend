@@ -4,6 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import {
+  ProjectsForbiddenProjectException,
+  ProjectsNotFoundException,
+} from "../../common/http/api-exceptions";
 import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   deals,
@@ -286,38 +290,42 @@ export class ProjectsService {
     const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
     const projectKey = (namePart.length >= 2 ? namePart : "PRJ") + "-" + randomPart;
 
-    const [project] = await this.db
-      .insert(projects)
-      .values({
-        orgId,
-        key: projectKey,
-        name: input.name,
-        description: input.description ?? deal.notes ?? null,
-        startDate: input.startDate ? new Date(input.startDate) : new Date(),
-        endDate: input.endDate
-          ? new Date(input.endDate)
-          : deal.expectedCloseDate
-            ? new Date(deal.expectedCloseDate)
-            : undefined,
-        status: "ACTIVE",
-        dealId: input.dealId,
-        managerId: deal.assignedToId ?? userId,
-        budget: deal.value ?? undefined,
-        settings: { modules: { sprints: true, epics: true, timeTracking: true, wiki: true } },
-      })
-      .returning();
+    const project = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(projects)
+        .values({
+          orgId,
+          key: projectKey,
+          name: input.name,
+          description: input.description ?? deal.notes ?? null,
+          startDate: input.startDate ? new Date(input.startDate) : new Date(),
+          endDate: input.endDate
+            ? new Date(input.endDate)
+            : deal.expectedCloseDate
+              ? new Date(deal.expectedCloseDate)
+              : undefined,
+          status: "ACTIVE",
+          dealId: input.dealId,
+          managerId: deal.assignedToId ?? userId,
+          budget: deal.value ?? undefined,
+          settings: { modules: { sprints: true, epics: true, timeTracking: true, wiki: true } },
+        })
+        .returning();
 
-    await this.db.insert(projectStatuses).values(
-      DEFAULT_STATUSES.map((s) => ({
-        orgId,
-        projectId: project.id,
-        name: s.name,
-        order: s.order,
-        color: s.color,
-      })),
-    );
+      await tx.insert(projectStatuses).values(
+        DEFAULT_STATUSES.map((s) => ({
+          orgId,
+          projectId: created.id,
+          name: s.name,
+          order: s.order,
+          color: s.color,
+        })),
+      );
 
-    await this.db.insert(projectMembers).values({ projectId: project.id, userId, role: "OWNER" });
+      await tx.insert(projectMembers).values({ projectId: created.id, userId, role: "OWNER" });
+
+      return created;
+    });
 
     this.audit.log({
       action: "project.created_from_deal",
@@ -339,7 +347,7 @@ export class ProjectsService {
     const projectCheck = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
     });
-    if (!projectCheck) throw new NotFoundException("Project not found");
+    if (!projectCheck) throw new ProjectsNotFoundException();
 
     if (!isOwnerOrAdmin) {
       const isManager = projectCheck.managerId === u.userId;
@@ -348,7 +356,18 @@ export class ProjectsService {
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
           .where(and(eq(projectMembers.userId, u.userId), eq(projectMembers.projectId, projectId)));
-        if (memberOf.length === 0) throw new NotFoundException("Not found");
+        if (memberOf.length === 0) {
+          this.audit.log({
+            action: "project.access_denied",
+            userId: u.userId,
+            orgId,
+            targetId: String(projectId),
+            targetType: "project",
+            metadata: { reason: "NOT_A_MEMBER", projectId },
+            result: "FAILURE",
+          });
+          throw new ProjectsForbiddenProjectException(projectId);
+        }
       }
     }
 

@@ -17,11 +17,17 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "../access/access.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
+import {
+  ProjectsForbiddenTicketException,
+  ProjectsTicketConflictException,
+  ProjectsTicketNotFoundException,
+} from "../../common/http/api-exceptions";
 import type {
   BulkUpdateInput,
   CreateTicketInput,
@@ -52,6 +58,7 @@ export class ProjectsTicketsService {
     private readonly projectsEmail: ProjectsEmailService,
     private readonly activity: ProjectsActivityService,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
@@ -189,7 +196,7 @@ export class ProjectsTicketsService {
           type: "INFO",
           title: "Ticket Assigned to You",
           message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
-          link: `/projects/${projectId}`,
+          link: `/projects/${projectId}?ticket=${ticket.id}`,
         });
       } catch (error) {
         logger.error("Failed to create ticket assignment notification", { error });
@@ -213,7 +220,7 @@ export class ProjectsTicketsService {
         labels: { with: { label: true } },
       },
     });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!ticket) throw new ProjectsTicketNotFoundException();
 
     const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
@@ -221,7 +228,16 @@ export class ProjectsTicketsService {
         ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) {
-        throw new ForbiddenException("You don't have access to this ticket's details.");
+        this.audit.log({
+          action: "ticket.access_denied",
+          userId: u.userId,
+          orgId: u.orgId,
+          targetId: String(ticketId),
+          targetType: "ticket",
+          metadata: { ticketId, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
+          result: "FAILURE",
+        });
+        throw new ProjectsForbiddenTicketException();
       }
     }
 
@@ -247,9 +263,16 @@ export class ProjectsTicketsService {
 
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true },
+      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true, updatedAt: true },
     });
     if (!before || !before.projectId) throw new NotFoundException("Ticket not found");
+
+    if (input.expectedUpdatedAt !== undefined) {
+      const expected = new Date(input.expectedUpdatedAt);
+      if (before.updatedAt.getTime() !== expected.getTime()) {
+        throw new ProjectsTicketConflictException();
+      }
+    }
 
     const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
@@ -334,7 +357,7 @@ export class ProjectsTicketsService {
           type: "INFO",
           title: "Ticket Assigned to You",
           message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-          link: ticketData?.projectId ? `/projects/${ticketData.projectId}` : undefined,
+          link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
         });
       } catch (error) {
         logger.error("Failed to create ticket assignment notification", { error });

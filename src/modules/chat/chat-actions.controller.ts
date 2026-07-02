@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Inject, NotFoundException, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Inject, Post, UseGuards } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -8,15 +8,25 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { projectMembers, tickets } from "../../db/schema";
+import { projectMembers, ticketActivityLog, tickets } from "../../db/schema";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ticketStatusActionSchema, type TicketStatusActionInput } from "./dto/chat.schemas";
+import { AuditService } from "../../common/audit/audit.service";
+import { ChatMessagesService } from "./chat-messages.service";
+import {
+  ChatActionForbiddenException,
+  ProjectsTicketNotFoundException,
+} from "../../common/http/api-exceptions";
 
 @RequireModule("chat")
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatActionsController {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+    private readonly chatMessages: ChatMessagesService,
+  ) {}
 
   @Post("ticket-status")
   @RequirePermission("projects:tickets:update")
@@ -29,7 +39,7 @@ export class ChatActionsController {
         where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
         columns: { projectId: true },
       });
-      if (!membership) throw new ForbiddenException("Not a project member");
+      if (!membership) throw new ChatActionForbiddenException();
     }
 
     const ticket = await this.db.query.tickets.findFirst({
@@ -37,12 +47,43 @@ export class ChatActionsController {
       columns: { id: true, status: true },
     });
 
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!ticket) throw new ProjectsTicketNotFoundException();
+
+    if (ticket.status === body.nextStatus) {
+      return { success: true, prevStatus: ticket.status, nextStatus: body.nextStatus };
+    }
 
     await this.db
       .update(tickets)
       .set({ status: body.nextStatus, updatedAt: new Date() })
       .where(and(eq(tickets.id, body.ticketId), eq(tickets.orgId, u.orgId)));
+
+    void this.db
+      .insert(ticketActivityLog)
+      .values({
+        orgId: u.orgId,
+        ticketId: body.ticketId,
+        userId: u.userId,
+        action: "status_changed",
+        fromValue: ticket.status,
+        toValue: body.nextStatus,
+      })
+      .catch(() => undefined);
+
+    this.audit.log({
+      action: "ticket.status_changed",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(body.ticketId),
+      targetType: "ticket",
+      metadata: { projectId: body.projectId, from: ticket.status, to: body.nextStatus },
+    });
+
+    void this.chatMessages
+      .sendSystemMessage(body.channelId, u.userId, u.orgId, `Status changed from ${ticket.status} to ${body.nextStatus}`, {
+        entities: [{ type: "ticket", id: String(body.ticketId), projectId: body.projectId }],
+      })
+      .catch(() => undefined);
 
     return { success: true, prevStatus: ticket.status, nextStatus: body.nextStatus };
   }

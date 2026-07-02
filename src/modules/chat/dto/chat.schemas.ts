@@ -39,6 +39,32 @@ export const sendMessageSchema = z.object({
       }),
     )
     .optional(),
+  metadata: z
+    .object({
+      entities: z
+        .array(
+          z.discriminatedUnion("type", [
+            z.object({
+              type: z.literal("ticket"),
+              id: z.string(),
+              projectId: z.number().int().positive(),
+              ticketNumber: z.number().int().optional(),
+              projectKey: z.string().optional(),
+              title: z.string().optional(),
+              status: z.string().optional(),
+              priority: z.string().optional(),
+            }),
+            z.object({
+              type: z.literal("comment"),
+              id: z.string(),
+              ticketId: z.number().int().positive(),
+              projectId: z.number().int().positive(),
+            }),
+          ]),
+        )
+        .max(10),
+    })
+    .optional(),
 });
 
 export const editMessageSchema = z.object({

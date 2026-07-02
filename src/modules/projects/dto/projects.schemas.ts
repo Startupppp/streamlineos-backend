@@ -129,6 +129,7 @@ export const updateTicketSchema = z.object({
   originalEstimate: z.number().nullable().optional(),
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  expectedUpdatedAt: z.string().optional(),
 });
 
 export const bulkUpdateSchema = z
@@ -326,3 +327,6 @@ export type UpdateFeedbackInput = z.infer<typeof updateFeedbackSchema>;
 export type ChangelogListQuery = z.infer<typeof changelogListQuerySchema>;
 export type CreateChangelogInput = z.infer<typeof createChangelogSchema>;
 export type UpdateChangelogInput = z.infer<typeof updateChangelogSchema>;
+
+export const updateCommentSchema = z.object({ content: z.string().min(1) });
+export type UpdateCommentInput = z.infer<typeof updateCommentSchema>;

@@ -28,6 +28,7 @@ import {
   reorderSchema,
   searchTicketsQuerySchema,
   ticketsListQuerySchema,
+  updateCommentSchema,
   updateTicketSchema,
   type AddLabelInput,
   type AddRelationInput,
@@ -39,6 +40,7 @@ import {
   type ReorderInput,
   type SearchTicketsQuery,
   type TicketsListQuery,
+  type UpdateCommentInput,
   type UpdateTicketInput,
 } from "./dto/projects.schemas";
 import {
@@ -125,6 +127,38 @@ export class ProjectsTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addComment(u, ticketId, body);
+  }
+
+  @Get(":projectId/tickets/:ticketId/comments/:commentId")
+  getComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.getComment(u, projectId, ticketId, commentId);
+  }
+
+  @Patch(":projectId/tickets/:ticketId/comments/:commentId")
+  editComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @Body(new ZodValidationPipe(updateCommentSchema)) body: UpdateCommentInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.editComment(u, projectId, ticketId, commentId, body.content);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/comments/:commentId")
+  @HttpCode(204)
+  deleteComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("commentId", ParseIntPipe) commentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.deleteComment(u, projectId, ticketId, commentId);
   }
 
   @Get(":projectId/tickets/:ticketId/subtasks")

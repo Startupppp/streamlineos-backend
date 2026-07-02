@@ -22,6 +22,8 @@ const TIERS: Record<string, Tier> = {
   "invite:accept": { limit: 10, windowSecs: 60 },
 };
 
+const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
+
 export interface RateLimitResult {
   allowed: boolean;
   retryAfterSecs: number;
@@ -35,6 +37,7 @@ export class RateLimitService {
   async check(tier: string, identifier: string): Promise<RateLimitResult> {
     const t = TIERS[tier];
     if (!t) return { allowed: true, retryAfterSecs: 0 };
+    const effectiveLimit = t.limit * DEV_LIMIT_MULTIPLIER;
     const now = Date.now();
     const windowMs = t.windowSecs * 1000;
     if (this.redis) {
@@ -42,21 +45,23 @@ export class RateLimitService {
       try {
         const count = await this.redis.incr(key);
         if (count === 1) await this.redis.expire(key, t.windowSecs);
-        if (count > t.limit) {
+        if (count > effectiveLimit) {
           const ttl = await this.redis.ttl(key);
           return { allowed: false, retryAfterSecs: ttl > 0 ? ttl : t.windowSecs };
         }
         return { allowed: true, retryAfterSecs: 0 };
       } catch {}
     }
-    const hits = (this.mem.get(identifier) ?? []).filter((ts) => now - ts < windowMs);
-    if (hits.length >= t.limit) {
-      const retryAfterSecs = Math.ceil((windowMs - (now - hits[0])) / 1000);
-      this.mem.set(identifier, hits);
+    const memKey = `${tier}:${identifier}`;
+    const hits = (this.mem.get(memKey) ?? []).filter((ts) => now - ts < windowMs);
+    if (hits.length >= effectiveLimit) {
+      const oldest = hits[0] ?? now;
+      const retryAfterSecs = Math.ceil((windowMs - (now - oldest)) / 1000);
+      this.mem.set(memKey, hits);
       return { allowed: false, retryAfterSecs };
     }
     hits.push(now);
-    this.mem.set(identifier, hits);
+    this.mem.set(memKey, hits);
     return { allowed: true, retryAfterSecs: 0 };
   }
 }

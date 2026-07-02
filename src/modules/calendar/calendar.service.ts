@@ -8,10 +8,21 @@ import {
   tasks,
   holidays,
   users,
+  tickets,
+  projects,
+  projectMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
+
+export interface LinkedTicket {
+  id: number;
+  key: string;
+  title: string;
+  projectId: number;
+  status: string;
+}
 
 export interface CalendarEventItem {
   id: string;
@@ -28,6 +39,8 @@ export interface CalendarEventItem {
   entityId?: string | null;
   entityType?: string | null;
   myRsvpStatus?: string | null;
+  projectId?: number | null;
+  linkedTicket?: LinkedTicket | null;
 }
 
 export interface OooConflict {
@@ -51,106 +64,174 @@ export class CalendarService {
     start: Date,
     end: Date,
   ): Promise<CalendarEventItem[]> {
-    const [eventsData, leavesData, interviewsData, tasksData, holidaysData] = await Promise.all([
-      this.db.query.calendarEvents.findMany({
-        where: and(
-          eq(calendarEvents.orgId, orgId),
-          gte(calendarEvents.startDate, start),
-          lte(calendarEvents.startDate, end),
-        ),
-        with: { creator: { columns: { name: true } } },
-        orderBy: (t, { asc }) => [asc(t.startDate)],
-      }),
-
-      this.db
-        .select({
-          id: leaveRequests.id,
-          userId: leaveRequests.userId,
-          startDate: leaveRequests.startDate,
-          endDate: leaveRequests.endDate,
-          reason: leaveRequests.reason,
-          userName: users.name,
-        })
-        .from(leaveRequests)
-        .innerJoin(users, eq(leaveRequests.userId, users.id))
-        .where(
-          and(
-            eq(leaveRequests.orgId, orgId),
-            eq(leaveRequests.status, "APPROVED"),
-            lte(leaveRequests.startDate, dateOnly(end)),
-            gte(leaveRequests.endDate, dateOnly(start)),
+    const [eventsData, leavesData, interviewsData, tasksData, holidaysData, projectTicketsData] =
+      await Promise.all([
+        this.db.query.calendarEvents.findMany({
+          where: and(
+            eq(calendarEvents.orgId, orgId),
+            gte(calendarEvents.startDate, start),
+            lte(calendarEvents.startDate, end),
           ),
-        ),
+          with: { creator: { columns: { name: true } } },
+          orderBy: (t, { asc }) => [asc(t.startDate)],
+        }),
 
-      this.db
-        .select({
-          id: interviews.id,
-          scheduledAt: interviews.scheduledAt,
-          duration: interviews.duration,
-          type: interviews.type,
-          interviewerId: interviews.interviewerId,
-          location: interviews.location,
-          meetingLink: interviews.meetingLink,
-        })
-        .from(interviews)
-        .where(
-          and(
-            eq(interviews.orgId, orgId),
-            gte(interviews.scheduledAt, start),
-            lte(interviews.scheduledAt, end),
+        this.db
+          .select({
+            id: leaveRequests.id,
+            userId: leaveRequests.userId,
+            startDate: leaveRequests.startDate,
+            endDate: leaveRequests.endDate,
+            reason: leaveRequests.reason,
+            userName: users.name,
+          })
+          .from(leaveRequests)
+          .innerJoin(users, eq(leaveRequests.userId, users.id))
+          .where(
+            and(
+              eq(leaveRequests.orgId, orgId),
+              eq(leaveRequests.status, "APPROVED"),
+              lte(leaveRequests.startDate, dateOnly(end)),
+              gte(leaveRequests.endDate, dateOnly(start)),
+            ),
           ),
-        ),
 
-      this.db
-        .select({
-          id: tasks.id,
-          title: tasks.title,
-          dueDate: tasks.dueDate,
-          status: tasks.status,
-          assigneeId: tasks.assigneeId,
-        })
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.orgId, orgId),
-            isNotNull(tasks.dueDate),
-            gte(tasks.dueDate, start),
-            lte(tasks.dueDate, end),
+        this.db
+          .select({
+            id: interviews.id,
+            scheduledAt: interviews.scheduledAt,
+            duration: interviews.duration,
+            type: interviews.type,
+            interviewerId: interviews.interviewerId,
+            location: interviews.location,
+            meetingLink: interviews.meetingLink,
+          })
+          .from(interviews)
+          .where(
+            and(
+              eq(interviews.orgId, orgId),
+              gte(interviews.scheduledAt, start),
+              lte(interviews.scheduledAt, end),
+            ),
           ),
-        ),
 
-      this.db
-        .select({
-          id: holidays.id,
-          name: holidays.name,
-          date: holidays.date,
-          message: holidays.message,
-        })
-        .from(holidays)
-        .where(
-          and(
-            eq(holidays.orgId, orgId),
-            gte(holidays.date, dateOnly(start)),
-            lte(holidays.date, dateOnly(end)),
+        this.db
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            dueDate: tasks.dueDate,
+            status: tasks.status,
+            assigneeId: tasks.assigneeId,
+          })
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.orgId, orgId),
+              isNotNull(tasks.dueDate),
+              gte(tasks.dueDate, start),
+              lte(tasks.dueDate, end),
+            ),
           ),
-        ),
-    ]);
+
+        this.db
+          .select({
+            id: holidays.id,
+            name: holidays.name,
+            date: holidays.date,
+            message: holidays.message,
+          })
+          .from(holidays)
+          .where(
+            and(
+              eq(holidays.orgId, orgId),
+              gte(holidays.date, dateOnly(start)),
+              lte(holidays.date, dateOnly(end)),
+            ),
+          ),
+
+        this.db
+          .select({
+            id: tickets.id,
+            title: tickets.title,
+            dueDate: tickets.dueDate,
+            status: tickets.status,
+            ticketNumber: tickets.ticketNumber,
+            projectId: projects.id,
+            projectKey: projects.key,
+          })
+          .from(tickets)
+          .innerJoin(projects, eq(tickets.projectId, projects.id))
+          .innerJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(projectMembers.userId, userId),
+              isNotNull(tickets.dueDate),
+              gte(tickets.dueDate, dateOnly(start)),
+              lte(tickets.dueDate, dateOnly(end)),
+            ),
+          ),
+      ]);
 
     const eventIds = eventsData.map((e) => e.id);
-    const rsvpMap = new Map<number, string>();
-    if (eventIds.length > 0) {
-      const attendeeRows = await this.db
-        .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
-        .from(eventAttendees)
-        .where(and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)));
-      for (const row of attendeeRows) {
-        rsvpMap.set(row.eventId, row.status ?? "pending");
+    const ticketEntityIds: number[] = [];
+    for (const ev of eventsData) {
+      if (ev.entityType === "ticket" && ev.entityId != null) {
+        const parsed = parseInt(ev.entityId, 10);
+        if (!Number.isNaN(parsed)) ticketEntityIds.push(parsed);
       }
     }
+
+    const rsvpMap = new Map<number, string>();
+    const linkedTicketMap = new Map<number, LinkedTicket>();
+
+    await Promise.all([
+      (async () => {
+        if (eventIds.length === 0) return;
+        const rows = await this.db
+          .select({ eventId: eventAttendees.eventId, status: eventAttendees.status })
+          .from(eventAttendees)
+          .where(
+            and(eq(eventAttendees.userId, userId), inArray(eventAttendees.eventId, eventIds)),
+          );
+        for (const row of rows) {
+          rsvpMap.set(row.eventId, row.status ?? "pending");
+        }
+      })(),
+      (async () => {
+        if (ticketEntityIds.length === 0) return;
+        const rows = await this.db
+          .select({
+            id: tickets.id,
+            ticketNumber: tickets.ticketNumber,
+            title: tickets.title,
+            projectId: projects.id,
+            status: tickets.status,
+            projectKey: projects.key,
+          })
+          .from(tickets)
+          .innerJoin(projects, eq(tickets.projectId, projects.id))
+          .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
+        for (const row of rows) {
+          linkedTicketMap.set(row.id, {
+            id: row.id,
+            key: `${row.projectKey}-${row.ticketNumber}`,
+            title: row.title,
+            projectId: row.projectId,
+            status: row.status,
+          });
+        }
+      })(),
+    ]);
 
     const result: CalendarEventItem[] = [];
 
     for (const ev of eventsData) {
+      let linkedTicket: LinkedTicket | null | undefined;
+      if (ev.entityType === "ticket" && ev.entityId != null) {
+        const parsed = parseInt(ev.entityId, 10);
+        linkedTicket = Number.isNaN(parsed) ? null : (linkedTicketMap.get(parsed) ?? null);
+      }
       result.push({
         id: `event-${ev.id}`,
         title: ev.title,
@@ -166,6 +247,7 @@ export class CalendarService {
         entityId: ev.entityId,
         entityType: ev.entityType,
         myRsvpStatus: rsvpMap.get(ev.id) ?? null,
+        linkedTicket,
       });
     }
 
@@ -211,6 +293,24 @@ export class CalendarService {
         color: tk.status === "completed" ? "gray" : "red",
         category: "task",
         source: "task",
+      });
+    }
+
+    for (const pt of projectTicketsData) {
+      if (!pt.dueDate) continue;
+      const ptDate = new Date(pt.dueDate);
+      result.push({
+        id: `ticket-${pt.id}`,
+        title: `${pt.projectKey}-${pt.ticketNumber}: ${pt.title}`,
+        start: ptDate,
+        end: ptDate,
+        allDay: true,
+        color: "blue",
+        category: "task",
+        source: "task",
+        entityType: "ticket",
+        entityId: String(pt.id),
+        projectId: pt.projectId,
       });
     }
 
