@@ -20,6 +20,7 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { EmailService } from "../email/email.service";
 import type {
   ListUsersInput,
   UpdateUserInput,
@@ -38,6 +39,7 @@ export class UsersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly email: EmailService,
   ) {}
 
   async createUser(orgId: string, input: CreateUserInput, actorUserId: string) {
@@ -510,6 +512,30 @@ export class UsersService {
       welcomeMessage?: string;
     },
   ) {
+    const existingUser = await this.db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
+
+    if (existingUser) {
+      const existingMember = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.userId, existingUser.id),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      });
+      if (existingMember) throw new ConflictException("User is already a member");
+    }
+
+    const existingInvitation = await this.db.query.invitations.findFirst({
+      where: and(
+        eq(invitations.email, email),
+        eq(invitations.orgId, orgId),
+        gt(invitations.expiresAt, new Date()),
+        isNull(invitations.acceptedAt),
+      ),
+    });
+    if (existingInvitation) throw new ConflictException("An invitation has already been sent to this email");
+
     const token = randomBytes(32).toString("hex");
     const invitationId = randomUUID();
     const expiresAt = addDays(new Date(), 7);
@@ -529,9 +555,11 @@ export class UsersService {
       expiresAt,
     });
 
+    void this.email.sendInvitationEmail(email, token, org?.name ?? "Your Organization").catch(() => {});
+
     this.audit.log({ action: "user.invited", userId: invitedByUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email, role, ...extra } });
 
-    return { success: true, invitationId, token, organizationName: org?.name ?? "" };
+    return { success: true, invitationId, organizationName: org?.name ?? "" };
   }
 
   async bulkInvite(orgId: string, emails: string[], role: string, invitedByUserId: string) {
@@ -676,14 +704,21 @@ export class UsersService {
     const newToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
 
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { name: true },
+    });
+
     await this.db
       .update(invitations)
       .set({ token: newToken, expiresAt: newExpiresAt })
       .where(eq(invitations.id, invitationId));
 
+    void this.email.sendInvitationEmail(invitation.email, newToken, org?.name ?? "Your Organization").catch(() => {});
+
     this.audit.log({ action: "user.invitation.resent", userId: actorUserId, orgId, targetId: invitationId, targetType: "invitation", metadata: { email: invitation.email } });
 
-    return { success: true, token: newToken };
+    return { success: true };
   }
 
   async cancelInvite(orgId: string, invitationId: string, actorUserId: string) {

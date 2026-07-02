@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
-import { and, eq, gt, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, sql } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes, createDecipheriv } from "node:crypto";
 import {
   accounts,
@@ -148,6 +148,7 @@ export class AuthService {
         hasDashboardAccess: true,
         isPasswordChangeRequired: false,
         emailVerified: null,
+        lastActiveOrgId: orgId,
       });
 
       await tx.insert(organizationMembers).values({
@@ -252,10 +253,7 @@ export class AuthService {
       await this.db.update(users).set({ loginAttempts: 0, lockedUntil: null }).where(eq(users.id, user.id));
     }
 
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, user.id),
-      orderBy: (t, { desc }) => [desc(t.joinedAt)],
-    });
+    const membership = await this.resolveActiveMembership(user.id, user.lastActiveOrgId ?? null);
     const orgId = membership?.orgId ?? "";
 
     let daysUntilExpiry: number | undefined;
@@ -625,6 +623,36 @@ export class AuthService {
     await this.email.sendMagicLinkEmail(user.email, token);
   }
 
+  private async resolveActiveMembership(
+    userId: string,
+    preferredOrgId: string | null,
+  ): Promise<{
+    orgId: string;
+    isOwner: boolean;
+    mfaEnforced: boolean;
+    enabledModules: string[] | null;
+    orgOnboardingCompletedAt: Date | null;
+  } | null> {
+    const rows = await this.db
+      .select({
+        orgId: organizationMembers.orgId,
+        isOwner: organizationMembers.isOwner,
+        mfaEnforced: organizations.mfaEnforced,
+        enabledModules: organizations.enabledModules,
+        orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
+      })
+      .from(organizationMembers)
+      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+      .where(eq(organizationMembers.userId, userId))
+      .orderBy(desc(organizationMembers.joinedAt));
+
+    if (preferredOrgId) {
+      const preferred = rows.find((r) => r.orgId === preferredOrgId);
+      if (preferred) return preferred;
+    }
+    return rows[0] ?? null;
+  }
+
   async getSessionData(userId: string): Promise<{
     userId: string;
     email: string;
@@ -647,8 +675,8 @@ export class AuthService {
     permissions: string[];
     plan: string | null;
   }> {
-    const [user, membership] = await Promise.all([
-      this.db.query.users.findFirst({
+    const user = await this.db.query.users
+      .findFirst({
         where: eq(users.id, userId),
         columns: {
           id: true,
@@ -664,17 +692,16 @@ export class AuthService {
           branchId: true,
           totpEnabled: true,
           onboardingCompletedAt: true,
+          lastActiveOrgId: true,
         },
-      }),
-      this.db.query.organizationMembers.findFirst({
-        where: eq(organizationMembers.userId, userId),
-        columns: { orgId: true, isOwner: true },
-      }),
-    ]).catch(() => {
-      throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
-    });
+      })
+      .catch(() => {
+        throw new HttpException("Service temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+      });
 
     if (!user) throw new NotFoundException("User not found");
+
+    const membership = await this.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
 
     let mfaEnforced = false;
     let enabledModules: string[] = [];
@@ -682,40 +709,27 @@ export class AuthService {
     let plan: string | null = null;
     let permissions: string[] = [];
 
-    let resolvedOrgId: string | null = membership?.orgId ?? null;
-    let isOrgOwner = membership?.isOwner ?? false;
+    const resolvedOrgId = membership?.orgId ?? null;
+    const isOrgOwner = membership?.isOwner ?? false;
 
-    if (resolvedOrgId) {
-      const orgId = resolvedOrgId;
-      const [org, sub] = await Promise.all([
-        this.db.query.organizations.findFirst({
-          where: eq(organizations.id, orgId),
-          columns: { mfaEnforced: true, enabledModules: true, onboardingCompletedAt: true },
-        }),
-        this.db.query.subscriptions.findFirst({
-          where: eq(subscriptions.orgId, orgId),
-          columns: { plan: true, status: true },
-        }),
-      ]);
+    if (membership) {
+      mfaEnforced = membership.mfaEnforced;
+      enabledModules = membership.enabledModules ?? [];
+      orgOnboardingCompletedAt = membership.orgOnboardingCompletedAt?.toISOString() ?? null;
 
-      if (!org) {
-        resolvedOrgId = null;
-        isOrgOwner = false;
-      } else {
-        mfaEnforced = org.mfaEnforced ?? false;
-        enabledModules = org.enabledModules ?? [];
-        orgOnboardingCompletedAt = org.onboardingCompletedAt?.toISOString() ?? null;
+      const sub = await this.db.query.subscriptions.findFirst({
+        where: eq(subscriptions.orgId, membership.orgId),
+        columns: { plan: true, status: true },
+      });
+      if (sub) {
+        plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
+      }
 
-        if (sub) {
-          plan = sub.status === "ACTIVE" || sub.status === "TRIAL" ? sub.plan : "FREE";
-        }
-
-        try {
-          const permMap = await this.access.resolveUserPermissions(orgId, userId);
-          permissions = [...permMap.keys()];
-        } catch {
-          permissions = [];
-        }
+      try {
+        const permMap = await this.access.resolveUserPermissions(membership.orgId, userId);
+        permissions = [...permMap.keys()];
+      } catch {
+        permissions = [];
       }
     }
 
@@ -759,15 +773,12 @@ export class AuthService {
 
     await this.db.update(magicLinkTokens).set({ usedAt: new Date() }).where(eq(magicLinkTokens.id, row.id));
 
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, row.userId),
-      columns: { orgId: true },
-    });
-
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
-      columns: { isPasswordChangeRequired: true },
+      columns: { isPasswordChangeRequired: true, lastActiveOrgId: true },
     });
+
+    const membership = await this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null);
 
     await this.cache.invalidate(CACHE_KEYS.userSession(row.userId));
 

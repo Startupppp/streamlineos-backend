@@ -137,6 +137,7 @@ export const users = pgTable("users", {
   websiteUrl: text("website_url"),
   onboardingDocStatus: onboardingDocStatusEnum("onboarding_doc_status").default("PENDING").notNull(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  lastActiveOrgId: text("last_active_org_id").references(() => organizations.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

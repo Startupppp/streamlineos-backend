@@ -9,7 +9,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
 import type { JWTPayload } from "jose";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
@@ -81,20 +81,38 @@ export class JwtAuthGuard implements CanActivate {
       ]);
       const path = req.path ?? req.url?.split("?")[0] ?? "";
       const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
-      if (!claims.orgId && !claims.isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
+
+      let orgId = claims.orgId;
+      let isOrgOwner = claims.isOrgOwner;
+      let role = claims.role;
+      let enabledModules = claims.enabledModules;
+      let plan = claims.plan;
+
+      if (!orgId && !claims.isPlatformAdmin) {
+        const resolved = await this.resolveOrgContext(claims.sub);
+        if (resolved) {
+          orgId = resolved.orgId;
+          isOrgOwner = resolved.isOwner;
+          role = role || resolved.role;
+          enabledModules = enabledModules.length > 0 ? enabledModules : resolved.enabledModules;
+          plan = plan ?? resolved.plan;
+        }
+      }
+
+      if (!orgId && !claims.isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
         throw new UnauthorizedException("Organization not found");
       }
 
       req.user = {
         userId: claims.sub,
-        orgId: claims.orgId ?? "",
+        orgId: orgId ?? "",
         branchId: claims.branchId ?? null,
-        role: claims.role,
+        role,
         permissions: claims.permissions,
-        enabledModules: claims.enabledModules,
-        plan: claims.plan,
+        enabledModules,
+        plan,
         isPlatformAdmin: claims.isPlatformAdmin,
-        isOrgOwner: claims.isOrgOwner,
+        isOrgOwner,
         sessionId: claims.sessionId,
       };
       return true;
@@ -107,6 +125,53 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     throw new UnauthorizedException("Unauthorized");
+  }
+
+  private async resolveOrgContext(userId: string): Promise<{
+    orgId: string;
+    role: string;
+    isOwner: boolean;
+    enabledModules: string[];
+    plan: string | null;
+  } | null> {
+    const [user, rows] = await Promise.all([
+      this.db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { lastActiveOrgId: true },
+      }),
+      this.db
+        .select({
+          orgId: organizationMembers.orgId,
+          role: organizationMembers.role,
+          isOwner: organizationMembers.isOwner,
+          enabledModules: organizations.enabledModules,
+        })
+        .from(organizationMembers)
+        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .where(eq(organizationMembers.userId, userId))
+        .orderBy(desc(organizationMembers.joinedAt)),
+    ]);
+
+    const preferred = user?.lastActiveOrgId
+      ? rows.find((r) => r.orgId === user.lastActiveOrgId)
+      : undefined;
+    const member = preferred ?? rows[0];
+    if (!member) return null;
+
+    const subscription = await this.db
+      .select({ plan: subscriptions.plan })
+      .from(subscriptions)
+      .where(eq(subscriptions.orgId, member.orgId))
+      .limit(1)
+      .then((r) => r[0] ?? null);
+
+    return {
+      orgId: member.orgId,
+      role: member.role,
+      isOwner: member.isOwner,
+      enabledModules: member.enabledModules ?? [],
+      plan: subscription?.plan ?? null,
+    };
   }
 
   private async tryPatAuth(rawToken: string): Promise<CurrentUserContext | null> {
@@ -144,43 +209,26 @@ export class JwtAuthGuard implements CanActivate {
       .where(eq(userApiTokens.id, matchedTokenId))
       .catch(() => undefined);
 
-    const [user, member] = await Promise.all([
+    const [user, resolved] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, matchedUserId),
         columns: { id: true, branchId: true, role: true },
       }),
-      this.db.query.organizationMembers.findFirst({
-        where: eq(organizationMembers.userId, matchedUserId),
-        orderBy: (t, { desc }) => [desc(t.joinedAt)],
-        columns: { orgId: true, role: true, isOwner: true },
-      }),
+      this.resolveOrgContext(matchedUserId),
     ]);
 
-    if (!user || !member) return null;
-
-    const [org, subscription] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, member.orgId),
-        columns: { enabledModules: true },
-      }),
-      this.db
-        .select({ plan: subscriptions.plan })
-        .from(subscriptions)
-        .where(eq(subscriptions.orgId, member.orgId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-    ]);
+    if (!user || !resolved) return null;
 
     return {
       userId: matchedUserId,
-      orgId: member.orgId,
+      orgId: resolved.orgId,
       branchId: user.branchId ?? null,
-      role: member.role,
+      role: resolved.role,
       permissions: [],
-      enabledModules: org?.enabledModules ?? [],
-      plan: subscription?.plan ?? null,
+      enabledModules: resolved.enabledModules,
+      plan: resolved.plan,
       isPlatformAdmin: false,
-      isOrgOwner: member.isOwner,
+      isOrgOwner: resolved.isOwner,
       sessionId: `pat:${matchedTokenId}`,
     };
   }

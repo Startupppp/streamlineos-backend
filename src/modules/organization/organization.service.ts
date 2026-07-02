@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import bcrypt from "bcryptjs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { and, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
-import { organizations, organizationMembers, invitations, users, passwordResetTokens, orgHolidays, orgCustomDomains } from "../../db/schema";
+import { organizations, organizationMembers, invitations, users, passwordResetTokens, orgHolidays, orgCustomDomains, magicLinkTokens } from "../../db/schema";
+import { addHours } from "date-fns";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -118,6 +119,11 @@ export class OrganizationService {
       .where(eq(organizations.id, targetOrgId))
       .limit(1);
     if (!org) throw new BadRequestException("Organization not found");
+
+    await this.db
+      .update(users)
+      .set({ lastActiveOrgId: targetOrgId })
+      .where(eq(users.id, userId));
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
@@ -524,7 +530,7 @@ export class OrganizationService {
     return { success: true };
   }
 
-  async acceptInvitation(input: AcceptInvitationInput): Promise<{ ok: boolean }> {
+  async acceptInvitation(input: AcceptInvitationInput): Promise<{ ok: boolean; autoLoginToken?: string }> {
     const invitation = await this.db.query.invitations.findFirst({
       where: and(
         eq(invitations.token, input.token),
@@ -556,12 +562,26 @@ export class OrganizationService {
           .onConflictDoNothing();
 
         await tx
+          .update(users)
+          .set({ lastActiveOrgId: invitation.orgId })
+          .where(eq(users.id, existingUser.id));
+
+        await tx
           .update(invitations)
           .set({ acceptedAt: new Date() })
           .where(eq(invitations.id, invitation.id));
       });
 
-      return { ok: true };
+      const autoLoginToken = randomBytes(32).toString("hex");
+      await this.db.insert(magicLinkTokens).values({
+        id: randomUUID(),
+        userId: existingUser.id,
+        tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+        expiresAt: addHours(new Date(), 1),
+      });
+      await this.cache.invalidate(CACHE_KEYS.userSession(existingUser.id));
+
+      return { ok: true, autoLoginToken };
     }
 
     if (!input.password) throw new BadRequestException("Password is required for new accounts");
@@ -582,6 +602,8 @@ export class OrganizationService {
         lastName: input.lastName,
         emailVerified: new Date(),
         role: invitation.role,
+        hasDashboardAccess: true,
+        lastActiveOrgId: invitation.orgId,
       });
 
       await tx
@@ -595,7 +617,16 @@ export class OrganizationService {
         .where(eq(invitations.id, invitation.id));
     });
 
-    return { ok: true };
+    const autoLoginToken = randomBytes(32).toString("hex");
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId,
+      tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+      expiresAt: addHours(new Date(), 1),
+    });
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+
+    return { ok: true, autoLoginToken };
   }
 
   async getSettings(orgId: string) {
