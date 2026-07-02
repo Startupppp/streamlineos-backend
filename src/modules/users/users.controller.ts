@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
+import { UserOpsService } from "./user-ops.service";
 import { InvitationsService } from "../organization/invitations.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
@@ -27,6 +28,7 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly userProfile: UserProfileService,
+    private readonly userOps: UserOpsService,
     private readonly invitations: InvitationsService,
   ) {}
 
@@ -42,12 +44,12 @@ export class UsersController {
 
   @Get("stats")
   getStats(@CurrentUser() u: CurrentUserContext) {
-    return this.users.getStats(u.orgId);
+    return this.userOps.getStats(u.orgId);
   }
 
   @Get("export")
   async exportUsers(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    const data = await this.users.exportUsers(u.orgId);
+    const data = await this.userOps.exportUsers(u.orgId);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=users.csv");
     res.send(data);
@@ -107,7 +109,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.bulkSuspend(u.orgId, body.userIds, u.userId);
+    return this.userOps.bulkSuspend(u.orgId, body.userIds, u.userId);
   }
 
   @Post("bulk-archive")
@@ -115,7 +117,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.bulkArchive(u.orgId, body.userIds, u.userId);
+    return this.userOps.bulkArchive(u.orgId, body.userIds, u.userId);
   }
 
   @Post("bulk-restore")
@@ -123,7 +125,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.bulkRestore(u.orgId, body.userIds, u.userId);
+    return this.userOps.bulkRestore(u.orgId, body.userIds, u.userId);
   }
 
   @Post("bulk-update")
@@ -131,7 +133,7 @@ export class UsersController {
     @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.bulkUpdateUsers(u.orgId, body, u.userId);
+    return this.userOps.bulkUpdateUsers(u.orgId, body, u.userId);
   }
 
   @Post("import")
@@ -140,7 +142,7 @@ export class UsersController {
     body: { rows: ImportUsersRow[] },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.users.importUsers(u.orgId, body.rows, u.userId);
+    return this.userOps.importUsers(u.orgId, body.rows, u.userId);
   }
 
   // ── Invitation sub-routes (static prefix "invitations/") ──
@@ -261,7 +263,7 @@ export class UsersController {
 
   @Post(":userId/reset-password")
   resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.users.resetPassword(u.orgId, userId, u.userId);
+    return this.userOps.resetPassword(u.orgId, userId, u.userId);
   }
 
   @Get(":userId/audit")

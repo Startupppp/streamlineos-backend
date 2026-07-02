@@ -1,11 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from "@nestjs/common";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { type Db } from "../../db/drizzle.module";
+import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { EmailService } from "./email.service";
 import { TwilioGateway } from "./dispatch/twilio.gateway";
 import { TEMPLATE_MAP } from "./templates/test-catalog";
