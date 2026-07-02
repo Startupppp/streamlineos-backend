@@ -444,9 +444,11 @@ export class ProjectsTicketSubresourcesService {
         authorId: users.id,
         authorName: users.name,
         authorImage: users.image,
+        projectKey: projects.key,
       })
       .from(ticketComments)
       .leftJoin(users, eq(users.id, ticketComments.userId))
+      .leftJoin(projects, and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
       .where(
         and(
           eq(ticketComments.id, commentId),
@@ -458,12 +460,6 @@ export class ProjectsTicketSubresourcesService {
 
     const row = rows[0];
     if (!row) throw new ProjectsCommentNotFoundException();
-
-    const projectRow = await this.db
-      .select({ key: projects.key })
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
-      .limit(1);
 
     return {
       id: row.id,
@@ -480,7 +476,7 @@ export class ProjectsTicketSubresourcesService {
         id: ticket.id,
         ticketNumber: ticket.ticketNumber,
         title: ticket.title,
-        projectKey: projectRow[0]?.key ?? null,
+        projectKey: row.projectKey ?? null,
         projectId,
       },
     };

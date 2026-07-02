@@ -106,6 +106,7 @@ export class ProjectsMembersService {
         name: body.name,
         color: body.color,
         order: nextOrder,
+        type: body.type ?? "unstarted",
       })
       .returning();
     return state;
@@ -150,6 +151,7 @@ export class ProjectsMembersService {
     if (data.name !== undefined) updateData.name = data.name;
     if (data.color !== undefined) updateData.color = data.color;
     if (data.order !== undefined) updateData.order = data.order;
+    if (data.type !== undefined) updateData.type = data.type;
 
     const [updated] = await this.db
       .update(projectStatuses)

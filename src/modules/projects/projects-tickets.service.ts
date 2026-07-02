@@ -2,7 +2,6 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   projectMembers,
-  projectStatuses,
   projects,
   ticketAssignees,
   ticketAttachments,
@@ -21,6 +20,7 @@ import { AccessService } from "../access/access.service";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
+import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
@@ -63,16 +63,9 @@ export class ProjectsTicketsService {
     private readonly audit: AuditService,
   ) {}
 
-  private readonly CANONICAL_STATUSES = new Set(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
-
   private async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
-    if (this.CANONICAL_STATUSES.has(status)) return;
-    const rows = await this.db
-      .select({ name: projectStatuses.name })
-      .from(projectStatuses)
-      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
-    const validNames = new Set(rows.map((r) => r.name));
-    if (!validNames.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, [status]);
+    if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
   }
 
   private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
@@ -263,7 +256,8 @@ export class ProjectsTicketsService {
   }
 
   async updateTicket(orgId: string, actingUserId: string, ticketId: number, input: UpdateTicketInput) {
-    const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
+    const now = new Date();
+    const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     if (input.title) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.type) updateData.type = normalizeTicketType(input.type);
@@ -324,7 +318,7 @@ export class ProjectsTicketsService {
       void this.projectsEmail.notifyStatusReview(ticketId, actingUserId, input.status).catch(() => undefined);
     }
 
-    return { updated: true };
+    return { updated: true, updatedAt: now.toISOString() };
   }
 
   private async syncAssignees(ticketId: number, actingUserId: string, input: UpdateTicketInput): Promise<void> {
@@ -463,6 +457,12 @@ export class ProjectsTicketsService {
 
   async reorder(orgId: string, projectId: number, body: ReorderInput) {
     if (body.items.length === 0) return { success: true };
+
+    const distinctStatuses = [...new Set(body.items.map((i) => i.status))];
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, distinctStatuses);
+    for (const status of distinctStatuses) {
+      if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+    }
 
     await this.db.transaction(async (tx) => {
       for (const item of body.items) {

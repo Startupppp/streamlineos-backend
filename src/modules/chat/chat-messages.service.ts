@@ -31,6 +31,7 @@ type PersistedMessage = {
   createdAt: Date;
   replyToId: number | null;
   metadata: Record<string, unknown> | null;
+  messageType: "text" | "lead_submission" | "system";
 };
 
 @Injectable()
@@ -177,6 +178,7 @@ export class ChatMessagesService {
       createdAt: message.createdAt,
       replyToId: message.replyToId,
       metadata: message.metadata,
+      messageType: message.messageType,
     });
 
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {
@@ -349,16 +351,24 @@ export class ChatMessagesService {
       return [created];
     });
 
+    const [senderRow] = await this.db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, senderId))
+      .limit(1);
+    const senderName = senderRow?.name ?? null;
+
     void this.ably
       .publishChatMessage(orgId, channelId, {
         id: message.id,
         channelId: message.channelId,
         senderId: message.senderId,
-        senderName: null,
+        senderName,
         content: message.content,
         createdAt: message.createdAt,
         replyToId: message.replyToId,
         metadata,
+        messageType: "system",
       })
       .catch(() => undefined);
   }

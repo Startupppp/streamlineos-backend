@@ -208,6 +208,7 @@ export class ProjectsReportsService {
     const sprintTickets = await this.db
       .select({
         storyPoints: tickets.storyPoints,
+        status: tickets.status,
         updatedAt: tickets.updatedAt,
         group: customStates.group,
       })
@@ -220,7 +221,8 @@ export class ProjectsReportsService {
 
     const completedByDate = new Map<string, number>();
     for (const t of sprintTickets) {
-      if (t.group !== "completed") continue;
+      const group = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
+      if (group !== "completed") continue;
       const dateKey = formatDateOnly(t.updatedAt);
       completedByDate.set(dateKey, (completedByDate.get(dateKey) ?? 0) + (t.storyPoints ?? 0));
     }
@@ -310,6 +312,7 @@ export class ProjectsReportsService {
       .select({
         sprintId: tickets.sprintId,
         storyPoints: tickets.storyPoints,
+        status: tickets.status,
         group: customStates.group,
       })
       .from(tickets)
@@ -331,7 +334,8 @@ export class ProjectsReportsService {
       const pts = t.storyPoints ?? 0;
       bucket.committedPoints += pts;
       bucket.committedCount += 1;
-      if (t.group === "completed") {
+      const group = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
+      if (group === "completed") {
         bucket.completedPoints += pts;
         bucket.completedCount += 1;
       }
@@ -361,7 +365,7 @@ export class ProjectsReportsService {
     await this.requireProject(orgId, projectId);
 
     const projectTickets = await this.db
-      .select({ storyPoints: tickets.storyPoints, group: customStates.group })
+      .select({ storyPoints: tickets.storyPoints, status: tickets.status, group: customStates.group })
       .from(tickets)
       .leftJoin(customStates, eq(tickets.stateId, customStates.id))
       .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)));
@@ -372,7 +376,7 @@ export class ProjectsReportsService {
     }
 
     for (const t of projectTickets) {
-      const group: StateGroup = t.group ?? "backlog";
+      const group: StateGroup = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
       const bucket = totals.get(group);
       if (!bucket) continue;
       bucket.count += 1;

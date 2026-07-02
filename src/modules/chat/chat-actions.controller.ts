@@ -8,18 +8,17 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { projectMembers, projectStatuses, ticketActivityLog, tickets } from "../../db/schema";
+import { projectMembers, ticketActivityLog, tickets } from "../../db/schema";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ticketStatusActionSchema, type TicketStatusActionInput } from "./dto/chat.schemas";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatMessagesService } from "./chat-messages.service";
 import {
   ChatActionForbiddenException,
-  ProjectsInvalidTicketStatusException,
+  ChatActionTicketStatusFailedException,
   ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
-
-const CANONICAL_STATUSES = new Set(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
+import { resolveValidTicketStatuses } from "../projects/ticket-status.util";
 
 @RequireModule("chat")
 @Controller("chat/actions")
@@ -56,14 +55,8 @@ export class ChatActionsController {
       return { success: true, prevStatus: ticket.status, nextStatus: body.nextStatus };
     }
 
-    if (!CANONICAL_STATUSES.has(body.nextStatus)) {
-      const statuses = await this.db
-        .select({ name: projectStatuses.name })
-        .from(projectStatuses)
-        .where(and(eq(projectStatuses.projectId, body.projectId), eq(projectStatuses.orgId, u.orgId)));
-      const validNames = new Set(statuses.map((s) => s.name));
-      if (!validNames.has(body.nextStatus)) throw new ProjectsInvalidTicketStatusException(body.nextStatus);
-    }
+    const valid = await resolveValidTicketStatuses(this.db, body.projectId, u.orgId, [body.nextStatus]);
+    if (!valid.has(body.nextStatus)) throw new ChatActionTicketStatusFailedException();
 
     await this.db
       .update(tickets)

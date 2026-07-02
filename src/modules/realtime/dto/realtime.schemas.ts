@@ -17,6 +17,7 @@ export const chatMessagePayloadSchema = z.object({
   createdAt: z.date(),
   replyToId: z.number().nullable(),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  messageType: z.string().optional(),
 });
 
 export type ChatMessagePayload = z.infer<typeof chatMessagePayloadSchema>;
