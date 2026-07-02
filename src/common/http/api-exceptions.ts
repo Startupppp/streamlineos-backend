@@ -84,3 +84,12 @@ export class ProjectsTicketConflictException extends HttpException {
     );
   }
 }
+
+export class ProjectsInvalidTicketStatusException extends HttpException {
+  constructor(status: string) {
+    super(
+      { code: "PROJECTS_INVALID_TICKET_STATUS", message: `"${status}" is not a valid status for this project` },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+}
