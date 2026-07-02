@@ -541,6 +541,48 @@ export class ChatChannelsService {
     return { ok: true };
   }
 
+  async favoriteChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ isFavorite: true })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async unfavoriteChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ isFavorite: false })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async setNotificationPreference(channelId: number, userId: string, preference: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ notificationPreference: preference })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true, notificationPreference: preference };
+  }
+
   async listChannelFiles(channelId: number, userId: string, cursor?: number, limit = 20) {
     await this.assertMember(channelId, userId);
     const safeLimit = Math.min(Math.max(1, limit), 100);

@@ -72,4 +72,52 @@ describe("ChatChannelsService", () => {
       expect(result).toEqual({ ok: true });
     });
   });
+
+  describe("favoriteChannel", () => {
+    it("throws ForbiddenException if requester is not a member", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(undefined);
+      await expect(service.favoriteChannel(1, "user1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("marks the channel as favorite for the current user", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({
+        userId: "user1",
+        role: "MEMBER",
+      });
+      const result = await service.favoriteChannel(1, "user1");
+      expect(mockDb.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("unfavoriteChannel", () => {
+    it("unmarks the channel as favorite for the current user", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({
+        userId: "user1",
+        role: "MEMBER",
+      });
+      const result = await service.unfavoriteChannel(1, "user1");
+      expect(mockDb.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("setNotificationPreference", () => {
+    it("throws ForbiddenException if requester is not a member", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(undefined);
+      await expect(
+        service.setNotificationPreference(1, "user1", "MENTIONS"),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("updates the notification preference for the current user", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({
+        userId: "user1",
+        role: "MEMBER",
+      });
+      const result = await service.setNotificationPreference(1, "user1", "MENTIONS");
+      expect(mockDb.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, notificationPreference: "MENTIONS" });
+    });
+  });
 });

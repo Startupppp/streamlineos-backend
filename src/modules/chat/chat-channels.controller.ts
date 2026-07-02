@@ -26,10 +26,12 @@ import {
   addMemberSchema,
   createChannelSchema,
   muteChannelSchema,
+  notificationPreferenceSchema,
   updateChannelSchema,
   type AddMemberInput,
   type CreateChannelInput,
   type MuteChannelInput,
+  type NotificationPreferenceInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -247,6 +249,37 @@ export class ChatChannelsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.channels.unmuteChannel(channelId, u.userId);
+  }
+
+  @ApiOperation({ summary: "Add a channel to the current user's favorites" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Post(":channelId/favorite")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  favorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.channels.favoriteChannel(channelId, u.userId);
+  }
+
+  @ApiOperation({ summary: "Remove a channel from the current user's favorites" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Post(":channelId/unfavorite")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  unfavorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.channels.unfavoriteChannel(channelId, u.userId);
+  }
+
+  @ApiOperation({ summary: "Set the current user's notification preference for a channel" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Post(":channelId/notification-preference")
+  @HttpCode(200)
+  @RequirePermission("chat:channels:write")
+  setNotificationPreference(
+    @Param("channelId", ParseIntPipe) channelId: number,
+    @Body(new ZodValidationPipe(notificationPreferenceSchema)) body: NotificationPreferenceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.channels.setNotificationPreference(channelId, u.userId, body.preference);
   }
 
   @ApiOperation({ summary: "List files shared in a channel with cursor pagination" })

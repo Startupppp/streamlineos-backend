@@ -36,6 +36,8 @@ export const chatChannelMembers = pgTable("chat_channel_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
   mutedUntil: timestamp("muted_until"),
   archivedAt: timestamp("archived_at"),
+  isFavorite: boolean("is_favorite").default(false).notNull(),
+  notificationPreference: text("notification_preference").default("DEFAULT").notNull(),
 }, (table) => [
   uniqueIndex("uniq_channel_member").on(table.channelId, table.userId),
   index("idx_chat_members_user").on(table.userId),
@@ -190,6 +192,36 @@ export const chatHuddleParticipants = pgTable("chat_huddle_participants", {
 }, (table) => [
   uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
   index("idx_huddle_participants_huddle").on(table.huddleId),
+]);
+
+export const chatChannelInviteLinks = pgTable("chat_channel_invite_links", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  token: text("token").notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => [
+  uniqueIndex("uniq_chat_invite_link_token").on(table.token),
+  index("idx_chat_invite_links_channel").on(table.channelId, table.revokedAt),
+]);
+
+export const chatChannelInviteLinksRelations = relations(chatChannelInviteLinks, ({ one }) => ({
+  channel: one(chatChannels, { fields: [chatChannelInviteLinks.channelId], references: [chatChannels.id] }),
+  createdByUser: one(users, { fields: [chatChannelInviteLinks.createdBy], references: [users.id] }),
+}));
+
+export const chatOrgSettings = pgTable("chat_org_settings", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  defaultNotificationPreference: text("default_notification_preference").default("ALL").notNull(),
+  maxAttachmentSizeMb: integer("max_attachment_size_mb").default(25).notNull(),
+  maxHuddleParticipants: integer("max_huddle_participants").default(50).notNull(),
+  updatedBy: text("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_chat_org_settings_org").on(table.orgId),
 ]);
 
 export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({
