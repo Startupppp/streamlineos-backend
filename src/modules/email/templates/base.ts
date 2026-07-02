@@ -1,4 +1,5 @@
 import { appUrl } from "../app-url";
+import { getSupportEmail } from "../email.constants";
 
 export { appUrl };
 
@@ -18,6 +19,7 @@ export interface EmailTemplateProps {
 }
 
 export function getEmailTemplate({ title, preheader, content }: EmailTemplateProps): string {
+  const supportEmail = getSupportEmail();
   const preheaderText = preheader
     ? `<div style="display:none;font-size:1px;color:#EEF3FB;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
     : "";
@@ -191,14 +193,13 @@ ${preheaderText}
         <tr>
           <td style="padding:40px 48px 32px;" class="card-body">
 
-            <!-- Logo lockup -->
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:36px;">
               <tr>
-                <td style="vertical-align:middle;">
-                  <img src="${appUrl}/logo-email.svg" alt="StreamlineOS" width="48" height="48" style="display:block;border:0;width:48px;height:48px;border-radius:10px;" border="0">
+                <td width="36" height="36" align="center" valign="middle" bgcolor="#1e40af" style="width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);">
+                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:18px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;">S</span>
                 </td>
-                <td style="vertical-align:middle;padding-left:10px;">
-                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:16px;font-weight:600;color:#0b1220;letter-spacing:-0.02em;">StreamlineOS</span>
+                <td style="vertical-align:middle;padding-left:11px;">
+                  <span style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:17px;font-weight:600;color:#0b1220;letter-spacing:-0.02em;">Streamline<span style="color:#1e40af;">OS</span></span>
                 </td>
               </tr>
             </table>
@@ -216,12 +217,8 @@ ${preheaderText}
               <tr>
                 <td style="padding:20px 48px 28px;text-align:center;" class="email-footer">
                   <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;font-weight:600;color:#64748B;margin:0 0 4px 0;">StreamlineOS</p>
-                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0 0 6px 0;">Enterprise Resource Management &nbsp;·&nbsp; <a href="mailto:support@streamlineos.app" style="color:#94A3B8;text-decoration:underline;">support@streamlineos.app</a></p>
-                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0;">
-                    <a href="https://streamlineos.app/unsubscribe" style="color:#94A3B8;text-decoration:underline;">Unsubscribe</a>
-                    &nbsp;·&nbsp;
-                    <a href="https://streamlineos.app/privacy" style="color:#94A3B8;text-decoration:underline;">Privacy Policy</a>
-                  </p>
+                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0 0 6px 0;">Enterprise Resource Management &nbsp;&middot;&nbsp; <a href="mailto:${supportEmail}" style="color:#94A3B8;text-decoration:underline;">${supportEmail}</a></p>
+                  <p style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:12px;color:#999;margin:0;"><a href="${appUrl}/privacy" style="color:#94A3B8;text-decoration:underline;">Privacy Policy</a></p>
                 </td>
               </tr>
             </table>

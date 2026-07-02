@@ -25,3 +25,7 @@ export function getFromAddress(): string {
   const email = getFromEmail();
   return name ? `${name} <${email}>` : email;
 }
+
+export function getSupportEmail(): string {
+  return getFromEmail();
+}
