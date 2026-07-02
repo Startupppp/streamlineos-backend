@@ -17,6 +17,7 @@ import { ChatPinsService } from "./chat-pins.service";
 import { ChatHuddlesService } from "./chat-huddles.service";
 import { ChatSearchService } from "./chat-search.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
+import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatSavedService } from "./chat-saved.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 
@@ -32,7 +33,9 @@ import { RealtimeModule } from "../realtime/realtime.module";
     ChatHuddlesService,
     ChatSearchService,
     ChatNotificationsService,
+    ChatReplyRemindersService,
     ChatSavedService,
   ],
+  exports: [ChatReplyRemindersService],
 })
 export class ChatModule {}

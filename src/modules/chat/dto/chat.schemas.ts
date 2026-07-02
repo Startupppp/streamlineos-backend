@@ -39,6 +39,13 @@ export const sendMessageSchema = z.object({
       }),
     )
     .optional(),
+  metadata: z
+    .object({
+      entities: z.array(z.unknown()).optional(),
+      forwardCount: z.number().int().positive().optional(),
+    })
+    .passthrough()
+    .optional(),
 });
 
 export const editMessageSchema = z.object({

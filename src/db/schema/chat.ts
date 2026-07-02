@@ -35,6 +35,7 @@ export const chatChannelMembers = pgTable("chat_channel_members", {
   lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
   mutedUntil: timestamp("muted_until"),
+  archivedAt: timestamp("archived_at"),
 }, (table) => [
   uniqueIndex("uniq_channel_member").on(table.channelId, table.userId),
   index("idx_chat_members_user").on(table.userId),
@@ -106,6 +107,23 @@ export const chatSavedMessages = pgTable("chat_saved_messages", {
 }, (table) => [
   uniqueIndex("uniq_saved_message").on(table.userId, table.messageId),
   index("idx_saved_messages_user").on(table.userId),
+]);
+
+export const chatReplyReminders = pgTable("chat_reply_reminders", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  channelId: integer("channel_id").references(() => chatChannels.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").references(() => chatMessages.id, { onDelete: "cascade" }).notNull(),
+  recipientUserId: text("recipient_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  senderUserId: text("sender_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  remindAt: timestamp("remind_at").notNull(),
+  sentAt: timestamp("sent_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_chat_reply_reminder").on(table.messageId, table.recipientUserId),
+  index("idx_chat_reply_reminders_due").on(table.remindAt),
+  index("idx_chat_reply_reminders_recipient").on(table.recipientUserId, table.channelId),
 ]);
 
 export const chatChannelsRelations = relations(chatChannels, ({ many, one }) => ({

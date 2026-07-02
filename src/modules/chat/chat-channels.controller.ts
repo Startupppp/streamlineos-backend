@@ -55,6 +55,14 @@ export class ChatChannelsController {
     return this.channels.getMyChannels(u.userId, u.orgId);
   }
 
+  @ApiOperation({ summary: "List archived channels for the current user" })
+  @ApiResponse({ status: 200, description: "OK" })
+  @Get("archived")
+  @RequirePermission("chat:channels:read")
+  listArchived(@CurrentUser() u: CurrentUserContext) {
+    return this.channels.getArchivedChannels(u.userId, u.orgId);
+  }
+
   @ApiOperation({ summary: "List public channels available to join" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("public")
@@ -177,7 +185,7 @@ export class ChatChannelsController {
     return this.channels.leaveChannel(channelId, u.userId);
   }
 
-  @ApiOperation({ summary: "Archive a channel" })
+  @ApiOperation({ summary: "Archive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/archive")
   @HttpCode(200)
@@ -186,7 +194,7 @@ export class ChatChannelsController {
     return this.channels.archiveChannel(channelId, u.userId);
   }
 
-  @ApiOperation({ summary: "Unarchive a channel" })
+  @ApiOperation({ summary: "Unarchive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unarchive")
   @HttpCode(200)

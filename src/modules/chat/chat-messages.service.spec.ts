@@ -4,7 +4,7 @@ import { ChatMessagesService } from "./chat-messages.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
-import { ChatNotificationsService } from "./chat-notifications.service";
+import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 
 const mockDb = {
   query: {
@@ -26,7 +26,7 @@ const mockDb = {
 
 const mockAbly = { publishChatEvent: jest.fn().mockResolvedValue(undefined) };
 const mockWebPush = { sendToUser: jest.fn().mockResolvedValue(undefined) };
-const mockNotifications = { notifyMentions: jest.fn().mockResolvedValue(undefined) };
+const mockReplyReminders = { scheduleForMessage: jest.fn().mockResolvedValue(undefined) };
 
 describe("ChatMessagesService", () => {
   let service: ChatMessagesService;
@@ -40,6 +40,7 @@ describe("ChatMessagesService", () => {
         { provide: AblyService, useValue: mockAbly },
         { provide: WebPushService, useValue: mockWebPush },
         { provide: ChatNotificationsService, useValue: mockNotifications },
+        { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
       ],
     }).compile();
     service = module.get(ChatMessagesService);

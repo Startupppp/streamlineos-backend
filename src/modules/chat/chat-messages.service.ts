@@ -18,6 +18,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
+import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
 const CEO = "CEO";
@@ -39,6 +40,7 @@ export class ChatMessagesService {
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
+    private readonly replyReminders: ChatReplyRemindersService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -122,6 +124,7 @@ export class ChatMessagesService {
           senderId: userId,
           content: sanitizedContent?.trim() || null,
           replyToId: body.replyToId,
+          metadata: body.metadata ?? null,
         })
         .returning();
 
@@ -143,9 +146,17 @@ export class ChatMessagesService {
         .set({ lastMessageAt: new Date(), updatedAt: new Date() })
         .where(eq(chatChannels.id, channelId));
 
+      await tx
+        .update(chatChannelMembers)
+        .set({ archivedAt: null })
+        .where(eq(chatChannelMembers.channelId, channelId));
+
       return created;
     });
 
+    void this.replyReminders
+      .scheduleForMessage(orgId, channelId, message.id, userId)
+      .catch(() => undefined);
     void this.dispatchMessageSideEffects(orgId, channelId, message, body).catch(() => undefined);
 
     return message;
@@ -174,6 +185,7 @@ export class ChatMessagesService {
       content: message.content,
       createdAt: message.createdAt,
       replyToId: message.replyToId,
+      metadata: body.metadata ?? null,
     });
 
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {

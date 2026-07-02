@@ -62,10 +62,14 @@ describe("ChatChannelsService", () => {
   });
 
   describe("archiveChannel", () => {
-    it("throws ForbiddenException if user is not ADMIN", async () => {
-      mockDb.query.chatChannelMembers.findFirst
-        .mockResolvedValueOnce({ userId: "user1", role: "MEMBER" });
-      await expect(service.archiveChannel(1, "user1")).rejects.toThrow(ForbiddenException);
+    it("archives the channel for the current user", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce({
+        userId: "user1",
+        role: "MEMBER",
+      });
+      const result = await service.archiveChannel(1, "user1");
+      expect(mockDb.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
     });
   });
 });

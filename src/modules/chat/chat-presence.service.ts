@@ -68,7 +68,6 @@ export class ChatPresenceService {
           and(
             eq(chatMessages.channelId, chatChannelMembers.channelId),
             gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
-            ne(chatMessages.senderId, userId),
             eq(chatMessages.isDeleted, false),
           ),
         )
