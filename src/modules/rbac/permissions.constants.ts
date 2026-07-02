@@ -232,6 +232,7 @@ const CHAT_PERMISSIONS: Permission[] = [
   { name: "chat:channels:write", resource: "chat:channels", action: "write", description: "Create and update chat channels" },
   { name: "chat:messages:read", resource: "chat:messages", action: "read", description: "Read chat messages" },
   { name: "chat:messages:write", resource: "chat:messages", action: "write", description: "Send and edit chat messages" },
+  { name: "ai:chat:use", resource: "ai:chat", action: "use", description: "Use the AI chat assistant" },
 ];
 
 const API_TOKEN_PERMISSIONS: Permission[] = [
@@ -302,6 +303,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "chat:channels:read",
   "chat:messages:read",
   "chat:messages:write",
+  "ai:chat:use",
   "settings:api-tokens:read",
   "settings:api-tokens:write",
 ];

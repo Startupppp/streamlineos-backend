@@ -19,6 +19,7 @@ import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
+import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
 
 const CEO = "CEO";
@@ -41,6 +42,7 @@ export class ChatMessagesService {
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
     private readonly replyReminders: ChatReplyRemindersService,
+    private readonly orgSettings: ChatOrgSettingsService,
   ) {}
 
   private async isMember(channelId: number, userId: string): Promise<boolean> {
@@ -114,6 +116,17 @@ export class ChatMessagesService {
 
     if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0)) {
       throw new BadRequestException("Message must have content or attachments");
+    }
+
+    if (body.attachments && body.attachments.length > 0) {
+      const { maxAttachmentSizeMb } = await this.orgSettings.getSettings(orgId);
+      const maxBytes = maxAttachmentSizeMb * 1024 * 1024;
+      const oversized = body.attachments.find((a) => a.fileSize > maxBytes);
+      if (oversized) {
+        throw new BadRequestException(
+          `Attachment "${oversized.fileName}" exceeds the ${maxAttachmentSizeMb}MB limit for this organization`,
+        );
+      }
     }
 
     const message = await this.db.transaction(async (tx) => {
@@ -242,24 +255,37 @@ export class ChatMessagesService {
   }
 
   async edit(messageId: number, userId: string, content: string) {
+    const message = await this.db.query.chatMessages.findFirst({
+      where: eq(chatMessages.id, messageId),
+    });
+    if (!message || message.isDeleted) throw new NotFoundException("Message not found");
+    if (message.senderId !== userId) {
+      throw new ForbiddenException("You can only edit your own messages");
+    }
+
     await this.db
       .update(chatMessages)
       .set({ content: content.trim(), isEdited: true, updatedAt: new Date() })
-      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.senderId, userId)));
+      .where(eq(chatMessages.id, messageId));
 
     return { ok: true };
   }
 
   async remove(messageId: number, userId: string, role: string) {
-    const isAdmin = role === CEO || role === HR;
+    const message = await this.db.query.chatMessages.findFirst({
+      where: eq(chatMessages.id, messageId),
+    });
+    if (!message || message.isDeleted) throw new NotFoundException("Message not found");
 
-    const conditions = [eq(chatMessages.id, messageId)];
-    if (!isAdmin) conditions.push(eq(chatMessages.senderId, userId));
+    const isAdmin = role === CEO || role === HR;
+    if (!isAdmin && message.senderId !== userId) {
+      throw new ForbiddenException("You can only delete your own messages");
+    }
 
     await this.db
       .update(chatMessages)
       .set({ isDeleted: true, content: null, updatedAt: new Date() })
-      .where(and(...conditions));
+      .where(eq(chatMessages.id, messageId));
 
     return { ok: true };
   }
