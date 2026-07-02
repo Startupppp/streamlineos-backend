@@ -1,60 +1,5 @@
 import { getEmailTemplate, escapeHtml } from "./base";
-
-export function getWeeklyAttendanceReportTemplate(
-  weekRange: string,
-  orgName: string,
-  rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[]
-): string {
-  const sOrgName = escapeHtml(orgName);
-  const tableRows = rows
-    .map(
-      (r) => `
-      <tr>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; color: #6b7280; font-size: 13px;">${escapeHtml(r.department)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; color: #374151;">${escapeHtml(r.name)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; color: #111827;">${r.daysPresent}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; color: #111827;">${escapeHtml(r.totalHours)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; color: #111827;">${r.overtimeDays}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; color: ${r.autoCheckoutDays > 0 ? '#dc2626' : '#111827'};">${r.autoCheckoutDays}</td>
-      </tr>`
-    )
-    .join("");
-
-  const content = `
-    <h2 class="email-title">Attendance Report</h2>
-    <p class="email-text">
-      Here is the attendance summary for <strong>${sOrgName}</strong> for the period <strong>${weekRange}</strong>.
-    </p>
-
-    <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px;">
-      <thead>
-        <tr style="background-color: #f3f4f6;">
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; font-weight: 600; color: #111827;">Department</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; font-weight: 600; color: #111827;">Employee</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; font-weight: 600; color: #111827;">Days Present</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; font-weight: 600; color: #111827;">Total Hours</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; font-weight: 600; color: #111827;">Overtime Days</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; font-weight: 600; color: #111827;">Auto-Checkout</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${tableRows}
-      </tbody>
-    </table>
-
-    <div class="divider"></div>
-
-    <p class="email-text" style="font-size: 14px; color: #64748b;">
-      This report includes all employees with at least one attendance record in the selected period, sorted by department. Review full details in the HR portal.
-    </p>
-  `;
-
-  return getEmailTemplate({
-    title: `Attendance Report - ${weekRange}`,
-    preheader: `Attendance summary for ${weekRange}`,
-    content,
-  });
-}
+import { renderCallout } from "./components";
 
 export interface MonthlyExpenseReportRow {
   date: string;
@@ -65,6 +10,54 @@ export interface MonthlyExpenseReportRow {
   status: string;
 }
 
+export function getWeeklyAttendanceReportTemplate(
+  weekRange: string,
+  orgName: string,
+  rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[]
+): string {
+  const sOrgName = escapeHtml(orgName);
+  const sWeekRange = escapeHtml(weekRange);
+  const tableRows = rows
+    .map(
+      (r) => `
+      <tr>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;color:#4A5568;font-size:13px;">${escapeHtml(r.department)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;color:#0b1220;">${escapeHtml(r.name)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;color:#0b1220;">${r.daysPresent}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;color:#0b1220;">${escapeHtml(r.totalHours)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;color:#0b1220;">${r.overtimeDays}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;color:${r.autoCheckoutDays > 0 ? "#dc2626" : "#0b1220"};">${r.autoCheckoutDays}</td>
+      </tr>`
+    )
+    .join("");
+
+  const content = `
+    <p class="email-text">Attendance for <strong>${sOrgName}</strong> — week of <strong>${sWeekRange}</strong>.</p>
+
+    <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
+      <thead>
+        <tr style="background-color:#F7F9FF;">
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-weight:600;color:#0b1220;">Department</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-weight:600;color:#0b1220;">Employee</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;font-weight:600;color:#0b1220;">Days present</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;font-weight:600;color:#0b1220;">Total hours</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;font-weight:600;color:#0b1220;">Overtime days</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;font-weight:600;color:#0b1220;">Auto-checkout</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+      </tbody>
+    </table>
+  `;
+
+  return getEmailTemplate({
+    title: `Attendance report — week of ${sWeekRange}`,
+    preheader: `Attendance summary for ${sOrgName} — week of ${sWeekRange}`,
+    content,
+  });
+}
+
 export function getMonthlyExpenseReportTemplate(
   monthLabel: string,
   orgName: string,
@@ -72,33 +65,31 @@ export function getMonthlyExpenseReportTemplate(
   summary: { totalAmount: string; totalCount: number; pendingCount: number; approvedCount: number; paidCount: number; rejectedCount: number }
 ): string {
   const sOrgName = escapeHtml(orgName);
+  const sMonthLabel = escapeHtml(monthLabel);
   const tableRows = rows
     .map(
       (r) => `
       <tr>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; color: #374151;">${escapeHtml(r.date)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; color: #374151;">${escapeHtml(r.employeeName)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; color: #374151;">${escapeHtml(r.category)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: right; color: #111827;">${r.currency === "INR" ? "₹" : ""}${escapeHtml(r.amount)}</td>
-        <td style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; color: #111827;">${escapeHtml(r.status)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;color:#4A5568;">${escapeHtml(r.date)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;color:#0b1220;">${escapeHtml(r.employeeName)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;color:#4A5568;">${escapeHtml(r.category)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:right;color:#1e40af;">${r.currency === "INR" ? "&#8377;" : ""}${escapeHtml(r.amount)}</td>
+        <td style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;color:#0b1220;">${escapeHtml(r.status)}</td>
       </tr>`
     )
     .join("");
 
   const content = `
-    <h2 class="email-title">Monthly Expense Report</h2>
-    <p class="email-text">
-      Here is the expense summary for <strong>${sOrgName}</strong> for <strong>${monthLabel}</strong>.
-    </p>
+    <p class="email-text">Expenses for <strong>${sOrgName}</strong> — <strong>${sMonthLabel}</strong>.</p>
 
-    <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px;">
+    <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
       <thead>
-        <tr style="background-color: #f3f4f6;">
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; font-weight: 600; color: #111827;">Date</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; font-weight: 600; color: #111827;">Employee</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; font-weight: 600; color: #111827;">Category</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: right; font-weight: 600; color: #111827;">Amount</th>
-          <th style="border: 1px solid #d1d5db; padding: 8px 12px; text-align: center; font-weight: 600; color: #111827;">Status</th>
+        <tr style="background-color:#F7F9FF;">
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-weight:600;color:#0b1220;">Date</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-weight:600;color:#0b1220;">Employee</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-weight:600;color:#0b1220;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:right;font-weight:600;color:#0b1220;">Amount</th>
+          <th style="border:1px solid #e2e8f0;padding:8px 12px;text-align:center;font-weight:600;color:#0b1220;">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -106,21 +97,120 @@ export function getMonthlyExpenseReportTemplate(
       </tbody>
     </table>
 
-    <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin: 24px 0;">
-      <p class="email-text" style="margin: 0 0 8px 0;"><strong>Summary</strong></p>
-      <p class="email-text" style="margin: 0; font-size: 14px;">Total amount: <strong>₹${escapeHtml(summary.totalAmount)}</strong> &nbsp;|&nbsp; Total expenses: <strong>${summary.totalCount}</strong> &nbsp;|&nbsp; Pending: ${summary.pendingCount} &nbsp;|&nbsp; Approved: ${summary.approvedCount} &nbsp;|&nbsp; Paid: ${summary.paidCount} &nbsp;|&nbsp; Rejected: ${summary.rejectedCount}</p>
+    <div style="background-color:#F7F9FF;border-left:4px solid #3b82f6;padding:16px 20px;border-radius:0 8px 8px 0;margin:24px 0;">
+      <p style="font-family:'DM Sans',-apple-system,sans-serif;font-size:14px;color:#0b1220;margin:0 0 4px 0;font-weight:600;">Summary</p>
+      <p style="font-family:'DM Sans',-apple-system,sans-serif;font-size:14px;color:#4A5568;margin:0;">Total: <strong style="color:#1e40af;">&#8377;${escapeHtml(summary.totalAmount)}</strong> &nbsp;&middot;&nbsp; ${summary.totalCount} expense${summary.totalCount !== 1 ? "s" : ""} &nbsp;&middot;&nbsp; Pending: ${summary.pendingCount} &nbsp;&middot;&nbsp; Approved: ${summary.approvedCount} &nbsp;&middot;&nbsp; Paid: ${summary.paidCount} &nbsp;&middot;&nbsp; Rejected: ${summary.rejectedCount}</p>
     </div>
-
-    <div class="divider"></div>
-
-    <p class="email-text" style="font-size: 14px; color: #64748b;">
-      This is an automated monthly report. Review expense details in the HR portal.
-    </p>
   `;
 
   return getEmailTemplate({
-    title: `Monthly Expense Report - ${monthLabel}`,
-    preheader: `Expense summary for ${monthLabel}`,
+    title: `Expense report — ${sMonthLabel}`,
+    preheader: `Expense summary for ${sOrgName} — ${sMonthLabel}`,
+    content,
+  });
+}
+
+export interface WeeklyRecapData {
+  orgName: string;
+  weekRange: string;
+  totalEmployees: number;
+  newLeads: number;
+  convertedLeads: number;
+  totalActivities: number;
+  openTickets: number;
+  closedTickets: number;
+  pendingLeaves: number;
+  topPerformers: Array<{ name: string; score: number }>;
+  pipelineSummary: Array<{ status: string; count: number }>;
+  aiNarrative: string;
+}
+
+export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
+  const sOrgName = escapeHtml(data.orgName);
+  const sWeekRange = escapeHtml(data.weekRange);
+
+  const narrativeBlock = data.aiNarrative
+    ? renderCallout(data.aiNarrative.replace(/\n\n/g, "<br><br>").replace(/\n/g, " "), "info")
+    : "";
+
+  const kpiRows = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0;">
+      <tr>
+        <td width="50%" style="padding:0 6px 12px 0;">
+          <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Sora',-apple-system,sans-serif;">${data.newLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;">New leads</p>
+          </div>
+        </td>
+        <td width="50%" style="padding:0 0 12px 6px;">
+          <div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#166534;font-family:'Sora',-apple-system,sans-serif;">${data.convertedLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;">Conversions</p>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td width="50%" style="padding:0 6px 0 0;">
+          <div style="background:#fefce8;border-radius:8px;padding:16px;text-align:center;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#854d0e;font-family:'Sora',-apple-system,sans-serif;">${data.totalActivities}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;">Activities logged</p>
+          </div>
+        </td>
+        <td width="50%" style="padding:0 0 0 6px;">
+          <div style="background:#faf5ff;border-radius:8px;padding:16px;text-align:center;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#7c3aed;font-family:'Sora',-apple-system,sans-serif;">${data.closedTickets}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;">Tickets closed</p>
+          </div>
+        </td>
+      </tr>
+    </table>`;
+
+  const statsTable = `
+    <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:8px 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">Total employees</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">${data.totalEmployees}</td></tr>
+      <tr><td style="padding:8px 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">Open tickets</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;border-bottom:1px solid #f1f5f9;">${data.openTickets}</td></tr>
+      <tr><td style="padding:8px 0;font-size:13px;color:#6b7280;font-family:'DM Sans',-apple-system,sans-serif;">Pending leave requests</td><td style="text-align:right;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;">${data.pendingLeaves}</td></tr>
+    </table>`;
+
+  const topPerformersSection = data.topPerformers.length > 0
+    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Sales leaderboard</p>
+       <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+         <thead><tr style="background-color:#f8fafc;">
+           <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;">Rank</th>
+           <th style="padding:8px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;">Name</th>
+           <th style="padding:8px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;">Score</th>
+         </tr></thead>
+         <tbody>${data.topPerformers.slice(0, 5).map((p, i) =>
+           `<tr><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${i === 0 ? "1st" : i === 1 ? "2nd" : i === 2 ? "3rd" : `#${i + 1}`}</td><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${escapeHtml(p.name)}</td><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;font-size:13px;">${p.score} pts</td></tr>`
+         ).join("")}</tbody>
+       </table>`
+    : "";
+
+  const pipelineSection = data.pipelineSummary.length > 0
+    ? `<p style="font-size:14px;font-weight:600;color:#0b1220;font-family:'DM Sans',-apple-system,sans-serif;margin:24px 0 8px 0;border-bottom:2px solid #e2e8f0;padding-bottom:6px;">Lead pipeline</p>
+       <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+         <thead><tr style="background-color:#f8fafc;">
+           <th style="padding:6px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;">Status</th>
+           <th style="padding:6px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;">Count</th>
+         </tr></thead>
+         <tbody>${data.pipelineSummary.map(s =>
+           `<tr><td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${escapeHtml(s.status)}</td><td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;font-size:13px;">${s.count}</td></tr>`
+         ).join("")}</tbody>
+       </table>`
+    : "";
+
+  const content = `
+    <p class="email-text">Your weekly overview for <strong>${sOrgName}</strong> — week of <strong>${sWeekRange}</strong>.</p>
+    ${narrativeBlock}
+    ${kpiRows}
+    ${statsTable}
+    ${topPerformersSection}
+    ${pipelineSection}
+  `;
+
+  return getEmailTemplate({
+    title: `Your week at ${sOrgName}`,
+    preheader: `Weekly recap for ${sOrgName} — ${sWeekRange}: ${data.newLeads} new leads, ${data.convertedLeads} conversions.`,
     content,
   });
 }

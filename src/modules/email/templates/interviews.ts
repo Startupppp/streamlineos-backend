@@ -1,0 +1,167 @@
+import { escapeHtml, getEmailTemplate } from "./base";
+import { renderButton, renderCallout, renderKeyValueRows } from "./components";
+
+interface InterviewInviteParams {
+  recipientName: string;
+  candidateName: string;
+  jobTitle: string;
+  companyName: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  format: string;
+  meetingLink?: string;
+  location?: string;
+  notes?: string;
+  recipientRole: "candidate" | "interviewer";
+}
+
+export function getInterviewInviteEmail(params: InterviewInviteParams): { subject: string; html: string } {
+  const recipient = escapeHtml(params.recipientName);
+  const candidate = escapeHtml(params.candidateName);
+  const job = escapeHtml(params.jobTitle);
+  const company = escapeHtml(params.companyName);
+  const notes = params.notes ? escapeHtml(params.notes) : null;
+
+  const isCandidate = params.recipientRole === "candidate";
+
+  const durationLabel =
+    params.durationMinutes >= 60
+      ? `${params.durationMinutes / 60}h`
+      : `${params.durationMinutes}min`;
+
+  const rows = [
+    ...(isCandidate ? [] : [{ label: "Candidate", value: params.candidateName }]),
+    { label: "Position", value: params.jobTitle },
+    { label: "Date & time", value: params.scheduledAt },
+    { label: "Duration", value: durationLabel },
+    { label: "Format", value: params.format },
+    ...(params.location ? [{ label: "Location", value: params.location }] : []),
+  ];
+
+  const intro = isCandidate
+    ? `You have been invited to interview for the ${job} position at ${company}.`
+    : `You have been assigned to interview ${candidate} for the ${job} role at ${company}.`;
+
+  const closing = isCandidate
+    ? "Please confirm your availability. Contact HR if you need to reschedule."
+    : "Review the candidate's profile before the interview.";
+
+  const cta = params.meetingLink ? renderButton("Join meeting", escapeHtml(params.meetingLink)) : "";
+
+  const title = isCandidate ? "Interview invitation" : "Interview assigned";
+
+  const content = `<h1 class="email-title" style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:30px;font-weight:700;color:#0b1220;letter-spacing:-0.025em;line-height:1.18;margin:0 0 14px 0;">${title}</h1>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">Hi ${recipient},</p>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">${intro}</p>
+${renderKeyValueRows(rows)}
+${notes ? renderCallout(notes, "info") : ""}
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">${closing}</p>
+${cta}`;
+
+  const subject = isCandidate
+    ? `Interview invitation — ${params.jobTitle} at ${params.companyName}`
+    : `You're interviewing ${params.candidateName} on ${params.scheduledAt}`;
+
+  return {
+    subject,
+    html: getEmailTemplate({
+      title,
+      preheader: isCandidate
+        ? `Interview for ${params.jobTitle} at ${params.companyName} on ${params.scheduledAt}.`
+        : `Interview with ${params.candidateName} on ${params.scheduledAt}.`,
+      content,
+    }),
+  };
+}
+
+export function getSelfScheduleBookingEmail(
+  candidateName: string,
+  bookingUrl: string,
+  expiresAtLabel: string,
+  orgName = "StreamlineOS",
+): { subject: string; html: string } {
+  const name = escapeHtml(candidateName);
+  const company = escapeHtml(orgName);
+
+  const content = `<h1 class="email-title" style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:30px;font-weight:700;color:#0b1220;letter-spacing:-0.025em;line-height:1.18;margin:0 0 14px 0;">Schedule your interview</h1>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">Hi ${name},</p>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">We would like to invite you to pick a time for your interview with ${company}. Choose a slot that works best for you.</p>
+${renderButton("Choose a time", escapeHtml(bookingUrl))}
+${renderCallout(`This scheduling link expires on ${escapeHtml(expiresAtLabel)}.`, "info")}`;
+
+  return {
+    subject: `Schedule your interview with ${orgName}`,
+    html: getEmailTemplate({
+      title: "Schedule your interview",
+      preheader: `Pick a time for your interview with ${orgName}. Link expires ${expiresAtLabel}.`,
+      content,
+    }),
+  };
+}
+
+export function getBookingConfirmationEmail(
+  candidateName: string,
+  slotLabel: string,
+): { subject: string; html: string } {
+  const rows = [
+    { label: "Candidate", value: candidateName },
+    { label: "Scheduled slot", value: slotLabel },
+  ];
+
+  const content = `<h1 class="email-title" style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:30px;font-weight:700;color:#0b1220;letter-spacing:-0.025em;line-height:1.18;margin:0 0 14px 0;">Interview scheduled</h1>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">The candidate has self-scheduled their interview.</p>
+${renderKeyValueRows(rows)}`;
+
+  return {
+    subject: `${candidateName} scheduled their interview`,
+    html: getEmailTemplate({
+      title: "Interview scheduled",
+      preheader: `${candidateName} selected a slot on ${slotLabel}.`,
+      content,
+    }),
+  };
+}
+
+function feedbackRatingButton(ratingLabel: string, bgColor: string): string {
+  const subject = encodeURIComponent(`Interview Feedback — ${ratingLabel}`);
+  const body = encodeURIComponent(`Hi, I would rate my interview experience as ${ratingLabel}. (Add your comments here)`);
+  const href = `mailto:hr@streamlineos.app?subject=${subject}&body=${body}`;
+  return `<td style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${bgColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;font-family:'DM Sans',-apple-system,sans-serif;">${escapeHtml(ratingLabel)}</a></td>`;
+}
+
+export function getCandidateFeedbackEmail(params: {
+  candidateName: string;
+  orgName: string;
+  scheduledAt: Date;
+}): { subject: string; html: string } {
+  const name = escapeHtml(params.candidateName);
+  const company = escapeHtml(params.orgName);
+  const dateStr = escapeHtml(
+    params.scheduledAt.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "long",
+      timeStyle: "short",
+    }),
+  );
+
+  const content = `<h1 class="email-title" style="font-family:'Sora',-apple-system,'Segoe UI',Arial,sans-serif;font-size:30px;font-weight:700;color:#0b1220;letter-spacing:-0.025em;line-height:1.18;margin:0 0 14px 0;">Share your feedback</h1>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">Hi ${name},</p>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 20px 0;">Thank you for taking the time to interview with ${company} on ${dateStr}. Your feedback helps us improve our hiring process.</p>
+${renderCallout("Was the process clear and respectful? Did you feel heard? Any suggestions?", "info")}
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:#4A5568;margin:0 0 12px 0;font-weight:600;">How would you rate your experience?</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;"><tr>
+${feedbackRatingButton("Excellent", "#16a34a")}
+${feedbackRatingButton("Good", "#06b6d4")}
+${feedbackRatingButton("Could be better", "#d97706")}
+</tr></table>
+<p class="email-text" style="font-family:'DM Sans',-apple-system,'Segoe UI',sans-serif;font-size:13px;line-height:1.7;color:#64748B;margin:0 0 20px 0;">You can also reply to this email directly with any comments or suggestions.</p>`;
+
+  return {
+    subject: "How was your interview experience?",
+    html: getEmailTemplate({
+      title: "Share your feedback",
+      preheader: `Let us know how your interview at ${params.orgName} went.`,
+      content,
+    }),
+  };
+}

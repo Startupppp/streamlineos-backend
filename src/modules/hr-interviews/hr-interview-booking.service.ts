@@ -4,7 +4,7 @@ import { calendarEvents, candidates, interviewBookingLinks, interviews, users } 
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { getBookingConfirmationEmail } from "./interview-emails.util";
+import { getBookingConfirmationEmail } from "../email/templates/interviews";
 import type { BookInterviewInput } from "./dto/interview-scheduling.schemas";
 
 const TYPE_MAP: Record<string, "VIDEO" | "PHONE" | "ONSITE"> = {

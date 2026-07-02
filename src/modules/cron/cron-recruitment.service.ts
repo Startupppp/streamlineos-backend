@@ -16,7 +16,7 @@ import { EmailService } from "../email/email.service";
 import {
   getInterviewNoShowRescheduleEmail,
   getOfferDeadlineReminderEmail,
-} from "./recruitment-emails.util";
+} from "../email/templates/recruitment";
 
 const PENDING_OFFER_STATUSES = ["SENT", "VIEWED"] as const;
 const NO_SHOW_FOLLOW_UP_DUE_MS = 24 * 60 * 60 * 1000;

@@ -21,6 +21,13 @@ import {
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
+import { getAccountDeactivationEmailTemplate } from "./templates/auth";
+import {
+  getWorkLogApprovedEmailTemplate,
+  getWorkLogRejectedEmailTemplate,
+  getOnboardingWelcomeEmailTemplate,
+  getOnboardingTaskEmailTemplate,
+} from "./templates/notifications-misc";
 
 export abstract class EmailSendersBase extends EmailBase {
   sendVerificationEmail(email: string, token: string): Promise<void> {
@@ -285,6 +292,64 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Your StreamlineOS sign-in link",
       html: getMagicLinkEmailTemplate(magicLink),
+    });
+  }
+
+  sendAccountDeactivationEmail(email: string, employeeName: string, deactivatedBy: string): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Your account has been deactivated",
+      html: getAccountDeactivationEmailTemplate(employeeName, deactivatedBy),
+    });
+  }
+
+  sendWorkLogApprovedEmail(email: string, employeeName: string, date: string, approverName: string): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Your work log was approved",
+      html: getWorkLogApprovedEmailTemplate(employeeName, date, approverName),
+    });
+  }
+
+  sendWorkLogRejectedEmail(
+    email: string,
+    employeeName: string,
+    date: string,
+    approverName: string,
+    reason?: string,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Your work log needs changes",
+      html: getWorkLogRejectedEmailTemplate(employeeName, date, approverName, reason),
+    });
+  }
+
+  sendOnboardingWelcomeEmail(
+    email: string,
+    employeeName: string,
+    designation: string,
+    joiningDate: string,
+    taskCount: number,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Welcome — your onboarding has started",
+      html: getOnboardingWelcomeEmailTemplate(employeeName, designation, joiningDate, taskCount),
+    });
+  }
+
+  sendOnboardingTaskEmail(
+    email: string,
+    recipientName: string,
+    employeeName: string,
+    taskRole: string,
+    taskCount: number,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Onboarding tasks assigned to you",
+      html: getOnboardingTaskEmailTemplate(recipientName, employeeName, taskRole, taskCount),
     });
   }
 }

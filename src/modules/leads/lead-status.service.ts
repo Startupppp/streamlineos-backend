@@ -18,16 +18,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { appUrl } from "../email/app-url";
+import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
-
-function notificationEmailHtml(title: string, message: string, link?: string): string {
-  const button = link
-    ? `<div style="text-align:center;margin:24px 0;"><a href="${appUrl}${link}" style="background:#0f2b7f;color:#bd882c;padding:12px 28px;text-decoration:none;border-radius:6px;font-weight:bold;">View Details</a></div>`
-    : "";
-  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;"><div style="background:linear-gradient(135deg,#0f2b7f,#1e40af);padding:24px;text-align:center;border-radius:10px 10px 0 0;"><h1 style="color:#bd882c;margin:0;font-size:22px;">StreamlineOS</h1></div><div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;"><h2 style="color:#1e40af;margin-top:0;">${title}</h2><p>${message}</p>${button}</div></body></html>`;
-}
 
 export type TransitionLeadStatusResult =
   | { ok: true; lead: LeadRow }
@@ -42,14 +36,6 @@ export class LeadStatusService {
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
   ) {}
-
-  private sendNotificationEmail(to: string, title: string, message: string, link?: string): Promise<void> {
-    return this.email.sendEmail({
-      to,
-      subject: `${title} — StreamlineOS`,
-      html: notificationEmailHtml(title, message, link),
-    });
-  }
 
   private async getNextCrmAssignee(orgId: string): Promise<string | null> {
     const csMembers = await this.db
@@ -225,29 +211,33 @@ export class LeadStatusService {
 
       const salesRep = await this.db.query.users.findFirst({
         where: eq(users.id, lead.assignedToId || userId),
-        columns: { email: true },
+        columns: { email: true, name: true },
       });
       if (salesRep?.email) {
-        await this.sendNotificationEmail(
-          salesRep.email,
-          "Lead Converted",
-          `Lead "${lead.name}" has been converted to a client.`,
-          `/crm/clients`,
-        );
+        const { subject, html } = getLeadStatusChangeEmailTemplate({
+          recipientName: salesRep.name ?? "Team Member",
+          leadName: lead.name,
+          fromStatus: null,
+          toStatus: "Converted",
+          leadUrl: `${appUrl}/crm/clients`,
+        });
+        await this.email.sendEmail({ to: salesRep.email, subject, html });
       }
 
       if (crmAssigneeId) {
         const crmUser = await this.db.query.users.findFirst({
           where: eq(users.id, crmAssigneeId),
-          columns: { email: true },
+          columns: { email: true, name: true },
         });
         if (crmUser?.email) {
-          await this.sendNotificationEmail(
-            crmUser.email,
-            "New Client Assigned",
-            `Client "${lead.name}" has been assigned to you for onboarding.`,
-            `/crm/clients`,
-          );
+          const { subject, html } = getLeadStatusChangeEmailTemplate({
+            recipientName: crmUser.name ?? "Team Member",
+            leadName: lead.name,
+            fromStatus: null,
+            toStatus: "Converted",
+            leadUrl: `${appUrl}/crm/clients`,
+          });
+          await this.email.sendEmail({ to: crmUser.email, subject, html });
         }
       }
     } catch {

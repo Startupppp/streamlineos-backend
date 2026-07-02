@@ -15,6 +15,11 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
+import {
+  getContactAdminNotificationEmail,
+  getContactAutoreplyEmail,
+  getContactReplyEmail,
+} from "../email/templates/platform";
 import type { VisitInput, ListMessagesQuery, ContactFormInput } from "./dto/platform.schemas";
 
 export interface VisitMeta {
@@ -25,7 +30,6 @@ export interface VisitMeta {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inr = (paise: number) => Math.round(paise / 100);
 
-const BRAND_NAME = "StreamlineOS";
 const BRAND_URL = "https://www.streamlineos.in";
 const BRAND_SUPPORT_EMAIL = "support@streamlineos.in";
 
@@ -57,87 +61,6 @@ function getAdminRecipients(): string[] {
   return deduped.length > 0 ? deduped : [BRAND_SUPPORT_EMAIL];
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function buildAdminNotificationHtml(data: ContactFormInput, reference: string): string {
-  const topicLabel = TOPIC_LABEL[data.topic ?? "other"] ?? "Something else";
-  const fields: { label: string; value: string }[] = [
-    { label: "Reference", value: reference },
-    { label: "Name", value: data.name },
-    { label: "Email", value: data.email },
-    { label: "Company", value: data.company ?? "—" },
-    { label: "Phone", value: data.phone ?? "—" },
-    { label: "Topic", value: topicLabel },
-  ];
-  const rows = fields
-    .map(
-      (f) =>
-        `<tr><td style="padding:8px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;width:120px;border-bottom:1px solid #e2e8f0;">${escapeHtml(f.label)}</td><td style="padding:8px 16px;color:#0b1220;font-size:14px;border-bottom:1px solid #e2e8f0;">${escapeHtml(f.value)}</td></tr>`,
-    )
-    .join("");
-
-  return `<!doctype html>
-<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:580px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-    <div style="padding:24px 32px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
-      <p style="margin:0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">${BRAND_NAME} · New contact submission</p>
-      <h1 style="margin:6px 0 0;font-size:22px;font-weight:700;letter-spacing:-0.01em;">${topicLabel} — ${escapeHtml(data.name)}</h1>
-    </div>
-    <table style="width:100%;border-collapse:collapse;">${rows}</table>
-    <div style="padding:20px 32px;border-top:1px solid #e2e8f0;">
-      <p style="margin:0 0 6px;color:#64748b;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;">Message</p>
-      <p style="margin:0;color:#0b1220;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(data.message)}</p>
-    </div>
-    <div style="padding:18px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
-      <a href="${BRAND_URL}/owner/inbox/${reference}" style="color:#3b82f6;text-decoration:none;font-weight:500;">Open in owner inbox →</a>
-    </div>
-  </div>
-</body></html>`;
-}
-
-function buildCustomerAutoreplyHtml(data: ContactFormInput): string {
-  const firstName = data.name.split(" ")[0] ?? data.name;
-  return `<!doctype html>
-<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:560px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-    <div style="padding:28px 32px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
-      <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.01em;">Thanks, ${escapeHtml(firstName)} — we got it.</h1>
-    </div>
-    <div style="padding:24px 32px;color:#0b1220;font-size:14px;line-height:1.65;">
-      <p style="margin:0 0 14px;">A human on the ${BRAND_NAME} team will reply within one business day. If it&apos;s urgent, reply to this email and it reaches us directly.</p>
-      <p style="margin:0 0 14px;color:#64748b;">For reference, the message you sent:</p>
-      <div style="padding:14px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;color:#475569;font-size:13px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(data.message)}</div>
-      <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">— The ${BRAND_NAME} team</p>
-    </div>
-  </div>
-</body></html>`;
-}
-
-function buildReplyHtml(name: string, body: string): string {
-  const firstName = name.split(" ")[0] ?? name;
-  const safeBody = escapeHtml(body).replace(/\n/g, "<br/>");
-  return `<!doctype html>
-<html><body style="margin:0;padding:0;background:#eef3fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:560px;margin:32px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-    <div style="padding:20px 28px;background:linear-gradient(135deg,#1e40af 0%,#3b82f6 55%,#06b6d4 100%);color:#ffffff;">
-      <p style="margin:0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">${BRAND_NAME} · Re: your message</p>
-    </div>
-    <div style="padding:24px 28px;color:#0b1220;font-size:14px;line-height:1.65;">
-      <p style="margin:0 0 14px;">Hi ${escapeHtml(firstName)},</p>
-      <div style="white-space:pre-wrap;">${safeBody}</div>
-      <p style="margin:24px 0 4px;color:#94a3b8;font-size:12px;">— The ${BRAND_NAME} team</p>
-      <p style="margin:0;color:#94a3b8;font-size:12px;">Reply to this email to reach us directly.</p>
-    </div>
-  </div>
-</body></html>`;
-}
 
 @Injectable()
 export class PlatformService {
@@ -162,12 +85,29 @@ export class PlatformService {
 
     const adminRecipients = getAdminRecipients();
     const topicLabel = TOPIC_LABEL[input.topic ?? "other"] ?? "Something else";
+    const receivedAt = new Date().toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
 
     try {
+      const adminEmail = getContactAdminNotificationEmail({
+        name: input.name,
+        email: input.email,
+        topic: topicLabel,
+        message: input.message,
+        reference,
+        receivedAt,
+        company: input.company,
+        phone: input.phone,
+        inboxUrl: `${BRAND_URL}/owner/inbox/${reference}`,
+      });
       await this.email.sendEmail({
         to: adminRecipients,
-        subject: `[${BRAND_NAME}] New ${topicLabel} — ${input.name}`,
-        html: buildAdminNotificationHtml(input, reference),
+        subject: adminEmail.subject,
+        html: adminEmail.html,
         replyTo: input.email,
       });
     } catch (error) {
@@ -175,10 +115,11 @@ export class PlatformService {
     }
 
     try {
+      const autoreplyEmail = getContactAutoreplyEmail({ name: input.name, message: input.message });
       await this.email.sendEmail({
         to: input.email,
-        subject: `We got your message — ${BRAND_NAME}`,
-        html: buildCustomerAutoreplyHtml(input),
+        subject: autoreplyEmail.subject,
+        html: autoreplyEmail.html,
         replyTo: BRAND_SUPPORT_EMAIL,
       });
     } catch (error) {
@@ -424,11 +365,15 @@ export class PlatformService {
 
   async replyToMessage(code: string, body: string, repliedById: string): Promise<{ ok: true }> {
     const message = await this.getMessageByPublicCode(code);
-    const html = buildReplyHtml(message.name, body);
+    const replyEmail = getContactReplyEmail({
+      name: message.name,
+      replyBody: body,
+      originalMessage: message.message,
+    });
     await this.email.sendEmail({
       to: message.email,
-      subject: `Re: your message to ${BRAND_NAME}`,
-      html,
+      subject: replyEmail.subject,
+      html: replyEmail.html,
       replyTo: BRAND_SUPPORT_EMAIL,
     });
     await this.db

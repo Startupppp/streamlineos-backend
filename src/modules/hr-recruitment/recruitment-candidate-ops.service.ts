@@ -19,7 +19,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
-import { getCandidateRejectionEmail } from "./recruitment-emails.util";
+import { getCandidateRejectionEmail } from "../email/templates/recruitment";
 import type {
   BgvStatusInput,
   BulkImportInput,

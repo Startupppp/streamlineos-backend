@@ -17,7 +17,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { GoogleCalendarService } from "../google-calendar/google-calendar.service";
-import { getInterviewInviteEmail, getSelfScheduleBookingEmail } from "./interview-emails.util";
+import { getInterviewInviteEmail, getSelfScheduleBookingEmail } from "../email/templates/interviews";
 import type {
   CreateInterviewInput,
   ScheduleInterviewInput,

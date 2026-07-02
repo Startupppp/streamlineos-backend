@@ -8,7 +8,7 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { decrypt, decryptBankDetails } from "./lib/encryption";
 import { generatePayslipPdf } from "./lib/payslip-pdf";
-import { getPayslipEmailHtml } from "./lib/payslip-email";
+import { getPayslipEmailTemplate } from "../email/templates/payroll";
 
 type PayrollRow = typeof payrolls.$inferSelect;
 
@@ -60,10 +60,6 @@ export class PayrollStatusService {
       metadata: { employeeId: existing.userId, month: existing.month },
     });
 
-    if (existing.userId) {
-      void this.notifyApproved(payrollId, existing.userId, userId, existing.month);
-    }
-
     return { ok: true };
   }
 
@@ -92,30 +88,6 @@ export class PayrollStatusService {
     void this.notifyPaid(orgId, existing);
 
     return { ok: true };
-  }
-
-  private async notifyApproved(
-    payrollId: number,
-    employeeId: string,
-    approverId: string,
-    month: string | null,
-  ): Promise<void> {
-    try {
-      const [employee, approver] = await Promise.all([
-        this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { email: true, name: true } }),
-        this.db.query.users.findFirst({ where: eq(users.id, approverId), columns: { name: true } }),
-      ]);
-      if (employee?.email) {
-        await this.email.sendPayrollApprovedEmail(
-          employee.email,
-          employee.name ?? "Employee",
-          month ?? "Current Month",
-          approver?.name ?? "Admin",
-        );
-      }
-    } catch (error) {
-      logger.error("Failed to send payroll approved email", { payrollId, error });
-    }
   }
 
   private async notifyPaid(orgId: string, payroll: PayrollRow): Promise<void> {
@@ -166,7 +138,7 @@ export class PayrollStatusService {
         netSalary,
       });
 
-      const html = getPayslipEmailHtml({
+      const { subject: payslipSubject, html } = getPayslipEmailTemplate({
         employeeName: employee.name ?? "Employee",
         month: monthLabel,
         netSalary: netSalary.toLocaleString("en-IN", { minimumFractionDigits: 2 }),
@@ -175,7 +147,7 @@ export class PayrollStatusService {
 
       await this.email.sendEmail({
         to: employee.email,
-        subject: `Your Payslip for ${monthLabel} — ${org?.name ?? "Company"}`,
+        subject: payslipSubject,
         html,
         attachments: [
           {

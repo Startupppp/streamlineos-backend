@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
 import { EmailService } from "../email/email.service";
 import { logger } from "../../common/logger/logger.service";
-import { getCandidateFeedbackEmail } from "./interview-emails.util";
+import { getCandidateFeedbackEmail } from "../email/templates/interviews";
 import type { SubmitScorecardInput, UpdateInterviewInput } from "./dto/interview-scheduling.schemas";
 
 @Injectable()

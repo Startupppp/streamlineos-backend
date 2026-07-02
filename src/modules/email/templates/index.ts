@@ -6,8 +6,6 @@ export {
   getPasswordChangeConfirmationEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
-  getNewDeviceLoginEmailTemplate,
-  getPasswordExpiryWarningEmailTemplate,
 } from "./auth";
 
 export {

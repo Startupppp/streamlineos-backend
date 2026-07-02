@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { AccessService } from "../access/access.service";
+import { EmailService } from "../email/email.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
 import type {
@@ -21,6 +22,7 @@ export class WorkLogsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly email: EmailService,
   ) {}
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
@@ -147,7 +149,34 @@ export class WorkLogsService {
       .where(eq(timesheets.id, body.id))
       .returning();
 
+    void this.dispatchWorkLogStatusEmail(existing, body.status, u.userId, body.rejectionReason).catch(() => undefined);
+
     return updated;
+  }
+
+  private async dispatchWorkLogStatusEmail(
+    log: typeof timesheets.$inferSelect,
+    status: "APPROVED" | "REJECTED",
+    actorId: string,
+    rejectionReason?: string,
+  ): Promise<void> {
+    const [ownerRow, actorRow] = await Promise.all([
+      this.db.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, log.userId)).limit(1),
+      this.db.select({ name: users.name }).from(users).where(eq(users.id, actorId)).limit(1),
+    ]);
+
+    const ownerEmail = ownerRow[0]?.email;
+    const ownerName = ownerRow[0]?.name ?? "Employee";
+    const actorName = actorRow[0]?.name ?? "Manager";
+    const dateLabel = String(log.date).slice(0, 10);
+
+    if (!ownerEmail) return;
+
+    if (status === "APPROVED") {
+      await this.email.sendWorkLogApprovedEmail(ownerEmail, ownerName, dateLabel, actorName);
+    } else {
+      await this.email.sendWorkLogRejectedEmail(ownerEmail, ownerName, dateLabel, actorName, rejectionReason);
+    }
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {

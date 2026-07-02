@@ -5,8 +5,6 @@ import {
   getPasswordChangeConfirmationEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
-  getNewDeviceLoginEmailTemplate,
-  getPasswordExpiryWarningEmailTemplate,
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
@@ -81,23 +79,6 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
     name: "Account Locked",
     subject: "Account Locked - StreamlineOS",
     generateHtml: () => getAccountLockedEmailTemplate("Test User"),
-  },
-  "auth.new_device": {
-    category: "Auth",
-    name: "New Device Login Alert",
-    subject: "New Device Sign-In Detected - StreamlineOS",
-    generateHtml: () =>
-      getNewDeviceLoginEmailTemplate("Test User", {
-        userAgent: "Chrome on Windows",
-        ipAddress: "127.0.0.1",
-        time: new Date().toLocaleString("en-IN"),
-      }),
-  },
-  "auth.password_expiry": {
-    category: "Auth",
-    name: "Password Expiry Warning",
-    subject: "Your Password Expires in 7 Days - StreamlineOS",
-    generateHtml: () => getPasswordExpiryWarningEmailTemplate("Test User", 7),
   },
 
   "org.invitation": {
