@@ -10,6 +10,9 @@ export interface AuditEntry {
   orgId?: string | null;
   targetId?: string | null;
   targetType?: string | null;
+  actorUserId?: string | null;
+  resourceType?: string | null;
+  resourceId?: string | null;
   metadata?: Record<string, unknown>;
   ipAddress?: string | null;
   result?: "SUCCESS" | "FAILURE";
@@ -39,6 +42,9 @@ export class AuditService {
         orgId: entry.orgId ?? null,
         targetId: entry.targetId ?? null,
         targetType: entry.targetType ?? null,
+        actorUserId: entry.actorUserId ?? null,
+        resourceType: entry.resourceType ?? null,
+        resourceId: entry.resourceId ?? null,
         metadata: enrichedMetadata,
         ipAddress: entry.ipAddress ?? null,
       })

@@ -39,23 +39,6 @@ export const userPreferences = pgTable("user_preferences", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
 
-export const userActivity = pgTable("user_activity", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  action: text("action").notNull(),
-  resourceType: text("resource_type"),
-  resourceId: text("resource_id"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
-  ipAddress: text("ip_address"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_user_activity_org_user").on(table.orgId, table.userId),
-  index("idx_user_activity_org_created").on(table.orgId, table.createdAt),
-  index("idx_user_activity_actor").on(table.actorUserId),
-]);
-
 export const userMembershipsRelations = relations(userMemberships, ({ one }) => ({
   user: one(users, { fields: [userMemberships.userId], references: [users.id] }),
   org: one(organizations, { fields: [userMemberships.orgId], references: [organizations.id] }),
@@ -66,8 +49,3 @@ export const userPreferencesRelations = relations(userPreferences, ({ one }) => 
   user: one(users, { fields: [userPreferences.userId], references: [users.id] }),
 }));
 
-export const userActivityRelations = relations(userActivity, ({ one }) => ({
-  user: one(users, { fields: [userActivity.userId], references: [users.id] }),
-  org: one(organizations, { fields: [userActivity.orgId], references: [organizations.id] }),
-  actor: one(users, { fields: [userActivity.actorUserId], references: [users.id], relationName: "activityActor" }),
-}));

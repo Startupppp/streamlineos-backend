@@ -80,7 +80,7 @@ export class AuthController {
     const result = await this.rateLimit.check(tier, identifier);
     if (!result.allowed) {
       throw new HttpException(
-        { error_code: "RATE_LIMITED", retryAfter: result.retryAfterSecs },
+        { code: "AUTH_RATE_LIMITED", message: "Too many attempts. Try again later.", details: { retryAfterSeconds: result.retryAfterSecs } },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

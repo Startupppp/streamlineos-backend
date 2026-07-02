@@ -15,7 +15,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { addDays, addHours } from "date-fns";
+import { addDays, addMinutes } from "date-fns";
 import { type SetupInput } from "./dto/org.schemas";
 
 @Injectable()
@@ -160,7 +160,7 @@ export class OrgSetupService {
       id: randomUUID(),
       userId: u.userId,
       tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-      expiresAt: addHours(new Date(), 1),
+      expiresAt: addMinutes(new Date(), 10),
     });
 
     return { success: true, orgId, autoLoginToken };

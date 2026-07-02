@@ -217,7 +217,7 @@ export class AuthService {
 
     if (!user || !user.password) {
       await this.logLoginEvent(null, null, "login.failure", false, "INVALID_CREDENTIALS", context);
-      throw new UnauthorizedException("Invalid credentials");
+      throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
     }
 
     if (!user.isActive) {
@@ -227,13 +227,13 @@ export class AuthService {
 
     if (!user.emailVerified) {
       await this.logLoginEvent(user.id, null, "login.failure", false, "EMAIL_NOT_VERIFIED", context);
-      throw new UnauthorizedException("Please verify your email before signing in");
+      throw new UnauthorizedException({ code: "AUTH_EMAIL_NOT_VERIFIED", message: "Please verify your email before signing in" });
     }
 
     if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
       const remainingSeconds = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 1000);
       await this.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_LOCKED", context);
-      throw new UnauthorizedException(`ACCOUNT_LOCKED:${remainingSeconds}`);
+      throw new UnauthorizedException({ code: "AUTH_ACCOUNT_LOCKED", message: "Account locked. Try again later.", details: { retryAfterSeconds: remainingSeconds } });
     }
 
     const isValid = await this.passwordService.verify(input.password, user.password);
@@ -246,7 +246,7 @@ export class AuthService {
       }
       await this.db.update(users).set(update).where(eq(users.id, user.id));
       await this.logLoginEvent(user.id, null, "login.failure", false, "INVALID_CREDENTIALS", context);
-      throw new UnauthorizedException("Invalid credentials");
+      throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
     }
 
     if (user.loginAttempts && user.loginAttempts > 0) {
@@ -270,7 +270,7 @@ export class AuthService {
 
         if (isExpired) {
           await this.logLoginEvent(user.id, orgId, "login.failure", false, "SUBSCRIPTION_INACTIVE", context);
-          throw new UnauthorizedException("SUBSCRIPTION_INACTIVE");
+          throw new UnauthorizedException({ code: "AUTH_SUBSCRIPTION_INACTIVE", message: "Your subscription is inactive. Please renew to continue." });
         }
 
         const expiryDate = sub.status === "TRIAL" ? sub.trialEndsAt : sub.currentPeriodEnd;
@@ -297,7 +297,7 @@ export class AuthService {
       }
       if (!user.totpSecret || !verifyTotpCode(input.totpCode, user.totpSecret)) {
         await this.logLoginEvent(user.id, orgId, "login.failure", false, "INVALID_MFA_CODE", context);
-        throw new UnauthorizedException("Invalid MFA code");
+        throw new UnauthorizedException({ code: "AUTH_INVALID_MFA_CODE", message: "Invalid MFA code" });
       }
     }
 
@@ -417,12 +417,14 @@ export class AuthService {
     const tokenHash = hashToken(input.token);
 
     const record = await this.db.query.passwordResetTokens.findFirst({
-      where: and(
-        eq(passwordResetTokens.token, tokenHash),
-        gt(passwordResetTokens.expiresAt, new Date()),
-      ),
+      where: eq(passwordResetTokens.token, tokenHash),
     });
-    if (!record) throw new BadRequestException("Invalid or expired reset token");
+    if (!record) {
+      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid reset token" });
+    }
+    if (new Date(record.expiresAt) <= new Date()) {
+      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Password reset token has expired" });
+    }
 
     const user = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${record.email.toLowerCase()}`,
@@ -448,12 +450,14 @@ export class AuthService {
 
   async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
     const record = await this.db.query.verificationTokens.findFirst({
-      where: and(
-        eq(verificationTokens.token, input.token),
-        gt(verificationTokens.expires, new Date()),
-      ),
+      where: eq(verificationTokens.token, input.token),
     });
-    if (!record) throw new BadRequestException("Invalid or expired verification token");
+    if (!record) {
+      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid verification token" });
+    }
+    if (new Date(record.expires) <= new Date()) {
+      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Verification token has expired" });
+    }
 
     const [updatedUsers] = await Promise.all([
       this.db
@@ -761,14 +765,14 @@ export class AuthService {
     const tokenHash = createHash("sha256").update(token).digest("hex");
 
     const row = await this.db.query.magicLinkTokens.findFirst({
-      where: and(
-        eq(magicLinkTokens.tokenHash, tokenHash),
-        gt(magicLinkTokens.expiresAt, new Date()),
-      ),
+      where: eq(magicLinkTokens.tokenHash, tokenHash),
     });
 
-    if (!row || row.usedAt) {
-      throw new UnauthorizedException("Invalid or expired magic link");
+    if (!row) {
+      throw new UnauthorizedException({ code: "AUTH_TOKEN_INVALID", message: "Invalid magic link" });
+    }
+    if (row.usedAt || new Date(row.expiresAt) <= new Date()) {
+      throw new UnauthorizedException({ code: "AUTH_TOKEN_EXPIRED", message: "Magic link has expired or has already been used" });
     }
 
     await this.db.update(magicLinkTokens).set({ usedAt: new Date() }).where(eq(magicLinkTokens.id, row.id));

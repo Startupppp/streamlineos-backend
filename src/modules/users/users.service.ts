@@ -13,7 +13,7 @@ import {
   devices,
   invitations,
   loginHistory,
-  userActivity,
+  auditLogs,
   userPreferences,
   userMemberships,
   passwordResetTokens,
@@ -84,18 +84,7 @@ export class UsersService {
       await tx.insert(organizationMembers).values({ userId, orgId, role }).onConflictDoNothing();
     });
 
-    await this.db.insert(userActivity).values({
-      id: randomUUID(),
-      orgId,
-      userId,
-      actorUserId,
-      action: "user.created",
-      resourceType: "user",
-      resourceId: userId,
-      metadata: { email, role },
-    });
-
-    this.audit.log({ action: "user.created", userId: actorUserId, orgId, targetId: userId, targetType: "user" });
+    this.audit.log({ action: "user.created", userId: actorUserId, orgId, targetId: userId, targetType: "user", actorUserId, resourceType: "user", resourceId: userId, metadata: { email, role } });
 
     return { userId, created: true };
   }
@@ -250,18 +239,7 @@ export class UsersService {
         .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
     }
 
-    await this.db.insert(userActivity).values({
-      id: randomUUID(),
-      orgId,
-      userId,
-      actorUserId,
-      action: "user.updated",
-      resourceType: "user",
-      resourceId: userId,
-      metadata: { changes: data },
-    });
-
-    this.audit.log({ action: "user.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { changes: data } });
+    this.audit.log({ action: "user.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", actorUserId, resourceType: "user", resourceId: userId, metadata: { changes: data } });
 
     return { success: true };
   }
@@ -271,19 +249,19 @@ export class UsersService {
 
     if (!user.isActive && status !== "active") {
       const lastStatusEvent = await this.db
-        .select({ action: userActivity.action })
-        .from(userActivity)
+        .select({ action: auditLogs.action })
+        .from(auditLogs)
         .where(
           and(
-            eq(userActivity.orgId, orgId),
-            eq(userActivity.userId, userId),
+            eq(auditLogs.orgId, orgId),
+            eq(auditLogs.targetId, userId),
             or(
-              eq(userActivity.action, "user.status.suspended"),
-              eq(userActivity.action, "user.status.archived"),
+              eq(auditLogs.action, "user.status.suspended"),
+              eq(auditLogs.action, "user.status.archived"),
             )!,
           ),
         )
-        .orderBy(desc(userActivity.createdAt))
+        .orderBy(desc(auditLogs.createdAt))
         .limit(1);
 
       const currentState = lastStatusEvent[0]?.action === "user.status.archived" ? "archived" : "suspended";
@@ -309,18 +287,7 @@ export class UsersService {
         .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)));
     }
 
-    await this.db.insert(userActivity).values({
-      id: randomUUID(),
-      orgId,
-      userId,
-      actorUserId,
-      action: `user.status.${status}`,
-      resourceType: "user",
-      resourceId: userId,
-      metadata: { status, ...(reason ? { reason } : {}) },
-    });
-
-    this.audit.log({ action: `user.status.${status}`, userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { status, reason } });
+    this.audit.log({ action: `user.status.${status}`, userId: actorUserId, orgId, targetId: userId, targetType: "user", actorUserId, resourceType: "user", resourceId: userId, metadata: { status, reason } });
 
     return { success: true };
   }
@@ -342,18 +309,7 @@ export class UsersService {
       .delete(organizationMembers)
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
 
-    await this.db.insert(userActivity).values({
-      id: randomUUID(),
-      orgId,
-      userId,
-      actorUserId,
-      action: "user.deleted",
-      resourceType: "user",
-      resourceId: userId,
-      metadata: {},
-    });
-
-    this.audit.log({ action: "user.deleted", userId: actorUserId, orgId, targetId: userId, targetType: "user" });
+    this.audit.log({ action: "user.deleted", userId: actorUserId, orgId, targetId: userId, targetType: "user", actorUserId, resourceType: "user", resourceId: userId });
 
     return { success: true };
   }
@@ -423,13 +379,37 @@ export class UsersService {
     const limit = Math.min(params?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
 
-    const data = await this.db
-      .select()
-      .from(userActivity)
-      .where(and(eq(userActivity.orgId, orgId), eq(userActivity.userId, userId)))
-      .orderBy(desc(userActivity.createdAt))
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        orgId: auditLogs.orgId,
+        targetId: auditLogs.targetId,
+        actorUserId: auditLogs.actorUserId,
+        action: auditLogs.action,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.orgId, orgId), eq(auditLogs.targetId, userId), eq(auditLogs.targetType, "user")))
+      .orderBy(desc(auditLogs.createdAt))
       .limit(limit)
       .offset(offset);
+
+    const data = rows.map((row) => ({
+      id: String(row.id),
+      orgId: row.orgId ?? "",
+      userId: row.targetId ?? "",
+      actorUserId: row.actorUserId ?? null,
+      action: row.action,
+      resourceType: row.resourceType ?? null,
+      resourceId: row.resourceId ?? null,
+      metadata: row.metadata ?? {},
+      ipAddress: row.ipAddress ?? null,
+      createdAt: row.createdAt,
+    }));
 
     return { data, page, limit };
   }
@@ -799,18 +779,7 @@ export class UsersService {
       await this.db.update(users).set({ departmentId: data.departmentId }).where(eq(users.id, userId));
     }
 
-    await this.db.insert(userActivity).values({
-      id: randomUUID(),
-      orgId,
-      userId,
-      actorUserId,
-      action: "user.membership.updated",
-      resourceType: "user",
-      resourceId: userId,
-      metadata: { changes: data },
-    });
-
-    this.audit.log({ action: "user.membership.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", metadata: { changes: data } });
+    this.audit.log({ action: "user.membership.updated", userId: actorUserId, orgId, targetId: userId, targetType: "user", actorUserId, resourceType: "user", resourceId: userId, metadata: { changes: data } });
 
     return { success: true };
   }
@@ -918,16 +887,46 @@ export class UsersService {
     const { page, limit, actorUserId, action, from, to } = params;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(userActivity.orgId, orgId)];
-    if (actorUserId) conditions.push(eq(userActivity.actorUserId, actorUserId));
-    if (action) conditions.push(ilike(userActivity.action, `%${action}%`));
-    if (from) conditions.push(gte(userActivity.createdAt, new Date(from)));
-    if (to) conditions.push(lte(userActivity.createdAt, new Date(to)));
+    const conditions = [eq(auditLogs.orgId, orgId), eq(auditLogs.targetType, "user")];
+    if (actorUserId) conditions.push(eq(auditLogs.actorUserId, actorUserId));
+    if (action) conditions.push(ilike(auditLogs.action, `%${action}%`));
+    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
+    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
 
-    const [data, countResult] = await Promise.all([
-      this.db.select().from(userActivity).where(and(...conditions)).orderBy(desc(userActivity.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(userActivity).where(and(...conditions)),
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: auditLogs.id,
+          orgId: auditLogs.orgId,
+          targetId: auditLogs.targetId,
+          actorUserId: auditLogs.actorUserId,
+          action: auditLogs.action,
+          resourceType: auditLogs.resourceType,
+          resourceId: auditLogs.resourceId,
+          metadata: auditLogs.metadata,
+          ipAddress: auditLogs.ipAddress,
+          createdAt: auditLogs.createdAt,
+        })
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(auditLogs).where(and(...conditions)),
     ]);
+
+    const data = rows.map((row) => ({
+      id: String(row.id),
+      orgId: row.orgId ?? "",
+      userId: row.targetId ?? "",
+      actorUserId: row.actorUserId ?? null,
+      action: row.action,
+      resourceType: row.resourceType ?? null,
+      resourceId: row.resourceId ?? null,
+      metadata: row.metadata ?? {},
+      ipAddress: row.ipAddress ?? null,
+      createdAt: row.createdAt,
+    }));
 
     return {
       data,
@@ -961,14 +960,44 @@ export class UsersService {
     const { page, limit, from, to } = params;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(userActivity.orgId, orgId), eq(userActivity.userId, userId)];
-    if (from) conditions.push(gte(userActivity.createdAt, new Date(from)));
-    if (to) conditions.push(lte(userActivity.createdAt, new Date(to)));
+    const conditions = [eq(auditLogs.orgId, orgId), eq(auditLogs.targetId, userId), eq(auditLogs.targetType, "user")];
+    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
+    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
 
-    const [data, countResult] = await Promise.all([
-      this.db.select().from(userActivity).where(and(...conditions)).orderBy(desc(userActivity.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(userActivity).where(and(...conditions)),
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: auditLogs.id,
+          orgId: auditLogs.orgId,
+          targetId: auditLogs.targetId,
+          actorUserId: auditLogs.actorUserId,
+          action: auditLogs.action,
+          resourceType: auditLogs.resourceType,
+          resourceId: auditLogs.resourceId,
+          metadata: auditLogs.metadata,
+          ipAddress: auditLogs.ipAddress,
+          createdAt: auditLogs.createdAt,
+        })
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(auditLogs).where(and(...conditions)),
     ]);
+
+    const data = rows.map((row) => ({
+      id: String(row.id),
+      orgId: row.orgId ?? "",
+      userId: row.targetId ?? "",
+      actorUserId: row.actorUserId ?? null,
+      action: row.action,
+      resourceType: row.resourceType ?? null,
+      resourceId: row.resourceId ?? null,
+      metadata: row.metadata ?? {},
+      ipAddress: row.ipAddress ?? null,
+      createdAt: row.createdAt,
+    }));
 
     return {
       data,

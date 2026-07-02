@@ -24,6 +24,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return;
       }
       const obj = body as Record<string, unknown>;
+      if (typeof obj.code === "string") {
+        res.status(status).json({
+          code: obj.code,
+          message: typeof obj.message === "string" ? obj.message : "Error",
+          ...(obj.details !== undefined ? { details: obj.details } : {}),
+        });
+        return;
+      }
       if (typeof obj.message === "string") {
         res.status(status).json({ error: obj.message });
         return;

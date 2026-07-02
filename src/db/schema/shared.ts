@@ -120,6 +120,9 @@ export const auditLogs = pgTable("audit_logs", {
   orgId: text("org_id").references(() => organizations.id),
   targetId: text("target_id"),
   targetType: text("target_type"),
+  actorUserId: text("actor_user_id"),
+  resourceType: text("resource_type"),
+  resourceId: text("resource_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -130,6 +133,7 @@ export const auditLogs = pgTable("audit_logs", {
   index("idx_audit_logs_created_at").on(table.createdAt),
   index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),
   index("idx_audit_logs_org_action").on(table.orgId, table.action),
+  index("idx_audit_logs_resource").on(table.orgId, table.resourceType, table.createdAt),
 ]);
 
 export const pushSubscriptions = pgTable("push_subscriptions", {

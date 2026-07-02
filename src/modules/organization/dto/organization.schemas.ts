@@ -90,7 +90,12 @@ export const updateMemberRoleSchema = z.object({
 
 export const acceptInvitationSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8).max(128).optional(),
+  password: z.string().min(8).max(128)
+    .regex(/[A-Z]/, "Must include an uppercase letter")
+    .regex(/[a-z]/, "Must include a lowercase letter")
+    .regex(/[0-9]/, "Must include a number")
+    .regex(/[^A-Za-z0-9]/, "Must include a special character")
+    .optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
