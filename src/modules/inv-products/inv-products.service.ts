@@ -7,7 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import type { CreateProductInput, UpdateProductInput, ListProductsInput, CreateVariantInput, UpdateVariantInput, CreateCategoryInput, CreateUomInput } from "./dto/inv-products.schemas";
+import type { CreateProductInput, UpdateProductInput, ListProductsInput, CreateVariantInput, UpdateVariantInput, CreateCategoryInput, CreateUomInput, UpdateCategoryInput, UpdateUomInput } from "./dto/inv-products.schemas";
 
 @Injectable()
 export class InvProductsService {
@@ -206,5 +206,25 @@ export class InvProductsService {
     const [uom] = await this.db.insert(invUom).values({ orgId, ...data }).returning();
     await this.cache.del(`inv:products:uom:${orgId}`);
     return uom;
+  }
+
+  async updateCategory(orgId: string, categoryId: number, data: UpdateCategoryInput) {
+    const [updated] = await this.db.update(invCategories)
+      .set({ ...data })
+      .where(and(eq(invCategories.id, categoryId), eq(invCategories.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Category not found");
+    await this.cache.del(`inv:products:categories:${orgId}`);
+    return updated;
+  }
+
+  async updateUom(orgId: string, uomId: number, data: UpdateUomInput) {
+    const [updated] = await this.db.update(invUom)
+      .set({ ...data })
+      .where(and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("UOM not found");
+    await this.cache.del(`inv:products:uom:${orgId}`);
+    return updated;
   }
 }

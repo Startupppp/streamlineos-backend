@@ -3,7 +3,7 @@ import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { projects } from "./core";
 
-export interface WhiteboardElement {
+export type WhiteboardElement = {
   id: string;
   type: "note" | "rect" | "ellipse" | "text";
   x: number;
@@ -12,7 +12,7 @@ export interface WhiteboardElement {
   h: number;
   text: string;
   color: string;
-}
+};
 
 export const projectWhiteboards = pgTable("project_whiteboards", {
   id: serial("id").primaryKey(),

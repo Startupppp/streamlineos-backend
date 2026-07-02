@@ -94,6 +94,16 @@ export class InvStockController {
     return this.stock.createTransfer(u.orgId, u.userId, body);
   }
 
+  @Post("transfers/:transferId/dispatch")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:transfer")
+  dispatchTransfer(
+    @Param("transferId", ParseIntPipe) transferId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.stock.dispatchTransfer(u.orgId, transferId);
+  }
+
   @Post("transfers/:transferId/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")

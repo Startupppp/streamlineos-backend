@@ -46,22 +46,30 @@ export class OrgSetupService {
     u: CurrentUserContext,
     input: SetupInput,
   ): Promise<string> {
+    console.log("[OrgSetup] resolveOrCreateOrg", { userId: u.userId, orgId: u.orgId });
     if (u.orgId) {
       const existingOrg = await this.db.query.organizations.findFirst({
         where: eq(organizations.id, u.orgId),
         columns: { id: true },
       });
-      if (existingOrg) return u.orgId;
+      if (existingOrg) {
+        console.log("[OrgSetup] existing org found via JWT orgId:", u.orgId);
+        return u.orgId;
+      }
     }
 
     const existingMember = await this.db.query.organizationMembers.findFirst({
       where: eq(organizationMembers.userId, u.userId),
       columns: { orgId: true },
     });
-    if (existingMember) return existingMember.orgId;
+    if (existingMember) {
+      console.log("[OrgSetup] existing member found, orgId:", existingMember.orgId);
+      return existingMember.orgId;
+    }
 
     const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
+    console.log("[OrgSetup] creating new org, orgId:", orgId, "orgName:", orgName);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(organizations).values({
@@ -103,8 +111,11 @@ export class OrgSetupService {
   }
 
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
+    console.log("[OrgSetup] completeSetup start", { userId: u.userId, orgId: u.orgId, isOrgOwner: u.isOrgOwner });
     const orgId = await this.resolveOrCreateOrg(u, input);
+    console.log("[OrgSetup] resolved orgId:", orgId);
     if (u.orgId && !u.isOrgOwner) {
+      console.log("[OrgSetup] early return (not owner, already has org)");
       return { success: true };
     }
 
@@ -211,6 +222,7 @@ export class OrgSetupService {
       targetType: "organization",
     });
 
+    console.log("[OrgSetup] creating autoLoginToken for userId:", u.userId);
     const autoLoginToken = randomBytes(32).toString("hex");
     await this.db.insert(magicLinkTokens).values({
       id: randomUUID(),
@@ -218,6 +230,7 @@ export class OrgSetupService {
       tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
       expiresAt: addHours(new Date(), 1),
     });
+    console.log("[OrgSetup] returning success with orgId:", orgId, "hasToken: true");
 
     return { success: true, orgId, autoLoginToken };
   }

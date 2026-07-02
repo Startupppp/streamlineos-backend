@@ -6,17 +6,22 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { InvProductsService } from "./inv-products.service";
 import { resolveInvProductsScope } from "../inventory/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
   createVariantSchema, updateVariantSchema, createCategorySchema, createUomSchema, listVariantsSchema,
+  updateCategorySchema, updateUomSchema,
   type ListProductsInput, type CreateProductInput, type UpdateProductInput,
   type CreateVariantInput, type UpdateVariantInput, type CreateCategoryInput, type CreateUomInput, type ListVariantsInput,
+  type UpdateCategoryInput, type UpdateUomInput,
 } from "./dto/inv-products.schemas";
 
+@RequireModule("inventory")
 @Controller("inventory/products")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvProductsController {
   constructor(
     private readonly products: InvProductsService,
@@ -66,6 +71,28 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.createUom(u.orgId, body);
+  }
+
+  @Patch("categories/:categoryId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
+  updateCategory(
+    @Param("categoryId", ParseIntPipe) categoryId: number,
+    @Body(new ZodValidationPipe(updateCategorySchema)) body: UpdateCategoryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.updateCategory(u.orgId, categoryId, body);
+  }
+
+  @Patch("uom/:uomId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
+  updateUom(
+    @Param("uomId", ParseIntPipe) uomId: number,
+    @Body(new ZodValidationPipe(updateUomSchema)) body: UpdateUomInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.updateUom(u.orgId, uomId, body);
   }
 
   @Get("variants")

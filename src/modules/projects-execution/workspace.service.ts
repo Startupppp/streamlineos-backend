@@ -259,19 +259,22 @@ export class WhiteboardsService {
       columns: { id: true, name: true, data: true, updatedAt: true },
     });
 
-    return boards.map((board) => ({
-      id: board.id,
-      name: board.name,
-      elementCount: board.data.length,
-      updatedAt: board.updatedAt,
-    }));
+    return boards.map((board) => {
+      const scene = board.data as { elements?: unknown[] } | null;
+      return {
+        id: board.id,
+        name: board.name,
+        elementCount: Array.isArray(scene?.elements) ? scene.elements.length : 0,
+        updatedAt: board.updatedAt,
+      };
+    });
   }
 
   async createWhiteboard(orgId: string, userId: string, projectId: number, input: CreateWhiteboardInput) {
     await assertProject(this.db, orgId, projectId);
     const [board] = await this.db
       .insert(projectWhiteboards)
-      .values({ projectId, orgId, name: input.name, data: [], createdBy: userId })
+      .values({ projectId, orgId, name: input.name, data: {}, createdBy: userId })
       .returning();
     return board;
   }

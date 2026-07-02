@@ -65,3 +65,18 @@ export const listVariantsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type ListVariantsInput = z.infer<typeof listVariantsSchema>;
+
+export const updateCategorySchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  parentCategoryId: z.number().int().positive().nullable().optional(),
+  description: z.string().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+
+export const updateUomSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  abbreviation: z.string().min(1).max(20).optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateUomInput = z.infer<typeof updateUomSchema>;

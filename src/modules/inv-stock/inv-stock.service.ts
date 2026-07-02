@@ -228,6 +228,17 @@ export class InvStockService {
     });
     const sourceLevelMap = new Map(sourceLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
 
+    const destVariantIds = transfer.lines.map((l) => l.productVariantId);
+    const destLevels = await this.db.query.invStockLevels.findMany({
+      where: and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, destVariantIds),
+        eq(invStockLevels.locationId, transfer.toLocationId),
+      ),
+      columns: { productVariantId: true, onHand: true },
+    });
+    const destLevelMap = new Map(destLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
+
     await this.db.transaction(async (tx) => {
       for (const completion of data.lines) {
         const line = transfer.lines.find((l) => l.id === completion.transferLineId);
@@ -275,7 +286,8 @@ export class InvStockService {
           {
             orgId, productVariantId: line.productVariantId, locationId: transfer.toLocationId,
             transactionType: "TRANSFER_IN", quantityChange: qtyReceived.toString(),
-            quantityBefore: "0", quantityAfter: qtyReceived.toString(),
+            quantityBefore: (destLevelMap.get(line.productVariantId) ?? 0).toString(),
+            quantityAfter: ((destLevelMap.get(line.productVariantId) ?? 0) + qtyReceived).toString(),
             referenceType: "inv_transfer", referenceId: transferId.toString(), createdBy: userId,
           },
         ]);
@@ -288,6 +300,19 @@ export class InvStockService {
 
     await this.cache.del(CACHE_KEYS.invStockSummary(orgId));
     await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
+  }
+
+  async dispatchTransfer(orgId: string, transferId: number): Promise<void> {
+    const transfer = await this.db.query.invStockTransfers.findFirst({
+      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
+      columns: { id: true, status: true },
+    });
+    if (!transfer) throw new NotFoundException("Transfer not found");
+    if (transfer.status !== "PENDING") throw new BadRequestException("Only PENDING transfers can be dispatched");
+
+    await this.db.update(invStockTransfers)
+      .set({ status: "IN_TRANSIT", updatedAt: new Date() })
+      .where(eq(invStockTransfers.id, transferId));
   }
 
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {

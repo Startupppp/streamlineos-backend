@@ -57,21 +57,10 @@ export const createWhiteboardSchema = z.object({
   name: z.string().min(1).max(200),
 });
 
-const whiteboardElementSchema = z.object({
-  id: z.string().min(1),
-  type: z.enum(["note", "rect", "ellipse", "text"]),
-  x: z.number(),
-  y: z.number(),
-  w: z.number(),
-  h: z.number(),
-  text: z.string(),
-  color: z.string().min(1).max(32),
-});
-
 export const updateWhiteboardSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
-    data: z.array(whiteboardElementSchema).optional(),
+    data: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((value) => value.name !== undefined || value.data !== undefined, {
     message: "Provide name or data to update",

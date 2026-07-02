@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import {
@@ -7,6 +7,7 @@ import {
   invPoLines,
   invGrns,
   invGrnLines,
+  invLocations,
   invStockLevels,
   invStockTransactions,
 } from "../../db/schema";
@@ -58,6 +59,21 @@ export class InvPurchaseOrdersService {
       .where(eq(invGrns.orgId, orgId));
     const cnt = rows[0]?.cnt ?? 0;
     return `GRN-${year}-${String(cnt + 1).padStart(4, "0")}`;
+  }
+
+  private async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
+    if (!warehouseId) throw new BadRequestException("A warehouse is required for this operation");
+    const loc = await this.db.query.invLocations.findFirst({
+      where: and(
+        eq(invLocations.warehouseId, warehouseId),
+        eq(invLocations.orgId, orgId),
+        eq(invLocations.isActive, true),
+      ),
+      columns: { id: true },
+      orderBy: (t, { asc }) => [asc(t.id)],
+    });
+    if (!loc) throw new BadRequestException("Warehouse has no active locations. Please add a location to the warehouse first.");
+    return loc.id;
   }
 
   async listPos(orgId: string, filters: ListPoInput, scope: DataScope = "all", userId?: string) {
@@ -170,6 +186,8 @@ export class InvPurchaseOrdersService {
     if (!po) throw new NotFoundException("Purchase order not found");
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be sent");
 
+    const locationId = await this.resolveLocationId(orgId, po.warehouseId);
+
     const sent = await this.db.transaction(async (tx) => {
       const [row] = await tx.update(invPurchaseOrders)
         .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
@@ -177,7 +195,6 @@ export class InvPurchaseOrdersService {
         .returning();
 
       for (const line of po.lines) {
-        const locationId = po.warehouseId ?? 1;
         await tx.insert(invStockLevels).values({
           orgId,
           productVariantId: line.productVariantId,
@@ -212,7 +229,7 @@ export class InvPurchaseOrdersService {
 
     const grnNumber = await this.nextGrnNumber(orgId);
     let totalValue = 0;
-    const locationId = data.locationId ?? 1;
+    const locationId = data.locationId ?? await this.resolveLocationId(orgId, po.warehouseId);
 
     const acceptedGrnLines = data.lines.filter((l) => l.qualityStatus === "ACCEPTED");
     const acceptedVariantIds = [

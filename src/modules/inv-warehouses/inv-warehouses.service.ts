@@ -48,6 +48,15 @@ export class InvWarehousesService {
     }
 
     const [wh] = await this.db.insert(invWarehouses).values({ orgId, createdBy: userId, ...data }).returning();
+
+    await this.db.insert(invLocations).values({
+      orgId,
+      warehouseId: wh.id,
+      name: "Main",
+      code: "MAIN",
+      locationType: "ZONE",
+    });
+
     await this.cache.del(CACHE_KEYS.invWarehousesList(orgId));
     return wh;
   }

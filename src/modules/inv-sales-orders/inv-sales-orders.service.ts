@@ -5,7 +5,7 @@ import {
   NotFoundException,
   ConflictException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import {
@@ -14,6 +14,7 @@ import {
   invStockLevels,
   invStockTransactions,
   invProductVariants,
+  invLocations,
   invoices,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -64,6 +65,21 @@ export class InvSalesOrdersService {
       .where(eq(invoices.orgId, orgId));
     const cnt = rows[0]?.cnt ?? 0;
     return `INV-${year}-${String(cnt + 1).padStart(4, "0")}`;
+  }
+
+  private async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
+    if (!warehouseId) throw new BadRequestException("A warehouse is required for this operation");
+    const loc = await this.db.query.invLocations.findFirst({
+      where: and(
+        eq(invLocations.warehouseId, warehouseId),
+        eq(invLocations.orgId, orgId),
+        eq(invLocations.isActive, true),
+      ),
+      columns: { id: true },
+      orderBy: (t, { asc }) => [asc(t.id)],
+    });
+    if (!loc) throw new BadRequestException("Warehouse has no active locations. Please add a location to the warehouse first.");
+    return loc.id;
   }
 
   async listSos(orgId: string, filters: ListSoInput, scope: DataScope = "all", userId?: string) {
@@ -200,7 +216,7 @@ export class InvSalesOrdersService {
       }
     }
 
-    const locationId = so.warehouseId ?? 1;
+    const locationId = await this.resolveLocationId(orgId, so.warehouseId);
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
         await tx.insert(invStockLevels).values({
@@ -235,7 +251,7 @@ export class InvSalesOrdersService {
     if (!so) throw new NotFoundException("Sales order not found");
     if (so.status !== "CONFIRMED") throw new BadRequestException("Only CONFIRMED sales orders can be shipped");
 
-    const locationId = so.warehouseId ?? 1;
+    const locationId = await this.resolveLocationId(orgId, so.warehouseId);
     const shipVariantIds = so.lines.map((l) => l.productVariantId);
     const preLevels = await this.db.query.invStockLevels.findMany({
       where: and(
