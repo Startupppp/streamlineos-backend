@@ -161,10 +161,11 @@ export class EmployeesController {
       if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
 
-    const employee = await this.employees.getEmployee(u.orgId, employeeId);
+    const employee = await this.mutations.getEmployeeDetail(u.orgId, employeeId);
     if (!employee) throw new NotFoundException("Employee not found");
 
-    const html = buildEmployeeProfileHtml(employee);
+    const { skills, ...employeeData } = employee;
+    const html = buildEmployeeProfileHtml(employeeData, skills);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="employee-profile-${employeeId}.html"`);
     res.send(html);

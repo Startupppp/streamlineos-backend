@@ -40,7 +40,6 @@ const EMPLOYEE_USER_COLUMNS = {
   twitterUrl: true,
   githubUrl: true,
   websiteUrl: true,
-  skills: true,
   phone: true,
   branchId: true,
 } as const;
@@ -125,7 +124,6 @@ export class EmployeesService {
         twitterUrl: u.twitterUrl ?? null,
         githubUrl: u.githubUrl ?? null,
         websiteUrl: u.websiteUrl ?? null,
-        skills: u.skills ?? null,
         phone: u.phone ?? null,
       }));
   }
@@ -309,37 +307,6 @@ export class EmployeesService {
       .limit(50);
 
     return { data };
-  }
-
-  async getEmployee(orgId: string, userId: string) {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
-      columns: { userId: true },
-      with: {
-        user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            role: true,
-            designation: true,
-            employeeId: true,
-            image: true,
-            isActive: true,
-            joiningDate: true,
-            reportingTo: true,
-            monthlySalary: true,
-            bio: true,
-            linkedinUrl: true,
-            skills: true,
-            phone: true,
-          },
-        },
-      },
-    });
-    return member?.user ?? null;
   }
 
   async getReportsToMe(orgId: string, employeeId: string) {

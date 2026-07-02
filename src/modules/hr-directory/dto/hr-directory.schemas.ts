@@ -167,10 +167,6 @@ export const updateEmployeeSchema = z.object({
   hasDashboardAccess: z.boolean().optional(),
   role: z.string().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
-  experienceYears: z.preprocess(
-    (val) => (val === undefined || val === null ? undefined : Number(val)),
-    z.number().min(0, "Experience cannot be negative").max(60, "Experience cannot exceed 60 years").optional(),
-  ),
   taxId: z.string().optional(),
   monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
   bankDetails: z
@@ -219,11 +215,6 @@ export const onboardEmployeeSchema = z.object({
       const dob = new Date(val);
       return !isNaN(dob.getTime()) && Date.now() - dob.getTime() >= MIN_AGE_MS;
     }, "Employee must be at least 16 years old"),
-  skills: z.string().optional(),
-  experienceYears: z.preprocess(
-    (val) => (val === undefined || val === null ? undefined : Number(val)),
-    z.number().min(0, "Experience cannot be negative").max(60, "Experience cannot exceed 60 years").optional(),
-  ),
   taxId: z.string().optional(),
   monthlySalary: z.number().min(0, "Salary cannot be negative").max(9_999_999, "Salary exceeds maximum").optional(),
   bankDetails: z

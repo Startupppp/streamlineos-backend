@@ -14,7 +14,7 @@ import {
   users,
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
-import type { UsersService } from "./users.service";
+import { UsersService } from "./users.service";
 
 @Injectable()
 export class UserOpsService {

@@ -221,7 +221,7 @@ export class AccessService {
     const roleIdList = Array.from(roleIds);
     if (roleIdList.length > 0) {
       const roleRecords = await this.db
-        .select({ id: roles.id, slug: roles.slug, permissions: roles.permissions })
+        .select({ id: roles.id, slug: roles.slug })
         .from(roles)
         .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)));
       const roleById = new Map(roleRecords.map((record) => [record.id, record]));
@@ -257,12 +257,7 @@ export class AccessService {
           continue;
         }
         const record = roleById.get(roleId);
-        const jsonbPerms = record?.permissions ?? [];
-        if (jsonbPerms.length > 0) {
-          for (const key of jsonbPerms) merge(key, "all");
-          continue;
-        }
-        const defaults = record ? ROLE_DEFAULT_PERMISSIONS[record.slug] ?? [] : [];
+        const defaults = record ? (ROLE_DEFAULT_PERMISSIONS[record.slug] ?? []) : [];
         for (const key of defaults) merge(key, "all");
       }
     }

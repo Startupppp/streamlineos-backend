@@ -8,8 +8,10 @@ import type { announcements } from "../../db/schema";
 import { AnnouncementsService } from "./announcements.service";
 
 type AnnouncementInsert = typeof announcements.$inferInsert;
-type CreateBody = Omit<AnnouncementInsert, "id" | "orgId" | "authorId" | "readCount" | "createdAt" | "updatedAt">;
-type UpdateBody = Partial<AnnouncementInsert>;
+type CreateBody = Omit<AnnouncementInsert, "id" | "orgId" | "authorId" | "readCount" | "createdAt" | "updatedAt"> & {
+  targetIds?: string[];
+};
+type UpdateBody = Partial<AnnouncementInsert> & { targetIds?: string[] };
 
 @UseGuards(JwtAuthGuard)
 @Controller("hr/announcements")
@@ -32,7 +34,8 @@ export class AnnouncementsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
   create(@CurrentUser() u: CurrentUserContext, @Body() body: CreateBody) {
-    return this.service.create(u.orgId, u.userId, body);
+    const { targetIds = [], ...rest } = body;
+    return this.service.create(u.orgId, u.userId, targetIds, rest);
   }
 
   @Patch(":announcementId")
@@ -43,7 +46,8 @@ export class AnnouncementsController {
     @Param("announcementId", ParseIntPipe) id: number,
     @Body() body: UpdateBody,
   ) {
-    return this.service.update(u.orgId, id, body);
+    const { targetIds, ...rest } = body;
+    return this.service.update(u.orgId, id, targetIds, rest);
   }
 
   @Delete(":announcementId")

@@ -103,7 +103,6 @@ export class OrgSetupService {
         slug: "ADMIN",
         isSystem: false,
         orgId,
-        permissions: [],
       });
     });
 

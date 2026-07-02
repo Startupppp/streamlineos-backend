@@ -8,8 +8,6 @@ export const personalDetailsSchema = z.object({
   phone: z.string().min(1),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
   dateOfBirth: z.string().optional(),
-  experienceYears: z.string().optional(),
-  skills: z.array(z.string()).or(z.string()).optional(),
   emergencyName: z.string().optional(),
   emergencyRelation: z.string().optional(),
   emergencyPhone: z.string().optional(),

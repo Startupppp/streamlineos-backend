@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   dealStageEnum, dealActivityTypeEnum, slaAppliesToEnum, slaPriorityEnum,
@@ -64,7 +64,6 @@ export const dealMeetings = pgTable("deal_meetings", {
   title: text("title").notNull(),
   scheduledAt: timestamp("scheduled_at").notNull(),
   durationMinutes: integer("duration_minutes").default(30).notNull(),
-  attendees: text("attendees").array(),
   agenda: text("agenda"),
   notes: text("notes"),
   actionItems: text("action_items"),
@@ -76,6 +75,16 @@ export const dealMeetings = pgTable("deal_meetings", {
 }, (table) => [
   index("idx_deal_meetings_deal").on(table.dealId),
   index("idx_deal_meetings_org").on(table.orgId),
+]);
+
+export const dealMeetingAttendees = pgTable("deal_meeting_attendees", {
+  id: serial("id").primaryKey(),
+  meetingId: integer("meeting_id").references(() => dealMeetings.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  attendeeId: text("attendee_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_deal_meeting_attendees_unique").on(table.meetingId, table.attendeeId),
 ]);
 
 export const dealApprovalRules = pgTable("deal_approval_rules", {
@@ -326,9 +335,14 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
   meetings: many(dealMeetings),
 }));
 
-export const dealMeetingsRelations = relations(dealMeetings, ({ one }) => ({
+export const dealMeetingsRelations = relations(dealMeetings, ({ one, many }) => ({
   deal: one(deals, { fields: [dealMeetings.dealId], references: [deals.id] }),
   creator: one(users, { fields: [dealMeetings.createdBy], references: [users.id] }),
+  attendeeRows: many(dealMeetingAttendees),
+}));
+
+export const dealMeetingAttendeesRelations = relations(dealMeetingAttendees, ({ one }) => ({
+  meeting: one(dealMeetings, { fields: [dealMeetingAttendees.meetingId], references: [dealMeetings.id] }),
 }));
 
 export const dealActivitiesRelations = relations(dealActivities, ({ one }) => ({

@@ -84,9 +84,20 @@ export class RolesService {
           slug: input.slug,
           orgId: actor.orgId,
           isSystem: false,
-          permissions: input.permissions,
         })
         .returning();
+
+      const validPerms = input.permissions.filter((key) => CATALOG_KEYS.has(key));
+      if (validPerms.length > 0) {
+        await tx.insert(rolePermissionGrants).values(
+          validPerms.map((permissionKey) => ({
+            orgId: actor.orgId,
+            roleId: row.id,
+            permissionKey,
+            scope: "all" as const,
+          })),
+        );
+      }
 
       await bumpPermissionsVersion(tx, actor.orgId);
       return row;
@@ -110,17 +121,37 @@ export class RolesService {
       const updateData: {
         updatedAt: Date;
         name?: string;
-        permissions?: string[];
       } = {
         updatedAt: new Date(),
       };
       if (input.name && !existing.isSystem) updateData.name = input.name;
-      if (input.permissions) updateData.permissions = input.permissions;
 
       await tx
         .update(roles)
         .set(updateData)
         .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
+
+      if (input.permissions !== undefined) {
+        await tx
+          .delete(rolePermissionGrants)
+          .where(
+            and(
+              eq(rolePermissionGrants.orgId, actor.orgId),
+              eq(rolePermissionGrants.roleId, roleId),
+            ),
+          );
+        const validPerms = input.permissions.filter((key) => CATALOG_KEYS.has(key));
+        if (validPerms.length > 0) {
+          await tx.insert(rolePermissionGrants).values(
+            validPerms.map((permissionKey) => ({
+              orgId: actor.orgId,
+              roleId,
+              permissionKey,
+              scope: "all" as const,
+            })),
+          );
+        }
+      }
 
       await bumpPermissionsVersion(tx, actor.orgId);
     });
@@ -222,13 +253,9 @@ export class RolesService {
       .limit(500);
     if (grants.length > 0) return grants;
 
-    const fallbackKeys =
-      role.permissions.length > 0
-        ? role.permissions
-        : (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
-    return fallbackKeys.map((permissionKey) => ({
+    return (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []).map((permissionKey) => ({
       permissionKey,
-      scope: "all",
+      scope: "all" as DataScope,
     }));
   }
 
@@ -498,7 +525,6 @@ export class RolesService {
         id: roles.id,
         name: roles.name,
         slug: roles.slug,
-        permissions: roles.permissions,
       })
       .from(roles)
       .where(eq(roles.orgId, orgId))
@@ -523,11 +549,7 @@ export class RolesService {
 
     return orgRoles.map((role) => {
       const explicit = grantsByRole.get(role.id);
-      const permissions =
-        explicit ??
-        (role.permissions.length > 0
-          ? role.permissions
-          : (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []));
+      const permissions = explicit ?? (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []);
       return {
         roleId: role.id,
         roleName: role.name,
@@ -617,9 +639,19 @@ export class RolesService {
           slug,
           orgId: actor.orgId,
           isSystem: false,
-          permissions: validPermissions,
         })
         .returning();
+
+      if (validPermissions.length > 0) {
+        await tx.insert(rolePermissionGrants).values(
+          validPermissions.map((permissionKey) => ({
+            orgId: actor.orgId,
+            roleId: row.id,
+            permissionKey,
+            scope: "all" as const,
+          })),
+        );
+      }
 
       await bumpPermissionsVersion(tx, actor.orgId);
       return row;

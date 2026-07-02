@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import {
   rolePermissionGrants,
   rolePermissions,
-  roles,
   userPermissions,
   users,
 } from "../../db/schema";
@@ -55,14 +54,7 @@ export class RbacService {
         })
       : [];
 
-    const customRole = role
-      ? await this.db.query.roles.findFirst({
-          where: and(eq(roles.slug, role), eq(roles.orgId, orgId)),
-          columns: { permissions: true },
-        })
-      : null;
-
-    const defaultPerms = role ? ROLE_DEFAULT_PERMISSIONS[role] ?? [] : [];
+    const defaultPerms = role ? (ROLE_DEFAULT_PERMISSIONS[role] ?? []) : [];
 
     const permissionSet = new Set<string>();
 
@@ -73,10 +65,6 @@ export class RbacService {
     rolePerms.forEach((rp) => {
       if (rp.permission?.name) permissionSet.add(rp.permission.name);
     });
-
-    if (customRole?.permissions && Array.isArray(customRole.permissions)) {
-      for (const perm of customRole.permissions) permissionSet.add(perm);
-    }
 
     defaultPerms.forEach((perm) => permissionSet.add(perm));
 
@@ -90,17 +78,9 @@ export class RbacService {
       limit: 500,
     });
 
-    const customRole = await this.db.query.roles.findFirst({
-      where: and(eq(roles.slug, role), eq(roles.orgId, orgId)),
-      columns: { permissions: true },
-    });
-
     const result = new Set<string>();
     for (const rp of perms) {
       if (rp.permission?.name) result.add(rp.permission.name);
-    }
-    if (customRole?.permissions && Array.isArray(customRole.permissions)) {
-      for (const p of customRole.permissions) result.add(p);
     }
     return Array.from(result);
   }

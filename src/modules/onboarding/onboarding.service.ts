@@ -291,12 +291,6 @@ export class OnboardingService {
   }
 
   async savePersonalDetails(orgId: string, userId: string, input: PersonalDetailsInput) {
-    const skillsArray = Array.isArray(input.skills)
-      ? input.skills
-      : input.skills
-        ? input.skills.split(",").map((s) => s.trim()).filter(Boolean)
-        : undefined;
-
     const emergencyContact =
       input.emergencyName && input.emergencyRelation && input.emergencyPhone
         ? {
@@ -312,8 +306,6 @@ export class OnboardingService {
         phone: input.phone,
         ...(input.gender ? { gender: input.gender } : {}),
         ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
-        ...(input.experienceYears ? { experienceYears: input.experienceYears } : {}),
-        ...(skillsArray ? { skills: skillsArray } : {}),
         ...(emergencyContact ? { emergencyContact } : {}),
       })
       .where(eq(users.id, userId));

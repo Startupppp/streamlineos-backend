@@ -30,11 +30,16 @@ export class HrInterviewsService {
 
     return this.db.query.interviews.findMany({
       where: and(...conditions),
-      with: { candidate: true, interviewer: true },
+      with: { candidate: true, interviewer: true, panelMembers: { columns: { userId: true } } },
       orderBy: [desc(interviews.scheduledAt)],
       limit: query.limit,
       offset: query.offset,
-    });
+    }).then((rows) =>
+      rows.map(({ panelMembers, ...iv }) => ({
+        ...iv,
+        panelInterviewerIds: panelMembers.map((m) => m.userId),
+      })),
+    );
   }
 
   listSlas(orgId: string) {

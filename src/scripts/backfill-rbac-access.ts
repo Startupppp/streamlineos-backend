@@ -11,7 +11,7 @@ import {
   roles,
   userRoles,
 } from "../db/schema";
-import { ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
 
 type Database = PostgresJsDatabase<typeof schema>;
 
@@ -65,6 +65,20 @@ interface BackfillSummary {
 const SALES_OWN_SCOPE_KEYS = new Set(["crm:leads:view", "crm:leads:update"]);
 
 async function backfill(db: Database): Promise<BackfillSummary> {
+  if (PERMISSIONS.length > 0) {
+    await db
+      .insert(permissions)
+      .values(
+        PERMISSIONS.map((p) => ({
+          name: p.name,
+          resource: p.resource,
+          action: p.action,
+          description: p.description ?? null,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
   const catalogRows = await db.select({ name: permissions.name }).from(permissions);
   const catalog = new Set(catalogRows.map((row) => row.name));
   const allSystemSlugs = Object.keys(ROLE_DEFAULT_PERMISSIONS);
@@ -95,7 +109,6 @@ async function backfill(db: Database): Promise<BackfillSummary> {
             slug,
             orgId: org.id,
             isSystem: true,
-            permissions: ROLE_DEFAULT_PERMISSIONS[slug] ?? [],
           })
           .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
           .returning({ id: roles.id });
@@ -107,13 +120,12 @@ async function backfill(db: Database): Promise<BackfillSummary> {
           id: roles.id,
           slug: roles.slug,
           isSystem: roles.isSystem,
-          permissions: roles.permissions,
         })
         .from(roles)
         .where(eq(roles.orgId, org.id));
 
       for (const role of orgRoles) {
-        const rawKeys = role.isSystem ? ROLE_DEFAULT_PERMISSIONS[role.slug] ?? [] : role.permissions;
+        const rawKeys = role.isSystem ? (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []) : [];
         const keys = [...new Set(rawKeys)].filter((key) => catalog.has(key));
         if (keys.length === 0) continue;
         const inserted = await tx
@@ -129,9 +141,7 @@ async function backfill(db: Database): Promise<BackfillSummary> {
                   : ("all" as const),
             })),
           )
-          .onConflictDoNothing({
-            target: [rolePermissionGrants.roleId, rolePermissionGrants.permissionKey],
-          })
+          .onConflictDoNothing()
           .returning({ id: rolePermissionGrants.id });
         summary.grantsInserted += inserted.length;
       }

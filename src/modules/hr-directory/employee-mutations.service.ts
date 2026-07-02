@@ -6,9 +6,10 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  employeeSkills,
   onboardingTasks,
   organizationMembers,
   passwordResetTokens,
@@ -56,21 +57,6 @@ function toBankDetails(input: BankDetailsInput): BankDetails {
   };
 }
 
-function normalizeSkills(raw: string): string[] {
-  const seen = new Set<string>();
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s && /[a-zA-Z0-9]/.test(s))
-    .reduce<string[]>((acc, s) => {
-      const key = s.toLowerCase();
-      if (seen.has(key)) return acc;
-      seen.add(key);
-      acc.push(s.charAt(0).toUpperCase() + s.slice(1));
-      return acc;
-    }, []);
-}
-
 @Injectable()
 export class EmployeeMutationsService {
   constructor(
@@ -109,7 +95,6 @@ export class EmployeeMutationsService {
             twitterUrl: true,
             githubUrl: true,
             websiteUrl: true,
-            skills: true,
             phone: true,
           },
         },
@@ -118,6 +103,12 @@ export class EmployeeMutationsService {
 
     if (!member?.user) return null;
     const u = member.user;
+
+    const skillRows = await this.db
+      .select({ name: employeeSkills.skillName, level: employeeSkills.level })
+      .from(employeeSkills)
+      .where(and(eq(employeeSkills.orgId, orgId), eq(employeeSkills.userId, userId)));
+
     return {
       id: u.id,
       name: u.name,
@@ -139,7 +130,7 @@ export class EmployeeMutationsService {
       twitterUrl: u.twitterUrl ?? null,
       githubUrl: u.githubUrl ?? null,
       websiteUrl: u.websiteUrl ?? null,
-      skills: u.skills ?? null,
+      skills: skillRows,
       phone: u.phone ?? null,
     };
   }
@@ -204,7 +195,6 @@ export class EmployeeMutationsService {
     }
     if (body.role !== undefined && isOwnerOrAdmin) updateData.role = body.role;
     if (body.gender !== undefined) updateData.gender = body.gender;
-    if (body.experienceYears !== undefined) updateData.experienceYears = String(body.experienceYears);
     if (body.taxId !== undefined) updateData.taxId = body.taxId ? encrypt(body.taxId) : "";
     if (body.monthlySalary !== undefined && isOwnerOrAdmin) updateData.monthlySalary = String(body.monthlySalary);
     if (body.bankDetails !== undefined) {
@@ -219,7 +209,6 @@ export class EmployeeMutationsService {
       if (!isOwnerOrAdmin) throw new ForbiddenException("Only admins can toggle dashboard access.");
       updateData.hasDashboardAccess = body.hasDashboardAccess;
     }
-    if (body.skills !== undefined) updateData.skills = body.skills;
     if (body.bio !== undefined) updateData.bio = body.bio;
     if (body.linkedinUrl !== undefined) updateData.linkedinUrl = body.linkedinUrl || null;
     if (body.twitterUrl !== undefined) updateData.twitterUrl = body.twitterUrl || null;
@@ -231,6 +220,34 @@ export class EmployeeMutationsService {
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
         await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
+      }
+
+      if (body.skills !== undefined) {
+        const existing = await tx
+          .select({ skillName: employeeSkills.skillName })
+          .from(employeeSkills)
+          .where(and(eq(employeeSkills.orgId, actor.orgId), eq(employeeSkills.userId, targetUserId)));
+
+        const existingNames = new Set(existing.map((s) => s.skillName));
+        const newNames = new Set(body.skills);
+
+        const toDelete = existing.filter((s) => !newNames.has(s.skillName)).map((s) => s.skillName);
+        if (toDelete.length > 0) {
+          await tx.delete(employeeSkills).where(
+            and(
+              eq(employeeSkills.orgId, actor.orgId),
+              eq(employeeSkills.userId, targetUserId),
+              inArray(employeeSkills.skillName, toDelete),
+            ),
+          );
+        }
+
+        const toInsert = body.skills.filter((name) => !existingNames.has(name));
+        if (toInsert.length > 0) {
+          await tx.insert(employeeSkills).values(
+            toInsert.map((skillName) => ({ orgId: actor.orgId, userId: targetUserId, skillName, level: 1 })),
+          );
+        }
       }
 
       if (body.joiningDate && isOwnerOrAdmin) {
@@ -319,8 +336,6 @@ export class EmployeeMutationsService {
           employeeId: resolvedEmployeeId,
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
           dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
-          skills: body.skills ? normalizeSkills(body.skills) : undefined,
-          experienceYears: body.experienceYears?.toString(),
           taxId: body.taxId ? encrypt(body.taxId) : undefined,
           monthlySalary: body.monthlySalary?.toString(),
           bankDetails: body.bankDetails?.accountNumber

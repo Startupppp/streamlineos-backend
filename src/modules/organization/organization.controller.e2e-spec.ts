@@ -21,7 +21,6 @@ describe("Organization auth (e2e)", () => {
   const routes: ReadonlyArray<[Method, string]> = [
     ["get", "/organization"],
     ["post", "/organization"],
-    ["get", "/organization/profile"],
     ["get", "/organization/members"],
     ["delete", "/organization/members/some-user-id"],
     ["get", "/organization/invitations"],

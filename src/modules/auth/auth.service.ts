@@ -143,7 +143,7 @@ export class AuthService {
       });
 
       const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };
-      await tx.insert(roles).values({ ...adminRole, orgId, permissions: [] });
+      await tx.insert(roles).values({ ...adminRole, orgId });
     });
 
     const rawToken = generateToken();

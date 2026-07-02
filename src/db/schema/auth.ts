@@ -89,8 +89,6 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   gender: genderEnum("gender"),
-  skills: text("skills").array(),
-  experienceYears: decimal("experience_years", { precision: 5, scale: 2 }),
   joiningDate: date("joining_date"),
   dateOfBirth: date("date_of_birth"),
   taxId: text("tax_id"),
@@ -288,7 +286,6 @@ export const roles = pgTable("roles", {
   slug: text("slug").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   isSystem: boolean("is_system").default(false).notNull(),
-  permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

@@ -15,18 +15,20 @@ export interface ProfileEmployee {
   isActive: boolean;
   bio: string | null;
   linkedinUrl: string | null;
-  skills: string[] | null;
   phone: string | null;
 }
 
-export function buildEmployeeProfileHtml(employee: ProfileEmployee): string {
+export function buildEmployeeProfileHtml(
+  employee: ProfileEmployee,
+  skills: { name: string; level: number }[],
+): string {
   const name =
     employee.name ?? (`${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim() || "Employee");
   const joinDate = employee.joiningDate ? formatDayMonthYear(new Date(employee.joiningDate)) : "—";
 
   const skillsList =
-    Array.isArray(employee.skills) && employee.skills.length > 0
-      ? employee.skills.map((s) => `<span class="badge">${s}</span>`).join(" ")
+    skills.length > 0
+      ? skills.map((s) => `<span class="badge">${s.name}</span>`).join(" ")
       : "—";
 
   return `<!DOCTYPE html>

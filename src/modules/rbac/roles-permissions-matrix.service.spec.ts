@@ -5,37 +5,43 @@ import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 
-type RoleRow = { id: number; name: string; slug: string; permissions: string[] };
+type RoleRow = { id: number; name: string; slug: string };
 type GrantRow = { roleId: number; permissionKey: string };
 
 interface RoleSelectChain {
   from: jest.Mock;
   where: jest.Mock;
   orderBy: jest.Mock;
+  limit: jest.Mock;
 }
 
 interface GrantSelectChain {
   from: jest.Mock;
   where: jest.Mock;
+  limit: jest.Mock;
 }
 
 function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
   const chain: RoleSelectChain = {
     from: jest.fn(),
     where: jest.fn(),
-    orderBy: jest.fn().mockResolvedValue(resolvedValue),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(resolvedValue),
   };
   chain.from.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   return chain;
 }
 
 function buildGrantChain(resolvedValue: GrantRow[]): GrantSelectChain {
   const chain: GrantSelectChain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(resolvedValue),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(resolvedValue),
   };
   chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -69,8 +75,8 @@ function makeService(db: Db): RolesService {
 describe("RolesService.getPermissionsMatrix", () => {
   it("returns an entry per role with permissions from grants when grants exist", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 1, name: "Admin", slug: "OWNER", permissions: [] },
-      { id: 2, name: "Sales", slug: "SALES", permissions: [] },
+      { id: 1, name: "Admin", slug: "OWNER" },
+      { id: 2, name: "Sales", slug: "SALES" },
     ];
     const grants: GrantRow[] = [
       { roleId: 1, permissionKey: "settings:rbac:manage" },
@@ -102,9 +108,9 @@ describe("RolesService.getPermissionsMatrix", () => {
     });
   });
 
-  it("falls back to role.permissions when no grants exist for that role", async () => {
+  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants exist for a custom slug with no default", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 10, name: "Custom", slug: "CUSTOM_SLUG", permissions: ["hr:employees:view", "reports:view"] },
+      { id: 10, name: "Custom", slug: "CUSTOM_SLUG" },
     ];
     const grants: GrantRow[] = [];
 
@@ -118,13 +124,13 @@ describe("RolesService.getPermissionsMatrix", () => {
       roleId: 10,
       roleName: "Custom",
       roleSlug: "CUSTOM_SLUG",
-      permissions: ["hr:employees:view", "reports:view"],
+      permissions: [],
     });
   });
 
-  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role.permissions is empty", async () => {
+  it("falls back to ROLE_DEFAULT_PERMISSIONS when no grants and role has no jsonb", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 5, name: "HR Manager", slug: "HR", permissions: [] },
+      { id: 5, name: "HR Manager", slug: "HR" },
     ];
     const grants: GrantRow[] = [];
 
@@ -151,9 +157,9 @@ describe("RolesService.getPermissionsMatrix", () => {
     expect(result).toEqual([]);
   });
 
-  it("resolves with an empty permissions array when slug has no default and role.permissions is empty and no grants", async () => {
+  it("resolves with an empty permissions array when slug has no default and no grants", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 99, name: "Unknown Role", slug: "UNKNOWN_SLUG_WITH_NO_DEFAULT", permissions: [] },
+      { id: 99, name: "Unknown Role", slug: "UNKNOWN_SLUG_WITH_NO_DEFAULT" },
     ];
     const grants: GrantRow[] = [];
 
@@ -173,8 +179,8 @@ describe("RolesService.getPermissionsMatrix", () => {
 
   it("grants for one role do not contaminate another role that has no grants", async () => {
     const orgRoles: RoleRow[] = [
-      { id: 1, name: "Admin", slug: "OWNER", permissions: [] },
-      { id: 2, name: "Engineer", slug: "ENGINEERING", permissions: [] },
+      { id: 1, name: "Admin", slug: "OWNER" },
+      { id: 2, name: "Engineer", slug: "ENGINEERING" },
     ];
     const grants: GrantRow[] = [
       { roleId: 1, permissionKey: "settings:rbac:manage" },

@@ -128,17 +128,17 @@ describeWithDb(
 
       const ownRole = await db
         .insert(roles)
-        .values({ name: "Leads Own", slug: "leads_own", orgId: ORG_ID, isSystem: false, permissions: [] })
+        .values({ name: "Leads Own", slug: "leads_own", orgId: ORG_ID, isSystem: false })
         .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
         .returning({ id: roles.id });
       const salesRole = await db
         .insert(roles)
-        .values({ name: "Sales", slug: "SALES", orgId: ORG_ID, isSystem: true, permissions: [] })
+        .values({ name: "Sales", slug: "SALES", orgId: ORG_ID, isSystem: true })
         .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
         .returning({ id: roles.id });
       const deniedRole = await db
         .insert(roles)
-        .values({ name: "Viewer None", slug: "viewer_none", orgId: ORG_ID, isSystem: false, permissions: [] })
+        .values({ name: "Viewer None", slug: "viewer_none", orgId: ORG_ID, isSystem: false })
         .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
         .returning({ id: roles.id });
 

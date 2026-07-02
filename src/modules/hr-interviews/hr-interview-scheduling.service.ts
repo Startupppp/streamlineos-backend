@@ -1,7 +1,15 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import { calendarEvents, candidates, interviewBookingLinks, interviews, users } from "../../db/schema";
+import {
+  bookingLinkInterviewers,
+  calendarEvents,
+  candidates,
+  interviewBookingLinks,
+  interviewPanelMembers,
+  interviews,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -112,23 +120,30 @@ export class HrInterviewSchedulingService {
     const primaryInterviewerId = input.interviewers[0];
     const candidateName = `${candidate.firstName} ${candidate.lastName}`;
 
-    const [interview] = await this.db
-      .insert(interviews)
-      .values({
-        orgId,
-        candidateId: input.candidateId,
-        jobPostingId: input.jobPostingId,
-        interviewerId: primaryInterviewerId,
-        panelInterviewerIds: input.interviewers.length > 1 ? input.interviewers : [],
-        type: FORMAT_TO_TYPE[input.format],
-        scheduledAt: scheduledDate,
-        duration: input.durationMinutes,
-        meetingLink: input.meetLink,
-        notes: input.notes,
-        result: "PENDING",
-        remindersSent: {},
-      })
-      .returning();
+    const interview = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(interviews)
+        .values({
+          orgId,
+          candidateId: input.candidateId,
+          jobPostingId: input.jobPostingId,
+          interviewerId: primaryInterviewerId,
+          type: FORMAT_TO_TYPE[input.format],
+          scheduledAt: scheduledDate,
+          duration: input.durationMinutes,
+          meetingLink: input.meetLink,
+          notes: input.notes,
+          result: "PENDING",
+          remindersSent: {},
+        })
+        .returning();
+
+      await tx.insert(interviewPanelMembers).values(
+        input.interviewers.map((uid) => ({ interviewId: created.id, orgId, userId: uid })),
+      );
+
+      return created;
+    });
 
     await this.db.insert(calendarEvents).values({
       orgId,
@@ -166,7 +181,10 @@ export class HrInterviewSchedulingService {
 
     void this.dispatchScheduledAutomation(orgId, interview, primaryInterviewerId).catch(() => undefined);
 
-    return interview;
+    return {
+      ...interview,
+      panelInterviewerIds: input.interviewers.length > 1 ? input.interviewers : [],
+    };
   }
 
   async selfSchedule(orgId: string, userId: string, input: SelfScheduleInput) {
@@ -179,22 +197,29 @@ export class HrInterviewSchedulingService {
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000);
 
-    const [link] = await this.db
-      .insert(interviewBookingLinks)
-      .values({
-        orgId,
-        candidateId: input.candidateId,
-        jobPostingId: input.jobPostingId,
-        token,
-        interviewerIds: input.interviewerIds,
-        durationMinutes: input.durationMinutes,
-        interviewType: input.interviewType,
-        availableSlots: input.availableSlots,
-        expiresAt,
-        createdBy: userId,
-        notes: input.notes,
-      })
-      .returning();
+    const link = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(interviewBookingLinks)
+        .values({
+          orgId,
+          candidateId: input.candidateId,
+          jobPostingId: input.jobPostingId,
+          token,
+          durationMinutes: input.durationMinutes,
+          interviewType: input.interviewType,
+          availableSlots: input.availableSlots,
+          expiresAt,
+          createdBy: userId,
+          notes: input.notes,
+        })
+        .returning();
+
+      await tx.insert(bookingLinkInterviewers).values(
+        input.interviewerIds.map((uid) => ({ bookingLinkId: created.id, userId: uid })),
+      );
+
+      return created;
+    });
 
     const bookingUrl = `${bookingBaseUrl()}/interview-booking/${token}`;
 

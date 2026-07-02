@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   calendarEvents,
   interviewBookingLinks,
+  interviewPanelMembers,
   interviewScorecards,
   interviews,
   users,
@@ -108,6 +109,34 @@ export class HrInterviewersService {
           start: iv.scheduledAt.toISOString(),
           end: endTime.toISOString(),
           title: "Interview",
+        });
+      }
+    }
+
+    const panelMemberRows = await this.db
+      .select({
+        scheduledAt: interviews.scheduledAt,
+        duration: interviews.duration,
+        userId: interviewPanelMembers.userId,
+      })
+      .from(interviewPanelMembers)
+      .innerJoin(interviews, eq(interviewPanelMembers.interviewId, interviews.id))
+      .where(
+        and(
+          eq(interviews.orgId, orgId),
+          gte(interviews.scheduledAt, dayStart),
+          lte(interviews.scheduledAt, dayEnd),
+          inArray(interviewPanelMembers.userId, interviewerIds),
+        ),
+      );
+
+    for (const pm of panelMemberRows) {
+      if (busyMap.has(pm.userId)) {
+        const endTime = new Date(pm.scheduledAt.getTime() + (pm.duration ?? 60) * 60_000);
+        busyMap.get(pm.userId)?.push({
+          start: pm.scheduledAt.toISOString(),
+          end: endTime.toISOString(),
+          title: "Interview (Panel)",
         });
       }
     }

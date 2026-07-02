@@ -8,7 +8,6 @@ export const announcements = pgTable("announcements", {
   content: text("content").notNull(),
   authorId: text("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   targetType: text("target_type").default("ALL").notNull(),
-  targetIds: jsonb("target_ids").$type<string[]>().default([]).notNull(),
   isPinned: boolean("is_pinned").default(false).notNull(),
   publishAt: timestamp("publish_at"),
   expiresAt: timestamp("expires_at"),
@@ -20,6 +19,18 @@ export const announcements = pgTable("announcements", {
 }, (table) => [
   index("idx_announcements_org_status").on(table.orgId, table.status),
   index("idx_announcements_org_pinned").on(table.orgId, table.isPinned),
+]);
+
+export const announcementTargets = pgTable("announcement_targets", {
+  id: serial("id").primaryKey(),
+  announcementId: integer("announcement_id").references(() => announcements.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_announcement_targets_announcement").on(table.announcementId),
+  index("idx_announcement_targets_org_type_target").on(table.orgId, table.targetType, table.targetId),
 ]);
 
 export const announcementReads = pgTable("announcement_reads", {

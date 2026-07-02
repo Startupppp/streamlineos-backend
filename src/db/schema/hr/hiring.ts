@@ -158,7 +158,6 @@ export const interviews = pgTable("interviews", {
   notes: text("notes"),
   recordingUrl: text("recording_url"),
   recordingPlatform: text("recording_platform"),
-  panelInterviewerIds: jsonb("panel_interviewer_ids").$type<string[]>().default([]),
   remindersSent: jsonb("reminders_sent").$type<Record<string, boolean>>().notNull().default({}),
   calendarSyncToken: text("calendar_sync_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -211,7 +210,6 @@ export const interviewBookingLinks = pgTable("interview_booking_links", {
   candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
   jobPostingId: integer("job_posting_id").references(() => jobPostings.id),
   token: text("token").notNull().unique(),
-  interviewerIds: jsonb("interviewer_ids").$type<string[]>().notNull().default([]),
   durationMinutes: integer("duration_minutes").notNull().default(60),
   interviewType: text("interview_type").notNull().default("VIDEO"),
   availableSlots: jsonb("available_slots").$type<BookingSlot[]>().notNull().default([]),
@@ -265,13 +263,43 @@ export const calibrationSessions = pgTable("calibration_sessions", {
   status: text("status").$type<"pending" | "scheduled" | "completed" | "cancelled">().notNull().default("pending"),
   notes: text("notes"),
   decision: text("decision").$type<"STRONG_HIRE" | "HIRE" | "NO_HIRE" | "HOLD" | null>(),
-  participantIds: jsonb("participant_ids").$type<string[]>().notNull().default([]),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_calibration_sessions_candidate").on(table.candidateId),
   index("idx_calibration_sessions_org").on(table.orgId),
+]);
+
+export const interviewPanelMembers = pgTable("interview_panel_members", {
+  id: serial("id").primaryKey(),
+  interviewId: integer("interview_id").notNull().references(() => interviews.id, { onDelete: "cascade" }),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_interview_panel_members_interview_user").on(table.interviewId, table.userId),
+  index("idx_interview_panel_members_org_user").on(table.orgId, table.userId),
+]);
+
+export const bookingLinkInterviewers = pgTable("booking_link_interviewers", {
+  id: serial("id").primaryKey(),
+  bookingLinkId: integer("booking_link_id").notNull().references(() => interviewBookingLinks.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_booking_link_interviewers_link_user").on(table.bookingLinkId, table.userId),
+]);
+
+export const calibrationParticipants = pgTable("calibration_participants", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => calibrationSessions.id, { onDelete: "cascade" }),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_calibration_participants_session_user").on(table.sessionId, table.userId),
+  index("idx_calibration_participants_org_user").on(table.orgId, table.userId),
 ]);
 
 export const candidateDocumentsVault = pgTable("candidate_documents_vault", {
@@ -436,6 +464,7 @@ export const interviewsRelations = relations(interviews, ({ one, many }) => ({
   jobPosting: one(jobPostings, { fields: [interviews.jobPostingId], references: [jobPostings.id] }),
   interviewer: one(users, { fields: [interviews.interviewerId], references: [users.id] }),
   scorecards: many(interviewScorecards),
+  panelMembers: many(interviewPanelMembers),
 }));
 
 export const scorecardTemplatesRelations = relations(scorecardTemplates, ({ one, many }) => ({
@@ -488,10 +517,11 @@ export const candidateOffersRelations = relations(candidateOffers, ({ one }) => 
   offeredByUser: one(users, { fields: [candidateOffers.offeredBy], references: [users.id] }),
 }));
 
-export const interviewBookingLinksRelations = relations(interviewBookingLinks, ({ one }) => ({
+export const interviewBookingLinksRelations = relations(interviewBookingLinks, ({ one, many }) => ({
   candidate: one(candidates, { fields: [interviewBookingLinks.candidateId], references: [candidates.id] }),
   jobPosting: one(jobPostings, { fields: [interviewBookingLinks.jobPostingId], references: [jobPostings.id] }),
   creator: one(users, { fields: [interviewBookingLinks.createdBy], references: [users.id] }),
+  interviewers: many(bookingLinkInterviewers),
 }));
 
 export type PipelineTrigger =
@@ -791,4 +821,28 @@ export const scheduledReports = pgTable("scheduled_reports", {
 export const scheduledReportsRelations = relations(scheduledReports, ({ one }) => ({
   organization: one(organizations, { fields: [scheduledReports.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [scheduledReports.createdBy], references: [users.id] }),
+}));
+
+export const calibrationSessionsRelations = relations(calibrationSessions, ({ one, many }) => ({
+  organization: one(organizations, { fields: [calibrationSessions.orgId], references: [organizations.id] }),
+  candidate: one(candidates, { fields: [calibrationSessions.candidateId], references: [candidates.id] }),
+  createdByUser: one(users, { fields: [calibrationSessions.createdBy], references: [users.id] }),
+  participants: many(calibrationParticipants),
+}));
+
+export const interviewPanelMembersRelations = relations(interviewPanelMembers, ({ one }) => ({
+  interview: one(interviews, { fields: [interviewPanelMembers.interviewId], references: [interviews.id] }),
+  organization: one(organizations, { fields: [interviewPanelMembers.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [interviewPanelMembers.userId], references: [users.id] }),
+}));
+
+export const bookingLinkInterviewersRelations = relations(bookingLinkInterviewers, ({ one }) => ({
+  bookingLink: one(interviewBookingLinks, { fields: [bookingLinkInterviewers.bookingLinkId], references: [interviewBookingLinks.id] }),
+  user: one(users, { fields: [bookingLinkInterviewers.userId], references: [users.id] }),
+}));
+
+export const calibrationParticipantsRelations = relations(calibrationParticipants, ({ one }) => ({
+  session: one(calibrationSessions, { fields: [calibrationParticipants.sessionId], references: [calibrationSessions.id] }),
+  organization: one(organizations, { fields: [calibrationParticipants.orgId], references: [organizations.id] }),
+  user: one(users, { fields: [calibrationParticipants.userId], references: [users.id] }),
 }));

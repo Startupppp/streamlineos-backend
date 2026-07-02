@@ -14,7 +14,6 @@ export interface ChannelResult {
 @Injectable()
 export class EmailRoutesService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly twilio: TwilioGateway,
   ) {}

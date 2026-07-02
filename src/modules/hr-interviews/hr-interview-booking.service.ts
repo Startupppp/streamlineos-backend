@@ -23,6 +23,7 @@ export class HrInterviewBookingService {
   async book(token: string, input: BookInterviewInput) {
     const link = await this.db.query.interviewBookingLinks.findFirst({
       where: eq(interviewBookingLinks.token, token),
+      with: { interviewers: { columns: { userId: true } } },
     });
     if (!link) throw new NotFoundException("Booking link not found.");
     if (link.status !== "pending") throw new GoneException("This booking link has already been used.");
@@ -48,7 +49,7 @@ export class HrInterviewBookingService {
           orgId: link.orgId,
           candidateId: link.candidateId,
           jobPostingId: link.jobPostingId,
-          interviewerId: link.interviewerIds[0] ?? link.createdBy,
+          interviewerId: link.interviewers[0]?.userId ?? link.createdBy,
           type: TYPE_MAP[link.interviewType] ?? "VIDEO",
           scheduledAt: slotStart,
           duration: link.durationMinutes,
@@ -69,7 +70,7 @@ export class HrInterviewBookingService {
         entityType: "interview",
         entityId: String(created.id),
         createdBy: link.createdBy,
-        attendeeIds: link.interviewerIds,
+        attendeeIds: link.interviewers.map((i) => i.userId),
       });
 
       return created;
