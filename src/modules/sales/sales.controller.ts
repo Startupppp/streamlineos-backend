@@ -91,6 +91,7 @@ export class SalesController {
   }
 
   @Get("commissions")
+  @RequirePermission("crm:incentives:read")
   listCommissions(
     @Query(new ZodValidationPipe(commissionListSchema)) query: CommissionListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +114,7 @@ export class SalesController {
   }
 
   @Get("quotas")
+  @RequirePermission("crm:targets:view")
   listQuotas(
     @Query(new ZodValidationPipe(quotaListSchema)) query: QuotaListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -122,6 +124,7 @@ export class SalesController {
 
   @Post("quotas")
   @HttpCode(201)
+  @RequirePermission("crm:targets:manage")
   async createQuota(
     @Body(new ZodValidationPipe(quotaCreateSchema)) body: QuotaCreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -175,6 +178,7 @@ export class SalesController {
   }
 
   @Get("dashboard/kpis")
+  @RequirePermission("sales:view")
   dashboardKpis(
     @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -184,6 +188,7 @@ export class SalesController {
   }
 
   @Get("dashboard/funnel")
+  @RequirePermission("sales:view")
   dashboardFunnel(
     @Query(new ZodValidationPipe(dashboardRangeSchema)) query: DashboardRangeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -193,6 +198,7 @@ export class SalesController {
   }
 
   @Get("dashboard/leaderboard")
+  @RequirePermission("sales:view")
   dashboardLeaderboard(
     @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
     @CurrentUser() u: CurrentUserContext,
@@ -201,6 +207,7 @@ export class SalesController {
   }
 
   @Get("dashboard/revenue-vs-goal")
+  @RequirePermission("sales:view")
   dashboardRevenueVsGoal(
     @Query(new ZodValidationPipe(revenueVsGoalSchema)) query: RevenueVsGoalInput,
     @CurrentUser() u: CurrentUserContext,
@@ -210,6 +217,7 @@ export class SalesController {
   }
 
   @Get("dashboard/velocity")
+  @RequirePermission("sales:view")
   dashboardVelocity(
     @Query(new ZodValidationPipe(leaderboardSchema)) query: LeaderboardInput,
     @CurrentUser() u: CurrentUserContext,
@@ -218,6 +226,7 @@ export class SalesController {
   }
 
   @Get("dashboard/aging")
+  @RequirePermission("sales:view")
   dashboardAging(
     @Query(new ZodValidationPipe(agingSchema)) query: AgingInput,
     @CurrentUser() u: CurrentUserContext,
@@ -226,6 +235,7 @@ export class SalesController {
   }
 
   @Get("dashboard/cohort")
+  @RequirePermission("sales:view")
   dashboardCohort(
     @Query(new ZodValidationPipe(cohortSchema)) query: CohortInput,
     @CurrentUser() u: CurrentUserContext,
@@ -254,6 +264,7 @@ export class SalesController {
   }
 
   @Get("dashboard/rep-comparison")
+  @RequirePermission("sales:view")
   async dashboardRepComparison(
     @Query(new ZodValidationPipe(repComparisonSchema)) query: RepComparisonInput,
     @CurrentUser() u: CurrentUserContext,

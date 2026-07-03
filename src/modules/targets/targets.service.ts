@@ -33,7 +33,6 @@ export function isNotFound(value: unknown): value is TargetNotFound {
 interface CreateContext {
   role: string;
   callerId: string;
-  permissions: string[];
   isOrgOwner: boolean;
   isPlatformAdmin: boolean;
 }
@@ -42,7 +41,6 @@ interface ManageContext {
   role: string;
   callerId: string;
   branchId: number | null;
-  permissions: string[];
   isOrgOwner: boolean;
   isPlatformAdmin: boolean;
 }
@@ -143,7 +141,7 @@ export class TargetsService {
       return { error: "forbidden", message: "At least one user is required", status: 400 } as TargetsForbidden;
     }
 
-    if (!ctx.isOrgOwner && !ctx.isPlatformAdmin && !ctx.permissions.includes("crm:targets:manage") && ctx.role !== "BRANCH_MANAGER") {
+    if (!ctx.isOrgOwner && !ctx.isPlatformAdmin && ctx.role !== "BRANCH_MANAGER") {
       const targetUsers = await this.db
         .select({ id: users.id, reportingTo: users.reportingTo })
         .from(users)
@@ -326,11 +324,11 @@ export class TargetsService {
   }
 
   private async assertCanManage(
-    caller: { isOrgOwner: boolean; isPlatformAdmin: boolean; permissions: string[] },
+    caller: { isOrgOwner: boolean; isPlatformAdmin: boolean },
     callerId: string,
     userIds: string[],
   ) {
-    if (caller.isOrgOwner || caller.isPlatformAdmin || caller.permissions.includes("crm:targets:manage")) return true;
+    if (caller.isOrgOwner || caller.isPlatformAdmin) return true;
     const targetUsers = await this.db
       .select({ id: users.id, reportingTo: users.reportingTo })
       .from(users)

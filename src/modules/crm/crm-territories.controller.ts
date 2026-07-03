@@ -36,6 +36,7 @@ export class CrmTerritoriesController {
   constructor(private readonly territories: CrmTerritoriesService) {}
 
   @Get()
+  @RequirePermission("crm:territories:manage")
   list(
     @Query(new ZodValidationPipe(territoryListSchema)) query: TerritoryListInput,
     @CurrentUser() u: CurrentUserContext,

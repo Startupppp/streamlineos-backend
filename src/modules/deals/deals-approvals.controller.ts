@@ -34,6 +34,7 @@ export class DealsApprovalsController {
   constructor(private readonly approvals: DealsApprovalsService) {}
 
   @Get("approval-rules")
+  @RequirePermission("crm:deals:read")
   listRules(@CurrentUser() u: CurrentUserContext) {
     return this.approvals.listRules(u.orgId);
   }
@@ -49,6 +50,7 @@ export class DealsApprovalsController {
   }
 
   @Get("approvals")
+  @RequirePermission("crm:deals:read")
   listApprovals(
     @Query(new ZodValidationPipe(approvalsListSchema)) query: ApprovalsListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -57,6 +59,7 @@ export class DealsApprovalsController {
   }
 
   @Post("approvals")
+  @RequirePermission("crm:deals:update")
   async submitApproval(
     @Body(new ZodValidationPipe(submitApprovalSchema)) body: SubmitApprovalInput,
     @CurrentUser() u: CurrentUserContext,

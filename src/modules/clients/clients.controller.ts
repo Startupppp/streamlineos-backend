@@ -67,20 +67,24 @@ export class ClientsController {
   ) {}
 
   @Get()
-  listAccounts(
+  @RequirePermission("crm:clients:read")
+  async listAccounts(
     @Query(new ZodValidationPipe(listAccountsSchema)) query: ListAccountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.accounts.getClientAccounts(u.orgId, u.role, u.userId, query);
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientAccounts(u.orgId, scope, u.userId, query);
   }
 
   @Get("list")
+  @RequirePermission("crm:clients:read")
   async listClients(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveClientsReadScope(this.access, u);
     return this.clients.listClients(u.orgId, u.userId, scope);
   }
 
   @Get("health")
+  @RequirePermission("crm:clients:read")
   async getHealth(
     @Query(new ZodValidationPipe(healthQuerySchema)) query: HealthQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,11 +94,13 @@ export class ClientsController {
   }
 
   @Get("churn-alerts")
+  @RequirePermission("crm:clients:read")
   getChurnAlerts(@CurrentUser() u: CurrentUserContext) {
     return this.clients.getChurnAlerts(u.orgId);
   }
 
   @Get("assign-crm")
+  @RequirePermission("crm:clients:read")
   getCrmAssignmentStats(@CurrentUser() u: CurrentUserContext) {
     return this.accounts.getCrmAssignmentStats(u.orgId);
   }
@@ -111,28 +117,25 @@ export class ClientsController {
   }
 
   @Get("renewals")
+  @RequirePermission("crm:clients:read")
   listRenewals(@CurrentUser() u: CurrentUserContext) {
     return this.accounts.listRenewals(u.orgId);
   }
 
   @Patch("renewals/:accountId")
+  @RequirePermission("crm:clients:update")
   async updateRenewal(
     @Param("accountId", ParseIntPipe) accountId: number,
     @Body(new ZodValidationPipe(updateRenewalSchema)) body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("crm:clients:update")) {
-        throw new ForbiddenException("Insufficient permissions to update renewal stage");
-      }
-    }
     const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
 
   @Get("opportunities")
+  @RequirePermission("crm:clients:read")
   listOpportunities(
     @Query(new ZodValidationPipe(opportunitiesListSchema)) query: OpportunitiesListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -176,6 +179,7 @@ export class ClientsController {
   }
 
   @Get("onboarding/items")
+  @RequirePermission("crm:clients:read")
   listOnboardingItems(
     @Query(new ZodValidationPipe(onboardingItemsListSchema)) query: OnboardingItemsListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -217,6 +221,7 @@ export class ClientsController {
   }
 
   @Get("onboarding/templates")
+  @RequirePermission("crm:clients:read")
   listOnboardingTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplates(u.orgId);
   }
@@ -232,36 +237,35 @@ export class ClientsController {
   }
 
   @Get(":clientId")
+  @RequirePermission("crm:clients:read")
   async getClientAccount(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const scope = await resolveClientsReadScope(this.access, u);
     const account = await this.accounts.getClientAccount(u.orgId, clientId);
     if (!account) throw new NotFoundException("Client account not found");
-    if (u.role === "SALES" && account.salesRepId !== u.userId) {
+    if (scope === "none") throw new ForbiddenException("Access denied");
+    if (scope === "own" && account.salesRepId !== u.userId) {
       throw new ForbiddenException("You can only view your own converted clients");
     }
     return account;
   }
 
   @Patch(":clientId")
+  @RequirePermission("crm:clients:update")
   async updateClientStatus(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Body(new ZodValidationPipe(updateClientStatusSchema)) body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("crm:clients:manage")) {
-        throw new ForbiddenException("Only CRM team can update client status");
-      }
-    }
     const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
 
   @Get(":clientId/activities")
+  @RequirePermission("crm:clients:read")
   getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -271,23 +275,19 @@ export class ClientsController {
 
   @Post(":clientId/activities")
   @HttpCode(201)
+  @RequirePermission("crm:clients:update")
   async createClientActivity(
     @Param("clientId", ParseIntPipe) clientId: number,
     @Body(new ZodValidationPipe(createActivitySchema)) body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("crm:clients:update")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);
     if (!activity) throw new NotFoundException("Client account not found");
     return activity;
   }
 
   @Get(":clientId/timeline")
+  @RequirePermission("crm:clients:read")
   async getClientTimeline(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,

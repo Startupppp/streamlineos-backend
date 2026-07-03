@@ -33,6 +33,7 @@ export class CrmWebFormsController {
   constructor(private readonly forms: CrmWebFormsService) {}
 
   @Get()
+  @RequirePermission("crm:web-forms:manage")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.forms.list(u.orgId);
   }

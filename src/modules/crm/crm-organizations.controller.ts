@@ -37,6 +37,7 @@ export class CrmOrganizationsController {
   constructor(private readonly orgs: CrmOrganizationsService) {}
 
   @Get()
+  @RequirePermission("crm:organizations:view")
   list(
     @Query(new ZodValidationPipe(organizationListSchema)) query: OrganizationListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +56,7 @@ export class CrmOrganizationsController {
   }
 
   @Get(":organizationId")
+  @RequirePermission("crm:organizations:view")
   async getOne(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +100,7 @@ export class CrmOrganizationsController {
   }
 
   @Get(":organizationId/hierarchy")
+  @RequirePermission("crm:organizations:view")
   async hierarchy(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +111,7 @@ export class CrmOrganizationsController {
   }
 
   @Get(":organizationId/related-leads")
+  @RequirePermission("crm:organizations:view")
   async relatedLeads(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +122,7 @@ export class CrmOrganizationsController {
   }
 
   @Get(":organizationId/roll-up")
+  @RequirePermission("crm:organizations:view")
   rollUp(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -126,6 +131,7 @@ export class CrmOrganizationsController {
   }
 
   @Get(":organizationId/timeline")
+  @RequirePermission("crm:organizations:view")
   timeline(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,

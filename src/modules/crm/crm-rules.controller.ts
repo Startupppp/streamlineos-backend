@@ -38,17 +38,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("crm")
 @Controller("crm")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmRulesController {
   constructor(private readonly rules: CrmRulesService) {}
 
   @Get("assignment-rules")
+  @RequirePermission("crm:assignment-rules:manage")
   listAssignmentRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listAssignmentRules(u.orgId);
   }
 
   @Post("assignment-rules")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:assignment-rules:manage")
   @HttpCode(201)
   createAssignmentRule(
@@ -59,7 +59,6 @@ export class CrmRulesController {
   }
 
   @Patch("assignment-rules/reorder")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:assignment-rules:manage")
   reorderAssignmentRules(
     @Body(new ZodValidationPipe(assignmentReorderSchema)) body: AssignmentReorderInput,
@@ -69,7 +68,6 @@ export class CrmRulesController {
   }
 
   @Patch("assignment-rules/:ruleId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:assignment-rules:manage")
   async updateAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -82,7 +80,6 @@ export class CrmRulesController {
   }
 
   @Delete("assignment-rules/:ruleId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:assignment-rules:manage")
   deleteAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -92,12 +89,12 @@ export class CrmRulesController {
   }
 
   @Get("scoring-rules")
+  @RequirePermission("crm:scoring-rules:manage")
   listScoringRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listScoringRules(u.orgId);
   }
 
   @Post("scoring-rules")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:scoring-rules:manage")
   @HttpCode(201)
   createScoringRule(
@@ -108,7 +105,6 @@ export class CrmRulesController {
   }
 
   @Patch("scoring-rules/:ruleId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:scoring-rules:manage")
   async updateScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -121,7 +117,6 @@ export class CrmRulesController {
   }
 
   @Delete("scoring-rules/:ruleId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:scoring-rules:manage")
   deleteScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -131,12 +126,12 @@ export class CrmRulesController {
   }
 
   @Get("email-templates")
+  @RequirePermission("crm:email-templates:manage")
   listEmailTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listEmailTemplates(u.orgId);
   }
 
   @Post("email-templates")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:email-templates:manage")
   @HttpCode(201)
   createEmailTemplate(
@@ -147,7 +142,6 @@ export class CrmRulesController {
   }
 
   @Patch("email-templates/:templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:email-templates:manage")
   async updateEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -160,7 +154,6 @@ export class CrmRulesController {
   }
 
   @Delete("email-templates/:templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:email-templates:manage")
   deleteEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,

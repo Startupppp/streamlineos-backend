@@ -165,9 +165,22 @@ export class KbPagesService {
   }
 
   async search(user: CurrentUserContext, q: string): Promise<{ id: number; title: string; icon: string | null; snippet: string }[]> {
-    if (!q.trim()) return [];
+    const words = q
+      .trim()
+      .split(/\s+/)
+      .map(function sanitizeWord(w) {
+        return w.replace(/[^\p{L}\p{N}]/gu, "");
+      })
+      .filter(function nonEmpty(w) {
+        return w.length > 0;
+      })
+      .slice(0, 8);
+    if (words.length === 0) return [];
     const orgId = user.orgId;
-    const tsquery = sql`websearch_to_tsquery('english', ${q})`;
+    const prefixQuery = words.map(function toPrefix(w) {
+      return `${w}:*`;
+    }).join(" & ");
+    const tsquery = sql`to_tsquery('english', ${prefixQuery})`;
     const rows = await this.db
       .select({
         id: kbPages.id,
