@@ -24,3 +24,4 @@ export * from "./billing";
 export * from "./workflow";
 export * from "./onboarding";
 export * from "./payment-providers";
+export * from "./surveys";
