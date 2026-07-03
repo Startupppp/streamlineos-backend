@@ -292,6 +292,32 @@ const BILLING_PERMISSIONS: Permission[] = [
   { name: "billing:enterprise-quotes:approve", resource: "billing:enterprise-quotes", action: "approve", description: "Approve/reject/send enterprise quotes", scopable: false },
 ];
 
+const ONBOARDING_PERMISSIONS: Permission[] = [
+  { name: "onboarding:org:manage", resource: "onboarding:org", action: "manage", description: "Manage org setup wizard/session", scopable: false },
+  { name: "onboarding:module-checklists:view", resource: "onboarding:module-checklists", action: "view", description: "View module setup checklists", scopable: false },
+  { name: "onboarding:module-checklists:manage", resource: "onboarding:module-checklists", action: "manage", description: "Complete, skip, and dismiss module setup checklist items", scopable: false },
+  { name: "onboarding:tours:view", resource: "onboarding:tours", action: "view", description: "View and progress guided tours", scopable: false },
+  { name: "onboarding:tours:manage", resource: "onboarding:tours", action: "manage", description: "Manage guided tour definitions", scopable: false },
+  { name: "hr:onboarding:plans:manage", resource: "hr:onboarding:plans", action: "manage", description: "Create and launch employee onboarding plans", scopable: false },
+  { name: "hr:onboarding:tasks:view", resource: "hr:onboarding:tasks", action: "view", description: "View employee onboarding tasks", scopable: false },
+  { name: "hr:onboarding:tasks:complete", resource: "hr:onboarding:tasks", action: "complete", description: "Complete own or assigned employee onboarding tasks", scopable: false },
+];
+
+// Payment provider setup permissions (12_Payment_Integration_Setup_Page.md). Not yet
+// enforced by any route until the payment-provider module lands, but registered now
+// alongside the rest of the onboarding permission surface for a single source of truth.
+const PAYMENTS_PERMISSIONS: Permission[] = [
+  { name: "payments:providers:view", resource: "payments:providers", action: "view", description: "View configured payment providers and readiness", scopable: false },
+  { name: "payments:providers:manage", resource: "payments:providers", action: "manage", description: "Connect, configure, and disable payment providers", scopable: false },
+  { name: "payments:credentials:manage", resource: "payments:credentials", action: "manage", description: "Add, rotate, and disconnect provider credentials", scopable: false },
+  { name: "payments:webhooks:view", resource: "payments:webhooks", action: "view", description: "View webhook health and event history", scopable: false },
+  { name: "payments:webhooks:manage", resource: "payments:webhooks", action: "manage", description: "Generate, verify, and retry payment webhooks", scopable: false },
+  { name: "payments:test:run", resource: "payments:test", action: "run", description: "Run test transactions against a payment provider", scopable: false },
+  { name: "payments:live:activate", resource: "payments:live", action: "activate", description: "Activate live payment processing", scopable: false },
+  { name: "payments:manual-methods:manage", resource: "payments:manual-methods", action: "manage", description: "Configure manual/offline payment methods", scopable: false },
+  { name: "payments:audit:view", resource: "payments:audit", action: "view", description: "View payment provider audit log", scopable: false },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -306,6 +332,8 @@ export const PERMISSIONS: Permission[] = [
   ...API_TOKEN_PERMISSIONS,
   ...BILLING_PERMISSIONS,
   ...WORKFLOW_PERMISSIONS,
+  ...ONBOARDING_PERMISSIONS,
+  ...PAYMENTS_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));
@@ -329,6 +357,10 @@ const EMPLOYEE_SELF_SERVICE = [
   "settings:api-tokens:write",
   "calendar:read",
   "calendar:write",
+  "onboarding:module-checklists:view",
+  "onboarding:tours:view",
+  "hr:onboarding:tasks:view",
+  "hr:onboarding:tasks:complete",
 ];
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);
@@ -391,6 +423,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:handbook:manage",
     "hr:integrations:manage",
     "hr:onboarding:manage",
+    "hr:onboarding:plans:manage",
+    "onboarding:module-checklists:manage",
+    "onboarding:org:manage",
     "hr:alumni:read",
     "hr:analytics:read",
     "hr:headcount:read",

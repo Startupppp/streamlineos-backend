@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { orgBusinessUnits, orgBranches, orgDepartments, orgTeams, organizations } from "../../db/schema";
+import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "it-services": ["Engineering", "Product", "Operations", "HR"],
@@ -31,12 +32,19 @@ function teamCode(deptName: string): string {
 
 @Injectable()
 export class WorkspaceOnboardingService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly checklists: ModuleChecklistService,
+  ) {}
 
   async generateWorkspace(
     orgId: string,
     industry: string,
+    enabledModules?: string[],
   ): Promise<{ businessUnits: number; branches: number; departments: number; teams: number }> {
+    if (enabledModules?.length) {
+      await this.checklists.ensureChecklistsForModules(orgId, enabledModules);
+    }
     const slug = normalizeIndustrySlug(industry);
     const deptNames = INDUSTRY_TEMPLATES[slug];
     if (!deptNames) {

@@ -38,11 +38,114 @@ import {
   type PersonalDetailsInput,
   type UpdateTaskInput,
 } from "./dto/onboarding.schemas";
+import { ModuleRecommendationService } from "../onboarding-flow/module-recommendation.service";
+import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
+import { GuidedTourService } from "../onboarding-flow/guided-tour.service";
+import {
+  checklistItemSkipSchema,
+  moduleRecommendationInputSchema,
+  tourProgressSchema,
+  type ChecklistItemSkipInput,
+  type ModuleRecommendationInput,
+  type TourProgressInput,
+} from "../onboarding-flow/dto/onboarding-flow.schemas";
 
 @Controller("onboarding")
 @UseGuards(JwtAuthGuard)
 export class OnboardingController {
-  constructor(private readonly onboarding: OnboardingService) {}
+  constructor(
+    private readonly onboarding: OnboardingService,
+    private readonly moduleRecommendations: ModuleRecommendationService,
+    private readonly checklists: ModuleChecklistService,
+    private readonly tours: GuidedTourService,
+  ) {}
+
+  // NOTE: every static route below must stay ABOVE `getUserTasks` (`GET /onboarding/:userId`,
+  // near the bottom of this class) — it's a catch-all that would otherwise shadow these paths.
+
+  @Post("module-recommendations")
+  @HttpCode(200)
+  getModuleRecommendations(
+    @Body(new ZodValidationPipe(moduleRecommendationInputSchema)) body: ModuleRecommendationInput,
+  ) {
+    return this.moduleRecommendations.recommend(body);
+  }
+
+  @Get("module-checklists")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:view")
+  listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
+    return this.checklists.listChecklists(u.orgId, u.enabledModules);
+  }
+
+  @Get("module-checklists/:moduleKey")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:view")
+  getModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+    return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
+  }
+
+  @Post("module-checklists/:moduleKey/items/:itemKey/complete")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:manage")
+  completeChecklistItem(
+    @Param("moduleKey") moduleKey: string,
+    @Param("itemKey") itemKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.checklists.completeItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules);
+  }
+
+  @Post("module-checklists/:moduleKey/items/:itemKey/skip")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:manage")
+  skipChecklistItem(
+    @Param("moduleKey") moduleKey: string,
+    @Param("itemKey") itemKey: string,
+    @Body(new ZodValidationPipe(checklistItemSkipSchema)) body: ChecklistItemSkipInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.checklists.skipItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules, body.reason);
+  }
+
+  @Post("module-checklists/:moduleKey/dismiss")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:manage")
+  dismissModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+    return this.checklists.dismissChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
+  }
+
+  @Get("tours")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:tours:view")
+  listTours(@CurrentUser() u: CurrentUserContext) {
+    return this.tours.listToursForUser(u.orgId, u.userId, u.role);
+  }
+
+  @Post("tours/:tourKey/progress")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:tours:view")
+  saveTourProgress(
+    @Param("tourKey") tourKey: string,
+    @Body(new ZodValidationPipe(tourProgressSchema)) body: TourProgressInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tours.saveProgress(u.orgId, u.userId, tourKey, body.currentStep);
+  }
+
+  @Post("tours/:tourKey/complete")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:tours:view")
+  completeTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+    return this.tours.completeTour(u.orgId, u.userId, tourKey);
+  }
+
+  @Post("tours/:tourKey/dismiss")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:tours:view")
+  dismissTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+    return this.tours.dismissTour(u.orgId, u.userId, tourKey);
+  }
 
   @Get()
   @UseGuards(PermissionGuard)

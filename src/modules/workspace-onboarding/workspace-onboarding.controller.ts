@@ -21,7 +21,7 @@ export class WorkspaceOnboardingController {
     @Body(new ZodValidationPipe(generateSchema)) body: GenerateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.generateWorkspace(u.orgId, body.industry);
+    return this.service.generateWorkspace(u.orgId, body.industry, body.enabledModules);
   }
 
   @Post("complete")
