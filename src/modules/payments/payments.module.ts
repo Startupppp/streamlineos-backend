@@ -8,6 +8,7 @@ import { RazorpayAdapter } from "./adapters/razorpay.adapter";
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
 import { PaymentReadinessService } from "./payment-readiness.service";
+import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 
 @Module({
   controllers: [PaymentsController, PaymentWebhooksPublicController],
@@ -19,6 +20,7 @@ import { PaymentReadinessService } from "./payment-readiness.service";
     PaymentTestTransactionService,
     PaymentWebhookHealthService,
     PaymentReadinessService,
+    PaymentManualMethodsService,
   ],
   exports: [PaymentProviderSetupService, PaymentAuditService, PaymentProviderAdapterRegistry],
 })

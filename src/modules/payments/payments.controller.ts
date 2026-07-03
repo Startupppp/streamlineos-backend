@@ -21,6 +21,8 @@ import { PaymentProviderSetupService, type ActorContext } from "./payment-provid
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
 import { PaymentReadinessService } from "./payment-readiness.service";
+import { PaymentAuditService } from "./payment-audit.service";
+import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 import {
   createProviderSchema,
   disconnectCredentialsSchema,
@@ -31,6 +33,12 @@ import {
   type SaveCredentialsInput,
   type UpdateProviderInput,
 } from "./dto/payments.schemas";
+import {
+  createManualMethodSchema,
+  updateManualMethodSchema,
+  type CreateManualMethodInput,
+  type UpdateManualMethodInput,
+} from "./dto/manual-methods.schemas";
 import {
   createTestTransactionSchema,
   verifyTestTransactionSchema,
@@ -52,6 +60,8 @@ export class PaymentsController {
     private readonly testTransactions: PaymentTestTransactionService,
     private readonly webhooks: PaymentWebhookHealthService,
     private readonly readiness: PaymentReadinessService,
+    private readonly audit: PaymentAuditService,
+    private readonly manualMethods: PaymentManualMethodsService,
   ) {}
 
   private apiBaseUrl(req: Request): string {
@@ -260,5 +270,63 @@ export class PaymentsController {
     @Req() req: Request,
   ) {
     return this.readiness.activateLive(u.orgId, providerKey, this.actorContext(u, req));
+  }
+
+  @Get("providers/:providerKey/audit")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:audit:view")
+  async listProviderAudit(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
+    const provider = await this.providers.getProvider(u.orgId, providerKey);
+    return this.audit.listForProvider(u.orgId, provider.id);
+  }
+
+  @Get("audit")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:audit:view")
+  listAllAudit(@CurrentUser() u: CurrentUserContext) {
+    return this.audit.listForOrg(u.orgId);
+  }
+
+  @Get("manual-methods")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:providers:view")
+  listManualMethods(@CurrentUser() u: CurrentUserContext) {
+    return this.manualMethods.list(u.orgId);
+  }
+
+  @Post("manual-methods")
+  @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:manual-methods:manage")
+  createManualMethod(
+    @Body(new ZodValidationPipe(createManualMethodSchema)) body: CreateManualMethodInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.manualMethods.create(u.orgId, body, this.actorContext(u, req));
+  }
+
+  @Patch("manual-methods/:id")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:manual-methods:manage")
+  updateManualMethod(
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateManualMethodSchema)) body: UpdateManualMethodInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.manualMethods.update(u.orgId, id, body, this.actorContext(u, req));
+  }
+
+  @Post("manual-methods/:id/disable")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:manual-methods:manage")
+  disableManualMethod(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.manualMethods.disable(u.orgId, id, this.actorContext(u, req));
   }
 }
