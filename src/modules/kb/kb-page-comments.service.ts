@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { kbPageComments, kbPages } from "../../db/schema";
+import { kbPageComments, kbPages, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-page-comments.schemas";
@@ -11,13 +11,21 @@ type CommentRow = typeof kbPageComments.$inferSelect;
 export class KbPageCommentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, pageId: number): Promise<CommentRow[]> {
+  async list(orgId: string, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
     await this.assertPageExists(orgId, pageId);
-    return this.db
-      .select()
+    const rows = await this.db
+      .select({
+        comment: kbPageComments,
+        authorName: users.name,
+        authorEmail: users.email,
+      })
       .from(kbPageComments)
+      .leftJoin(users, eq(users.id, kbPageComments.authorId))
       .where(and(eq(kbPageComments.orgId, orgId), eq(kbPageComments.pageId, pageId)))
       .orderBy(asc(kbPageComments.createdAt));
+    return rows.map(function toCommentWithAuthor(row) {
+      return { ...row.comment, authorName: row.authorName ?? row.authorEmail };
+    });
   }
 
   async create(orgId: string, pageId: number, authorId: string, input: CreatePageCommentInput): Promise<CommentRow> {
