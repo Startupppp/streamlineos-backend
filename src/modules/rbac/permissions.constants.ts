@@ -815,6 +815,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "reports:generate",
     "reports:schedule",
     "audit-log:read",
+    // Per 12_Payment_Integration_Setup_Page.md: accountants view provider status, webhooks,
+    // and audit; they cannot manage credentials, enable/disable a provider, or activate live.
+    "payments:providers:view",
+    "payments:webhooks:view",
+    "payments:audit:view",
   ],
 };
 
