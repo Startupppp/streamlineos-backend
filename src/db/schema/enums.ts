@@ -169,3 +169,41 @@ export const revenueEventTypeEnum = pgEnum("revenue_event_type", [
 export const enterpriseQuoteStatusEnum = pgEnum("enterprise_quote_status", [
   "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"
 ]);
+
+// Onboarding Flow (org setup / module checklists / guided tours) — see onboarding.ts.
+// Named "onboarding_flow_*" to avoid colliding with the pre-existing HR employee
+// onboarding tables (onboarding_templates, onboarding_template_steps, onboarding_tasks,
+// onboarding_steps) which remain in hr/offboarding.ts and auth.ts unchanged.
+export const onboardingFlowTypeEnum = pgEnum("onboarding_flow_type", [
+  "org_setup",
+  "member_setup",
+  "employee_onboarding",
+  "module_setup",
+  "guided_tour",
+  "payment_setup",
+]);
+
+export const onboardingFlowSessionStatusEnum = pgEnum("onboarding_flow_session_status", [
+  "not_started", "in_progress", "completed", "skipped", "abandoned",
+]);
+
+export const onboardingFlowStepStatusEnum = pgEnum("onboarding_flow_step_status", [
+  "todo", "in_progress", "done", "skipped", "blocked",
+]);
+
+export const onboardingFlowTaskStatusEnum = pgEnum("onboarding_flow_task_status", [
+  "todo", "in_progress", "done", "skipped",
+]);
+
+export const onboardingFlowTaskCategoryEnum = pgEnum("onboarding_flow_task_category", [
+  "profile", "document", "training", "system_access", "equipment",
+  "policy", "module_setup", "guided_action", "payment_setup",
+]);
+
+export const moduleSetupChecklistStatusEnum = pgEnum("module_setup_checklist_status", [
+  "not_started", "in_progress", "completed",
+]);
+
+export const guidedTourProgressStatusEnum = pgEnum("guided_tour_progress_status", [
+  "not_started", "in_progress", "completed", "dismissed",
+]);
