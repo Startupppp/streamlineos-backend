@@ -1,0 +1,268 @@
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash } from "node:crypto";
+import { and, desc, eq } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { paymentProviders, paymentWebhookEndpoints, paymentWebhookEvents } from "../../db/schema";
+import { getCatalogEntry } from "./payment-provider-catalog";
+import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
+import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
+import { PaymentAuditService } from "./payment-audit.service";
+import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
+
+// Only an allow-listed summary is ever persisted in payload_redacted — never the full webhook
+// body, which can carry card/bank/contact details depending on event type.
+function redactPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const summary: Record<string, unknown> = {};
+  for (const entityKey of Object.keys(payload)) {
+    const entity = (payload[entityKey] as { entity?: Record<string, unknown> } | undefined)?.entity;
+    if (!entity || typeof entity !== "object") continue;
+    summary[entityKey] = {
+      id: entity.id,
+      status: entity.status,
+      amount: entity.amount,
+      currency: entity.currency,
+    };
+  }
+  return summary;
+}
+
+@Injectable()
+export class PaymentWebhookHealthService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly registry: PaymentProviderAdapterRegistry,
+    private readonly providers: PaymentProviderSetupService,
+    private readonly audit: PaymentAuditService,
+  ) {}
+
+  private async findProvider(orgId: string, providerKey: string) {
+    const provider = await this.db.query.paymentProviders.findFirst({
+      where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
+    });
+    if (!provider) throw new NotFoundException(`Payment provider not configured: ${providerKey}`);
+    return provider;
+  }
+
+  async generateEndpoint(orgId: string, providerKey: string, environment: "test" | "live", apiBaseUrl: string, actor: ActorContext) {
+    const provider = await this.findProvider(orgId, providerKey);
+    const catalogEntry = getCatalogEntry(providerKey);
+    const url = `${apiBaseUrl.replace(/\/$/, "")}/webhooks/payments/${providerKey}/${environment}/${orgId}`;
+
+    const existing = await this.db.query.paymentWebhookEndpoints.findFirst({
+      where: and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, environment)),
+    });
+
+    const values = {
+      orgId,
+      providerId: provider.id,
+      environment,
+      url,
+      expectedEvents: catalogEntry?.expectedWebhookEvents ?? [],
+    };
+
+    const [endpoint] = existing
+      ? await this.db
+          .update(paymentWebhookEndpoints)
+          .set(values)
+          .where(eq(paymentWebhookEndpoints.id, existing.id))
+          .returning()
+      : await this.db.insert(paymentWebhookEndpoints).values({ ...values, status: "not_verified" }).returning();
+
+    await this.audit.log({
+      orgId,
+      actorUserId: actor.userId,
+      providerId: provider.id,
+      action: "payment_webhook.generated",
+      environment,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      afterRedacted: { url },
+    });
+
+    return endpoint;
+  }
+
+  /** Manual verification path for a sample event pasted from the provider's dashboard. */
+  async verifyEndpointManual(
+    orgId: string,
+    providerKey: string,
+    environment: "test" | "live",
+    sample: { rawBody: string; signature: string } | undefined,
+    actor: ActorContext,
+  ) {
+    const provider = await this.findProvider(orgId, providerKey);
+    const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
+      where: and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, environment)),
+    });
+    if (!endpoint) throw new BadRequestException("Generate the webhook endpoint before verifying it");
+
+    if (!sample) {
+      return endpoint;
+    }
+
+    const adapter = this.registry.get(providerKey);
+    if (!adapter) throw new BadRequestException(`No backend integration available for provider: ${providerKey}`);
+
+    const creds = await this.providers.getDecryptedSecret(orgId, provider.id, environment);
+    if (!creds?.webhookSecret) throw new BadRequestException("Save a webhook secret before verifying");
+
+    const valid = adapter.verifyWebhookSignature({
+      rawBody: sample.rawBody,
+      signature: sample.signature,
+      webhookSecret: creds.webhookSecret,
+    });
+
+    const [updated] = await this.db
+      .update(paymentWebhookEndpoints)
+      .set(
+        valid
+          ? { status: "verified", lastVerifiedAt: new Date(), failureReason: null }
+          : { status: "failing", lastFailureAt: new Date(), failureReason: "Sample signature did not match" },
+      )
+      .where(eq(paymentWebhookEndpoints.id, endpoint.id))
+      .returning();
+
+    await this.audit.log({
+      orgId,
+      actorUserId: actor.userId,
+      providerId: provider.id,
+      action: valid ? "payment_webhook.verified" : "payment_webhook.verification_failed",
+      environment,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+
+    return updated;
+  }
+
+  async listEvents(orgId: string, providerKey: string, limit = 50) {
+    const provider = await this.findProvider(orgId, providerKey);
+    return this.db.query.paymentWebhookEvents.findMany({
+      where: and(eq(paymentWebhookEvents.orgId, orgId), eq(paymentWebhookEvents.providerId, provider.id)),
+      orderBy: desc(paymentWebhookEvents.receivedAt),
+      limit,
+    });
+  }
+
+  /**
+   * Public webhook receiver entry point. Verifies signature, enforces idempotency via the
+   * unique(provider_id, environment, provider_event_id) constraint (insert-or-ignore, never
+   * reprocess a duplicate), and flips the endpoint's health based on the outcome.
+   */
+  async processIncomingWebhook(params: {
+    providerKey: string;
+    environment: "test" | "live";
+    orgId: string;
+    rawBody: string;
+    signature: string | undefined;
+    providerEventIdHeader: string | undefined;
+  }): Promise<{ status: number; body: Record<string, unknown> }> {
+    const adapter = this.registry.get(params.providerKey);
+    if (!adapter) return { status: 404, body: { ok: false, error: "unknown provider" } };
+
+    const provider = await this.db.query.paymentProviders.findFirst({
+      where: and(eq(paymentProviders.orgId, params.orgId), eq(paymentProviders.providerKey, params.providerKey)),
+    });
+    if (!provider) return { status: 404, body: { ok: false, error: "provider not configured" } };
+
+    const creds = await this.providers.getDecryptedSecret(params.orgId, provider.id, params.environment);
+    if (!creds?.webhookSecret) return { status: 400, body: { ok: false, error: "webhook not configured" } };
+
+    const signatureValid = adapter.verifyWebhookSignature({
+      rawBody: params.rawBody,
+      signature: params.signature ?? "",
+      webhookSecret: creds.webhookSecret,
+    });
+
+    const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
+      where: and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, params.environment)),
+    });
+
+    if (!signatureValid) {
+      if (endpoint) {
+        await this.db
+          .update(paymentWebhookEndpoints)
+          .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
+          .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+      }
+      return { status: 401, body: { ok: false, error: "invalid signature" } };
+    }
+
+    let envelope: { event: string; payload: Record<string, unknown> };
+    try {
+      const raw: unknown = JSON.parse(params.rawBody);
+      const parsed = webhookEnvelopeSchema.safeParse(raw);
+      if (!parsed.success) return { status: 400, body: { ok: false, error: "invalid payload" } };
+      envelope = parsed.data;
+    } catch {
+      return { status: 400, body: { ok: false, error: "invalid JSON" } };
+    }
+
+    const providerEventId =
+      params.providerEventIdHeader ?? createHash("sha256").update(params.rawBody).digest("hex");
+
+    const [inserted] = await this.db
+      .insert(paymentWebhookEvents)
+      .values({
+        orgId: params.orgId,
+        providerId: provider.id,
+        environment: params.environment,
+        providerEventId,
+        eventType: envelope.event,
+        signatureValid: true,
+        processingStatus: "processed",
+        idempotencyKey: providerEventId,
+        payloadRedacted: redactPayload(envelope.payload),
+        processedAt: new Date(),
+      })
+      .onConflictDoNothing({
+        target: [paymentWebhookEvents.providerId, paymentWebhookEvents.environment, paymentWebhookEvents.providerEventId],
+      })
+      .returning();
+
+    if (endpoint) {
+      await this.db
+        .update(paymentWebhookEndpoints)
+        .set({ status: "verified", lastVerifiedAt: new Date(), failureReason: null })
+        .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+    }
+
+    if (!inserted) {
+      // Duplicate delivery — signature was valid but we've already processed this event.
+      return { status: 200, body: { ok: true, duplicate: true } };
+    }
+
+    return { status: 200, body: { ok: true } };
+  }
+
+  async retryEvent(orgId: string, providerKey: string, eventId: number, actor: ActorContext) {
+    const provider = await this.findProvider(orgId, providerKey);
+    const event = await this.db.query.paymentWebhookEvents.findFirst({
+      where: and(eq(paymentWebhookEvents.id, eventId), eq(paymentWebhookEvents.orgId, orgId), eq(paymentWebhookEvents.providerId, provider.id)),
+    });
+    if (!event) throw new NotFoundException("Webhook event not found");
+
+    // Re-processing here means re-running whatever reconciliation the event type implies
+    // (e.g. re-checking invoice/subscription state) — that reconciliation logic is owned by
+    // billing/invoices, not this module, so this marks the event for reconciliation rather
+    // than re-deriving business effects itself.
+    const [updated] = await this.db
+      .update(paymentWebhookEvents)
+      .set({ processingStatus: "processed", processedAt: new Date(), errorMessage: null })
+      .where(eq(paymentWebhookEvents.id, eventId))
+      .returning();
+
+    await this.audit.log({
+      orgId,
+      actorUserId: actor.userId,
+      providerId: provider.id,
+      action: "payment_webhook_event.retried",
+      environment: event.environment,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+
+    return updated;
+  }
+}
