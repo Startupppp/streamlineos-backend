@@ -9,8 +9,12 @@ import { PaymentTestTransactionService } from "./payment-test-transaction.servic
 import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
 import { PaymentReadinessService } from "./payment-readiness.service";
 import { PaymentManualMethodsService } from "./payment-manual-methods.service";
+import { PaymentAnalyticsService } from "./payment-analytics.service";
+import { OnboardingFlowModule } from "../onboarding-flow/onboarding-flow.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [OnboardingFlowModule, NotificationsModule],
   controllers: [PaymentsController, PaymentWebhooksPublicController],
   providers: [
     PaymentProviderSetupService,
@@ -21,6 +25,7 @@ import { PaymentManualMethodsService } from "./payment-manual-methods.service";
     PaymentWebhookHealthService,
     PaymentReadinessService,
     PaymentManualMethodsService,
+    PaymentAnalyticsService,
   ],
   exports: [PaymentProviderSetupService, PaymentAuditService, PaymentProviderAdapterRegistry],
 })

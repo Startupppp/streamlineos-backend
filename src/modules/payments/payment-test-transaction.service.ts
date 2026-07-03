@@ -6,6 +6,7 @@ import { paymentProviders, paymentTestTransactions } from "../../db/schema";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
 import { PaymentAuditService } from "./payment-audit.service";
+import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { CreateTestTransactionInput, VerifyTestTransactionInput } from "./dto/test-transaction.schemas";
 
 @Injectable()
@@ -15,6 +16,7 @@ export class PaymentTestTransactionService {
     private readonly registry: PaymentProviderAdapterRegistry,
     private readonly providers: PaymentProviderSetupService,
     private readonly audit: PaymentAuditService,
+    private readonly paymentAnalytics: PaymentAnalyticsService,
   ) {}
 
   private async findProvider(orgId: string, providerKey: string) {
@@ -76,6 +78,7 @@ export class PaymentTestTransactionService {
         userAgent: actor.userAgent,
         afterRedacted: { amount: input.amount, currency: input.currency, providerOrderId: order.providerOrderId },
       });
+      this.paymentAnalytics.track(orgId, actor.userId, "payment_test_payment_started", { metadata: { providerKey } });
 
       return { ...updated, keyId: creds.keyId };
     } catch (err) {
@@ -129,6 +132,12 @@ export class PaymentTestTransactionService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
+    this.paymentAnalytics.track(
+      orgId,
+      actor.userId,
+      signatureValid ? "payment_test_payment_succeeded" : "payment_test_payment_failed",
+      { metadata: { providerKey } },
+    );
 
     return updated;
   }

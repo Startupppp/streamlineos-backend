@@ -8,6 +8,7 @@ import { getCatalogEntry } from "./payment-provider-catalog";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
 import { PaymentAuditService } from "./payment-audit.service";
+import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
 
 // Only an allow-listed summary is ever persisted in payload_redacted — never the full webhook
@@ -34,6 +35,7 @@ export class PaymentWebhookHealthService {
     private readonly registry: PaymentProviderAdapterRegistry,
     private readonly providers: PaymentProviderSetupService,
     private readonly audit: PaymentAuditService,
+    private readonly paymentAnalytics: PaymentAnalyticsService,
   ) {}
 
   private async findProvider(orgId: string, providerKey: string) {
@@ -79,6 +81,7 @@ export class PaymentWebhookHealthService {
       userAgent: actor.userAgent,
       afterRedacted: { url },
     });
+    this.paymentAnalytics.track(orgId, actor.userId, "payment_webhook_generated", { metadata: { providerKey, environment } });
 
     return endpoint;
   }
@@ -132,6 +135,9 @@ export class PaymentWebhookHealthService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
+    if (valid) {
+      this.paymentAnalytics.track(orgId, actor.userId, "payment_webhook_verified", { metadata: { providerKey, environment } });
+    }
 
     return updated;
   }
@@ -181,10 +187,21 @@ export class PaymentWebhookHealthService {
 
     if (!signatureValid) {
       if (endpoint) {
+        const wasHealthy = endpoint.status !== "failing";
         await this.db
           .update(paymentWebhookEndpoints)
           .set({ status: "failing", lastFailureAt: new Date(), failureReason: "Invalid signature" })
           .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+        // Notify only on the transition to failing, not on every request, to avoid flooding
+        // the owner if a bot repeatedly probes the endpoint with a bad signature.
+        if (wasHealthy) {
+          await this.paymentAnalytics.notifyOwner(params.orgId, {
+            title: "Payment webhook is failing",
+            message: `${params.providerKey} (${params.environment}) webhook signature verification is failing. Check the webhook secret in Settings > Payments.`,
+            type: "WARNING",
+            priority: "HIGH",
+          });
+        }
       }
       return { status: 401, body: { ok: false, error: "invalid signature" } };
     }

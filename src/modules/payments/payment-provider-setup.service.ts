@@ -7,6 +7,7 @@ import { decryptSecret, encryptSecret, maskSecretHint } from "../../common/secur
 import { PAYMENT_PROVIDER_CATALOG, getCatalogEntry } from "./payment-provider-catalog";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning } from "./payment-provider-adapter.interface";
 import { PaymentAuditService } from "./payment-audit.service";
+import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { SaveCredentialsInput, UpdateProviderInput } from "./dto/payments.schemas";
 
 export interface ActorContext {
@@ -22,6 +23,7 @@ export class PaymentProviderSetupService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: PaymentProviderAdapterRegistry,
     private readonly audit: PaymentAuditService,
+    private readonly paymentAnalytics: PaymentAnalyticsService,
   ) {}
 
   getCatalog() {
@@ -102,6 +104,8 @@ export class PaymentProviderSetupService {
       userAgent: actor.userAgent,
       afterRedacted: { providerKey, status: created.status },
     });
+    this.paymentAnalytics.track(orgId, actor.userId, "payment_setup_started", { metadata: { providerKey } });
+    this.paymentAnalytics.track(orgId, actor.userId, "payment_provider_selected", { metadata: { providerKey } });
 
     return created;
   }
@@ -207,6 +211,9 @@ export class PaymentProviderSetupService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
       afterRedacted: { maskedKeyHint: saved.maskedKeyHint, environment: input.environment },
+    });
+    this.paymentAnalytics.track(orgId, actor.userId, "payment_credentials_saved", {
+      metadata: { providerKey, environment: input.environment },
     });
 
     return { credential: this.toPublicCredential(saved), warning };

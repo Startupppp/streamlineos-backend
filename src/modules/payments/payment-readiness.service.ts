@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { PaymentAuditService } from "./payment-audit.service";
+import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { ActorContext } from "./payment-provider-setup.service";
 
 export interface ReadinessResult {
@@ -26,6 +27,7 @@ export class PaymentReadinessService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: PaymentProviderAdapterRegistry,
     private readonly audit: PaymentAuditService,
+    private readonly paymentAnalytics: PaymentAnalyticsService,
   ) {}
 
   private async findProvider(orgId: string, providerKey: string) {
@@ -118,6 +120,15 @@ export class PaymentReadinessService {
         userAgent: actor.userAgent,
         afterRedacted: { blockers: readiness.blockers },
       });
+      this.paymentAnalytics.track(orgId, actor.userId, "payment_live_activation_blocked", {
+        metadata: { providerKey, blockers: readiness.blockers },
+      });
+      await this.paymentAnalytics.notifyOwner(orgId, {
+        title: "Live payment activation blocked",
+        message: `${providerKey} live activation was blocked: ${readiness.blockers[0] ?? "critical checks incomplete"}`,
+        type: "WARNING",
+        priority: "HIGH",
+      });
       throw new BadRequestException({
         message: "Cannot activate live payments — critical checks are incomplete.",
         blockers: readiness.blockers,
@@ -138,6 +149,13 @@ export class PaymentReadinessService {
       environment: "live",
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
+    });
+    this.paymentAnalytics.track(orgId, actor.userId, "payment_live_activated", { metadata: { providerKey } });
+    await this.paymentAnalytics.notifyOwner(orgId, {
+      title: "Live payments activated",
+      message: `${providerKey} is now live and can accept real customer payments.`,
+      type: "SUCCESS",
+      priority: "NORMAL",
     });
 
     return updated;
