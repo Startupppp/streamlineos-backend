@@ -18,6 +18,8 @@ const TIERS: Record<string, Tier> = {
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
+  "whiteboard:public-view": { limit: 60, windowSecs: 60 },
+  "whiteboard:public-edit": { limit: 30, windowSecs: 60 },
   "invite:validate": { limit: 30, windowSecs: 60 },
   "invite:accept": { limit: 10, windowSecs: 60 },
 };

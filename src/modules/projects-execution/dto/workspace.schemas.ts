@@ -57,25 +57,54 @@ export const createWhiteboardSchema = z.object({
   name: z.string().min(1).max(200),
 });
 
-const whiteboardElementSchema = z.object({
-  id: z.string().min(1),
-  type: z.enum(["note", "rect", "ellipse", "text"]),
-  x: z.number(),
-  y: z.number(),
-  w: z.number(),
-  h: z.number(),
-  text: z.string(),
-  color: z.string(),
+export const excalidrawSceneSchema = z.object({
+  type: z.string().max(50).optional(),
+  version: z.number().int().optional(),
+  source: z.string().max(500).optional(),
+  elements: z.array(z.record(z.string(), z.unknown())).max(5000),
+  appState: z.record(z.string(), z.unknown()).optional(),
+  files: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const updateWhiteboardSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
-    data: z.array(whiteboardElementSchema).max(2000).optional(),
+    data: excalidrawSceneSchema.optional(),
   })
   .refine((value) => value.name !== undefined || value.data !== undefined, {
     message: "Provide name or data to update",
   });
+
+export const updateWhiteboardSharingSchema = z
+  .object({
+    visibility: z.enum(["project", "private", "public"]).optional(),
+    publicAccess: z.enum(["viewer", "editor"]).optional(),
+    linkExpiresAt: z.string().datetime().nullable().optional(),
+    allowExport: z.boolean().optional(),
+  })
+  .refine(
+    (v) =>
+      v.visibility !== undefined ||
+      v.publicAccess !== undefined ||
+      v.linkExpiresAt !== undefined ||
+      v.allowExport !== undefined,
+    { message: "Provide at least one field to update" },
+  );
+
+export const setWhiteboardSharesSchema = z.object({
+  shares: z
+    .array(
+      z.object({
+        userId: z.string().min(1),
+        role: z.enum(["viewer", "editor"]),
+      }),
+    )
+    .max(100),
+});
+
+export const publicWhiteboardUpdateSchema = z.object({
+  data: excalidrawSceneSchema,
+});
 
 export const createPageSchema = z.object({
   title: z.string().min(1).max(200),
@@ -102,6 +131,10 @@ export type IntakeListQuery = z.infer<typeof intakeListQuerySchema>;
 export type CreateViewInput = z.infer<typeof createViewSchema>;
 export type UpdateViewInput = z.infer<typeof updateViewSchema>;
 export type CreateWhiteboardInput = z.infer<typeof createWhiteboardSchema>;
+export type ExcalidrawSceneInput = z.infer<typeof excalidrawSceneSchema>;
 export type UpdateWhiteboardInput = z.infer<typeof updateWhiteboardSchema>;
+export type UpdateWhiteboardSharingInput = z.infer<typeof updateWhiteboardSharingSchema>;
+export type SetWhiteboardSharesInput = z.infer<typeof setWhiteboardSharesSchema>;
+export type PublicWhiteboardUpdateInput = z.infer<typeof publicWhiteboardUpdateSchema>;
 export type CreatePageInput = z.infer<typeof createPageSchema>;
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;

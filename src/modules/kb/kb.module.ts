@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AiModule } from "../ai/ai.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
@@ -16,6 +17,10 @@ import { KbFromTicketService } from "./kb-from-ticket.service";
 import { KbTagsService } from "./kb-tags.service";
 import { KbTranslationsService } from "./kb-translations.service";
 import { KbCommentsService } from "./kb-comments.service";
+import { KbPagesService } from "./kb-pages.service";
+import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageCommentsService } from "./kb-page-comments.service";
+import { KbPageTemplatesService } from "./kb-page-templates.service";
 import { KbSpacesController } from "./kb-spaces.controller";
 import { KbCategoriesController } from "./kb-categories.controller";
 import { KbArticlesController } from "./kb-articles.controller";
@@ -31,9 +36,12 @@ import { KbCommentsController } from "./kb-comments.controller";
 import { KbVerificationController } from "./kb-verification.controller";
 import { KbVerificationService } from "./kb-verification.service";
 import { KbWidgetController } from "./kb-widget.controller";
+import { KbPagesController } from "./kb-pages.controller";
+import { KbPageCommentsController } from "./kb-page-comments.controller";
+import { KbPageTemplatesController } from "./kb-page-templates.controller";
 
 @Module({
-  imports: [AiModule],
+  imports: [AiModule, NotificationsModule],
   controllers: [
     KbSpacesController,
     KbCategoriesController,
@@ -49,6 +57,9 @@ import { KbWidgetController } from "./kb-widget.controller";
     KbCommentsController,
     KbVerificationController,
     KbWidgetController,
+    KbPagesController,
+    KbPageCommentsController,
+    KbPageTemplatesController,
   ],
   providers: [
     KbCreditsService,
@@ -68,6 +79,10 @@ import { KbWidgetController } from "./kb-widget.controller";
     KbTranslationsService,
     KbCommentsService,
     KbVerificationService,
+    KbPagesService,
+    KbPageTreeService,
+    KbPageCommentsService,
+    KbPageTemplatesService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })

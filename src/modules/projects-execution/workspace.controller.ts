@@ -22,8 +22,8 @@ import {
   MilestonesService,
   PagesService,
   ViewsService,
-  WhiteboardsService,
 } from "./workspace.service";
+import { WhiteboardsService } from "./whiteboards.service";
 import {
   createIntakeSchema,
   createMilestoneSchema,
@@ -175,6 +175,7 @@ export class ViewsController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/whiteboards")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class WhiteboardsController {
@@ -185,18 +186,18 @@ export class WhiteboardsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.listWhiteboards(u.orgId, projectId);
+    return this.whiteboards.listWhiteboards(u, projectId);
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   createWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createWhiteboardSchema)) body: CreateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.createWhiteboard(u.orgId, u.userId, projectId, body);
+    return this.whiteboards.createWhiteboard(u, projectId, body);
   }
 
   @Get(":whiteboardId")
@@ -205,28 +206,28 @@ export class WhiteboardsController {
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.getWhiteboard(u.orgId, projectId, whiteboardId);
+    return this.whiteboards.getWhiteboard(u, projectId, whiteboardId);
   }
 
   @Patch(":whiteboardId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   updateWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @Body(new ZodValidationPipe(updateWhiteboardSchema)) body: UpdateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.updateWhiteboard(u.orgId, projectId, whiteboardId, body);
+    return this.whiteboards.updateWhiteboard(u, projectId, whiteboardId, body);
   }
 
   @Delete(":whiteboardId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   deleteWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.deleteWhiteboard(u.orgId, projectId, whiteboardId);
+    return this.whiteboards.deleteWhiteboard(u, projectId, whiteboardId);
   }
 }
 

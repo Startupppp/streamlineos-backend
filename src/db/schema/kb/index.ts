@@ -5,3 +5,5 @@ export * from "./translations";
 export * from "./tags";
 export * from "./events";
 export * from "./credits";
+export * from "./pages";
+export * from "./page-collab";

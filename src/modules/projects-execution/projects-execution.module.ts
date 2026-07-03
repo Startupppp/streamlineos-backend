@@ -23,8 +23,13 @@ import {
   MilestonesService,
   PagesService,
   ViewsService,
-  WhiteboardsService,
 } from "./workspace.service";
+import { WhiteboardsService } from "./whiteboards.service";
+import {
+  PublicWhiteboardLinksController,
+  WhiteboardSharingController,
+} from "./whiteboard-sharing.controller";
+import { WhiteboardSharingService } from "./whiteboard-sharing.service";
 import {
   BillingSummaryController,
   TicketTimeEntriesController,
@@ -42,6 +47,8 @@ import { TimesheetsService } from "./timesheets.service";
     IntakeController,
     ViewsController,
     WhiteboardsController,
+    WhiteboardSharingController,
+    PublicWhiteboardLinksController,
     PagesController,
     TimeEntriesController,
     BillingSummaryController,
@@ -56,6 +63,7 @@ import { TimesheetsService } from "./timesheets.service";
     IntakeService,
     ViewsService,
     WhiteboardsService,
+    WhiteboardSharingService,
     PagesService,
     TimesheetsService,
   ],

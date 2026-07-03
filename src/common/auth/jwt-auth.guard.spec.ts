@@ -20,7 +20,7 @@ describe("JwtAuthGuard", () => {
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ catch: jest.fn() }) }) }),
     query: { users: { findFirst: jest.fn() }, organizationMembers: { findFirst: jest.fn() }, organizations: { findFirst: jest.fn() } },
   };
-  const guard = new JwtAuthGuard(reflector, mockDb as unknown as import("../../db/drizzle.module").Db);
+  const guard = new JwtAuthGuard(reflector, mockDb as unknown as import("../../db/drizzle.module").Db, null);
 
   beforeEach(() => reflector.getAllAndOverride.mockReturnValue(false));
 

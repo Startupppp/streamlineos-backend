@@ -256,14 +256,24 @@ export class AuthService {
       }
     }
 
-    const mfaRequired = !!user.totpEnabled || !!(await (async () => {
-      if (!orgId) return false;
+    let orgSecuritySettings: {
+      mfaEnforced: boolean;
+      maxConcurrentSessions: number | null;
+      passwordExpiryDays: number | null;
+    } | null = null;
+    if (orgId) {
       const [org] = await this.db
-        .select({ mfaEnforced: organizations.mfaEnforced })
+        .select({
+          mfaEnforced: organizations.mfaEnforced,
+          maxConcurrentSessions: organizations.maxConcurrentSessions,
+          passwordExpiryDays: organizations.passwordExpiryDays,
+        })
         .from(organizations)
         .where(eq(organizations.id, orgId));
-      return org?.mfaEnforced ?? false;
-    })());
+      orgSecuritySettings = org ?? null;
+    }
+
+    const mfaRequired = !!user.totpEnabled || !!(orgSecuritySettings?.mfaEnforced ?? false);
 
     if (mfaRequired) {
       if (!input.totpCode) {
@@ -290,14 +300,8 @@ export class AuthService {
       expiresAt,
     });
 
-    if (orgId) {
-      const [org] = await this.db
-        .select({ maxConcurrentSessions: organizations.maxConcurrentSessions })
-        .from(organizations)
-        .where(eq(organizations.id, orgId));
-      if (org?.maxConcurrentSessions) {
-        await this.sessionService.enforceMaxSessions(user.id, org.maxConcurrentSessions, sessionId);
-      }
+    if (orgSecuritySettings?.maxConcurrentSessions) {
+      await this.sessionService.enforceMaxSessions(user.id, orgSecuritySettings.maxConcurrentSessions, sessionId);
     }
 
     await this.authTokens.logLoginEvent(user.id, orgId, "login.success", true, null, context);
@@ -312,13 +316,18 @@ export class AuthService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(user.id));
 
+    const baseline = user.passwordChangedAt ?? user.createdAt;
+    const passwordExpired =
+      !!orgSecuritySettings?.passwordExpiryDays &&
+      addDays(new Date(baseline), orgSecuritySettings.passwordExpiryDays) < new Date();
+
     return {
       userId: user.id,
       orgId,
       sessionId,
       deviceId: device.id,
       isNewDevice: !device.trusted,
-      forceChangePassword: user.isPasswordChangeRequired ?? false,
+      forceChangePassword: (user.isPasswordChangeRequired ?? false) || passwordExpired,
       ...(daysUntilExpiry !== undefined && { daysUntilExpiry }),
     };
   }
