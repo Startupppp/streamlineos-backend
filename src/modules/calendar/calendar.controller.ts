@@ -131,6 +131,7 @@ export class CalendarController {
   }
 
   @Get("export")
+  @RequirePermission("calendar:read")
   async exportEvents(
     @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
