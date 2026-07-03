@@ -318,6 +318,24 @@ const PAYMENTS_PERMISSIONS: Permission[] = [
   { name: "payments:audit:view", resource: "payments:audit", action: "view", description: "View payment provider audit log", scopable: false },
 ];
 
+const SURVEYS_PERMISSIONS: Permission[] = [
+  { name: "surveys:view", resource: "surveys", action: "view", description: "View surveys, assessments, live sessions, and lead qualification forms", scopable: true },
+  { name: "surveys:create", resource: "surveys", action: "create", description: "Create surveys" },
+  { name: "surveys:update", resource: "surveys", action: "update", description: "Edit survey builder content", scopable: true },
+  { name: "surveys:publish", resource: "surveys", action: "publish", description: "Publish, pause, and close surveys", scopable: true },
+  { name: "surveys:delete", resource: "surveys", action: "delete", description: "Delete or archive surveys", scopable: true },
+  { name: "surveys:participants:view", resource: "surveys:participants", action: "view", description: "View survey participants and collectors" },
+  { name: "surveys:participants:manage", resource: "surveys:participants", action: "manage", description: "Import, invite, and remind survey participants" },
+  { name: "surveys:responses:view", resource: "surveys:responses", action: "view", description: "View survey responses" },
+  { name: "surveys:responses:export", resource: "surveys:responses", action: "export", description: "Export survey responses" },
+  { name: "surveys:analytics:view", resource: "surveys:analytics", action: "view", description: "View survey analytics and reports" },
+  { name: "surveys:templates:manage", resource: "surveys:templates", action: "manage", description: "Manage the survey template library" },
+  { name: "surveys:live:host", resource: "surveys:live", action: "host", description: "Host live survey sessions" },
+  { name: "surveys:assessments:manage", resource: "surveys:assessments", action: "manage", description: "Manage assessment scoring, attempts, and certificates" },
+  { name: "surveys:automations:manage", resource: "surveys:automations", action: "manage", description: "Manage survey automations and lead routing rules" },
+  { name: "surveys:settings:manage", resource: "surveys:settings", action: "manage", description: "Manage survey branding, anonymity, and collector settings" },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -334,6 +352,7 @@ export const PERMISSIONS: Permission[] = [
   ...WORKFLOW_PERMISSIONS,
   ...ONBOARDING_PERMISSIONS,
   ...PAYMENTS_PERMISSIONS,
+  ...SURVEYS_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));
