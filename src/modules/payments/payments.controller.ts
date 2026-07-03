@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Req,
@@ -17,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PaymentProviderSetupService, type ActorContext } from "./payment-provider-setup.service";
+import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 import {
   createProviderSchema,
   disconnectCredentialsSchema,
@@ -27,11 +29,20 @@ import {
   type SaveCredentialsInput,
   type UpdateProviderInput,
 } from "./dto/payments.schemas";
+import {
+  createTestTransactionSchema,
+  verifyTestTransactionSchema,
+  type CreateTestTransactionInput,
+  type VerifyTestTransactionInput,
+} from "./dto/test-transaction.schemas";
 
 @Controller("payments")
 @UseGuards(JwtAuthGuard)
 export class PaymentsController {
-  constructor(private readonly providers: PaymentProviderSetupService) {}
+  constructor(
+    private readonly providers: PaymentProviderSetupService,
+    private readonly testTransactions: PaymentTestTransactionService,
+  ) {}
 
   private actorContext(u: CurrentUserContext, req: Request): ActorContext {
     return {
@@ -134,5 +145,38 @@ export class PaymentsController {
     @Req() req: Request,
   ) {
     return this.providers.disconnectCredentials(u.orgId, providerKey, body.environment, this.actorContext(u, req));
+  }
+
+  @Get("providers/:providerKey/test-transactions")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:providers:view")
+  listTestTransactions(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
+    return this.testTransactions.listForProvider(u.orgId, providerKey);
+  }
+
+  @Post("providers/:providerKey/test-transactions")
+  @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:test:run")
+  createTestTransaction(
+    @Param("providerKey") providerKey: string,
+    @Body(new ZodValidationPipe(createTestTransactionSchema)) body: CreateTestTransactionInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.testTransactions.createTestTransaction(u.orgId, providerKey, body, this.actorContext(u, req));
+  }
+
+  @Patch("providers/:providerKey/test-transactions/:id/verify")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:test:run")
+  verifyTestTransaction(
+    @Param("providerKey") providerKey: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(verifyTestTransactionSchema)) body: VerifyTestTransactionInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.testTransactions.verifyTestTransaction(u.orgId, providerKey, id, body, this.actorContext(u, req));
   }
 }

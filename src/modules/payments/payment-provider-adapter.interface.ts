@@ -17,10 +17,12 @@ export interface PaymentProviderAdapter {
   validateCredentialFormat?(environment: "test" | "live", keyId: string): PaymentCredentialWarning | null;
 
   createOrder(params: {
-    orgId: string;
-    environment: "test" | "live";
+    keyId: string;
+    keySecret: string;
     amount: string;
     currency: string;
+    receipt: string;
+    notes?: Record<string, string>;
   }): Promise<{ providerOrderId: string; raw: unknown }>;
 
   verifyPaymentSignature(params: {
