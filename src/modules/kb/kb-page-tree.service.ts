@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   Inject,
@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
+import { pageVisibleTo } from "./kb-page-visibility";
 import { kbPages, kbPageLinks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -39,14 +40,18 @@ export function isDescendant(
 export class KbPageTreeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async getTree(orgId: string): Promise<{
+  async getTree(user: CurrentUserContext): Promise<{
     id: number;
     parentPageId: number | null;
     title: string;
     icon: string | null;
     sortOrder: number;
+    visibility: string;
+    createdById: string | null;
+    status: string;
     hasChildren: boolean;
   }[]> {
+    const orgId = user.orgId;
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -54,9 +59,12 @@ export class KbPageTreeService {
         title: kbPages.title,
         icon: kbPages.icon,
         sortOrder: kbPages.sortOrder,
+        visibility: kbPages.visibility,
+        createdById: kbPages.createdById,
+        status: kbPages.status,
       })
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)))
+      .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)))
       .orderBy(kbPages.sortOrder);
 
     const childSet = new Set(rows.map((r) => r.parentPageId).filter((id): id is number => id !== null));
@@ -307,11 +315,12 @@ export class KbPageTreeService {
     });
   }
 
-  async getTrash(orgId: string): Promise<PageRow[]> {
+  async getTrash(user: CurrentUserContext): Promise<PageRow[]> {
+    const orgId = user.orgId;
     return this.db
       .select()
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), pageVisibleTo(user)))
       .orderBy(sql`${kbPages.deletedAt} desc`)
       .limit(100);
   }

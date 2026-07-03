@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+﻿import { Module } from "@nestjs/common";
 import { AiModule } from "../ai/ai.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { KbCreditsService } from "./kb-credits.service";
@@ -39,6 +39,11 @@ import { KbWidgetController } from "./kb-widget.controller";
 import { KbPagesController } from "./kb-pages.controller";
 import { KbPageCommentsController } from "./kb-page-comments.controller";
 import { KbPageTemplatesController } from "./kb-page-templates.controller";
+import { KbPublicPagesController } from "./kb-public-pages.controller";
+import { KbPageReviewsController } from "./kb-page-reviews.controller";
+import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { KbImportExportController } from "./kb-import-export.controller";
+import { KbImportExportService } from "./kb-import-export.service";
 
 @Module({
   imports: [AiModule, NotificationsModule],
@@ -60,6 +65,9 @@ import { KbPageTemplatesController } from "./kb-page-templates.controller";
     KbPagesController,
     KbPageCommentsController,
     KbPageTemplatesController,
+    KbPublicPagesController,
+    KbPageReviewsController,
+    KbImportExportController,
   ],
   providers: [
     KbCreditsService,
@@ -83,6 +91,8 @@ import { KbPageTemplatesController } from "./kb-page-templates.controller";
     KbPageTreeService,
     KbPageCommentsService,
     KbPageTemplatesService,
+    KbPageReviewsService,
+    KbImportExportService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })

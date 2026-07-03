@@ -29,6 +29,11 @@ export const kbSpaces = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     deletedAt: timestamp("deleted_at"),
+    type: text("type").notNull().default("team").$type<"private" | "team" | "company" | "module" | "support" | "project">(),
+    color: text("color"),
+    defaultVisibility: text("default_visibility").notNull().default("org"),
+    owningTeamId: text("owning_team_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
     index("idx_kb_spaces_org").on(table.orgId),

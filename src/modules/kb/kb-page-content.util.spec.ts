@@ -8,6 +8,12 @@ const mention = (id: string): unknown => ({ type: "mention", attrs: { id } });
 
 const paragraph = (children: unknown[]): unknown => ({ type: "paragraph", content: children });
 
+const slatePageLink = (pageId: number): unknown => ({ type: "page_link", pageId, value: "Page Name", children: [{ text: "" }] });
+
+const slateMention = (userId: string): unknown => ({ type: "mention", userId, value: "John", children: [{ text: "" }] });
+
+const slateParagraph = (children: unknown[]): unknown => ({ type: "paragraph", children });
+
 describe("extractPageLinkIds", () => {
   it("returns empty array for null/undefined input", () => {
     expect(extractPageLinkIds(null)).toEqual([]);
@@ -80,5 +86,60 @@ describe("extractMentionUserIds", () => {
 
   it("does not throw on garbage attrs", () => {
     expect(() => extractMentionUserIds({ type: "doc", content: [{ type: "mention", attrs: { id: 123 } }] })).not.toThrow();
+  });
+});
+
+describe("Slate (Plate) format", () => {
+  describe("extractPageLinkIds", () => {
+    it("returns pageId from a root-level page_link node", () => {
+      expect(extractPageLinkIds([slatePageLink(1)])).toEqual([1]);
+    });
+
+    it("extracts page_link nested inside paragraph children", () => {
+      expect(extractPageLinkIds([slateParagraph([slatePageLink(5)])])).toEqual([5]);
+    });
+
+    it("deduplicates repeated page_link pageIds", () => {
+      expect(extractPageLinkIds([slatePageLink(3), slatePageLink(3), slatePageLink(4)])).toEqual([3, 4]);
+    });
+
+    it("returns [] when no page_link nodes exist", () => {
+      expect(extractPageLinkIds([slateParagraph([{ type: "text", text: "hello" }])])).toEqual([]);
+    });
+
+    it("ignores page_link with null or undefined pageId", () => {
+      expect(extractPageLinkIds([{ type: "page_link", pageId: null, children: [] }])).toEqual([]);
+      expect(extractPageLinkIds([{ type: "page_link", children: [] }])).toEqual([]);
+    });
+
+    it("ignores page_link with non-number pageId", () => {
+      expect(extractPageLinkIds([{ type: "page_link", pageId: "5", children: [] }])).toEqual([]);
+    });
+  });
+
+  describe("extractMentionUserIds", () => {
+    it("returns userId from a root-level mention node", () => {
+      expect(extractMentionUserIds([slateMention("user-1")])).toEqual(["user-1"]);
+    });
+
+    it("extracts mention nested inside paragraph children", () => {
+      expect(extractMentionUserIds([slateParagraph([slateMention("user-3")])])).toEqual(["user-3"]);
+    });
+
+    it("deduplicates repeated mention userIds", () => {
+      expect(extractMentionUserIds([slateMention("user-1"), slateMention("user-1"), slateMention("user-2")])).toEqual(["user-1", "user-2"]);
+    });
+
+    it("returns [] when no mention nodes exist", () => {
+      expect(extractMentionUserIds([slateParagraph([{ type: "text", text: "hello" }])])).toEqual([]);
+    });
+
+    it("ignores mention with empty string userId", () => {
+      expect(extractMentionUserIds([{ type: "mention", userId: "", children: [] }])).toEqual([]);
+    });
+
+    it("ignores mention with non-string userId", () => {
+      expect(extractMentionUserIds([{ type: "mention", userId: 123, children: [] }])).toEqual([]);
+    });
   });
 });

@@ -73,6 +73,11 @@ describe("KB Pages auth/RBAC (e2e)", () => {
     ["get", "/kb/page-templates"],
     ["post", "/kb/page-templates"],
     ["delete", "/kb/page-templates/1"],
+    ["post", "/kb/pages/1/publish"],
+    ["post", "/kb/pages/1/archive"],
+    ["post", "/kb/pages/1/unarchive"],
+    ["post", "/kb/pages/1/verify"],
+    ["post", "/kb/pages/1/mark-stale"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {

@@ -1,4 +1,4 @@
-import {
+﻿import {
   pgTable,
   serial,
   text,
@@ -9,7 +9,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { kbSpaces } from "./spaces";
 
@@ -33,12 +33,26 @@ export const kbPages = pgTable(
     deletedById: text("deleted_by_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+    visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
+    publicToken: text("public_token"),
+    status: text("status").notNull().default("draft").$type<"draft" | "in_review" | "published" | "archived">(),
+    contentType: text("content_type").notNull().default("note").$type<"note" | "sop" | "policy" | "support_article" | "troubleshooting" | "decision_record" | "meeting_notes" | "runbook" | "project_brief" | "playbook">(),
+    trustState: text("trust_state").notNull().default("unverified").$type<"unverified" | "verified" | "verification_expired">(),
+    ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    verifiedById: text("verified_by_id").references(() => users.id, { onDelete: "set null" }),
+    verifiedUntil: timestamp("verified_until", { withTimezone: true }),
+    nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
+    publicSlug: text("public_slug"),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),
     index("idx_kb_pages_org_updated").on(table.orgId, table.updatedAt),
     index("idx_kb_pages_parent").on(table.parentPageId),
+    uniqueIndex("uniq_kb_pages_public_token").on(table.publicToken),
+    index("idx_kb_pages_org_status").on(table.orgId, table.status),
+    index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt),
+    uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
   ],
 );
 
@@ -80,6 +94,8 @@ export const kbPageLinks = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     sourcePageId: integer("source_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
     targetPageId: integer("target_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    targetType: text("target_type").notNull().default("page"),
+    targetId: text("target_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

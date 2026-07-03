@@ -1,4 +1,4 @@
-import {
+﻿import {
   Body,
   Controller,
   Delete,
@@ -42,7 +42,7 @@ export class KbPageCommentsController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.comments.list(u.orgId, pageId);
+    return this.comments.list(u, pageId);
   }
 
   @Post("pages/:pageId/comments")
@@ -52,7 +52,7 @@ export class KbPageCommentsController {
     @Body(new ZodValidationPipe(createPageCommentSchema)) body: CreatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.comments.create(u.orgId, pageId, u.userId, body);
+    return this.comments.create(u, pageId, body);
   }
 
   @Patch("page-comments/:commentId")

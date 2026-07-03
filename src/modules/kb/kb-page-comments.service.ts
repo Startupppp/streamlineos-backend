@@ -1,9 +1,11 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+﻿import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { kbPageComments, kbPages, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-page-comments.schemas";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { pageVisibleTo } from "./kb-page-visibility";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
 
@@ -11,8 +13,9 @@ type CommentRow = typeof kbPageComments.$inferSelect;
 export class KbPageCommentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
-    await this.assertPageExists(orgId, pageId);
+  async list(user: CurrentUserContext, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
+    const orgId = user.orgId;
+    await this.assertPageExists(user, pageId);
     const rows = await this.db
       .select({
         comment: kbPageComments,
@@ -28,8 +31,10 @@ export class KbPageCommentsService {
     });
   }
 
-  async create(orgId: string, pageId: number, authorId: string, input: CreatePageCommentInput): Promise<CommentRow> {
-    await this.assertPageExists(orgId, pageId);
+  async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentRow> {
+    const orgId = user.orgId;
+    const authorId = user.userId;
+    await this.assertPageExists(user, pageId);
 
     if (input.parentId) {
       const parent = await this.db.query.kbPageComments.findFirst({
@@ -95,9 +100,14 @@ export class KbPageCommentsService {
     return updated;
   }
 
-  private async assertPageExists(orgId: string, pageId: number): Promise<void> {
+  private async assertPageExists(user: CurrentUserContext, pageId: number): Promise<void> {
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, user.orgId),
+        isNull(kbPages.deletedAt),
+        pageVisibleTo(user),
+      ),
       columns: { id: true },
     });
     if (!page) throw new NotFoundException("Page not found");

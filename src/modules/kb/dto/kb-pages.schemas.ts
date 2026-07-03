@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 
 const tipTapContent = z.record(z.string(), z.unknown());
 
@@ -15,8 +15,27 @@ export const updatePageSchema = z.object({
   coverImage: z.string().max(2000).nullable().optional(),
   content: tipTapContent.optional(),
   contentText: z.string().max(200000).optional(),
+  status: z.enum(["draft", "in_review", "published", "archived"]).optional(),
+  contentType: z.enum([
+    "note",
+    "sop",
+    "policy",
+    "support_article",
+    "troubleshooting",
+    "decision_record",
+    "meeting_notes",
+    "runbook",
+    "project_brief",
+    "playbook",
+  ]).optional(),
+  ownerUserId: z.string().nullable().optional(),
 });
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
+
+export const verifyPageSchema = z.object({
+  intervalDays: z.coerce.number().int().positive().optional(),
+});
+export type VerifyPageInput = z.infer<typeof verifyPageSchema>;
 
 export const movePageSchema = z.object({
   parentPageId: z.coerce.number().int().positive().nullable(),
@@ -33,3 +52,8 @@ export const searchPagesSchema = z.object({
   q: z.string().trim().max(200).default(""),
 });
 export type SearchPagesInput = z.infer<typeof searchPagesSchema>;
+
+export const setVisibilitySchema = z.object({
+  visibility: z.enum(["private", "org", "public"]),
+});
+export type SetVisibilityInput = z.infer<typeof setVisibilitySchema>;

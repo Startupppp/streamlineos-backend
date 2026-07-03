@@ -6,6 +6,18 @@ type TipTapNode = {
   text?: string;
 };
 
+type SlateNode = {
+  type?: string;
+  children?: SlateNode[];
+  pageId?: number;
+  userId?: string;
+  [key: string]: unknown;
+};
+
+function isSlateNode(value: unknown): value is SlateNode {
+  return typeof value === "object" && value !== null;
+}
+
 function walkNodes(node: unknown, visitor: (n: TipTapNode) => void): void {
   if (typeof node !== "object" || node === null) return;
   const n = node as TipTapNode;
@@ -15,14 +27,32 @@ function walkNodes(node: unknown, visitor: (n: TipTapNode) => void): void {
   }
 }
 
+function walkSlateNodes(nodes: unknown[], visitor: (node: SlateNode) => void): void {
+  for (const item of nodes) {
+    if (!isSlateNode(item)) continue;
+    visitor(item);
+    if (Array.isArray(item.children)) {
+      walkSlateNodes(item.children, visitor);
+    }
+  }
+}
+
 export function extractPageLinkIds(content: unknown): number[] {
   const ids: number[] = [];
   try {
-    walkNodes(content, (node) => {
-      if (node.type === "pageLink" && typeof node.attrs?.pageId === "number") {
-        ids.push(node.attrs.pageId);
-      }
-    });
+    if (Array.isArray(content)) {
+      walkSlateNodes(content, (node) => {
+        if (node.type === "page_link" && typeof node.pageId === "number") {
+          ids.push(node.pageId);
+        }
+      });
+    } else {
+      walkNodes(content, (node) => {
+        if (node.type === "pageLink" && typeof node.attrs?.pageId === "number") {
+          ids.push(node.attrs.pageId);
+        }
+      });
+    }
   } catch {
   }
   return [...new Set(ids)];
@@ -31,11 +61,19 @@ export function extractPageLinkIds(content: unknown): number[] {
 export function extractMentionUserIds(content: unknown): string[] {
   const ids: string[] = [];
   try {
-    walkNodes(content, (node) => {
-      if (node.type === "mention" && typeof node.attrs?.id === "string" && node.attrs.id.length > 0) {
-        ids.push(node.attrs.id);
-      }
-    });
+    if (Array.isArray(content)) {
+      walkSlateNodes(content, (node) => {
+        if (node.type === "mention" && typeof node.userId === "string" && node.userId.length > 0) {
+          ids.push(node.userId);
+        }
+      });
+    } else {
+      walkNodes(content, (node) => {
+        if (node.type === "mention" && typeof node.attrs?.id === "string" && node.attrs.id.length > 0) {
+          ids.push(node.attrs.id);
+        }
+      });
+    }
   } catch {
   }
   return [...new Set(ids)];
