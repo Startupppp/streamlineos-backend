@@ -11,6 +11,7 @@ import { RecruitmentRecruitersController } from "./recruitment-recruiters.contro
 import { RecruitmentSourcingController } from "./recruitment-sourcing.controller";
 import { RecruitmentAutomationController } from "./recruitment-automation.controller";
 import { RecruitmentRequisitionsController } from "./recruitment-requisitions.controller";
+import { RecruitmentJobBoardsController } from "./recruitment-job-boards.controller";
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
@@ -22,6 +23,7 @@ import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
+import { RecruitmentJobBoardsService } from "./recruitment-job-boards.service";
 
 @Module({
   imports: [NotificationsModule, AutomationModule, AiModule],
@@ -35,6 +37,7 @@ import { RecruitmentRequisitionsService } from "./recruitment-requisitions.servi
     RecruitmentSourcingController,
     RecruitmentAutomationController,
     RecruitmentRequisitionsController,
+    RecruitmentJobBoardsController,
   ],
   providers: [
     RecruitmentCandidatesService,
@@ -48,6 +51,7 @@ import { RecruitmentRequisitionsService } from "./recruitment-requisitions.servi
     RecruitmentAutomationService,
     RecruitmentCandidateAiService,
     RecruitmentRequisitionsService,
+    RecruitmentJobBoardsService,
   ],
 })
 export class HrRecruitmentModule {}

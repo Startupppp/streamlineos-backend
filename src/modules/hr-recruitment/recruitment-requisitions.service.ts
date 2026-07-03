@@ -1,8 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { jobRequisitions } from "../../db/schema";
+import { jobRequisitions, jobPostings } from "../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import type { CreateRequisitionInput, UpdateRequisitionInput } from "./dto/requisitions.schemas";
 
 @Injectable()
 export class RecruitmentRequisitionsService {
@@ -17,10 +18,56 @@ export class RecruitmentRequisitionsService {
       .limit(100);
   }
 
-  async create(orgId: string, requestedBy: string, data: Omit<typeof jobRequisitions.$inferInsert, "id" | "orgId" | "requestedBy" | "status" | "createdAt" | "updatedAt">) {
+  async create(orgId: string, requestedBy: string, data: CreateRequisitionInput) {
     const [req] = await this.db.insert(jobRequisitions)
-      .values({ ...data, orgId, requestedBy, status: "DRAFT" }).returning();
+      .values({
+        ...data,
+        budgetMin: data.budgetMin?.toString(),
+        budgetMax: data.budgetMax?.toString(),
+        orgId,
+        requestedBy,
+        status: "DRAFT",
+      }).returning();
     return req;
+  }
+
+  private async findOrThrow(orgId: string, id: number) {
+    const [req] = await this.db.select().from(jobRequisitions)
+      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)));
+    if (!req) throw new NotFoundException("Requisition not found");
+    return req;
+  }
+
+  async createJobFromRequisition(orgId: string, userId: string, id: number) {
+    const requisition = await this.findOrThrow(orgId, id);
+    if (requisition.status !== "APPROVED") {
+      throw new BadRequestException("Only APPROVED requisitions can create a job posting");
+    }
+    if (requisition.linkedJobId) {
+      throw new ConflictException("A job posting has already been created for this requisition");
+    }
+
+    const job = await this.db.transaction(async (tx) => {
+      const [created] = await tx.insert(jobPostings).values({
+        orgId,
+        title: requisition.title,
+        location: requisition.location ?? undefined,
+        type: requisition.type,
+        salaryMin: requisition.budgetMin ?? undefined,
+        salaryMax: requisition.budgetMax ?? undefined,
+        openings: requisition.headcount,
+        postedBy: userId,
+        status: "DRAFT",
+      }).returning();
+
+      await tx.update(jobRequisitions)
+        .set({ linkedJobId: created.id, updatedAt: new Date() })
+        .where(eq(jobRequisitions.id, id));
+
+      return created;
+    });
+
+    return { jobId: job.id, jobTitle: job.title };
   }
 
   async submit(orgId: string, id: number) {
@@ -47,9 +94,14 @@ export class RecruitmentRequisitionsService {
     return req;
   }
 
-  async update(orgId: string, id: number, data: Partial<typeof jobRequisitions.$inferInsert>) {
+  async update(orgId: string, id: number, data: UpdateRequisitionInput) {
     const [req] = await this.db.update(jobRequisitions)
-      .set({ ...data, updatedAt: new Date() })
+      .set({
+        ...data,
+        budgetMin: data.budgetMin?.toString(),
+        budgetMax: data.budgetMax?.toString(),
+        updatedAt: new Date(),
+      })
       .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId))).returning();
     if (!req) throw new NotFoundException("Requisition not found");
     return req;
