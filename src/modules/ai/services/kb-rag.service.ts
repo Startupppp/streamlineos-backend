@@ -82,7 +82,7 @@ export class KbRagService {
     let query = this.db
       .select({
         id: kbArticleChunks.id,
-        articleId: kbArticleChunks.articleId,
+        articleId: kbArticles.id,
         attachmentId: kbArticleChunks.attachmentId,
         source: kbArticleChunks.source,
         content: kbArticleChunks.content,

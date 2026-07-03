@@ -43,6 +43,7 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
+    sourceArticleId: integer("source_article_id"),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
@@ -53,6 +54,7 @@ export const kbPages = pgTable(
     index("idx_kb_pages_org_status").on(table.orgId, table.status),
     index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt),
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
+    uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
   ],
 );
 

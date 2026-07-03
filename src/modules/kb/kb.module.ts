@@ -46,6 +46,9 @@ import { KbImportExportController } from "./kb-import-export.controller";
 import { KbImportExportService } from "./kb-import-export.service";
 import { KbPageRecordLinksController } from "./kb-page-record-links.controller";
 import { KbPageRecordLinksService } from "./kb-page-record-links.service";
+import { KbPageIndexingController } from "./kb-page-indexing.controller";
+import { KbArticleMigrationController } from "./kb-article-migration.controller";
+import { KbArticleMigrationService } from "./kb-article-migration.service";
 
 @Module({
   imports: [AiModule, NotificationsModule],
@@ -71,6 +74,8 @@ import { KbPageRecordLinksService } from "./kb-page-record-links.service";
     KbPageReviewsController,
     KbImportExportController,
     KbPageRecordLinksController,
+    KbPageIndexingController,
+    KbArticleMigrationController,
   ],
   providers: [
     KbCreditsService,
@@ -97,6 +102,7 @@ import { KbPageRecordLinksService } from "./kb-page-record-links.service";
     KbPageReviewsService,
     KbImportExportService,
     KbPageRecordLinksService,
+    KbArticleMigrationService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })

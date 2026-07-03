@@ -50,7 +50,7 @@ export const kbImportJobs = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    sourceType: text("source_type").$type<"markdown" | "html" | "zip">().notNull(),
+    sourceType: text("source_type").$type<"markdown" | "html" | "zip" | "support_kb">().notNull(),
     fileKey: text("file_key"),
     status: text("status")
       .$type<"pending" | "processing" | "completed" | "failed">()
