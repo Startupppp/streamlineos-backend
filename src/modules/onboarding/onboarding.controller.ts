@@ -41,12 +41,15 @@ import {
 import { ModuleRecommendationService } from "../onboarding-flow/module-recommendation.service";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 import { GuidedTourService } from "../onboarding-flow/guided-tour.service";
+import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import {
   checklistItemSkipSchema,
   moduleRecommendationInputSchema,
+  sessionPatchSchema,
   tourProgressSchema,
   type ChecklistItemSkipInput,
   type ModuleRecommendationInput,
+  type SessionPatchInput,
   type TourProgressInput,
 } from "../onboarding-flow/dto/onboarding-flow.schemas";
 
@@ -58,10 +61,24 @@ export class OnboardingController {
     private readonly moduleRecommendations: ModuleRecommendationService,
     private readonly checklists: ModuleChecklistService,
     private readonly tours: GuidedTourService,
+    private readonly sessions: OnboardingSessionService,
   ) {}
 
   // NOTE: every static route below must stay ABOVE `getUserTasks` (`GET /onboarding/:userId`,
   // near the bottom of this class) — it's a catch-all that would otherwise shadow these paths.
+
+  @Get("session")
+  getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
+    return this.sessions.getOrCreateSession(u.orgId, u.userId, "employee_onboarding");
+  }
+
+  @Patch("session")
+  patchOnboardingSession(
+    @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.sessions.patchSession(u.orgId, u.userId, "employee_onboarding", body);
+  }
 
   @Post("module-recommendations")
   @HttpCode(200)
