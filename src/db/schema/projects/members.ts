@@ -15,6 +15,7 @@ export const projectStatuses = pgTable("project_statuses", {
   name: text("name").notNull(),
   order: integer("order").notNull().default(0),
   color: text("color"),
+  type: text("type").default("unstarted"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

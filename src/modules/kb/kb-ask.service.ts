@@ -17,6 +17,10 @@ const ASK_SYSTEM_PROMPT =
   "If the context does not contain the answer, say you don't have that information and suggest opening a support ticket. " +
   "Never invent facts that are not present in the context.";
 
+export type AskCitation =
+  | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null }
+  | { kind: "page"; pageId: number; title: string; spaceId: number | null };
+
 @Injectable()
 export class KbAskService {
   constructor(
@@ -31,7 +35,7 @@ export class KbAskService {
     input: AskInput,
   ): Promise<{
     answer: string;
-    citations: { articleId: number; title: string; slug: string; spaceId: number | null }[];
+    citations: AskCitation[];
     hasContext: boolean;
   }> {
     if (!this.llm.isConfigured()) {
@@ -58,7 +62,7 @@ export class KbAskService {
     }
 
     const context = top
-      .map((article, index) => `[${index + 1}] ${article.title}\n${(article.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
+      .map((source, index) => `[${index + 1}] ${source.title}\n${(source.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
       .join("\n\n---\n\n");
 
     await this.credits.consume(user.orgId, ASK_COST, {
@@ -87,18 +91,16 @@ export class KbAskService {
     await this.events.record(user.orgId, "ai_answer", {
       actorId: user.userId,
       query: input.question,
-      metadata: { articleIds: top.map((article) => article.id) },
+      metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
     });
 
-    return {
-      answer,
-      citations: top.map((article) => ({
-        articleId: article.id,
-        title: article.title,
-        slug: article.slug,
-        spaceId: article.spaceId,
-      })),
-      hasContext: true,
-    };
+    const citations: AskCitation[] = top.map((source) => {
+      if (source.kind === "article") {
+        return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId };
+      }
+      return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId };
+    });
+
+    return { answer, citations, hasContext: true };
   }
 }

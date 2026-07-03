@@ -33,4 +33,19 @@ export class KbAnalyticsController {
   ): Promise<unknown> {
     return await this.analytics.noResults(u.orgId, query);
   }
+
+  @Get("analytics/pages")
+  @RequirePermission("kb:analytics:view")
+  async pages(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return await this.analytics.pages(u);
+  }
+
+  @Get("analytics/gaps")
+  @RequirePermission("kb:analytics:view")
+  async gaps(
+    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.gaps(u.orgId, query);
+  }
 }

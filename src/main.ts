@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
@@ -9,10 +10,13 @@ import { ResponseTransformInterceptor } from "./common/interceptors/response-tra
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: false,
     rawBody: true,
+    bodyParser: false,
   });
+  app.useBodyParser("json", { limit: "3mb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
   app.use(helmet());
   const isLocalDevOrigin = (origin: string): boolean =>
     /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);

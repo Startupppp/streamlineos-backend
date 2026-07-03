@@ -22,8 +22,8 @@ import {
   MilestonesService,
   PagesService,
   ViewsService,
-  WhiteboardsService,
 } from "./workspace.service";
+import { WhiteboardsService } from "./whiteboards.service";
 import {
   createIntakeSchema,
   createMilestoneSchema,
@@ -66,7 +66,7 @@ export class MilestonesController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   createMilestone(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createMilestoneSchema)) body: CreateMilestoneInput,
@@ -76,7 +76,7 @@ export class MilestonesController {
   }
 
   @Patch(":milestoneId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   updateMilestone(
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @Body(new ZodValidationPipe(updateMilestoneSchema)) body: UpdateMilestoneInput,
@@ -86,7 +86,7 @@ export class MilestonesController {
   }
 
   @Delete(":milestoneId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   deleteMilestone(
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -111,7 +111,7 @@ export class IntakeController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   createIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createIntakeSchema)) body: CreateIntakeInput,
@@ -121,7 +121,7 @@ export class IntakeController {
   }
 
   @Patch(":requestId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   updateIntake(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(updateIntakeSchema)) body: UpdateIntakeInput,
@@ -146,7 +146,7 @@ export class ViewsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   createView(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createViewSchema)) body: CreateViewInput,
@@ -156,7 +156,7 @@ export class ViewsController {
   }
 
   @Patch(":viewId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   updateView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @Body(new ZodValidationPipe(updateViewSchema)) body: UpdateViewInput,
@@ -166,7 +166,7 @@ export class ViewsController {
   }
 
   @Delete(":viewId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   deleteView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -175,6 +175,19 @@ export class ViewsController {
   }
 }
 
+@RequireModule("projects")
+@Controller("whiteboards")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class WhiteboardsHubController {
+  constructor(private readonly whiteboards: WhiteboardsService) {}
+
+  @Get()
+  listAllWhiteboards(@CurrentUser() u: CurrentUserContext) {
+    return this.whiteboards.listAllWhiteboards(u);
+  }
+}
+
+@RequireModule("projects")
 @Controller("projects/:projectId/whiteboards")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class WhiteboardsController {
@@ -185,18 +198,18 @@ export class WhiteboardsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.listWhiteboards(u.orgId, projectId);
+    return this.whiteboards.listWhiteboards(u, projectId);
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   createWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createWhiteboardSchema)) body: CreateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.createWhiteboard(u.orgId, u.userId, projectId, body);
+    return this.whiteboards.createWhiteboard(u, projectId, body);
   }
 
   @Get(":whiteboardId")
@@ -205,28 +218,28 @@ export class WhiteboardsController {
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.getWhiteboard(u.orgId, projectId, whiteboardId);
+    return this.whiteboards.getWhiteboard(u, projectId, whiteboardId);
   }
 
   @Patch(":whiteboardId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   updateWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @Body(new ZodValidationPipe(updateWhiteboardSchema)) body: UpdateWhiteboardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.updateWhiteboard(u.orgId, projectId, whiteboardId, body);
+    return this.whiteboards.updateWhiteboard(u, projectId, whiteboardId, body);
   }
 
   @Delete(":whiteboardId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:whiteboards:manage")
   deleteWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.whiteboards.deleteWhiteboard(u.orgId, projectId, whiteboardId);
+    return this.whiteboards.deleteWhiteboard(u, projectId, whiteboardId);
   }
 }
 
@@ -245,7 +258,7 @@ export class PagesController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   createPage(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
@@ -255,7 +268,7 @@ export class PagesController {
   }
 
   @Patch(":pageId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   updatePage(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(updatePageSchema)) body: UpdatePageInput,
@@ -265,7 +278,7 @@ export class PagesController {
   }
 
   @Delete(":pageId")
-  @RequirePermission("projects:write")
+  @RequirePermission("projects:workspace:manage")
   deletePage(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,

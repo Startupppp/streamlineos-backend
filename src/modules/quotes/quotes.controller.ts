@@ -41,6 +41,7 @@ export class QuotesController {
   constructor(private readonly quotes: QuotesService) {}
 
   @Get()
+  @RequirePermission("crm:quotes:read")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +60,7 @@ export class QuotesController {
   }
 
   @Get("export")
+  @RequirePermission("crm:quotes:read")
   async exportCsv(
     @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +76,7 @@ export class QuotesController {
   }
 
   @Get(":quoteId")
+  @RequirePermission("crm:quotes:read")
   async get(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

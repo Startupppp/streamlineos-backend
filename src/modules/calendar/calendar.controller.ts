@@ -62,6 +62,7 @@ export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}
 
   @Get("events")
+  @RequirePermission("calendar:read")
   getEvents(
     @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +108,7 @@ export class CalendarController {
 
   @Post("events/:eventId/rsvp")
   @HttpCode(200)
+  @RequirePermission("calendar:write")
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
@@ -118,6 +120,7 @@ export class CalendarController {
   }
 
   @Get("events/:eventId/rsvp")
+  @RequirePermission("calendar:read")
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +131,7 @@ export class CalendarController {
   }
 
   @Get("export")
+  @RequirePermission("calendar:read")
   async exportEvents(
     @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
     @CurrentUser() u: CurrentUserContext,

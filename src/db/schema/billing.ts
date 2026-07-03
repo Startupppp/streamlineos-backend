@@ -108,7 +108,7 @@ export const orgAiCredits = pgTable(
   "org_ai_credits",
   {
     id: serial("id").primaryKey(),
-    orgId: integer("org_id").notNull().unique(),
+    orgId: text("org_id").notNull().unique().references(() => organizations.id, { onDelete: "cascade" }),
     balance: integer("balance").default(0).notNull(),
     lifetimeGranted: integer("lifetime_granted").default(0).notNull(),
     lifetimeConsumed: integer("lifetime_consumed").default(0).notNull(),
@@ -124,8 +124,8 @@ export const aiCreditTransactions = pgTable(
   "ai_credit_transactions",
   {
     id: serial("id").primaryKey(),
-    orgId: integer("org_id").notNull(),
-    userId: integer("user_id"),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     type: aiCreditTxnTypeEnum("type").notNull(),
     amount: integer("amount").notNull(),
     balanceAfter: integer("balance_after").notNull(),

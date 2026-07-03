@@ -32,6 +32,8 @@ type PersistedMessage = {
   content: string | null;
   createdAt: Date;
   replyToId: number | null;
+  metadata: Record<string, unknown> | null;
+  messageType: "text" | "lead_submission" | "system";
 };
 
 @Injectable()
@@ -198,7 +200,8 @@ export class ChatMessagesService {
       content: message.content,
       createdAt: message.createdAt,
       replyToId: message.replyToId,
-      metadata: body.metadata ?? null,
+      metadata: message.metadata,
+      messageType: message.messageType,
     });
 
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {
@@ -355,6 +358,55 @@ export class ChatMessagesService {
     if (!parentMessage) throw new NotFoundException("Message not found");
 
     return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
+  }
+
+  async sendSystemMessage(
+    channelId: number,
+    senderId: string,
+    orgId: string,
+    content: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    const [message] = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(chatMessages)
+        .values({
+          channelId,
+          senderId,
+          content,
+          messageType: "system",
+          metadata,
+        })
+        .returning();
+
+      await tx
+        .update(chatChannels)
+        .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+        .where(eq(chatChannels.id, channelId));
+
+      return [created];
+    });
+
+    const [senderRow] = await this.db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, senderId))
+      .limit(1);
+    const senderName = senderRow?.name ?? null;
+
+    void this.ably
+      .publishChatMessage(orgId, channelId, {
+        id: message.id,
+        channelId: message.channelId,
+        senderId: message.senderId,
+        senderName,
+        content: message.content,
+        createdAt: message.createdAt,
+        replyToId: message.replyToId,
+        metadata,
+        messageType: "system",
+      })
+      .catch(() => undefined);
   }
 
   async react(channelId: number, messageId: number, userId: string, emoji: string) {

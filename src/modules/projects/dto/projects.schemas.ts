@@ -62,17 +62,15 @@ export const removeMemberSchema = z.object({
 export const createStateSchema = z.object({
   name: z.string().min(1).max(50),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
-  group: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]),
-  sequence: z.number().int().min(0),
-  isDefault: z.boolean().default(false),
+  order: z.number().int().min(0).optional(),
+  type: z.string().optional(),
 });
 
 export const updateCustomStateSchema = z.object({
   name: z.string().min(1).max(50).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-  group: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]).optional(),
-  sequence: z.number().int().min(0).optional(),
-  isDefault: z.boolean().optional(),
+  order: z.number().int().min(0).optional(),
+  type: z.string().optional(),
 });
 
 export const createLabelSchema = z.object({
@@ -129,6 +127,7 @@ export const updateTicketSchema = z.object({
   originalEstimate: z.number().nullable().optional(),
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  expectedUpdatedAt: z.string().optional(),
 });
 
 export const bulkUpdateSchema = z
@@ -326,3 +325,6 @@ export type UpdateFeedbackInput = z.infer<typeof updateFeedbackSchema>;
 export type ChangelogListQuery = z.infer<typeof changelogListQuerySchema>;
 export type CreateChangelogInput = z.infer<typeof createChangelogSchema>;
 export type UpdateChangelogInput = z.infer<typeof updateChangelogSchema>;
+
+export const updateCommentSchema = z.object({ content: z.string().min(1) });
+export type UpdateCommentInput = z.infer<typeof updateCommentSchema>;

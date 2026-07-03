@@ -28,17 +28,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("crm")
 @Controller("crm/sla")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmSlaController {
   constructor(private readonly sla: CrmSlaService) {}
 
   @Get("policies")
+  @RequirePermission("crm:sla:manage")
   listPolicies(@CurrentUser() u: CurrentUserContext) {
     return this.sla.listPolicies(u.orgId);
   }
 
   @Post("policies")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:sla:manage")
   @HttpCode(201)
   createPolicy(
@@ -49,7 +49,6 @@ export class CrmSlaController {
   }
 
   @Patch("policies/:policyId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:sla:manage")
   async updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -62,7 +61,6 @@ export class CrmSlaController {
   }
 
   @Delete("policies/:policyId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("crm:sla:manage")
   deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -72,11 +70,13 @@ export class CrmSlaController {
   }
 
   @Get("breached")
+  @RequirePermission("crm:sla:manage")
   breached(@CurrentUser() u: CurrentUserContext) {
     return this.sla.breached(u.orgId);
   }
 
   @Get("report")
+  @RequirePermission("crm:sla:manage")
   report(@CurrentUser() u: CurrentUserContext) {
     return this.sla.report(u.orgId);
   }

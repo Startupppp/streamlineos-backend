@@ -12,7 +12,7 @@ import {
 export class AiCreditsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async getWallet(orgId: number) {
+  async getWallet(orgId: string) {
     let [wallet] = await this.db
       .select()
       .from(orgAiCredits)
@@ -41,8 +41,8 @@ export class AiCreditsService {
   }
 
   async consumeCredits(
-    orgId: number,
-    userId: number,
+    orgId: string,
+    userId: string,
     amount: number,
     feature: string,
     model?: string,
@@ -84,7 +84,7 @@ export class AiCreditsService {
     });
   }
 
-  async grantPlanCredits(orgId: number, plan: string, userId?: number) {
+  async grantPlanCredits(orgId: string, plan: string, userId?: string) {
     const grantMap: Record<string, number> = {
       STARTER: 500,
       PROFESSIONAL: 2000,
@@ -128,7 +128,7 @@ export class AiCreditsService {
   }
 
   async updateAutoTopUp(
-    orgId: number,
+    orgId: string,
     enabled: boolean,
     packId?: number,
     threshold?: number,

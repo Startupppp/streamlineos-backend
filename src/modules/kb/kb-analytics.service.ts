@@ -1,9 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbEvents } from "../../db/schema";
+import { and, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { kbArticles, kbEvents, kbPageComments, kbPageVersions, kbPageVisits, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { RangeInput } from "./dto/kb-analytics.schemas";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { pageVisibleTo } from "./kb-page-visibility";
 
 type TopArticle = {
   id: number;
@@ -34,6 +36,23 @@ type OverviewResult = {
 };
 
 type NoResultsRow = { query: string | null; count: number };
+
+type PageAnalyticsRow = {
+  id: number;
+  title: string;
+  status: string;
+  trustState: string;
+  updatedAt: Date;
+  uniqueViewers: number;
+  commentCount: number;
+  versionCount: number;
+};
+
+type GapRow = {
+  query: string | null;
+  count: number;
+  lastOccurredAt: Date;
+};
 
 @Injectable()
 export class KbAnalyticsService {
@@ -116,6 +135,55 @@ export class KbAnalyticsService {
       trustScore,
       topArticles,
     };
+  }
+
+  async pages(user: CurrentUserContext): Promise<PageAnalyticsRow[]> {
+    return this.db
+      .select({
+        id: kbPages.id,
+        title: kbPages.title,
+        status: kbPages.status,
+        trustState: kbPages.trustState,
+        updatedAt: kbPages.updatedAt,
+        uniqueViewers: sql<number>`count(distinct ${kbPageVisits.id})::int`,
+        commentCount: sql<number>`count(distinct ${kbPageComments.id})::int`,
+        versionCount: sql<number>`count(distinct ${kbPageVersions.id})::int`,
+      })
+      .from(kbPages)
+      .leftJoin(kbPageVisits, eq(kbPageVisits.pageId, kbPages.id))
+      .leftJoin(
+        kbPageComments,
+        and(eq(kbPageComments.pageId, kbPages.id), eq(kbPageComments.orgId, user.orgId)),
+      )
+      .leftJoin(
+        kbPageVersions,
+        and(eq(kbPageVersions.pageId, kbPages.id), eq(kbPageVersions.orgId, user.orgId)),
+      )
+      .where(and(eq(kbPages.orgId, user.orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)))
+      .groupBy(kbPages.id)
+      .orderBy(desc(sql`count(distinct ${kbPageVisits.id})`))
+      .limit(50);
+  }
+
+  async gaps(orgId: string, range: RangeInput): Promise<GapRow[]> {
+    const conditions: SQL[] = [
+      eq(kbEvents.orgId, orgId),
+      eq(kbEvents.eventType, "search_no_results"),
+    ];
+    if (range.from) conditions.push(gte(kbEvents.occurredAt, new Date(range.from)));
+    if (range.to) conditions.push(lte(kbEvents.occurredAt, new Date(range.to)));
+
+    return this.db
+      .select({
+        query: kbEvents.query,
+        count: sql<number>`count(*)::int`,
+        lastOccurredAt: sql<Date>`max(${kbEvents.occurredAt})`,
+      })
+      .from(kbEvents)
+      .where(and(...conditions))
+      .groupBy(kbEvents.query)
+      .orderBy(desc(sql`count(*)`))
+      .limit(50);
   }
 
   async noResults(orgId: string, range: RangeInput): Promise<NoResultsRow[]> {

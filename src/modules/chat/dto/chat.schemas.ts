@@ -41,7 +41,29 @@ export const sendMessageSchema = z.object({
     .optional(),
   metadata: z
     .object({
-      entities: z.array(z.unknown()).optional(),
+      entities: z
+        .array(
+          z.discriminatedUnion("type", [
+            z.object({
+              type: z.literal("ticket"),
+              id: z.string(),
+              projectId: z.number().int().positive(),
+              ticketNumber: z.number().int().optional(),
+              projectKey: z.string().optional(),
+              title: z.string().optional(),
+              status: z.string().optional(),
+              priority: z.string().optional(),
+            }),
+            z.object({
+              type: z.literal("comment"),
+              id: z.string(),
+              ticketId: z.number().int().positive(),
+              projectId: z.number().int().positive(),
+            }),
+          ]),
+        )
+        .max(10)
+        .optional(),
       forwardCount: z.number().int().positive().optional(),
     })
     .passthrough()
@@ -116,6 +138,6 @@ export const ticketStatusActionSchema = z.object({
   channelId: z.number().int().positive(),
   projectId: z.number().int().positive(),
   ticketId: z.number().int().positive(),
-  nextStatus: z.enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]),
+  nextStatus: z.string().min(1).max(100),
 });
 export type TicketStatusActionInput = z.infer<typeof ticketStatusActionSchema>;

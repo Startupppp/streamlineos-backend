@@ -18,7 +18,7 @@ export class ModuleGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<Request & { user: CurrentUserContext }>();
     const user = req.user;
-    if (!user.isPlatformAdmin && !user.enabledModules.includes(required)) {
+    if (!user.isPlatformAdmin && !user.isOrgOwner && !user.enabledModules.some(m => m.toUpperCase() === required.toUpperCase())) {
       throw new ModuleDisabledException(required);
     }
     return true;

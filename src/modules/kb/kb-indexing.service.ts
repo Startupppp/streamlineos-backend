@@ -1,9 +1,21 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, count, eq, sql } from "drizzle-orm";
-import { kbArticles, kbArticleChunks } from "../../db/schema";
+import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { kbArticles, kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmbeddingsService, EMBEDDING_MODEL } from "../ai/providers/embeddings.service";
+
+export function isPageIndexable(page: {
+  status: string;
+  visibility: string;
+  deletedAt: Date | null;
+}): boolean {
+  return (
+    page.status === "published" &&
+    (page.visibility === "org" || page.visibility === "public") &&
+    page.deletedAt === null
+  );
+}
 
 @Injectable()
 export class KbIndexingService {
@@ -81,8 +93,59 @@ export class KbIndexingService {
       const valuesToInsert = chunks.map((chunk, index) => ({
         orgId,
         articleId,
+        pageId: null,
         attachmentId: null,
         source: "article_body" as const,
+        chunkIndex: index,
+        content: chunk,
+        tokens: Math.ceil(chunk.length / 4),
+        embedding: embeddings[index],
+        embeddingModel: EMBEDDING_MODEL,
+      }));
+
+      await tx.insert(kbArticleChunks).values(valuesToInsert);
+    });
+  }
+
+  async indexPage(orgId: string, pageId: number): Promise<void> {
+    const page = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+      columns: {
+        status: true,
+        visibility: true,
+        deletedAt: true,
+        contentText: true,
+      },
+    });
+
+    if (!page || !isPageIndexable(page) || !page.contentText?.trim() || !this.embeddings.isConfigured()) {
+      await this.removePageChunks(orgId, pageId);
+      return;
+    }
+
+    const chunks = this.chunkText(page.contentText);
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.pageId, pageId),
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "page_body"),
+          ),
+        );
+
+      if (chunks.length === 0) return;
+
+      const embeddings = await Promise.all(chunks.map((chunk) => this.embeddings.embedQuery(chunk)));
+
+      const valuesToInsert = chunks.map((chunk, index) => ({
+        orgId,
+        articleId: null,
+        pageId,
+        attachmentId: null,
+        source: "page_body" as const,
         chunkIndex: index,
         content: chunk,
         tokens: Math.ceil(chunk.length / 4),
@@ -100,6 +163,12 @@ export class KbIndexingService {
       .where(and(eq(kbArticleChunks.articleId, articleId), eq(kbArticleChunks.orgId, orgId)));
   }
 
+  async removePageChunks(orgId: string, pageId: number): Promise<void> {
+    await this.db
+      .delete(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.pageId, pageId), eq(kbArticleChunks.orgId, orgId)));
+  }
+
   async reindexAll(orgId: string): Promise<{ reindexed: number }> {
     const articles = await this.db.query.kbArticles.findMany({
       where: and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")),
@@ -111,6 +180,23 @@ export class KbIndexingService {
     }
 
     return { reindexed: articles.length };
+  }
+
+  async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
+    const where = orgId
+      ? and(eq(kbPages.orgId, orgId), eq(kbPages.status, "published"), isNull(kbPages.deletedAt))
+      : and(eq(kbPages.status, "published"), isNull(kbPages.deletedAt));
+
+    const pages = await this.db
+      .select({ id: kbPages.id, orgId: kbPages.orgId })
+      .from(kbPages)
+      .where(where);
+
+    for (const page of pages) {
+      await this.indexPage(page.orgId, page.id);
+    }
+
+    return { reindexed: pages.length };
   }
 
   async getArticleIndexStatus(

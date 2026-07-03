@@ -11,29 +11,44 @@ import { jwtVerify } from "jose";
 import type { JWTPayload } from "jose";
 import { desc, eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
+import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
 import type { BackendClaims, CurrentUserContext } from "./backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { organizationMembers, organizations, subscriptions, userApiTokens, users } from "../../db/schema";
+import { REDIS } from "../../common/cache/cache.service";
+import {
+  organizationMembers,
+  organizations,
+  subscriptions,
+  userApiTokens,
+  users,
+} from "../../db/schema";
 
 function extractClaims(payload: JWTPayload): BackendClaims {
   return {
     sub: typeof payload.sub === "string" ? payload.sub : "",
-    orgId: typeof payload["orgId"] === "string" && payload["orgId"] !== "" ? payload["orgId"] : null,
-    branchId: typeof payload["branchId"] === "number" ? payload["branchId"] : null,
+    orgId:
+      typeof payload["orgId"] === "string" && payload["orgId"] !== ""
+        ? payload["orgId"]
+        : null,
+    branchId:
+      typeof payload["branchId"] === "number" ? payload["branchId"] : null,
     role: typeof payload["role"] === "string" ? payload["role"] : "",
     permissions: Array.isArray(payload["permissions"])
       ? payload["permissions"].filter((x): x is string => typeof x === "string")
       : [],
     enabledModules: Array.isArray(payload["enabledModules"])
-      ? payload["enabledModules"].filter((x): x is string => typeof x === "string")
+      ? payload["enabledModules"].filter(
+          (x): x is string => typeof x === "string",
+        )
       : [],
     plan: typeof payload["plan"] === "string" ? payload["plan"] : null,
     isPlatformAdmin: payload["isPlatformAdmin"] === true,
     isOrgOwner: payload["isOrgOwner"] === true,
-    sessionId: typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
+    sessionId:
+      typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
   };
 }
 
@@ -42,6 +57,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(REDIS) private readonly redis: Redis | null,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -51,7 +67,9 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: CurrentUserContext }>();
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
       throw new UnauthorizedException("Unauthorized");
@@ -62,23 +80,32 @@ export class JwtAuthGuard implements CanActivate {
 
     let claims: BackendClaims | null = null;
     try {
-      const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] });
+      const { payload } = await jwtVerify(
+        token,
+        new TextEncoder().encode(secret),
+        { algorithms: ["HS256"] },
+      );
       claims = extractClaims(payload);
     } catch {
       // JWT verification failed — fall through to PAT check
     }
 
     if (claims !== null) {
-      if (!claims.sub) {
-        throw new UnauthorizedException("Unauthorized");
+      if (!claims.sub) throw new UnauthorizedException("Unauthorized");
+
+      if (!claims.sessionId) throw new UnauthorizedException("Unauthorized");
+
+      if (this.redis && !claims.sessionId.startsWith("pat:")) {
+        const revoked = await this.redis.get<boolean>(
+          `revoked:session:${claims.sessionId}`,
+        );
+        if (revoked)
+          throw new UnauthorizedException("Session has been revoked");
       }
-      if (!claims.sessionId) {
-        throw new UnauthorizedException("Unauthorized");
-      }
-      const allowNoOrg = this.reflector.getAllAndOverride<boolean>(ALLOW_NO_ORG_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]);
+      const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_NO_ORG_KEY,
+        [context.getHandler(), context.getClass()],
+      );
       const path = req.path ?? req.url?.split("?")[0] ?? "";
       const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
 
@@ -94,7 +121,10 @@ export class JwtAuthGuard implements CanActivate {
           orgId = resolved.orgId;
           isOrgOwner = resolved.isOwner;
           role = role || resolved.role;
-          enabledModules = enabledModules.length > 0 ? enabledModules : resolved.enabledModules;
+          enabledModules =
+            enabledModules.length > 0
+              ? enabledModules
+              : resolved.enabledModules;
           plan = plan ?? resolved.plan;
         }
       }
@@ -147,7 +177,10 @@ export class JwtAuthGuard implements CanActivate {
           enabledModules: organizations.enabledModules,
         })
         .from(organizationMembers)
-        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .innerJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
         .where(eq(organizationMembers.userId, userId))
         .orderBy(desc(organizationMembers.joinedAt)),
     ]);
@@ -174,7 +207,9 @@ export class JwtAuthGuard implements CanActivate {
     };
   }
 
-  private async tryPatAuth(rawToken: string): Promise<CurrentUserContext | null> {
+  private async tryPatAuth(
+    rawToken: string,
+  ): Promise<CurrentUserContext | null> {
     const prefix = rawToken.slice(0, 8);
 
     const rows = await this.db

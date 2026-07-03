@@ -2,7 +2,7 @@ export type PermissionTier = "STARTER" | "GROWTH" | "ENTERPRISE";
 
 export interface CatalogPermission {
   key: string;
-  module: string;
+  module: string | null;
   resource: string;
   action: string;
   description: string;
@@ -29,13 +29,13 @@ export const PERMISSION_CATALOG: CatalogPermission[] = [
   { key: "inventory:products:manage", module: "inventory", resource: "products", action: "manage", description: "Manage products", minTier: "STARTER", scopable: false },
   { key: "inventory:orders:view", module: "inventory", resource: "orders", action: "view", description: "View orders", minTier: "STARTER", scopable: true },
   { key: "inventory:orders:manage", module: "inventory", resource: "orders", action: "manage", description: "Manage orders", minTier: "GROWTH", scopable: false },
-  { key: "settings:rbac:manage", module: "settings", resource: "rbac", action: "manage", description: "Manage roles & permissions", minTier: "STARTER", scopable: false },
-  { key: "settings:org:manage", module: "settings", resource: "org", action: "manage", description: "Manage organization settings", minTier: "STARTER", scopable: false },
-  { key: "settings:billing:manage", module: "settings", resource: "billing", action: "manage", description: "Manage billing", minTier: "STARTER", scopable: false },
-  { key: "settings:automations:view", module: "settings", resource: "automations", action: "view", description: "View automations", minTier: "GROWTH", scopable: false },
-  { key: "settings:automations:manage", module: "settings", resource: "automations", action: "manage", description: "Manage automations", minTier: "GROWTH", scopable: false },
-  { key: "settings:custom-fields:manage", module: "settings", resource: "custom-fields", action: "manage", description: "Manage custom fields", minTier: "GROWTH", scopable: false },
-  { key: "settings:integrations:manage", module: "settings", resource: "integrations", action: "manage", description: "Manage integrations", minTier: "GROWTH", scopable: false },
+  { key: "settings:rbac:manage", module: null, resource: "rbac", action: "manage", description: "Manage roles & permissions", minTier: "STARTER", scopable: false },
+  { key: "settings:org:manage", module: null, resource: "org", action: "manage", description: "Manage organization settings", minTier: "STARTER", scopable: false },
+  { key: "settings:billing:manage", module: null, resource: "billing", action: "manage", description: "Manage billing", minTier: "STARTER", scopable: false },
+  { key: "settings:automations:view", module: null, resource: "automations", action: "view", description: "View automations", minTier: "GROWTH", scopable: false },
+  { key: "settings:automations:manage", module: null, resource: "automations", action: "manage", description: "Manage automations", minTier: "GROWTH", scopable: false },
+  { key: "settings:custom-fields:manage", module: null, resource: "custom-fields", action: "manage", description: "Manage custom fields", minTier: "GROWTH", scopable: false },
+  { key: "settings:integrations:manage", module: null, resource: "integrations", action: "manage", description: "Manage integrations", minTier: "GROWTH", scopable: false },
   { key: "kb:articles:view", module: "kb", resource: "articles", action: "view", description: "View knowledge base articles", minTier: "STARTER", scopable: true },
   { key: "kb:articles:manage", module: "kb", resource: "articles", action: "manage", description: "Manage knowledge base articles", minTier: "GROWTH", scopable: false },
 ];

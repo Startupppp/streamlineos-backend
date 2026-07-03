@@ -5,7 +5,6 @@ import {
   pages,
   projectMilestones,
   projectViews,
-  projectWhiteboards,
   projects,
   tickets,
 } from "../../db/schema";
@@ -16,13 +15,11 @@ import type {
   CreateMilestoneInput,
   CreatePageInput,
   CreateViewInput,
-  CreateWhiteboardInput,
   IntakeListQuery,
   UpdateIntakeInput,
   UpdateMilestoneInput,
   UpdatePageInput,
   UpdateViewInput,
-  UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
 
 async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
@@ -243,86 +240,6 @@ export class ViewsService {
     await this.db
       .delete(projectViews)
       .where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)));
-    return { success: true };
-  }
-}
-
-@Injectable()
-export class WhiteboardsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  async listWhiteboards(orgId: string, projectId: number) {
-    await assertProject(this.db, orgId, projectId);
-    const boards = await this.db.query.projectWhiteboards.findMany({
-      where: and(eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, orgId)),
-      orderBy: [desc(projectWhiteboards.updatedAt)],
-      columns: { id: true, name: true, data: true, updatedAt: true },
-    });
-
-    return boards.map((board) => ({
-      id: board.id,
-      name: board.name,
-      elementCount: Array.isArray(board.data) ? board.data.length : 0,
-      updatedAt: board.updatedAt,
-    }));
-  }
-
-  async createWhiteboard(orgId: string, userId: string, projectId: number, input: CreateWhiteboardInput) {
-    await assertProject(this.db, orgId, projectId);
-    const [board] = await this.db
-      .insert(projectWhiteboards)
-      .values({ projectId, orgId, name: input.name, data: [], createdBy: userId })
-      .returning();
-    return board;
-  }
-
-  async getWhiteboard(orgId: string, projectId: number, whiteboardId: number) {
-    await assertProject(this.db, orgId, projectId);
-    const board = await this.db.query.projectWhiteboards.findFirst({
-      where: and(
-        eq(projectWhiteboards.id, whiteboardId),
-        eq(projectWhiteboards.projectId, projectId),
-        eq(projectWhiteboards.orgId, orgId),
-      ),
-    });
-    if (!board) throw new NotFoundException("Whiteboard not found");
-    return board;
-  }
-
-  async updateWhiteboard(orgId: string, projectId: number, whiteboardId: number, input: UpdateWhiteboardInput) {
-    await assertProject(this.db, orgId, projectId);
-    const [updated] = await this.db
-      .update(projectWhiteboards)
-      .set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.data !== undefined ? { data: input.data } : {}),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(projectWhiteboards.id, whiteboardId),
-          eq(projectWhiteboards.projectId, projectId),
-          eq(projectWhiteboards.orgId, orgId),
-        ),
-      )
-      .returning();
-    if (!updated) throw new NotFoundException("Whiteboard not found");
-    return updated;
-  }
-
-  async deleteWhiteboard(orgId: string, projectId: number, whiteboardId: number) {
-    await assertProject(this.db, orgId, projectId);
-    const [deleted] = await this.db
-      .delete(projectWhiteboards)
-      .where(
-        and(
-          eq(projectWhiteboards.id, whiteboardId),
-          eq(projectWhiteboards.projectId, projectId),
-          eq(projectWhiteboards.orgId, orgId),
-        ),
-      )
-      .returning();
-    if (!deleted) throw new NotFoundException("Whiteboard not found");
     return { success: true };
   }
 }

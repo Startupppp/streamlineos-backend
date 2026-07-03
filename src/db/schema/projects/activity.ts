@@ -12,6 +12,8 @@ export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
   "sprint_changed",
   "due_date_changed",
   "comment_added",
+  "comment_updated",
+  "comment_deleted",
   "label_changed",
 ]);
 

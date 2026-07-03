@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -19,7 +18,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { AccessService } from "../access/access.service";
 import { LeadsOpsService } from "./leads-ops.service";
 import {
   bulkDeleteSchema,
@@ -39,10 +37,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 @Controller("leads")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeadsOpsController {
-  constructor(
-    private readonly ops: LeadsOpsService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly ops: LeadsOpsService) {}
 
   @Get("import/:batchId")
   @RequirePermission("crm:leads:view")
@@ -75,16 +70,11 @@ export class LeadsOpsController {
 
   @Post("merge")
   @HttpCode(200)
+  @RequirePermission("crm:leads:assign")
   async mergeLeads(
     @Body(new ZodValidationPipe(topMergeSchema)) body: TopMergeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("crm:leads:assign")) {
-        throw new ForbiddenException("Forbidden: Manager or Admin role required");
-      }
-    }
     const result = await this.ops.mergeLeads(u.orgId, u.userId, body);
     if (!result.ok) {
       if (result.reason === "self") {
@@ -110,16 +100,11 @@ export class LeadsOpsController {
 
   @Post("distribute")
   @HttpCode(200)
+  @RequirePermission("crm:leads:assign")
   async distribute(
     @Body(new ZodValidationPipe(distributeSchema)) body: DistributeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("crm:leads:assign")) {
-        throw new ForbiddenException("Only CEO or HR can distribute leads");
-      }
-    }
     const result = await this.ops.distribute(u.orgId, u.userId, body);
     if (!result.ok) {
       if (result.reason === "no_members") {

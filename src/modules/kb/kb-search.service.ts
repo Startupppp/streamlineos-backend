@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleChunks } from "../../db/schema";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { kbArticles, kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
@@ -12,13 +12,11 @@ import type { SearchInput } from "./dto/kb-ai.schemas";
 const SNIPPET_LENGTH = 160;
 const RRF_CONSTANT = 60;
 
-export interface RetrievedArticle {
-  id: number;
-  title: string;
-  slug: string;
-  spaceId: number | null;
-  contentText: string;
-}
+export type RetrievedSource =
+  | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string }
+  | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string };
+
+export type { RetrievedSource as RetrievedArticle };
 
 @Injectable()
 export class KbSearchService {
@@ -113,47 +111,94 @@ export class KbSearchService {
     query: string,
     limit: number,
     spaceId?: number,
-  ): Promise<RetrievedArticle[]> {
+  ): Promise<RetrievedSource[]> {
     const ids = await this.access.getAccessibleSpaceIds(user);
-    if (ids.length === 0) return [];
-
     const q = query.trim();
     if (!q) return [];
 
     const pool = Math.max(limit * 3, limit);
-    const lists: number[][] = [await this.keywordCandidates(user.orgId, ids, q, pool, spaceId)];
+    const lists: string[][] = [];
 
-    if (this.embeddings.isConfigured()) {
-      const vectorIds = await this.vectorCandidates(user.orgId, ids, q, pool, spaceId);
-      if (vectorIds.length > 0) lists.push(vectorIds);
+    if (ids.length > 0) {
+      const articleKeyword = await this.articleKeywordCandidates(user.orgId, ids, q, pool, spaceId);
+      if (articleKeyword.length > 0) lists.push(articleKeyword.map((id) => `a:${id}`));
+
+      if (this.embeddings.isConfigured()) {
+        const articleVector = await this.articleVectorCandidates(user.orgId, ids, q, pool, spaceId);
+        if (articleVector.length > 0) lists.push(articleVector.map((id) => `a:${id}`));
+      }
     }
 
-    const fused = this.fuse(lists).slice(0, limit);
+    const pageKeyword = await this.pageKeywordCandidates(user.orgId, q, pool);
+    if (pageKeyword.length > 0) lists.push(pageKeyword.map((id) => `p:${id}`));
+
+    if (this.embeddings.isConfigured()) {
+      const pageVector = await this.pageVectorCandidates(user.orgId, q, pool);
+      if (pageVector.length > 0) lists.push(pageVector.map((id) => `p:${id}`));
+    }
+
+    const fused = this.fuseKeys(lists).slice(0, limit);
     if (fused.length === 0) return [];
 
-    const conditions: SQL[] = [
-      eq(kbArticles.orgId, user.orgId),
-      inArray(kbArticles.id, fused),
-      eq(kbArticles.status, "published"),
-    ];
-    if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
+    const articleIds = fused.filter((k) => k.startsWith("a:")).map((k) => parseInt(k.slice(2), 10));
+    const pageIds = fused.filter((k) => k.startsWith("p:")).map((k) => parseInt(k.slice(2), 10));
 
-    const rows = await this.db
-      .select({
-        id: kbArticles.id,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        spaceId: kbArticles.spaceId,
-        contentText: kbArticles.contentText,
-      })
-      .from(kbArticles)
-      .where(and(...conditions));
+    const results: RetrievedSource[] = [];
 
-    const order = new Map(fused.map((id, index) => [id, index]));
-    return rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    if (articleIds.length > 0) {
+      const articleConditions: SQL[] = [
+        eq(kbArticles.orgId, user.orgId),
+        inArray(kbArticles.id, articleIds),
+        eq(kbArticles.status, "published"),
+      ];
+      if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
+      const articleRows = await this.db
+        .select({
+          id: kbArticles.id,
+          title: kbArticles.title,
+          slug: kbArticles.slug,
+          spaceId: kbArticles.spaceId,
+          contentText: kbArticles.contentText,
+        })
+        .from(kbArticles)
+        .where(and(...articleConditions));
+      for (const row of articleRows) {
+        results.push({ kind: "article", ...row, contentText: row.contentText ?? "" });
+      }
+    }
+
+    if (pageIds.length > 0) {
+      const pageRows = await this.db
+        .select({
+          id: kbPages.id,
+          title: kbPages.title,
+          spaceId: kbPages.spaceId,
+          contentText: kbPages.contentText,
+        })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, user.orgId),
+            inArray(kbPages.id, pageIds),
+            eq(kbPages.status, "published"),
+            isNull(kbPages.deletedAt),
+            sql`${kbPages.visibility} IN ('org', 'public')`,
+          ),
+        );
+      for (const row of pageRows) {
+        results.push({ kind: "page", ...row, contentText: row.contentText ?? "" });
+      }
+    }
+
+    const order = new Map(fused.map((key, index) => [key, index]));
+    return results.sort((a, b) => {
+      const ka = a.kind === "article" ? `a:${a.id}` : `p:${a.id}`;
+      const kb = b.kind === "article" ? `a:${b.id}` : `p:${b.id}`;
+      return (order.get(ka) ?? 0) - (order.get(kb) ?? 0);
+    });
   }
 
-  private async keywordCandidates(
+  private async articleKeywordCandidates(
     orgId: string,
     spaceIds: number[],
     query: string,
@@ -178,7 +223,7 @@ export class KbSearchService {
     return rows.map((row) => row.id);
   }
 
-  private async vectorCandidates(
+  private async articleVectorCandidates(
     orgId: string,
     spaceIds: number[],
     query: string,
@@ -190,6 +235,7 @@ export class KbSearchService {
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
         eq(kbArticleChunks.orgId, orgId),
+        isNotNull(kbArticleChunks.articleId),
         inArray(kbArticles.spaceId, spaceIds),
         eq(kbArticles.status, "published"),
       ];
@@ -206,9 +252,79 @@ export class KbSearchService {
       const seen = new Set<number>();
       const result: number[] = [];
       for (const row of rows) {
-        if (seen.has(row.articleId)) continue;
-        seen.add(row.articleId);
-        result.push(row.articleId);
+        const id = row.articleId;
+        if (id === null || seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
+        if (result.length >= pool) break;
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  private async pageKeywordCandidates(
+    orgId: string,
+    query: string,
+    pool: number,
+  ): Promise<number[]> {
+    const tsquery = sql`websearch_to_tsquery('english', ${query})`;
+    const term = `%${query}%`;
+    const rows = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          eq(kbPages.status, "published"),
+          isNull(kbPages.deletedAt),
+          sql`${kbPages.visibility} IN ('org', 'public')`,
+          sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`,
+        ),
+      )
+      .orderBy(desc(sql`ts_rank(fts, ${tsquery})`), desc(kbPages.updatedAt))
+      .limit(pool);
+    return rows.map((row) => row.id);
+  }
+
+  private async pageVectorCandidates(
+    orgId: string,
+    query: string,
+    pool: number,
+  ): Promise<number[]> {
+    try {
+      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const rows = await this.db
+        .select({ pageId: kbArticleChunks.pageId })
+        .from(kbArticleChunks)
+        .innerJoin(
+          kbPages,
+          and(
+            eq(kbPages.id, kbArticleChunks.pageId),
+            eq(kbPages.status, "published"),
+            isNull(kbPages.deletedAt),
+            sql`${kbPages.visibility} IN ('org', 'public')`,
+          ),
+        )
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            isNotNull(kbArticleChunks.pageId),
+            eq(kbPages.orgId, orgId),
+          ),
+        )
+        .orderBy(distance)
+        .limit(pool * 4);
+
+      const seen = new Set<number>();
+      const result: number[] = [];
+      for (const row of rows) {
+        const id = row.pageId;
+        if (id === null || seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
         if (result.length >= pool) break;
       }
       return result;
@@ -226,18 +342,18 @@ export class KbSearchService {
     return sql<number>`ts_rank(fts, ${tsquery})`;
   }
 
-  private fuse(lists: number[][]): number[] {
-    const scores = new Map<number, number>();
+  private fuseKeys(lists: string[][]): string[] {
+    const scores = new Map<string, number>();
     for (const list of lists) {
-      list.forEach((id, rank) => {
-        scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_CONSTANT + rank + 1));
+      list.forEach((key, rank) => {
+        scores.set(key, (scores.get(key) ?? 0) + 1 / (RRF_CONSTANT + rank + 1));
       });
     }
-    return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
   }
 
-  private buildSnippet(contentText: string, query: string): string {
-    const text = contentText.trim();
+  private buildSnippet(contentText: string | null, query: string): string {
+    const text = (contentText ?? "").trim();
     if (!text) return "";
     const index = text.toLowerCase().indexOf(query.toLowerCase());
     const start = index > 0 ? index : 0;

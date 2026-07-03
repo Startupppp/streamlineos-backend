@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
+import type { DataScope } from "../access/access.types";
 import { Redis } from "@upstash/redis";
 import {
   clientAccounts,
@@ -22,7 +23,6 @@ import type {
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
 
-const SALES = "SALES";
 const CUSTOMER_SUPPORT = "CUSTOMER_SUPPORT";
 
 @Injectable()
@@ -36,15 +36,15 @@ export class ClientAccountsService {
 
   async getClientAccounts(
     orgId: string,
-    role: string,
+    scope: DataScope,
     userId: string,
     filters: ListAccountsInput,
   ) {
     void this.tryBackfill(orgId, userId);
 
     const f = [eq(clientAccounts.orgId, orgId)];
-    if (role === SALES) f.push(eq(clientAccounts.salesRepId, userId));
-    if (role === CUSTOMER_SUPPORT) f.push(eq(clientAccounts.assignedCrmId, userId));
+    if (scope === "own") f.push(eq(clientAccounts.salesRepId, userId));
+    if (scope === "none") f.push(sql`false`);
     if (filters.status) f.push(eq(clientAccounts.status, filters.status));
     if (filters.search) {
       const s = `%${filters.search}%`;

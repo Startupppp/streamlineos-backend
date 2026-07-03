@@ -17,11 +17,19 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "../access/access.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
+import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
+import {
+  ProjectsForbiddenTicketException,
+  ProjectsInvalidTicketStatusException,
+  ProjectsTicketConflictException,
+  ProjectsTicketNotFoundException,
+} from "../../common/http/api-exceptions";
 import type {
   BulkUpdateInput,
   CreateTicketInput,
@@ -52,7 +60,13 @@ export class ProjectsTicketsService {
     private readonly projectsEmail: ProjectsEmailService,
     private readonly activity: ProjectsActivityService,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
+
+  private async validateTicketStatus(projectId: number, orgId: string, status: string): Promise<void> {
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, [status]);
+    if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+  }
 
   private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
     const perms = await this.access.resolveUserPermissions(orgId, userId);
@@ -120,6 +134,10 @@ export class ProjectsTicketsService {
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
     const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
+
+    if (body.status !== undefined) {
+      await this.validateTicketStatus(projectId, u.orgId, body.status);
+    }
 
     const [ticket] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
@@ -189,7 +207,7 @@ export class ProjectsTicketsService {
           type: "INFO",
           title: "Ticket Assigned to You",
           message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
-          link: `/projects/${projectId}`,
+          link: `/projects/${projectId}?ticket=${ticket.id}`,
         });
       } catch (error) {
         logger.error("Failed to create ticket assignment notification", { error });
@@ -213,7 +231,7 @@ export class ProjectsTicketsService {
         labels: { with: { label: true } },
       },
     });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!ticket) throw new ProjectsTicketNotFoundException();
 
     const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
@@ -221,7 +239,16 @@ export class ProjectsTicketsService {
         ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) {
-        throw new ForbiddenException("You don't have access to this ticket's details.");
+        this.audit.log({
+          action: "ticket.access_denied",
+          userId: u.userId,
+          orgId: u.orgId,
+          targetId: String(ticketId),
+          targetType: "ticket",
+          metadata: { ticketId, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
+          result: "FAILURE",
+        });
+        throw new ProjectsForbiddenTicketException();
       }
     }
 
@@ -229,7 +256,8 @@ export class ProjectsTicketsService {
   }
 
   async updateTicket(orgId: string, actingUserId: string, ticketId: number, input: UpdateTicketInput) {
-    const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
+    const now = new Date();
+    const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     if (input.title) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.type) updateData.type = normalizeTicketType(input.type);
@@ -247,12 +275,23 @@ export class ProjectsTicketsService {
 
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true },
+      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true, updatedAt: true },
     });
     if (!before || !before.projectId) throw new NotFoundException("Ticket not found");
 
+    if (input.expectedUpdatedAt !== undefined) {
+      const expected = new Date(input.expectedUpdatedAt);
+      if (before.updatedAt.getTime() !== expected.getTime()) {
+        throw new ProjectsTicketConflictException();
+      }
+    }
+
     const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
+
+    if (input.status !== undefined) {
+      await this.validateTicketStatus(before.projectId, orgId, input.status);
+    }
 
     await this.db
       .update(tickets)
@@ -279,7 +318,7 @@ export class ProjectsTicketsService {
       void this.projectsEmail.notifyStatusReview(ticketId, actingUserId, input.status).catch(() => undefined);
     }
 
-    return { updated: true };
+    return { updated: true, updatedAt: now.toISOString() };
   }
 
   private async syncAssignees(ticketId: number, actingUserId: string, input: UpdateTicketInput): Promise<void> {
@@ -334,7 +373,7 @@ export class ProjectsTicketsService {
           type: "INFO",
           title: "Ticket Assigned to You",
           message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-          link: ticketData?.projectId ? `/projects/${ticketData.projectId}` : undefined,
+          link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
         });
       } catch (error) {
         logger.error("Failed to create ticket assignment notification", { error });
@@ -397,6 +436,10 @@ export class ProjectsTicketsService {
     });
     if (!member) throw new ForbiddenException("Not a project member.");
 
+    if (body.status !== undefined) {
+      await this.validateTicketStatus(projectId, u.orgId, body.status);
+    }
+
     const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
     if (body.assigneeId !== undefined) updateData.assigneeId = body.assigneeId;
     if (body.status !== undefined) updateData.status = body.status;
@@ -414,6 +457,12 @@ export class ProjectsTicketsService {
 
   async reorder(orgId: string, projectId: number, body: ReorderInput) {
     if (body.items.length === 0) return { success: true };
+
+    const distinctStatuses = [...new Set(body.items.map((i) => i.status))];
+    const valid = await resolveValidTicketStatuses(this.db, projectId, orgId, distinctStatuses);
+    for (const status of distinctStatuses) {
+      if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
+    }
 
     await this.db.transaction(async (tx) => {
       for (const item of body.items) {

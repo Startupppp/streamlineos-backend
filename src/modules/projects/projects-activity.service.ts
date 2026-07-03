@@ -216,7 +216,9 @@ export class ProjectsActivityService {
       return;
     }
 
-    const link = input.projectId ? `/projects/${input.projectId}` : undefined;
+    const link = input.projectId
+      ? `/projects/${input.projectId}?ticket=${input.ticketId}&comment=${input.commentId}`
+      : undefined;
     for (const user of mentioned) {
       try {
         await this.notifications.create({

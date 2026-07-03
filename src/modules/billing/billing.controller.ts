@@ -169,7 +169,7 @@ export class BillingController {
   @RequirePermission("billing:ai-credits:view")
   async getAiCredits(@CurrentUser() u: CurrentUserContext) {
     const [wallet, packs] = await Promise.all([
-      this.aiCredits.getWallet(parseInt(u.orgId, 10)),
+      this.aiCredits.getWallet(u.orgId),
       this.aiCredits.listPacks(),
     ]);
     return { ...wallet, packs };
@@ -183,7 +183,7 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiCredits.updateAutoTopUp(
-      parseInt(u.orgId, 10),
+      u.orgId,
       body.enabled,
       body.packId,
       body.threshold,

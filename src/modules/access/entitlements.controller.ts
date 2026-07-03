@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
-import { EntitlementsService } from "./entitlements.service";
+import { EntitlementsService, ModuleStatus } from "./entitlements.service";
 
 const moduleKeyParamSchema = z.object({
   moduleKey: z.string().min(1).max(64).regex(/^[a-z][a-z0-9_-]*$/),
@@ -26,7 +26,7 @@ export class EntitlementsController {
 
   @Get()
   @RequirePermission("settings:manage")
-  listModules(@CurrentUser() u: CurrentUserContext): Promise<Array<{ moduleKey: string; enabled: boolean }>> {
+  listModules(@CurrentUser() u: CurrentUserContext): Promise<ModuleStatus[]> {
     return this.entitlements.listModules(u.orgId);
   }
 

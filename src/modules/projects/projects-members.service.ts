@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import { customStates, projectMembers, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -86,22 +86,27 @@ export class ProjectsMembersService {
   listCustomStates(orgId: string, projectId: number) {
     return this.db
       .select()
-      .from(customStates)
-      .where(and(eq(customStates.projectId, projectId), eq(customStates.orgId, orgId)))
-      .orderBy(customStates.sequence);
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)))
+      .orderBy(projectStatuses.order);
   }
 
   async createCustomState(orgId: string, projectId: number, body: CreateStateInput) {
+    const [maxResult] = await this.db
+      .select({ maxOrder: sql<number>`COALESCE(MAX(${projectStatuses.order}), -1)` })
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
+    const nextOrder = body.order ?? ((maxResult?.maxOrder ?? -1) + 1);
+
     const [state] = await this.db
-      .insert(customStates)
+      .insert(projectStatuses)
       .values({
         projectId,
         orgId,
         name: body.name,
         color: body.color,
-        group: body.group,
-        sequence: body.sequence,
-        isDefault: body.isDefault,
+        order: nextOrder,
+        type: body.type ?? "unstarted",
       })
       .returning();
     return state;
@@ -142,21 +147,27 @@ export class ProjectsMembersService {
   }
 
   async updateCustomState(orgId: string, stateId: number, data: UpdateCustomStateInput) {
+    const updateData: Partial<typeof projectStatuses.$inferInsert> = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.color !== undefined) updateData.color = data.color;
+    if (data.order !== undefined) updateData.order = data.order;
+    if (data.type !== undefined) updateData.type = data.type;
+
     const [updated] = await this.db
-      .update(customStates)
-      .set(data)
-      .where(and(eq(customStates.id, stateId), eq(customStates.orgId, orgId)))
+      .update(projectStatuses)
+      .set(updateData)
+      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
       .returning();
-    if (!updated) throw new NotFoundException("State not found");
+    if (!updated) throw new NotFoundException("Status not found");
     return updated;
   }
 
   async deleteCustomState(orgId: string, stateId: number) {
     const [deleted] = await this.db
-      .delete(customStates)
-      .where(and(eq(customStates.id, stateId), eq(customStates.orgId, orgId)))
+      .delete(projectStatuses)
+      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
       .returning();
-    if (!deleted) throw new NotFoundException("State not found");
+    if (!deleted) throw new NotFoundException("Status not found");
     return { success: true };
   }
 }

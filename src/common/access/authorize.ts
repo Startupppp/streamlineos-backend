@@ -45,17 +45,20 @@ export function authorize(ctx: CurrentUserContext, input: AuthorizeInput): Autho
 
   const catalogEntry = PERMISSION_CATALOG.find((p) => p.key === permission);
 
-  const resolvedModule = requiredModule ?? catalogEntry?.module;
-  if (resolvedModule && ctx.enabledModules && !ctx.enabledModules.includes(resolvedModule)) {
-    return { allow: false, reason: "NO_MODULE", scope: "none", upgrade: resolvedModule };
-  }
-
-  if (catalogEntry && !meetsMinTier((ctx as unknown as Record<string, unknown>).orgTier as string | undefined, catalogEntry.minTier)) {
-    return { allow: false, reason: "PLAN_UPGRADE", scope: "none", upgrade: catalogEntry.minTier };
-  }
-
   if (ctx.isPlatformAdmin || ctx.isOrgOwner) {
     return { allow: true, scope: "all" };
+  }
+
+  const resolvedModule = requiredModule ?? catalogEntry?.module ?? undefined;
+  if (resolvedModule) {
+    const upperModule = resolvedModule.toUpperCase();
+    if (ctx.enabledModules && !ctx.enabledModules.some(m => m.toUpperCase() === upperModule)) {
+      return { allow: false, reason: "NO_MODULE", scope: "none", upgrade: resolvedModule };
+    }
+  }
+
+  if (catalogEntry && !meetsMinTier(ctx.plan ?? undefined, catalogEntry.minTier)) {
+    return { allow: false, reason: "PLAN_UPGRADE", scope: "none", upgrade: catalogEntry.minTier };
   }
 
   if (!hasPermission(ctx.permissions, permission)) {
@@ -70,7 +73,7 @@ export function requireAuthorize(ctx: CurrentUserContext, input: AuthorizeInput)
   if (!result.allow) {
     const msg =
       result.reason === "NO_MODULE"
-        ? `Module not enabled: ${input.requiredModule}`
+        ? `Module not enabled: ${result.upgrade}`
         : `Permission denied: ${input.permission}`;
     throw new ForbiddenException(msg);
   }
