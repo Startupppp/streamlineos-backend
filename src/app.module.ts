@@ -11,6 +11,7 @@ import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { TargetsModule } from "./modules/targets/targets.module";
 import { CsatModule } from "./modules/csat/csat.module";
+import { SurveysModule } from "./modules/surveys/surveys.module";
 import { BlogModule } from "./modules/blog/blog.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { GoalsModule } from "./modules/goals/goals.module";
@@ -102,6 +103,7 @@ import { MeService } from "./me/me.service";
     ContactsModule,
     TargetsModule,
     CsatModule,
+    SurveysModule,
     BlogModule,
     AuditLogModule,
     GoalsModule,
