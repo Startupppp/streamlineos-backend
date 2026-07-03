@@ -57,14 +57,20 @@ export const createWhiteboardSchema = z.object({
   name: z.string().min(1).max(200),
 });
 
-export const excalidrawSceneSchema = z.object({
-  type: z.string().max(50).optional(),
-  version: z.number().int().optional(),
-  source: z.string().max(500).optional(),
-  elements: z.array(z.record(z.string(), z.unknown())).max(5000),
-  appState: z.record(z.string(), z.unknown()).optional(),
-  files: z.record(z.string(), z.unknown()).optional(),
-});
+const MAX_SCENE_BYTES = 2_000_000;
+
+export const excalidrawSceneSchema = z
+  .object({
+    type: z.string().max(50).optional(),
+    version: z.number().int().optional(),
+    source: z.string().max(500).optional(),
+    elements: z.array(z.record(z.string(), z.unknown())).max(5000),
+    appState: z.record(z.string(), z.unknown()).optional(),
+    files: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((scene) => JSON.stringify(scene).length <= MAX_SCENE_BYTES, {
+    message: "Scene exceeds the 2MB limit",
+  });
 
 export const updateWhiteboardSchema = z
   .object({

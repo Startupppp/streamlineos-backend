@@ -176,6 +176,18 @@ export class ViewsController {
 }
 
 @RequireModule("projects")
+@Controller("whiteboards")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class WhiteboardsHubController {
+  constructor(private readonly whiteboards: WhiteboardsService) {}
+
+  @Get()
+  listAllWhiteboards(@CurrentUser() u: CurrentUserContext) {
+    return this.whiteboards.listAllWhiteboards(u);
+  }
+}
+
+@RequireModule("projects")
 @Controller("projects/:projectId/whiteboards")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class WhiteboardsController {

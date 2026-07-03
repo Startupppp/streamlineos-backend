@@ -17,6 +17,7 @@ import {
   PagesController,
   ViewsController,
   WhiteboardsController,
+  WhiteboardsHubController,
 } from "./workspace.controller";
 import {
   IntakeService,
@@ -47,6 +48,7 @@ import { TimesheetsService } from "./timesheets.service";
     IntakeController,
     ViewsController,
     WhiteboardsController,
+    WhiteboardsHubController,
     WhiteboardSharingController,
     PublicWhiteboardLinksController,
     PagesController,

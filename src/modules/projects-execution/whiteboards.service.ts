@@ -182,6 +182,52 @@ export class WhiteboardsService {
     }));
   }
 
+  async listAllWhiteboards(u: CurrentUserContext) {
+    const visibilityFilter =
+      u.isOrgOwner || u.isPlatformAdmin
+        ? undefined
+        : or(
+            ne(projectWhiteboards.visibility, "private"),
+            eq(projectWhiteboards.createdBy, u.userId),
+            isNotNull(projectWhiteboardShares.role),
+          );
+
+    const boards = await this.db
+      .select({
+        id: projectWhiteboards.id,
+        name: projectWhiteboards.name,
+        data: projectWhiteboards.data,
+        visibility: projectWhiteboards.visibility,
+        createdBy: projectWhiteboards.createdBy,
+        updatedAt: projectWhiteboards.updatedAt,
+        projectId: projectWhiteboards.projectId,
+        projectName: projects.name,
+      })
+      .from(projectWhiteboards)
+      .innerJoin(projects, eq(projects.id, projectWhiteboards.projectId))
+      .leftJoin(
+        projectWhiteboardShares,
+        and(
+          eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
+          eq(projectWhiteboardShares.userId, u.userId),
+        ),
+      )
+      .where(and(eq(projectWhiteboards.orgId, u.orgId), visibilityFilter))
+      .orderBy(desc(projectWhiteboards.updatedAt))
+      .limit(100);
+
+    return boards.map((board) => ({
+      id: board.id,
+      name: board.name,
+      elementCount: board.data.elements.length,
+      visibility: board.visibility,
+      createdBy: board.createdBy,
+      updatedAt: board.updatedAt,
+      projectId: board.projectId,
+      projectName: board.projectName,
+    }));
+  }
+
   async getWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
     await assertProject(this.db, u.orgId, projectId);
     const { board, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
