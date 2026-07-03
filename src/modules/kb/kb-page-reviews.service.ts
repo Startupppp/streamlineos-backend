@@ -145,6 +145,22 @@ export class KbPageReviewsService {
       metadata: { pageId, type: input.type },
     });
 
+    if (review.reviewerId && review.reviewerId !== user.userId) {
+      void this.notifications
+        .create({
+          orgId: user.orgId,
+          userId: review.reviewerId,
+          type: "INFO",
+          category: "SYSTEM",
+          sourceModule: "kb",
+          title: `Review requested: ${page.title}`,
+          message: `You have been assigned a ${input.type} review for "${page.title}".`,
+        })
+        .catch(function notifError(err: unknown) {
+          console.error("Failed to send review request notification", err);
+        });
+    }
+
     return review;
   }
 

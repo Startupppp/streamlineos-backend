@@ -3,6 +3,7 @@
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
@@ -11,6 +12,7 @@ import { kbPages, kbPageLinks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
+import { KbIndexingService } from "./kb-indexing.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 
@@ -38,11 +40,17 @@ export function isDescendant(
 
 @Injectable()
 export class KbPageTreeService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  private readonly logger = new Logger(KbPageTreeService.name);
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly indexing: KbIndexingService,
+  ) {}
 
   async getTree(user: CurrentUserContext): Promise<{
     id: number;
     parentPageId: number | null;
+    spaceId: number | null;
     title: string;
     icon: string | null;
     sortOrder: number;
@@ -56,6 +64,7 @@ export class KbPageTreeService {
       .select({
         id: kbPages.id,
         parentPageId: kbPages.parentPageId,
+        spaceId: kbPages.spaceId,
         title: kbPages.title,
         icon: kbPages.icon,
         sortOrder: kbPages.sortOrder,
@@ -83,19 +92,25 @@ export class KbPageTreeService {
     const deletedAt = now;
     const deletedById = user.userId;
 
-    const deleted = await this.db.transaction(async (tx) => {
-      const subtreeIds = await this.collectSubtreeIds(tx, orgId, pageId);
+    const { deleted, subtreeIds } = await this.db.transaction(async (tx) => {
+      const ids = await this.collectSubtreeIds(tx, orgId, pageId);
       await tx
         .update(kbPages)
         .set({ deletedAt, deletedById })
         .where(
           and(
             eq(kbPages.orgId, orgId),
-            sql`${kbPages.id} = ANY(ARRAY[${sql.join(subtreeIds.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+            sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
           ),
         );
-      return subtreeIds.length;
+      return { deleted: ids.length, subtreeIds: ids };
     });
+
+    for (const id of subtreeIds) {
+      this.indexing.removePageChunks(orgId, id).catch((err: unknown) => {
+        this.logger.error(`Failed to remove chunks for trashed page ${id}: ${err}`);
+      });
+    }
 
     return { deletedCount: deleted };
   }

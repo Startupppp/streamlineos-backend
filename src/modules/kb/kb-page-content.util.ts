@@ -11,6 +11,7 @@ type SlateNode = {
   children?: SlateNode[];
   pageId?: number;
   userId?: string;
+  key?: unknown;
   [key: string]: unknown;
 };
 
@@ -63,8 +64,13 @@ export function extractMentionUserIds(content: unknown): string[] {
   try {
     if (Array.isArray(content)) {
       walkSlateNodes(content, (node) => {
-        if (node.type === "mention" && typeof node.userId === "string" && node.userId.length > 0) {
-          ids.push(node.userId);
+        if (node.type === "mention") {
+          const id = typeof node.key === "string" && node.key.length > 0
+            ? node.key
+            : typeof node.userId === "string" && node.userId.length > 0
+              ? node.userId
+              : null;
+          if (id) ids.push(id);
         }
       });
     } else {

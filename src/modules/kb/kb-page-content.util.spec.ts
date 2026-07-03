@@ -10,7 +10,8 @@ const paragraph = (children: unknown[]): unknown => ({ type: "paragraph", conten
 
 const slatePageLink = (pageId: number): unknown => ({ type: "page_link", pageId, value: "Page Name", children: [{ text: "" }] });
 
-const slateMention = (userId: string): unknown => ({ type: "mention", userId, value: "John", children: [{ text: "" }] });
+const slateMention = (userId: string): unknown => ({ type: "mention", key: userId, value: "John", children: [{ text: "" }] });
+const slateMentionLegacy = (userId: string): unknown => ({ type: "mention", userId, value: "John", children: [{ text: "" }] });
 
 const slateParagraph = (children: unknown[]): unknown => ({ type: "paragraph", children });
 
@@ -134,12 +135,16 @@ describe("Slate (Plate) format", () => {
       expect(extractMentionUserIds([slateParagraph([{ type: "text", text: "hello" }])])).toEqual([]);
     });
 
+    it("also accepts legacy userId field", () => {
+      expect(extractMentionUserIds([slateMentionLegacy("user-legacy")])).toEqual(["user-legacy"]);
+    });
+
     it("ignores mention with empty string userId", () => {
-      expect(extractMentionUserIds([{ type: "mention", userId: "", children: [] }])).toEqual([]);
+      expect(extractMentionUserIds([{ type: "mention", key: "", children: [] }])).toEqual([]);
     });
 
     it("ignores mention with non-string userId", () => {
-      expect(extractMentionUserIds([{ type: "mention", userId: 123, children: [] }])).toEqual([]);
+      expect(extractMentionUserIds([{ type: "mention", key: 123, children: [] }])).toEqual([]);
     });
   });
 });

@@ -11,8 +11,9 @@ import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { kbArticles } from "./kb";
 import { kbArticleAttachments } from "./kb-attachments";
+import { kbPages } from "../kb/pages";
 
-export const KB_CHUNK_SOURCES = ["article_body", "attachment"] as const;
+export const KB_CHUNK_SOURCES = ["article_body", "attachment", "page_body"] as const;
 export type KbChunkSource = (typeof KB_CHUNK_SOURCES)[number];
 
 export const KB_EMBEDDING_DIMENSIONS = 1536;
@@ -24,9 +25,8 @@ export const kbArticleChunks = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    articleId: integer("article_id")
-      .references(() => kbArticles.id, { onDelete: "cascade" })
-      .notNull(),
+    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }),
+    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }),
     attachmentId: integer("attachment_id").references(
       () => kbArticleAttachments.id,
       { onDelete: "cascade" },
@@ -44,6 +44,7 @@ export const kbArticleChunks = pgTable(
   (table) => [
     index("idx_kb_chunks_article").on(table.articleId),
     index("idx_kb_chunks_org_article").on(table.orgId, table.articleId),
+    index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
   ],
 );
 
@@ -51,6 +52,10 @@ export const kbArticleChunksRelations = relations(kbArticleChunks, ({ one }) => 
   article: one(kbArticles, {
     fields: [kbArticleChunks.articleId],
     references: [kbArticles.id],
+  }),
+  page: one(kbPages, {
+    fields: [kbArticleChunks.pageId],
+    references: [kbPages.id],
   }),
   attachment: one(kbArticleAttachments, {
     fields: [kbArticleChunks.attachmentId],

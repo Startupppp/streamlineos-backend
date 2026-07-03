@@ -44,6 +44,8 @@ import { KbPageReviewsController } from "./kb-page-reviews.controller";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KbImportExportController } from "./kb-import-export.controller";
 import { KbImportExportService } from "./kb-import-export.service";
+import { KbPageRecordLinksController } from "./kb-page-record-links.controller";
+import { KbPageRecordLinksService } from "./kb-page-record-links.service";
 
 @Module({
   imports: [AiModule, NotificationsModule],
@@ -68,6 +70,7 @@ import { KbImportExportService } from "./kb-import-export.service";
     KbPublicPagesController,
     KbPageReviewsController,
     KbImportExportController,
+    KbPageRecordLinksController,
   ],
   providers: [
     KbCreditsService,
@@ -93,6 +96,7 @@ import { KbImportExportService } from "./kb-import-export.service";
     KbPageTemplatesService,
     KbPageReviewsService,
     KbImportExportService,
+    KbPageRecordLinksService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })

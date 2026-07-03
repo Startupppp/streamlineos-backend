@@ -93,9 +93,10 @@ export const kbPageLinks = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     sourcePageId: integer("source_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
-    targetPageId: integer("target_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    targetPageId: integer("target_page_id").references(() => kbPages.id, { onDelete: "cascade" }),
     targetType: text("target_type").notNull().default("page"),
     targetId: text("target_id"),
+    label: text("label"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

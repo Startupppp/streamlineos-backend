@@ -48,8 +48,12 @@ export class RateLimitService {
         const count = await this.redis.incr(key);
         if (count === 1) await this.redis.expire(key, t.windowSecs);
         if (count > effectiveLimit) {
-          const ttl = await this.redis.ttl(key);
-          return { allowed: false, retryAfterSecs: ttl > 0 ? ttl : t.windowSecs };
+          let ttl = await this.redis.ttl(key);
+          if (ttl < 0) {
+            await this.redis.expire(key, t.windowSecs);
+            ttl = t.windowSecs;
+          }
+          return { allowed: false, retryAfterSecs: ttl };
         }
         return { allowed: true, retryAfterSecs: 0 };
       } catch {}

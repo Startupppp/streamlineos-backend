@@ -8,7 +8,7 @@
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates } from "../../db/schema";
+import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -18,6 +18,7 @@ import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb
 import { pageVisibleTo } from "./kb-page-visibility";
 import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { KbIndexingService } from "./kb-indexing.service";
 
 const VERSION_WINDOW_MS = 10 * 60 * 1000;
 const MAX_VERSIONS = 100;
@@ -33,6 +34,7 @@ export class KbPagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly reviews: KbPageReviewsService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
   async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
@@ -55,6 +57,14 @@ export class KbPagesService {
       if (!parent) throw new NotFoundException("Parent page not found");
     }
 
+    if (input.spaceId != null) {
+      const space = await this.db.query.kbSpaces.findFirst({
+        where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (!space) throw new NotFoundException("Space not found");
+    }
+
     const siblings = await this.db
       .select({ sortOrder: kbPages.sortOrder })
       .from(kbPages)
@@ -75,6 +85,7 @@ export class KbPagesService {
       .insert(kbPages)
       .values({
         orgId,
+        spaceId: input.spaceId ?? null,
         parentPageId: input.parentPageId ?? null,
         title: input.title ?? "",
         content: templateContent ?? null,
@@ -131,6 +142,16 @@ export class KbPagesService {
     }
 
     const values: Partial<typeof kbPages.$inferInsert> = { lastEditedById: user.userId };
+    if (input.spaceId !== undefined) {
+      if (input.spaceId != null) {
+        const space = await this.db.query.kbSpaces.findFirst({
+          where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+          columns: { id: true },
+        });
+        if (!space) throw new NotFoundException("Space not found");
+      }
+      values.spaceId = input.spaceId;
+    }
     if (input.title !== undefined) values.title = input.title;
     if (input.icon !== undefined) values.icon = input.icon;
     if (input.coverImage !== undefined) values.coverImage = input.coverImage;
@@ -186,15 +207,27 @@ export class KbPagesService {
   }
 
   async publish(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    return this.setStatus(user, pageId, "published");
+    const result = await this.setStatus(user, pageId, "published");
+    this.indexing.indexPage(user.orgId, pageId).catch((err: unknown) => {
+      this.logger.error(`Failed to index page ${pageId}: ${err}`);
+    });
+    return result;
   }
 
   async archive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    return this.setStatus(user, pageId, "archived");
+    const result = await this.setStatus(user, pageId, "archived");
+    this.indexing.removePageChunks(user.orgId, pageId).catch((err: unknown) => {
+      this.logger.error(`Failed to remove chunks for page ${pageId}: ${err}`);
+    });
+    return result;
   }
 
   async unarchive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    return this.setStatus(user, pageId, "draft");
+    const result = await this.setStatus(user, pageId, "draft");
+    this.indexing.removePageChunks(user.orgId, pageId).catch((err: unknown) => {
+      this.logger.error(`Failed to remove chunks for page ${pageId}: ${err}`);
+    });
+    return result;
   }
 
   private async setStatus(
@@ -622,7 +655,7 @@ export class KbPagesService {
 
     await tx
       .delete(kbPageLinks)
-      .where(and(eq(kbPageLinks.sourcePageId, pageId), eq(kbPageLinks.orgId, orgId)));
+      .where(and(eq(kbPageLinks.sourcePageId, pageId), eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetType, "page")));
 
     if (linkIds.length === 0) return;
 
@@ -662,7 +695,7 @@ export class KbPagesService {
           sourceModule: "kb",
           title: "You were mentioned in a page",
           message: `You were mentioned in "${pageTitle || "Untitled"}"`,
-          link: `/knowledge-base/pages/${pageId}`,
+          link: `/knowledge/pages/${pageId}`,
         });
       } catch (err) {
         this.logger.error(`Mention notification failed for user ${userId}: ${err}`);

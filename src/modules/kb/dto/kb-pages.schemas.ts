@@ -4,12 +4,14 @@ const tipTapContent = z.record(z.string(), z.unknown());
 
 export const createPageSchema = z.object({
   parentPageId: z.coerce.number().int().positive().nullable().optional(),
+  spaceId: z.coerce.number().int().positive().nullable().optional(),
   title: z.string().max(500).optional(),
   templateId: z.coerce.number().int().positive().nullable().optional(),
 });
 export type CreatePageInput = z.infer<typeof createPageSchema>;
 
 export const updatePageSchema = z.object({
+  spaceId: z.coerce.number().int().positive().nullable().optional(),
   title: z.string().max(500).optional(),
   icon: z.string().max(100).nullable().optional(),
   coverImage: z.string().max(2000).nullable().optional(),

@@ -109,6 +109,8 @@ const CRM_PERMISSIONS: Permission[] = [
   { name: "crm:organizations:manage", resource: "crm:organizations", action: "manage", description: "Manage CRM organizations" },
   { name: "crm:web-forms:manage", resource: "crm:web-forms", action: "manage", description: "Manage CRM web forms" },
   { name: "crm:territories:manage", resource: "crm:territories", action: "manage", description: "Manage CRM territories" },
+  { name: "crm:automations:manage", resource: "crm:automations", action: "manage", description: "Manage CRM automation rules" },
+  { name: "crm:products:manage", resource: "crm:products", action: "manage", description: "Manage the CRM product catalog" },
 ];
 
 const SHARED_PERMISSIONS: Permission[] = [
@@ -600,6 +602,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "crm:email-templates:manage",
     "crm:scoring-rules:manage",
     "crm:sla:manage",
+    "crm:automations:manage",
+    "crm:products:manage",
     "sales:view",
     "sales:manage",
     "crm:targets:view",
