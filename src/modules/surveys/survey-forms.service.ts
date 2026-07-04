@@ -76,6 +76,7 @@ export class SurveyFormsService {
             type: question.type as (typeof surveyQuestions.$inferInsert)["type"],
             title: question.title,
             required: question.required ?? false,
+            variableName: question.variableName ?? null,
             settings: question.settings ?? {},
             sortOrder: questionIndex,
           })
