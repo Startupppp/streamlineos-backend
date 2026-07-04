@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
   surveyVersions,
+  surveyForms,
   surveyResponseSessions,
   surveyAnswers,
   surveyQuestionChoices,
@@ -11,6 +12,7 @@ import { type Db } from "../../db/drizzle.module";
 import { SurveyCollectorService } from "./survey-collector.service";
 import { SurveyParticipantService } from "./survey-participant.service";
 import { SurveyAutomationService } from "./survey-automation.service";
+import { SurveyAssessmentService } from "./survey-assessment.service";
 import type { SaveAnswerInput, StartSessionInput } from "./dto/survey-public.schemas";
 import type { ListResponsesInput } from "./dto/survey-analytics.schemas";
 
@@ -21,6 +23,7 @@ export class SurveyResponseService {
     private readonly collectors: SurveyCollectorService,
     private readonly participants: SurveyParticipantService,
     private readonly automations: SurveyAutomationService,
+    private readonly assessments: SurveyAssessmentService,
   ) {}
 
   async getPublicSurvey(collectorToken: string) {
@@ -70,6 +73,11 @@ export class SurveyResponseService {
 
     await this.collectors.incrementCounter(collector.id, "starts");
     this.automations.record(survey.orgId, survey.id, session.id, "survey.response.started", {}).catch(() => undefined);
+
+    if (survey.mode === "assessment") {
+      const attempt = await this.assessments.createAttempt(survey.orgId, survey.id, participantId);
+      await this.assessments.linkAttemptToSession(attempt.id, session.id);
+    }
 
     return session;
   }
@@ -129,16 +137,23 @@ export class SurveyResponseService {
     const totalScore = allAnswers.reduce((sum, a) => sum + (a.score ?? 0), 0);
     const durationSeconds = Math.max(0, Math.round((Date.now() - session.startedAt.getTime()) / 1000));
 
+    const survey = await this.db.query.surveyForms.findFirst({ where: eq(surveyForms.id, session.surveyId) });
+    let passed: boolean | null = null;
+    if (survey?.mode === "assessment") {
+      const attempt = await this.assessments.completeAttempt(session.orgId, session.surveyId, session.id, totalScore);
+      passed = attempt?.passed ?? null;
+    }
+
     const [updated] = await this.db
       .update(surveyResponseSessions)
-      .set({ status: "submitted", submittedAt: new Date(), durationSeconds, score: totalScore })
+      .set({ status: "submitted", submittedAt: new Date(), durationSeconds, score: totalScore, passed })
       .where(eq(surveyResponseSessions.id, session.id))
       .returning();
 
     if (session.collectorId) await this.collectors.incrementCounter(session.collectorId, "completions");
     if (session.participantId) await this.participants.markStatus(session.participantId, "completed", "completedAt");
 
-    this.automations.record(session.orgId, session.surveyId, session.id, "survey.response.submitted", { score: totalScore }).catch(() => undefined);
+    this.automations.record(session.orgId, session.surveyId, session.id, "survey.response.submitted", { score: totalScore, passed }).catch(() => undefined);
 
     return updated;
   }
