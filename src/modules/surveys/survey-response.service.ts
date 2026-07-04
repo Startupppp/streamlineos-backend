@@ -165,7 +165,7 @@ export class SurveyResponseService {
     const answers = await this.db.query.surveyAnswers.findMany({
       where: eq(surveyAnswers.sessionId, sessionId),
       orderBy: [asc(surveyAnswers.answeredAt)],
-      with: { question: true },
+      with: { question: { with: { choices: true } } },
     });
 
     return { session, answers };
