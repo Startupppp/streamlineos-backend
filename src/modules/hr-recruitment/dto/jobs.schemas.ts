@@ -14,6 +14,17 @@ const VALID_JOB_TYPES = [
 ] as const;
 const MAX_SALARY = 999_999_999;
 
+export const screeningQuestionSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1).max(500),
+  type: z.enum(["TEXT", "YES_NO", "SINGLE_SELECT", "NUMBER"]),
+  required: z.boolean().default(false),
+  knockout: z.boolean().default(false),
+  knockoutAnswer: z.string().max(200).optional(),
+  options: z.array(z.string().max(200)).optional(),
+});
+export type ScreeningQuestionInput = z.infer<typeof screeningQuestionSchema>;
+
 export const jobListSchema = z.object({
   status: z.enum(JOB_STATUSES).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -55,6 +66,7 @@ export const createJobSchema = z
       .refine((d) => !d || new Date(d) >= new Date(new Date().toDateString()), "Application deadline cannot be in the past")
       .optional(),
     status: z.enum(JOB_STATUSES).optional(),
+    screeningQuestions: z.array(screeningQuestionSchema).max(20).optional(),
   })
   .refine(
     (d) => {
@@ -83,6 +95,7 @@ export const updateJobSchema = z
     status: z.enum(JOB_STATUSES),
     openings: z.number().int().positive(),
     applicationDeadline: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
+    screeningQuestions: z.array(screeningQuestionSchema).max(20),
   })
   .partial();
 export type UpdateJobInput = z.infer<typeof updateJobSchema>;

@@ -17,6 +17,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { getCandidateRejectionEmail } from "../email/templates/recruitment";
@@ -24,6 +25,7 @@ import type {
   BgvStatusInput,
   BulkImportInput,
   BulkRejectInput,
+  BulkShortlistInput,
   CreateApplicationInput,
   ImportInput,
   SlaResetInput,
@@ -34,6 +36,7 @@ export class RecruitmentCandidateOpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
   ) {}
@@ -173,6 +176,44 @@ export class RecruitmentCandidateOpsService {
     }
 
     return { rejected: toReject.length, alreadyRejected, emailsSent };
+  }
+
+  async bulkShortlist(orgId: string, userId: string, input: BulkShortlistInput) {
+    const existing = await this.db
+      .select({ id: candidates.id, firstName: candidates.firstName, lastName: candidates.lastName, status: candidates.status })
+      .from(candidates)
+      .where(and(inArray(candidates.id, input.candidateIds), eq(candidates.orgId, orgId)));
+
+    if (existing.length === 0) {
+      throw new NotFoundException("No matching candidates found");
+    }
+
+    const toShortlist = existing.filter((c) => c.status === "NEW");
+    const skipped = existing.length - toShortlist.length;
+
+    if (toShortlist.length === 0) {
+      return { shortlisted: 0, skipped };
+    }
+
+    const ids = toShortlist.map((c) => c.id);
+    await this.db
+      .update(candidates)
+      .set({ status: "SCREENING", updatedAt: new Date() })
+      .where(and(inArray(candidates.id, ids), eq(candidates.orgId, orgId)));
+
+    for (const c of toShortlist) {
+      this.audit.log({
+        action: "CANDIDATE_STAGE_CHANGED",
+        userId,
+        orgId,
+        targetId: String(c.id),
+        targetType: "candidate",
+        metadata: { from: "NEW", to: "SCREENING", candidateName: `${c.firstName} ${c.lastName}`, bulk: true },
+      });
+    }
+
+    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    return { shortlisted: toShortlist.length, skipped };
   }
 
   async getSla(orgId: string, candidateId: number) {

@@ -8,6 +8,7 @@ export const applySchema = z.object({
   linkedinUrl: z.string().url().max(500).optional(),
   coverLetter: z.string().max(5000).optional(),
   resumeUrl: z.string().url().max(500).optional(),
+  answers: z.record(z.string(), z.string().max(1000)).optional(),
 });
 
 export type ApplyInput = z.infer<typeof applySchema>;

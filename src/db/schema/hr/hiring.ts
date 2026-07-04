@@ -7,6 +7,16 @@ import {
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
 
+export interface ScreeningQuestion {
+  id: string;
+  question: string;
+  type: "TEXT" | "YES_NO" | "SINGLE_SELECT" | "NUMBER";
+  required: boolean;
+  knockout: boolean;
+  knockoutAnswer?: string;
+  options?: string[];
+}
+
 export const hiringFlows = pgTable("hiring_flows", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -59,6 +69,7 @@ export const jobPostings = pgTable("job_postings", {
   postedBy: text("posted_by").references(() => users.id),
   externalPostingIds: jsonb("external_posting_ids").$type<Record<string, string>>(),
   isInternal: boolean("is_internal").notNull().default(false),
+  screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -134,6 +145,7 @@ export const candidateApplications = pgTable("candidate_applications", {
   coverLetter: text("cover_letter"),
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
+  screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_applications_candidate").on(table.candidateId),
