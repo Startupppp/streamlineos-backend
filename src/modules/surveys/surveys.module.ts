@@ -1,5 +1,8 @@
 import { Module } from "@nestjs/common";
 import { WebhooksModule } from "../webhooks/webhooks.module";
+import { LeadsModule } from "../leads/leads.module";
+import { TasksModule } from "../tasks/tasks.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SurveysController } from "./surveys.controller";
 import { SurveyBuilderController } from "./survey-builder.controller";
 import { SurveyCollectorsController } from "./survey-collectors.controller";
@@ -21,11 +24,12 @@ import { SurveyLiveSessionService } from "./survey-live-session.service";
 import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { SurveyAnalyticsService } from "./survey-analytics.service";
 import { SurveyAutomationService } from "./survey-automation.service";
+import { SurveyLeadAutomationService } from "./survey-lead-automation.service";
 import { SurveyExportService } from "./survey-export.service";
 import { SurveyTemplateService } from "./survey-template.service";
 
 @Module({
-  imports: [WebhooksModule],
+  imports: [WebhooksModule, LeadsModule, TasksModule, NotificationsModule],
   controllers: [
     SurveysController,
     SurveyBuilderController,
@@ -50,6 +54,7 @@ import { SurveyTemplateService } from "./survey-template.service";
     SurveyLiveParticipantService,
     SurveyAnalyticsService,
     SurveyAutomationService,
+    SurveyLeadAutomationService,
     SurveyExportService,
     SurveyTemplateService,
   ],

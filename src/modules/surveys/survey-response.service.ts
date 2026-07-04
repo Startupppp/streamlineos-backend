@@ -13,6 +13,7 @@ import { SurveyCollectorService } from "./survey-collector.service";
 import { SurveyParticipantService } from "./survey-participant.service";
 import { SurveyAutomationService } from "./survey-automation.service";
 import { SurveyAssessmentService } from "./survey-assessment.service";
+import { SurveyLeadAutomationService } from "./survey-lead-automation.service";
 import type { SaveAnswerInput, StartSessionInput } from "./dto/survey-public.schemas";
 import type { ListResponsesInput } from "./dto/survey-analytics.schemas";
 
@@ -24,6 +25,7 @@ export class SurveyResponseService {
     private readonly participants: SurveyParticipantService,
     private readonly automations: SurveyAutomationService,
     private readonly assessments: SurveyAssessmentService,
+    private readonly leadAutomations: SurveyLeadAutomationService,
   ) {}
 
   async getPublicSurvey(collectorToken: string) {
@@ -133,7 +135,10 @@ export class SurveyResponseService {
       for (const answer of answers) await this.upsertAnswer(session, answer);
     }
 
-    const allAnswers = await this.db.query.surveyAnswers.findMany({ where: eq(surveyAnswers.sessionId, session.id) });
+    const allAnswers = await this.db.query.surveyAnswers.findMany({
+      where: eq(surveyAnswers.sessionId, session.id),
+      with: { question: { columns: { variableName: true } } },
+    });
     const totalScore = allAnswers.reduce((sum, a) => sum + (a.score ?? 0), 0);
     const durationSeconds = Math.max(0, Math.round((Date.now() - session.startedAt.getTime()) / 1000));
 
@@ -154,6 +159,13 @@ export class SurveyResponseService {
     if (session.participantId) await this.participants.markStatus(session.participantId, "completed", "completedAt");
 
     this.automations.record(session.orgId, session.surveyId, session.id, "survey.response.submitted", { score: totalScore, passed }).catch(() => undefined);
+
+    if (survey) {
+      this.automations
+        .getRulesForEvent(session.orgId, session.surveyId, "survey.response.submitted")
+        .then((rules) => (rules.length ? this.leadAutomations.run(survey, session, allAnswers, totalScore, rules) : undefined))
+        .catch(() => undefined);
+    }
 
     return updated;
   }

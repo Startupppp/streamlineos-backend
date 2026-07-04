@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -44,5 +44,15 @@ export class SurveyAutomationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.patch(u.orgId, surveyId, automationId, body);
+  }
+
+  @Delete(":automationId")
+  @RequirePermission("surveys:automations:manage")
+  remove(
+    @Param("surveyId", ParseIntPipe) surveyId: number,
+    @Param("automationId") automationId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.remove(u.orgId, surveyId, automationId);
   }
 }

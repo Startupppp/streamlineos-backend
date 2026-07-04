@@ -33,5 +33,6 @@ import { LeadNotificationAiService } from "./lead-notification-ai.service";
     LeadsOpsService,
     LeadNotificationAiService,
   ],
+  exports: [LeadsService, LeadsDetailService],
 })
 export class LeadsModule {}

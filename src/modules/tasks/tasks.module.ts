@@ -6,5 +6,6 @@ import { TaskNotificationsService } from "./task-notifications.service";
 @Module({
   controllers: [TasksController],
   providers: [TasksService, TaskNotificationsService],
+  exports: [TasksService],
 })
 export class TasksModule {}

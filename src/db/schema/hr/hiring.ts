@@ -436,6 +436,49 @@ export const candidateOffers = pgTable("candidate_offers", {
   index("idx_candidate_offers_org").on(table.orgId),
 ]);
 
+export const offerVersions = pgTable("offer_versions", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
+  offeredDesignation: text("offered_designation"),
+  joiningDate: date("joining_date"),
+  validUntil: date("valid_until"),
+  notes: text("notes"),
+  changeReason: text("change_reason"),
+  changedBy: text("changed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_offer_versions_offer").on(table.offerId),
+]);
+
+export type OfferNegotiationDirection = "CANDIDATE_COUNTER" | "INTERNAL_RESPONSE";
+
+export const offerNegotiations = pgTable("offer_negotiations", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  direction: text("direction").$type<OfferNegotiationDirection>().notNull(),
+  proposedSalary: decimal("proposed_salary", { precision: 15, scale: 2 }),
+  proposedJoiningDate: date("proposed_joining_date"),
+  message: text("message"),
+  createdBy: text("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_offer_negotiations_offer").on(table.offerId),
+]);
+
+export const offerVersionsRelations = relations(offerVersions, ({ one }) => ({
+  offer: one(candidateOffers, { fields: [offerVersions.offerId], references: [candidateOffers.id] }),
+  changedByUser: one(users, { fields: [offerVersions.changedBy], references: [users.id] }),
+}));
+
+export const offerNegotiationsRelations = relations(offerNegotiations, ({ one }) => ({
+  offer: one(candidateOffers, { fields: [offerNegotiations.offerId], references: [candidateOffers.id] }),
+  createdByUser: one(users, { fields: [offerNegotiations.createdBy], references: [users.id] }),
+}));
+
 export const hiringFlowsRelations = relations(hiringFlows, ({ one, many }) => ({
   organization: one(organizations, { fields: [hiringFlows.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [hiringFlows.createdBy], references: [users.id] }),

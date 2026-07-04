@@ -6,6 +6,7 @@ import { RecruitmentCandidatesController } from "./recruitment-candidates.contro
 import { RecruitmentPipelineController } from "./recruitment-pipeline.controller";
 import { RecruitmentCandidateRecordsController } from "./recruitment-candidate-records.controller";
 import { RecruitmentOffersController } from "./recruitment-offers.controller";
+import { RecruitmentOffersListController } from "./recruitment-offers-list.controller";
 import { RecruitmentJobsController } from "./recruitment-jobs.controller";
 import { RecruitmentRecruitersController } from "./recruitment-recruiters.controller";
 import { RecruitmentSourcingController } from "./recruitment-sourcing.controller";
@@ -34,6 +35,7 @@ import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.servic
     RecruitmentPipelineController,
     RecruitmentCandidateRecordsController,
     RecruitmentOffersController,
+    RecruitmentOffersListController,
     RecruitmentJobsController,
     RecruitmentRecruitersController,
     RecruitmentSourcingController,

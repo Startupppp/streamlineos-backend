@@ -17,6 +17,7 @@ import {
   externalReferrers,
   interviewBookingLinks,
   jobPostings,
+  offerNegotiations,
   organizations,
   recruitmentVendors,
   vendorCandidateSubmissions,
@@ -195,13 +196,19 @@ export class RecruitmentService {
       throw new GoneException("This offer link has expired.");
     }
 
-    return offer;
+    const negotiations = await this.db.query.offerNegotiations.findMany({
+      where: eq(offerNegotiations.offerId, offer.id),
+      orderBy: (t, { asc: a }) => [a(t.createdAt)],
+      columns: { direction: true, proposedSalary: true, message: true, createdAt: true },
+    });
+
+    return { ...offer, negotiations };
   }
 
   async respondToOffer(token: string, input: OfferRespondInput) {
     const offer = await this.db.query.candidateOffers.findFirst({
       where: eq(candidateOffers.acceptanceToken, token),
-      columns: { id: true, offerStatus: true, acceptanceTokenExpiresAt: true },
+      columns: { id: true, orgId: true, offerStatus: true, acceptanceTokenExpiresAt: true },
     });
 
     if (!offer) throw new NotFoundException("Offer not found");
@@ -217,6 +224,21 @@ export class RecruitmentService {
       throw new ConflictException("This offer can no longer be responded to.");
     }
 
+    if (input.action === "counter") {
+      await this.db.insert(offerNegotiations).values({
+        orgId: offer.orgId,
+        offerId: offer.id,
+        direction: "CANDIDATE_COUNTER",
+        proposedSalary: input.counterSalary !== undefined ? String(input.counterSalary) : null,
+        message: input.counterMessage,
+      });
+      await this.db
+        .update(candidateOffers)
+        .set({ offerStatus: "COUNTERED", respondedAt: new Date(), updatedAt: new Date() })
+        .where(eq(candidateOffers.id, offer.id));
+      return { success: true, status: "COUNTERED" };
+    }
+
     const newStatus = input.action === "accept" ? "ACCEPTED" : "DECLINED";
 
     await this.db
@@ -224,7 +246,7 @@ export class RecruitmentService {
       .set({
         offerStatus: newStatus,
         respondedAt: new Date(),
-        notes: input.declineReason ?? null,
+        ...(input.action === "decline" ? { notes: input.declineReason ?? null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(candidateOffers.id, offer.id));

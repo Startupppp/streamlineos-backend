@@ -10,8 +10,10 @@ export const applySchema = z.object({
 });
 
 export const offerRespondSchema = z.object({
-  action: z.enum(["accept", "decline"]),
+  action: z.enum(["accept", "decline", "counter"]),
   declineReason: z.string().max(1000).optional(),
+  counterSalary: z.number().positive().optional(),
+  counterMessage: z.string().max(2000).optional(),
 });
 
 export const roadmapQuerySchema = z.object({

@@ -51,6 +51,11 @@ export class SurveyAutomationService {
     return this.getRules(survey);
   }
 
+  async getRulesForEvent(orgId: string, surveyId: number, eventType: string) {
+    const survey = await this.getSurvey(orgId, surveyId);
+    return this.getRules(survey).filter((rule) => rule.eventType === eventType);
+  }
+
   async create(orgId: string, surveyId: number, input: CreateAutomationInput) {
     const survey = await this.getSurvey(orgId, surveyId);
     const rules = this.getRules(survey);
@@ -68,6 +73,13 @@ export class SurveyAutomationService {
     rules[index] = { ...rules[index], ...input };
     await this.saveRules(orgId, surveyId, survey, rules);
     return rules[index];
+  }
+
+  async remove(orgId: string, surveyId: number, automationId: string) {
+    const survey = await this.getSurvey(orgId, surveyId);
+    const rules = this.getRules(survey).filter((r) => r.id !== automationId);
+    await this.saveRules(orgId, surveyId, survey, rules);
+    return { success: true };
   }
 
   private async saveRules(orgId: string, surveyId: number, survey: typeof surveyForms.$inferSelect, rules: AutomationRule[]) {
