@@ -7,14 +7,17 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  auditLogs,
   calibrationParticipants,
   calibrationSessions,
   candidateDocuments,
   candidateDocumentsVault,
+  candidateMessages,
   candidateReferenceChecks,
   candidateReferrals,
   candidates,
   documentTemplates,
+  interviews,
   users,
   vaultAccessLogs,
 } from "../../db/schema";
@@ -507,6 +510,80 @@ export class RecruitmentCandidateRecordsService {
           ? `${l.accessorFirstName} ${l.accessorLastName}`
           : (l.accessorName ?? "Unknown"),
     }));
+  }
+
+  async getActivity(orgId: string, candidateId: number) {
+    await this.ensureCandidate(orgId, candidateId);
+
+    const [auditEntries, candidateInterviews, messages, documents] = await Promise.all([
+      this.db
+        .select({
+          id: auditLogs.id,
+          action: auditLogs.action,
+          metadata: auditLogs.metadata,
+          createdAt: auditLogs.createdAt,
+          userName: users.name,
+        })
+        .from(auditLogs)
+        .leftJoin(users, eq(auditLogs.userId, users.id))
+        .where(and(eq(auditLogs.orgId, orgId), eq(auditLogs.targetType, "candidate"), eq(auditLogs.targetId, String(candidateId))))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(100),
+      this.db.query.interviews.findMany({
+        where: and(eq(interviews.candidateId, candidateId), eq(interviews.orgId, orgId)),
+        columns: { id: true, type: true, scheduledAt: true, result: true },
+        orderBy: (t, { desc: d }) => [d(t.scheduledAt)],
+      }),
+      this.db.query.candidateMessages.findMany({
+        where: and(eq(candidateMessages.candidateId, candidateId), eq(candidateMessages.orgId, orgId)),
+        columns: { id: true, direction: true, channel: true, subject: true, sentAt: true },
+        orderBy: (t, { desc: d }) => [d(t.sentAt)],
+      }),
+      this.db.query.candidateDocuments.findMany({
+        where: eq(candidateDocuments.candidateId, candidateId),
+        columns: { id: true, title: true, status: true, createdAt: true, sentAt: true },
+        orderBy: (t, { desc: d }) => [d(t.createdAt)],
+      }),
+    ]);
+
+    const events = [
+      ...auditEntries.map((e) => ({
+        type: "AUDIT" as const,
+        id: `audit-${e.id}`,
+        label: e.action,
+        detail: e.metadata as Record<string, unknown> | null,
+        actor: e.userName,
+        at: e.createdAt,
+      })),
+      ...candidateInterviews.map((i) => ({
+        type: "INTERVIEW" as const,
+        id: `interview-${i.id}`,
+        label: `Interview scheduled (${i.type})`,
+        detail: { result: i.result },
+        actor: null,
+        at: i.scheduledAt,
+      })),
+      ...messages.map((m) => ({
+        type: "MESSAGE" as const,
+        id: `message-${m.id}`,
+        label: m.direction === "OUTBOUND" ? `Message sent (${m.channel})` : `Message received (${m.channel})`,
+        detail: { subject: m.subject },
+        actor: null,
+        at: m.sentAt,
+      })),
+      ...documents.map((d) => ({
+        type: "DOCUMENT" as const,
+        id: `document-${d.id}`,
+        label: `Document ${d.status === "SENT" ? "sent" : "generated"}: ${d.title}`,
+        detail: { status: d.status },
+        actor: null,
+        at: d.sentAt ?? d.createdAt,
+      })),
+    ];
+
+    return events
+      .filter((e) => e.at !== null)
+      .sort((a, b) => new Date(b.at!).getTime() - new Date(a.at!).getTime());
   }
 
   private async markDocumentViewed(documentId: number): Promise<void> {

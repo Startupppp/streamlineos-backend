@@ -285,4 +285,12 @@ export class RecruitmentCandidateRecordsController {
     }
     return this.records.listVaultAccessLogs(u.orgId, candidateId);
   }
+
+  @Get("activity")
+  getActivity(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.records.getActivity(u.orgId, candidateId);
+  }
 }

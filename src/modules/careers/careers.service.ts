@@ -7,6 +7,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
 import type { ApplyInput } from "./dto/careers.schemas";
 
 export type ApplyJobNotFound = { error: "job_not_found" };
@@ -22,7 +23,10 @@ export function isApplyJobNotFound(value: unknown): value is ApplyJobNotFound {
 
 @Injectable()
 export class CareersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   listOpenJobs() {
     return this.db
@@ -62,7 +66,7 @@ export class CareersService {
     const firstName = nameParts[0] ?? name.trim();
     const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const existingCandidate = await tx.query.candidates.findFirst({
         where: and(eq(candidates.orgId, job.orgId), ilike(candidates.email, normalizedEmail)),
         columns: { id: true },
@@ -106,5 +110,8 @@ export class CareersService {
 
       return { id: candidateId };
     });
+
+    await this.cache.invalidatePattern(`hr:candidates:list:${job.orgId}:*`);
+    return result;
   }
 }
