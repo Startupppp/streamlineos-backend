@@ -60,12 +60,24 @@ export const essReimbursementSchema = z.object({
 });
 
 export const essBankSchema = z.object({
-  accountNumber: z.string().min(8),
-  bankName: z.string().min(1),
-  branch: z.string().min(1),
-  ifsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/),
-  accountHolder: z.string().min(1),
-  pfUanNumber: z.string().optional(),
+  accountNumber: z.string().min(8).max(34),
+  bankName: z.string().min(1).max(100),
+  branch: z.string().min(1).max(100),
+  ifsc: z.string().max(50).optional(),
+  code: z.string().max(50).optional(),
+  accountHolder: z.string().min(1).max(100),
+  accountHolderName: z.string().max(100).optional(),
+  pfUanNumber: z.string().max(30).optional(),
+  bankCountry: z.string().length(2).toUpperCase().optional(),
+}).superRefine((data, ctx) => {
+  const effectiveCode = data.code ?? data.ifsc ?? "";
+  if (!effectiveCode) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Bank code (IFSC / routing / sort code / IBAN) is required",
+      path: ["code"],
+    });
+  }
 });
 
 export const essTaxDeclarationSchema = z.object({
@@ -102,7 +114,7 @@ export type PatchTaxWindow = z.infer<typeof patchTaxWindowSchema>;
 export type DeclarationApprove = z.infer<typeof declarationApproveSchema>;
 export type EssLoan = z.infer<typeof essLoanSchema>;
 export type EssReimbursement = z.infer<typeof essReimbursementSchema>;
-export type EssBank = z.infer<typeof essBankSchema>;
+export type EssBank = z.output<typeof essBankSchema>;
 export type EssTaxDeclaration = z.infer<typeof essTaxDeclarationSchema>;
 export type EssTaxProof = z.infer<typeof essTaxProofSchema>;
 export type FnfApprove = z.infer<typeof fnfApproveSchema>;

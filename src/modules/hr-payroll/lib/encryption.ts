@@ -33,6 +33,7 @@ export interface BankDetails {
   ifsc: string;
   accountHolder: string;
   pfUanNumber?: string;
+  bankCountry?: string;
 }
 
 export function decryptBankDetails(encrypted: string | null | undefined): BankDetails | null {

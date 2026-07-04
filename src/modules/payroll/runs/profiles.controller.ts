@@ -76,7 +76,7 @@ export class ProfilesController {
     @Body(new ZodValidationPipe(patchProfileSchema)) body: PatchProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.profilesService.patchProfile(u.orgId, employeeUserId, profileId, body);
+    const result = await this.profilesService.patchProfile(u.orgId, employeeUserId, profileId, body, u.userId);
     if (!result) throw new NotFoundException("Salary profile not found");
     if (!result.ok) throw new BadRequestException("Cannot update a superseded salary profile");
     return { ok: true };

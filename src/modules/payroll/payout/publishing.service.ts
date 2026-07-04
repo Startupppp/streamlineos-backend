@@ -21,10 +21,12 @@ import {
   organizationMembers,
   organizations,
 } from "../../../db/schema";
+import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
+import { logger } from "../../../common/logger/logger.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
 import { generatePayslipPdf } from "../../../modules/hr-payroll/lib/payslip-pdf";
 import { renderPayslipHtml, buildPayslipPdfData } from "./lib/payslip-renderer";
@@ -54,6 +56,7 @@ function fmtMonthYear(month: string): string {
 export class PublishingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
     private readonly storage: StorageService,
     private readonly email: EmailService,
     private readonly access: AccessService,
@@ -196,7 +199,7 @@ export class PublishingService {
       if (upsertedPub) {
         this.notifications
           .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
-          .catch(e => console.error("notifyPayslipPublished failed", e));
+          .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
       }
 
       if (emailPayslips && emp.email) {
@@ -251,6 +254,16 @@ export class PublishingService {
           metadata: { publishedCount: published, total: totalEmployees },
         });
       });
+
+      this.audit.log({
+        action: "payroll.payslips_published",
+        userId: actorId,
+        orgId,
+        targetId: String(runId),
+        targetType: "payroll_run",
+        metadata: { publishedCount: published, total: totalEmployees },
+      });
+
       runStatus = "PAYSLIPS_PUBLISHED";
     }
 

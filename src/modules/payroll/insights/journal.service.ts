@@ -2,7 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { payrollLineItems, payrollRunEmployees } from "../../../db/schema";
+import { payrollLineItems, payrollRunEmployees, employeeSalaryProfiles } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { findRunForMonth } from "./lib/report-builders";
 import { AccountingMappingsService } from "./accounting-mappings.service";
@@ -30,6 +30,7 @@ interface LineGroup {
   category: string;
   name: string;
   total: number;
+  costCenter: string | null;
 }
 
 const EMPTY_RESULT = (month: string): JournalResult => ({
@@ -54,7 +55,7 @@ export class JournalService {
 
     const provisional = !PAYROLL_LOCKED_STATUSES.includes(run.status);
 
-    const [lineItems, runEmployees, mappings] = await Promise.all([
+    const [lineItems, runEmployees, empCostCenters, mappings] = await Promise.all([
       this.db
         .select()
         .from(payrollLineItems)
@@ -63,12 +64,29 @@ export class JournalService {
         .select({ net: payrollRunEmployees.net })
         .from(payrollRunEmployees)
         .where(eq(payrollRunEmployees.runId, run.id)),
+      this.db
+        .select({
+          runEmployeeId: payrollRunEmployees.id,
+          costCenter: employeeSalaryProfiles.costCenter,
+        })
+        .from(payrollRunEmployees)
+        .leftJoin(
+          employeeSalaryProfiles,
+          eq(payrollRunEmployees.profileId, employeeSalaryProfiles.id),
+        )
+        .where(eq(payrollRunEmployees.runId, run.id)),
       this.accountingMappingsService.getMappings(orgId),
     ]);
 
+    const costCenterMap = new Map<number, string | null>();
+    for (const e of empCostCenters) {
+      costCenterMap.set(e.runEmployeeId, e.costCenter ?? null);
+    }
+
     const groups = new Map<string, LineGroup>();
     for (const item of lineItems) {
-      const key = `${item.componentId ?? ""}\0${item.code}\0${item.category}`;
+      const costCenter = costCenterMap.get(item.runEmployeeId) ?? null;
+      const key = `${item.componentId ?? ""}\0${item.code}\0${item.category}\0${costCenter ?? ""}`;
       const existing = groups.get(key);
       if (existing !== undefined) {
         existing.total += parseFloat(item.amount);
@@ -79,6 +97,7 @@ export class JournalService {
           category: item.category,
           name: item.name,
           total: parseFloat(item.amount),
+          costCenter,
         });
       }
     }
@@ -112,7 +131,7 @@ export class JournalService {
         description: `${group.name} (${group.code})`,
         debit: isDebit ? sum : "0.00",
         credit: isDebit ? "0.00" : sum,
-        costCenter: null,
+        costCenter: group.costCenter,
       });
     }
 

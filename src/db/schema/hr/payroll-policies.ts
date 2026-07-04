@@ -13,6 +13,7 @@ export const payrollPolicies = pgTable("payroll_policies", {
   currency: text("currency").default("INR").notNull(),
   payFrequency: payFrequencyEnum("pay_frequency").default("MONTHLY").notNull(),
   payDay: integer("pay_day").default(28).notNull(),
+  employeeCount: integer("employee_count"),
   startMonth: text("start_month").notNull(),
   activeVersionId: integer("active_version_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),

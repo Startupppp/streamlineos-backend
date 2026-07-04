@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { bonuses } from "../../db/schema";
+import { bonuses, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateBonusInput, PatchBonusInput } from "./dto/payroll.schemas";
@@ -15,8 +15,23 @@ export class BonusesService {
 
   listBonuses(orgId: string, userId: string, isAdmin: boolean) {
     return this.db
-      .select()
+      .select({
+        id: bonuses.id,
+        orgId: bonuses.orgId,
+        userId: bonuses.userId,
+        type: bonuses.type,
+        amount: bonuses.amount,
+        reason: bonuses.reason,
+        month: bonuses.month,
+        status: bonuses.status,
+        approvedBy: bonuses.approvedBy,
+        approvedAt: bonuses.approvedAt,
+        createdAt: bonuses.createdAt,
+        userName: users.name,
+        userEmail: users.email,
+      })
       .from(bonuses)
+      .leftJoin(users, eq(bonuses.userId, users.id))
       .where(
         isAdmin
           ? eq(bonuses.orgId, orgId)

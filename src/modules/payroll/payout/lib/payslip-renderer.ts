@@ -45,9 +45,16 @@ function fmtMonthYear(month: string): string {
 
 function fmtMoney(v: string, currency: string): string {
   const n = parseFloat(v) || 0;
-  return currency === "INR"
-    ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
-    : `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+  const locale = currency === "INR" ? "en-IN" : "en-US";
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${currency} ${n.toFixed(2)}`;
+  }
 }
 
 function byCategory(lines: CalculationSnapshotLine[], cat: string): CalculationSnapshotLine[] {
@@ -83,7 +90,7 @@ function bankSection(e: RendererEmployeeInfo, accent: string): string {
 <div style="font-size:10px;text-transform:uppercase;color:${accent};border-bottom:1px solid #e0e8ff;padding-bottom:4px;margin-bottom:8px;font-weight:700">Bank Details</div>
 <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span>Bank</span><span>${e.bankName ?? "—"}</span></div>
 <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span>Account</span><span>${e.maskedAccount ?? "—"}</span></div>
-<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span>IFSC</span><span>${e.ifsc ?? "—"}</span></div>
+<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span>Bank Code</span><span>${e.ifsc ?? "—"}</span></div>
 </div>
 <div style="padding:12px 20px;">
 <div style="font-size:10px;text-transform:uppercase;color:${accent};border-bottom:1px solid #e0e8ff;padding-bottom:4px;margin-bottom:8px;font-weight:700">Authorisation</div>

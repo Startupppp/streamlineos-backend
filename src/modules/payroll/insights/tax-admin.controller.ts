@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Inject,
@@ -61,6 +62,7 @@ export class TaxAdminController {
         status: taxDeclarations.status,
         verifiedBy: taxDeclarations.verifiedBy,
         verifiedAt: taxDeclarations.verifiedAt,
+        reviewNote: taxDeclarations.reviewNote,
         createdAt: taxDeclarations.createdAt,
         userName: users.name,
         userEmail: users.email,
@@ -94,10 +96,11 @@ export class TaxAdminController {
   async reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
+    @Body() body: { note?: string },
   ) {
     const [updated] = await this.db
       .update(taxDeclarations)
-      .set({ status: "DRAFT" })
+      .set({ status: "DRAFT", reviewNote: body.note?.trim() || null })
       .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, u.orgId)))
       .returning();
 

@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { logger } from "../../../common/logger/logger.service";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -123,7 +124,7 @@ export class TaxWindowsService {
     if (data.status === "OPEN" && actorId && updated?.closesAt) {
       this.notifications
         .notifyDeclarationWindow(orgId, actorId, updated.financialYear, updated.closesAt)
-        .catch(e => console.error("notifyDeclarationWindow failed", e));
+        .catch((e: unknown) => logger.error("notifyDeclarationWindow failed", { error: String(e) }));
     }
 
     return updated;

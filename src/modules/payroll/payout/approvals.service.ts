@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -15,8 +15,13 @@ import {
   payrollExceptions,
   payrollRunEvents,
   payrollRuns,
+  roles,
+  rolePermissionGrants,
+  userRoles,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions.constants";
+import { logger } from "../../../common/logger/logger.service";
 import {
   DEFAULT_PAYROLL_TOGGLES,
   type PayrollApprovalStageDef,
@@ -88,6 +93,11 @@ export class ApprovalsService {
         ? rawChain
         : [{ stage: 1, stageName: "Finance Approval", requiredPermission: "payroll:runs:approve" }];
 
+    const firstStage = chain[0];
+    const firstStageApprovers = firstStage
+      ? await this.resolveApprovers(orgId, firstStage.requiredPermission)
+      : [];
+
     return this.db.transaction(async (tx) => {
       await tx.insert(payrollApprovals).values(
         chain.map((def) => ({
@@ -111,10 +121,18 @@ export class ApprovalsService {
         actorId: userId,
       });
 
-      const firstStageName = chain[0]?.stageName ?? "Stage 1";
-      this.notifications
-        .notifyApprovalPending(orgId, userId, runId, firstStageName)
-        .catch(e => console.error("notifyApprovalPending failed", e));
+      if (firstStage && firstStageApprovers.length > 0) {
+        const { stageName } = firstStage;
+        void Promise.all(
+          firstStageApprovers.map((approverId) =>
+            this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
+          ),
+        ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
+      }
+
+      void this.notifications
+        .notifyApprovalSubmitted(orgId, userId, runId)
+        .catch((e: unknown) => logger.error("notifyApprovalSubmitted failed", { error: String(e) }));
 
       return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
     });
@@ -205,6 +223,14 @@ export class ApprovalsService {
     const toggles = (run.policyVersion?.toggles ?? DEFAULT_PAYROLL_TOGGLES) as typeof DEFAULT_PAYROLL_TOGGLES;
     const lockAfterApproval = toggles.lockAfterApproval !== false;
 
+    const nextStage = !isLastStage
+      ? (allStages.find((s) => s.id !== approvalId && s.status === "PENDING") ?? null)
+      : null;
+
+    const nextStageApprovers = nextStage
+      ? await this.resolveApprovers(orgId, nextStage.requiredPermission)
+      : [];
+
     return this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
@@ -249,17 +275,59 @@ export class ApprovalsService {
           : "APPROVED"
         : "PENDING_APPROVAL";
 
-      if (!isLastStage) {
-        const nextStage = allStages.find(s => s.id !== approvalId && s.status === "PENDING");
-        if (nextStage) {
-          this.notifications
-            .notifyApprovalPending(orgId, userId, runId, nextStage.stageName)
-            .catch(e => console.error("notifyApprovalPending failed", e));
-        }
+      if (nextStage && nextStageApprovers.length > 0) {
+        const { stageName } = nextStage;
+        void Promise.all(
+          nextStageApprovers.map((approverId) =>
+            this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
+          ),
+        ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
       }
 
       return { success: true, runStatus };
     });
+  }
+
+  private async resolveApprovers(orgId: string, requiredPermission: string): Promise<string[]> {
+    const slugsWithPerm = Object.entries(ROLE_DEFAULT_PERMISSIONS)
+      .filter(([, perms]) => (perms as string[]).includes(requiredPermission))
+      .map(([slug]) => slug);
+
+    const [grantRows, defaultRoleRows, ownerRows] = await Promise.all([
+      this.db
+        .select({ userId: userRoles.userId })
+        .from(rolePermissionGrants)
+        .innerJoin(
+          userRoles,
+          and(
+            eq(userRoles.roleId, rolePermissionGrants.roleId),
+            eq(userRoles.orgId, orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(rolePermissionGrants.orgId, orgId),
+            eq(rolePermissionGrants.permissionKey, requiredPermission),
+          ),
+        ),
+      slugsWithPerm.length > 0
+        ? this.db
+            .select({ userId: userRoles.userId })
+            .from(userRoles)
+            .innerJoin(roles, eq(userRoles.roleId, roles.id))
+            .where(and(eq(userRoles.orgId, orgId), inArray(roles.slug, slugsWithPerm)))
+        : Promise.resolve<{ userId: string }[]>([]),
+      this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true))),
+    ]);
+
+    const ids = new Set<string>();
+    for (const row of [...grantRows, ...defaultRoleRows, ...ownerRows]) {
+      if (row.userId) ids.add(row.userId);
+    }
+    return Array.from(ids);
   }
 
   async rejectStage(

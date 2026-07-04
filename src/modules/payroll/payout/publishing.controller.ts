@@ -43,7 +43,7 @@ export class PublishingController {
   }
 
   @Get("payslips/:publicationId/download")
-  @UseGuards(JwtAuthGuard)
+  @RequirePermission("self:payslips")
   downloadPdf(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,

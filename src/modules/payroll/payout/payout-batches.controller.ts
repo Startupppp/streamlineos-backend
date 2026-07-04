@@ -17,6 +17,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayoutBatchesService } from "./payout-batches.service";
+import { PayoutValidationService } from "./payout-validation.service";
 import {
   batchesQuerySchema,
   createBatchSchema,
@@ -33,7 +34,10 @@ import {
 @Controller("payroll/runs/:runId/payout")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayoutRunController {
-  constructor(private readonly batches: PayoutBatchesService) {}
+  constructor(
+    private readonly batches: PayoutBatchesService,
+    private readonly validation: PayoutValidationService,
+  ) {}
 
   @Get("validation")
   @RequirePermission("payroll:bank:manage")
@@ -41,7 +45,7 @@ export class PayoutRunController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.validatePayout(u.orgId, runId);
+    return this.validation.validatePayout(u.orgId, runId);
   }
 
   @Post("batches")
@@ -96,7 +100,7 @@ export class PayoutBatchesController {
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markSent(u.orgId, batchId);
+    return this.batches.markSent(u.orgId, batchId, u.userId);
   }
 
   @Post("batches/:batchId/mark-paid")
@@ -131,7 +135,7 @@ export class PayoutBatchesController {
     @Body(new ZodValidationPipe(markItemFailedSchema)) body: MarkItemFailedInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.markItemFailed(u.orgId, batchId, itemId, body.failureReason);
+    return this.batches.markItemFailed(u.orgId, batchId, itemId, body.failureReason, u.userId);
   }
 }
 

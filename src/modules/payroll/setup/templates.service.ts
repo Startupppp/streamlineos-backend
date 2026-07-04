@@ -69,7 +69,25 @@ export class PayrollTemplatesService {
     }
   }
 
-  async list(orgId: string, input: ListTemplatesInput): Promise<{ items: TemplateRow[]; total: number }> {
+  private computeIsRecommended(row: TemplateRow, country: string | undefined): boolean {
+    if (!country) return row.isRecommended;
+    const key = row.key ?? "";
+    const countryUpper = country.toUpperCase();
+    if (countryUpper === "IN") {
+      return ["INDIAN_STANDARD", "INDIAN_STARTUP"].includes(key);
+    }
+    const COUNTRY_TEMPLATE_MAP: Record<string, string> = {
+      US: "US_STANDARD",
+      UK: "UK_STANDARD",
+      AE: "UAE_STANDARD",
+      SG: "SG_STANDARD",
+      AU: "AU_STANDARD",
+    };
+    const recommendedKey = COUNTRY_TEMPLATE_MAP[countryUpper];
+    return recommendedKey != null && key === recommendedKey;
+  }
+
+  async list(orgId: string, input: ListTemplatesInput & { country?: string }): Promise<{ items: (TemplateRow & { isRecommended: boolean })[]; total: number }> {
     await this.ensureSystemTemplatesExist();
 
     const filters: SQL[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId)) as SQL];
@@ -89,7 +107,7 @@ export class PayrollTemplatesService {
     const where = and(...filters);
     const offset = (input.page - 1) * input.pageSize;
 
-    const items = await this.db
+    const rows = await this.db
       .select()
       .from(payrollTemplates)
       .where(where)
@@ -100,6 +118,11 @@ export class PayrollTemplatesService {
       .select({ id: payrollTemplates.id })
       .from(payrollTemplates)
       .where(where);
+
+    const items = rows.map((row) => ({
+      ...row,
+      isRecommended: this.computeIsRecommended(row, input.country),
+    }));
 
     return { items, total: allItems.length };
   }

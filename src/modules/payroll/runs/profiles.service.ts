@@ -11,10 +11,14 @@ import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
+import { AuditService } from "../../../common/audit/audit.service";
 
 @Injectable()
 export class ProfilesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   async listProfiles(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
     const offset = (query.page - 1) * query.limit;
@@ -165,13 +169,26 @@ export class ProfilesService {
         );
       }
 
+      this.audit.log({
+        action: "payroll.salary_profile_created",
+        userId: actorId,
+        orgId,
+        targetId: employeeUserId,
+        targetType: "employee",
+        metadata: { profileId: inserted.id, annualCtc: body.annualCtc },
+      });
+
       return { profileId: inserted.id };
     });
   }
 
-  async patchProfile(orgId: string, employeeUserId: string, profileId: number, body: PatchProfileInput) {
+  async patchProfile(orgId: string, employeeUserId: string, profileId: number, body: PatchProfileInput, actorId: string) {
     const existing = await this.db
-      .select({ id: employeeSalaryProfiles.id, status: employeeSalaryProfiles.status })
+      .select({
+        id: employeeSalaryProfiles.id,
+        status: employeeSalaryProfiles.status,
+        annualCtc: employeeSalaryProfiles.annualCtc,
+      })
       .from(employeeSalaryProfiles)
       .where(
         and(
@@ -185,6 +202,8 @@ export class ProfilesService {
     if (!existing[0]) return null;
     if (existing[0].status === "SUPERSEDED") return { ok: false, reason: "superseded" };
 
+    const oldAnnualCtc = existing[0].annualCtc;
+
     const updateData: Partial<typeof employeeSalaryProfiles.$inferInsert> = {};
     if (body.annualCtc !== undefined) updateData.annualCtc = body.annualCtc;
     if (body.workerType !== undefined) updateData.workerType = body.workerType;
@@ -197,6 +216,19 @@ export class ProfilesService {
       .update(employeeSalaryProfiles)
       .set(updateData)
       .where(eq(employeeSalaryProfiles.id, profileId));
+
+    this.audit.log({
+      action: "payroll.salary_profile_updated",
+      userId: actorId,
+      orgId,
+      targetId: employeeUserId,
+      targetType: "employee",
+      metadata: {
+        profileId,
+        oldAnnualCtc,
+        newAnnualCtc: body.annualCtc ?? oldAnnualCtc,
+      },
+    });
 
     if (body.components && body.components.length > 0) {
       await this.db

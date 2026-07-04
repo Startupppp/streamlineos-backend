@@ -25,6 +25,25 @@ export class PayrollNotificationsService {
     } satisfies CreateNotificationInput);
   }
 
+  async notifyApprovalSubmitted(
+    orgId: string,
+    userId: string,
+    runId: number,
+  ): Promise<void> {
+    await this.notifications.create({
+      orgId,
+      userId,
+      type: "SUCCESS",
+      priority: "NORMAL",
+      category: "HRMS",
+      sourceModule: "payroll",
+      title: "Payroll Submitted for Approval",
+      message: "Your payroll run has been submitted and is pending approval.",
+      link: `/payroll/runs/${runId}`,
+      metadata: { runId },
+    } satisfies CreateNotificationInput);
+  }
+
   async notifyApprovalPending(
     orgId: string,
     userId: string,

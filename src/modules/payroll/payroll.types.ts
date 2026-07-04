@@ -48,6 +48,11 @@ export const PAYROLL_TEMPLATE_KEYS = [
   "MANUFACTURING",
   "STAFFING",
   "EXECUTIVE",
+  "US_STANDARD",
+  "UK_STANDARD",
+  "UAE_STANDARD",
+  "SG_STANDARD",
+  "AU_STANDARD",
 ] as const;
 export type PayrollTemplateKey = (typeof PAYROLL_TEMPLATE_KEYS)[number];
 
@@ -151,6 +156,17 @@ export interface PayrollApprovalStageDef {
   requiredPermission: string;
 }
 
+export interface StatutoryPackItemConfig {
+  key: string;
+  enabled: boolean;
+  percentOverride?: string;
+}
+
+export interface StatutoryPackConfig {
+  country: string;
+  items: StatutoryPackItemConfig[];
+}
+
 export interface PayrollPolicyConfig {
   components: TemplateComponentDef[];
   rounding: { mode: "NEAREST" | "UP" | "DOWN"; precision: 0 | 2 };
@@ -175,6 +191,7 @@ export interface PayrollPolicyConfig {
     tdsMode: "DECLARATION" | "FLAT" | "NONE";
     tdsFlatPercent: string | null;
   };
+  statutoryPack?: StatutoryPackConfig;
   overtime: { multiplier: string; basis: "BASIC" | "GROSS" };
   varianceThresholdPercent: number;
 }

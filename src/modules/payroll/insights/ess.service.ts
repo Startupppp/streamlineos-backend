@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, inArray, lte, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -22,7 +22,9 @@ import {
 import { LoansService } from "../../hr-payroll/loans.service";
 import { ReimbursementsService } from "../../hr-payroll/reimbursements.service";
 import { TaxService } from "../../hr-payroll/tax.service";
-import { BankDetails, decryptBankDetails, encryptBankDetails } from "../../onboarding/crypto.helpers";
+import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../onboarding/crypto.helpers";
+import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
+import type { EssBank } from "./dto/insights.schemas";
 import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
 
 @Injectable()
@@ -308,14 +310,35 @@ export class EssService {
         branch: details.branch,
         ifsc: details.ifsc,
         accountHolder: details.accountHolder,
+        bankCountry: details.bankCountry ?? null,
       },
     };
   }
 
-  async updateBankDetails(orgId: string, userId: string, body: BankDetails) {
+  async updateBankDetails(orgId: string, userId: string, body: EssBank) {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essAllowBankUpdate) throw new ForbiddenException("Bank details update is disabled");
-    const encrypted = encryptBankDetails(body);
+
+    const effectiveCode = body.code ?? body.ifsc ?? "";
+    const effectiveHolder = body.accountHolder ?? body.accountHolderName ?? "";
+    const effectiveCountry = body.bankCountry ?? "IN";
+    const scheme = detectScheme(effectiveCountry);
+    const codeValidation = validateSchemeCode(scheme, effectiveCode);
+    if (!codeValidation.valid) {
+      throw new BadRequestException(codeValidation.issue ?? `Invalid ${codeValidation.label}`);
+    }
+
+    const stored: BankDetails = {
+      accountNumber: body.accountNumber,
+      bankName: body.bankName,
+      branch: body.branch,
+      ifsc: effectiveCode,
+      accountHolder: effectiveHolder,
+      pfUanNumber: body.pfUanNumber,
+      bankCountry: body.bankCountry,
+    };
+
+    const encrypted = encryptBankDetails(stored);
     await this.db.update(users).set({ bankDetails: encrypted }).where(eq(users.id, userId));
     await this.db.insert(auditLogs).values({
       action: "bank_details.updated",

@@ -75,8 +75,29 @@
     {
       "idx": 10,
       "version": "7",
+      "when": 1783199999999,
+      "tag": "0147_payroll_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
       "when": 1783200000000,
       "tag": "0148_payroll_integration_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783200000001,
+      "tag": "0011_timesheet_payroll_schema_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783200000002,
+      "tag": "0149_payroll_tax_reject_note",
       "breakpoints": true
     }
   ]

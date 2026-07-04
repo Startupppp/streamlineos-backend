@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { AuditService } from "../../../common/audit/audit.service";
 import { and, count, eq, sql } from "drizzle-orm";
 import {
   payrollPolicies,
@@ -33,8 +34,10 @@ import type {
   TemplateComponentDef,
   PayrollApprovalStageDef,
   PayrollToggleKey,
+  StatutoryPackConfig,
 } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { getStatutoryPack } from "../runs/lib/statutory-packs";
 import { addDays, format, parse } from "date-fns";
 
 const RISKY_TOGGLES = new Set<PayrollToggleKey>([
@@ -173,15 +176,27 @@ const DEFAULT_STATUTORY = {
   tdsFlatPercent: null as string | null,
 };
 
+function buildPackConfig(country: string): StatutoryPackConfig {
+  const pack = getStatutoryPack(country);
+  return {
+    country,
+    items: pack.items.map((item) => ({
+      key: item.key,
+      enabled: item.enabledByDefault,
+    })),
+  };
+}
+
 function buildDefaultConfig(
   input: ActivatePolicyInput,
   components: TemplateComponentDef[],
   toggles: PayrollToggles,
+  country: string,
 ): PayrollPolicyConfig {
   const approvalChain = buildApprovalChain(toggles);
   const calendar = input.calendar ?? DEFAULT_CALENDAR;
   const statutory = input.statutory ?? DEFAULT_STATUTORY;
-  return {
+  const cfg: PayrollPolicyConfig = {
     components,
     rounding: { mode: "NEAREST", precision: 2 },
     approvalChain,
@@ -208,6 +223,10 @@ function buildDefaultConfig(
     overtime: { multiplier: "1.50", basis: "BASIC" },
     varianceThresholdPercent: 20,
   };
+  if (country !== "IN") {
+    cfg.statutoryPack = buildPackConfig(country);
+  }
+  return cfg;
 }
 
 @Injectable()
@@ -215,6 +234,7 @@ export class PayrollPoliciesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly templatesService: PayrollTemplatesService,
+    private readonly audit: AuditService,
   ) {}
 
   async getCurrent(orgId: string) {
@@ -223,7 +243,10 @@ export class PayrollPoliciesService {
     });
     if (!policy) return { policy: null };
 
-    if (!policy.activeVersionId) return { policy, activeVersion: null };
+    const pack = getStatutoryPack(policy.country ?? "IN");
+    const taxRegimeApplicable = pack.taxRegimeApplicable;
+
+    if (!policy.activeVersionId) return { policy, activeVersion: null, taxRegimeApplicable };
 
     const activeVersion = await this.db.query.payrollPolicyVersions.findFirst({
       where: and(
@@ -231,7 +254,17 @@ export class PayrollPoliciesService {
         eq(payrollPolicyVersions.orgId, orgId),
       ),
     });
-    return { policy, activeVersion: activeVersion ?? null };
+
+    const config = activeVersion?.config as unknown as PayrollPolicyConfig | null;
+    const packData = config?.statutoryPack
+      ? {
+          country: config.statutoryPack.country,
+          items: config.statutoryPack.items,
+          complianceChecklist: getStatutoryPack(config.statutoryPack.country).complianceChecklist,
+        }
+      : null;
+
+    return { policy, activeVersion: activeVersion ?? null, taxRegimeApplicable, statutoryPack: packData };
   }
 
   async create(u: CurrentUserContext, input: CreatePolicyInput) {
@@ -252,6 +285,7 @@ export class PayrollPoliciesService {
         currency: input.currency,
         payFrequency: input.payFrequency,
         payDay: input.payDay,
+        employeeCount: input.employeeCount ?? null,
         startMonth: input.startMonth,
         createdBy: u.userId,
       })
@@ -321,7 +355,30 @@ export class PayrollPoliciesService {
       allowReimbursements: toggles.essAllowReimbursements,
     };
 
-    return { toggles, components, approvalChain, calendarPlan, essOptions };
+    const previewCountry = input.country ?? "IN";
+    const pack = getStatutoryPack(previewCountry);
+    const packConfig = buildPackConfig(previewCountry);
+    const statutoryPack = {
+      country: pack.country,
+      countryName: pack.countryName,
+      currency: pack.currency,
+      taxRegimeApplicable: pack.taxRegimeApplicable,
+      items: pack.items.map((item) => {
+        const cfg = packConfig.items.find((c) => c.key === item.key);
+        return {
+          key: item.key,
+          label: item.label,
+          kind: item.kind,
+          componentCode: item.componentCode,
+          enabled: cfg?.enabled ?? item.enabledByDefault,
+          calc: item.calc,
+          note: item.note,
+        };
+      }),
+      complianceChecklist: pack.complianceChecklist,
+    };
+
+    return { toggles, components, approvalChain, calendarPlan, essOptions, statutoryPack };
   }
 
   async activate(u: CurrentUserContext, policyId: number, input: ActivatePolicyInput) {
@@ -349,7 +406,7 @@ export class PayrollPoliciesService {
     }
 
     const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };
-    const config = buildDefaultConfig(input, components, toggles);
+    const config = buildDefaultConfig(input, components, toggles, policy.country ?? "IN");
 
     const result = await this.db.transaction(async (tx) => {
       const versionsResult = await tx
@@ -424,6 +481,17 @@ export class PayrollPoliciesService {
         .where(eq(payrollPolicies.id, policyId));
 
       return { policyVersion: newVersion, componentCount: components.length };
+    });
+
+    this.audit.log({
+      action: "payroll.template_activated",
+      userId: u.userId,
+      orgId: u.orgId,
+      metadata: {
+        policyId,
+        versionId: result.policyVersion?.id,
+        templateKey,
+      },
     });
 
     const checklist = [

@@ -7,6 +7,7 @@ export const toggleOverridesSchema = z
 
 export const listTemplatesSchema = z.object({
   category: z.string().trim().optional(),
+  country: z.string().trim().max(10).optional(),
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -32,6 +33,7 @@ export const createPolicySchema = z.object({
   currency: z.string().trim().length(3).default("INR"),
   payFrequency: z.enum(["MONTHLY", "SEMI_MONTHLY", "BI_WEEKLY", "WEEKLY"]).default("MONTHLY"),
   payDay: z.coerce.number().int().min(1).max(31).default(28),
+  employeeCount: z.number().int().positive().optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "startMonth must be YYYY-MM"),
 });
 export type CreatePolicyInput = z.infer<typeof createPolicySchema>;

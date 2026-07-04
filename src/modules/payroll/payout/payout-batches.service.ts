@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
-import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -20,19 +19,52 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
-import type { CalculationSnapshot } from "../payroll.types";
+import type { PayoutBatchFormat } from "./dto/payout.schemas";
 
-const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
+  if (currency === "INR") return "NEFT_CSV";
+  if (currency === "USD") return "ACH_CSV";
+  if (currency === "EUR") return "SEPA_CSV";
+  return "GENERIC_CSV";
+}
 
-export interface ValidationItem {
-  userId: string;
-  employeeName: string;
-  netAmount: string;
-  currency: string;
-  maskedAccount: string | null;
-  errors: string[];
-  warnings: string[];
-  onHold: boolean;
+function csvHeader(format: PayoutBatchFormat): string {
+  switch (format) {
+    case "NEFT_CSV":
+    case "RTGS_CSV":
+      return "SrNo,EmployeeName,AccountNumber,IFSCCode,Amount,Narration";
+    case "ACH_CSV":
+      return "SrNo,EmployeeName,RoutingNumber,AccountNumber,Amount,Narration";
+    case "SEPA_CSV":
+      return "SrNo,EmployeeName,IBAN,BIC,Currency,Amount,Reference";
+    case "GENERIC_CSV":
+      return "SrNo,EmployeeName,AccountNumber,BankCode,Currency,Amount,Narration";
+  }
+}
+
+function csvRow(
+  format: PayoutBatchFormat,
+  idx: number,
+  name: string,
+  accountNumber: string,
+  bankCode: string,
+  currency: string,
+  amount: string,
+  narration: string,
+): string {
+  const safeName = name.replace(/"/g, "");
+  const amt = parseFloat(amount).toFixed(2);
+  switch (format) {
+    case "NEFT_CSV":
+    case "RTGS_CSV":
+      return `${idx},"${safeName}","${accountNumber}","${bankCode}",${amt},"${narration}"`;
+    case "ACH_CSV":
+      return `${idx},"${safeName}","${bankCode}","${accountNumber}",${amt},"${narration}"`;
+    case "SEPA_CSV":
+      return `${idx},"${safeName}","${accountNumber}","${bankCode}","${currency}",${amt},"${narration}"`;
+    case "GENERIC_CSV":
+      return `${idx},"${safeName}","${accountNumber}","${bankCode}","${currency}",${amt},"${narration}"`;
+  }
 }
 
 @Injectable()
@@ -43,86 +75,12 @@ export class PayoutBatchesService {
     private readonly storage: StorageService,
   ) {}
 
-  async validatePayout(orgId: string, runId: number): Promise<ValidationItem[]> {
-    const run = await this.db.query.payrollRuns.findFirst({
-      where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-      columns: { id: true, status: true },
-    });
-    if (!run) throw new NotFoundException("Payroll run not found");
-
-    const employees = await this.db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        net: payrollRunEmployees.net,
-        currency: payrollRunEmployees.currency,
-        status: payrollRunEmployees.status,
-        holdReason: payrollRunEmployees.holdReason,
-        bankDetails: users.bankDetails,
-        name: users.name,
-      })
-      .from(payrollRunEmployees)
-      .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
-
-    const accountsSeen = new Map<string, string[]>();
-    const results: ValidationItem[] = [];
-
-    for (const emp of employees) {
-      const bank = decryptBankDetails(emp.bankDetails ?? null);
-      const errors: string[] = [];
-      const warnings: string[] = [];
-      const onHold = emp.status === "HELD" || !!emp.holdReason;
-
-      if (!bank?.accountNumber) {
-        errors.push("Missing bank account");
-      }
-
-      if (bank?.accountNumber && emp.currency === "INR" && !IFSC_REGEX.test(bank.ifsc ?? "")) {
-        errors.push(`Invalid IFSC code: ${bank.ifsc ?? "(none)"}`);
-      }
-
-      const net = parseFloat(emp.net);
-      if (net < 0) errors.push("Negative net pay");
-      else if (net === 0) warnings.push("Zero net pay");
-
-      if (onHold) warnings.push(`Salary on hold: ${emp.holdReason ?? "reason not specified"}`);
-
-      const maskedAccount = bank?.accountNumber
-        ? "XXXX" + bank.accountNumber.slice(-4)
-        : null;
-
-      if (bank?.accountNumber) {
-        const existing = accountsSeen.get(bank.accountNumber);
-        if (existing) {
-          warnings.push(`Duplicate bank account with employee(s): ${existing.join(", ")}`);
-          existing.push(emp.userId);
-        } else {
-          accountsSeen.set(bank.accountNumber, [emp.userId]);
-        }
-      }
-
-      results.push({
-        userId: emp.userId,
-        employeeName: emp.name ?? emp.userId,
-        netAmount: emp.net,
-        currency: emp.currency,
-        maskedAccount,
-        errors,
-        warnings,
-        onHold,
-      });
-    }
-
-    return results;
-  }
-
   async createBatch(
     orgId: string,
     runId: number,
     userId: string,
     idempotencyKey: string | undefined,
-    format: "NEFT_CSV" | "RTGS_CSV",
+    format: PayoutBatchFormat | undefined,
   ) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
@@ -178,7 +136,11 @@ export class PayoutBatchesService {
       throw new BadRequestException("No eligible employees for payout batch — check validation");
     }
 
-    const csvRows = ["SrNo,EmployeeName,AccountNumber,IFSCCode,Amount,Narration"];
+    const firstCurrency = eligible[0]?.currency ?? "INR";
+    const resolvedFormat: PayoutBatchFormat = format ?? defaultFormatFromCurrency(firstCurrency);
+
+    const narrationLabel = `Salary ${run.month ?? ""}`.trim();
+    const csvRows = [csvHeader(resolvedFormat)];
     const itemsData: Array<{
       runEmployeeId: number;
       userId: string;
@@ -190,16 +152,25 @@ export class PayoutBatchesService {
     eligible.forEach((emp, idx) => {
       const bank = decryptBankDetails(emp.bankDetails ?? null);
       if (!bank?.accountNumber) return;
-      const narration = `Salary ${run.month}`;
+      const bankCode = bank.ifsc ?? "";
       csvRows.push(
-        `${idx + 1},"${(emp.name ?? emp.userId).replace(/"/g, "")}","${bank.accountNumber}","${bank.ifsc ?? ""}",${parseFloat(emp.net).toFixed(2)},"${narration}"`,
+        csvRow(
+          resolvedFormat,
+          idx + 1,
+          emp.name ?? emp.userId,
+          bank.accountNumber,
+          bankCode,
+          emp.currency,
+          emp.net,
+          narrationLabel,
+        ),
       );
       itemsData.push({
         runEmployeeId: emp.id,
         userId: emp.userId,
         amount: emp.net,
         accountMasked: "XXXX" + bank.accountNumber.slice(-4),
-        ifsc: bank.ifsc ?? null,
+        ifsc: bankCode || null,
       });
     });
 
@@ -232,7 +203,7 @@ export class PayoutBatchesService {
           runId,
           batchNumber,
           status: "GENERATED",
-          format,
+          format: resolvedFormat,
           totalAmount,
           itemCount: itemsData.length,
           idempotencyKey: idempotencyKey ?? null,
@@ -267,11 +238,21 @@ export class PayoutBatchesService {
           batchNumber,
           itemCount: itemsData.length,
           totalAmount,
+          format: resolvedFormat,
           fileKey: uploadResult.key ?? null,
         },
       });
 
       return [batch];
+    });
+
+    this.audit.log({
+      action: "payroll.bank_batch_generated",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { batchId: newBatch.id, batchNumber, itemCount: itemsData.length, totalAmount },
     });
 
     const items = await this.db.query.payrollBankBatchItems.findMany({
@@ -316,14 +297,19 @@ export class PayoutBatchesService {
     return { batch, items };
   }
 
-  async markSent(orgId: string, batchId: number) {
+  async markSent(orgId: string, batchId: number, actorId: string) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
       where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
-      columns: { id: true, status: true },
+      columns: { id: true, status: true, runId: true },
     });
     if (!batch) throw new NotFoundException("Batch not found");
+
+    if (batch.status === "SENT") return { success: true };
+
     if (batch.status !== "GENERATED") {
-      throw new ConflictException(`Batch is already ${batch.status}`);
+      throw new ConflictException(
+        `Batch must be GENERATED to be marked sent — current status: ${batch.status}`,
+      );
     }
 
     await this.db.transaction(async (tx) => {
@@ -338,6 +324,23 @@ export class PayoutBatchesService {
         .where(
           and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.status, "PENDING")),
         );
+
+      await tx.insert(payrollRunEvents).values({
+        orgId,
+        runId: batch.runId,
+        type: "BANK_BATCH_SENT",
+        actorId,
+        metadata: { batchId },
+      });
+    });
+
+    this.audit.log({
+      action: "payroll.bank_batch_sent",
+      userId: actorId,
+      orgId,
+      targetId: String(batch.runId),
+      targetType: "payroll_run",
+      metadata: { batchId },
     });
 
     return { success: true };
@@ -354,17 +357,45 @@ export class PayoutBatchesService {
     if (!item) throw new NotFoundException("Batch item not found");
     if (item.status === "PAID") throw new ConflictException("Item already marked paid");
 
+    const batchRow = await this.db.query.payrollBankBatches.findFirst({
+      where: eq(payrollBankBatches.id, batchId),
+      columns: { runId: true },
+    });
+
     const now = new Date();
-    await this.db
-      .update(payrollBankBatchItems)
-      .set({ status: "PAID", transactionRef, paidAt: now })
-      .where(eq(payrollBankBatchItems.id, itemId));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(payrollBankBatchItems)
+        .set({ status: "PAID", transactionRef, paidAt: now })
+        .where(eq(payrollBankBatchItems.id, itemId));
+
+      if (batchRow?.runId) {
+        await tx.insert(payrollRunEvents).values({
+          orgId,
+          runId: batchRow.runId,
+          type: "BANK_ITEM_PAID",
+          actorId,
+          metadata: { batchId, itemId, transactionRef },
+        });
+      }
+    });
+
+    if (batchRow?.runId) {
+      this.audit.log({
+        action: "payroll.bank_item_paid",
+        userId: actorId,
+        orgId,
+        targetId: String(batchRow.runId),
+        targetType: "payroll_run",
+        metadata: { batchId, itemId, transactionRef },
+      });
+    }
 
     await this.checkRunCompletion(orgId, batchId, actorId);
     return { success: true };
   }
 
-  async markItemFailed(orgId: string, batchId: number, itemId: number, failureReason: string) {
+  async markItemFailed(orgId: string, batchId: number, itemId: number, failureReason: string, actorId: string) {
     const item = await this.db.query.payrollBankBatchItems.findFirst({
       where: and(
         eq(payrollBankBatchItems.id, itemId),
@@ -374,10 +405,38 @@ export class PayoutBatchesService {
     });
     if (!item) throw new NotFoundException("Batch item not found");
 
-    await this.db
-      .update(payrollBankBatchItems)
-      .set({ status: "FAILED", failureReason })
-      .where(eq(payrollBankBatchItems.id, itemId));
+    const batchRow = await this.db.query.payrollBankBatches.findFirst({
+      where: eq(payrollBankBatches.id, batchId),
+      columns: { runId: true },
+    });
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(payrollBankBatchItems)
+        .set({ status: "FAILED", failureReason })
+        .where(eq(payrollBankBatchItems.id, itemId));
+
+      if (batchRow?.runId) {
+        await tx.insert(payrollRunEvents).values({
+          orgId,
+          runId: batchRow.runId,
+          type: "BANK_ITEM_FAILED",
+          actorId,
+          metadata: { batchId, itemId, failureReason },
+        });
+      }
+    });
+
+    if (batchRow?.runId) {
+      this.audit.log({
+        action: "payroll.bank_item_failed",
+        userId: actorId,
+        orgId,
+        targetId: String(batchRow.runId),
+        targetType: "payroll_run",
+        metadata: { batchId, itemId, failureReason },
+      });
+    }
 
     return { success: true };
   }
@@ -385,9 +444,17 @@ export class PayoutBatchesService {
   async markBatchPaid(orgId: string, batchId: number, transactionRef: string, actorId: string) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
       where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
-      columns: { id: true, status: true },
+      columns: { id: true, status: true, runId: true },
     });
     if (!batch) throw new NotFoundException("Batch not found");
+
+    if (batch.status === "PAID") return { success: true };
+
+    if (batch.status !== "SENT" && batch.status !== "PARTIALLY_PAID") {
+      throw new ConflictException(
+        `Batch must be SENT or PARTIALLY_PAID to be marked paid — current status: ${batch.status}`,
+      );
+    }
 
     const now = new Date();
     await this.db.transaction(async (tx) => {
@@ -401,6 +468,32 @@ export class PayoutBatchesService {
             not(eq(payrollBankBatchItems.status, "FAILED")),
           ),
         );
+
+      const failedItems = await tx
+        .select({ id: payrollBankBatchItems.id })
+        .from(payrollBankBatchItems)
+        .where(
+          and(
+            eq(payrollBankBatchItems.batchId, batchId),
+            eq(payrollBankBatchItems.status, "FAILED"),
+          ),
+        )
+        .limit(1);
+
+      const newBatchStatus = failedItems.length > 0 ? "PARTIALLY_PAID" : "PAID";
+      await tx
+        .update(payrollBankBatches)
+        .set({ status: newBatchStatus })
+        .where(eq(payrollBankBatches.id, batchId));
+    });
+
+    this.audit.log({
+      action: "payroll.bank_batch_paid",
+      userId: actorId,
+      orgId,
+      targetId: String(batch.runId),
+      targetType: "payroll_run",
+      metadata: { batchId, transactionRef },
     });
 
     await this.checkRunCompletion(orgId, batchId, actorId);
@@ -452,6 +545,8 @@ export class PayoutBatchesService {
     const paidUserIds = paidItemUserIds.map(r => r.userId);
 
     const now = new Date();
+    let runMarkedPaid = false;
+
     await this.db.transaction(async (tx) => {
       const [currentRun] = await tx
         .select({ status: payrollRuns.status })
@@ -488,7 +583,20 @@ export class PayoutBatchesService {
         actorId,
         metadata: { paidCount: paidUserIds.length },
       });
+
+      runMarkedPaid = true;
     });
+
+    if (runMarkedPaid) {
+      this.audit.log({
+        action: "payroll.marked_paid",
+        userId: actorId,
+        orgId,
+        targetId: String(runId),
+        targetType: "payroll_run",
+        metadata: { paidCount: paidUserIds.length },
+      });
+    }
   }
 
   async getFile(orgId: string, batchId: number) {
@@ -532,6 +640,7 @@ export class PayoutBatchesService {
       ifsc: bank?.ifsc ?? null,
       accountHolder: bank?.accountHolder ?? null,
       pfUanNumber: bank?.pfUanNumber ?? null,
+      bankCountry: bank?.bankCountry ?? null,
     };
   }
 }

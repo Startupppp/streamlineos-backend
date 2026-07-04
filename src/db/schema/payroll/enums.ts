@@ -2,7 +2,8 @@ import { pgEnum } from "drizzle-orm/pg-core";
 
 export const payrollTemplateCategoryEnum = pgEnum("payroll_template_category", [
   "INDIAN_STANDARD", "INDIAN_STARTUP", "CONTRACTOR", "SALES_INCENTIVE",
-  "GLOBAL_REMOTE", "HOURLY", "MANUFACTURING", "STAFFING", "EXECUTIVE", "CUSTOM",
+  "GLOBAL_REMOTE", "HOURLY", "MANUFACTURING", "STAFFING", "EXECUTIVE",
+  "CUSTOM", "COUNTRY_STANDARD",
 ]);
 
 export const payrollInputSourceEnum = pgEnum("payroll_input_source", [
@@ -12,7 +13,8 @@ export const payrollInputSourceEnum = pgEnum("payroll_input_source", [
 export const payrollRunEventTypeEnum = pgEnum("payroll_run_event_type", [
   "GENERATED", "RECALCULATED", "APPROVAL_SUBMITTED", "APPROVED", "REJECTED",
   "LOCKED", "REOPENED", "MARKED_PAID", "PAYSLIPS_PUBLISHED",
-  "BANK_BATCH_GENERATED", "EXCEPTION_OVERRIDDEN", "INPUT_OVERRIDDEN", "CLOSED",
+  "BANK_BATCH_GENERATED", "BANK_BATCH_SENT", "BANK_ITEM_PAID", "BANK_ITEM_FAILED",
+  "EXCEPTION_OVERRIDDEN", "INPUT_OVERRIDDEN", "CLOSED",
 ]);
 
 export const payslipPublicationStatusEnum = pgEnum("payslip_publication_status", [

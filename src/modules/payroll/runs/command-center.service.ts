@@ -8,9 +8,11 @@ import {
   payrollApprovals,
   payrollCalendarEvents,
   payrollPolicyVersions,
+  payrollPolicies,
 } from "../../../db/schema";
 import { buildRunChecklist } from "./lib/checklist";
-import type { PayrollToggles } from "../payroll.types";
+import type { PayrollToggles, PayrollPolicyConfig } from "../payroll.types";
+import { getStatutoryPack } from "./lib/statutory-packs";
 import type { CommandCenterQuery } from "./dto/runs.schemas";
 
 @Injectable()
@@ -30,6 +32,7 @@ export class CommandCenterService {
     const run = runs[0] ?? null;
 
     const toggles = run?.policyVersionId ? await this.loadToggles(orgId, run.policyVersionId) : null;
+    const packComplianceChecklist = await this.loadPackComplianceChecklist(orgId, run?.policyVersionId ?? null);
     const checklist = run ? await buildRunChecklist(this.db, orgId, run, toggles) : [];
 
     const exceptionCounts = run
@@ -77,6 +80,7 @@ export class CommandCenterService {
 
     const header = run
       ? {
+          runId: run.id,
           month: run.month,
           status: run.status,
           grossTotal: run.grossTotal,
@@ -86,7 +90,7 @@ export class CommandCenterService {
           employeeCount: run.employeeCount,
           exceptionCounts,
         }
-      : { month, status: null, grossTotal: "0", deductionTotal: "0", netTotal: "0", employerCostTotal: "0", employeeCount: 0, exceptionCounts };
+      : { runId: null, month, status: null, grossTotal: "0", deductionTotal: "0", netTotal: "0", employerCostTotal: "0", employeeCount: 0, exceptionCounts };
 
     return {
       header,
@@ -97,7 +101,10 @@ export class CommandCenterService {
         varianceSummary: null,
         pendingApprovals,
         payoutReadiness: run ? ["LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED"].includes(run.status) : false,
-        statutoryReadiness: checklist.find((c) => c.key === "tax_declarations_locked")?.done ?? false,
+        statutoryReadiness: {
+          taxDeclarationsLocked: checklist.find((c) => c.key === "tax_declarations_locked")?.done ?? false,
+          packComplianceChecklist,
+        },
       },
       upcomingCalendarEvents,
     };
@@ -128,5 +135,33 @@ export class CommandCenterService {
       .limit(1);
 
     return (version[0]?.toggles as PayrollToggles) ?? null;
+  }
+
+  private async loadPackComplianceChecklist(
+    orgId: string,
+    policyVersionId: number | null,
+  ): Promise<{ key: string; label: string; detail: string }[]> {
+    const policy = await this.db
+      .select({ country: payrollPolicies.country })
+      .from(payrollPolicies)
+      .where(eq(payrollPolicies.orgId, orgId))
+      .limit(1);
+
+    const country = policy[0]?.country ?? "IN";
+    if (country === "IN") return [];
+
+    if (policyVersionId != null) {
+      const version = await this.db
+        .select({ config: payrollPolicyVersions.config })
+        .from(payrollPolicyVersions)
+        .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
+        .limit(1);
+
+      const config = version[0]?.config as unknown as PayrollPolicyConfig | null;
+      const packCountry = config?.statutoryPack?.country ?? country;
+      return getStatutoryPack(packCountry).complianceChecklist;
+    }
+
+    return getStatutoryPack(country).complianceChecklist;
   }
 }

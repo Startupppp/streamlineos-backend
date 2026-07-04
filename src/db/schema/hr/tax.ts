@@ -16,6 +16,7 @@ export const taxDeclarations = pgTable("tax_declarations", {
   status: text("status").default("DRAFT").notNull(),
   verifiedBy: text("verified_by").references(() => users.id),
   verifiedAt: timestamp("verified_at"),
+  reviewNote: text("review_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
