@@ -188,7 +188,7 @@ export class GenerateService {
       .where(
         and(
           eq(payrollRuns.orgId, orgId),
-          eq(payrollRuns.status, "CLOSED"),
+          inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
           lt(payrollRuns.month, currentMonth),
         ),
       )

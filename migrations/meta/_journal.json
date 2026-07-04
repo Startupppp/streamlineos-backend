@@ -99,6 +99,13 @@
       "when": 1783200000002,
       "tag": "0149_payroll_tax_reject_note",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783200000003,
+      "tag": "0150_payroll_hardening",
+      "breakpoints": true
     }
   ]
 }

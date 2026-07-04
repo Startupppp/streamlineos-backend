@@ -280,7 +280,7 @@ export class RunsService {
     };
   }
 
-  private async buildVarianceSummary(
+  async buildVarianceSummary(
     orgId: string,
     runId: number,
     currentMonth: string,

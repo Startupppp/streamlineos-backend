@@ -28,6 +28,7 @@ import {
   type PayrollPolicyConfig,
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
+import { AuditService } from "../../../common/audit/audit.service";
 
 @Injectable()
 export class ApprovalsService {
@@ -35,6 +36,7 @@ export class ApprovalsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
+    private readonly audit: AuditService,
   ) {}
 
   async submitApproval(orgId: string, userId: string, runId: number) {
@@ -231,7 +233,7 @@ export class ApprovalsService {
       ? await this.resolveApprovers(orgId, nextStage.requiredPermission)
       : [];
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
         .set({ status: "APPROVED", actedBy: userId, actedAt: new Date(), comment: comment ?? null })
@@ -286,6 +288,17 @@ export class ApprovalsService {
 
       return { success: true, runStatus };
     });
+
+    this.audit.log({
+      action: "payroll.run_approval_stage_approved",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { approvalId, stageName: approval.stageName, resultingStatus: result.runStatus },
+    });
+
+    return result;
   }
 
   private async resolveApprovers(orgId: string, requiredPermission: string): Promise<string[]> {
@@ -379,7 +392,7 @@ export class ApprovalsService {
       throw new ConflictException("This is not the next stage to reject");
     }
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
         .set({ status: "REJECTED", actedBy: userId, actedAt: new Date(), comment })
@@ -400,5 +413,16 @@ export class ApprovalsService {
 
       return { success: true, runStatus: "PREVIEW_READY" as const };
     });
+
+    this.audit.log({
+      action: "payroll.run_approval_stage_rejected",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { approvalId, stageName: approval.stageName, comment },
+    });
+
+    return result;
   }
 }

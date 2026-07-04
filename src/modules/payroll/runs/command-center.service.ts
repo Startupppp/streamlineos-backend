@@ -14,10 +14,14 @@ import { buildRunChecklist } from "./lib/checklist";
 import type { PayrollToggles, PayrollPolicyConfig } from "../payroll.types";
 import { getStatutoryPack } from "./lib/statutory-packs";
 import type { CommandCenterQuery } from "./dto/runs.schemas";
+import { RunsService } from "./runs.service";
 
 @Injectable()
 export class CommandCenterService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly runsService: RunsService,
+  ) {}
 
   async getCommandCenter(orgId: string, query: CommandCenterQuery) {
     const now = new Date();
@@ -98,7 +102,9 @@ export class CommandCenterService {
       panels: {
         runStatus: run?.status ?? null,
         topExceptions,
-        varianceSummary: null,
+        varianceSummary: run
+          ? await this.runsService.buildVarianceSummary(orgId, run.id, run.month, run.netTotal)
+          : null,
         pendingApprovals,
         payoutReadiness: run ? ["LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED"].includes(run.status) : false,
         statutoryReadiness: {

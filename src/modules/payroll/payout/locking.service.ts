@@ -4,10 +4,14 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollRuns, payrollRunEmployees, payrollRunEvents } from "../../../db/schema";
 import { canTransitionRun } from "../payroll.types";
+import { AuditService } from "../../../common/audit/audit.service";
 
 @Injectable()
 export class LockingService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   async lock(orgId: string, userId: string, runId: number) {
     const run = await this.db.query.payrollRuns.findFirst({
@@ -53,6 +57,15 @@ export class LockingService {
       });
     });
 
+    this.audit.log({
+      action: "payroll.run_locked",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { month: run.month },
+    });
+
     return { success: true, lockedAt: now };
   }
 
@@ -86,6 +99,15 @@ export class LockingService {
       });
     });
 
+    this.audit.log({
+      action: "payroll.run_reopened",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { month: run.month, reason },
+    });
+
     return { success: true, reopenedAt: now };
   }
 
@@ -116,6 +138,15 @@ export class LockingService {
         type: "CLOSED",
         actorId: userId,
       });
+    });
+
+    this.audit.log({
+      action: "payroll.run_closed",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { month: run.month },
     });
 
     return { success: true, closedAt: now };
