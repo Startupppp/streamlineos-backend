@@ -18,13 +18,13 @@ interface SubmittedAnswer {
 type Survey = typeof surveyForms.$inferSelect;
 type ResponseSession = { id: number; orgId: string };
 
-function scoreToPriority(score: number): "HOT" | "WARM" | "COLD" {
+export function scoreToPriority(score: number): "HOT" | "WARM" | "COLD" {
   if (score >= 70) return "HOT";
   if (score >= 40) return "WARM";
   return "COLD";
 }
 
-function extractAnswerMap(answers: SubmittedAnswer[]): Record<string, string> {
+export function extractAnswerMap(answers: SubmittedAnswer[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const answer of answers) {
     const key = answer.question?.variableName;
