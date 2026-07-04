@@ -133,11 +133,13 @@ export class RecruitmentJobsService {
     if (input.hiringFlowId !== undefined) updateData.hiringFlowId = input.hiringFlowId;
 
     await this.db.update(jobPostings).set(updateData).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     return { success: true };
   }
 
   async remove(orgId: string, jobId: number) {
     await this.db.delete(jobPostings).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     return { success: true };
   }
 
@@ -181,6 +183,7 @@ export class RecruitmentJobsService {
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
         .where(eq(jobPostings.id, jobId));
+      await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     }
 
     return { results, publishedCount, externalIds };
