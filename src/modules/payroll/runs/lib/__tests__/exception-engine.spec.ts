@@ -6,6 +6,8 @@ const baseSnapshot: CalculationSnapshot = {
   policyVersionId: 1,
   computedAt: "2025-07-01T00:00:00.000Z",
   currency: "INR",
+  fxRate: null,
+  netPayoutCurrency: null,
   scheduledDays: "30",
   paidDays: "28",
   lopDays: "2",

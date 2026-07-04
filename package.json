@@ -82,6 +82,9 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
+    "testPathIgnorePatterns": [
+      "e2e-spec"
+    ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -13,6 +13,7 @@ import {
   reimbursements,
   salaryLoans,
   payrollLoanAdjustments,
+  incentives,
 } from "../../../db/schema";
 import type { PayrollPolicyConfig, PayrollToggles, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { calcPayroll, type ResolvedComponent, type CalcInputPulls } from "./lib/calculation-engine";
@@ -100,11 +101,44 @@ export class GeneratePipelineService {
           .where(and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
       : [];
 
-    const approvedReimbursements = toggles.reimbursements
+    const [year, mon] = month.split("-").map(Number);
+    const monthStart = new Date(year!, mon! - 1, 1);
+    const monthEnd = new Date(year!, mon!, 0, 23, 59, 59, 999);
+
+    const rawIncentives = toggles.incentives
       ? await this.db
-          .select({ amount: reimbursements.amount, category: reimbursements.category })
+          .select({
+            approvedAmount: incentives.approvedAmount,
+            calculatedAmount: incentives.calculatedAmount,
+          })
+          .from(incentives)
+          .where(
+            and(
+              eq(incentives.orgId, orgId),
+              eq(incentives.salesRepId, userId),
+              eq(incentives.status, "APPROVED"),
+              gte(incentives.approvedAt, monthStart),
+              lte(incentives.approvedAt, monthEnd),
+            ),
+          )
+      : [];
+
+    const approvedIncentives = rawIncentives.map(i => ({
+      amount: i.approvedAmount ?? i.calculatedAmount,
+    }));
+
+    const rawReimbursements = toggles.reimbursements
+      ? await this.db
+          .select({ id: reimbursements.id, amount: reimbursements.amount, category: reimbursements.category })
           .from(reimbursements)
-          .where(and(eq(reimbursements.orgId, orgId), eq(reimbursements.userId, userId), eq(reimbursements.status, "APPROVED")))
+          .where(
+            and(
+              eq(reimbursements.orgId, orgId),
+              eq(reimbursements.userId, userId),
+              eq(reimbursements.status, "APPROVED"),
+              isNull(reimbursements.paidAt),
+            ),
+          )
       : [];
 
     const activeLoans = toggles.loans
@@ -113,8 +147,9 @@ export class GeneratePipelineService {
 
     return {
       approvedBonuses: approvedBonuses.map((b) => ({ amount: b.amount, type: b.type })),
-      approvedIncentives: [],
-      approvedReimbursements: approvedReimbursements.map((r) => ({ amount: r.amount, category: r.category })),
+      approvedIncentives,
+      approvedReimbursements: rawReimbursements.map((r) => ({ amount: r.amount, category: r.category })),
+      consumedReimbursementIds: rawReimbursements.map(r => r.id),
       activeLoans,
     };
   }
@@ -201,6 +236,18 @@ export class GeneratePipelineService {
     previousSnapshot: CalculationSnapshot | null,
     hasAttendanceInput: boolean,
   ): { snapshot: CalculationSnapshot; exceptions: ReturnType<typeof detectExceptions> } {
+    let fxRate: string | null = null;
+    let missingFxRate = false;
+
+    if (profile.payoutCurrency != null && profile.payoutCurrency !== profile.currency) {
+      const rate = config.fxRates?.[profile.payoutCurrency];
+      if (rate != null) {
+        fxRate = rate;
+      } else {
+        missingFxRate = true;
+      }
+    }
+
     const snapshot = calcPayroll({
       policyVersionId,
       month,
@@ -208,7 +255,7 @@ export class GeneratePipelineService {
       workerType: profile.workerType,
       currency: profile.currency,
       payoutCurrency: profile.payoutCurrency,
-      fxRate: null,
+      fxRate,
       taxRegime: profile.taxRegime,
       components,
       toggles,
@@ -218,6 +265,7 @@ export class GeneratePipelineService {
         paidDays: inputs.paidDays,
         lopDays: inputs.lopDays,
         overtimeHours: inputs.overtimeHours,
+        billableHours: inputs.billableHours,
       },
       pulls,
       previousSnapshot,
@@ -239,7 +287,7 @@ export class GeneratePipelineService {
       hasApprovedTaxDeclaration: true,
       isJoiningInMonth: false,
       isExitInMonth: false,
-      missingFxRate: false,
+      missingFxRate,
     };
 
     const exceptions = detectExceptions(exceptionInput);
@@ -268,6 +316,8 @@ export class GeneratePipelineService {
           workerType: profile.workerType,
           currency: profile.currency,
           payoutCurrency: profile.payoutCurrency,
+          fxRate: snapshot.fxRate ?? null,
+          netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
           scheduledDays: inputs.scheduledDays,
           paidDays: inputs.paidDays,
           lopDays: inputs.lopDays,
@@ -294,6 +344,8 @@ export class GeneratePipelineService {
         workerType: profile.workerType,
         currency: profile.currency,
         payoutCurrency: profile.payoutCurrency,
+        fxRate: snapshot.fxRate ?? null,
+        netPayoutCurrency: snapshot.netPayoutCurrency ?? null,
         scheduledDays: inputs.scheduledDays,
         paidDays: inputs.paidDays,
         lopDays: inputs.lopDays,

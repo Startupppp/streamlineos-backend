@@ -194,6 +194,7 @@ export interface PayrollPolicyConfig {
   statutoryPack?: StatutoryPackConfig;
   overtime: { multiplier: string; basis: "BASIC" | "GROSS" };
   varianceThresholdPercent: number;
+  fxRates?: Record<string, string>;
 }
 
 export interface PayrollTemplateSeed {
@@ -254,6 +255,8 @@ export interface CalculationSnapshot {
   policyVersionId: number | null;
   computedAt: string;
   currency: string;
+  fxRate?: string | null;
+  netPayoutCurrency?: string | null;
   scheduledDays: string;
   paidDays: string;
   lopDays: string;
@@ -268,6 +271,17 @@ export interface CalculationSnapshot {
   variance: RunEmployeeVariance | null;
 }
 
+export interface VarianceSummary {
+  previousMonth: string | null;
+  currentNet: string;
+  previousNet: string;
+  netDelta: string;
+  netDeltaPercent: number;
+  newJoiners: number;
+  exited: number;
+  changedEmployees: number;
+}
+
 export interface InputsSnapshot {
   source: PayrollInputSource;
   scheduledDays: string;
@@ -280,6 +294,7 @@ export interface InputsSnapshot {
   billableHours: string;
   isOverride: boolean;
   overrideReason: string | null;
+  consumedReimbursementIds?: number[];
 }
 
 export const PAYROLL_RUN_TRANSITIONS: Record<PayrollRunStatus, readonly PayrollRunStatus[]> = {

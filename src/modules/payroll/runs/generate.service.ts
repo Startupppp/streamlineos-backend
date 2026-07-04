@@ -1,5 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray, count } from "drizzle-orm";
+import { Injectable, Inject, Logger } from "@nestjs/common";
+import { and, eq, inArray, count, desc, lt, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -9,14 +9,18 @@ import {
   payrollPolicies,
   payrollPolicyVersions,
   employeeSalaryProfiles,
+  payrollRunEmployees,
+  reimbursements,
 } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
-import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot } from "../payroll.types";
+import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 
 @Injectable()
 export class GenerateService {
+  private readonly logger = new Logger(GenerateService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly pipeline: GeneratePipelineService,
@@ -49,6 +53,10 @@ export class GenerateService {
 
     const profiles = await this.loadEligibleProfiles(orgId, run.month, toggles);
 
+    if (isRecalc) {
+      await this.clearPreviouslyConsumedReimbursements(orgId, runId);
+    }
+
     let processedCount = 0;
     let grossTotal = 0;
     let deductionTotal = 0;
@@ -65,7 +73,7 @@ export class GenerateService {
         ]);
 
         const hasAttendanceInput = inputs.source === "ATTENDANCE";
-        const prevSnap = await this.getPreviousSnapshot(orgId, profile.userId, runId);
+        const prevSnap = await this.getPreviousSnapshot(orgId, profile.userId, runId, run.month);
 
         const { snapshot, exceptions } = this.pipeline.runCalcAndDetect(
           profile,
@@ -80,9 +88,22 @@ export class GenerateService {
           hasAttendanceInput,
         );
 
-        const empId = await this.pipeline.upsertRunEmployee(tx, orgId, runId, profile, inputs, snapshot);
+        const inputsWithConsumed: InputsSnapshot = {
+          ...inputs,
+          consumedReimbursementIds: pulls.consumedReimbursementIds ?? [],
+        };
+
+        const empId = await this.pipeline.upsertRunEmployee(tx, orgId, runId, profile, inputsWithConsumed, snapshot);
         await this.pipeline.replaceLineItems(tx, orgId, runId, empId, snapshot);
         await this.pipeline.upsertExceptions(tx, orgId, runId, empId, profile.userId, exceptions);
+
+        const consumedIds = pulls.consumedReimbursementIds ?? [];
+        if (consumedIds.length > 0) {
+          await tx
+            .update(reimbursements)
+            .set({ paidAt: new Date() })
+            .where(inArray(reimbursements.id, consumedIds));
+        }
 
         grossTotal += parseFloat(snapshot.totals.gross);
         deductionTotal += parseFloat(snapshot.totals.deductions);
@@ -131,29 +152,65 @@ export class GenerateService {
     if (finalExceptionCount > 0) {
       this.notifications
         .notifyExceptions(orgId, actorId, runId, finalExceptionCount)
-        .catch(e => console.error("notifyExceptions failed", e));
+        .catch(e => this.logger.error("notifyExceptions failed", { error: e, orgId, runId }));
     }
 
     return { ok: true };
   }
 
-  private async getPreviousSnapshot(orgId: string, userId: string, currentRunId: number): Promise<CalculationSnapshot | null> {
-    const prevRun = await this.db
+  private async clearPreviouslyConsumedReimbursements(orgId: string, runId: number): Promise<void> {
+    const existingEmps = await this.db
+      .select({ inputsSnapshot: payrollRunEmployees.inputsSnapshot })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+
+    const prevIds = existingEmps.flatMap(
+      e => (e.inputsSnapshot as { consumedReimbursementIds?: number[] } | null)?.consumedReimbursementIds ?? [],
+    );
+
+    if (prevIds.length > 0) {
+      await this.db
+        .update(reimbursements)
+        .set({ paidAt: null })
+        .where(inArray(reimbursements.id, prevIds));
+    }
+  }
+
+  private async getPreviousSnapshot(
+    orgId: string,
+    userId: string,
+    currentRunId: number,
+    currentMonth: string,
+  ): Promise<CalculationSnapshot | null> {
+    const [prevRun] = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.status, "CLOSED")))
-      .orderBy(payrollRuns.month)
+      .where(
+        and(
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRuns.status, "CLOSED"),
+          lt(payrollRuns.month, currentMonth),
+        ),
+      )
+      .orderBy(desc(payrollRuns.month))
       .limit(1);
 
-    if (!prevRun[0] || prevRun[0].id === currentRunId) return null;
+    if (!prevRun) return null;
 
-    const prevEmp = await this.db
-      .select({ calculationSnapshot: payrollExceptions.metadata })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, prevRun[0].id), eq(payrollRuns.orgId, orgId)))
+    const [prevEmp] = await this.db
+      .select({ calculationSnapshot: payrollRunEmployees.calculationSnapshot })
+      .from(payrollRunEmployees)
+      .where(
+        and(
+          eq(payrollRunEmployees.runId, prevRun.id),
+          eq(payrollRunEmployees.userId, userId),
+        ),
+      )
       .limit(1);
 
-    return null;
+    if (!prevEmp?.calculationSnapshot) return null;
+
+    return prevEmp.calculationSnapshot as unknown as CalculationSnapshot;
   }
 
   private async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{
@@ -200,7 +257,9 @@ export class GenerateService {
   }
 
   private async loadEligibleProfiles(orgId: string, month: string, toggles: PayrollToggles): Promise<ProfileData[]> {
-    const monthEnd = `${month}-31`;
+    const [year, mon] = month.split("-").map(Number);
+    const lastDay = new Date(year!, mon!, 0).getDate();
+    const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
     const rows = await this.db
       .select({
@@ -217,6 +276,7 @@ export class GenerateService {
         and(
           eq(employeeSalaryProfiles.orgId, orgId),
           inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
+          lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
         ),
       );
 

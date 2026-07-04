@@ -34,6 +34,7 @@ export interface CalcInputPulls {
   approvedBonuses: { amount: MoneyString; type: string }[];
   approvedIncentives: { amount: MoneyString }[];
   approvedReimbursements: { amount: MoneyString; category: string }[];
+  consumedReimbursementIds?: number[];
   activeLoans: {
     id: number;
     emiAmount: MoneyString | null;
@@ -61,6 +62,7 @@ export interface CalcEngineInput {
     paidDays: string;
     lopDays: string;
     overtimeHours: string;
+    billableHours?: string;
   };
   pulls: CalcInputPulls;
   previousSnapshot: CalculationSnapshot | null;
@@ -90,13 +92,17 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   const paidDays = parseFloat(input.inputs.paidDays) || 0;
   const lopDays = parseFloat(input.inputs.lopDays) || 0;
   const overtimeHours = parseFloat(input.inputs.overtimeHours) || 0;
+  const billableHours = parseFloat(input.inputs.billableHours ?? "0") || 0;
   const prorationFactor = scheduledDays > 0 ? paidDays / scheduledDays : 0;
   const totalDaysInMonth = daysInMonth(month);
+
+  const totalIncentivePaise = pulls.approvedIncentives.reduce((s, i) => s + toPaise(i.amount), 0);
 
   const lines: CalculationSnapshotLine[] = [];
 
   const earningComps = components.filter(c => c.type === "EARNING" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
   const deductionComps = components.filter(c => c.type === "DEDUCTION" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
+  const adjustmentComps = components.filter(c => c.type === "ADJUSTMENT" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
 
   let basicPaise = 0;
   const pendingGrossPercent: ResolvedComponent[] = [];
@@ -115,6 +121,8 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       rawPaise = pctOf(monthlyCtcPaise, comp.percent);
     } else if (comp.calcMethod === "ATTENDANCE_BASED" && comp.amount != null) {
       rawPaise = Math.round(toPaise(comp.amount) * prorationFactor);
+    } else if (comp.calcMethod === "TIMESHEET_BASED" && comp.amount != null) {
+      rawPaise = Math.round(parseFloat(comp.amount) * billableHours * 100);
     } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
       const scope: FormulaScope = {
         basic: basicPaise / 100,
@@ -124,7 +132,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         paid_days: paidDays,
         lop_days: lopDays,
         overtime_hours: overtimeHours,
-        incentive_amount: 0,
+        incentive_amount: totalIncentivePaise / 100,
         reimbursement_amount: 0,
       };
       const result = evalFormula(comp.formula, scope);
@@ -154,30 +162,50 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       rawPaise = 0;
     }
 
-    const proratedPaise = comp.calcMethod === "ATTENDANCE_BASED" ? rawPaise : applyRounding(Math.round(rawPaise * prorationFactor), rounding);
+    const noProrate = comp.calcMethod === "ATTENDANCE_BASED" || comp.calcMethod === "TIMESHEET_BASED";
+    const proratedPaise = noProrate ? rawPaise : applyRounding(Math.round(rawPaise * prorationFactor), rounding);
 
-    lines.push({
-      code: comp.code,
-      name: comp.name,
-      category: "EARNING",
-      amount: fromPaise(proratedPaise),
-      calcMethod: comp.calcMethod,
-      taxable: comp.taxable,
-      sortOrder: comp.sortOrder,
-      explain: {
-        method: comp.calcMethod,
-        formula: comp.formula ?? undefined,
-        inputs: { ctc: monthlyCtcPaise / 100, percent: comp.percent ? parseFloat(comp.percent) : 0 },
-        steps: [
-          comp.calcMethod === "PERCENT_OF_BASIC"
-            ? `${comp.name} = ${comp.percent}% of monthly CTC ₹${(monthlyCtcPaise / 100).toFixed(2)} = ₹${(rawPaise / 100).toFixed(2)}`
-            : `${comp.name} = ₹${(rawPaise / 100).toFixed(2)}`,
-          proratedPaise !== rawPaise
-            ? `Prorated ₹${(rawPaise / 100).toFixed(2)} × ${paidDays}/${scheduledDays} paid days = ₹${(proratedPaise / 100).toFixed(2)}`
-            : `Full amount = ₹${(proratedPaise / 100).toFixed(2)}`,
-        ],
-      },
-    });
+    if (comp.calcMethod === "TIMESHEET_BASED") {
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "EARNING",
+        amount: fromPaise(proratedPaise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          inputs: { hourlyRate: parseFloat(comp.amount ?? "0"), billableHours },
+          steps: [
+            `${comp.name} = ₹${parseFloat(comp.amount ?? "0").toFixed(2)}/hr × ${billableHours}h = ₹${(proratedPaise / 100).toFixed(2)}`,
+          ],
+        },
+      });
+    } else {
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "EARNING",
+        amount: fromPaise(proratedPaise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          formula: comp.formula ?? undefined,
+          inputs: { ctc: monthlyCtcPaise / 100, percent: comp.percent ? parseFloat(comp.percent) : 0 },
+          steps: [
+            comp.calcMethod === "PERCENT_OF_BASIC"
+              ? `${comp.name} = ${comp.percent}% of monthly CTC ₹${(monthlyCtcPaise / 100).toFixed(2)} = ₹${(rawPaise / 100).toFixed(2)}`
+              : `${comp.name} = ₹${(rawPaise / 100).toFixed(2)}`,
+            proratedPaise !== rawPaise
+              ? `Prorated ₹${(rawPaise / 100).toFixed(2)} × ${paidDays}/${scheduledDays} paid days = ₹${(proratedPaise / 100).toFixed(2)}`
+              : `Full amount = ₹${(proratedPaise / 100).toFixed(2)}`,
+          ],
+        },
+      });
+    }
 
     if (comp.code === "BASIC") basicPaise = proratedPaise;
   }
@@ -208,23 +236,171 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     });
   }
 
+  let nonStatDeductionPaise = 0;
+
+  const buildDeductionScope = (): FormulaScope => ({
+    basic: basicPaise / 100,
+    gross: grossPaise / 100,
+    ctc: monthlyCtcPaise / 100,
+    days_in_month: totalDaysInMonth,
+    paid_days: paidDays,
+    lop_days: lopDays,
+    overtime_hours: overtimeHours,
+    incentive_amount: totalIncentivePaise / 100,
+    reimbursement_amount: 0,
+  });
+
   for (const comp of deductionComps) {
-    if (comp.calcMethod !== "FIXED" || comp.amount == null) continue;
-    const paise = applyRounding(toPaise(comp.amount), rounding);
+    let paise = 0;
+
+    if (comp.calcMethod === "FIXED" && comp.amount != null) {
+      paise = applyRounding(toPaise(comp.amount), rounding);
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "DEDUCTION",
+        amount: fromPaise(paise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          inputs: { amount: paise / 100 },
+          steps: [`${comp.name} = ₹${(paise / 100).toFixed(2)} (fixed deduction)`],
+        },
+      });
+    } else if (comp.calcMethod === "PERCENT_OF_BASIC" && comp.percent != null) {
+      paise = applyRounding(pctOf(basicPaise, comp.percent), rounding);
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "DEDUCTION",
+        amount: fromPaise(paise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          inputs: { basic: basicPaise / 100, percent: parseFloat(comp.percent) },
+          steps: [`${comp.name} = ${comp.percent}% of basic ₹${(basicPaise / 100).toFixed(2)} = ₹${(paise / 100).toFixed(2)}`],
+        },
+      });
+    } else if (comp.calcMethod === "PERCENT_OF_GROSS" && comp.percent != null) {
+      paise = applyRounding(pctOf(grossPaise, comp.percent), rounding);
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "DEDUCTION",
+        amount: fromPaise(paise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          inputs: { gross: grossPaise / 100, percent: parseFloat(comp.percent) },
+          steps: [`${comp.name} = ${comp.percent}% of gross ₹${(grossPaise / 100).toFixed(2)} = ₹${(paise / 100).toFixed(2)}`],
+        },
+      });
+    } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
+      const result = evalFormula(comp.formula, buildDeductionScope());
+      if (!result.ok) {
+        lines.push({
+          code: comp.code,
+          name: comp.name,
+          category: "DEDUCTION",
+          amount: "0.00",
+          calcMethod: comp.calcMethod,
+          taxable: comp.taxable,
+          sortOrder: comp.sortOrder,
+          explain: {
+            method: comp.calcMethod,
+            formula: comp.formula,
+            inputs: buildDeductionScope() as unknown as Record<string, number>,
+            steps: [`Error: ${result.error}`],
+            note: result.error,
+          },
+        });
+        continue;
+      }
+      paise = applyRounding(Math.round(result.value * 100), rounding);
+      lines.push({
+        code: comp.code,
+        name: comp.name,
+        category: "DEDUCTION",
+        amount: fromPaise(paise),
+        calcMethod: comp.calcMethod,
+        taxable: comp.taxable,
+        sortOrder: comp.sortOrder,
+        explain: {
+          method: comp.calcMethod,
+          formula: comp.formula,
+          inputs: buildDeductionScope() as unknown as Record<string, number>,
+          steps: [`${comp.name} = formula result = ₹${(paise / 100).toFixed(2)}`],
+        },
+      });
+    } else {
+      continue;
+    }
+
+    nonStatDeductionPaise += paise;
+  }
+
+  let adjustmentPaise = 0;
+
+  for (const comp of adjustmentComps) {
+    let paise = 0;
+
+    if (comp.calcMethod === "FIXED" && comp.amount != null) {
+      paise = applyRounding(toPaise(comp.amount), rounding);
+    } else if (comp.calcMethod === "PERCENT_OF_BASIC" && comp.percent != null) {
+      paise = applyRounding(pctOf(basicPaise, comp.percent), rounding);
+    } else if (comp.calcMethod === "PERCENT_OF_GROSS" && comp.percent != null) {
+      paise = applyRounding(pctOf(grossPaise, comp.percent), rounding);
+    } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
+      const result = evalFormula(comp.formula, buildDeductionScope());
+      if (!result.ok) {
+        lines.push({
+          code: comp.code,
+          name: comp.name,
+          category: "ADJUSTMENT",
+          amount: "0.00",
+          calcMethod: comp.calcMethod,
+          taxable: comp.taxable,
+          sortOrder: comp.sortOrder,
+          explain: {
+            method: comp.calcMethod,
+            formula: comp.formula,
+            inputs: buildDeductionScope() as unknown as Record<string, number>,
+            steps: [`Error: ${result.error}`],
+            note: result.error,
+          },
+        });
+        continue;
+      }
+      paise = applyRounding(Math.round(result.value * 100), rounding);
+    } else if (comp.calcMethod === "MANUAL") {
+      paise = 0;
+    } else {
+      continue;
+    }
+
     lines.push({
       code: comp.code,
       name: comp.name,
-      category: "DEDUCTION",
+      category: "ADJUSTMENT",
       amount: fromPaise(paise),
       calcMethod: comp.calcMethod,
       taxable: comp.taxable,
       sortOrder: comp.sortOrder,
       explain: {
         method: comp.calcMethod,
+        formula: comp.formula ?? undefined,
         inputs: { amount: paise / 100 },
-        steps: [`${comp.name} = ₹${(paise / 100).toFixed(2)} (fixed deduction)`],
+        steps: [`${comp.name} = ₹${(paise / 100).toFixed(2)} (adjustment / clawback)`],
       },
     });
+
+    adjustmentPaise += paise;
   }
 
   if (toggles.overtime && overtimeHours > 0) {
@@ -329,7 +505,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   });
   lines.push(...statResult.lines);
 
-  let totalDeductionPaise = statResult.totalEmployeeDeductionPaise;
+  let totalDeductionPaise = statResult.totalEmployeeDeductionPaise + nonStatDeductionPaise + adjustmentPaise;
   let totalEmployerPaise = statResult.totalEmployerContributionPaise;
 
   if (toggles.loans) {
@@ -421,6 +597,11 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
 
   const netPaise = grossPaise + reimbursementPaise - totalDeductionPaise;
 
+  let computedNetPayoutCurrency: string | null = null;
+  if (fxRate != null && payoutCurrency != null && payoutCurrency !== currency) {
+    computedNetPayoutCurrency = ((netPaise / 100) * parseFloat(fxRate)).toFixed(2);
+  }
+
   let variance: RunEmployeeVariance | null = null;
   if (previousSnapshot != null) {
     const prevNet = toPaise(previousSnapshot.totals.net);
@@ -452,6 +633,8 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     policyVersionId,
     computedAt: new Date().toISOString(),
     currency,
+    fxRate,
+    netPayoutCurrency: computedNetPayoutCurrency,
     scheduledDays: input.inputs.scheduledDays,
     paidDays: input.inputs.paidDays,
     lopDays: input.inputs.lopDays,
