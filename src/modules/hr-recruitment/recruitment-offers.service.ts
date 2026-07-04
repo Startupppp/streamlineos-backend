@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateOfferInput,
   CreateOfferNegotiationInput,
@@ -27,6 +28,7 @@ export class RecruitmentOffersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
+    private readonly audit: AuditService,
   ) {}
 
   async listOffers(orgId: string, candidateId: number) {
@@ -94,10 +96,19 @@ export class RecruitmentOffersService {
       changedBy: userId,
     });
 
+    this.audit.log({
+      action: "OFFER_CREATED",
+      userId,
+      orgId,
+      targetId: String(offer.id),
+      targetType: "candidate_offer",
+      metadata: { candidateId, offeredSalary: offer.offeredSalary, offeredDesignation: offer.offeredDesignation },
+    });
+
     return offer;
   }
 
-  async submitForApproval(orgId: string, offerId: number) {
+  async submitForApproval(orgId: string, offerId: number, userId: string) {
     const offer = await this.findOffer(orgId, offerId);
     if (offer.offerStatus !== "DRAFT") {
       throw new BadRequestException("Only DRAFT offers can be submitted for approval.");
@@ -106,6 +117,13 @@ export class RecruitmentOffersService {
       .update(candidateOffers)
       .set({ offerStatus: "PENDING_APPROVAL", updatedAt: new Date() })
       .where(eq(candidateOffers.id, offerId));
+    this.audit.log({
+      action: "OFFER_SUBMITTED_FOR_APPROVAL",
+      userId,
+      orgId,
+      targetId: String(offerId),
+      targetType: "candidate_offer",
+    });
     return { success: true };
   }
 
@@ -128,6 +146,14 @@ export class RecruitmentOffersService {
         ...tokenFields,
       })
       .where(eq(candidateOffers.id, offerId));
+    this.audit.log({
+      action: "OFFER_APPROVED",
+      userId,
+      orgId,
+      targetId: String(offerId),
+      targetType: "candidate_offer",
+      metadata: { remarks },
+    });
     return { success: true };
   }
 
@@ -138,7 +164,7 @@ export class RecruitmentOffersService {
     };
   }
 
-  async rejectApproval(orgId: string, offerId: number, remarks?: string) {
+  async rejectApproval(orgId: string, offerId: number, remarks: string | undefined, userId: string) {
     const offer = await this.findOffer(orgId, offerId);
     if (offer.offerStatus !== "PENDING_APPROVAL") {
       throw new BadRequestException("Only PENDING_APPROVAL offers can be rejected.");
@@ -147,6 +173,14 @@ export class RecruitmentOffersService {
       .update(candidateOffers)
       .set({ offerStatus: "APPROVAL_REJECTED", approvalRemarks: remarks ?? null, updatedAt: new Date() })
       .where(eq(candidateOffers.id, offerId));
+    this.audit.log({
+      action: "OFFER_APPROVAL_REJECTED",
+      userId,
+      orgId,
+      targetId: String(offerId),
+      targetType: "candidate_offer",
+      metadata: { remarks },
+    });
     return { success: true };
   }
 
@@ -193,6 +227,16 @@ export class RecruitmentOffersService {
         .update(candidateOffers)
         .set({ offerStatus: "COUNTERED", respondedAt: new Date(), updatedAt: new Date() })
         .where(eq(candidateOffers.id, offerId));
+      if (offer.offeredBy) {
+        this.audit.log({
+          action: "OFFER_COUNTERED_BY_CANDIDATE",
+          userId: offer.offeredBy,
+          orgId,
+          targetId: String(offerId),
+          targetType: "candidate_offer",
+          metadata: { proposedSalary: entry.proposedSalary, source: "public_candidate_response" },
+        });
+      }
     }
 
     if (direction === "INTERNAL_RESPONSE" && input.applyToOffer && userId) {
@@ -210,6 +254,14 @@ export class RecruitmentOffersService {
             updatedAt: now,
           })
           .where(eq(candidateOffers.id, offerId));
+        this.audit.log({
+          action: "OFFER_TERMS_REVISED",
+          userId,
+          orgId,
+          targetId: String(offerId),
+          targetType: "candidate_offer",
+          metadata: { proposedSalary: input.proposedSalary },
+        });
       }
     }
 
@@ -372,7 +424,7 @@ export class RecruitmentOffersService {
     });
   }
 
-  async deleteOffer(orgId: string, candidateId: number, offerId: number) {
+  async deleteOffer(orgId: string, candidateId: number, offerId: number, userId: string) {
     const existing = await this.db.query.candidateOffers.findFirst({
       where: and(
         eq(candidateOffers.id, offerId),
@@ -384,6 +436,13 @@ export class RecruitmentOffersService {
     if (!existing) throw new NotFoundException("Offer not found");
 
     await this.db.delete(candidateOffers).where(eq(candidateOffers.id, offerId));
+    this.audit.log({
+      action: "OFFER_DELETED",
+      userId,
+      orgId,
+      targetId: String(offerId),
+      targetType: "candidate_offer",
+    });
     return { success: true };
   }
 

@@ -55,7 +55,7 @@ export class RecruitmentOffersController {
   @Post(":offerId/submit-for-approval")
   @RequirePermission("hr:offers:manage")
   submitForApproval(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.offers.submitForApproval(u.orgId, offerId);
+    return this.offers.submitForApproval(u.orgId, offerId, u.userId);
   }
 
   @Post(":offerId/approve")
@@ -75,7 +75,7 @@ export class RecruitmentOffersController {
     @Body(new ZodValidationPipe(approvalRemarksSchema)) body: ApprovalRemarksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.offers.rejectApproval(u.orgId, offerId, body.remarks);
+    return this.offers.rejectApproval(u.orgId, offerId, body.remarks, u.userId);
   }
 
   @Get(":offerId/versions")
@@ -119,6 +119,6 @@ export class RecruitmentOffersController {
     @Param("offerId", ParseIntPipe) offerId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.offers.deleteOffer(u.orgId, candidateId, offerId);
+    return this.offers.deleteOffer(u.orgId, candidateId, offerId, u.userId);
   }
 }
