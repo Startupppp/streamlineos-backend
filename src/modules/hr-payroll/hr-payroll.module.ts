@@ -53,5 +53,6 @@ import { BankTransfersService } from "./bank-transfers.service";
     TaxService,
     BankTransfersService,
   ],
+  exports: [FnfService, TaxService, ReimbursementsService, LoansService],
 })
 export class HrPayrollModule {}

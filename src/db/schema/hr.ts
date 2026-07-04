@@ -26,3 +26,7 @@ export * from "./hr/salary-structure-templates";
 export * from "./hr/allowances";
 export * from "./hr/tax";
 export * from "./hr/bank-transfers";
+export * from "./hr/payroll-policies";
+export * from "./hr/payroll-runs";
+export * from "./hr/payroll-payout";
+export * from "./hr/payroll-workforce";

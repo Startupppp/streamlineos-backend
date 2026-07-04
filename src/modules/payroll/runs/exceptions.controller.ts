@@ -1,0 +1,85 @@
+import {
+  Controller,
+  Get,
+  Patch,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseGuards,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { ExceptionsService } from "./exceptions.service";
+import {
+  resolveExceptionSchema,
+  overrideExceptionSchema,
+  type ResolveExceptionInput,
+  type OverrideExceptionInput,
+} from "./dto/runs.schemas";
+import { z } from "zod";
+
+const exceptionFilterSchema = z.object({
+  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
+  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
+});
+
+@Controller("payroll/runs/:runId/exceptions")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class ExceptionsController {
+  constructor(private readonly exceptionsService: ExceptionsService) {}
+
+  @Get()
+  @RequirePermission("payroll:runs:view")
+  async list(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: z.infer<typeof exceptionFilterSchema>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.exceptionsService.listExceptions(u.orgId, runId, query.severity, query.status);
+    if (!result) throw new NotFoundException("Payroll run not found");
+    return result;
+  }
+
+  @Patch(":exceptionId/resolve")
+  @RequirePermission("payroll:runs:update")
+  async resolve(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Param("exceptionId", ParseIntPipe) exceptionId: number,
+    @Body(new ZodValidationPipe(resolveExceptionSchema)) body: ResolveExceptionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.exceptionsService.resolveException(u.orgId, runId, exceptionId, u.userId, body);
+    if (!result.ok) {
+      if (result.reason === "not_found" || result.reason === "exception_not_found") throw new NotFoundException("Not found");
+      if (result.reason === "locked") throw new BadRequestException("Cannot modify a locked run");
+      if (result.reason === "already_resolved") throw new BadRequestException("Exception is already resolved");
+      throw new BadRequestException(result.reason);
+    }
+    return { ok: true };
+  }
+
+  @Patch(":exceptionId/override")
+  @RequirePermission("payroll:runs:manage")
+  async override(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Param("exceptionId", ParseIntPipe) exceptionId: number,
+    @Body(new ZodValidationPipe(overrideExceptionSchema)) body: OverrideExceptionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.exceptionsService.overrideException(u.orgId, runId, exceptionId, u.userId, body);
+    if (!result.ok) {
+      if (result.reason === "not_found" || result.reason === "exception_not_found") throw new NotFoundException("Not found");
+      if (result.reason === "locked") throw new BadRequestException("Cannot modify a locked run");
+      if (result.reason === "already_resolved") throw new BadRequestException("Exception is already resolved or overridden");
+      throw new BadRequestException(result.reason);
+    }
+    return { ok: true };
+  }
+}

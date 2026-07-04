@@ -1,0 +1,60 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { FnfInsightsService } from "./fnf.service";
+import type { PatchFnfInput } from "../../hr-payroll/dto/payroll.schemas";
+
+@Controller("payroll/fnf")
+@UseGuards(JwtAuthGuard)
+export class FnfController {
+  constructor(private readonly fnfService: FnfInsightsService) {}
+
+  @Get()
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payroll:fnf:view")
+  list(@CurrentUser() u: CurrentUserContext) {
+    return this.fnfService.list(u.orgId, u.userId, true);
+  }
+
+  @Get(":settlementId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payroll:fnf:view")
+  getOne(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("settlementId", ParseIntPipe) settlementId: number,
+  ) {
+    return this.fnfService.getOne(u.orgId, settlementId);
+  }
+
+  @Post(":settlementId/approve")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payroll:fnf:manage")
+  approve(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("settlementId", ParseIntPipe) settlementId: number,
+    @Body() body: PatchFnfInput,
+  ) {
+    return this.fnfService.approve(u.orgId, settlementId, u.userId, body);
+  }
+
+  @Get(":settlementId/statement")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payroll:fnf:view")
+  getStatement(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("settlementId", ParseIntPipe) settlementId: number,
+  ) {
+    return this.fnfService.getStatement(u.orgId, settlementId);
+  }
+}

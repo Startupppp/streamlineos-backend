@@ -7,6 +7,7 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { projects, sprints, customStates, modules, cycles } from "./core";
+import { timesheetExports } from "./timesheet-payroll";
 
 export const tickets = pgTable("tickets", {
   id: serial("id").primaryKey(),
@@ -152,11 +153,14 @@ export const timesheets = pgTable("timesheets", {
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
   isBillable: boolean("is_billable").default(false).notNull(),
+  payrollStatus: text("payroll_status").notNull().default("UNPROCESSED"),
+  payrollExportId: integer("payroll_export_id").references(() => timesheetExports.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_timesheets_user_date").on(table.userId, table.date),
   index("idx_timesheets_org_status").on(table.orgId, table.status),
+  index("idx_timesheets_org_payroll").on(table.orgId, table.payrollStatus, table.date),
   uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userId, table.date).where(sql`ticket_id IS NULL`),
 ]);
 

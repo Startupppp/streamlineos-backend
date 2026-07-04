@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -77,6 +78,9 @@ export class TimesheetsService {
       with: { ticket: { with: { project: true } } },
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+    if (entry.payrollStatus === "EXPORTED") {
+      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+    }
     if (entry.status !== "PENDING") {
       throw new ForbiddenException("Cannot edit a time entry that has already been reviewed");
     }
@@ -111,6 +115,9 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+    if (entry.payrollStatus === "EXPORTED") {
+      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+    }
     if (entry.status !== "PENDING") {
       throw new ForbiddenException("Cannot delete a time entry that has already been reviewed");
     }
@@ -139,6 +146,9 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+    if (entry.payrollStatus === "EXPORTED") {
+      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+    }
     if (entry.status !== "PENDING") {
       throw new BadRequestException("Only pending entries can be approved");
     }
@@ -166,6 +176,9 @@ export class TimesheetsService {
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
+    if (entry.payrollStatus === "EXPORTED") {
+      throw new ConflictException("This entry was included in a payroll export and can no longer be modified. Use a correction entry instead.");
+    }
     if (entry.status !== "PENDING") {
       throw new BadRequestException("Only pending entries can be rejected");
     }

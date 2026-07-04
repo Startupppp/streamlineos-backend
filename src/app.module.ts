@@ -86,6 +86,8 @@ import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { UsersModule } from "./modules/users/users.module";
 import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/workspace-onboarding.module";
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
+import { PayrollModule } from "./modules/payroll/payroll.module";
+import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -176,6 +178,8 @@ import { MeService } from "./me/me.service";
     UsersModule,
     WorkspaceOnboardingModule,
     WorkflowsModule,
+    PayrollModule,
+    TimesheetsModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

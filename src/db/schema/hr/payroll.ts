@@ -126,6 +126,7 @@ export const salaryLoans = pgTable("salary_loans", {
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
   disbursedAt: timestamp("disbursed_at"),
+  closedAt: timestamp("closed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -163,6 +164,11 @@ export const fnfSettlements = pgTable("fnf_settlements", {
   status: fnfStatusEnum("status").default("DRAFT").notNull(),
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
   notes: text("notes"),
+  reimbursementsDue: decimal("reimbursements_due", { precision: 15, scale: 2 }).default("0").notNull(),
+  assetRecovery: decimal("asset_recovery", { precision: 15, scale: 2 }).default("0").notNull(),
+  noticeRecovery: decimal("notice_recovery", { precision: 15, scale: 2 }).default("0").notNull(),
+  otherDeductions: decimal("other_deductions", { precision: 15, scale: 2 }).default("0").notNull(),
+  statementPublishedAt: timestamp("statement_published_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

@@ -71,6 +71,13 @@
       "when": 1782910000000,
       "tag": "0009_project_statuses_type",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783200000000,
+      "tag": "0148_payroll_integration_fixes",
+      "breakpoints": true
     }
   ]
 }

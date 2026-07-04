@@ -1,0 +1,110 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { PayrollPoliciesService } from "./policies.service";
+import {
+  createPolicySchema,
+  updatePolicySchema,
+  policyPreviewSchema,
+  activatePolicySchema,
+  createPolicyVersionSchema,
+  toggleImpactSchema,
+  type CreatePolicyInput,
+  type UpdatePolicyInput,
+  type PolicyPreviewInput,
+  type ActivatePolicyInput,
+  type CreatePolicyVersionInput,
+  type ToggleImpactInput,
+} from "./dto/setup.schemas";
+
+@Controller("payroll/policies")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class PayrollPoliciesController {
+  constructor(private readonly service: PayrollPoliciesService) {}
+
+  @Get("current")
+  @RequirePermission("payroll:policies:view")
+  async getCurrent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return this.service.getCurrent(u.orgId);
+  }
+
+  @Get("toggle-impact")
+  @RequirePermission("payroll:policies:view")
+  async toggleImpact(
+    @Query(new ZodValidationPipe(toggleImpactSchema)) query: ToggleImpactInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.toggleImpact(u.orgId, query);
+  }
+
+  @Post()
+  @RequirePermission("payroll:policies:manage")
+  async create(
+    @Body(new ZodValidationPipe(createPolicySchema)) body: CreatePolicyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.create(u, body);
+  }
+
+  @Post("preview")
+  @RequirePermission("payroll:policies:view")
+  async preview(
+    @Body(new ZodValidationPipe(policyPreviewSchema)) body: PolicyPreviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.preview(u.orgId, body);
+  }
+
+  @Patch(":policyId")
+  @RequirePermission("payroll:policies:manage")
+  async update(
+    @Param("policyId", ParseIntPipe) policyId: number,
+    @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.update(u, policyId, body);
+  }
+
+  @Post(":policyId/activate")
+  @RequirePermission("payroll:policies:manage")
+  async activate(
+    @Param("policyId", ParseIntPipe) policyId: number,
+    @Body(new ZodValidationPipe(activatePolicySchema)) body: ActivatePolicyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.activate(u, policyId, body);
+  }
+
+  @Get(":policyId/versions")
+  @RequirePermission("payroll:policies:view")
+  async listVersions(
+    @Param("policyId", ParseIntPipe) policyId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.listVersions(u.orgId, policyId);
+  }
+
+  @Post(":policyId/versions")
+  @RequirePermission("payroll:policies:manage")
+  async createVersion(
+    @Param("policyId", ParseIntPipe) policyId: number,
+    @Body(new ZodValidationPipe(createPolicyVersionSchema)) body: CreatePolicyVersionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.createVersion(u, policyId, body);
+  }
+}

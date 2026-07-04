@@ -169,3 +169,74 @@ export const revenueEventTypeEnum = pgEnum("revenue_event_type", [
 export const enterpriseQuoteStatusEnum = pgEnum("enterprise_quote_status", [
   "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"
 ]);
+
+export const payrollRunStatusEnum = pgEnum("payroll_run_status", [
+  "PREPARING", "DRAFT", "PREVIEW_READY", "EXCEPTIONS_FOUND", "PENDING_APPROVAL",
+  "APPROVED", "LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED", "REOPENED",
+]);
+
+export const payrollWorkerTypeEnum = pgEnum("payroll_worker_type", [
+  "EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR",
+]);
+
+export const salaryComponentTypeEnum = pgEnum("salary_component_type", [
+  "EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT",
+]);
+
+export const salaryComponentCalcMethodEnum = pgEnum("salary_component_calc_method", [
+  "FIXED", "PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FORMULA",
+  "ATTENDANCE_BASED", "TIMESHEET_BASED", "MANUAL",
+]);
+
+export const payrollExceptionSeverityEnum = pgEnum("payroll_exception_severity", [
+  "BLOCKER", "WARNING", "INFO",
+]);
+
+export const payrollExceptionStatusEnum = pgEnum("payroll_exception_status", [
+  "OPEN", "RESOLVED", "OVERRIDDEN",
+]);
+
+export const payrollApprovalStatusEnum = pgEnum("payroll_approval_status", [
+  "PENDING", "APPROVED", "REJECTED",
+]);
+
+export const payrollBankBatchStatusEnum = pgEnum("payroll_bank_batch_status", [
+  "DRAFT", "GENERATED", "SENT", "PARTIALLY_PAID", "PAID", "FAILED",
+]);
+
+export const payrollBankItemStatusEnum = pgEnum("payroll_bank_item_status", [
+  "PENDING", "SENT", "PAID", "FAILED", "HELD",
+]);
+
+export const payrollPolicyStatusEnum = pgEnum("payroll_policy_status", [
+  "DRAFT", "ACTIVE", "SUPERSEDED", "ARCHIVED",
+]);
+
+export const salaryProfileStatusEnum = pgEnum("salary_profile_status", [
+  "UPCOMING", "ACTIVE", "SUPERSEDED",
+]);
+
+export const payFrequencyEnum = pgEnum("pay_frequency", [
+  "MONTHLY", "SEMI_MONTHLY", "BI_WEEKLY", "WEEKLY",
+]);
+
+export const taxRegimeTypeEnum = pgEnum("tax_regime_type", [
+  "OLD", "NEW",
+]);
+
+export const payslipLayoutEnum = pgEnum("payslip_layout", [
+  "CLASSIC", "MODERN", "COMPLIANCE",
+]);
+
+export const payslipPublishChannelEnum = pgEnum("payslip_publish_channel", [
+  "PORTAL", "EMAIL",
+]);
+
+export const payrollCalendarEventTypeEnum = pgEnum("payroll_calendar_event_type", [
+  "ATTENDANCE_CUTOFF", "REIMBURSEMENT_CUTOFF", "DECLARATION_CUTOFF",
+  "PREVIEW_DUE", "APPROVAL_DEADLINE", "PAY_DATE", "PUBLISH_DATE",
+]);
+
+export const payrollLoanAdjustmentTypeEnum = pgEnum("payroll_loan_adjustment_type", [
+  "SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST",
+]);

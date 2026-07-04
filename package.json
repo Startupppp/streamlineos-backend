@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
+    "seed:payroll-templates": "node --env-file=.env -r ts-node/register src/scripts/seed-payroll-templates.ts",
     "seed:permissions": "node scripts/seed-permissions.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
