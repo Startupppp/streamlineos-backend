@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
-import { surveyLiveSessions, surveyForms, surveyQuestions, surveySections } from "../../db/schema";
+import { surveyLiveSessions, surveyForms, surveyQuestions, surveySections, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
@@ -45,6 +45,15 @@ export class SurveyLiveSessionService {
     return session;
   }
 
+  async getCurrentQuestion(session: typeof surveyLiveSessions.$inferSelect) {
+    if (!session.currentQuestionId) return null;
+    const question = await this.db.query.surveyQuestions.findFirst({
+      where: eq(surveyQuestions.id, session.currentQuestionId),
+      with: { choices: { orderBy: [asc(surveyQuestionChoices.sortOrder)] } },
+    });
+    return question ?? null;
+  }
+
   async start(sessionId: number) {
     const session = await this.get(sessionId);
     const firstQuestion = await this.db.query.surveyQuestions.findFirst({
@@ -67,10 +76,11 @@ export class SurveyLiveSessionService {
     });
     const currentIndex = questions.findIndex((q) => q.id === session.currentQuestionId);
     const nextQuestion = questions[currentIndex + 1] ?? null;
+    const settings = { ...(session.settings ?? {}), revealed: false };
 
     const [updated] = await this.db
       .update(surveyLiveSessions)
-      .set({ currentQuestionId: nextQuestion?.id ?? null })
+      .set({ currentQuestionId: nextQuestion?.id ?? null, settings })
       .where(eq(surveyLiveSessions.id, sessionId))
       .returning();
     return updated;

@@ -1,8 +1,10 @@
-import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, Param, Patch, Post, Request } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, NotFoundException, Param, Patch, Post, Request } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { SurveyResponseService } from "./survey-response.service";
+import { SurveyLiveSessionService } from "./survey-live-session.service";
+import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import {
   startSessionSchema,
   patchSessionSchema,
@@ -11,14 +13,20 @@ import {
   type PatchSessionInput,
   type SubmitSessionInput,
 } from "./dto/survey-public.schemas";
+import {
+  joinLiveSessionSchema,
+  submitLiveAnswerSchema,
+  type JoinLiveSessionInput,
+  type SubmitLiveAnswerInput,
+} from "./dto/survey-live-session.schemas";
 
-// Live session public join/answer routes (/public/surveys/live/:sessionCode/...) land in the
-// live-sessions milestone alongside the participant/answer tracking model they need.
 @Controller("public/surveys")
 export class SurveyPublicController {
   constructor(
     private readonly responses: SurveyResponseService,
     private readonly rateLimit: RateLimitService,
+    private readonly liveSessions: SurveyLiveSessionService,
+    private readonly liveParticipants: SurveyLiveParticipantService,
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
@@ -77,5 +85,43 @@ export class SurveyPublicController {
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
     return this.responses.submit(Number(sessionId), body.answers);
+  }
+
+  @Public()
+  @Get("live/:sessionCode")
+  async getLiveSession(@Param("sessionCode") sessionCode: string) {
+    const session = await this.liveSessions.getByCode(sessionCode);
+    if (session.status === "ended") throw new NotFoundException("This live session has ended");
+    const question = await this.liveSessions.getCurrentQuestion(session);
+    const currentQuestion = question && {
+      ...question,
+      choices: question.choices.map(({ isCorrect: _isCorrect, ...choice }) => choice),
+    };
+    return { ...session, currentQuestion };
+  }
+
+  @Public()
+  @Post("live/:sessionCode/join")
+  @HttpCode(201)
+  async joinLiveSession(
+    @Param("sessionCode") sessionCode: string,
+    @Body(new ZodValidationPipe(joinLiveSessionSchema)) body: JoinLiveSessionInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("survey:public-start", this.getIp(req));
+    const session = await this.liveSessions.getByCode(sessionCode);
+    return this.liveParticipants.join(session, body);
+  }
+
+  @Public()
+  @Post("live/:sessionCode/answer")
+  async submitLiveAnswer(
+    @Param("sessionCode") sessionCode: string,
+    @Body(new ZodValidationPipe(submitLiveAnswerSchema)) body: SubmitLiveAnswerInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("survey:public-submit", this.getIp(req));
+    const session = await this.liveSessions.getByCode(sessionCode);
+    return this.liveParticipants.submitAnswer(session, body);
   }
 }

@@ -6,12 +6,16 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
+import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { createLiveSessionSchema, type CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
 
 @Controller("surveys")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SurveyLiveSessionController {
-  constructor(private readonly liveSessions: SurveyLiveSessionService) {}
+  constructor(
+    private readonly liveSessions: SurveyLiveSessionService,
+    private readonly liveParticipants: SurveyLiveParticipantService,
+  ) {}
 
   @Post(":surveyId/live-sessions")
   @HttpCode(201)
@@ -52,5 +56,17 @@ export class SurveyLiveSessionController {
   @RequirePermission("surveys:live:host")
   end(@Param("sessionId", ParseIntPipe) sessionId: number) {
     return this.liveSessions.end(sessionId);
+  }
+
+  @Get("live-sessions/:sessionId/results")
+  @RequirePermission("surveys:live:host")
+  async results(@Param("sessionId", ParseIntPipe) sessionId: number) {
+    const session = await this.liveSessions.get(sessionId);
+    const participantCount = await this.liveParticipants.getParticipantCount(sessionId);
+    if (!session.currentQuestionId) {
+      return { participantCount, revealed: false, question: null };
+    }
+    const results = await this.liveParticipants.getQuestionResults(sessionId, session.currentQuestionId);
+    return { participantCount, revealed: Boolean((session.settings as { revealed?: boolean })?.revealed), question: results };
   }
 }

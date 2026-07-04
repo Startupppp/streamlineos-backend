@@ -18,6 +18,7 @@ import { SurveyParticipantService } from "./survey-participant.service";
 import { SurveyResponseService } from "./survey-response.service";
 import { SurveyAssessmentService } from "./survey-assessment.service";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
+import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { SurveyAnalyticsService } from "./survey-analytics.service";
 import { SurveyAutomationService } from "./survey-automation.service";
 import { SurveyExportService } from "./survey-export.service";
@@ -46,6 +47,7 @@ import { SurveyTemplateService } from "./survey-template.service";
     SurveyResponseService,
     SurveyAssessmentService,
     SurveyLiveSessionService,
+    SurveyLiveParticipantService,
     SurveyAnalyticsService,
     SurveyAutomationService,
     SurveyExportService,
