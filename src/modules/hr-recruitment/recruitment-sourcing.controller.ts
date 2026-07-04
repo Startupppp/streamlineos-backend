@@ -26,6 +26,8 @@ import {
   headcountListSchema,
   rejectHeadcountSchema,
   submissionIdQuerySchema,
+  updateExternalReferralSchema,
+  updateExternalReferrerStatusSchema,
   updateHeadcountSchema,
   updateReferralStatusSchema,
   updateSubmissionSchema,
@@ -37,6 +39,8 @@ import {
   type HeadcountListInput,
   type RejectHeadcountInput,
   type SubmissionIdQueryInput,
+  type UpdateExternalReferralInput,
+  type UpdateExternalReferrerStatusInput,
   type UpdateHeadcountInput,
   type UpdateReferralStatusInput,
   type UpdateSubmissionInput,
@@ -123,12 +127,27 @@ export class RecruitmentSourcingController {
     return this.sourcing.deleteVendor(u.orgId, vendorId);
   }
 
-  @Get("vendors/:vendorId/submissions")
-  listSubmissions(
+  @Post("vendors/:vendorId/portal-link")
+  @HttpCode(201)
+  async generateVendorPortalLink(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.listSubmissions(u.orgId, vendorId);
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
+    return this.sourcing.generateVendorPortalLink(u.orgId, vendorId);
+  }
+
+  @Get("vendors/:vendorId/submissions")
+  async listSubmissions(
+    @Param("vendorId", ParseIntPipe) vendorId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const canViewFinancials =
+      u.isOrgOwner || u.isPlatformAdmin || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
+    return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);
   }
 
   @Post("vendors/:vendorId/submissions")
@@ -221,5 +240,45 @@ export class RecruitmentSourcingController {
       if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
     }
     return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
+  }
+
+  @Get("external-referrals")
+  listExternalReferrals(@CurrentUser() u: CurrentUserContext) {
+    return this.sourcing.listExternalReferrals(u.orgId);
+  }
+
+  @Patch("external-referrals/:referralId")
+  async updateExternalReferral(
+    @Param("referralId", ParseIntPipe) referralId: number,
+    @Body(new ZodValidationPipe(updateExternalReferralSchema)) body: UpdateExternalReferralInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
+    return this.sourcing.updateExternalReferral(u.orgId, referralId, body);
+  }
+
+  @Get("external-referrers")
+  async listExternalReferrers(@CurrentUser() u: CurrentUserContext) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
+    return this.sourcing.listExternalReferrers(u.orgId);
+  }
+
+  @Patch("external-referrers/:referrerId")
+  async updateExternalReferrerStatus(
+    @Param("referrerId", ParseIntPipe) referrerId: number,
+    @Body(new ZodValidationPipe(updateExternalReferrerStatusSchema)) body: UpdateExternalReferrerStatusInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
+    return this.sourcing.updateExternalReferrerStatus(u.orgId, referrerId, body);
   }
 }

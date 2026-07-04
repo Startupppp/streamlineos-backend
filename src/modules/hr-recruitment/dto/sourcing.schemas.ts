@@ -27,6 +27,9 @@ export const createVendorSchema = z.object({
   website: z.string().url().optional().or(z.literal("")),
   feePercent: z.number().min(0).max(100).optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).default("ACTIVE"),
+  contractType: z.enum(["CONTINGENCY", "CONTRACT_STAFFING", "BOTH"]).default("CONTINGENCY"),
+  slaDays: z.number().int().positive().optional(),
+  replacementGuaranteeDays: z.number().int().positive().optional(),
 });
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 
@@ -38,12 +41,19 @@ export const updateVendorSchema = z.object({
   website: z.string().url().optional().or(z.literal("")),
   feePercent: z.number().min(0).max(100).optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  contractType: z.enum(["CONTINGENCY", "CONTRACT_STAFFING", "BOTH"]).optional(),
+  slaDays: z.number().int().positive().optional(),
+  replacementGuaranteeDays: z.number().int().positive().optional(),
 });
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
 
 export const createSubmissionSchema = z.object({
   candidateId: z.number().int().positive(),
   jobPostingId: z.number().int().positive().optional(),
+  billRate: z.number().positive().optional(),
+  payRate: z.number().positive().optional(),
+  contractStartDate: z.string().optional(),
+  contractEndDate: z.string().optional(),
 });
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 
@@ -53,6 +63,10 @@ export const updateSubmissionSchema = z.object({
   invoiceAmount: z.number().positive().optional(),
   invoiceDate: z.string().optional(),
   paidAt: z.string().optional(),
+  billRate: z.number().positive().optional(),
+  payRate: z.number().positive().optional(),
+  contractStartDate: z.string().optional(),
+  contractEndDate: z.string().optional(),
 });
 export type UpdateSubmissionInput = z.infer<typeof updateSubmissionSchema>;
 
@@ -91,3 +105,14 @@ export const rejectHeadcountSchema = z.object({
   reason: z.string().max(2000).optional(),
 });
 export type RejectHeadcountInput = z.infer<typeof rejectHeadcountSchema>;
+
+export const updateExternalReferralSchema = z.object({
+  status: z.enum(["SUBMITTED", "REVIEWING", "HIRED", "REJECTED", "INELIGIBLE", "REWARD_PENDING", "REWARD_PAID"]).optional(),
+  rewardAmount: z.number().positive().optional(),
+});
+export type UpdateExternalReferralInput = z.infer<typeof updateExternalReferralSchema>;
+
+export const updateExternalReferrerStatusSchema = z.object({
+  status: z.enum(["ACTIVE", "BLOCKED"]),
+});
+export type UpdateExternalReferrerStatusInput = z.infer<typeof updateExternalReferrerStatusSchema>;

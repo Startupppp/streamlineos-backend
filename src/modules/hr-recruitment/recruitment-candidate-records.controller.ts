@@ -161,20 +161,28 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("referral")
   @HttpCode(201)
-  createReferral(
+  async createReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createReferralSchema)) body: CreateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.createReferral(u.orgId, candidateId, body);
   }
 
   @Patch("referral")
-  updateReferral(
+  async updateReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateReferralSchema)) body: UpdateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
     return this.records.updateReferral(u.orgId, candidateId, body);
   }
 

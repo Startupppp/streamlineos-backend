@@ -656,6 +656,7 @@ export const emailSequenceEnrollmentsRelations = relations(emailSequenceEnrollme
 export type VendorStatus = "ACTIVE" | "INACTIVE";
 export type VendorPlacementStatus = "SUBMITTED" | "INTERVIEWING" | "PLACED" | "REJECTED";
 export type VendorInvoiceStatus = "NOT_INVOICED" | "INVOICED" | "PAID";
+export type VendorContractType = "CONTINGENCY" | "CONTRACT_STAFFING" | "BOTH";
 
 export const recruitmentVendors = pgTable("recruitment_vendors", {
   id: serial("id").primaryKey(),
@@ -667,11 +668,17 @@ export const recruitmentVendors = pgTable("recruitment_vendors", {
   website: text("website"),
   feePercent: decimal("fee_percent", { precision: 5, scale: 2 }),
   status: text("status").$type<VendorStatus>().notNull().default("ACTIVE"),
+  contractType: text("contract_type").$type<VendorContractType>().notNull().default("CONTINGENCY"),
+  slaDays: integer("sla_days"),
+  replacementGuaranteeDays: integer("replacement_guarantee_days"),
+  portalToken: text("portal_token"),
+  portalTokenExpiresAt: timestamp("portal_token_expires_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_recruitment_vendors_org").on(table.orgId),
+  uniqueIndex("idx_recruitment_vendors_portal_token").on(table.portalToken),
 ]);
 
 export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions", {
@@ -685,6 +692,10 @@ export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions"
   invoiceAmount: decimal("invoice_amount", { precision: 15, scale: 2 }),
   invoiceDate: date("invoice_date"),
   paidAt: date("paid_at"),
+  billRate: decimal("bill_rate", { precision: 10, scale: 2 }),
+  payRate: decimal("pay_rate", { precision: 10, scale: 2 }),
+  contractStartDate: date("contract_start_date"),
+  contractEndDate: date("contract_end_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_vendor_submissions_vendor").on(table.vendorId),

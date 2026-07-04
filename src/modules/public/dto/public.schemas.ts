@@ -66,6 +66,21 @@ export const intakeSchema = z.object({
   submitterEmail: z.string().email().optional(),
 });
 
+export const externalReferrerRegisterSchema = z.object({
+  orgId: z.string().trim().min(1),
+  name: z.string().min(1).max(200).trim(),
+  email: z.string().email().max(200).toLowerCase(),
+  phone: z.string().max(50).optional(),
+});
+
+export const externalReferralSubmitSchema = z.object({
+  firstName: z.string().min(1).max(200).trim(),
+  lastName: z.string().min(1).max(200).trim(),
+  email: z.string().email().max(200).toLowerCase(),
+  phone: z.string().max(50).optional(),
+  jobPostingId: z.number().int().positive().optional(),
+});
+
 export type ApplyInput = z.infer<typeof applySchema>;
 export type OfferRespondInput = z.infer<typeof offerRespondSchema>;
 export type RoadmapQueryInput = z.infer<typeof roadmapQuerySchema>;
@@ -77,3 +92,5 @@ export type KbFeedbackInput = z.infer<typeof kbFeedbackSchema>;
 export type NpsSubmitInput = z.infer<typeof npsSubmitSchema>;
 export type LeadFormBody = z.infer<typeof leadFormBodySchema>;
 export type IntakeInput = z.infer<typeof intakeSchema>;
+export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegisterSchema>;
+export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;
