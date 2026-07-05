@@ -22,14 +22,17 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarService } from "./calendar.service";
+import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import {
   createEventSchema,
   exportSchema,
+  externalEventsQuerySchema,
   listEventsSchema,
   rsvpSchema,
   updateEventSchema,
   type CreateEventInput,
   type ExportInput,
+  type ExternalEventsQueryInput,
   type ListEventsInput,
   type RsvpInput,
   type UpdateEventInput,
@@ -60,7 +63,10 @@ function csvEscape(value: string): string {
 @Controller("calendar")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class CalendarController {
-  constructor(private readonly calendar: CalendarService) {}
+  constructor(
+    private readonly calendar: CalendarService,
+    private readonly externalEvents: ExternalCalendarEventsService,
+  ) {}
 
   @Get("events")
   @RequirePermission("calendar:read")
@@ -73,6 +79,21 @@ export class CalendarController {
       u.userId,
       new Date(query.start),
       new Date(query.end),
+    );
+  }
+
+  @Get("external-events")
+  @RequirePermission("calendar:read")
+  getExternalEvents(
+    @Query(new ZodValidationPipe(externalEventsQuerySchema))
+    query: ExternalEventsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.externalEvents.getExternalEvents(
+      u.orgId,
+      u.userId,
+      query.start,
+      query.end,
     );
   }
 
@@ -93,8 +114,14 @@ export class CalendarController {
     @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const event = await this.calendar.updateEvent(u.orgId, u.userId, eventId, body);
-    if (!event) throw new NotFoundException("Event not found or not authorized");
+    const event = await this.calendar.updateEvent(
+      u.orgId,
+      u.userId,
+      eventId,
+      body,
+    );
+    if (!event)
+      throw new NotFoundException("Event not found or not authorized");
     return event;
   }
 
@@ -146,7 +173,16 @@ export class CalendarController {
 
     const events = await this.calendar.exportEvents(u.orgId, fromDate, toDate);
 
-    const headers = ["Title", "Start", "End", "All Day", "Category", "Location", "Description", "Color"];
+    const headers = [
+      "Title",
+      "Start",
+      "End",
+      "All Day",
+      "Category",
+      "Location",
+      "Description",
+      "Color",
+    ];
     const rows = events.map((event) => [
       csvEscape(event.title),
       csvEscape(formatDatetime(event.startDate)),
@@ -158,7 +194,10 @@ export class CalendarController {
       csvEscape(event.color ?? ""),
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\r\n");
     const filename = `calendar-${formatDate(fromDate)}-to-${formatDate(toDate)}.csv`;
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");

@@ -11,7 +11,9 @@ import {
   tickets,
   projects,
   projectMembers,
+  userIntegrationConnections,
 } from "../../db/schema";
+import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
@@ -56,7 +58,10 @@ function dateOnly(date: Date): string {
 
 @Injectable()
 export class CalendarService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly sync: ExternalCalendarSyncService,
+  ) {}
 
   async getEvents(
     orgId: string,
@@ -394,7 +399,38 @@ export class CalendarService {
       this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
     ]);
 
-    return { event, oooConflicts };
+    let meetingUrl: string | null = null;
+    let syncError: string | null = null;
+    let syncedEvent = event;
+    if (event && input.syncConnectionId) {
+      try {
+        const conn = await this.ownedActiveConnection(orgId, userId, input.syncConnectionId);
+        const attendeeEmailList = await this.attendeeEmails(attendeeIds);
+        const pushed = await this.sync.pushCreate(userId, conn, {
+          title: input.title,
+          description: input.description ?? null,
+          startIso: startDate.toISOString(),
+          endIso: endDate.toISOString(),
+          allDay: input.allDay ?? false,
+          attendeeEmails: attendeeEmailList,
+          addConference: input.addConference ?? false,
+        });
+        meetingUrl = pushed.meetingUrl;
+        const rows = await this.db
+          .update(calendarEvents)
+          .set({
+            integrationConnectionId: conn.id,
+            externalEventId: pushed.externalEventId,
+            location: event.location ?? pushed.meetingUrl ?? null,
+          })
+          .where(eq(calendarEvents.id, event.id))
+          .returning();
+        syncedEvent = rows[0] ?? event;
+      } catch (error) {
+        syncError = error instanceof Error ? error.message : "Failed to sync to external calendar";
+      }
+    }
+    return { event: syncedEvent, oooConflicts, meetingUrl, syncError };
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
@@ -430,10 +466,38 @@ export class CalendarService {
       )
       .returning();
 
+    if (event?.integrationConnectionId && event.externalEventId) {
+      try {
+        const conn = await this.ownedActiveConnection(orgId, userId, event.integrationConnectionId);
+        await this.sync.pushUpdate(userId, conn, event.externalEventId, {
+          title: event.title,
+          description: event.description ?? null,
+          startIso: event.startDate.toISOString(),
+          endIso: event.endDate.toISOString(),
+        });
+      } catch {}
+    }
+
     return event ?? null;
   }
 
   async deleteEvent(orgId: string, userId: string, id: number) {
+    const rows = await this.db
+      .select({
+        integrationConnectionId: calendarEvents.integrationConnectionId,
+        externalEventId: calendarEvents.externalEventId,
+      })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.id, id),
+          eq(calendarEvents.orgId, orgId),
+          eq(calendarEvents.createdBy, userId),
+        ),
+      )
+      .limit(1);
+    const mapping = rows[0];
+
     await this.db
       .delete(calendarEvents)
       .where(
@@ -443,7 +507,43 @@ export class CalendarService {
           eq(calendarEvents.createdBy, userId),
         ),
       );
+
+    if (mapping?.integrationConnectionId && mapping.externalEventId) {
+      try {
+        const conn = await this.ownedActiveConnection(orgId, userId, mapping.integrationConnectionId);
+        await this.sync.pushDelete(userId, conn, mapping.externalEventId);
+      } catch {}
+    }
+
     return { deleted: true };
+  }
+
+  private async ownedActiveConnection(orgId: string, userId: string, connectionId: number) {
+    const rows = await this.db
+      .select({
+        id: userIntegrationConnections.id,
+        toolkit: userIntegrationConnections.toolkit,
+        composioConnectedAccountId: userIntegrationConnections.composioConnectedAccountId,
+      })
+      .from(userIntegrationConnections)
+      .where(
+        and(
+          eq(userIntegrationConnections.id, connectionId),
+          eq(userIntegrationConnections.orgId, orgId),
+          eq(userIntegrationConnections.userId, userId),
+          eq(userIntegrationConnections.status, "active"),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new Error("Calendar account connection not found");
+    return row;
+  }
+
+  private async attendeeEmails(attendeeIds: string[]): Promise<string[]> {
+    if (attendeeIds.length === 0) return [];
+    const rows = await this.db.select({ email: users.email }).from(users).where(inArray(users.id, attendeeIds));
+    return rows.map((r) => r.email);
   }
 
   private getEventForOrg(orgId: string, id: number) {

@@ -1,6 +1,16 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { userIntegrationConnections, type IntegrationToolkit } from "../../db/schema";
+import {
+  userIntegrationConnections,
+  type IntegrationToolkit,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { APP_CONFIG } from "../../config/config.module";
@@ -17,8 +27,17 @@ const CONNECTION_COLUMNS = {
   createdAt: userIntegrationConnections.createdAt,
 } as const;
 
+const OWNED_CONNECTION_COLUMNS = {
+  id: userIntegrationConnections.id,
+  composioConnectedAccountId:
+    userIntegrationConnections.composioConnectedAccountId,
+  isPrimary: userIntegrationConnections.isPrimary,
+} as const;
+
 @Injectable()
 export class IntegrationsService {
+  private readonly logger = new Logger(IntegrationsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -35,7 +54,11 @@ export class IntegrationsService {
           eq(userIntegrationConnections.userId, userId),
         ),
       )
-      .orderBy(desc(userIntegrationConnections.isPrimary), desc(userIntegrationConnections.createdAt));
+      .orderBy(
+        desc(userIntegrationConnections.isPrimary),
+        desc(userIntegrationConnections.createdAt),
+      )
+      .limit(50);
   }
 
   async initiate(userId: string, toolkit: IntegrationToolkit) {
@@ -46,9 +69,11 @@ export class IntegrationsService {
   async finalize(orgId: string, userId: string, connectedAccountId: string) {
     const account = await this.gateway.getConnectedAccount(connectedAccountId);
     if (!account.userId || account.userId !== userId) {
-      throw new ForbiddenException("Connected account does not belong to the current user");
+      throw new ForbiddenException(
+        "Connected account does not belong to the current user",
+      );
     }
-    const toolkit: IntegrationToolkit = account.toolkitSlug === "outlook" ? "outlook" : "googlecalendar";
+    const toolkit = this.toToolkit(account.toolkitSlug);
     return this.db.transaction(async (tx) => {
       const existing = await tx
         .select({ id: userIntegrationConnections.id })
@@ -75,7 +100,11 @@ export class IntegrationsService {
         })
         .onConflictDoUpdate({
           target: userIntegrationConnections.composioConnectedAccountId,
-          set: { status: "active", accountEmail: account.email, updatedAt: new Date() },
+          set: {
+            status: "active",
+            accountEmail: account.email,
+            updatedAt: new Date(),
+          },
         })
         .returning(CONNECTION_COLUMNS);
       return rows[0];
@@ -84,13 +113,16 @@ export class IntegrationsService {
 
   async disconnect(orgId: string, userId: string, connectionId: number) {
     const row = await this.ownedConnection(orgId, userId, connectionId);
-    try {
-      await this.gateway.deleteConnectedAccount(row.composioConnectedAccountId);
-    } catch {}
     await this.db.transaction(async (tx) => {
       await tx
         .delete(userIntegrationConnections)
-        .where(eq(userIntegrationConnections.id, connectionId));
+        .where(
+          and(
+            eq(userIntegrationConnections.id, connectionId),
+            eq(userIntegrationConnections.orgId, orgId),
+            eq(userIntegrationConnections.userId, userId),
+          ),
+        );
       if (row.isPrimary) {
         const next = await tx
           .select({ id: userIntegrationConnections.id })
@@ -112,6 +144,13 @@ export class IntegrationsService {
         }
       }
     });
+    try {
+      await this.gateway.deleteConnectedAccount(row.composioConnectedAccountId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete Composio account ${row.composioConnectedAccountId}: ${String(error)}`,
+      );
+    }
     return { deleted: true };
   }
 
@@ -130,15 +169,28 @@ export class IntegrationsService {
       const rows = await tx
         .update(userIntegrationConnections)
         .set({ isPrimary: true })
-        .where(eq(userIntegrationConnections.id, connectionId))
+        .where(
+          and(
+            eq(userIntegrationConnections.id, connectionId),
+            eq(userIntegrationConnections.orgId, orgId),
+            eq(userIntegrationConnections.userId, userId),
+          ),
+        )
         .returning(CONNECTION_COLUMNS);
-      return rows[0];
+      const row = rows[0];
+      if (!row) throw new NotFoundException("Connection not found");
+      return row;
     });
+  }
+
+  private toToolkit(slug: string | null): IntegrationToolkit {
+    if (slug === "googlecalendar" || slug === "outlook") return slug;
+    throw new BadRequestException(`Unsupported toolkit: ${slug ?? "unknown"}`);
   }
 
   async ownedConnection(orgId: string, userId: string, connectionId: number) {
     const rows = await this.db
-      .select()
+      .select(OWNED_CONNECTION_COLUMNS)
       .from(userIntegrationConnections)
       .where(
         and(

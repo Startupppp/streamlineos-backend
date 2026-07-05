@@ -4,8 +4,14 @@ const titleSchema = z
   .string()
   .min(2, "Event title must be at least 2 characters")
   .max(100, "Event title must be at most 100 characters")
-  .refine((v) => /^[a-zA-Z0-9]/.test(v.trim()), "Event title must start with a letter or number")
-  .refine((v) => !/\s{2,}/.test(v), "Event title cannot have consecutive spaces");
+  .refine(
+    (v) => /^[a-zA-Z0-9]/.test(v.trim()),
+    "Event title must start with a letter or number",
+  )
+  .refine(
+    (v) => !/\s{2,}/.test(v),
+    "Event title cannot have consecutive spaces",
+  );
 
 export const listEventsSchema = z.object({
   start: z.string(),
@@ -30,6 +36,8 @@ export const createEventSchema = z
     agenda: z.string().optional(),
     linkedDealId: z.number().int().optional(),
     linkedLeadId: z.number().int().optional(),
+    syncConnectionId: z.number().int().positive().optional(),
+    addConference: z.boolean().optional(),
   })
   .refine(
     (v) => {
@@ -73,8 +81,16 @@ export const exportSchema = z.object({
   to: z.string(),
 });
 
+export const externalEventsQuerySchema = z.object({
+  start: z.string(),
+  end: z.string(),
+});
+
 export type ListEventsInput = z.infer<typeof listEventsSchema>;
 export type CreateEventInput = z.infer<typeof createEventSchema>;
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 export type RsvpInput = z.infer<typeof rsvpSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;
+export type ExternalEventsQueryInput = z.infer<
+  typeof externalEventsQuerySchema
+>;
