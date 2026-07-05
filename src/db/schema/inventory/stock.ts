@@ -1,24 +1,31 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
-import { invLocations } from "./warehouses";
+import { invLocations, invWarehouses } from "./warehouses";
 
 export const invStockLevels = pgTable("inv_stock_levels", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "cascade" }).notNull(),
+  lotId: integer("lot_id"),
+  serialId: integer("serial_id"),
   onHand: decimal("on_hand", { precision: 18, scale: 4 }).default("0").notNull(),
   committed: decimal("committed", { precision: 18, scale: 4 }).default("0").notNull(),
   onOrder: decimal("on_order", { precision: 18, scale: 4 }).default("0").notNull(),
+  blockedQty: decimal("blocked_qty", { precision: 18, scale: 4 }).default("0"),
+  qualityHoldQty: decimal("quality_hold_qty", { precision: 18, scale: 4 }).default("0"),
+  outgoingQty: decimal("outgoing_qty", { precision: 18, scale: 4 }).default("0"),
+  averageCost: decimal("average_cost", { precision: 18, scale: 4 }),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uniq_inv_stock_variant_location").on(table.productVariantId, table.locationId),
   index("idx_inv_stock_org").on(table.orgId),
   index("idx_inv_stock_variant").on(table.productVariantId),
   index("idx_inv_stock_location").on(table.locationId),
+  index("idx_inv_stock_lot").on(table.lotId),
+  index("idx_inv_stock_serial").on(table.serialId),
 ]);
 
 export const invStockTransactions = pgTable("inv_stock_transactions", {
@@ -30,6 +37,13 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
   quantityBefore: decimal("quantity_before", { precision: 18, scale: 4 }).notNull(),
   quantityAfter: decimal("quantity_after", { precision: 18, scale: 4 }).notNull(),
+  lotId: integer("lot_id"),
+  serialId: integer("serial_id"),
+  unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
+  totalCost: decimal("total_cost", { precision: 18, scale: 4 }),
+  idempotencyKey: text("idempotency_key"),
+  reason: text("reason"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   referenceType: text("reference_type"),
   referenceId: text("reference_id"),
   notes: text("notes"),
@@ -39,6 +53,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
   index("idx_inv_txn_org_type").on(table.orgId, table.transactionType),
   index("idx_inv_txn_reference").on(table.referenceType, table.referenceId),
+  index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
   index("idx_inv_txn_created").on(table.createdAt),
 ]);
 
@@ -49,11 +64,14 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   reason: invAdjReasonEnum("reason").notNull(),
   notes: text("notes"),
   status: text("status").default("POSTED").notNull(),
+  approvedBy: text("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uniq_inv_adj_org_ref").on(table.orgId, table.referenceNumber),
+  index("idx_inv_adj_org_ref").on(table.orgId, table.referenceNumber),
   index("idx_inv_adj_org").on(table.orgId),
 ]);
 
@@ -74,14 +92,18 @@ export const invStockTransfers = pgTable("inv_stock_transfers", {
   referenceNumber: text("reference_number").notNull(),
   fromLocationId: integer("from_location_id").references(() => invLocations.id, { onDelete: "restrict" }).notNull(),
   toLocationId: integer("to_location_id").references(() => invLocations.id, { onDelete: "restrict" }).notNull(),
+  fromWarehouseId: integer("from_warehouse_id").references(() => invWarehouses.id, { onDelete: "restrict" }),
+  toWarehouseId: integer("to_warehouse_id").references(() => invWarehouses.id, { onDelete: "restrict" }),
   status: invTransferStatusEnum("status").default("PENDING").notNull(),
   notes: text("notes"),
+  reservedAt: timestamp("reserved_at"),
+  dispatchedAt: timestamp("dispatched_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uniq_inv_transfer_org_ref").on(table.orgId, table.referenceNumber),
+  index("idx_inv_transfer_org_ref").on(table.orgId, table.referenceNumber),
   index("idx_inv_transfers_org_status").on(table.orgId, table.status),
 ]);
 
@@ -112,6 +134,7 @@ export const invStockTransactionsRelations = relations(invStockTransactions, ({ 
 export const invStockAdjustmentsRelations = relations(invStockAdjustments, ({ one, many }) => ({
   organization: one(organizations, { fields: [invStockAdjustments.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invStockAdjustments.createdBy], references: [users.id] }),
+  approver: one(users, { fields: [invStockAdjustments.approvedBy], references: [users.id], relationName: "adjApprover" }),
   lines: many(invStockAdjustmentLines),
 }));
 
@@ -125,6 +148,8 @@ export const invStockTransfersRelations = relations(invStockTransfers, ({ one, m
   organization: one(organizations, { fields: [invStockTransfers.orgId], references: [organizations.id] }),
   fromLocation: one(invLocations, { fields: [invStockTransfers.fromLocationId], references: [invLocations.id], relationName: "transferFrom" }),
   toLocation: one(invLocations, { fields: [invStockTransfers.toLocationId], references: [invLocations.id], relationName: "transferTo" }),
+  fromWarehouse: one(invWarehouses, { fields: [invStockTransfers.fromWarehouseId], references: [invWarehouses.id], relationName: "transferFromWh" }),
+  toWarehouse: one(invWarehouses, { fields: [invStockTransfers.toWarehouseId], references: [invWarehouses.id], relationName: "transferToWh" }),
   creator: one(users, { fields: [invStockTransfers.createdBy], references: [users.id] }),
   lines: many(invStockTransferLines),
 }));

@@ -57,6 +57,7 @@ export class MilestonesController {
   constructor(private readonly milestones: MilestonesService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listMilestones(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,12 +96,14 @@ export class MilestonesController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/intake")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class IntakeController {
   constructor(private readonly intake: IntakeService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(intakeListQuerySchema)) query: IntakeListQuery,
@@ -131,12 +134,14 @@ export class IntakeController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/views")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ViewsController {
   constructor(private readonly views: ViewsService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listViews(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +187,7 @@ export class WhiteboardsHubController {
   constructor(private readonly whiteboards: WhiteboardsService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listAllWhiteboards(@CurrentUser() u: CurrentUserContext) {
     return this.whiteboards.listAllWhiteboards(u);
   }

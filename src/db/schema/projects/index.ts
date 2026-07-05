@@ -1,6 +1,7 @@
 export * from "./core";
 export * from "./tasks";
 export * from "./timesheet-payroll";
+export * from "./timesheet-core";
 export * from "./members";
 export * from "./reporting";
 export * from "./relations";

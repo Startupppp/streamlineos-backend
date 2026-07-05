@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -57,7 +59,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTicketsController {
   constructor(
     private readonly tickets: ProjectsTicketsService,
@@ -65,6 +67,7 @@ export class ProjectsTicketsController {
   ) {}
 
   @Get("search/tickets")
+  @RequirePermission("projects:tickets:view")
   searchTickets(
     @Query(new ZodValidationPipe(searchTicketsQuerySchema)) query: SearchTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -72,7 +75,14 @@ export class ProjectsTicketsController {
     return this.tickets.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
   }
 
+  @Get("my-work")
+  @RequirePermission("projects:tickets:view")
+  getMyWork(@CurrentUser() u: CurrentUserContext) {
+    return this.tickets.getMyWork(u.orgId, u.userId);
+  }
+
   @Get(":projectId/tickets")
+  @RequirePermission("projects:tickets:view")
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(ticketsListQuerySchema)) query: TicketsListQuery,
@@ -82,6 +92,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets")
+  @RequirePermission("projects:tickets:create")
   @HttpCode(201)
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -92,6 +103,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/bulk")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(200)
   bulkUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -102,6 +114,7 @@ export class ProjectsTicketsController {
   }
 
   @Patch(":projectId/tickets/reorder")
+  @RequirePermission("projects:tickets:update")
   reorder(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(reorderSchema)) body: ReorderInput,
@@ -111,6 +124,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/activity")
+  @RequirePermission("projects:tickets:view")
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -120,6 +134,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/comments")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -130,6 +145,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/comments/:commentId")
+  @RequirePermission("projects:tickets:view")
   getComment(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -140,6 +156,7 @@ export class ProjectsTicketsController {
   }
 
   @Patch(":projectId/tickets/:ticketId/comments/:commentId")
+  @RequirePermission("projects:tickets:update")
   editComment(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -151,6 +168,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(204)
   deleteComment(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -162,6 +180,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/subtasks")
+  @RequirePermission("projects:tickets:view")
   getSubtasks(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -170,6 +189,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("projects:tickets:view")
   listRelations(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -179,6 +199,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   addRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -190,6 +211,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/relations")
+  @RequirePermission("projects:tickets:update")
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -200,6 +222,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("projects:tickets:view")
   getWatchers(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -208,6 +231,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   addWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -218,6 +242,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/watchers")
+  @RequirePermission("projects:tickets:update")
   removeWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -226,6 +251,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/labels")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   addLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -236,6 +262,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
+  @RequirePermission("projects:tickets:update")
   removeLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -245,6 +272,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/attachments")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   addAttachment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -255,6 +283,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/git-links")
+  @RequirePermission("projects:tickets:view")
   getGitLinks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -264,6 +293,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId/checklists")
+  @RequirePermission("projects:tickets:view")
   getChecklists(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -273,6 +303,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/checklists")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   createChecklist(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -284,6 +315,7 @@ export class ProjectsTicketsController {
   }
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId")
+  @RequirePermission("projects:tickets:update")
   updateChecklist(
     @Param("checklistId", ParseIntPipe) checklistId: number,
     @Body(new ZodValidationPipe(updateChecklistSchema)) body: UpdateChecklistInput,
@@ -293,6 +325,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(204)
   deleteChecklist(
     @Param("checklistId", ParseIntPipe) checklistId: number,
@@ -302,6 +335,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(201)
   createChecklistItem(
     @Param("checklistId", ParseIntPipe) checklistId: number,
@@ -312,6 +346,7 @@ export class ProjectsTicketsController {
   }
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
+  @RequirePermission("projects:tickets:update")
   updateChecklistItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body(new ZodValidationPipe(updateChecklistItemSchema)) body: UpdateChecklistItemInput,
@@ -321,6 +356,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(204)
   deleteChecklistItem(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -330,6 +366,7 @@ export class ProjectsTicketsController {
   }
 
   @Get(":projectId/tickets/:ticketId")
+  @RequirePermission("projects:tickets:view")
   getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -338,6 +375,7 @@ export class ProjectsTicketsController {
   }
 
   @Patch(":projectId/tickets/:ticketId")
+  @RequirePermission("projects:tickets:update")
   updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
@@ -347,6 +385,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId")
+  @RequirePermission("projects:tickets:delete")
   deleteTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Query("force") force: string,
@@ -356,6 +395,7 @@ export class ProjectsTicketsController {
   }
 
   @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(200)
   addReaction(
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -366,6 +406,7 @@ export class ProjectsTicketsController {
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(204)
   removeReaction(
     @Param("commentId", ParseIntPipe) commentId: number,

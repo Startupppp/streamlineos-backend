@@ -24,6 +24,7 @@ export class ProjectsBudgetController {
   constructor(private readonly budget: ProjectsBudgetService) {}
 
   @Get(":projectId/budget")
+  @RequirePermission("projects:manage")
   getBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

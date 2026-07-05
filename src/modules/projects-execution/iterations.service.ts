@@ -11,6 +11,7 @@ import type {
   CreateSprintInput,
   CycleListQuery,
   UpdateCycleInput,
+  UpdateEpicInput,
   UpdateModuleInput,
   UpdateSprintInput,
 } from "./dto/iterations.schemas";
@@ -65,6 +66,16 @@ export class SprintsService {
       })
       .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
 
+    return { success: true };
+  }
+
+  async deleteSprint(orgId: string, projectId: number, sprintId: number) {
+    const sprint = await this.db.query.sprints.findFirst({
+      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), eq(sprints.projectId, projectId)),
+      columns: { id: true },
+    });
+    if (!sprint) throw new NotFoundException("Sprint not found");
+    await this.db.delete(sprints).where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
     return { success: true };
   }
 
@@ -358,5 +369,38 @@ export class EpicsService {
     });
 
     return epic;
+  }
+
+  async updateEpic(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput) {
+    const [updated] = await this.db
+      .update(tickets)
+      .set({ ...input, updatedAt: new Date() })
+      .where(
+        and(
+          eq(tickets.id, epicId),
+          eq(tickets.orgId, orgId),
+          eq(tickets.projectId, projectId),
+          eq(tickets.type, "EPIC"),
+        ),
+      )
+      .returning();
+    if (!updated) throw new NotFoundException("Epic not found");
+    return updated;
+  }
+
+  async deleteEpic(orgId: string, projectId: number, epicId: number) {
+    const epic = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.id, epicId),
+        eq(tickets.orgId, orgId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.type, "EPIC"),
+      ),
+      columns: { id: true },
+    });
+    if (!epic) throw new NotFoundException("Epic not found");
+    await this.db.update(tickets).set({ epicId: null }).where(eq(tickets.epicId, epicId));
+    await this.db.delete(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId)));
+    return { success: true };
   }
 }

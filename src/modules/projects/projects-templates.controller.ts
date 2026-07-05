@@ -31,6 +31,7 @@ export class ProjectsTemplatesController {
   constructor(private readonly templates: ProjectsTemplatesService) {}
 
   @Get("templates")
+  @RequirePermission("projects:view")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.templates.listTemplates(u.orgId);
   }

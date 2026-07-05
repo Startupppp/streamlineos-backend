@@ -45,7 +45,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsController {
   constructor(
     private readonly projects: ProjectsService,
@@ -53,6 +53,7 @@ export class ProjectsController {
   ) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listProjects(
     @Query(new ZodValidationPipe(listProjectsSchema)) query: ListProjectsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -61,7 +62,6 @@ export class ProjectsController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:create")
   @HttpCode(201)
   createProject(
@@ -72,7 +72,6 @@ export class ProjectsController {
   }
 
   @Post("from-deal")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:create")
   @HttpCode(201)
   createFromDeal(
@@ -83,12 +82,12 @@ export class ProjectsController {
   }
 
   @Get("labels")
+  @RequirePermission("projects:view")
   listLabels(@CurrentUser() u: CurrentUserContext) {
     return this.members.listLabels(u.orgId);
   }
 
   @Post("labels")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(201)
   createLabel(
@@ -99,7 +98,6 @@ export class ProjectsController {
   }
 
   @Patch("labels/:labelId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   updateLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -110,7 +108,6 @@ export class ProjectsController {
   }
 
   @Delete("labels/:labelId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(204)
   deleteLabel(
@@ -121,12 +118,12 @@ export class ProjectsController {
   }
 
   @Get(":projectId/members")
+  @RequirePermission("projects:view")
   listMembers(@Param("projectId", ParseIntPipe) projectId: number) {
     return this.members.listMembers(projectId);
   }
 
   @Post(":projectId/members")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(201)
   addMember(
@@ -137,7 +134,6 @@ export class ProjectsController {
   }
 
   @Delete(":projectId/members")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -147,6 +143,7 @@ export class ProjectsController {
   }
 
   @Get(":projectId/custom-states")
+  @RequirePermission("projects:view")
   listCustomStates(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -155,7 +152,6 @@ export class ProjectsController {
   }
 
   @Post(":projectId/custom-states")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(201)
   createCustomState(
@@ -167,7 +163,6 @@ export class ProjectsController {
   }
 
   @Patch(":projectId/custom-states/:stateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   updateCustomState(
     @Param("projectId", ParseIntPipe) _projectId: number,
@@ -179,7 +174,6 @@ export class ProjectsController {
   }
 
   @Delete(":projectId/custom-states/:stateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(204)
   deleteCustomState(
@@ -191,12 +185,12 @@ export class ProjectsController {
   }
 
   @Get(":projectId/labels")
+  @RequirePermission("projects:view")
   listProjectLabels(@CurrentUser() u: CurrentUserContext) {
     return this.members.listLabels(u.orgId);
   }
 
   @Post(":projectId/labels")
-  @UseGuards(PermissionGuard)
   @RequirePermission("projects:manage")
   @HttpCode(201)
   createProjectLabel(
@@ -207,6 +201,7 @@ export class ProjectsController {
   }
 
   @Get(":projectId")
+  @RequirePermission("projects:view")
   getProject(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -215,6 +210,7 @@ export class ProjectsController {
   }
 
   @Patch(":projectId")
+  @RequirePermission("projects:update")
   updateProject(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,
@@ -224,6 +220,7 @@ export class ProjectsController {
   }
 
   @Delete(":projectId")
+  @RequirePermission("projects:delete")
   deleteProject(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

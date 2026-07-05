@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { invProductStatusEnum } from "../enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum } from "../enums";
 import { organizations, users } from "../auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -8,6 +8,10 @@ export const invUom = pgTable("inv_uom", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   abbreviation: text("abbreviation").notNull(),
+  category: text("category"),
+  ratioToBase: decimal("ratio_to_base", { precision: 18, scale: 8 }).default("1"),
+  roundingPrecision: integer("rounding_precision").default(2),
+  isBase: boolean("is_base").default(false),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -40,6 +44,14 @@ export const invProducts = pgTable("inv_products", {
   barcode: text("barcode"),
   description: text("description"),
   status: invProductStatusEnum("status").default("ACTIVE").notNull(),
+  productType: invProductTypeEnum("product_type").default("STOCKABLE"),
+  trackingMethod: invTrackingMethodEnum("tracking_method").default("NONE"),
+  costingMethod: invCostingMethodEnum("costing_method").default("WEIGHTED_AVERAGE"),
+  standardCost: decimal("standard_cost", { precision: 18, scale: 4 }),
+  purchaseUomId: integer("purchase_uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  salesUomId: integer("sales_uom_id").references(() => invUom.id, { onDelete: "set null" }),
+  defaultVendorId: integer("default_vendor_id"),
+  reorderEnabled: boolean("reorder_enabled").default(false),
   costPrice: decimal("cost_price", { precision: 18, scale: 4 }).default("0").notNull(),
   sellingPrice: decimal("selling_price", { precision: 18, scale: 4 }).default("0").notNull(),
   reorderPoint: decimal("reorder_point", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -91,7 +103,9 @@ export const invCategoriesRelations = relations(invCategories, ({ one, many }) =
 export const invProductsRelations = relations(invProducts, ({ one, many }) => ({
   organization: one(organizations, { fields: [invProducts.orgId], references: [organizations.id] }),
   category: one(invCategories, { fields: [invProducts.categoryId], references: [invCategories.id] }),
-  uom: one(invUom, { fields: [invProducts.uomId], references: [invUom.id] }),
+  uom: one(invUom, { fields: [invProducts.uomId], references: [invUom.id], relationName: "baseUom" }),
+  purchaseUom: one(invUom, { fields: [invProducts.purchaseUomId], references: [invUom.id], relationName: "purchaseUom" }),
+  salesUom: one(invUom, { fields: [invProducts.salesUomId], references: [invUom.id], relationName: "salesUom" }),
   creator: one(users, { fields: [invProducts.createdBy], references: [users.id] }),
   variants: many(invProductVariants),
 }));

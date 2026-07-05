@@ -14,7 +14,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -27,6 +26,7 @@ import {
   createSprintSchema,
   cycleListQuerySchema,
   updateCycleSchema,
+  updateEpicSchema,
   updateModuleSchema,
   updateSprintSchema,
   type CreateCycleInput,
@@ -35,16 +35,19 @@ import {
   type CreateSprintInput,
   type CycleListQuery,
   type UpdateCycleInput,
+  type UpdateEpicInput,
   type UpdateModuleInput,
   type UpdateSprintInput,
 } from "./dto/iterations.schemas";
 
+@RequireModule("projects")
 @Controller("projects/:projectId/sprints")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class SprintsController {
   constructor(private readonly sprints: SprintsService) {}
 
   @Get()
+  @RequirePermission("projects:sprints:view")
   listSprints(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,10 +56,8 @@ export class SprintsController {
   }
 
   @Post()
-  @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
-  @RequirePermission("projects:sprints:manage")
   @HttpCode(201)
+  @RequirePermission("projects:sprints:manage")
   createSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createSprintSchema)) body: CreateSprintInput,
@@ -66,6 +67,7 @@ export class SprintsController {
   }
 
   @Get(":sprintId/burndown")
+  @RequirePermission("projects:sprints:view")
   burndown(
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +76,7 @@ export class SprintsController {
   }
 
   @Get(":sprintId")
+  @RequirePermission("projects:sprints:view")
   getSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,8 +85,6 @@ export class SprintsController {
   }
 
   @Patch(":sprintId")
-  @UseGuards(ModuleGuard, PermissionGuard)
-  @RequireModule("projects")
   @RequirePermission("projects:sprints:manage")
   updateSprint(
     @Param("sprintId", ParseIntPipe) sprintId: number,
@@ -92,14 +93,26 @@ export class SprintsController {
   ) {
     return this.sprints.updateSprint(u.orgId, sprintId, body);
   }
+
+  @Delete(":sprintId")
+  @RequirePermission("projects:sprints:manage")
+  deleteSprint(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("sprintId", ParseIntPipe) sprintId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.sprints.deleteSprint(u.orgId, projectId, sprintId);
+  }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/cycles")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CyclesController {
   constructor(private readonly cycles: CyclesService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listCycles(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(cycleListQuerySchema)) query: CycleListQuery,
@@ -110,6 +123,7 @@ export class CyclesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("projects:workspace:manage")
   createCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
@@ -119,6 +133,7 @@ export class CyclesController {
   }
 
   @Patch(":cycleId")
+  @RequirePermission("projects:workspace:manage")
   updateCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("cycleId", ParseIntPipe) cycleId: number,
@@ -129,6 +144,7 @@ export class CyclesController {
   }
 
   @Delete(":cycleId")
+  @RequirePermission("projects:workspace:manage")
   deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -137,12 +153,14 @@ export class CyclesController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/modules")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ModulesController {
   constructor(private readonly modules: ModulesService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listModules(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -152,6 +170,7 @@ export class ModulesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("projects:workspace:manage")
   createModule(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createModuleSchema)) body: CreateModuleInput,
@@ -161,6 +180,7 @@ export class ModulesController {
   }
 
   @Patch(":moduleId")
+  @RequirePermission("projects:workspace:manage")
   updateModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @Body(new ZodValidationPipe(updateModuleSchema)) body: UpdateModuleInput,
@@ -170,6 +190,7 @@ export class ModulesController {
   }
 
   @Delete(":moduleId")
+  @RequirePermission("projects:workspace:manage")
   deleteModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -178,12 +199,14 @@ export class ModulesController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/epics")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class EpicsController {
   constructor(private readonly epics: EpicsService) {}
 
   @Get()
+  @RequirePermission("projects:tickets:view")
   listEpics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -193,11 +216,33 @@ export class EpicsController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("projects:tickets:create")
   createEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createEpicSchema)) body: CreateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.epics.createEpic(u.orgId, u.userId, projectId, body);
+  }
+
+  @Patch(":epicId")
+  @RequirePermission("projects:tickets:update")
+  updateEpic(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("epicId", ParseIntPipe) epicId: number,
+    @Body(new ZodValidationPipe(updateEpicSchema)) body: UpdateEpicInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.epics.updateEpic(u.orgId, projectId, epicId, body);
+  }
+
+  @Delete(":epicId")
+  @RequirePermission("projects:tickets:delete")
+  deleteEpic(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("epicId", ParseIntPipe) epicId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.epics.deleteEpic(u.orgId, projectId, epicId);
   }
 }

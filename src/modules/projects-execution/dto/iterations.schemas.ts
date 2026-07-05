@@ -66,6 +66,16 @@ export const createEpicSchema = z.object({
   points: z.number().optional(),
 });
 
+export const updateEpicSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+  assigneeId: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  points: z.number().nullable().optional(),
+});
+
 export type CreateSprintInput = z.infer<typeof createSprintSchema>;
 export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
 export type CreateCycleInput = z.infer<typeof createCycleSchema>;
@@ -74,3 +84,4 @@ export type CycleListQuery = z.infer<typeof cycleListQuerySchema>;
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type UpdateModuleInput = z.infer<typeof updateModuleSchema>;
 export type CreateEpicInput = z.infer<typeof createEpicSchema>;
+export type UpdateEpicInput = z.infer<typeof updateEpicSchema>;
