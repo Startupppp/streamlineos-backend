@@ -1,6 +1,7 @@
 ﻿import { z } from "zod";
 
-const tipTapContent = z.record(z.string(), z.unknown());
+const documentNode = z.record(z.string(), z.unknown());
+const documentContent = z.union([z.array(documentNode), documentNode]);
 
 export const createPageSchema = z.object({
   parentPageId: z.coerce.number().int().positive().nullable().optional(),
@@ -15,7 +16,7 @@ export const updatePageSchema = z.object({
   title: z.string().max(500).optional(),
   icon: z.string().max(100).nullable().optional(),
   coverImage: z.string().max(2000).nullable().optional(),
-  content: tipTapContent.optional(),
+  content: documentContent.optional(),
   contentText: z.string().max(200000).optional(),
   status: z.enum(["draft", "in_review", "published", "archived"]).optional(),
   contentType: z.enum([

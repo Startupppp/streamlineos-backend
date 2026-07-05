@@ -7,7 +7,7 @@ export const listReturnsSchema = z.object({
 });
 export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 
-export const vendorReturnLineSchema = z.object({
+const vendorReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   locationId: z.number().int().positive(),
   quantity: z.number().positive(),
@@ -31,7 +31,7 @@ export const postVendorReturnSchema = z.object({
 });
 export type PostVendorReturnInput = z.infer<typeof postVendorReturnSchema>;
 
-export const customerReturnLineSchema = z.object({
+const customerReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   reason: z.string().max(500),

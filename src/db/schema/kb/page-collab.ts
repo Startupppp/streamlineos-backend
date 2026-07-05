@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
-import { kbPages } from "./pages";
+import { kbPages, type KbPageContent } from "./pages";
 
 export const kbPageVersions = pgTable(
   "kb_page_versions",
@@ -20,7 +20,7 @@ export const kbPageVersions = pgTable(
     pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
     versionNumber: integer("version_number").notNull(),
     title: text("title").notNull().default(""),
-    content: jsonb("content").$type<Record<string, unknown>>(),
+    content: jsonb("content").$type<KbPageContent>(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -55,7 +55,7 @@ export const kbPageTemplates = pgTable(
     name: text("name").notNull(),
     icon: text("icon"),
     description: text("description"),
-    content: jsonb("content").$type<Record<string, unknown>>(),
+    content: jsonb("content").$type<KbPageContent>(),
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

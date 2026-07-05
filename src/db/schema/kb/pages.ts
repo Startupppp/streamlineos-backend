@@ -13,6 +13,10 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { kbSpaces } from "./spaces";
 
+export type KbPageContent =
+  | Record<string, unknown>
+  | Record<string, unknown>[];
+
 export const kbPages = pgTable(
   "kb_pages",
   {
@@ -23,7 +27,7 @@ export const kbPages = pgTable(
     title: text("title").notNull().default(""),
     icon: text("icon"),
     coverImage: text("cover_image"),
-    content: jsonb("content").$type<Record<string, unknown>>(),
+    content: jsonb("content").$type<KbPageContent>(),
     contentText: text("content_text"),
     sortOrder: integer("sort_order").notNull().default(0),
     isLocked: boolean("is_locked").default(false).notNull(),

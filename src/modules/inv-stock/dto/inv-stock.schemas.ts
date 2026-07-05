@@ -66,7 +66,7 @@ export const releaseReservationSchema = z.object({
 });
 export type ReleaseReservationInput = z.infer<typeof releaseReservationSchema>;
 
-export const openingStockLineSchema = z.object({
+const openingStockLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   locationId: z.number().int().positive(),
   qty: z.number().positive(),
@@ -86,7 +86,7 @@ export const listAdjustmentsSchema = z.object({
 });
 export type ListAdjustmentsInput = z.infer<typeof listAdjustmentsSchema>;
 
-export const adjustmentLineSchema = z.object({
+const adjustmentLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   locationId: z.number().int().positive(),
   quantityChange: z.number().refine((v) => v !== 0, { message: "must not be zero" }),
@@ -108,7 +108,7 @@ export const listTransfersSchema = z.object({
 });
 export type ListTransfersInput = z.infer<typeof listTransfersSchema>;
 
-export const transferLineSchema = z.object({
+const transferLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   lotId: z.number().int().positive().optional(),

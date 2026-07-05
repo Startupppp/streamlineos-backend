@@ -13,7 +13,7 @@ export const updateInsightStatusSchema = z.object({
 });
 export type UpdateInsightStatusInput = z.infer<typeof updateInsightStatusSchema>;
 
-export type InsightType =
+type InsightType =
   | "stockout_risk"
   | "dead_stock"
   | "vendor_delay"
@@ -21,7 +21,7 @@ export type InsightType =
   | "unusual_adjustments"
   | "expiry_risk";
 
-export type InsightSeverity = "high" | "medium" | "low";
+type InsightSeverity = "high" | "medium" | "low";
 
 export interface InsightCandidate {
   insightType: InsightType;

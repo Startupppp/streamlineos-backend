@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   invLots,
   invSerialNumbers,
@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import type { ListLotsInput, ListSerialsInput, UpdateLotStatusInput } from "./dto/traceability.schemas";
 
 @Injectable()

@@ -8,7 +8,7 @@ export const listPoSchema = z.object({
 });
 export type ListPoInput = z.infer<typeof listPoSchema>;
 
-export const poLineSchema = z.object({
+const poLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   unitCost: z.string().regex(/^\d+(\.\d{1,4})?$/),
@@ -38,7 +38,7 @@ export const updatePoSchema = z.object({
 });
 export type UpdatePoInput = z.infer<typeof updatePoSchema>;
 
-export const grnLotLineSchema = z.object({
+const grnLotLineSchema = z.object({
   poLineId: z.number().int().positive(),
   quantityReceived: z.number().positive(),
   qualityStatus: z.enum(["ACCEPTED", "REJECTED"]).default("ACCEPTED"),
@@ -48,7 +48,6 @@ export const grnLotLineSchema = z.object({
   manufactureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   serialNumbers: z.array(z.string().max(100)).optional(),
 });
-export type GrnLotLineInput = z.infer<typeof grnLotLineSchema>;
 
 export const createGrnSchema = z.object({
   receivedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

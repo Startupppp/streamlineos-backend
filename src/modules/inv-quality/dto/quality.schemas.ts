@@ -24,7 +24,7 @@ export const createInspectionSchema = z.object({
 });
 export type CreateInspectionInput = z.infer<typeof createInspectionSchema>;
 
-export const disposeLineSchema = z.object({
+const disposeLineSchema = z.object({
   lineId: z.number().int(),
   disposition: z.enum(["RELEASE_TO_AVAILABLE", "QUARANTINE", "RETURN_TO_VENDOR", "SCRAP"]),
   vendorId: z.number().int().optional(),

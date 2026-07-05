@@ -11,7 +11,7 @@ export const listSoSchema = z.object({
 });
 export type ListSoInput = z.infer<typeof listSoSchema>;
 
-export const soLineSchema = z.object({
+const soLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   unitPrice: z.string().regex(/^\d+(\.\d{1,4})?$/),
@@ -43,7 +43,7 @@ export const updateSoSchema = z.object({
 });
 export type UpdateSoInput = z.infer<typeof updateSoSchema>;
 
-export const reserveAllocationSchema = z.object({
+const reserveAllocationSchema = z.object({
   soLineId: z.number().int().positive(),
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
@@ -57,7 +57,7 @@ export const reserveSoSchema = z.object({
 });
 export type ReserveSoInput = z.infer<typeof reserveSoSchema>;
 
-export const pickLineSchema = z.object({
+const pickLineSchema = z.object({
   soLineId: z.number().int().positive(),
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),

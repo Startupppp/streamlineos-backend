@@ -11,7 +11,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
-export type TicketActivityAction = (typeof ticketActivityLog.action.enumValues)[number];
+type TicketActivityAction = (typeof ticketActivityLog.action.enumValues)[number];
 
 interface TicketSnapshot {
   title: string;

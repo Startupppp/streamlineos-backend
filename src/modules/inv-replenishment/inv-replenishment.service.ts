@@ -12,7 +12,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
 import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput } from "./dto/replenishment.schemas";
 

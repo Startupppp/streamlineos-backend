@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { projectStatuses } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 
-export const CANONICAL_TICKET_STATUSES = new Set(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
+const CANONICAL_TICKET_STATUSES = new Set(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 
 export async function resolveValidTicketStatuses(
   db: Db,

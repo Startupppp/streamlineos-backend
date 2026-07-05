@@ -9,6 +9,7 @@
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces } from "../../db/schema";
+import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -39,7 +40,7 @@ export class KbPagesService {
 
   async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
     const orgId = user.orgId;
-    let templateContent: Record<string, unknown> | null = null;
+    let templateContent: KbPageContent | null = null;
 
     if (input.templateId) {
       const tpl = await this.db.query.kbPageTemplates.findFirst({
@@ -554,7 +555,7 @@ export class KbPagesService {
     title: string;
     icon: string | null;
     coverImage: string | null;
-    content: Record<string, unknown> | null;
+    content: KbPageContent | null;
     updatedAt: Date;
   }> {
     const page = await this.db.query.kbPages.findFirst({
@@ -649,7 +650,7 @@ export class KbPagesService {
     tx: KbTransaction,
     orgId: string,
     pageId: number,
-    content: Record<string, unknown>,
+    content: unknown,
   ): Promise<void> {
     const linkIds = extractPageLinkIds(content);
 

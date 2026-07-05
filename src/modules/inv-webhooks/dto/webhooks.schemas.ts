@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const WEBHOOK_EVENTS = [
+const WEBHOOK_EVENTS = [
   "inventory.product.created",
   "inventory.stock.changed",
   "inventory.stock.low",

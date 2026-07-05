@@ -1,9 +1,9 @@
 ﻿import { z } from "zod";
 
-export const IMPORT_TYPES = ["products", "vendors", "categories", "uom", "locations", "opening-stock", "reorder-rules"] as const;
+const IMPORT_TYPES = ["products", "vendors", "categories", "uom", "locations", "opening-stock", "reorder-rules"] as const;
 export type ImportType = typeof IMPORT_TYPES[number];
 
-export const EXPORT_TYPES = ["products", "stock", "movements", "reorder", "valuation", "lots-serials"] as const;
+const EXPORT_TYPES = ["products", "stock", "movements", "reorder", "valuation", "lots-serials"] as const;
 export type ExportType = typeof EXPORT_TYPES[number];
 
 export const previewImportSchema = z.object({
