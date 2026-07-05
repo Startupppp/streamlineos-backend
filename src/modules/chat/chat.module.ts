@@ -3,7 +3,6 @@ import { ChatActionsController } from "./chat-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { ChatMessagesController } from "./chat-messages.controller";
 import { ChatPresenceController } from "./chat-presence.controller";
-import { ChatTokenController } from "./chat-token.controller";
 import { ChatPinsController } from "./chat-pins.controller";
 import { ChatHuddlesController } from "./chat-huddles.controller";
 import { ChatSearchController } from "./chat-search.controller";
@@ -27,7 +26,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
 
 @Module({
   imports: [RealtimeModule],
-  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatTokenController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController],
+  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController],
   providers: [
     ChatChannelsService,
     ChatMessagesService,

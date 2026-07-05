@@ -352,7 +352,7 @@ export class InvitationsService {
         isNull(invitations.acceptedAt),
       ),
     });
-    if (!invitation) throw new NotFoundException("Invitation not found");
+    if (!invitation) throw new NotFoundException("Invitation not found or already accepted");
 
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);
