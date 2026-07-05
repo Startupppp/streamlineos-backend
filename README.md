@@ -23,3 +23,4 @@ web schema change; CI runs `pnpm check:schema` and fails on drift.
 - `GET /health/ready` — readiness (DB `select 1`)
 - `GET /me` — current user context (requires `Authorization: Bearer <backend-token>`)
 - `GET /me/protected` — example RBAC-gated route (`crm:leads:delete`)
+
