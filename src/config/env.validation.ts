@@ -8,8 +8,12 @@ const schema = z.object({
     .string()
     .min(44, "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)"),
   CORS_ORIGINS: z.string().default("http://localhost:1000"),
+  APP_URL: z.string().url().default("http://localhost:1000"),
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  COMPOSIO_API_KEY: z.string().optional(),
+  COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
+  COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof schema> & { corsOrigins: string[] };

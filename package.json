@@ -23,6 +23,7 @@
     "@ai-sdk/google": "^2.0.76",
     "@aws-sdk/client-s3": "^3.1075.0",
     "@aws-sdk/s3-request-presigner": "^3.1075.0",
+    "@composio/core": "^0.13.1",
     "@langchain/core": "^1.2.1",
     "@langchain/openai": "^1.5.3",
     "@nestjs/common": "^10.4.15",

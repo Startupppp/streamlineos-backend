@@ -4,35 +4,18 @@ import {
   HttpException,
   Inject,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
-  ServiceUnavailableException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { interviews, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { APP_CONFIG } from "../../config/config.module";
-import { type AppConfig } from "../../config/env.validation";
-import { appUrl } from "../email/app-url";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-const MEET_EVENTS_URL = `${EVENTS_URL}?conferenceDataVersion=1`;
 
 const tokenSchema = z.object({ access_token: z.string() });
-
-const meetEventSchema = z.object({
-  conferenceData: z
-    .object({
-      entryPoints: z
-        .array(z.object({ uri: z.string().optional(), entryPointType: z.string() }))
-        .optional(),
-    })
-    .optional(),
-});
 
 const syncEventSchema = z.object({ id: z.string(), htmlLink: z.string() });
 
@@ -46,78 +29,7 @@ export interface InterviewEventPayload {
 
 @Injectable()
 export class GoogleCalendarService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
-  ) {}
-
-  async getStatus(userId: string) {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { googleRefreshToken: true, googleEmail: true },
-    });
-    return {
-      connected: !!user?.googleRefreshToken,
-      googleEmail: user?.googleEmail ?? null,
-      authUrl: `${appUrl}/api/integrations/google/auth`,
-    };
-  }
-
-  async createMeet(userId: string) {
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-      throw new ServiceUnavailableException("Google Meet integration not configured");
-    }
-
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { googleRefreshToken: true },
-    });
-
-    if (!user?.googleRefreshToken) {
-      throw new UnauthorizedException(
-        "Google account not connected. Please connect your Google account first.",
-      );
-    }
-
-    try {
-      const accessToken = await this.getAccessToken(user.googleRefreshToken);
-      const now = new Date();
-      const later = new Date(now.getTime() + 3600 * 1000);
-
-      const calRes = await fetch(MEET_EVENTS_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          summary: "Meeting",
-          start: { dateTime: now.toISOString() },
-          end: { dateTime: later.toISOString() },
-          conferenceData: {
-            createRequest: {
-              requestId: `meet-${Date.now()}`,
-              conferenceSolutionKey: { type: "hangoutsMeet" },
-            },
-          },
-        }),
-      });
-
-      if (!calRes.ok) throw new Error("Google Calendar API error");
-      const calEvent = meetEventSchema.parse(await calRes.json());
-
-      const meetLink = calEvent.conferenceData?.entryPoints?.find(
-        (ep) => ep.entryPointType === "video",
-      )?.uri;
-
-      if (!meetLink) throw new Error("No Meet link in response");
-      return { meetLink };
-    } catch (e) {
-      throw new InternalServerErrorException(
-        e instanceof Error ? e.message : "Failed to create Meet link",
-      );
-    }
-  }
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async syncInterview(orgId: string, userId: string, interviewId: number) {
     const interview = await this.db.query.interviews.findFirst({
@@ -234,21 +146,5 @@ export class GoogleCalendarService {
     } catch {
       return;
     }
-  }
-
-  private async getAccessToken(refreshToken: string): Promise<string> {
-    const res = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID ?? "",
-        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-      }),
-    });
-    if (!res.ok) throw new Error("Failed to refresh Google token");
-    const data = tokenSchema.parse(await res.json());
-    return data.access_token;
   }
 }
