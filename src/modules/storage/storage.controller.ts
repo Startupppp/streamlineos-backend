@@ -26,6 +26,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, organizationMembers } from "../../db/schema";
 import { StorageService, type FileStreamResult } from "./storage.service";
+import { validateMagicBytes } from "./file-signatures";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -40,33 +41,6 @@ const ALLOWED_UPLOAD_TYPES = [
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ];
-
-const FILE_SIGNATURES: Record<string, number[][]> = {
-  "image/jpeg": [[0xff, 0xd8, 0xff]],
-  "image/png": [[0x89, 0x50, 0x4e, 0x47]],
-  "image/gif": [
-    [0x47, 0x49, 0x46, 0x38, 0x37, 0x61],
-    [0x47, 0x49, 0x46, 0x38, 0x39, 0x61],
-  ],
-  "image/webp": [[0x52, 0x49, 0x46, 0x46]],
-  "application/pdf": [[0x25, 0x50, 0x44, 0x46]],
-  "application/msword": [[0xd0, 0xcf, 0x11, 0xe0]],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [[0x50, 0x4b, 0x03, 0x04]],
-  "application/vnd.ms-excel": [[0xd0, 0xcf, 0x11, 0xe0]],
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [[0x50, 0x4b, 0x03, 0x04]],
-};
-
-function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
-  const signatures = FILE_SIGNATURES[mimeType];
-  if (!signatures) return true;
-  if (buffer.length < 12) return false;
-  const matchesSignature = signatures.some((sig) => sig.every((byte, i) => buffer[i] === byte));
-  if (!matchesSignature) return false;
-  if (mimeType === "image/webp") {
-    return buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50;
-  }
-  return true;
-}
 
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
