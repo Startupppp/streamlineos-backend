@@ -166,7 +166,7 @@ const US_PACK: StatutoryPack = {
 };
 
 const UK_PACK: StatutoryPack = {
-  country: "UK",
+  country: "GB",
   countryName: "United Kingdom",
   currency: "GBP",
   taxRegimeApplicable: false,
@@ -401,7 +401,7 @@ export const STATUTORY_PACKS: StatutoryPack[] = [
 export const COUNTRY_DEFAULT_CURRENCY: Record<string, string> = {
   IN: "INR",
   US: "USD",
-  UK: "GBP",
+  GB: "GBP",
   AE: "AED",
   SG: "SGD",
   AU: "AUD",

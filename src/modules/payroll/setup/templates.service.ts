@@ -78,7 +78,7 @@ export class PayrollTemplatesService {
     }
     const COUNTRY_TEMPLATE_MAP: Record<string, string> = {
       US: "US_STANDARD",
-      UK: "UK_STANDARD",
+      GB: "UK_STANDARD",
       AE: "UAE_STANDARD",
       SG: "SG_STANDARD",
       AU: "AU_STANDARD",

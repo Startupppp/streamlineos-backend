@@ -53,6 +53,7 @@ import { HrPayrollModule } from "./modules/hr-payroll/hr-payroll.module";
 import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
 import { SearchModule } from "./modules/search/search.module";
 import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
+import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { CronModule } from "./modules/cron/cron.module";
 import { HrHelpdeskModule } from "./modules/hr-helpdesk/hr-helpdesk.module";
 import { HrRecruitmentModule } from "./modules/hr-recruitment/hr-recruitment.module";
@@ -144,6 +145,7 @@ import { MeService } from "./me/me.service";
     HrLifecycleModule,
     SearchModule,
     IntegrationsGitModule,
+    IntegrationsModule,
     CronModule,
     HrHelpdeskModule,
     HrRecruitmentModule,

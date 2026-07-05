@@ -167,6 +167,8 @@ const SHARED_PERMISSIONS: Permission[] = [
   { name: "audit-log:read", resource: "audit-log", action: "read", description: "View the audit log" },
   { name: "calendar:read", resource: "calendar", action: "read", description: "View calendar events" },
   { name: "calendar:write", resource: "calendar", action: "write", description: "Create and manage calendar events" },
+  { name: "integrations:connections:view", resource: "integrations:connections", action: "view", description: "View connected external app accounts" },
+  { name: "integrations:connections:manage", resource: "integrations:connections", action: "manage", description: "Connect and manage external app accounts" },
   { name: "dashboard:sales:view", resource: "dashboard:sales", action: "view", description: "View Sales dashboard" },
   { name: "dashboard:customer-executive:view", resource: "dashboard:customer-executive", action: "view", description: "View Customer Executive dashboard" },
   { name: "dashboard:support:view", resource: "dashboard:support", action: "view", description: "View Support CRM dashboard" },
@@ -372,6 +374,8 @@ const EMPLOYEE_SELF_SERVICE = [
   "settings:api-tokens:write",
   "calendar:read",
   "calendar:write",
+  "integrations:connections:view",
+  "integrations:connections:manage",
 ];
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);

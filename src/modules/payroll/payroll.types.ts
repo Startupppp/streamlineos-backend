@@ -160,6 +160,8 @@ export interface StatutoryPackItemConfig {
   key: string;
   enabled: boolean;
   percentOverride?: string;
+  label?: string;
+  kind?: string | null;
 }
 
 export interface StatutoryPackConfig {
@@ -325,7 +327,6 @@ export const PAYROLL_LOCKED_STATUSES: readonly PayrollRunStatus[] = [
 export const PAYROLL_EXCEPTION_CODES = {
   MISSING_SALARY_PROFILE: "BLOCKER",
   MISSING_BANK_ACCOUNT: "BLOCKER",
-  INVALID_BANK_IFSC: "BLOCKER",
   DUPLICATE_BANK_ACCOUNT: "WARNING",
   NEGATIVE_NET_PAY: "BLOCKER",
   ZERO_NET_PAY: "WARNING",

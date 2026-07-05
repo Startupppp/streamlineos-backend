@@ -7,7 +7,7 @@ import { calcStatutory } from "../statutory";
 import type { PayrollPolicyConfig, PayrollToggles } from "../../../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../../../payroll.types";
 
-const EXPECTED_COUNTRIES = ["IN", "US", "UK", "AE", "SG", "AU", "GENERIC"];
+const EXPECTED_COUNTRIES = ["IN", "US", "GB", "AE", "SG", "AU", "GENERIC"];
 
 describe("statutory-packs registry — structure sanity", () => {
   it("every expected country has exactly one pack", () => {
@@ -90,7 +90,7 @@ describe("statutory-packs registry — structure sanity", () => {
   });
 
   it("getStatutoryPack returns correct pack for each known country", () => {
-    for (const country of ["IN", "US", "UK", "AE", "SG", "AU"]) {
+    for (const country of ["IN", "US", "GB", "AE", "SG", "AU"]) {
       expect(getStatutoryPack(country).country).toBe(country);
     }
   });
@@ -98,7 +98,7 @@ describe("statutory-packs registry — structure sanity", () => {
   it("COUNTRY_DEFAULT_CURRENCY has correct entries", () => {
     expect(COUNTRY_DEFAULT_CURRENCY["IN"]).toBe("INR");
     expect(COUNTRY_DEFAULT_CURRENCY["US"]).toBe("USD");
-    expect(COUNTRY_DEFAULT_CURRENCY["UK"]).toBe("GBP");
+    expect(COUNTRY_DEFAULT_CURRENCY["GB"]).toBe("GBP");
     expect(COUNTRY_DEFAULT_CURRENCY["AE"]).toBe("AED");
     expect(COUNTRY_DEFAULT_CURRENCY["SG"]).toBe("SGD");
     expect(COUNTRY_DEFAULT_CURRENCY["AU"]).toBe("AUD");
@@ -106,7 +106,7 @@ describe("statutory-packs registry — structure sanity", () => {
 
   it("IN pack taxRegimeApplicable is true; all others are false", () => {
     expect(getStatutoryPack("IN").taxRegimeApplicable).toBe(true);
-    for (const country of ["US", "UK", "AE", "SG", "AU", "GENERIC"]) {
+    for (const country of ["US", "GB", "AE", "SG", "AU", "GENERIC"]) {
       expect(getStatutoryPack(country).taxRegimeApplicable).toBe(false);
     }
   });
@@ -238,32 +238,32 @@ describe("engine — US pack", () => {
 
 describe("engine — UK pack", () => {
   it("NI_EMP uses marginal brackets — 0% below threshold, 8% between thresholds, 2% above UEL", () => {
-    const niItemsOnly = getStatutoryPack("UK").items.map((i) => ({
+    const niItemsOnly = getStatutoryPack("GB").items.map((i) => ({
       key: i.key,
       enabled: i.key === "NI_EMP",
     }));
-    const result = runStatutory("UK", niItemsOnly);
+    const result = runStatutory("GB", niItemsOnly);
     const ni = result.lines.find((l) => l.code === "NI_EMP");
     expect(ni).toBeDefined();
     expect(ni!.category).toBe("DEDUCTION");
   });
 
   it("NI_ER is EMPLOYER_CONTRIBUTION", () => {
-    const result = runStatutory("UK");
+    const result = runStatutory("GB");
     const niEr = result.lines.find((l) => l.code === "NI_ER");
     expect(niEr).toBeDefined();
     expect(niEr!.category).toBe("EMPLOYER_CONTRIBUTION");
   });
 
   it("PAYE withholding has category TAX", () => {
-    const result = runStatutory("UK");
+    const result = runStatutory("GB");
     const paye = result.lines.find((l) => l.code === "PAYE");
     expect(paye).toBeDefined();
     expect(paye!.category).toBe("TAX");
   });
 
   it("PENSION_AE items disabled by default", () => {
-    const result = runStatutory("UK");
+    const result = runStatutory("GB");
     expect(result.lines.find((l) => l.code === "PENSION_AE_EMP")).toBeUndefined();
     expect(result.lines.find((l) => l.code === "PENSION_AE_ER")).toBeUndefined();
   });
@@ -369,7 +369,7 @@ describe("engine — IN legacy path unchanged (backward compat)", () => {
   });
 
   it("CONTRACTOR produces no lines regardless of country", () => {
-    for (const country of ["IN", "US", "UK", "SG"]) {
+    for (const country of ["IN", "US", "GB", "SG"]) {
       const config = baseConfig(country);
       const result = calcStatutory({
         workerType: "CONTRACTOR",

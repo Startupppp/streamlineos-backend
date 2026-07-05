@@ -256,13 +256,23 @@ export class PayrollPoliciesService {
     });
 
     const config = activeVersion?.config as unknown as PayrollPolicyConfig | null;
-    const packData = config?.statutoryPack
-      ? {
-          country: config.statutoryPack.country,
-          items: config.statutoryPack.items,
-          complianceChecklist: getStatutoryPack(config.statutoryPack.country).complianceChecklist,
-        }
-      : null;
+    let packData: {
+      country: string;
+      items: { key: string; enabled: boolean; percentOverride?: string; label: string; kind: string | null }[];
+      complianceChecklist: { key: string; label: string; detail: string }[];
+    } | null = null;
+    if (config?.statutoryPack) {
+      const packCountry = config.statutoryPack.country;
+      const packDef = getStatutoryPack(packCountry);
+      packData = {
+        country: packCountry,
+        items: config.statutoryPack.items.map((item) => {
+          const def = packDef.items.find((d) => d.key === item.key);
+          return { ...item, label: def?.label ?? item.key, kind: def?.kind ?? null };
+        }),
+        complianceChecklist: packDef.complianceChecklist,
+      };
+    }
 
     return { policy, activeVersion: activeVersion ?? null, taxRegimeApplicable, statutoryPack: packData };
   }
