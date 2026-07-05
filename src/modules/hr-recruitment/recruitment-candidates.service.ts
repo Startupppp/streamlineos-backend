@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, ne } from "drizzle-orm";
+import { and, desc, eq, ilike, ne, sql } from "drizzle-orm";
 import {
   candidateApplications,
   candidateSlaTracking,
@@ -70,12 +70,18 @@ export class RecruitmentCandidatesService {
   ) {}
 
   list(orgId: string, input: CandidateListInput) {
-    const key = `hr:candidates:list:${orgId}:${input.status ?? ""}:${input.limit}:${input.offset}`;
+    const key = `hr:candidates:list:${orgId}:${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.limit}:${input.offset}`;
     return this.cache.cached(
       key,
       () => {
         const conditions = [eq(candidates.orgId, orgId)];
         if (input.status) conditions.push(eq(candidates.status, input.status));
+        if (input.source) conditions.push(eq(candidates.source, input.source));
+        if (input.jobId) {
+          conditions.push(
+            sql`exists (select 1 from ${candidateApplications} where ${candidateApplications.candidateId} = ${candidates.id} and ${candidateApplications.jobPostingId} = ${input.jobId})`,
+          );
+        }
         return this.db.query.candidates.findMany({
           where: and(...conditions),
           orderBy: [desc(candidates.createdAt)],
@@ -85,6 +91,54 @@ export class RecruitmentCandidatesService {
       },
       CACHE_TTL.SHORT,
     );
+  }
+
+  async findDuplicates(orgId: string) {
+    const rows = await this.db.query.candidates.findMany({
+      where: eq(candidates.orgId, orgId),
+      columns: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true, createdAt: true, duplicateOfId: true },
+      orderBy: [desc(candidates.createdAt)],
+    });
+
+    const groups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = row.email?.trim().toLowerCase();
+      if (!key) continue;
+      const existing = groups.get(key);
+      if (existing) existing.push(row);
+      else groups.set(key, [row]);
+    }
+
+    return Array.from(groups.values())
+      .filter((group) => group.length > 1)
+      .map((group) => ({
+        key: group[0]!.email,
+        candidates: group,
+      }));
+  }
+
+  async linkDuplicate(orgId: string, candidateId: number, duplicateOfId: number) {
+    if (candidateId === duplicateOfId) {
+      throw new UnprocessableEntityException("A candidate cannot be marked as a duplicate of itself.");
+    }
+    const [existing, target] = await Promise.all([
+      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)), columns: { id: true } }),
+      this.db.query.candidates.findFirst({ where: and(eq(candidates.id, duplicateOfId), eq(candidates.orgId, orgId)), columns: { id: true } }),
+    ]);
+    if (!existing || !target) throw new NotFoundException("Candidate not found.");
+
+    await this.db.update(candidates).set({ duplicateOfId, updatedAt: new Date() }).where(eq(candidates.id, candidateId));
+    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    return { success: true };
+  }
+
+  async unlinkDuplicate(orgId: string, candidateId: number) {
+    const existing = await this.db.query.candidates.findFirst({ where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)), columns: { id: true } });
+    if (!existing) throw new NotFoundException("Candidate not found.");
+
+    await this.db.update(candidates).set({ duplicateOfId: null, updatedAt: new Date() }).where(eq(candidates.id, candidateId));
+    await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
+    return { success: true };
   }
 
   async create(orgId: string, input: CreateCandidateInput) {

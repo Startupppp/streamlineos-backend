@@ -16,6 +16,7 @@ const MODULE_CATALOG = [
   "kb",
   "blog",
   "support",
+  "surveys",
   "payroll",
 ] as const;
 
@@ -26,6 +27,7 @@ const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
   inventory: "INVENTORY",
   accounting: "FINANCE",
   support: "HELPDESK",
+  surveys: "SURVEYS",
   payroll: "PAYROLL",
 };
 

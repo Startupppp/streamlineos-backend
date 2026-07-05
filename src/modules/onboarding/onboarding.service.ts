@@ -28,6 +28,7 @@ import type {
   UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 import { encrypt, encryptBankDetails } from "./crypto.helpers";
+import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 
 type DefaultTask = {
   title: string;
@@ -71,6 +72,7 @@ export class OnboardingService {
     private readonly email: EmailService,
     private readonly access: AccessService,
     private readonly automation: AutomationService,
+    private readonly sessions: OnboardingSessionService,
   ) {}
 
   async getProgressSummary(orgId: string) {
@@ -396,6 +398,8 @@ export class OnboardingService {
       .update(users)
       .set({ onboardingCompletedAt: new Date() })
       .where(eq(users.id, userId));
+
+    await this.sessions.completeSession(orgId, userId, "employee_onboarding");
 
     const currentYear = new Date().getFullYear();
     const existingBalance = await this.db.query.leaveBalances.findFirst({

@@ -22,6 +22,8 @@ import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import {
   applySchema,
+  externalReferralSubmitSchema,
+  externalReferrerRegisterSchema,
   intakeSchema,
   kbFeedbackSchema,
   kbListQuerySchema,
@@ -33,6 +35,8 @@ import {
   roadmapQuerySchema,
   roadmapVoteSchema,
   type ApplyInput,
+  type ExternalReferralSubmitInput,
+  type ExternalReferrerRegisterInput,
   type IntakeInput,
   type KbFeedbackInput,
   type KbListInput,
@@ -112,6 +116,34 @@ export class PublicController {
   @Get("interview-booking/:token")
   getBookingLink(@Param("token") token: string) {
     return this.recruitment.getBookingLink(token);
+  }
+
+  @Post("referrals/register")
+  @HttpCode(201)
+  registerExternalReferrer(
+    @Body(new ZodValidationPipe(externalReferrerRegisterSchema)) body: ExternalReferrerRegisterInput,
+  ) {
+    return this.recruitment.registerExternalReferrer(body);
+  }
+
+  @Get("referrals/:token")
+  getExternalReferrerPortal(@Param("token") token: string) {
+    return this.recruitment.getExternalReferrerPortal(token);
+  }
+
+  @Post("referrals/:token/submit")
+  @HttpCode(201)
+  submitExternalReferral(
+    @Param("token") token: string,
+    @Body(new ZodValidationPipe(externalReferralSubmitSchema)) body: ExternalReferralSubmitInput,
+    @Req() req: Request,
+  ) {
+    return this.recruitment.submitExternalReferral(token, body, clientIp(req));
+  }
+
+  @Get("vendor-portal/:token")
+  getVendorPortal(@Param("token") token: string) {
+    return this.recruitment.getVendorPortal(token);
   }
 
   @Post("intake/:projectId")

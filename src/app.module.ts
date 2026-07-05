@@ -11,6 +11,7 @@ import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { TargetsModule } from "./modules/targets/targets.module";
 import { CsatModule } from "./modules/csat/csat.module";
+import { SurveysModule } from "./modules/surveys/surveys.module";
 import { BlogModule } from "./modules/blog/blog.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { GoalsModule } from "./modules/goals/goals.module";
@@ -88,6 +89,7 @@ import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/worksp
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -103,6 +105,7 @@ import { MeService } from "./me/me.service";
     ContactsModule,
     TargetsModule,
     CsatModule,
+    SurveysModule,
     BlogModule,
     AuditLogModule,
     GoalsModule,
@@ -180,6 +183,7 @@ import { MeService } from "./me/me.service";
     WorkflowsModule,
     PayrollModule,
     TimesheetsModule,
+    PaymentsModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

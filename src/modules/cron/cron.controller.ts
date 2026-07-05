@@ -18,6 +18,7 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
+import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 
 @Public()
 @Controller("cron")
@@ -32,6 +33,7 @@ export class CronController {
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
+    private readonly chatReplyReminders: ChatReplyRemindersService,
   ) {}
 
   @Get("trial-expiry")
@@ -296,6 +298,32 @@ export class CronController {
       return { success: true, message: `Processed ${result.fired} document expiry reminders`, ...result };
     } catch (error) {
       logger.error("Document expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("chat-reply-reminders")
+  getChatReplyReminders(@Headers("authorization") authorization?: string) {
+    return this.runChatReplyReminders(authorization);
+  }
+
+  @Post("chat-reply-reminders")
+  @HttpCode(200)
+  postChatReplyReminders(@Headers("authorization") authorization?: string) {
+    return this.runChatReplyReminders(authorization);
+  }
+
+  private async runChatReplyReminders(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.chatReplyReminders.processDueReminders();
+      return {
+        success: true,
+        message: `Sent ${result.sent} chat reply reminders, cancelled ${result.cancelled}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Chat reply reminder cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

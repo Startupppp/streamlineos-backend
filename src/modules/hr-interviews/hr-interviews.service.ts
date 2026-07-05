@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, or } from "drizzle-orm";
 import {
   candidateSlaTracking,
   candidates,
@@ -27,6 +27,18 @@ export class HrInterviewsService {
     const conditions = [eq(interviews.orgId, orgId)];
     if (query.candidateId) conditions.push(eq(interviews.candidateId, query.candidateId));
     if (query.upcoming === "true") conditions.push(gte(interviews.scheduledAt, new Date()));
+    if (query.relevant === "true") {
+      const now = new Date();
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(now);
+      todayEnd.setHours(23, 59, 59, 999);
+      const relevanceFilter = or(
+        and(gte(interviews.scheduledAt, todayStart), lte(interviews.scheduledAt, todayEnd)),
+        and(eq(interviews.result, "PENDING"), lt(interviews.scheduledAt, now)),
+      );
+      if (relevanceFilter) conditions.push(relevanceFilter);
+    }
 
     return this.db.query.interviews.findMany({
       where: and(...conditions),

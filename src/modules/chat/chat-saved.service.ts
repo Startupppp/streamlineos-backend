@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { chatChannelMembers, chatMessages, chatSavedMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -12,7 +12,7 @@ export class ChatSavedService {
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [eq(chatSavedMessages.userId, userId)];
     if (cursor) {
-      conditions.push(eq(chatSavedMessages.id, cursor));
+      conditions.push(lt(chatSavedMessages.id, cursor));
     }
 
     const rows = await this.db.query.chatSavedMessages.findMany({

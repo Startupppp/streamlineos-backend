@@ -116,3 +116,11 @@ export const approvalRemarksSchema = z.object({
   remarks: z.string().max(2000).optional(),
 });
 export type ApprovalRemarksInput = z.infer<typeof approvalRemarksSchema>;
+
+export const createOfferNegotiationSchema = z.object({
+  proposedSalary: z.number().positive().optional(),
+  proposedJoiningDate: z.string().optional(),
+  message: z.string().max(2000).optional(),
+  applyToOffer: z.boolean().optional(),
+});
+export type CreateOfferNegotiationInput = z.infer<typeof createOfferNegotiationSchema>;

@@ -6,11 +6,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
   candidateReferrals,
   candidates,
   departments,
+  externalReferrals,
+  externalReferrers,
   headcountRequests,
   jobPostings,
   recruitmentVendors,
@@ -26,6 +29,8 @@ import type {
   CreateSubmissionInput,
   CreateVendorInput,
   HeadcountListInput,
+  UpdateExternalReferralInput,
+  UpdateExternalReferrerStatusInput,
   UpdateHeadcountInput,
   UpdateReferralStatusInput,
   UpdateSubmissionInput,
@@ -149,6 +154,9 @@ export class RecruitmentSourcingService {
         website: input.website || undefined,
         feePercent: input.feePercent !== undefined ? String(input.feePercent) : undefined,
         status: input.status,
+        contractType: input.contractType,
+        slaDays: input.slaDays,
+        replacementGuaranteeDays: input.replacementGuaranteeDays,
       })
       .returning();
     return vendor;
@@ -169,6 +177,9 @@ export class RecruitmentSourcingService {
     if (input.status !== undefined) updateData.status = input.status;
     if (input.feePercent !== undefined) updateData.feePercent = String(input.feePercent);
     if (input.website !== undefined) updateData.website = input.website || undefined;
+    if (input.contractType !== undefined) updateData.contractType = input.contractType;
+    if (input.slaDays !== undefined) updateData.slaDays = input.slaDays;
+    if (input.replacementGuaranteeDays !== undefined) updateData.replacementGuaranteeDays = input.replacementGuaranteeDays;
 
     const [updated] = await this.db
       .update(recruitmentVendors)
@@ -185,9 +196,22 @@ export class RecruitmentSourcingService {
     return { success: true };
   }
 
-  async listSubmissions(orgId: string, vendorId: number) {
+  async generateVendorPortalLink(orgId: string, vendorId: number) {
     await this.ensureVendor(orgId, vendorId);
-    return this.db
+    const portalToken = randomBytes(16).toString("hex");
+    const portalTokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const [updated] = await this.db
+      .update(recruitmentVendors)
+      .set({ portalToken, portalTokenExpiresAt })
+      .where(eq(recruitmentVendors.id, vendorId))
+      .returning({ portalToken: recruitmentVendors.portalToken, portalTokenExpiresAt: recruitmentVendors.portalTokenExpiresAt });
+    return updated;
+  }
+
+  async listSubmissions(orgId: string, vendorId: number, canViewFinancials: boolean) {
+    await this.ensureVendor(orgId, vendorId);
+    const rows = await this.db
       .select({
         id: vendorCandidateSubmissions.id,
         candidateId: vendorCandidateSubmissions.candidateId,
@@ -198,6 +222,10 @@ export class RecruitmentSourcingService {
         invoiceAmount: vendorCandidateSubmissions.invoiceAmount,
         invoiceDate: vendorCandidateSubmissions.invoiceDate,
         paidAt: vendorCandidateSubmissions.paidAt,
+        billRate: vendorCandidateSubmissions.billRate,
+        payRate: vendorCandidateSubmissions.payRate,
+        contractStartDate: vendorCandidateSubmissions.contractStartDate,
+        contractEndDate: vendorCandidateSubmissions.contractEndDate,
         candidateFirstName: candidates.firstName,
         candidateLastName: candidates.lastName,
         candidateEmail: candidates.email,
@@ -208,13 +236,33 @@ export class RecruitmentSourcingService {
       .leftJoin(jobPostings, eq(vendorCandidateSubmissions.jobPostingId, jobPostings.id))
       .where(eq(vendorCandidateSubmissions.vendorId, vendorId))
       .orderBy(desc(vendorCandidateSubmissions.submittedAt));
+
+    if (canViewFinancials) {
+      return rows.map((r) => ({
+        ...r,
+        margin:
+          r.billRate !== null && r.payRate !== null
+            ? (Number(r.billRate) - Number(r.payRate)).toFixed(2)
+            : null,
+      }));
+    }
+
+    return rows.map((r) => ({ ...r, billRate: null, payRate: null, margin: null }));
   }
 
   async createSubmission(orgId: string, vendorId: number, input: CreateSubmissionInput) {
     await this.ensureVendor(orgId, vendorId);
     const [row] = await this.db
       .insert(vendorCandidateSubmissions)
-      .values({ vendorId, candidateId: input.candidateId, jobPostingId: input.jobPostingId })
+      .values({
+        vendorId,
+        candidateId: input.candidateId,
+        jobPostingId: input.jobPostingId,
+        billRate: input.billRate !== undefined ? String(input.billRate) : undefined,
+        payRate: input.payRate !== undefined ? String(input.payRate) : undefined,
+        contractStartDate: input.contractStartDate,
+        contractEndDate: input.contractEndDate,
+      })
       .returning();
     return row;
   }
@@ -226,6 +274,10 @@ export class RecruitmentSourcingService {
     if (input.invoiceAmount !== undefined) updateData.invoiceAmount = String(input.invoiceAmount);
     if (input.invoiceDate !== undefined) updateData.invoiceDate = input.invoiceDate;
     if (input.paidAt !== undefined) updateData.paidAt = input.paidAt;
+    if (input.billRate !== undefined) updateData.billRate = String(input.billRate);
+    if (input.payRate !== undefined) updateData.payRate = String(input.payRate);
+    if (input.contractStartDate !== undefined) updateData.contractStartDate = input.contractStartDate;
+    if (input.contractEndDate !== undefined) updateData.contractEndDate = input.contractEndDate;
 
     const [updated] = await this.db
       .update(vendorCandidateSubmissions)
@@ -365,6 +417,61 @@ export class RecruitmentSourcingService {
     });
 
     return { jobId: job.id, jobTitle: job.title };
+  }
+
+  listExternalReferrals(orgId: string) {
+    return this.db.query.externalReferrals.findMany({
+      where: eq(externalReferrals.orgId, orgId),
+      with: {
+        candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
+        referrer: { columns: { id: true, name: true, email: true } },
+        jobPosting: { columns: { id: true, title: true } },
+      },
+      orderBy: [desc(externalReferrals.createdAt)],
+    });
+  }
+
+  async updateExternalReferral(orgId: string, referralId: number, input: UpdateExternalReferralInput) {
+    const updates: Partial<typeof externalReferrals.$inferInsert> = { updatedAt: new Date() };
+    if (input.status !== undefined) updates.status = input.status;
+    if (input.rewardAmount !== undefined) updates.rewardAmount = String(input.rewardAmount);
+    if (input.status === "REWARD_PAID") updates.rewardPaidAt = new Date();
+
+    const [updated] = await this.db
+      .update(externalReferrals)
+      .set(updates)
+      .where(and(eq(externalReferrals.id, referralId), eq(externalReferrals.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Referral not found");
+    return updated;
+  }
+
+  listExternalReferrers(orgId: string) {
+    return this.db
+      .select({
+        id: externalReferrers.id,
+        name: externalReferrers.name,
+        email: externalReferrers.email,
+        phone: externalReferrers.phone,
+        status: externalReferrers.status,
+        createdAt: externalReferrers.createdAt,
+        referralCount: count(externalReferrals.id),
+      })
+      .from(externalReferrers)
+      .leftJoin(externalReferrals, eq(externalReferrals.referrerId, externalReferrers.id))
+      .where(eq(externalReferrers.orgId, orgId))
+      .groupBy(externalReferrers.id)
+      .orderBy(desc(externalReferrers.createdAt));
+  }
+
+  async updateExternalReferrerStatus(orgId: string, referrerId: number, input: UpdateExternalReferrerStatusInput) {
+    const [updated] = await this.db
+      .update(externalReferrers)
+      .set({ status: input.status })
+      .where(and(eq(externalReferrers.id, referrerId), eq(externalReferrers.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Referrer not found");
+    return updated;
   }
 
   private async ensureVendor(orgId: string, vendorId: number) {

@@ -12,6 +12,7 @@ import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { HuddleSignalInput } from "./dto/huddle.schemas";
 
 @Injectable()
@@ -21,6 +22,7 @@ export class ChatHuddlesService {
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly audit: AuditService,
+    private readonly orgSettings: ChatOrgSettingsService,
   ) {}
 
   private async assertMember(channelId: number, userId: string) {
@@ -149,6 +151,20 @@ export class ChatHuddlesService {
     if (!huddle) throw new NotFoundException("Huddle not found or already ended");
 
     await this.assertMember(huddle.channelId, userId);
+
+    const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
+      where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
+      columns: { userId: true },
+    });
+    const alreadyActive = activeParticipants.some((p) => p.userId === userId);
+    if (!alreadyActive) {
+      const { maxHuddleParticipants } = await this.orgSettings.getSettings(orgId);
+      if (activeParticipants.length >= maxHuddleParticipants) {
+        throw new ForbiddenException(
+          `This call is full (max ${maxHuddleParticipants} participants)`,
+        );
+      }
+    }
 
     await this.db
       .insert(chatHuddleParticipants)

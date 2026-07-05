@@ -17,6 +17,8 @@ const CANDIDATE_SOURCES = [
 
 export const candidateListSchema = z.object({
   status: z.enum(CANDIDATE_STATUSES).optional(),
+  source: z.string().optional(),
+  jobId: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().min(1).max(100).default(50),
   offset: z.coerce.number().min(0).default(0),
 });
@@ -117,6 +119,19 @@ export const bulkRejectSchema = z.object({
   sendRejectionEmail: z.boolean().default(true),
 });
 export type BulkRejectInput = z.infer<typeof bulkRejectSchema>;
+
+export const bulkShortlistSchema = z.object({
+  candidateIds: z
+    .array(z.number().int().positive())
+    .min(1, "Provide at least one candidate ID")
+    .max(100, "Cannot shortlist more than 100 candidates at once"),
+});
+export type BulkShortlistInput = z.infer<typeof bulkShortlistSchema>;
+
+export const linkDuplicateSchema = z.object({
+  duplicateOfId: z.number().int().positive(),
+});
+export type LinkDuplicateInput = z.infer<typeof linkDuplicateSchema>;
 
 const SLA_STATUSES = ["ON_TRACK", "AT_RISK", "BREACHED"] as const;
 

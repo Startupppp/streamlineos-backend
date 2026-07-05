@@ -240,3 +240,81 @@ export const payrollCalendarEventTypeEnum = pgEnum("payroll_calendar_event_type"
 export const payrollLoanAdjustmentTypeEnum = pgEnum("payroll_loan_adjustment_type", [
   "SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST",
 ]);
+
+// Onboarding Flow (org setup / module checklists / guided tours) — see onboarding.ts.
+// Named "onboarding_flow_*" to avoid colliding with the pre-existing HR employee
+// onboarding tables (onboarding_templates, onboarding_template_steps, onboarding_tasks,
+// onboarding_steps) which remain in hr/offboarding.ts and auth.ts unchanged.
+export const onboardingFlowTypeEnum = pgEnum("onboarding_flow_type", [
+  "org_setup",
+  "member_setup",
+  "employee_onboarding",
+  "module_setup",
+  "guided_tour",
+  "payment_setup",
+]);
+
+export const onboardingFlowSessionStatusEnum = pgEnum("onboarding_flow_session_status", [
+  "not_started", "in_progress", "completed", "skipped", "abandoned",
+]);
+
+export const onboardingFlowStepStatusEnum = pgEnum("onboarding_flow_step_status", [
+  "todo", "in_progress", "done", "skipped", "blocked",
+]);
+
+export const onboardingFlowTaskStatusEnum = pgEnum("onboarding_flow_task_status", [
+  "todo", "in_progress", "done", "skipped",
+]);
+
+export const onboardingFlowTaskCategoryEnum = pgEnum("onboarding_flow_task_category", [
+  "profile", "document", "training", "system_access", "equipment",
+  "policy", "module_setup", "guided_action", "payment_setup",
+]);
+
+export const moduleSetupChecklistStatusEnum = pgEnum("module_setup_checklist_status", [
+  "not_started", "in_progress", "completed",
+]);
+
+export const guidedTourProgressStatusEnum = pgEnum("guided_tour_progress_status", [
+  "not_started", "in_progress", "completed", "dismissed",
+]);
+
+// Payment provider setup (12_Payment_Integration_Setup_Page.md). Deliberately separate from
+// the existing subscriptions/subscription_payments (and platform_subscriptions/platform_payments)
+// tables in shared.ts/platform.ts — those are StreamlineOS billing tenants for their own SaaS
+// plan; this system is for tenants connecting their own Razorpay/Stripe account to charge their
+// own customers. See payment-providers.ts.
+export const paymentEnvironmentEnum = pgEnum("payment_environment", ["test", "live"]);
+
+export const paymentProviderStatusEnum = pgEnum("payment_provider_status", [
+  "not_configured",
+  "test_mode_ready",
+  "needs_credentials",
+  "needs_business_details",
+  "needs_kyc",
+  "kyc_pending",
+  "kyc_rejected",
+  "needs_webhook",
+  "webhook_failing",
+  "test_payment_required",
+  "ready_for_live",
+  "live",
+  "degraded",
+  "disabled",
+]);
+
+export const paymentWebhookEndpointStatusEnum = pgEnum("payment_webhook_endpoint_status", [
+  "not_verified", "verified", "failing",
+]);
+
+export const paymentWebhookProcessingStatusEnum = pgEnum("payment_webhook_processing_status", [
+  "received", "processed", "failed", "ignored_duplicate",
+]);
+
+export const paymentTestTransactionStatusEnum = pgEnum("payment_test_transaction_status", [
+  "created", "pending", "succeeded", "failed",
+]);
+
+export const paymentManualMethodStatusEnum = pgEnum("payment_manual_method_status", [
+  "enabled", "missing_instructions", "disabled",
+]);

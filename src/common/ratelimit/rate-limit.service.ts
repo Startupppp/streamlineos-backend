@@ -22,6 +22,9 @@ const TIERS: Record<string, Tier> = {
   "whiteboard:public-edit": { limit: 30, windowSecs: 60 },
   "invite:validate": { limit: 30, windowSecs: 60 },
   "invite:accept": { limit: 10, windowSecs: 60 },
+  "survey:public-view": { limit: 60, windowSecs: 60 },
+  "survey:public-start": { limit: 20, windowSecs: 60 },
+  "survey:public-submit": { limit: 20, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

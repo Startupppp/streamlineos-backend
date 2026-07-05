@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -8,6 +8,12 @@ import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
 import { setupSchema, type SetupInput } from "./dto/org.schemas";
 import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
+import {
+  orgSetupSkipSchema,
+  sessionPatchSchema,
+  type OrgSetupSkipInput,
+  type SessionPatchInput,
+} from "../onboarding-flow/dto/onboarding-flow.schemas";
 
 @Controller("org")
 @UseGuards(JwtAuthGuard)
@@ -23,6 +29,7 @@ export class OrgController {
     return this.members.listMembers(u.orgId, ctx);
   }
 
+  // Legacy single-call setup — kept working for the current frontend wizard.
   @Patch("setup")
   @AllowNoOrg()
   completeSetup(
@@ -30,5 +37,38 @@ export class OrgController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.setup.completeSetup(u, body);
+  }
+
+  @Get("setup/session")
+  @AllowNoOrg()
+  getSetupSession(@CurrentUser() u: CurrentUserContext) {
+    return this.setup.getSetupSession(u);
+  }
+
+  @Patch("setup/session")
+  @AllowNoOrg()
+  patchSetupSession(
+    @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.setup.patchSetupSession(u, body);
+  }
+
+  @Post("setup/complete")
+  @AllowNoOrg()
+  complete(
+    @Body(new ZodValidationPipe(setupSchema)) body: SetupInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.setup.completeSetup(u, body);
+  }
+
+  @Post("setup/skip")
+  @AllowNoOrg()
+  skip(
+    @Body(new ZodValidationPipe(orgSetupSkipSchema)) body: OrgSetupSkipInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.setup.skipSetup(u, body.reason);
   }
 }

@@ -239,7 +239,7 @@ describe("EntitlementsService", () => {
 
       const result = await new EntitlementsService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(8);
+      expect(result).toHaveLength(10);
       expect(result.every((r) => r.enabled)).toBe(true);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
@@ -252,10 +252,11 @@ describe("EntitlementsService", () => {
 
       const result = await new EntitlementsService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(8);
+      expect(result).toHaveLength(10);
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "projects")?.enabled).toBe(true);
+      expect(result.find((r) => r.moduleKey === "payroll")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
     });
@@ -267,7 +268,7 @@ describe("EntitlementsService", () => {
 
       const result = await new EntitlementsService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(8);
+      expect(result).toHaveLength(10);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);

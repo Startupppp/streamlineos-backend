@@ -17,6 +17,10 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { addDays, addMinutes } from "date-fns";
 import { type SetupInput } from "./dto/org.schemas";
+import { OnboardingSessionService, type SessionPatch } from "../onboarding-flow/onboarding-session.service";
+import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
+
+const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
 
 @Injectable()
 export class OrgSetupService {
@@ -24,6 +28,8 @@ export class OrgSetupService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly sessions: OnboardingSessionService,
+    private readonly checklists: ModuleChecklistService,
   ) {}
 
   private slugify(name: string): string {
@@ -148,6 +154,68 @@ export class OrgSetupService {
 
     this.audit.log({
       action: "org.setup.completed",
+      userId: u.userId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+    });
+
+    if (input.enabledModules?.length) {
+      await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
+    }
+    await this.sessions.completeSession(orgId, u.userId, "org_setup");
+
+    const autoLoginToken = randomBytes(32).toString("hex");
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId: u.userId,
+      tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
+      expiresAt: addMinutes(new Date(), 10),
+    });
+
+    return { success: true, orgId, autoLoginToken };
+  }
+
+  async getSetupSession(u: CurrentUserContext) {
+    return this.sessions.getOrCreateSession(u.orgId, u.userId, "org_setup");
+  }
+
+  async patchSetupSession(u: CurrentUserContext, patch: SessionPatch) {
+    return this.sessions.patchSession(u.orgId, u.userId, "org_setup", patch);
+  }
+
+  /** Minimal-defaults path for "Set up later" — mirrors the frontend's existing skip defaults. */
+  async skipSetup(u: CurrentUserContext, reason?: string) {
+    const orgId = await this.resolveOrCreateOrg(u, {
+      industry: "IT Services",
+      companySize: "1-10",
+    } as SetupInput);
+
+    if (u.orgId && !u.isOrgOwner) {
+      await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
+      return { success: true, orgId };
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(organizations)
+        .set({
+          industry: "IT Services",
+          companySize: "1-10",
+          enabledModules: DEFAULT_SKIP_MODULES,
+          onboardingCompletedAt: new Date(),
+        })
+        .where(eq(organizations.id, orgId));
+
+      await tx.update(users).set({ lastActiveOrgId: orgId }).where(eq(users.id, u.userId));
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
+    await this.checklists.ensureChecklistsForModules(orgId, DEFAULT_SKIP_MODULES);
+    await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
+
+    this.audit.log({
+      action: "org.setup.skipped",
       userId: u.userId,
       orgId,
       targetId: orgId,

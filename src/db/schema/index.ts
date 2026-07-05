@@ -1,4 +1,3 @@
-
 export * from "./enums";
 
 export * from "./auth";
@@ -24,3 +23,6 @@ export * from "./billing";
 export * from "./workflow";
 export * from "./payroll";
 export * from "./integrations";
+export * from "./onboarding";
+export * from "./payment-providers";
+export * from "./surveys";

@@ -4,50 +4,77 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
+import {
+  requisitionListSchema,
+  createRequisitionSchema,
+  updateRequisitionSchema,
+  rejectRequisitionSchema,
+  type RequisitionListInput,
+  type CreateRequisitionInput,
+  type UpdateRequisitionInput,
+  type RejectRequisitionInput,
+} from "./dto/requisitions.schemas";
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/recruitment/requisitions")
 export class RecruitmentRequisitionsController {
   constructor(private readonly service: RecruitmentRequisitionsService) {}
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:requisitions:view")
-  list(@CurrentUser() u: CurrentUserContext, @Query("status") status?: string) {
-    return this.service.list(u.orgId, status);
+  list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(requisitionListSchema)) query: RequisitionListInput,
+  ) {
+    return this.service.list(u.orgId, query.status);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:requisitions:view")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
-    return this.service.create(u.orgId, u.userId, body as Parameters<RecruitmentRequisitionsService["create"]>[2]);
+  create(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createRequisitionSchema)) body: CreateRequisitionInput,
+  ) {
+    return this.service.create(u.orgId, u.userId, body);
   }
 
   @Patch(":id/submit")
+  @RequirePermission("hr:requisitions:view")
   submit(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.submit(u.orgId, id);
   }
 
   @Patch(":id/approve")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:requisitions:manage")
   approve(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.approve(u.orgId, id, u.userId);
   }
 
   @Patch(":id/reject")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:requisitions:manage")
-  reject(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body("reason") reason: string) {
-    return this.service.reject(u.orgId, id, u.userId, reason);
+  reject(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(rejectRequisitionSchema)) body: RejectRequisitionInput,
+  ) {
+    return this.service.reject(u.orgId, id, u.userId, body.reason ?? "");
+  }
+
+  @Post(":id/create-job")
+  @RequirePermission("hr:requisitions:manage")
+  createJob(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
+    return this.service.createJobFromRequisition(u.orgId, u.userId, id);
   }
 
   @Patch(":id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:requisitions:view")
-  update(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
-    return this.service.update(u.orgId, id, body as Parameters<RecruitmentRequisitionsService["update"]>[2]);
+  update(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateRequisitionSchema)) body: UpdateRequisitionInput,
+  ) {
+    return this.service.update(u.orgId, id, body);
   }
 }
