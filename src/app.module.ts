@@ -105,7 +105,7 @@ import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/worksp
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
-import { TimesheetsCoreModule } from "./modules/timesheets/timesheets-core.module";
+import { TimesheetsCoreModule } from "./modules/timesheets-core/timesheets-core.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
