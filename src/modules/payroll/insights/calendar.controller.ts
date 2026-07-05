@@ -15,6 +15,13 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import {
+  createCalendarEventSchema,
+  patchCalendarEventSchema,
+  type CreateCalendarEvent,
+  type PatchCalendarEvent,
+} from "./dto/insights.schemas";
 import { CalendarService } from "./calendar.service";
 
 @Controller("payroll/calendar")
@@ -45,7 +52,7 @@ export class CalendarController {
   @RequirePermission("payroll:settings:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: { type: string; date: string; title: string; month?: string },
+    @Body(new ZodValidationPipe(createCalendarEventSchema)) body: CreateCalendarEvent,
   ) {
     return this.calendarService.create(u.orgId, u.userId, body);
   }
@@ -56,9 +63,9 @@ export class CalendarController {
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body() body: { type?: string; date?: string; title?: string; month?: string },
+    @Body(new ZodValidationPipe(patchCalendarEventSchema)) body: PatchCalendarEvent,
   ) {
-    return this.calendarService.update(u.orgId, eventId, body);
+    return this.calendarService.update(u.orgId, u.userId, eventId, body);
   }
 
   @Delete(":eventId")
@@ -68,6 +75,6 @@ export class CalendarController {
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,
   ) {
-    return this.calendarService.remove(u.orgId, eventId);
+    return this.calendarService.remove(u.orgId, u.userId, eventId);
   }
 }

@@ -6,6 +6,8 @@ export const reportQuerySchema = z.object({
   department: z.string().optional(),
   costCenter: z.string().optional(),
   workerType: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 
 export const calendarQuerySchema = z.object({
@@ -15,19 +17,37 @@ export const calendarQuerySchema = z.object({
 
 export const createCalendarEventSchema = z.object({
   type: z.string(),
-  date: z.string(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
   title: z.string().min(1).max(200),
   month: z.string().optional(),
 });
 
 export const patchCalendarEventSchema = createCalendarEventSchema.partial();
 
-export const accountingMappingSchema = z.object({
+export const accountingMappingCreateSchema = z.object({
   componentId: z.number().int().optional(),
   category: z.string().optional(),
   ledgerName: z.string().min(1),
   costCenterSource: z.string().optional(),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  const hasComponent = data.componentId !== undefined;
+  const hasCategory = data.category !== undefined;
+  if (hasComponent === hasCategory) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Exactly one of componentId or category must be provided",
+      path: [],
+    });
+  }
+});
+
+export const accountingMappingUpdateSchema = z.object({
+  componentId: z.number().int().nullable().optional(),
+  category: z.string().nullable().optional(),
+  ledgerName: z.string().min(1).optional(),
+  costCenterSource: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 export const taxWindowSchema = z.object({
@@ -108,7 +128,8 @@ export type ReportQuery = z.infer<typeof reportQuerySchema>;
 export type CalendarQuery = z.infer<typeof calendarQuerySchema>;
 export type CreateCalendarEvent = z.infer<typeof createCalendarEventSchema>;
 export type PatchCalendarEvent = z.infer<typeof patchCalendarEventSchema>;
-export type AccountingMapping = z.infer<typeof accountingMappingSchema>;
+export type AccountingMappingCreate = z.infer<typeof accountingMappingCreateSchema>;
+export type AccountingMappingUpdate = z.infer<typeof accountingMappingUpdateSchema>;
 export type TaxWindow = z.infer<typeof taxWindowSchema>;
 export type PatchTaxWindow = z.infer<typeof patchTaxWindowSchema>;
 export type DeclarationApprove = z.infer<typeof declarationApproveSchema>;

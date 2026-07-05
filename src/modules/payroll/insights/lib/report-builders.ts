@@ -6,6 +6,7 @@ import {
   payrollRunEmployees,
   users,
   departments,
+  employeeSalaryProfiles,
 } from "../../../../db/schema";
 
 export type RunRow = typeof payrollRuns.$inferSelect;
@@ -21,6 +22,7 @@ export interface EnrichedLineItem {
   runEmployee: RunEmployeeRow;
   userName: string | null;
   userDept: string | null;
+  costCenter: string | null;
 }
 
 export interface LineItemFilters {
@@ -63,6 +65,7 @@ export async function getLineItemsForRun(
       },
       userName: users.name,
       departmentId: users.departmentId,
+      profileId: payrollRunEmployees.profileId,
     })
     .from(payrollLineItems)
     .innerJoin(payrollRunEmployees, eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id))
@@ -90,15 +93,39 @@ export async function getLineItemsForRun(
     for (const d of deptRows) deptMap.set(d.id, d.name);
   }
 
+  const profileIds = [
+    ...new Set(rows.map((r) => r.profileId).filter((p): p is number => p !== null)),
+  ];
+
+  const ccMap = new Map<number, string | null>();
+  if (profileIds.length > 0) {
+    const profiles = await db
+      .select({ id: employeeSalaryProfiles.id, costCenter: employeeSalaryProfiles.costCenter })
+      .from(employeeSalaryProfiles)
+      .where(inArray(employeeSalaryProfiles.id, profileIds));
+    for (const p of profiles) ccMap.set(p.id, p.costCenter ?? null);
+  }
+
   const enriched: EnrichedLineItem[] = rows.map((r) => ({
     lineItem: r.lineItem,
     runEmployee: r.runEmployee,
     userName: r.userName,
     userDept: r.departmentId !== null ? (deptMap.get(r.departmentId) ?? null) : null,
+    costCenter: r.profileId !== null ? (ccMap.get(r.profileId) ?? null) : null,
   }));
+
+  if (filters?.department && filters.costCenter) {
+    return enriched.filter(
+      (e) => e.userDept === filters.department && e.costCenter === filters.costCenter,
+    );
+  }
 
   if (filters?.department) {
     return enriched.filter((e) => e.userDept === filters.department);
+  }
+
+  if (filters?.costCenter) {
+    return enriched.filter((e) => e.costCenter === filters.costCenter);
   }
 
   return enriched;

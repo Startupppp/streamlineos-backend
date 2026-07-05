@@ -1,11 +1,12 @@
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import request from "supertest";
 import { AppModule } from "../../../app.module";
 import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
 import { signToken } from "../../../../test/helpers/sign-token";
 import { AccessService } from "../../access/access.service";
-import { PayrollTemplatesService } from "./templates.service";
+import { PayrollTemplatesService, seedPayrollTemplates } from "./templates.service";
 import { PayrollPoliciesService } from "./policies.service";
 import { PayrollComponentsService } from "./components.service";
 
@@ -38,6 +39,7 @@ const mockTemplatesService = {
   getById: jest.fn().mockResolvedValue(mockTemplate),
   preview: jest.fn().mockResolvedValue(mockPreview),
   duplicate: jest.fn().mockResolvedValue({ id: 2, name: "Copy" }),
+  deleteCustomTemplate: jest.fn().mockResolvedValue({ success: true }),
 };
 
 const mockPoliciesService = {
@@ -64,6 +66,7 @@ const protectedRoutes: ReadonlyArray<[Method, string]> = [
   ["get", "/payroll/templates/1"],
   ["post", "/payroll/templates/1/duplicate"],
   ["post", "/payroll/templates/1/preview"],
+  ["delete", "/payroll/templates/1"],
   ["get", "/payroll/policies/current"],
   ["get", "/payroll/policies/toggle-impact"],
   ["post", "/payroll/policies"],
@@ -115,6 +118,7 @@ describe("payroll-setup RBAC — 403 when no permissions (e2e)", () => {
     ["get", "/payroll/templates/1"],
     ["post", "/payroll/templates/1/duplicate"],
     ["post", "/payroll/templates/1/preview"],
+    ["delete", "/payroll/templates/1"],
     ["get", "/payroll/policies/current"],
     ["post", "/payroll/policies"],
     ["post", "/payroll/policies/preview"],
@@ -263,5 +267,117 @@ describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("DELETE /payroll/templates/1 → 403 for view-only caller", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .delete("/payroll/templates/1")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+});
+
+describe("payroll-setup — template delete (e2e)", () => {
+  let app: INestApplication;
+  beforeAll(async () => { app = await buildApp(permittedAccess); });
+  afterAll(async () => app.close());
+
+  it("DELETE /payroll/templates/1 → 200 success for custom template", async () => {
+    mockTemplatesService.deleteCustomTemplate.mockResolvedValueOnce({ success: true });
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .delete("/payroll/templates/1")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+  });
+
+  it("DELETE /payroll/templates/1 → 409 when service rejects system template", async () => {
+    mockTemplatesService.deleteCustomTemplate.mockRejectedValueOnce(new ConflictException("Cannot delete system templates"));
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .delete("/payroll/templates/1")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(409);
+  });
+
+  it("DELETE /payroll/templates/99 → 404 when template not found", async () => {
+    mockTemplatesService.deleteCustomTemplate.mockRejectedValueOnce(new NotFoundException("Custom template not found"));
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .delete("/payroll/templates/99")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("payroll-setup — complexity filter (e2e)", () => {
+  let app: INestApplication;
+  beforeAll(async () => { app = await buildApp(permittedAccess); });
+  afterAll(async () => app.close());
+
+  it("GET /payroll/templates?complexity=SIMPLE → 200 passes complexity to service", async () => {
+    mockTemplatesService.list.mockResolvedValueOnce({ items: [], total: 0 });
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/payroll/templates?complexity=SIMPLE")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(mockTemplatesService.list).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ complexity: "SIMPLE" }),
+    );
+  });
+
+  it("GET /payroll/templates?complexity=INVALID → 400 for invalid complexity", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/payroll/templates?complexity=INVALID")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("payroll-setup — seedPayrollTemplates idempotency (unit)", () => {
+  it("calling seedPayrollTemplates twice returns seeded=0 the second time", async () => {
+    const insertedKeys = new Set<string>();
+    const mockDb = {
+      query: {
+        payrollTemplates: {
+          findFirst: jest.fn(({ where: _where }: { where: unknown }) => {
+            return Promise.resolve(null);
+          }),
+        },
+      },
+      insert: jest.fn(() => ({
+        values: jest.fn((vals: { key: string }) => {
+          insertedKeys.add(vals.key);
+          return Promise.resolve();
+        }),
+      })),
+    };
+
+    const findFirstImpl = ({ where: _where }: { where: unknown }) => {
+      return Promise.resolve(null);
+    };
+    const findFirstImplSecond = ({ where: _where }: { where: unknown }) => {
+      return Promise.resolve({ id: 1 });
+    };
+
+    mockDb.query.payrollTemplates.findFirst
+      .mockImplementation(findFirstImpl);
+
+    const first = await seedPayrollTemplates(mockDb as unknown as Parameters<typeof seedPayrollTemplates>[0]);
+    expect(first.seeded).toBeGreaterThan(0);
+    expect(first.skipped).toBe(0);
+
+    mockDb.query.payrollTemplates.findFirst
+      .mockImplementation(findFirstImplSecond);
+
+    const second = await seedPayrollTemplates(mockDb as unknown as Parameters<typeof seedPayrollTemplates>[0]);
+    expect(second.seeded).toBe(0);
+    expect(second.skipped).toBeGreaterThan(0);
   });
 });

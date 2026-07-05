@@ -60,13 +60,7 @@ export class PayrollTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async ensureSystemTemplatesExist(): Promise<void> {
-    const count = await this.db.query.payrollTemplates.findFirst({
-      where: and(eq(payrollTemplates.isSystem, true), isNull(payrollTemplates.orgId)),
-      columns: { id: true },
-    });
-    if (!count) {
-      await seedPayrollTemplates(this.db);
-    }
+    await seedPayrollTemplates(this.db);
   }
 
   private computeIsRecommended(row: TemplateRow, country: string | undefined): boolean {
@@ -94,6 +88,9 @@ export class PayrollTemplatesService {
 
     if (input.category) {
       filters.push(eq(payrollTemplates.category, input.category as TemplateRow["category"]));
+    }
+    if (input.complexity) {
+      filters.push(eq(payrollTemplates.complexity, input.complexity));
     }
     if (input.search) {
       filters.push(

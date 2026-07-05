@@ -74,7 +74,7 @@ export class ApprovalsService {
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {
-      return this.db.transaction(async (tx) => {
+      const autoResult = await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
           .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
@@ -87,6 +87,17 @@ export class ApprovalsService {
 
         return { autoApproved: true, runStatus: "APPROVED" as const };
       });
+
+      this.audit.log({
+        action: "payroll.run_approval_submitted",
+        userId,
+        orgId,
+        targetId: String(runId),
+        targetType: "payroll_run",
+        metadata: { runId, autoApproved: true },
+      });
+
+      return autoResult;
     }
 
     const rawChain = policyConfig?.approvalChain;
@@ -100,7 +111,7 @@ export class ApprovalsService {
       ? await this.resolveApprovers(orgId, firstStage.requiredPermission)
       : [];
 
-    return this.db.transaction(async (tx) => {
+    const submitResult = await this.db.transaction(async (tx) => {
       await tx.insert(payrollApprovals).values(
         chain.map((def) => ({
           orgId,
@@ -138,6 +149,17 @@ export class ApprovalsService {
 
       return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
     });
+
+    this.audit.log({
+      action: "payroll.run_approval_submitted",
+      userId,
+      orgId,
+      targetId: String(runId),
+      targetType: "payroll_run",
+      metadata: { runId, autoApproved: false, stagesCreated: chain.length },
+    });
+
+    return submitResult;
   }
 
   async listApprovals(orgId: string, runId: number) {
@@ -360,6 +382,7 @@ export class ApprovalsService {
       }),
       this.db.query.payrollRuns.findFirst({
         where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
+        columns: { id: true, status: true },
       }),
     ]);
 
@@ -378,6 +401,18 @@ export class ApprovalsService {
       if (!perms.has(approval.requiredPermission)) {
         throw new ForbiddenException(`Missing required permission: ${approval.requiredPermission}`);
       }
+    }
+
+    const submittedEvent = await this.db.query.payrollRunEvents.findFirst({
+      where: and(
+        eq(payrollRunEvents.runId, runId),
+        eq(payrollRunEvents.type, "APPROVAL_SUBMITTED"),
+      ),
+    });
+    if (submittedEvent?.actorId === userId) {
+      throw new ForbiddenException(
+        "Maker-checker violation: the submitter cannot reject their own payroll run",
+      );
     }
 
     const allStages = await this.db

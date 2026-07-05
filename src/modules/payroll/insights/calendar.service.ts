@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -8,6 +8,7 @@ import {
   payrollPolicyVersions,
 } from "../../../db/schema";
 import type { PayrollPolicyConfig } from "../payroll.types";
+import { AuditService } from "../../../common/audit/audit.service";
 
 type CalendarEventStatus = "upcoming" | "due" | "overdue";
 
@@ -23,6 +24,14 @@ type CalendarEventRow = {
 
 type CalendarEventInsert = typeof payrollCalendarEvents.$inferInsert;
 type CalendarEventSelect = typeof payrollCalendarEvents.$inferSelect;
+
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateDate(date: string | undefined): void {
+  if (date !== undefined && !DATE_REGEX.test(date)) {
+    throw new BadRequestException("date must be YYYY-MM-DD");
+  }
+}
 
 function deriveStatus(dateStr: string): CalendarEventStatus {
   const today = new Date();
@@ -46,7 +55,10 @@ function toRow(row: CalendarEventSelect): CalendarEventRow {
 
 @Injectable()
 export class CalendarService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(orgId: string, from?: string, to?: string): Promise<CalendarEventRow[]> {
     const base = eq(payrollCalendarEvents.orgId, orgId);
@@ -73,6 +85,8 @@ export class CalendarService {
     actorId: string,
     data: { type: string; date: string; title: string; month?: string },
   ): Promise<CalendarEventRow> {
+    validateDate(data.date);
+
     const [row] = await this.db
       .insert(payrollCalendarEvents)
       .values({
@@ -84,54 +98,92 @@ export class CalendarService {
         createdBy: actorId,
       })
       .returning();
+
+    this.audit.log({
+      action: "payroll.calendar.create",
+      userId: actorId,
+      orgId,
+      resourceType: "payroll_calendar_event",
+      resourceId: String(row.id),
+      after: { type: data.type, date: data.date, title: data.title },
+    });
+
     return toRow(row);
   }
 
   async update(
     orgId: string,
+    actorId: string,
     eventId: number,
     data: { type?: string; date?: string; title?: string; month?: string },
   ): Promise<CalendarEventRow> {
-    const [existing] = await this.db
-      .select({ id: payrollCalendarEvents.id })
-      .from(payrollCalendarEvents)
-      .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+    validateDate(data.date);
 
-    if (!existing) throw new NotFoundException("Calendar event not found");
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
+        .from(payrollCalendarEvents)
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
 
-    const patch: {
-      type?: CalendarEventInsert["type"];
-      date?: string;
-      title?: string;
-      month?: string | null;
-      updatedAt?: Date;
-    } = { updatedAt: new Date() };
+      if (!existing) throw new NotFoundException("Calendar event not found");
 
-    if (data.type !== undefined) patch.type = data.type as CalendarEventInsert["type"];
-    if (data.date !== undefined) patch.date = data.date;
-    if (data.title !== undefined) patch.title = data.title;
-    if (data.month !== undefined) patch.month = data.month;
+      const patch: {
+        type?: CalendarEventInsert["type"];
+        date?: string;
+        title?: string;
+        month?: string | null;
+        updatedAt?: Date;
+      } = { updatedAt: new Date() };
 
-    const [updated] = await this.db
-      .update(payrollCalendarEvents)
-      .set(patch)
-      .where(eq(payrollCalendarEvents.id, eventId))
-      .returning();
+      if (data.type !== undefined) patch.type = data.type as CalendarEventInsert["type"];
+      if (data.date !== undefined) patch.date = data.date;
+      if (data.title !== undefined) patch.title = data.title;
+      if (data.month !== undefined) patch.month = data.month;
 
-    return toRow(updated);
+      const [updated] = await tx
+        .update(payrollCalendarEvents)
+        .set(patch)
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)))
+        .returning();
+
+      this.audit.log({
+        action: "payroll.calendar.update",
+        userId: actorId,
+        orgId,
+        resourceType: "payroll_calendar_event",
+        resourceId: String(eventId),
+        before: { type: existing.type, date: existing.date, title: existing.title },
+        after: { type: updated.type, date: updated.date, title: updated.title },
+      });
+
+      return toRow(updated);
+    });
   }
 
-  async remove(orgId: string, eventId: number): Promise<{ deleted: true }> {
-    const [existing] = await this.db
-      .select({ id: payrollCalendarEvents.id })
-      .from(payrollCalendarEvents)
-      .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+  async remove(orgId: string, actorId: string, eventId: number): Promise<{ deleted: true }> {
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date })
+        .from(payrollCalendarEvents)
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
 
-    if (!existing) throw new NotFoundException("Calendar event not found");
+      if (!existing) throw new NotFoundException("Calendar event not found");
 
-    await this.db.delete(payrollCalendarEvents).where(eq(payrollCalendarEvents.id, eventId));
+      await tx
+        .delete(payrollCalendarEvents)
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
 
-    return { deleted: true };
+      this.audit.log({
+        action: "payroll.calendar.delete",
+        userId: actorId,
+        orgId,
+        resourceType: "payroll_calendar_event",
+        resourceId: String(eventId),
+        before: { type: existing.type, date: existing.date },
+      });
+
+      return { deleted: true };
+    });
   }
 
   async generateMonth(orgId: string, month: string): Promise<{ generated: number; month: string }> {
@@ -177,33 +229,27 @@ export class CalendarService {
       { type: "PUBLISH_DATE", date: publishDateStr, title: "Payslip Publish Date" },
     ];
 
-    let generated = 0;
-
-    for (const def of eventDefs) {
-      const [existing] = await this.db
-        .select({ id: payrollCalendarEvents.id })
+    return this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select({ type: payrollCalendarEvents.type })
         .from(payrollCalendarEvents)
         .where(
           and(
             eq(payrollCalendarEvents.orgId, orgId),
             eq(payrollCalendarEvents.month, month),
-            eq(payrollCalendarEvents.type, def.type),
           ),
         );
 
-      if (existing) continue;
+      const existingTypes = new Set(existing.map((e) => e.type));
+      const toInsert = eventDefs.filter((def) => !existingTypes.has(def.type));
 
-      await this.db.insert(payrollCalendarEvents).values({
-        orgId,
-        month,
-        type: def.type,
-        date: def.date,
-        title: def.title,
-      });
+      if (toInsert.length > 0) {
+        await tx.insert(payrollCalendarEvents).values(
+          toInsert.map((def) => ({ orgId, month, type: def.type, date: def.date, title: def.title })),
+        );
+      }
 
-      generated++;
-    }
-
-    return { generated, month };
+      return { generated: toInsert.length, month };
+    });
   }
 }

@@ -12,6 +12,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { authorize } from "../../access/authorize";
 import { JournalService } from "./journal.service";
 import { buildCsv } from "./lib/csv";
 
@@ -19,7 +21,10 @@ const CSV_HEADERS = ["account", "description", "debit", "credit", "costCenter"] 
 
 @Controller("payroll/reports/journal")
 export class JournalController {
-  constructor(private readonly journalService: JournalService) {}
+  constructor(
+    private readonly journalService: JournalService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -34,15 +39,14 @@ export class JournalController {
     const result = await this.journalService.buildJournal(u.orgId, targetMonth);
 
     if (format === "csv") {
-      if (!u.permissions.includes("payroll:reports:export")) {
-        throw new ForbiddenException();
-      }
+      const exportCheck = await authorize(this.access, u, "payroll:reports:export");
+      if (!exportCheck.allow) throw new ForbiddenException("Permission denied: payroll:reports:export required");
 
       const rows = result.lines.map((line) => [
         line.account,
         line.description,
-        line.debit,
-        line.credit,
+        String(line.debit),
+        String(line.credit),
         line.costCenter,
       ]);
 

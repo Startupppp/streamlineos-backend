@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, lte, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, or, count } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -26,12 +26,16 @@ export class ProfilesService {
 
     const conditions = [
       eq(employeeSalaryProfiles.orgId, orgId),
-      eq(employeeSalaryProfiles.status, "ACTIVE"),
       scopeCondition,
     ];
 
+    if (query.status) {
+      conditions.push(eq(employeeSalaryProfiles.status, query.status as "UPCOMING" | "ACTIVE" | "SUPERSEDED"));
+    } else {
+      conditions.push(eq(employeeSalaryProfiles.status, "ACTIVE"));
+    }
+
     if (query.workerType) conditions.push(eq(employeeSalaryProfiles.workerType, query.workerType as "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR"));
-    if (query.status) conditions.push(eq(employeeSalaryProfiles.status, query.status as "UPCOMING" | "ACTIVE" | "SUPERSEDED"));
     if (query.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, query.costCenter));
 
     const searchCondition = query.search
@@ -72,7 +76,7 @@ export class ProfilesService {
   }
 
   async getProfile(orgId: string, employeeUserId: string) {
-    const [active, history] = await Promise.all([
+    const [allProfiles, history] = await Promise.all([
       this.db
         .select()
         .from(employeeSalaryProfiles)
@@ -85,54 +89,61 @@ export class ProfilesService {
         .orderBy(desc(employeeSalaryProfiles.effectiveFrom)),
     ]);
 
-    if (!active[0]) return null;
+    const activeProfile = allProfiles[0] ?? null;
 
-    const components = await this.db
-      .select({
-        id: employeeSalaryProfileComponents.id,
-        componentId: employeeSalaryProfileComponents.componentId,
-        calcMethodOverride: employeeSalaryProfileComponents.calcMethodOverride,
-        amount: employeeSalaryProfileComponents.amount,
-        percent: employeeSalaryProfileComponents.percent,
-        formulaOverride: employeeSalaryProfileComponents.formulaOverride,
-        sortOrder: employeeSalaryProfileComponents.sortOrder,
-        code: salaryComponents.code,
-        name: salaryComponents.name,
-        type: salaryComponents.type,
-        calcMethod: salaryComponents.calcMethod,
-        taxable: salaryComponents.taxable,
-      })
-      .from(employeeSalaryProfileComponents)
-      .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
-      .where(eq(employeeSalaryProfileComponents.profileId, active[0].id))
-      .orderBy(salaryComponents.sortOrder);
+    const components = activeProfile
+      ? await this.db
+          .select({
+            id: employeeSalaryProfileComponents.id,
+            componentId: employeeSalaryProfileComponents.componentId,
+            calcMethodOverride: employeeSalaryProfileComponents.calcMethodOverride,
+            amount: employeeSalaryProfileComponents.amount,
+            percent: employeeSalaryProfileComponents.percent,
+            formulaOverride: employeeSalaryProfileComponents.formulaOverride,
+            sortOrder: employeeSalaryProfileComponents.sortOrder,
+            code: salaryComponents.code,
+            name: salaryComponents.name,
+            type: salaryComponents.type,
+            calcMethod: salaryComponents.calcMethod,
+            taxable: salaryComponents.taxable,
+          })
+          .from(employeeSalaryProfileComponents)
+          .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
+          .where(eq(employeeSalaryProfileComponents.profileId, activeProfile.id))
+          .orderBy(salaryComponents.sortOrder)
+      : [];
 
-    return { profile: active[0], components, history };
+    return { active: activeProfile, components, history };
   }
 
   async createProfile(orgId: string, employeeUserId: string, actorId: string, body: CreateProfileInput) {
     return this.db.transaction(async (tx) => {
-      const overlapping = await tx
-        .select({ id: employeeSalaryProfiles.id })
-        .from(employeeSalaryProfiles)
-        .where(
-          and(
-            eq(employeeSalaryProfiles.orgId, orgId),
-            eq(employeeSalaryProfiles.userId, employeeUserId),
-            eq(employeeSalaryProfiles.status, "ACTIVE"),
-          ),
-        )
-        .limit(1);
+      const today = new Date().toISOString().slice(0, 10);
+      const isFutureDated = body.effectiveFrom > today;
 
-      if (overlapping[0]) {
-        const dayBefore = new Date(body.effectiveFrom);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        const effectiveTo = dayBefore.toISOString().slice(0, 10);
+      if (!isFutureDated) {
+        const overlapping = await tx
+          .select({ id: employeeSalaryProfiles.id })
+          .from(employeeSalaryProfiles)
+          .where(
+            and(
+              eq(employeeSalaryProfiles.orgId, orgId),
+              eq(employeeSalaryProfiles.userId, employeeUserId),
+              eq(employeeSalaryProfiles.status, "ACTIVE"),
+            ),
+          )
+          .limit(1);
 
-        await tx
-          .update(employeeSalaryProfiles)
-          .set({ status: "SUPERSEDED", effectiveTo })
-          .where(eq(employeeSalaryProfiles.id, overlapping[0].id));
+        if (overlapping[0]) {
+          const dayBefore = new Date(body.effectiveFrom);
+          dayBefore.setDate(dayBefore.getDate() - 1);
+          const effectiveTo = dayBefore.toISOString().slice(0, 10);
+
+          await tx
+            .update(employeeSalaryProfiles)
+            .set({ status: "SUPERSEDED", effectiveTo })
+            .where(eq(employeeSalaryProfiles.id, overlapping[0].id));
+        }
       }
 
       const [inserted] = await tx
@@ -146,7 +157,7 @@ export class ProfilesService {
           taxRegime: body.taxRegime,
           costCenter: body.costCenter,
           annualCtc: body.annualCtc,
-          status: "ACTIVE",
+          status: isFutureDated ? "UPCOMING" : "ACTIVE",
           effectiveFrom: body.effectiveFrom,
           createdBy: actorId,
         })
@@ -175,7 +186,7 @@ export class ProfilesService {
         orgId,
         targetId: employeeUserId,
         targetType: "employee",
-        metadata: { profileId: inserted.id, annualCtc: body.annualCtc },
+        metadata: { profileId: inserted.id, annualCtc: body.annualCtc, status: isFutureDated ? "UPCOMING" : "ACTIVE" },
       });
 
       return { profileId: inserted.id };

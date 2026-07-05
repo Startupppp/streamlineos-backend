@@ -83,4 +83,66 @@ describe("exception engine", () => {
     });
     expect(results.some(e => e.code === "HIGH_VARIANCE")).toBe(true);
   });
+
+  it("detects SALARY_ON_HOLD when isSalaryOnHold is true", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false, isSalaryOnHold: true,
+    });
+    expect(results.some(e => e.code === "SALARY_ON_HOLD")).toBe(true);
+    expect(results.find(e => e.code === "SALARY_ON_HOLD")?.severity).toBe("WARNING");
+  });
+
+  it("does not detect SALARY_ON_HOLD when isSalaryOnHold is false or absent", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+    });
+    expect(results.some(e => e.code === "SALARY_ON_HOLD")).toBe(false);
+  });
+
+  it("detects DUPLICATE_BANK_ACCOUNT when userId is in duplicateBankAccountUserIds", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false, duplicateBankAccountUserIds: ["u1", "u2"],
+    });
+    expect(results.some(e => e.code === "DUPLICATE_BANK_ACCOUNT")).toBe(true);
+    expect(results.find(e => e.code === "DUPLICATE_BANK_ACCOUNT")?.severity).toBe("WARNING");
+  });
+
+  it("does not detect DUPLICATE_BANK_ACCOUNT when userId is not in the list", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false, duplicateBankAccountUserIds: ["u2", "u3"],
+    });
+    expect(results.some(e => e.code === "DUPLICATE_BANK_ACCOUNT")).toBe(false);
+  });
+
+  it("does not detect DUPLICATE_BANK_ACCOUNT when duplicateBankAccountUserIds is absent", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+    });
+    expect(results.some(e => e.code === "DUPLICATE_BANK_ACCOUNT")).toBe(false);
+  });
 });

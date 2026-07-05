@@ -1,4 +1,4 @@
-import { canTransitionRun, PAYROLL_RUN_TRANSITIONS } from "../../../payroll.types";
+import { canTransitionRun, PAYROLL_RUN_TRANSITIONS, PAYROLL_LOCKED_STATUSES } from "../../../payroll.types";
 import type { PayrollRunStatus } from "../../../payroll.types";
 
 const ALL_STATUSES = Object.keys(PAYROLL_RUN_TRANSITIONS) as PayrollRunStatus[];
@@ -63,6 +63,7 @@ describe("canTransitionRun — legal transitions", () => {
     ["EXCEPTIONS_FOUND", "DRAFT"],
     ["EXCEPTIONS_FOUND", "PENDING_APPROVAL"],
     ["PENDING_APPROVAL", "APPROVED"],
+    ["PENDING_APPROVAL", "LOCKED"],
     ["PENDING_APPROVAL", "PREVIEW_READY"],
     ["APPROVED", "LOCKED"],
     ["LOCKED", "PAID"],
@@ -109,5 +110,22 @@ describe("canTransitionRun — illegal transitions", () => {
 describe("canTransitionRun — self-transitions are always false", () => {
   it.each(ALL_STATUSES)("canTransitionRun(%s → %s) === false (self)", (status) => {
     expect(canTransitionRun(status, status)).toBe(false);
+  });
+});
+
+describe("PAYROLL_LOCKED_STATUSES", () => {
+  it("includes APPROVED so generate/recalculate refuses approved runs", () => {
+    expect(PAYROLL_LOCKED_STATUSES).toContain("APPROVED");
+  });
+
+  it("includes LOCKED, PAID, PAYSLIPS_PUBLISHED, CLOSED", () => {
+    expect(PAYROLL_LOCKED_STATUSES).toContain("LOCKED");
+    expect(PAYROLL_LOCKED_STATUSES).toContain("PAID");
+    expect(PAYROLL_LOCKED_STATUSES).toContain("PAYSLIPS_PUBLISHED");
+    expect(PAYROLL_LOCKED_STATUSES).toContain("CLOSED");
+  });
+
+  it("PENDING_APPROVAL transitions include LOCKED for lockAfterApproval flow", () => {
+    expect(PAYROLL_RUN_TRANSITIONS["PENDING_APPROVAL"]).toContain("LOCKED");
   });
 });

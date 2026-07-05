@@ -54,9 +54,14 @@ export async function pullAttendanceInputs(
 
   for (const rec of records) {
     const status = rec.status;
-    if (PAID_STATUSES.includes(status)) paidCount++;
-    if (LOP_STATUSES.includes(status)) lopCount++;
-    if (status === "HALFDAY") halfDayCount++;
+    if (status === "HALFDAY") {
+      paidCount += 0.5;
+      lopCount += 0.5;
+      halfDayCount++;
+    } else {
+      if (PAID_STATUSES.includes(status)) paidCount++;
+      if (LOP_STATUSES.includes(status)) lopCount++;
+    }
     if (status === "HOLIDAY_WORK") holidayWorkCount++;
   }
 

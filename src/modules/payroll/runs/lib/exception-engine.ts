@@ -24,6 +24,9 @@ export interface ExceptionInput {
   isJoiningInMonth: boolean;
   isExitInMonth: boolean;
   missingFxRate: boolean;
+  isSalaryOnHold?: boolean;
+  bankAccountHash?: string | null;
+  duplicateBankAccountUserIds?: string[];
 }
 
 export interface DetectedExceptions {
@@ -56,6 +59,18 @@ export function detectExceptions(input: ExceptionInput): DetectedExceptions[] {
 
   if (!hasBankAccount) {
     results.push(makeException("MISSING_BANK_ACCOUNT", "Employee has no bank account on file. Cannot disburse salary."));
+  }
+
+  if (input.isSalaryOnHold) {
+    results.push(makeException("SALARY_ON_HOLD", "Employee salary is on hold for this period. Disbursement will be skipped."));
+  }
+
+  if (input.duplicateBankAccountUserIds?.includes(input.userId)) {
+    results.push(makeException(
+      "DUPLICATE_BANK_ACCOUNT",
+      "This employee shares a bank account with another employee in this run.",
+      { userId: input.userId },
+    ));
   }
 
   const netPaise = toPaise(snapshot.totals.net);

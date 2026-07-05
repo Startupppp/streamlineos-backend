@@ -38,7 +38,10 @@ export type PayslipsQueryInput = z.infer<typeof payslipsQuerySchema>;
 
 export const createBonusSchema = z.object({
   userId: z.string().min(1),
-  type: z.enum(["PERFORMANCE", "FESTIVAL", "REFERRAL", "SPOT", "ANNUAL"]),
+  type: z.enum([
+    "PERFORMANCE", "FESTIVAL", "REFERRAL", "SPOT", "ANNUAL",
+    "JOINING", "RETENTION", "COMMISSION", "ADJUSTMENT",
+  ]),
   amount: z.preprocess(
     (val) => {
       const n = typeof val === "string" ? parseFloat(val) : val;
@@ -55,7 +58,8 @@ export const createBonusSchema = z.object({
     .refine((v) => !v || v.trim().length >= 3, "Reason must be at least 3 characters")
     .refine((v) => !v || !/^[\s\W]+$/.test(v.trim()), "Reason cannot consist of only special characters")
     .optional(),
-  month: z.string().optional(),
+  month: z.string().regex(/^\d{4}-\d{2}$/, "month must be YYYY-MM"),
+  taxable: z.boolean().optional(),
 });
 export type CreateBonusInput = z.infer<typeof createBonusSchema>;
 
@@ -133,12 +137,16 @@ export const createFnfSchema = z.object({
   bonusDue: z.number().min(0).optional(),
   deductions: z.number().min(0).optional(),
   loanRecovery: z.number().min(0).optional(),
+  reimbursementsDue: z.number().min(0).optional(),
+  assetRecovery: z.number().min(0).optional(),
+  noticeRecovery: z.number().min(0).optional(),
+  otherDeductions: z.number().min(0).optional(),
   notes: z.string().max(500).optional(),
 });
 export type CreateFnfInput = z.infer<typeof createFnfSchema>;
 
 export const patchFnfSchema = z.object({
-  status: z.enum(["PENDING_APPROVAL", "APPROVED", "PAID"]),
+  status: z.enum(["PENDING_APPROVAL", "APPROVED", "PAID", "HR_REVIEW", "FINANCE_REVIEW"]),
   notes: z.string().optional(),
 });
 export type PatchFnfInput = z.infer<typeof patchFnfSchema>;
@@ -157,3 +165,21 @@ export const taxCalcSchema = z.object({
   pfOptOut: z.boolean().optional().default(false),
 });
 export type TaxCalcInput = z.infer<typeof taxCalcSchema>;
+
+export const createTaxWindowBodySchema = z.object({
+  financialYear: z.string().min(1),
+  opensAt: z.string().datetime(),
+  closesAt: z.string().datetime(),
+  proofDeadline: z.string().datetime().optional(),
+  lockDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "lockDate must be YYYY-MM-DD").optional(),
+});
+export type CreateTaxWindowBody = z.infer<typeof createTaxWindowBodySchema>;
+
+export const patchTaxWindowBodySchema = z.object({
+  opensAt: z.string().datetime().optional(),
+  closesAt: z.string().datetime().optional(),
+  proofDeadline: z.string().datetime().optional(),
+  lockDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "lockDate must be YYYY-MM-DD").optional(),
+  status: z.enum(["DRAFT", "OPEN", "CLOSED", "LOCKED"]).optional(),
+});
+export type PatchTaxWindowBody = z.infer<typeof patchTaxWindowBodySchema>;

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray, isNull, gte, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, gte, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -14,6 +14,7 @@ import {
   salaryLoans,
   payrollLoanAdjustments,
   incentives,
+  taxDeclarations,
 } from "../../../db/schema";
 import type { PayrollPolicyConfig, PayrollToggles, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { calcPayroll, type ResolvedComponent, type CalcInputPulls } from "./lib/calculation-engine";
@@ -29,6 +30,16 @@ export interface ProfileData {
   payoutCurrency: string | null;
   annualCtc: string;
   taxRegime: "OLD" | "NEW" | null;
+}
+
+function getFyString(month: string): string {
+  const [yearStr, monStr] = month.split("-");
+  const year = parseInt(yearStr ?? "2025", 10);
+  const mon = parseInt(monStr ?? "4", 10);
+  if (mon >= 4) {
+    return `${year}-${String(year + 1).slice(-2)}`;
+  }
+  return `${year - 1}-${String(year).slice(-2)}`;
 }
 
 @Injectable()
@@ -96,7 +107,7 @@ export class GeneratePipelineService {
   async pullCalcInputs(orgId: string, userId: string, runId: number, month: string, toggles: PayrollToggles): Promise<CalcInputPulls> {
     const approvedBonuses = toggles.bonuses
       ? await this.db
-          .select({ amount: bonuses.amount, type: bonuses.type })
+          .select({ amount: bonuses.amount, type: bonuses.type, taxable: bonuses.taxable })
           .from(bonuses)
           .where(and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
       : [];
@@ -108,6 +119,7 @@ export class GeneratePipelineService {
     const rawIncentives = toggles.incentives
       ? await this.db
           .select({
+            id: incentives.id,
             approvedAmount: incentives.approvedAmount,
             calculatedAmount: incentives.calculatedAmount,
           })
@@ -137,6 +149,10 @@ export class GeneratePipelineService {
               eq(reimbursements.userId, userId),
               eq(reimbursements.status, "APPROVED"),
               isNull(reimbursements.paidAt),
+              or(
+                isNull(reimbursements.payrollMonth),
+                eq(reimbursements.payrollMonth, month),
+              ),
             ),
           )
       : [];
@@ -145,12 +161,53 @@ export class GeneratePipelineService {
       ? await this.loadLoansWithAdjustments(orgId, userId, runId)
       : [];
 
+    const fy = getFyString(month);
+    const taxDeclRows = toggles.tds
+      ? await this.db
+          .select({
+            section80c: taxDeclarations.section80c,
+            section80d: taxDeclarations.section80d,
+            hra: taxDeclarations.hra,
+            lta: taxDeclarations.lta,
+            homeLoanInterest: taxDeclarations.homeLoanInterest,
+            section80g: taxDeclarations.section80g,
+            previousEmploymentIncome: taxDeclarations.previousEmploymentIncome,
+            previousEmployerTds: taxDeclarations.previousEmployerTds,
+            status: taxDeclarations.status,
+          })
+          .from(taxDeclarations)
+          .where(
+            and(
+              eq(taxDeclarations.orgId, orgId),
+              eq(taxDeclarations.userId, userId),
+              eq(taxDeclarations.financialYear, fy),
+              eq(taxDeclarations.status, "VERIFIED"),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    const taxDeclaration = taxDeclRows[0]
+      ? {
+          section80c: taxDeclRows[0].section80c,
+          section80d: taxDeclRows[0].section80d,
+          hra: taxDeclRows[0].hra,
+          lta: taxDeclRows[0].lta,
+          homeLoanInterest: taxDeclRows[0].homeLoanInterest,
+          section80g: taxDeclRows[0].section80g,
+          previousEmploymentIncome: taxDeclRows[0].previousEmploymentIncome,
+          previousEmployerTds: taxDeclRows[0].previousEmployerTds,
+        }
+      : null;
+
     return {
-      approvedBonuses: approvedBonuses.map((b) => ({ amount: b.amount, type: b.type })),
+      approvedBonuses: approvedBonuses.map((b) => ({ amount: b.amount, type: b.type, taxable: b.taxable })),
       approvedIncentives,
       approvedReimbursements: rawReimbursements.map((r) => ({ amount: r.amount, category: r.category })),
       consumedReimbursementIds: rawReimbursements.map(r => r.id),
+      consumedIncentiveIds: rawIncentives.map(i => i.id),
       activeLoans,
+      taxDeclaration,
     };
   }
 
@@ -271,6 +328,8 @@ export class GeneratePipelineService {
       previousSnapshot,
     });
 
+    const hasApprovedTaxDeclaration = pulls.taxDeclaration != null;
+
     const exceptionInput: ExceptionInput = {
       orgId: "",
       runId: 0,
@@ -284,7 +343,7 @@ export class GeneratePipelineService {
       lopDays: parseFloat(inputs.lopDays),
       varianceThresholdPercent: config.varianceThresholdPercent ?? 20,
       hasAttendanceInput,
-      hasApprovedTaxDeclaration: true,
+      hasApprovedTaxDeclaration,
       isJoiningInMonth: false,
       isExitInMonth: false,
       missingFxRate,

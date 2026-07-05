@@ -11,6 +11,8 @@ import {
   employeeSalaryProfiles,
   payrollRunEmployees,
   reimbursements,
+  incentives,
+  salaryLoans,
 } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
@@ -97,12 +99,20 @@ export class GenerateService {
         await this.pipeline.replaceLineItems(tx, orgId, runId, empId, snapshot);
         await this.pipeline.upsertExceptions(tx, orgId, runId, empId, profile.userId, exceptions);
 
-        const consumedIds = pulls.consumedReimbursementIds ?? [];
-        if (consumedIds.length > 0) {
+        const consumedReimbIds = pulls.consumedReimbursementIds ?? [];
+        if (consumedReimbIds.length > 0) {
           await tx
             .update(reimbursements)
             .set({ paidAt: new Date() })
-            .where(inArray(reimbursements.id, consumedIds));
+            .where(inArray(reimbursements.id, consumedReimbIds));
+        }
+
+        const consumedIncentiveIds = pulls.consumedIncentiveIds ?? [];
+        if (consumedIncentiveIds.length > 0) {
+          await tx
+            .update(incentives)
+            .set({ status: "ADDED_TO_PAYROLL" })
+            .where(inArray(incentives.id, consumedIncentiveIds));
         }
 
         grossTotal += parseFloat(snapshot.totals.gross);
@@ -156,6 +166,50 @@ export class GenerateService {
     }
 
     return { ok: true };
+  }
+
+  async postPayrollLock(orgId: string, runId: number): Promise<void> {
+    const empRows = await this.db
+      .select({ calculationSnapshot: payrollRunEmployees.calculationSnapshot })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+
+    const loanIdSet = new Set<number>();
+    for (const emp of empRows) {
+      const snap = emp.calculationSnapshot as { lines?: { code: string }[] } | null;
+      for (const line of snap?.lines ?? []) {
+        const match = /^LOAN_EMI_(\d+)$/.exec(line.code);
+        if (match?.[1]) loanIdSet.add(parseInt(match[1], 10));
+      }
+    }
+
+    if (loanIdSet.size === 0) return;
+
+    const loanIds = [...loanIdSet];
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      for (const loanId of loanIds) {
+        const [loan] = await tx
+          .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
+          .from(salaryLoans)
+          .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)))
+          .limit(1);
+
+        if (!loan) continue;
+
+        const newPaidEmis = loan.paidEmis + 1;
+        const isRepaid = loan.totalEmis != null && newPaidEmis >= loan.totalEmis;
+
+        const loanUpdate: Partial<typeof salaryLoans.$inferInsert> = { paidEmis: newPaidEmis };
+        if (isRepaid) {
+          loanUpdate.status = "REPAID";
+          loanUpdate.closedAt = now;
+        }
+
+        await tx.update(salaryLoans).set(loanUpdate).where(eq(salaryLoans.id, loanId));
+      }
+    });
   }
 
   private async clearPreviouslyConsumedReimbursements(orgId: string, runId: number): Promise<void> {

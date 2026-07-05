@@ -14,23 +14,14 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import {
+  accountingMappingCreateSchema,
+  accountingMappingUpdateSchema,
+  type AccountingMappingCreate,
+  type AccountingMappingUpdate,
+} from "./dto/insights.schemas";
 import { AccountingMappingsService } from "./accounting-mappings.service";
-
-interface CreateMappingBody {
-  componentId?: number;
-  category?: string;
-  ledgerName: string;
-  costCenterSource?: string;
-  notes?: string;
-}
-
-interface UpdateMappingBody {
-  componentId?: number | null;
-  category?: string | null;
-  ledgerName?: string;
-  costCenterSource?: string | null;
-  notes?: string | null;
-}
 
 @Controller("payroll/accounting-mappings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,7 +36,7 @@ export class AccountingMappingsController {
 
   @Post()
   async create(
-    @Body() body: CreateMappingBody,
+    @Body(new ZodValidationPipe(accountingMappingCreateSchema)) body: AccountingMappingCreate,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.accountingMappingsService.create(u.orgId, body);
@@ -54,7 +45,7 @@ export class AccountingMappingsController {
   @Patch(":id")
   async update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() body: UpdateMappingBody,
+    @Body(new ZodValidationPipe(accountingMappingUpdateSchema)) body: AccountingMappingUpdate,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.accountingMappingsService.update(u.orgId, id, body);

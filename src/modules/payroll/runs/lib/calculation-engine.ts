@@ -31,10 +31,11 @@ export interface ResolvedComponent {
 }
 
 export interface CalcInputPulls {
-  approvedBonuses: { amount: MoneyString; type: string }[];
+  approvedBonuses: { amount: MoneyString; type: string; taxable: boolean }[];
   approvedIncentives: { amount: MoneyString }[];
   approvedReimbursements: { amount: MoneyString; category: string }[];
   consumedReimbursementIds?: number[];
+  consumedIncentiveIds?: number[];
   activeLoans: {
     id: number;
     emiAmount: MoneyString | null;
@@ -43,6 +44,16 @@ export interface CalcInputPulls {
     totalEmis: number | null;
     adjustment: { type: string; amount: MoneyString | null } | null;
   }[];
+  taxDeclaration?: {
+    section80c: string;
+    section80d: string;
+    hra: string;
+    lta: string;
+    homeLoanInterest: string;
+    section80g: string;
+    previousEmploymentIncome: string;
+    previousEmployerTds: string;
+  } | null;
 }
 
 export interface CalcEngineInput {
@@ -69,14 +80,54 @@ export interface CalcEngineInput {
 }
 
 function taxSlabNew(annualGrossPaise: number): number {
-  const g = annualGrossPaise / 100;
-  if (g <= 250000) return 0;
-  if (g <= 500000) return (g - 250000) * 0.05;
-  if (g <= 750000) return 12500 + (g - 500000) * 0.10;
-  if (g <= 1000000) return 37500 + (g - 750000) * 0.15;
-  if (g <= 1250000) return 75000 + (g - 1000000) * 0.20;
-  if (g <= 1500000) return 125000 + (g - 1250000) * 0.25;
-  return 187500 + (g - 1500000) * 0.30;
+  const STD_DEDUCTION_PAISE = 7_500_000;
+  const taxablePaise = Math.max(0, annualGrossPaise - STD_DEDUCTION_PAISE);
+  const g = taxablePaise / 100;
+
+  let tax = 0;
+  if (g <= 300000) {
+    tax = 0;
+  } else if (g <= 700000) {
+    tax = (g - 300000) * 0.05;
+  } else if (g <= 1000000) {
+    tax = 20000 + (g - 700000) * 0.10;
+  } else if (g <= 1200000) {
+    tax = 50000 + (g - 1000000) * 0.15;
+  } else if (g <= 1500000) {
+    tax = 80000 + (g - 1200000) * 0.20;
+  } else {
+    tax = 140000 + (g - 1500000) * 0.30;
+  }
+
+  if (tax > 0 && tax <= 60000) {
+    tax = 0;
+  }
+
+  return tax * 1.04;
+}
+
+function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number): number {
+  const STD_DEDUCTION_PAISE = 5_000_000;
+  const totalDeductionPaise = STD_DEDUCTION_PAISE + annualDeductionPaise;
+  const taxablePaise = Math.max(0, annualGrossPaise - totalDeductionPaise);
+  const g = taxablePaise / 100;
+
+  let tax = 0;
+  if (g <= 250000) {
+    tax = 0;
+  } else if (g <= 500000) {
+    tax = (g - 250000) * 0.05;
+  } else if (g <= 1000000) {
+    tax = 12500 + (g - 500000) * 0.20;
+  } else {
+    tax = 112500 + (g - 1000000) * 0.30;
+  }
+
+  if (tax > 0 && tax <= 12500) {
+    tax = 0;
+  }
+
+  return tax * 1.04;
 }
 
 export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
@@ -105,6 +156,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   const adjustmentComps = components.filter(c => c.type === "ADJUSTMENT" && !c.isStatutory).sort((a, b) => a.sortOrder - b.sortOrder);
 
   let basicPaise = 0;
+  let earningGrossSoFar = 0;
   const pendingGrossPercent: ResolvedComponent[] = [];
 
   for (const comp of earningComps) {
@@ -118,7 +170,8 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     if (comp.calcMethod === "FIXED" && comp.amount != null) {
       rawPaise = toPaise(comp.amount);
     } else if (comp.calcMethod === "PERCENT_OF_BASIC" && comp.percent != null) {
-      rawPaise = pctOf(monthlyCtcPaise, comp.percent);
+      const pctBase = basicPaise > 0 ? basicPaise : monthlyCtcPaise;
+      rawPaise = pctOf(pctBase, comp.percent);
     } else if (comp.calcMethod === "ATTENDANCE_BASED" && comp.amount != null) {
       rawPaise = Math.round(toPaise(comp.amount) * prorationFactor);
     } else if (comp.calcMethod === "TIMESHEET_BASED" && comp.amount != null) {
@@ -126,7 +179,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
       const scope: FormulaScope = {
         basic: basicPaise / 100,
-        gross: 0,
+        gross: earningGrossSoFar / 100,
         ctc: monthlyCtcPaise / 100,
         days_in_month: totalDaysInMonth,
         paid_days: paidDays,
@@ -165,6 +218,10 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     const noProrate = comp.calcMethod === "ATTENDANCE_BASED" || comp.calcMethod === "TIMESHEET_BASED";
     const proratedPaise = noProrate ? rawPaise : applyRounding(Math.round(rawPaise * prorationFactor), rounding);
 
+    const pctBase = comp.calcMethod === "PERCENT_OF_BASIC"
+      ? (basicPaise > 0 ? basicPaise : monthlyCtcPaise)
+      : monthlyCtcPaise;
+
     if (comp.calcMethod === "TIMESHEET_BASED") {
       lines.push({
         code: comp.code,
@@ -183,6 +240,9 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         },
       });
     } else {
+      const baseLabel = comp.calcMethod === "PERCENT_OF_BASIC"
+        ? (basicPaise > 0 ? `basic ₹${(pctBase / 100).toFixed(2)}` : `monthly CTC ₹${(pctBase / 100).toFixed(2)}`)
+        : "";
       lines.push({
         code: comp.code,
         name: comp.name,
@@ -197,7 +257,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
           inputs: { ctc: monthlyCtcPaise / 100, percent: comp.percent ? parseFloat(comp.percent) : 0 },
           steps: [
             comp.calcMethod === "PERCENT_OF_BASIC"
-              ? `${comp.name} = ${comp.percent}% of monthly CTC ₹${(monthlyCtcPaise / 100).toFixed(2)} = ₹${(rawPaise / 100).toFixed(2)}`
+              ? `${comp.name} = ${comp.percent}% of ${baseLabel} = ₹${(rawPaise / 100).toFixed(2)}`
               : `${comp.name} = ₹${(rawPaise / 100).toFixed(2)}`,
             proratedPaise !== rawPaise
               ? `Prorated ₹${(rawPaise / 100).toFixed(2)} × ${paidDays}/${scheduledDays} paid days = ₹${(proratedPaise / 100).toFixed(2)}`
@@ -208,6 +268,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     }
 
     if (comp.code === "BASIC") basicPaise = proratedPaise;
+    earningGrossSoFar += proratedPaise;
   }
 
   let grossPaise = lines
@@ -236,7 +297,12 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     });
   }
 
+  grossPaise = lines
+    .filter(l => l.category === "EARNING")
+    .reduce((s, l) => s + toPaise(l.amount), 0);
+
   let nonStatDeductionPaise = 0;
+  const pendingGrossDeductions: ResolvedComponent[] = [];
 
   const buildDeductionScope = (): FormulaScope => ({
     basic: basicPaise / 100,
@@ -251,6 +317,11 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   });
 
   for (const comp of deductionComps) {
+    if (comp.calcMethod === "PERCENT_OF_GROSS") {
+      pendingGrossDeductions.push(comp);
+      continue;
+    }
+
     let paise = 0;
 
     if (comp.calcMethod === "FIXED" && comp.amount != null) {
@@ -283,22 +354,6 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
           method: comp.calcMethod,
           inputs: { basic: basicPaise / 100, percent: parseFloat(comp.percent) },
           steps: [`${comp.name} = ${comp.percent}% of basic ₹${(basicPaise / 100).toFixed(2)} = ₹${(paise / 100).toFixed(2)}`],
-        },
-      });
-    } else if (comp.calcMethod === "PERCENT_OF_GROSS" && comp.percent != null) {
-      paise = applyRounding(pctOf(grossPaise, comp.percent), rounding);
-      lines.push({
-        code: comp.code,
-        name: comp.name,
-        category: "DEDUCTION",
-        amount: fromPaise(paise),
-        calcMethod: comp.calcMethod,
-        taxable: comp.taxable,
-        sortOrder: comp.sortOrder,
-        explain: {
-          method: comp.calcMethod,
-          inputs: { gross: grossPaise / 100, percent: parseFloat(comp.percent) },
-          steps: [`${comp.name} = ${comp.percent}% of gross ₹${(grossPaise / 100).toFixed(2)} = ₹${(paise / 100).toFixed(2)}`],
         },
       });
     } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
@@ -403,7 +458,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     adjustmentPaise += paise;
   }
 
-  if (toggles.overtime && overtimeHours > 0) {
+  if (toggles.overtime && overtimeHours > 0 && scheduledDays > 0) {
     const otBasisPaise = config.overtime.basis === "BASIC" ? basicPaise : grossPaise;
     const ratePerHour = otBasisPaise / (scheduledDays * 8);
     const otPaise = Math.round(parseFloat(config.overtime.multiplier) * ratePerHour * overtimeHours);
@@ -436,7 +491,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         category: "EARNING",
         amount: fromPaise(bPaise),
         calcMethod: "MANUAL",
-        taxable: true,
+        taxable: b.taxable,
         sortOrder: 810 + idx,
         explain: {
           method: "MANUAL",
@@ -490,6 +545,26 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   grossPaise = lines
     .filter(l => l.category === "EARNING")
     .reduce((s, l) => s + toPaise(l.amount), 0);
+
+  for (const comp of pendingGrossDeductions) {
+    if (comp.percent == null) continue;
+    const paise = applyRounding(pctOf(grossPaise, comp.percent), rounding);
+    lines.push({
+      code: comp.code,
+      name: comp.name,
+      category: "DEDUCTION",
+      amount: fromPaise(paise),
+      calcMethod: comp.calcMethod,
+      taxable: comp.taxable,
+      sortOrder: comp.sortOrder,
+      explain: {
+        method: comp.calcMethod,
+        inputs: { gross: grossPaise / 100, percent: parseFloat(comp.percent) },
+        steps: [`${comp.name} = ${comp.percent}% of gross ₹${(grossPaise / 100).toFixed(2)} = ₹${(paise / 100).toFixed(2)}`],
+      },
+    });
+    nonStatDeductionPaise += paise;
+  }
 
   const reimbursementPaise = lines
     .filter(l => l.category === "REIMBURSEMENT")
@@ -560,15 +635,32 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   if (toggles.tds) {
     let tdsPaise = 0;
     const tdsMode = config.statutory.tdsMode;
+    const taxDecl = pulls.taxDeclaration;
 
     if (workerType === "CONTRACTOR" || workerType === "CONSULTANT") {
       tdsPaise = pctOf(grossPaise, "10.00");
     } else if (tdsMode === "FLAT" && config.statutory.tdsFlatPercent != null) {
       tdsPaise = pctOf(grossPaise, config.statutory.tdsFlatPercent);
     } else if (tdsMode === "DECLARATION") {
-      const annualGrossPaise = grossPaise * 12;
-      const annualTax = taxSlabNew(annualGrossPaise);
-      tdsPaise = Math.round((annualTax * 100) / 12);
+      const prevEmpIncomePaise = taxDecl ? Math.round(toPaise(taxDecl.previousEmploymentIncome)) : 0;
+      const prevEmpTdsPaise = taxDecl ? Math.round(toPaise(taxDecl.previousEmployerTds)) : 0;
+      const annualGrossPaise = grossPaise * 12 + prevEmpIncomePaise;
+      const regime = taxRegime ?? "NEW";
+
+      let annualTaxRupees: number;
+      if (regime === "NEW") {
+        annualTaxRupees = taxSlabNew(annualGrossPaise);
+      } else {
+        const oldDeductionsPaise = taxDecl
+          ? toPaise(taxDecl.section80c) + toPaise(taxDecl.section80d) + toPaise(taxDecl.hra) +
+            toPaise(taxDecl.lta) + toPaise(taxDecl.homeLoanInterest) + toPaise(taxDecl.section80g)
+          : 0;
+        annualTaxRupees = taxSlabOld(annualGrossPaise, oldDeductionsPaise);
+      }
+
+      const annualTaxPaise = Math.round(annualTaxRupees * 100);
+      const netAnnualTaxPaise = Math.max(0, annualTaxPaise - prevEmpTdsPaise);
+      tdsPaise = Math.round(netAnnualTaxPaise / 12);
     }
 
     if (tdsPaise > 0) {
@@ -583,10 +675,10 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         sortOrder: SORT_BASE_TAX,
         explain: {
           method: tdsMode === "FLAT" || workerType === "CONTRACTOR" || workerType === "CONSULTANT" ? "PERCENT_OF_GROSS" : "FORMULA",
-          inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100 },
+          inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100, regime: taxRegime ?? "NEW" },
           steps: [
             tdsMode === "DECLARATION"
-              ? `TDS (declaration) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
+              ? `TDS (${taxRegime ?? "NEW"} regime) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
               : `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${config.statutory.tdsFlatPercent ?? "10"}% = ₹${(tdsRounded / 100).toFixed(2)}`,
           ],
         },

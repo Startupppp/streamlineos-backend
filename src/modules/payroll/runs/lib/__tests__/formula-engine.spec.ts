@@ -31,8 +31,8 @@ describe("formula engine", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("Unknown variable");
   });
-  it("syntax error returns error", () => {
-    const r = evalFormula("basic + + gross", scope);
+  it("trailing operator is a syntax error", () => {
+    const r = evalFormula("basic +", scope);
     expect(r.ok).toBe(false);
   });
   it("empty formula returns error", () => {
@@ -41,4 +41,36 @@ describe("formula engine", () => {
   });
   it("precedence: * before +", () => expect(evalFormula("2 + 3 * 4", scope)).toEqual({ ok: true, value: 14 }));
   it("whitespace is ignored", () => expect(evalFormula("  basic   +   1000  ", scope)).toEqual({ ok: true, value: 41000 }));
+
+  describe("unary minus and plus", () => {
+    it("unary minus negates a literal", () => {
+      const r = evalFormula("-500", scope);
+      expect(r).toEqual({ ok: true, value: -500 });
+    });
+
+    it("unary minus negates a variable", () => {
+      const r = evalFormula("-basic", scope);
+      expect(r).toEqual({ ok: true, value: -40000 });
+    });
+
+    it("unary minus in expression: -basic + 500", () => {
+      const r = evalFormula("-basic + 500", scope);
+      expect(r).toEqual({ ok: true, value: -39500 });
+    });
+
+    it("unary plus is identity", () => {
+      const r = evalFormula("+basic", scope);
+      expect(r).toEqual({ ok: true, value: 40000 });
+    });
+
+    it("subtraction uses infix minus, not unary", () => {
+      const r = evalFormula("basic - 500", scope);
+      expect(r).toEqual({ ok: true, value: 39500 });
+    });
+
+    it("unary minus in parentheses", () => {
+      const r = evalFormula("(-basic)", scope);
+      expect(r).toEqual({ ok: true, value: -40000 });
+    });
+  });
 });

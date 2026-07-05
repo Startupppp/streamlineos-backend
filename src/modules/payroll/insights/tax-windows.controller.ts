@@ -13,6 +13,13 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import {
+  createTaxWindowBodySchema,
+  patchTaxWindowBodySchema,
+  type CreateTaxWindowBody,
+  type PatchTaxWindowBody,
+} from "../../hr-payroll/dto/payroll.schemas";
 import { TaxWindowsService } from "./tax-windows.service";
 
 @Controller("payroll/tax-windows")
@@ -29,14 +36,7 @@ export class TaxWindowsController {
   @Post()
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body()
-    body: {
-      financialYear: string;
-      opensAt: string;
-      closesAt: string;
-      proofDeadline?: string;
-      lockDate?: string;
-    },
+    @Body(new ZodValidationPipe(createTaxWindowBodySchema)) body: CreateTaxWindowBody,
   ) {
     return this.taxWindowsService.create(u.orgId, body);
   }
@@ -45,14 +45,7 @@ export class TaxWindowsController {
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,
-    @Body()
-    body: {
-      opensAt?: string;
-      closesAt?: string;
-      proofDeadline?: string;
-      lockDate?: string;
-      status?: string;
-    },
+    @Body(new ZodValidationPipe(patchTaxWindowBodySchema)) body: PatchTaxWindowBody,
   ) {
     return this.taxWindowsService.update(u.orgId, id, body, u.userId);
   }

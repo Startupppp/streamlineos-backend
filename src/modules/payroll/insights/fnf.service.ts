@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, StreamableFile } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -100,5 +100,49 @@ export class FnfInsightsService {
       netPayable: row.netPayable,
       status: row.status,
     };
+  }
+
+  async downloadStatement(orgId: string, settlementId: number): Promise<StreamableFile> {
+    const stmt = await this.getStatement(orgId, settlementId);
+    const fmtMoney = (v: string) => {
+      const n = parseFloat(v) || 0;
+      return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    const rows = stmt.components
+      .map(
+        (c) =>
+          `<tr>
+            <td style="padding:8px 16px;border-bottom:1px solid #eee">${c.label}</td>
+            <td style="padding:8px 16px;border-bottom:1px solid #eee;text-align:right${c.type === "deduction" ? ";color:#b91c1c" : ""}">
+              ${c.type === "deduction" ? "−" : "+"}${fmtMoney(c.amount)}
+            </td>
+          </tr>`,
+      )
+      .join("");
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<title>Full &amp; Final Statement</title>
+<style>body{font-family:Arial,sans-serif;max-width:720px;margin:32px auto;color:#111}
+h1{font-size:22px;color:#0f2b7f}table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:8px 16px;background:#f5f7ff;font-size:11px;text-transform:uppercase;color:#0f2b7f}
+.net{background:#0f2b7f;color:#fff;font-size:15px;font-weight:700;padding:12px 16px}</style>
+</head><body>
+<h1>Full &amp; Final Settlement Statement</h1>
+<p><strong>Employee:</strong> ${stmt.employee.name} (${stmt.employee.email})</p>
+<p><strong>Status:</strong> ${stmt.status}</p>
+<table>
+<thead><tr><th>Component</th><th style="text-align:right">Amount (INR)</th></tr></thead>
+<tbody>${rows}</tbody>
+<tfoot><tr><td class="net">Net Payable</td><td class="net" style="text-align:right">${fmtMoney(stmt.netPayable)}</td></tr></tfoot>
+</table>
+<p style="font-size:11px;color:#888;margin-top:24px">This is a system-generated document — Confidential</p>
+</body></html>`;
+
+    const buffer = Buffer.from(html, "utf-8");
+    return new StreamableFile(buffer, {
+      type: "text/html; charset=utf-8",
+      disposition: `attachment; filename="fnf-statement-${settlementId}.html"`,
+    });
   }
 }

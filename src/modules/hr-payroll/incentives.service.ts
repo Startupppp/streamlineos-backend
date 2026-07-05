@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { incentives, incentiveConfig, incentiveStatusEnum, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -78,30 +78,22 @@ export class IncentivesService {
 
   async getIncentiveStats(orgId: string) {
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const monthStart = new Date(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01T00:00:00.000Z`);
 
-    const [allRows, monthRows] = await Promise.all([
-      this.db.query.incentives.findMany({ where: eq(incentives.orgId, orgId), limit: 10000 }),
-      this.db.query.incentives.findMany({
-        where: and(eq(incentives.orgId, orgId), gte(incentives.createdAt, new Date(monthStart))),
-        limit: 10000,
-      }),
-    ]);
+    const [stats] = await this.db
+      .select({
+        totalRevenue: sql<string>`COALESCE(SUM(${incentives.calculatedAmount}), '0')`,
+        approvedCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} IN ('APPROVED', 'ADDED_TO_PAYROLL'))`,
+        pendingCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} = 'PENDING')`,
+        thisMonth: sql<string>`COALESCE(SUM(CASE WHEN ${incentives.createdAt} >= ${monthStart} THEN ${incentives.calculatedAmount} ELSE 0 END), '0')`,
+      })
+      .from(incentives)
+      .where(eq(incentives.orgId, orgId));
 
-    let totalRevenue = 0;
-    let approved = 0;
-    let pending = 0;
-    let thisMonth = 0;
-
-    for (const inc of allRows) {
-      const amount = Number(inc.calculatedAmount || 0);
-      totalRevenue += amount;
-      if (inc.status === "APPROVED" || inc.status === "ADDED_TO_PAYROLL") approved++;
-      if (inc.status === "PENDING") pending++;
-    }
-    for (const inc of monthRows) {
-      thisMonth += Number(inc.calculatedAmount || 0);
-    }
+    const totalRevenue = Number(stats?.totalRevenue ?? 0);
+    const approved = Number(stats?.approvedCount ?? 0);
+    const pending = Number(stats?.pendingCount ?? 0);
+    const thisMonth = Number(stats?.thisMonth ?? 0);
 
     return {
       thisMonth: thisMonth.toFixed(2),

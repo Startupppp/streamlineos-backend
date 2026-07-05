@@ -93,27 +93,14 @@ export class PayoutBatchesService {
       );
     }
 
-    if (idempotencyKey) {
-      const existing = await this.db.query.payrollBankBatches.findFirst({
-        where: and(
-          eq(payrollBankBatches.orgId, orgId),
-          eq(payrollBankBatches.idempotencyKey, idempotencyKey),
-        ),
-      });
-      if (existing) {
-        const items = await this.db.query.payrollBankBatchItems.findMany({
-          where: eq(payrollBankBatchItems.batchId, existing.id),
-        });
-        return { batch: existing, items, replayed: true };
-      }
-    }
-
     const employees = await this.db
       .select({
         id: payrollRunEmployees.id,
         userId: payrollRunEmployees.userId,
         net: payrollRunEmployees.net,
         currency: payrollRunEmployees.currency,
+        payoutCurrency: payrollRunEmployees.payoutCurrency,
+        netPayoutCurrency: payrollRunEmployees.netPayoutCurrency,
         status: payrollRunEmployees.status,
         holdReason: payrollRunEmployees.holdReason,
         bankDetails: users.bankDetails,
@@ -127,7 +114,7 @@ export class PayoutBatchesService {
       if (e.status === "HELD" || e.holdReason) return false;
       const bank = decryptBankDetails(e.bankDetails ?? null);
       if (!bank?.accountNumber) return false;
-      const net = parseFloat(e.net);
+      const net = parseFloat(e.netPayoutCurrency ?? e.net);
       if (net <= 0) return false;
       return true;
     });
@@ -136,139 +123,168 @@ export class PayoutBatchesService {
       throw new BadRequestException("No eligible employees for payout batch — check validation");
     }
 
-    const firstCurrency = eligible[0]?.currency ?? "INR";
-    const resolvedFormat: PayoutBatchFormat = format ?? defaultFormatFromCurrency(firstCurrency);
-
-    const narrationLabel = `Salary ${run.month ?? ""}`.trim();
-    const csvRows = [csvHeader(resolvedFormat)];
-    const itemsData: Array<{
-      runEmployeeId: number;
-      userId: string;
-      amount: string;
-      accountMasked: string;
-      ifsc: string | null;
-    }> = [];
-
-    eligible.forEach((emp, idx) => {
-      const bank = decryptBankDetails(emp.bankDetails ?? null);
-      if (!bank?.accountNumber) return;
-      const bankCode = bank.ifsc ?? "";
-      csvRows.push(
-        csvRow(
-          resolvedFormat,
-          idx + 1,
-          emp.name ?? emp.userId,
-          bank.accountNumber,
-          bankCode,
-          emp.currency,
-          emp.net,
-          narrationLabel,
-        ),
-      );
-      itemsData.push({
-        runEmployeeId: emp.id,
-        userId: emp.userId,
-        amount: emp.net,
-        accountMasked: "XXXX" + bank.accountNumber.slice(-4),
-        ifsc: bankCode || null,
-      });
-    });
-
-    const csvContent = csvRows.join("\n");
-    const csvBuffer = Buffer.from(csvContent, "utf-8");
-    const month = run.month ?? "unknown";
-    const fileName = `payroll-batch-${month}-${Date.now()}.csv`;
-
-    const [uploadResult, seqResult] = await Promise.all([
-      this.storage.isConfigured()
-        ? this.storage.uploadFile(csvBuffer, "payroll/bank-batches", fileName, "text/csv")
-        : Promise.resolve({ url: null as string | null, key: null as string | null }),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payrollBankBatches)
-        .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId))),
-    ]);
-
-    const seq = (seqResult[0]?.count ?? 0) + 1;
-    const monthNum = month.replace("-", "");
-    const batchNumber = `PAY-${monthNum}-${String(seq).padStart(3, "0")}`;
-    const totalAmount = itemsData.reduce((s, i) => s + parseFloat(i.amount), 0).toFixed(2);
-    const now = new Date();
-
-    const [newBatch] = await this.db.transaction(async (tx) => {
-      const [batch] = await tx
-        .insert(payrollBankBatches)
-        .values({
-          orgId,
-          runId,
-          batchNumber,
-          status: "GENERATED",
-          format: resolvedFormat,
-          totalAmount,
-          itemCount: itemsData.length,
-          idempotencyKey: idempotencyKey ?? null,
-          fileKey: uploadResult.key ?? null,
-          generatedBy: userId,
-          generatedAt: now,
-        })
-        .returning();
-
-      if (!batch) throw new BadRequestException("Failed to create batch");
-
-      await tx.insert(payrollBankBatchItems).values(
-        itemsData.map(item => ({
-          orgId,
-          batchId: batch.id,
-          runEmployeeId: item.runEmployeeId,
-          userId: item.userId,
-          amount: item.amount,
-          accountMasked: item.accountMasked,
-          ifsc: item.ifsc,
-          status: "PENDING" as const,
-        })),
-      );
-
-      await tx.insert(payrollRunEvents).values({
-        orgId,
-        runId,
-        type: "BANK_BATCH_GENERATED",
-        actorId: userId,
-        metadata: {
-          batchId: batch.id,
-          batchNumber,
-          itemCount: itemsData.length,
-          totalAmount,
-          format: resolvedFormat,
-          fileKey: uploadResult.key ?? null,
-        },
-      });
-
-      return [batch];
-    });
-
-    this.audit.log({
-      action: "payroll.bank_batch_generated",
-      userId,
-      orgId,
-      targetId: String(runId),
-      targetType: "payroll_run",
-      metadata: { batchId: newBatch.id, batchNumber, itemCount: itemsData.length, totalAmount },
-    });
-
-    const items = await this.db.query.payrollBankBatchItems.findMany({
-      where: eq(payrollBankBatchItems.batchId, newBatch.id),
-    });
-
-    let fileUrl: string | null = null;
-    if (uploadResult.key && this.storage.isConfigured()) {
-      try {
-        fileUrl = await this.storage.getFileUrl(uploadResult.key, 3600);
-      } catch {
-        fileUrl = uploadResult.url ?? null;
-      }
+    const groupMap = new Map<string, typeof eligible>();
+    for (const emp of eligible) {
+      const code = emp.payoutCurrency ?? emp.currency;
+      const arr = groupMap.get(code) ?? [];
+      arr.push(emp);
+      groupMap.set(code, arr);
     }
 
-    return { batch: newBatch, items, fileUrl, replayed: false };
+    const month = run.month ?? "unknown";
+    const monthNum = month.replace("-", "");
+    const narrationLabel = `Salary ${month}`.trim();
+
+    const [seqRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(payrollBankBatches)
+      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
+    const baseSeq = seqRow?.count ?? 0;
+
+    type ItemData = { runEmployeeId: number; userId: string; amount: string; accountMasked: string; ifsc: string | null };
+    type BatchResult = {
+      batch: typeof payrollBankBatches.$inferSelect;
+      items: Array<typeof payrollBankBatchItems.$inferSelect>;
+      fileUrl: string | null;
+      currencyCode: string;
+      replayed: boolean;
+    };
+
+    const results: BatchResult[] = [];
+    let groupIdx = 0;
+
+    for (const [currencyCode, groupEmps] of groupMap) {
+      const groupFormat: PayoutBatchFormat = format ?? defaultFormatFromCurrency(currencyCode);
+      const subKey = idempotencyKey ? `${idempotencyKey}-${currencyCode}` : undefined;
+
+      if (subKey) {
+        const existingBatch = await this.db.query.payrollBankBatches.findFirst({
+          where: and(
+            eq(payrollBankBatches.orgId, orgId),
+            eq(payrollBankBatches.idempotencyKey, subKey),
+          ),
+        });
+        if (existingBatch) {
+          const batchItems = await this.db.query.payrollBankBatchItems.findMany({
+            where: eq(payrollBankBatchItems.batchId, existingBatch.id),
+          });
+          results.push({ batch: existingBatch, items: batchItems, fileUrl: null, currencyCode, replayed: true });
+          groupIdx++;
+          continue;
+        }
+      }
+
+      const csvRows = [csvHeader(groupFormat)];
+      const itemsData: ItemData[] = [];
+
+      groupEmps.forEach((emp, idx) => {
+        const bank = decryptBankDetails(emp.bankDetails ?? null);
+        if (!bank?.accountNumber) return;
+        const bankCode = bank.ifsc ?? "";
+        const effectiveAmount = emp.netPayoutCurrency ?? emp.net;
+        csvRows.push(csvRow(groupFormat, idx + 1, emp.name ?? emp.userId, bank.accountNumber, bankCode, currencyCode, effectiveAmount, narrationLabel));
+        itemsData.push({
+          runEmployeeId: emp.id,
+          userId: emp.userId,
+          amount: effectiveAmount,
+          accountMasked: "XXXX" + bank.accountNumber.slice(-4),
+          ifsc: bankCode || null,
+        });
+      });
+
+      const csvContent = csvRows.join("\n");
+      const csvBuffer = Buffer.from(csvContent, "utf-8");
+      const fileName = `payroll-batch-${month}-${currencyCode}-${Date.now()}.csv`;
+
+      const uploadResult = this.storage.isConfigured()
+        ? await this.storage.uploadFile(csvBuffer, "payroll/bank-batches", fileName, "text/csv")
+        : { url: null as string | null, key: null as string | null };
+
+      const seq = baseSeq + groupIdx + 1;
+      const batchNumber = `PAY-${monthNum}-${currencyCode}-${String(seq).padStart(3, "0")}`;
+      const totalAmount = itemsData.reduce((s, i) => s + parseFloat(i.amount), 0).toFixed(2);
+      const now = new Date();
+
+      const [newBatch] = await this.db.transaction(async (tx) => {
+        const [batch] = await tx
+          .insert(payrollBankBatches)
+          .values({
+            orgId,
+            runId,
+            batchNumber,
+            status: "GENERATED",
+            format: groupFormat,
+            totalAmount,
+            itemCount: itemsData.length,
+            idempotencyKey: subKey ?? null,
+            fileKey: uploadResult.key ?? null,
+            generatedBy: userId,
+            generatedAt: now,
+          })
+          .returning();
+
+        if (!batch) throw new BadRequestException("Failed to create batch");
+
+        await tx.insert(payrollBankBatchItems).values(
+          itemsData.map(item => ({
+            orgId,
+            batchId: batch.id,
+            runEmployeeId: item.runEmployeeId,
+            userId: item.userId,
+            amount: item.amount,
+            accountMasked: item.accountMasked,
+            ifsc: item.ifsc,
+            status: "PENDING" as const,
+          })),
+        );
+
+        await tx.insert(payrollRunEvents).values({
+          orgId,
+          runId,
+          type: "BANK_BATCH_GENERATED",
+          actorId: userId,
+          metadata: {
+            batchId: batch.id,
+            batchNumber,
+            itemCount: itemsData.length,
+            totalAmount,
+            format: groupFormat,
+            currencyCode,
+            fileKey: uploadResult.key ?? null,
+          },
+        });
+
+        return [batch];
+      });
+
+      this.audit.log({
+        action: "payroll.bank_batch_generated",
+        userId,
+        orgId,
+        targetId: String(runId),
+        targetType: "payroll_run",
+        metadata: { batchId: newBatch.id, batchNumber, itemCount: itemsData.length, totalAmount, currencyCode },
+      });
+
+      const batchItems = await this.db.query.payrollBankBatchItems.findMany({
+        where: eq(payrollBankBatchItems.batchId, newBatch.id),
+      });
+
+      let fileUrl: string | null = null;
+      if (uploadResult.key && this.storage.isConfigured()) {
+        try {
+          fileUrl = await this.storage.getFileUrl(uploadResult.key, 3600);
+        } catch {
+          fileUrl = uploadResult.url ?? null;
+        }
+      }
+
+      results.push({ batch: newBatch, items: batchItems, fileUrl, currencyCode, replayed: false });
+      groupIdx++;
+    }
+
+    const allReplayed = results.length > 0 && results.every(r => r.replayed);
+    return { batches: results, replayed: allReplayed };
   }
 
   async listBatches(orgId: string, runId?: number) {

@@ -10,8 +10,8 @@ import { AccountingMappingsService } from "./accounting-mappings.service";
 export interface JournalLine {
   account: string;
   description: string;
-  debit: string;
-  credit: string;
+  debit: number;
+  credit: number;
   costCenter: string | null;
 }
 
@@ -20,8 +20,8 @@ export interface JournalResult {
   month: string;
   lines: JournalLine[];
   unmappedCodes: string[];
-  totalDebits: string;
-  totalCredits: string;
+  totalDebits: number;
+  totalCredits: number;
 }
 
 interface LineGroup {
@@ -33,13 +33,15 @@ interface LineGroup {
   costCenter: string | null;
 }
 
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
 const EMPTY_RESULT = (month: string): JournalResult => ({
   provisional: true,
   month,
   lines: [],
   unmappedCodes: [],
-  totalDebits: "0.00",
-  totalCredits: "0.00",
+  totalDebits: 0,
+  totalCredits: 0,
 });
 
 @Injectable()
@@ -102,6 +104,9 @@ export class JournalService {
       }
     }
 
+    const employerLiabilityAccount =
+      mappings.get("EMPLOYER_CONTRIBUTION_LIABILITY") ?? "Statutory Liabilities Payable";
+
     const lines: JournalLine[] = [];
     const unmappedCodes: string[] = [];
 
@@ -125,30 +130,41 @@ export class JournalService {
         group.category === "REIMBURSEMENT" ||
         group.category === "EMPLOYER_CONTRIBUTION";
 
-      const sum = group.total.toFixed(2);
+      const amount = round2(group.total);
+
       lines.push({
         account,
         description: `${group.name} (${group.code})`,
-        debit: isDebit ? sum : "0.00",
-        credit: isDebit ? "0.00" : sum,
+        debit: isDebit ? amount : 0,
+        credit: isDebit ? 0 : amount,
         costCenter: group.costCenter,
       });
+
+      if (group.category === "EMPLOYER_CONTRIBUTION") {
+        lines.push({
+          account: employerLiabilityAccount,
+          description: `${group.name} payable (${group.code})`,
+          debit: 0,
+          credit: amount,
+          costCenter: group.costCenter,
+        });
+      }
     }
 
     const totalNetNum = runEmployees.reduce((acc, emp) => acc + parseFloat(emp.net), 0);
     lines.push({
       account: "Salaries Payable",
       description: "Net payable to employees",
-      debit: "0.00",
-      credit: totalNetNum.toFixed(2),
+      debit: 0,
+      credit: round2(totalNetNum),
       costCenter: null,
     });
 
     let totalDebitsNum = 0;
     let totalCreditsNum = 0;
     for (const line of lines) {
-      totalDebitsNum += parseFloat(line.debit);
-      totalCreditsNum += parseFloat(line.credit);
+      totalDebitsNum += line.debit;
+      totalCreditsNum += line.credit;
     }
 
     return {
@@ -156,8 +172,8 @@ export class JournalService {
       month,
       lines,
       unmappedCodes: [...new Set(unmappedCodes)],
-      totalDebits: totalDebitsNum.toFixed(2),
-      totalCredits: totalCreditsNum.toFixed(2),
+      totalDebits: round2(totalDebitsNum),
+      totalCredits: round2(totalCreditsNum),
     };
   }
 }

@@ -107,6 +107,12 @@ class Parser {
 
   private parseFactor(): FormulaResult {
     const t = this.peek();
+    if (t.type === "OP" && (t.value === "-" || t.value === "+")) {
+      this.consume();
+      const operand = this.parseFactor();
+      if (!operand.ok) return operand;
+      return { ok: true, value: t.value === "-" ? -operand.value : operand.value };
+    }
     if (t.type === "LPAREN") {
       this.consume();
       const inner = this.parseExpr();

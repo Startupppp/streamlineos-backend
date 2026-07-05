@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -65,5 +66,14 @@ export class PayrollTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.preview(u.orgId, templateId, body);
+  }
+
+  @Delete(":templateId")
+  @RequirePermission("payroll:templates:manage")
+  async deleteTemplate(
+    @Param("templateId", ParseIntPipe) templateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.service.deleteCustomTemplate(u.orgId, templateId);
   }
 }

@@ -61,7 +61,7 @@ describe("payroll engine extended", () => {
         toggles: { ...baseInput.toggles, bonuses: true },
         pulls: {
           ...baseInput.pulls,
-          approvedBonuses: [{ amount: "10000.00", type: "PERFORMANCE" }],
+          approvedBonuses: [{ amount: "10000.00", type: "PERFORMANCE", taxable: true }],
         },
       };
       const snap = calcPayroll(input);

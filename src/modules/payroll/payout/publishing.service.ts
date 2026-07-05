@@ -150,12 +150,13 @@ export class PublishingService {
       });
 
       let pdfUrl: string | null = null;
+      let renderedPdfBuffer: Buffer | null = null;
       try {
-        const pdfBuffer = await generatePayslipPdf(pdfData);
+        renderedPdfBuffer = await generatePayslipPdf(pdfData);
         if (this.storage.isConfigured()) {
           const fileName = `payslip-${emp.userId}-${run.month}.pdf`;
           const uploadResult = await this.storage.uploadFile(
-            pdfBuffer,
+            renderedPdfBuffer,
             `payroll/payslips/${runId}`,
             fileName,
             "application/pdf",
@@ -164,6 +165,7 @@ export class PublishingService {
         }
       } catch {
         pdfUrl = null;
+        renderedPdfBuffer = null;
       }
 
       const [upsertedPub] = await this.db
@@ -202,7 +204,7 @@ export class PublishingService {
           .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
       }
 
-      if (emailPayslips && emp.email) {
+      if (emailPayslips && emp.email && renderedPdfBuffer) {
         try {
           const monthLabel = fmtMonthYear(run.month);
           const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -212,7 +214,6 @@ export class PublishingService {
             netSalary: netAmount,
             orgName,
           });
-          const pdfBuffer = await generatePayslipPdf(pdfData);
           void this.email.sendEmail({
             to: emp.email,
             subject: emailTemplate.subject,
@@ -220,7 +221,7 @@ export class PublishingService {
             attachments: [
               {
                 filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
-                content: pdfBuffer,
+                content: renderedPdfBuffer,
                 type: "application/pdf",
               },
             ],

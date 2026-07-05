@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  StreamableFile,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -56,5 +57,15 @@ export class FnfController {
     @Param("settlementId", ParseIntPipe) settlementId: number,
   ) {
     return this.fnfService.getStatement(u.orgId, settlementId);
+  }
+
+  @Get(":settlementId/statement/download")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payroll:fnf:view")
+  downloadStatement(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("settlementId", ParseIntPipe) settlementId: number,
+  ): Promise<StreamableFile> {
+    return this.fnfService.downloadStatement(u.orgId, settlementId);
   }
 }

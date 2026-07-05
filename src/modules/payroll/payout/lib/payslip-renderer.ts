@@ -14,6 +14,9 @@ export interface RendererEmployeeInfo {
   ifsc?: string;
   pan?: string;
   pfUan?: string;
+  invoiceNumber?: string;
+  paymentAdviceRef?: string;
+  taxFormRef?: string;
 }
 
 export interface RendererOrgInfo {
@@ -81,6 +84,16 @@ function netBar(snap: CalculationSnapshot, currency: string, accent: string, lab
 </div>
 <div style="background:#f5f7ff;padding:6px 20px;font-size:11px;font-style:italic;border-bottom:2px solid ${accent}">
 In words: <strong>${amountInWords(snap.totals.net, currency)}</strong>
+</div>`;
+}
+
+function contractorSection(e: RendererEmployeeInfo, accent: string): string {
+  if (!e.invoiceNumber && !e.paymentAdviceRef && !e.taxFormRef) return "";
+  return `<div style="background:#f9fbff;border:1px solid #d0daf5;border-radius:4px;padding:10px 20px;margin:0 20px 12px;font-size:11px">
+<div style="font-size:10px;text-transform:uppercase;color:${accent};font-weight:700;margin-bottom:6px">Contractor Invoice Details</div>
+${e.invoiceNumber ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Invoice Number</span><span>${e.invoiceNumber}</span></div>` : ""}
+${e.paymentAdviceRef ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Payment Advice Ref</span><span>${e.paymentAdviceRef}</span></div>` : ""}
+${e.taxFormRef ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Tax Form Ref</span><span>${e.taxFormRef}</span></div>` : ""}
 </div>`;
 }
 
@@ -186,6 +199,7 @@ ${parseFloat(snapshot.lopDays) > 0 ? `<div style="display:flex;justify-content:s
 <tbody>${tableRows}<tr style="border-top:2px solid #dde3f0">${subtotalCols}</tr></tbody>
 </table>
 </div>
+${contractor ? contractorSection(employee, accent) : ""}
 ${netBar(snapshot, currency, accent, contractor ? "Net Payment Payable" : "Net Salary Payable")}
 ${bankSection(employee, accent)}
 ${footer(org, monthLabel)}
@@ -248,6 +262,7 @@ ${employee.pfUan ? `<div style="font-size:11px;color:#555">PF UAN: <strong>${emp
 </div>
 ${body}
 </div>
+${contractor ? contractorSection(employee, accent) : ""}
 ${netBar(snapshot, currency, accent, contractor ? "Net Payment Payable" : "Net Salary Payable")}
 ${bankSection(employee, accent)}
 ${footer(org, monthLabel)}
@@ -319,6 +334,7 @@ ${!contractor && config.showEmployerContributions ? `<tr style="background:#f0ff
 </tbody>
 </table>
 </div>
+${contractor ? contractorSection(employee, accent) : ""}
 ${netBar(snapshot, currency, accent, contractor ? "Net Payment Payable" : "Net Salary Payable")}
 ${bankSection(employee, accent)}
 ${footer(org, monthLabel)}

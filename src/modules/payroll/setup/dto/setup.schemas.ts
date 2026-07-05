@@ -7,6 +7,7 @@ export const toggleOverridesSchema = z
 
 export const listTemplatesSchema = z.object({
   category: z.string().trim().optional(),
+  complexity: z.enum(["SIMPLE", "MODERATE", "ADVANCED"]).optional(),
   country: z.string().trim().max(10).optional(),
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),

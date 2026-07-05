@@ -33,6 +33,7 @@ export const patchInputSchema = z.object({
   paidDays: z.string().optional(),
   lopDays: z.string().optional(),
   overtimeHours: z.string().optional(),
+  billableHours: z.string().optional(),
   reason: z.string().min(1).max(500),
 });
 export type PatchInputInput = z.infer<typeof patchInputSchema>;

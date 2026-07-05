@@ -12,6 +12,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { AccessService } from "../../access/access.service";
+import { authorize } from "../../access/authorize";
 import { ReportsService } from "./reports.service";
 import { buildCsv } from "./lib/csv";
 
@@ -19,22 +21,31 @@ function defaultMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-function requireExport(u: CurrentUserContext): void {
-  if (!u.permissions.includes("payroll:reports:export")) {
-    throw new ForbiddenException("Permission denied: payroll:reports:export required");
-  }
-}
-
 function setCsvHeaders(res: Response, name: string): void {
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="${name}.csv"`);
+}
+
+function parsePagination(limit: string | undefined, offset: string | undefined) {
+  return {
+    limit: limit !== undefined ? Math.min(parseInt(limit, 10) || 100, 100) : 100,
+    offset: offset !== undefined ? parseInt(offset, 10) || 0 : 0,
+  };
 }
 
 @Controller("payroll/reports")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @RequirePermission("payroll:reports:view")
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly access: AccessService,
+  ) {}
+
+  private async assertExport(u: CurrentUserContext): Promise<void> {
+    const check = await authorize(this.access, u, "payroll:reports:export");
+    if (!check.allow) throw new ForbiddenException("Permission denied: payroll:reports:export required");
+  }
 
   @Get("summary")
   async getSummary(
@@ -45,7 +56,7 @@ export class ReportsController {
   ) {
     const result = await this.reports.getSummary(u.orgId, month);
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const run = result.run;
       const headers = ["month", "status", "employeeCount", "grossTotal", "deductionTotal", "netTotal", "employerCostTotal", "exceptionCount"];
       const rows = run
@@ -64,12 +75,14 @@ export class ReportsController {
     @Query("department") department: string | undefined,
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getRegister(u.orgId, month, { department, costCenter, workerType });
+    const result = await this.reports.getRegister(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", "paidDays", "gross", "totalDeductions", "net", ...result.columns];
       const rows = result.rows.map((r) => [
         r.employeeId, r.name, r.department, r.workerType, r.paidDays, r.gross, r.totalDeductions, r.net,
@@ -87,12 +100,14 @@ export class ReportsController {
     @Query("format") format: string = "json",
     @Query("department") department: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getDepartmentCost(u.orgId, month, { department, workerType });
+    const result = await this.reports.getDepartmentCost(u.orgId, month, { department, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["department", "employeeCount", "grossTotal", "netTotal", "employerCostTotal"];
       const rows = result.rows.map((r) => [r.department, r.employeeCount, r.grossTotal, r.netTotal, r.employerCostTotal]);
       setCsvHeaders(res, `payroll-department-cost-${month}`);
@@ -107,12 +122,14 @@ export class ReportsController {
     @Query("format") format: string = "json",
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getCostCenter(u.orgId, month, { costCenter, workerType });
+    const result = await this.reports.getCostCenter(u.orgId, month, { costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["costCenter", "employeeCount", "grossTotal", "netTotal"];
       const rows = result.rows.map((r) => [r.costCenter, r.employeeCount, r.grossTotal, r.netTotal]);
       setCsvHeaders(res, `payroll-cost-center-${month}`);
@@ -128,12 +145,14 @@ export class ReportsController {
     @Query("department") department: string | undefined,
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getEarnings(u.orgId, month, { department, costCenter, workerType });
+    const result = await this.reports.getEarnings(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-earnings-${month}`);
@@ -149,12 +168,14 @@ export class ReportsController {
     @Query("department") department: string | undefined,
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getDeductions(u.orgId, month, { department, costCenter, workerType });
+    const result = await this.reports.getDeductions(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-deductions-${month}`);
@@ -170,12 +191,14 @@ export class ReportsController {
     @Query("department") department: string | undefined,
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getReimbursements(u.orgId, month, { department, costCenter, workerType });
+    const result = await this.reports.getReimbursements(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-reimbursements-${month}`);
@@ -191,12 +214,14 @@ export class ReportsController {
     @Query("department") department: string | undefined,
     @Query("costCenter") costCenter: string | undefined,
     @Query("workerType") workerType: string | undefined,
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getTax(u.orgId, month, { department, costCenter, workerType });
+    const result = await this.reports.getTax(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-tax-${month}`);
@@ -209,12 +234,14 @@ export class ReportsController {
   async getBankPayout(
     @Query("month") month: string = defaultMonth(),
     @Query("format") format: string = "json",
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getBankPayout(u.orgId, month);
+    const result = await this.reports.getBankPayout(u.orgId, month, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["batchNumber", "format", "totalAmount", "itemCount", "status", "generatedAt", "userName", "accountMasked", "ifsc", "amount", "itemStatus"];
       const rows = result.batches.flatMap((b) =>
         b.items.length > 0
@@ -231,12 +258,14 @@ export class ReportsController {
   async getVariance(
     @Query("month") month: string = defaultMonth(),
     @Query("format") format: string = "json",
+    @Query("limit") limit: string | undefined,
+    @Query("offset") offset: string | undefined,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getVariance(u.orgId, month);
+    const result = await this.reports.getVariance(u.orgId, month, parsePagination(limit, offset));
     if (format === "csv") {
-      requireExport(u);
+      await this.assertExport(u);
       const headers = ["userId", "name", "prevGross", "currGross", "grossDelta", "prevNet", "currNet", "netDelta"];
       const rows = result.perEmployee.map((r) => [r.userId, r.name, r.prevGross, r.currGross, r.grossDelta, r.prevNet, r.currNet, r.netDelta]);
       setCsvHeaders(res, `payroll-variance-${month}`);

@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lte, sum } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, gte, inArray, lte, not, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -264,6 +264,16 @@ export class EssService {
     if (!toggles.essAllowTaxDeclarations) throw new ForbiddenException("Tax declarations are disabled");
     const window = await this.getActiveWindow(orgId);
     if (!window) throw new ForbiddenException("Tax declaration window is not open");
+
+    if (window.lockDate) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (todayIso > window.lockDate) {
+        throw new ForbiddenException(
+          `Tax declaration window is locked — submission deadline was ${window.lockDate}`,
+        );
+      }
+    }
+
     return this.taxService.createOrUpdate(orgId, userId, {
       financialYear: body.financialYear,
       regime: body.regime,
@@ -273,6 +283,7 @@ export class EssService {
       section80d: body.section80d?.toString(),
       section80g: body.section80g?.toString(),
       homeLoanInterest: body.homeLoanInterest?.toString(),
+      status: "SUBMITTED",
     });
   }
 
@@ -319,6 +330,19 @@ export class EssService {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essAllowBankUpdate) throw new ForbiddenException("Bank details update is disabled");
 
+    const activeRun = await this.db.query.payrollRuns.findFirst({
+      where: and(
+        eq(payrollRuns.orgId, orgId),
+        inArray(payrollRuns.status, ["LOCKED", "APPROVED", "PAID", "PAYSLIPS_PUBLISHED"]),
+      ),
+      columns: { id: true, status: true, month: true },
+    });
+    if (activeRun) {
+      throw new ConflictException(
+        `Bank details are frozen: payroll run ${activeRun.month} is in status ${activeRun.status}. Contact HR to update after payout is complete.`,
+      );
+    }
+
     const effectiveCode = body.code ?? body.ifsc ?? "";
     const effectiveHolder = body.accountHolder ?? body.accountHolderName ?? "";
     const effectiveCountry = body.bankCountry ?? "IN";
@@ -355,7 +379,13 @@ export class EssService {
     const [settlement] = await this.db
       .select()
       .from(fnfSettlements)
-      .where(and(eq(fnfSettlements.userId, userId), eq(fnfSettlements.orgId, orgId)))
+      .where(
+        and(
+          eq(fnfSettlements.userId, userId),
+          eq(fnfSettlements.orgId, orgId),
+          not(eq(fnfSettlements.status, "DRAFT")),
+        ),
+      )
       .orderBy(desc(fnfSettlements.createdAt))
       .limit(1);
     return settlement ?? null;

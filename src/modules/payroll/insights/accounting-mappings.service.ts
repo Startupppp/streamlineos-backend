@@ -1,8 +1,17 @@
-import { Injectable, Inject, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { eq, and, asc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollAccountingMappings, salaryComponents } from "../../../db/schema";
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as Record<string, unknown>).code === "23505"
+  );
+}
 
 @Injectable()
 export class AccountingMappingsService {
@@ -26,30 +35,43 @@ export class AccountingMappingsService {
       notes?: string;
     },
   ) {
-    if (data.componentId !== undefined) {
+    const hasComponent = data.componentId !== undefined;
+    const hasCategory = data.category !== undefined;
+    if (hasComponent === hasCategory) {
+      throw new BadRequestException("Exactly one of componentId or category must be provided");
+    }
+
+    if (hasComponent) {
       const comp = await this.db
         .select({ id: salaryComponents.id })
         .from(salaryComponents)
-        .where(and(eq(salaryComponents.id, data.componentId), eq(salaryComponents.orgId, orgId)))
+        .where(and(eq(salaryComponents.id, data.componentId!), eq(salaryComponents.orgId, orgId)))
         .limit(1);
       if (comp.length === 0) throw new NotFoundException("Salary component not found");
     }
 
-    const rows = await this.db
-      .insert(payrollAccountingMappings)
-      .values({
-        orgId,
-        componentId: data.componentId ?? null,
-        category: data.category ?? null,
-        ledgerName: data.ledgerName,
-        costCenterSource: data.costCenterSource ?? null,
-        notes: data.notes ?? null,
-      })
-      .returning();
+    try {
+      const rows = await this.db
+        .insert(payrollAccountingMappings)
+        .values({
+          orgId,
+          componentId: data.componentId ?? null,
+          category: data.category ?? null,
+          ledgerName: data.ledgerName,
+          costCenterSource: data.costCenterSource ?? null,
+          notes: data.notes ?? null,
+        })
+        .returning();
 
-    const inserted = rows[0];
-    if (inserted === undefined) throw new Error("Insert failed unexpectedly");
-    return inserted;
+      const inserted = rows[0];
+      if (inserted === undefined) throw new Error("Insert failed unexpectedly");
+      return inserted;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException("A mapping for this component or category already exists in this organisation");
+      }
+      throw error;
+    }
   }
 
   async update(
@@ -78,15 +100,22 @@ export class AccountingMappingsService {
     if (data.costCenterSource !== undefined) setValues.costCenterSource = data.costCenterSource;
     if (data.notes !== undefined) setValues.notes = data.notes;
 
-    const rows = await this.db
-      .update(payrollAccountingMappings)
-      .set(setValues)
-      .where(and(eq(payrollAccountingMappings.id, id), eq(payrollAccountingMappings.orgId, orgId)))
-      .returning();
+    try {
+      const rows = await this.db
+        .update(payrollAccountingMappings)
+        .set(setValues)
+        .where(and(eq(payrollAccountingMappings.id, id), eq(payrollAccountingMappings.orgId, orgId)))
+        .returning();
 
-    const updated = rows[0];
-    if (updated === undefined) throw new NotFoundException("Accounting mapping not found");
-    return updated;
+      const updated = rows[0];
+      if (updated === undefined) throw new NotFoundException("Accounting mapping not found");
+      return updated;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException("A mapping for this component or category already exists in this organisation");
+      }
+      throw error;
+    }
   }
 
   async remove(orgId: string, id: number): Promise<{ deleted: true }> {

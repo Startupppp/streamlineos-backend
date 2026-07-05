@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { salaryLoans } from "../../db/schema";
+import { salaryLoans, auditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
@@ -47,16 +47,30 @@ export class LoansService {
     });
     if (!existing) return { ok: false };
 
-    await this.db
-      .update(salaryLoans)
-      .set({
-        ...(body.status && { status: body.status }),
-        ...(body.status === "APPROVED" && { approvedBy: userId, approvedAt: new Date() }),
-        ...(body.status === "ACTIVE" && { disbursedAt: new Date() }),
-        ...(body.paidEmis !== undefined && { paidEmis: body.paidEmis }),
-        updatedAt: new Date(),
-      })
-      .where(eq(salaryLoans.id, loanId));
+    const patch = {
+      ...(body.status && { status: body.status }),
+      ...(body.status === "APPROVED" && { approvedBy: userId, approvedAt: new Date() }),
+      ...(body.status === "ACTIVE" && { disbursedAt: new Date() }),
+      ...(body.paidEmis !== undefined && { paidEmis: body.paidEmis }),
+      updatedAt: new Date(),
+    };
+
+    if (body.status && body.status !== existing.status) {
+      await this.db.transaction(async (tx) => {
+        await tx.update(salaryLoans).set(patch).where(eq(salaryLoans.id, loanId));
+        await tx.insert(auditLogs).values({
+          action: "loan.status_changed",
+          userId,
+          orgId,
+          actorUserId: userId,
+          resourceType: "salary_loan",
+          resourceId: loanId.toString(),
+          metadata: { fromStatus: existing.status, toStatus: body.status },
+        });
+      });
+    } else {
+      await this.db.update(salaryLoans).set(patch).where(eq(salaryLoans.id, loanId));
+    }
 
     return { ok: true };
   }

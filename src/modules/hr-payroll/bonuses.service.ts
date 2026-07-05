@@ -23,6 +23,7 @@ export class BonusesService {
         amount: bonuses.amount,
         reason: bonuses.reason,
         month: bonuses.month,
+        taxable: bonuses.taxable,
         status: bonuses.status,
         approvedBy: bonuses.approvedBy,
         approvedAt: bonuses.approvedAt,
@@ -50,7 +51,8 @@ export class BonusesService {
         type: body.type,
         amount: body.amount.toString(),
         reason: body.reason ?? null,
-        month: body.month ?? null,
+        month: body.month,
+        taxable: body.taxable ?? true,
         status: "PENDING",
       })
       .returning();

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, count } from "drizzle-orm";
+import { and, eq, count, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollExceptions, payrollRuns, payrollRunEvents } from "../../../db/schema";
@@ -78,10 +78,22 @@ export class ExceptionsService {
     if (!ex[0]) return { ok: false, reason: "exception_not_found" };
     if (ex[0].status !== "OPEN") return { ok: false, reason: "already_resolved" };
 
-    await this.db
-      .update(payrollExceptions)
-      .set({ status: "RESOLVED", resolvedBy: actorId, resolvedAt: new Date() })
-      .where(eq(payrollExceptions.id, exceptionId));
+    if (body.note) {
+      await this.db
+        .update(payrollExceptions)
+        .set({
+          status: "RESOLVED",
+          resolvedBy: actorId,
+          resolvedAt: new Date(),
+          metadata: sql<Record<string, unknown>>`COALESCE(${payrollExceptions.metadata}, '{}')::jsonb || jsonb_build_object('resolveNote', ${body.note}::text)`,
+        })
+        .where(eq(payrollExceptions.id, exceptionId));
+    } else {
+      await this.db
+        .update(payrollExceptions)
+        .set({ status: "RESOLVED", resolvedBy: actorId, resolvedAt: new Date() })
+        .where(eq(payrollExceptions.id, exceptionId));
+    }
 
     return { ok: true };
   }

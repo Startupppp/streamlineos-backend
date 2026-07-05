@@ -1,11 +1,12 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollInputs, payrollRuns, payrollRunEvents } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import { pullAttendanceInputs } from "./lib/input-puller";
 
 @Injectable()
 export class InputsService {
@@ -83,6 +84,7 @@ export class InputsService {
     if (body.paidDays !== undefined) updateData.paidDays = body.paidDays;
     if (body.lopDays !== undefined) updateData.lopDays = body.lopDays;
     if (body.overtimeHours !== undefined) updateData.overtimeHours = body.overtimeHours;
+    if (body.billableHours !== undefined) updateData.billableHours = body.billableHours;
 
     await this.db.update(payrollInputs).set(updateData).where(eq(payrollInputs.id, inputId));
 
@@ -112,13 +114,75 @@ export class InputsService {
     if (!runCheck[0]) return { ok: false, reason: "not_found" };
     if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) return { ok: false, reason: "locked" };
 
-    const conditions = [eq(payrollInputs.runId, runId), eq(payrollInputs.orgId, orgId), eq(payrollInputs.isOverride, false)];
+    const month = runCheck[0].month;
+
+    const conditions = [
+      eq(payrollInputs.runId, runId),
+      eq(payrollInputs.orgId, orgId),
+      eq(payrollInputs.isOverride, false),
+    ];
     if (targetUserId) conditions.push(eq(payrollInputs.userId, targetUserId));
 
     const toReset = await this.db
-      .select({ id: payrollInputs.id })
+      .select({ id: payrollInputs.id, userId: payrollInputs.userId })
       .from(payrollInputs)
       .where(and(...conditions));
+
+    if (toReset.length === 0) return { ok: true, count: 0 };
+
+    const idsToDelete = toReset.map(r => r.id);
+
+    await this.db.transaction(async (tx) => {
+      await tx.delete(payrollInputs).where(inArray(payrollInputs.id, idsToDelete));
+
+      for (const row of toReset) {
+        const pulled = await pullAttendanceInputs(this.db, orgId, row.userId, month);
+        if (!pulled) continue;
+
+        await tx
+          .insert(payrollInputs)
+          .values({
+            orgId,
+            runId,
+            userId: row.userId,
+            source: pulled.source,
+            scheduledDays: pulled.scheduledDays,
+            paidDays: pulled.paidDays,
+            lopDays: pulled.lopDays,
+            halfDays: pulled.halfDays,
+            overtimeHours: pulled.overtimeHours,
+            shiftAllowanceUnits: pulled.shiftAllowanceUnits,
+            holidayWorkDays: pulled.holidayWorkDays,
+            billableHours: pulled.billableHours,
+            isOverride: false,
+          })
+          .onConflictDoUpdate({
+            target: [payrollInputs.runId, payrollInputs.userId],
+            set: {
+              source: pulled.source,
+              scheduledDays: pulled.scheduledDays,
+              paidDays: pulled.paidDays,
+              lopDays: pulled.lopDays,
+              halfDays: pulled.halfDays,
+              overtimeHours: pulled.overtimeHours,
+              shiftAllowanceUnits: pulled.shiftAllowanceUnits,
+              holidayWorkDays: pulled.holidayWorkDays,
+              billableHours: pulled.billableHours,
+              isOverride: false,
+              overrideReason: null,
+              overriddenBy: null,
+            },
+          });
+      }
+
+      await tx.insert(payrollRunEvents).values({
+        orgId,
+        runId,
+        type: "INPUT_OVERRIDDEN",
+        actorId,
+        metadata: { reimport: true, count: toReset.length },
+      });
+    });
 
     return { ok: true, count: toReset.length };
   }

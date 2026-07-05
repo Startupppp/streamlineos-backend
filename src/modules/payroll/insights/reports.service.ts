@@ -73,6 +73,11 @@ export interface VarianceEmployeeRow {
   netDelta: string;
 }
 
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
+}
+
 function isLocked(status: string): boolean {
   return (PAYROLL_LOCKED_STATUSES as readonly string[]).includes(status);
 }
@@ -87,6 +92,12 @@ function prevMonth(month: string): string {
 
 function deltaDec(a: string, b: string): string {
   return (parseFloat(b) - parseFloat(a)).toFixed(2);
+}
+
+function applyPage<T>(rows: T[], pagination: PaginationParams): T[] {
+  const limit = Math.min(pagination.limit ?? 100, 100);
+  const offset = pagination.offset ?? 0;
+  return rows.slice(offset, offset + limit);
 }
 
 function pivotByEmployee(
@@ -144,7 +155,7 @@ export class ReportsService {
     };
   }
 
-  async getRegister(orgId: string, month: string, filters: LineItemFilters) {
+  async getRegister(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
@@ -172,12 +183,13 @@ export class ReportsService {
       row.components[lineItem.code] = (parseFloat(existing) + parseFloat(lineItem.amount)).toFixed(2);
     }
 
-    const rows = [...empMap.values()];
-    const columns = [...new Set(rows.flatMap((r) => Object.keys(r.components)))].sort();
+    const allRows = [...empMap.values()];
+    const columns = [...new Set(allRows.flatMap((r) => Object.keys(r.components)))].sort();
+    const rows = applyPage(allRows, pagination);
     return { provisional, columns, rows };
   }
 
-  async getDepartmentCost(orgId: string, month: string, filters: LineItemFilters) {
+  async getDepartmentCost(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as DeptCostRow[] };
@@ -233,10 +245,10 @@ export class ReportsService {
       }
     }
 
-    return { provisional, rows: [...grouped.values()] };
+    return { provisional, rows: applyPage([...grouped.values()], pagination) };
   }
 
-  async getCostCenter(orgId: string, month: string, filters: LineItemFilters) {
+  async getCostCenter(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as CostCenterRow[] };
@@ -266,7 +278,7 @@ export class ReportsService {
         .select({ id: employeeSalaryProfiles.id, costCenter: employeeSalaryProfiles.costCenter })
         .from(employeeSalaryProfiles)
         .where(inArray(employeeSalaryProfiles.id, profileIds));
-      for (const p of profiles) ccMap.set(p.id, p.costCenter);
+      for (const p of profiles) ccMap.set(p.id, p.costCenter ?? null);
     }
 
     const grouped = new Map<string | null, CostCenterRow>();
@@ -284,94 +296,115 @@ export class ReportsService {
       }
     }
 
-    return { provisional, rows: [...grouped.values()] };
+    return { provisional, rows: applyPage([...grouped.values()], pagination) };
   }
 
-  async getEarnings(orgId: string, month: string, filters: LineItemFilters) {
+  async getEarnings(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
     const items = await getLineItemsForRun(this.db, run.id, filters);
-    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
-    return { provisional, columns, rows };
+    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
+    return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
 
-  async getDeductions(orgId: string, month: string, filters: LineItemFilters) {
+  async getDeductions(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
     const items = await getLineItemsForRun(this.db, run.id, filters);
-    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
-    return { provisional, columns, rows };
+    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
+    return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
 
-  async getReimbursements(orgId: string, month: string, filters: LineItemFilters) {
+  async getReimbursements(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
     const items = await getLineItemsForRun(this.db, run.id, filters);
-    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
-    return { provisional, columns, rows };
+    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
+    return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
 
-  async getTax(orgId: string, month: string, filters: LineItemFilters) {
+  async getTax(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
     const items = await getLineItemsForRun(this.db, run.id, filters);
-    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");
-    return { provisional, columns, rows };
+    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");
+    return { provisional, columns, rows: applyPage(allRows, pagination) };
   }
 
-  async getBankPayout(orgId: string, month: string) {
+  async getBankPayout(orgId: string, month: string, pagination: PaginationParams = {}) {
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, batches: [] as BankBatchResult[] };
 
-    const batches = await this.db
-      .select()
+    const joined = await this.db
+      .select({
+        batchId: payrollBankBatches.id,
+        batchNumber: payrollBankBatches.batchNumber,
+        batchFormat: payrollBankBatches.format,
+        totalAmount: payrollBankBatches.totalAmount,
+        itemCount: payrollBankBatches.itemCount,
+        batchStatus: payrollBankBatches.status,
+        generatedAt: payrollBankBatches.generatedAt,
+        itemAmount: payrollBankBatchItems.amount,
+        accountMasked: payrollBankBatchItems.accountMasked,
+        ifsc: payrollBankBatchItems.ifsc,
+        itemStatus: payrollBankBatchItems.status,
+        userName: users.name,
+      })
       .from(payrollBankBatches)
+      .leftJoin(payrollBankBatchItems, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
+      .leftJoin(users, eq(payrollBankBatchItems.userId, users.id))
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, run.id)));
 
-    const results: BankBatchResult[] = [];
-    for (const batch of batches) {
-      const batchItems = await this.db
-        .select({
-          amount: payrollBankBatchItems.amount,
-          accountMasked: payrollBankBatchItems.accountMasked,
-          ifsc: payrollBankBatchItems.ifsc,
-          status: payrollBankBatchItems.status,
-          userName: users.name,
-        })
-        .from(payrollBankBatchItems)
-        .innerJoin(users, eq(payrollBankBatchItems.userId, users.id))
-        .where(eq(payrollBankBatchItems.batchId, batch.id));
+    const batchMap = new Map<
+      number,
+      {
+        batchNumber: string;
+        format: string;
+        totalAmount: string;
+        itemCount: number;
+        status: string;
+        generatedAt: Date;
+        items: BankItem[];
+      }
+    >();
 
-      results.push({
-        batchNumber: batch.batchNumber,
-        format: batch.format,
-        totalAmount: batch.totalAmount,
-        itemCount: batch.itemCount,
-        status: batch.status,
-        generatedAt: batch.generatedAt,
-        items: batchItems.map((item) => ({
-          userName: item.userName,
-          accountMasked: item.accountMasked,
-          ifsc: item.ifsc,
-          amount: item.amount,
-          status: item.status,
-        })),
-      });
+    for (const row of joined) {
+      if (!batchMap.has(row.batchId)) {
+        batchMap.set(row.batchId, {
+          batchNumber: row.batchNumber,
+          format: row.batchFormat,
+          totalAmount: row.totalAmount,
+          itemCount: row.itemCount,
+          status: row.batchStatus,
+          generatedAt: row.generatedAt,
+          items: [],
+        });
+      }
+      if (row.itemAmount !== null && row.accountMasked !== null && row.itemStatus !== null) {
+        batchMap.get(row.batchId)!.items.push({
+          userName: row.userName,
+          accountMasked: row.accountMasked,
+          ifsc: row.ifsc ?? null,
+          amount: row.itemAmount,
+          status: row.itemStatus,
+        });
+      }
     }
 
-    return { provisional, batches: results };
+    const allBatches = [...batchMap.values()];
+    return { provisional, batches: applyPage(allBatches, pagination) };
   }
 
-  async getVariance(orgId: string, month: string) {
+  async getVariance(orgId: string, month: string, pagination: PaginationParams = {}) {
     const currentRun = await findRunForMonth(this.db, orgId, month);
     const prevMonthStr = prevMonth(month);
     const previousRun = await findRunForMonth(this.db, orgId, prevMonthStr);
@@ -416,7 +449,7 @@ export class ReportsService {
       for (const e of prevEmps) prevMap.set(e.userId, { gross: e.gross, net: e.net });
     }
 
-    const perEmployee: VarianceEmployeeRow[] = currEmps.map((e) => {
+    const allPerEmployee: VarianceEmployeeRow[] = currEmps.map((e) => {
       const prev = prevMap.get(e.userId) ?? { gross: "0.00", net: "0.00" };
       return {
         userId: e.userId,
@@ -430,6 +463,6 @@ export class ReportsService {
       };
     });
 
-    return { provisional, current, previous, delta, perEmployee };
+    return { provisional, current, previous, delta, perEmployee: applyPage(allPerEmployee, pagination) };
   }
 }

@@ -11,6 +11,7 @@ export interface PreviewLine {
   includeInCtc: boolean;
   isStatutory: boolean;
   sortOrder: number;
+  explain: string;
 }
 
 export interface TemplatePreviewResult {
@@ -40,6 +41,25 @@ function safeEvalFormula(formula: string, scope: FormulaScope): number {
 
 function toDecimalString(paise: number): MoneyString {
   return (Math.round(paise * 100) / 100).toFixed(2);
+}
+
+function buildExplain(comp: TemplateComponentDef): string {
+  switch (comp.calcMethod) {
+    case "FIXED":
+      return comp.amount ? `Fixed ${comp.amount}/month` : "Fixed amount";
+    case "PERCENT_OF_BASIC":
+      return comp.percent ? `${comp.percent}% of Basic` : "% of Basic";
+    case "PERCENT_OF_GROSS":
+      return comp.percent ? `${comp.percent}% of Gross` : "% of Gross";
+    case "FORMULA":
+      return comp.formula ?? "Custom formula";
+    case "ATTENDANCE_BASED":
+      return "Attendance-linked";
+    case "TIMESHEET_BASED":
+      return "Timesheet-linked";
+    case "MANUAL":
+      return "Manually entered";
+  }
 }
 
 export function computeTemplatePreview(
@@ -122,6 +142,7 @@ export function computeTemplatePreview(
       includeInCtc: comp.includeInCtc,
       isStatutory: comp.isStatutory,
       sortOrder: comp.sortOrder,
+      explain: buildExplain(comp),
     });
   }
 

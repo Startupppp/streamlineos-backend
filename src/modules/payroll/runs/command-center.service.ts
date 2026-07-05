@@ -47,6 +47,8 @@ export class CommandCenterService {
       ? await this.db
           .select({
             id: payrollExceptions.id,
+            runEmployeeId: payrollExceptions.runEmployeeId,
+            userId: payrollExceptions.userId,
             code: payrollExceptions.code,
             severity: payrollExceptions.severity,
             message: payrollExceptions.message,
