@@ -394,4 +394,3 @@ export const aiUsageLogs = pgTable("ai_usage_logs", {
   index("idx_ai_usage_org_created").on(table.orgId, table.createdAt),
   index("idx_ai_usage_user").on(table.userId),
 ]);
-

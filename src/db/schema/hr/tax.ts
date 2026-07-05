@@ -13,6 +13,8 @@ export const taxDeclarations = pgTable("tax_declarations", {
   section80d: decimal("section_80d", { precision: 15, scale: 2 }).default("0").notNull(),
   section80g: decimal("section_80g", { precision: 15, scale: 2 }).default("0").notNull(),
   homeLoanInterest: decimal("home_loan_interest", { precision: 15, scale: 2 }).default("0").notNull(),
+  previousEmploymentIncome: decimal("previous_employment_income", { precision: 15, scale: 2 }).default("0").notNull(),
+  previousEmployerTds: decimal("previous_employer_tds", { precision: 15, scale: 2 }).default("0").notNull(),
   status: text("status").default("DRAFT").notNull(),
   verifiedBy: text("verified_by").references(() => users.id),
   verifiedAt: timestamp("verified_at"),

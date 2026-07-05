@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../enums";
 import { organizations, users } from "../auth";
 
@@ -82,6 +82,8 @@ export const payrollAccountingMappings = pgTable("payroll_accounting_mappings", 
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_payroll_accounting_mappings_org").on(table.orgId),
+  uniqueIndex("uq_payroll_accounting_mappings_org_component").on(table.orgId, table.componentId).where(sql`${table.componentId} IS NOT NULL`),
+  uniqueIndex("uq_payroll_accounting_mappings_org_category").on(table.orgId, table.category).where(sql`${table.componentId} IS NULL`),
 ]);
 
 export const payrollPoliciesRelations = relations(payrollPolicies, ({ one, many }) => ({
