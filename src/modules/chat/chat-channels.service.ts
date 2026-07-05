@@ -5,6 +5,7 @@ import {
   chatChannels,
   chatChannelMembers,
   chatMessages,
+  subscriptions,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -248,6 +249,31 @@ export class ChatChannelsService {
     const allMembers = [...new Set([userId, ...memberIds])];
     const channelType = body.type;
     const isPrivate = channelType === "PRIVATE";
+
+    if (!entityType) {
+      const subscription = await this.db.query.subscriptions.findFirst({
+        where: eq(subscriptions.orgId, orgId),
+        columns: { status: true },
+      });
+      const isPaid = subscription?.status === "ACTIVE";
+      if (!isPaid) {
+        const [{ value: channelCount }] = await this.db
+          .select({ value: count() })
+          .from(chatChannels)
+          .where(
+            and(
+              eq(chatChannels.orgId, orgId),
+              inArray(chatChannels.type, ["GROUP", "PUBLIC", "PRIVATE"]),
+              isNull(chatChannels.entityType),
+            ),
+          );
+        if (channelCount >= 1) {
+          throw new ForbiddenException(
+            "Free plan is limited to 1 channel. Upgrade to create more.",
+          );
+        }
+      }
+    }
 
     const channel = await this.db.transaction(async (tx) => {
       const [created] = await tx

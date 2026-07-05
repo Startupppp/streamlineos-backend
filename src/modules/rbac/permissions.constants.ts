@@ -2299,6 +2299,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "hr:leaves:create",
   "hr:expenses:create",
   "chat:channels:read",
+  "chat:channels:write",
   "chat:messages:read",
   "chat:messages:write",
   "ai:chat:use",
@@ -2320,6 +2321,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   OWNER: ALL_PERMISSIONS,
 
   CEO: ALL_PERMISSIONS,
+
+  ADMIN: ALL_PERMISSIONS,
 
   HR: [
     ...EMPLOYEE_SELF_SERVICE,
