@@ -2119,6 +2119,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
 
   CEO: ALL_PERMISSIONS,
 
+  ADMIN: ALL_PERMISSIONS,
+
   HR: [
     ...EMPLOYEE_SELF_SERVICE,
     "tasks:read",

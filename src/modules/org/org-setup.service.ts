@@ -5,6 +5,7 @@ import {
   organizationMembers,
   subscriptions,
   roles,
+  rolePermissionGrants,
   users,
   magicLinkTokens,
 } from "../../db/schema";
@@ -19,6 +20,8 @@ import { addDays, addMinutes } from "date-fns";
 import { type SetupInput } from "./dto/org.schemas";
 import { OnboardingSessionService, type SessionPatch } from "../onboarding-flow/onboarding-session.service";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
+import { PERMISSIONS } from "../rbac/permissions.constants";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 
 const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
 
@@ -104,12 +107,26 @@ export class OrgSetupService {
         currentPeriodStart: new Date(),
         currentPeriodEnd: addDays(new Date(), 14),
       });
-      await tx.insert(roles).values({
-        name: "Administrator",
-        slug: "ADMIN",
-        isSystem: false,
-        orgId,
-      });
+      const [adminRole] = await tx
+        .insert(roles)
+        .values({
+          name: "Administrator",
+          slug: "ADMIN",
+          isSystem: false,
+          orgId,
+        })
+        .returning();
+
+      await tx.insert(rolePermissionGrants).values(
+        PERMISSIONS.map((permission) => ({
+          orgId,
+          roleId: adminRole.id,
+          permissionKey: permission.name,
+          scope: "all" as const,
+        })),
+      );
+
+      await bumpPermissionsVersion(tx, orgId);
     });
 
     this.audit.log({
