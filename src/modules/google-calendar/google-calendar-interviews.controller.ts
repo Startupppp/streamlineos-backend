@@ -6,10 +6,11 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { GoogleCalendarService } from "./google-calendar.service";
 import { syncInterviewSchema, type SyncInterviewInput } from "./dto/google-calendar.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 
 @RequireModule("calendar")
 @Controller("hr/integrations/google-calendar")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class GoogleCalendarInterviewsController {
   constructor(private readonly googleCalendar: GoogleCalendarService) {}
 

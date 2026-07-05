@@ -23,3 +23,4 @@ export * from "./feature-flags";
 export * from "./billing";
 export * from "./workflow";
 export * from "./payroll";
+export * from "./integrations";
