@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, lt, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, or, count, lt, sql, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -17,6 +17,7 @@ import { applyScope } from "../../access/apply-scope";
 import { buildRunChecklist } from "./lib/checklist";
 import type { ListRunsQuery, ListRunEmployeesQuery } from "./dto/runs.schemas";
 import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, VarianceSummary } from "../payroll.types";
+import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
 
 @Injectable()
@@ -257,7 +258,11 @@ export class RunsService {
     const prevRun = await this.db
       .select({ id: payrollRuns.id, month: payrollRuns.month, grossTotal: payrollRuns.grossTotal, netTotal: payrollRuns.netTotal })
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), sql`${payrollRuns.month} < ${run[0].month}`))
+      .where(and(
+        eq(payrollRuns.orgId, orgId),
+        sql`${payrollRuns.month} < ${run[0].month}`,
+        inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
+      ))
       .orderBy(desc(payrollRuns.month))
       .limit(1);
 
@@ -289,7 +294,11 @@ export class RunsService {
     const [prevRun] = await this.db
       .select({ id: payrollRuns.id, month: payrollRuns.month, netTotal: payrollRuns.netTotal })
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), lt(payrollRuns.month, currentMonth)))
+      .where(and(
+        eq(payrollRuns.orgId, orgId),
+        lt(payrollRuns.month, currentMonth),
+        inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
+      ))
       .orderBy(desc(payrollRuns.month))
       .limit(1);
 

@@ -22,8 +22,11 @@ export async function buildRunChecklist(
 ): Promise<PayrollChecklistItem[]> {
   const runId = run.id;
   const month = run.month;
-  const currentYear = new Date().getFullYear();
-  const financialYear = `${currentYear}-${currentYear + 1}`;
+  const [yearStr, monthStr] = month.split("-");
+  const runYear = parseInt(yearStr, 10);
+  const runMonth = parseInt(monthStr, 10);
+  const fyStartYear = runMonth >= 4 ? runYear : runYear - 1;
+  const financialYear = `${fyStartYear}-${fyStartYear + 1}`;
 
   const [
     missingProfileExceptions,

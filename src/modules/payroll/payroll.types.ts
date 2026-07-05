@@ -304,7 +304,7 @@ export const PAYROLL_RUN_TRANSITIONS: Record<PayrollRunStatus, readonly PayrollR
   DRAFT: ["PREVIEW_READY", "EXCEPTIONS_FOUND"],
   PREVIEW_READY: ["PENDING_APPROVAL", "DRAFT", "EXCEPTIONS_FOUND"],
   EXCEPTIONS_FOUND: ["PREVIEW_READY", "DRAFT", "PENDING_APPROVAL"],
-  PENDING_APPROVAL: ["APPROVED", "PREVIEW_READY"],
+  PENDING_APPROVAL: ["APPROVED", "LOCKED", "PREVIEW_READY"],
   APPROVED: ["LOCKED"],
   LOCKED: ["PAID", "REOPENED"],
   PAID: ["PAYSLIPS_PUBLISHED"],
@@ -318,6 +318,7 @@ export function canTransitionRun(from: PayrollRunStatus, to: PayrollRunStatus): 
 }
 
 export const PAYROLL_LOCKED_STATUSES: readonly PayrollRunStatus[] = [
+  "APPROVED",
   "LOCKED",
   "PAID",
   "PAYSLIPS_PUBLISHED",
