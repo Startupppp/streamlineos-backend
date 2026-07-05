@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { setDefaultResultOrder } from "node:dns";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
@@ -7,6 +8,8 @@ import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
+
+setDefaultResultOrder("ipv4first");
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();

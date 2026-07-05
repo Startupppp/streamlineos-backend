@@ -9,7 +9,6 @@ import {
   payrollPolicies,
   payrollPolicyVersions,
   payrollExceptions,
-  payrollBankBatches,
 } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";

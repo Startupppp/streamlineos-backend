@@ -25,7 +25,6 @@ export interface ExceptionInput {
   isExitInMonth: boolean;
   missingFxRate: boolean;
   isSalaryOnHold?: boolean;
-  bankAccountHash?: string | null;
   duplicateBankAccountUserIds?: string[];
 }
 

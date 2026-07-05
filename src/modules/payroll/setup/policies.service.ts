@@ -38,7 +38,7 @@ import type {
 } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import { getStatutoryPack } from "../runs/lib/statutory-packs";
-import { addDays, format, parse } from "date-fns";
+import { addDays, format } from "date-fns";
 
 const RISKY_TOGGLES = new Set<PayrollToggleKey>([
   "pf",

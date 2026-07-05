@@ -13,3 +13,4 @@ export * from "./activity";
 export * from "./qa";
 export * from "./bugs";
 export * from "./change-requests";
+export * from "./approvals";

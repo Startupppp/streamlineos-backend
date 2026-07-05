@@ -36,8 +36,9 @@ export class ClientPortalService {
         name: projects.name,
         key: projects.key,
         status: projects.status,
+        color: projects.color,
         startDate: projects.startDate,
-        endDate: projects.endDate,
+        targetEndDate: projects.endDate,
       })
       .from(projects)
       .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId)));
@@ -50,8 +51,9 @@ export class ClientPortalService {
         name: projects.name,
         key: projects.key,
         status: projects.status,
+        color: projects.color,
         startDate: projects.startDate,
-        endDate: projects.endDate,
+        targetEndDate: projects.endDate,
       })
       .from(projects)
       .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId)))

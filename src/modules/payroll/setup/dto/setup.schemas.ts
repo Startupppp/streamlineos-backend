@@ -94,9 +94,6 @@ export const activatePolicySchema = z.object({
 });
 export type ActivatePolicyInput = z.infer<typeof activatePolicySchema>;
 
-export type ActivateCalendarInput = z.infer<typeof calendarSchema>;
-export type ActivateStatutoryInput = z.infer<typeof statutorySchema>;
-
 export const createPolicyVersionSchema = z.object({
   toggleOverrides: toggleOverridesSchema,
   config: z.record(z.string(), z.unknown()).optional(),
