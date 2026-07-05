@@ -2096,6 +2096,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "hr:leaves:create",
   "hr:expenses:create",
   "chat:channels:read",
+  "chat:channels:write",
   "chat:messages:read",
   "chat:messages:write",
   "ai:chat:use",
