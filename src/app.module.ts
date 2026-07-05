@@ -43,6 +43,7 @@ import { BranchesModule } from "./modules/branches/branches.module";
 import { ProjectsExecutionModule } from "./modules/projects-execution/projects-execution.module";
 import { ProjectsQaModule } from "./modules/projects-qa/projects-qa.module";
 import { ProjectsClientPortalModule } from "./modules/projects-client-portal/projects-client-portal.module";
+import { ProjectsApprovalsModule } from "./modules/projects-approvals/projects-approvals.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
 import { KbModule } from "./modules/kb/kb.module";
@@ -153,6 +154,7 @@ import { MeService } from "./me/me.service";
     ProjectsExecutionModule,
     ProjectsQaModule,
     ProjectsClientPortalModule,
+    ProjectsApprovalsModule,
     ProjectsModule,
     SupportModule,
     KbModule,

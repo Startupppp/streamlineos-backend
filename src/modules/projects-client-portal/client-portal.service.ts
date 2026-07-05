@@ -36,7 +36,6 @@ export class ClientPortalService {
         name: projects.name,
         key: projects.key,
         status: projects.status,
-        color: projects.color,
         startDate: projects.startDate,
         targetEndDate: projects.endDate,
       })
@@ -51,7 +50,6 @@ export class ClientPortalService {
         name: projects.name,
         key: projects.key,
         status: projects.status,
-        color: projects.color,
         startDate: projects.startDate,
         targetEndDate: projects.endDate,
       })

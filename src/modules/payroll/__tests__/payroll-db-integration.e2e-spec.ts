@@ -290,7 +290,7 @@ d('Payroll DB Integration', () => {
 
       expect(first.replayed).toBe(false);
       expect(second.replayed).toBe(true);
-      expect(second.batch.id).toBe(first.batch.id);
+      expect(second.batches[0]?.batch.id).toBe(first.batches[0]?.batch.id);
 
       const [countRow] = await db
         .select({ n: count() })

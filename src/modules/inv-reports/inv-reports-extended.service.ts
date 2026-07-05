@@ -1,12 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   invStockLevels,
-  invStockTransactions,
   invProducts,
   invProductVariants,
-  invPurchaseOrders,
-  invSalesOrders,
   invShipments,
   invLots,
   invReorderRules,
@@ -15,7 +12,6 @@ import {
   invQualityInspections,
   invStockReservations,
   invLocations,
-  invCategories,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";

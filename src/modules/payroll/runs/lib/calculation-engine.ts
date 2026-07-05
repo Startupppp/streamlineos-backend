@@ -675,7 +675,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         sortOrder: SORT_BASE_TAX,
         explain: {
           method: tdsMode === "FLAT" || workerType === "CONTRACTOR" || workerType === "CONSULTANT" ? "PERCENT_OF_GROSS" : "FORMULA",
-          inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100, regime: taxRegime ?? "NEW" },
+          inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100 },
           steps: [
             tdsMode === "DECLARATION"
               ? `TDS (${taxRegime ?? "NEW"} regime) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`

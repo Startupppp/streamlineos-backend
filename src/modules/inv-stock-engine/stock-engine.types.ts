@@ -15,8 +15,6 @@ export const INV_ERRORS = {
   CHANNEL_SYNC_FAILED: "CHANNEL_SYNC_FAILED",
 } as const;
 
-export type InvErrorCode = (typeof INV_ERRORS)[keyof typeof INV_ERRORS];
-
 export type QualityBucket = "ON_HAND" | "BLOCKED" | "QUALITY_HOLD";
 
 export interface StockMovement {

@@ -83,10 +83,7 @@ export const CACHE_KEYS = {
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
 
   invReservationsList: (orgId: string, hash: string) => `inv:reservations:list:${orgId}:${hash}`,
-  invLotsList: (orgId: string, hash: string) => `inv:lots:list:${orgId}:${hash}`,
   invLotDetail: (orgId: string, id: number) => `inv:lots:detail:${orgId}:${id}`,
-  invSerialsList: (orgId: string, hash: string) => `inv:serials:list:${orgId}:${hash}`,
-  invSerialDetail: (orgId: string, id: number) => `inv:serials:detail:${orgId}:${id}`,
   invValuationReport: (orgId: string, hash: string) => `inv:valuation:report:${orgId}:${hash}`,
   invSlowMovingReport: (orgId: string, hash: string) => `inv:slow-moving:${orgId}:${hash}`,
   invExpiryReport: (orgId: string, hash: string) => `inv:expiry:report:${orgId}:${hash}`,
@@ -115,7 +112,6 @@ export const CACHE_KEYS = {
   invTraceabilitySerial: (orgId: string, serialId: number) => `inv:trace:serial:${orgId}:${serialId}`,
   invStockLevelPattern: (orgId: string) => `inv:stock:levels:${orgId}:*`,
   invDashboardPattern: (orgId: string) => `inv:dashboard:${orgId}`,
-  invReportsPattern: (orgId: string) => `inv:*:report:${orgId}:*`,
 
   featureFlags: () => "feature-flags:all",
 

@@ -346,7 +346,7 @@ describe("payroll-setup — seedPayrollTemplates idempotency (unit)", () => {
     const mockDb = {
       query: {
         payrollTemplates: {
-          findFirst: jest.fn(({ where: _where }: { where: unknown }) => {
+          findFirst: jest.fn(({ where: _where }: { where: unknown }): Promise<{ id: number } | null> => {
             return Promise.resolve(null);
           }),
         },
