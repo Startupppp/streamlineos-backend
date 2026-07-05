@@ -1,5 +1,3 @@
-import { describe, it, expect } from "@jest/globals";
-
 const LOCKED_STATUSES = ["LOCKED", "APPROVED", "PAID", "PAYSLIPS_PUBLISHED"] as const;
 type LockedStatus = (typeof LOCKED_STATUSES)[number];
 
