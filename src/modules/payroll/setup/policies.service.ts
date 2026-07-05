@@ -318,6 +318,22 @@ export class PayrollPoliciesService {
     if (input.payDay !== undefined) values.payDay = input.payDay;
     if (input.startMonth !== undefined) values.startMonth = input.startMonth;
 
+    if (input.fxRates !== undefined && policy.activeVersionId) {
+      const activeVersion = await this.db.query.payrollPolicyVersions.findFirst({
+        where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+        columns: { config: true },
+      });
+      const currentConfig = (activeVersion?.config as unknown as PayrollPolicyConfig | null) ?? ({} as PayrollPolicyConfig);
+      const fxRates = Object.fromEntries(
+        Object.entries(input.fxRates).map(([code, rate]) => [code, String(rate)]),
+      );
+      const nextConfig = { ...currentConfig, fxRates };
+      await this.db
+        .update(payrollPolicyVersions)
+        .set({ config: nextConfig as unknown as Record<string, unknown> })
+        .where(eq(payrollPolicyVersions.id, policy.activeVersionId));
+    }
+
     if (Object.keys(values).length === 0) return policy;
 
     const [updated] = await this.db

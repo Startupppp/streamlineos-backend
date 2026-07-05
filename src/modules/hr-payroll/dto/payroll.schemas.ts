@@ -120,6 +120,7 @@ export const createReimbursementSchema = z.object({
     .multipleOf(0.01, "Amount must have at most 2 decimal places"),
   description: z.string().max(1000).optional(),
   receiptUrl: z.string().url("Enter a valid URL (e.g. https://example.com)").optional().or(z.literal("")),
+  payrollMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM").optional(),
 });
 export type CreateReimbursementInput = z.infer<typeof createReimbursementSchema>;
 

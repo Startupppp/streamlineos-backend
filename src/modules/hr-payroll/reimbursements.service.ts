@@ -40,6 +40,7 @@ export class ReimbursementsService {
         amount: body.amount.toString(),
         description: body.description,
         receiptUrl: body.receiptUrl || undefined,
+        payrollMonth: body.payrollMonth ?? null,
         status: "PENDING",
       })
       .returning();

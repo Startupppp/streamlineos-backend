@@ -5,12 +5,14 @@ import type { Db } from "../../../db/drizzle.module";
 import { payrollRuns, payrollRunEmployees, payrollRunEvents } from "../../../db/schema";
 import { canTransitionRun } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
+import { GenerateService } from "../runs/generate.service";
 
 @Injectable()
 export class LockingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly generate: GenerateService,
   ) {}
 
   async lock(orgId: string, userId: string, runId: number) {
@@ -55,6 +57,8 @@ export class LockingService {
         type: "LOCKED",
         actorId: userId,
       });
+
+      await this.generate.postPayrollLock(orgId, runId, tx);
     });
 
     this.audit.log({

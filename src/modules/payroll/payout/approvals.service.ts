@@ -29,6 +29,7 @@ import {
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { GenerateService } from "../runs/generate.service";
 
 @Injectable()
 export class ApprovalsService {
@@ -37,6 +38,7 @@ export class ApprovalsService {
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
     private readonly audit: AuditService,
+    private readonly generate: GenerateService,
   ) {}
 
   async submitApproval(orgId: string, userId: string, runId: number) {
@@ -162,7 +164,7 @@ export class ApprovalsService {
     return submitResult;
   }
 
-  async listApprovals(orgId: string, runId: number) {
+  async listApprovals(orgId: string, runId: number, userId: string) {
     const run = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
@@ -171,11 +173,30 @@ export class ApprovalsService {
 
     if (!run[0]) throw new NotFoundException(`Payroll run ${runId} not found`);
 
-    return this.db
+    const rows = await this.db
       .select()
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
       .orderBy(asc(payrollApprovals.stage));
+
+    const nextPendingId = rows.find((r) => r.status === "PENDING")?.id;
+
+    const memberRow = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      columns: { isOwner: true },
+    });
+    const isOrgOwner = memberRow?.isOwner === true;
+    const perms = isOrgOwner ? null : await this.access.resolveUserPermissions(orgId, userId);
+
+    return rows.map((row) => {
+      const isNextStage = row.id === nextPendingId;
+      const hasPermission = isOrgOwner || (perms?.has(row.requiredPermission) ?? false);
+      return {
+        ...row,
+        isCurrentUserApprover: isNextStage && hasPermission,
+        approverName: row.stageName,
+      };
+    });
   }
 
   async approveStage(
@@ -278,6 +299,8 @@ export class ApprovalsService {
             { orgId, runId, type: "APPROVED", actorId: userId },
             { orgId, runId, type: "LOCKED", actorId: userId },
           ]);
+
+          await this.generate.postPayrollLock(orgId, runId, tx);
         } else {
           await tx
             .update(payrollRuns)

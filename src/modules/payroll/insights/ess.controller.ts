@@ -44,7 +44,7 @@ export class EssController {
   @RequirePermission("self:payroll")
   createReimbursement(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: { category: string; amount: number; description: string; receiptUrl?: string },
+    @Body() body: { category: string; amount: number; description: string; receiptUrl?: string; payrollMonth?: string },
   ) {
     return this.essService.createReimbursement(u.orgId, u.userId, body);
   }

@@ -19,6 +19,8 @@ import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSn
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 
+type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 @Injectable()
 export class GenerateService {
   private readonly logger = new Logger(GenerateService.name);
@@ -168,8 +170,16 @@ export class GenerateService {
     return { ok: true };
   }
 
-  async postPayrollLock(orgId: string, runId: number): Promise<void> {
-    const empRows = await this.db
+  async postPayrollLock(orgId: string, runId: number, tx?: PayrollTx): Promise<void> {
+    if (tx) {
+      await this.applyLoanRecovery(orgId, runId, tx);
+      return;
+    }
+    await this.db.transaction((t) => this.applyLoanRecovery(orgId, runId, t));
+  }
+
+  private async applyLoanRecovery(orgId: string, runId: number, tx: PayrollTx): Promise<void> {
+    const empRows = await tx
       .select({ calculationSnapshot: payrollRunEmployees.calculationSnapshot })
       .from(payrollRunEmployees)
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
@@ -185,31 +195,27 @@ export class GenerateService {
 
     if (loanIdSet.size === 0) return;
 
-    const loanIds = [...loanIdSet];
     const now = new Date();
+    for (const loanId of loanIdSet) {
+      const [loan] = await tx
+        .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
+        .from(salaryLoans)
+        .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)))
+        .limit(1);
 
-    await this.db.transaction(async (tx) => {
-      for (const loanId of loanIds) {
-        const [loan] = await tx
-          .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
-          .from(salaryLoans)
-          .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)))
-          .limit(1);
+      if (!loan) continue;
 
-        if (!loan) continue;
+      const newPaidEmis = loan.paidEmis + 1;
+      const isRepaid = loan.totalEmis != null && newPaidEmis >= loan.totalEmis;
 
-        const newPaidEmis = loan.paidEmis + 1;
-        const isRepaid = loan.totalEmis != null && newPaidEmis >= loan.totalEmis;
-
-        const loanUpdate: Partial<typeof salaryLoans.$inferInsert> = { paidEmis: newPaidEmis };
-        if (isRepaid) {
-          loanUpdate.status = "REPAID";
-          loanUpdate.closedAt = now;
-        }
-
-        await tx.update(salaryLoans).set(loanUpdate).where(eq(salaryLoans.id, loanId));
+      const loanUpdate: Partial<typeof salaryLoans.$inferInsert> = { paidEmis: newPaidEmis };
+      if (isRepaid) {
+        loanUpdate.status = "REPAID";
+        loanUpdate.closedAt = now;
       }
-    });
+
+      await tx.update(salaryLoans).set(loanUpdate).where(eq(salaryLoans.id, loanId));
+    }
   }
 
   private async clearPreviouslyConsumedReimbursements(orgId: string, runId: number): Promise<void> {

@@ -43,7 +43,7 @@ export class ApprovalsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.listApprovals(u.orgId, runId);
+    return this.approvals.listApprovals(u.orgId, runId, u.userId);
   }
 
   @Post("approvals/:approvalId/approve")

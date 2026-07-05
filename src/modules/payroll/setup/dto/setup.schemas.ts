@@ -47,6 +47,7 @@ export const updatePolicySchema = z.object({
   payFrequency: z.enum(["MONTHLY", "SEMI_MONTHLY", "BI_WEEKLY", "WEEKLY"]).optional(),
   payDay: z.coerce.number().int().min(1).max(31).optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  fxRates: z.record(z.string().trim().length(3), z.coerce.number().nonnegative()).optional(),
 });
 export type UpdatePolicyInput = z.infer<typeof updatePolicySchema>;
 

@@ -36,5 +36,6 @@ import { CommandCenterService } from "./command-center.service";
     LoanAdjustmentsService,
     CommandCenterService,
   ],
+  exports: [GenerateService],
 })
 export class PayrollRunsModule {}
