@@ -13,15 +13,17 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { InvReportsExtendedService } from "./inv-reports-extended.service";
 
 @Injectable()
 export class InvReportsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly extended: InvReportsExtendedService,
   ) {}
 
-  getDashboard(orgId: string) {
+  async getDashboard(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.invDashboard(orgId),
       async () => {
@@ -70,12 +72,15 @@ export class InvReportsService {
           },
         });
 
+        const extras = await this.extended.getDashboardExtras(orgId);
+
         return {
           stockSummary: stockSummary[0],
           lowStockCount: lowStockRows[0]?.count ?? 0,
           draftPoCount: draftPoRows[0]?.count ?? 0,
           openSoCount: openSoRows[0]?.count ?? 0,
           recentMovements,
+          ...extras,
         };
       },
       CACHE_TTL.SHORT,
@@ -107,28 +112,7 @@ export class InvReportsService {
   getReorderReport(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.invReorderReport(orgId),
-      () =>
-        this.db.query.invStockLevels.findMany({
-          where: and(
-            eq(invStockLevels.orgId, orgId),
-            sql`${invStockLevels.onHand}::numeric <= (
-              SELECT reorder_point::numeric
-              FROM inv_products p
-              JOIN inv_product_variants v ON v.product_id = p.id
-              WHERE v.id = ${invStockLevels.productVariantId}
-            )`,
-          ),
-          with: {
-            productVariant: {
-              with: {
-                product: {
-                  columns: { id: true, name: true, sku: true, reorderPoint: true, minStockLevel: true },
-                },
-              },
-            },
-            location: { with: { warehouse: { columns: { id: true, name: true } } } },
-          },
-        }),
+      () => this.extended.getReorderReportUpgraded(orgId),
       CACHE_TTL.MEDIUM,
     );
   }

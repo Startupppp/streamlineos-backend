@@ -23,5 +23,7 @@ export const createVendorSchema = z.object({
 });
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 
-export const updateVendorSchema = createVendorSchema.partial();
+export const updateVendorSchema = createVendorSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;

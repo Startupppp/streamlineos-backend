@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -7,14 +8,14 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvWarehousesService } from "./inv-warehouses.service";
 import {
-  createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema,
-  type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput,
+  createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema, listWarehouseStockSchema,
+  type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput, type ListWarehouseStockInput,
 } from "./dto/inv-warehouses.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/warehouses")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvWarehousesController {
   constructor(private readonly warehouses: InvWarehousesService) {}
 
@@ -51,6 +52,17 @@ export class InvWarehousesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.updateWarehouse(u.orgId, warehouseId, body);
+  }
+
+  @Get(":warehouseId/stock")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  getStock(
+    @Param("warehouseId", ParseIntPipe) warehouseId: number,
+    @Query(new ZodValidationPipe(listWarehouseStockSchema)) filters: ListWarehouseStockInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.warehouses.getWarehouseStock(u.orgId, warehouseId, filters.page, filters.limit);
   }
 
   @Get(":warehouseId/locations")

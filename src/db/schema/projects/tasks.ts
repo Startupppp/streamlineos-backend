@@ -39,6 +39,7 @@ export const tickets = pgTable("tickets", {
   sequenceId: text("sequence_id"),
   estimate: integer("estimate"),
   completionPercentage: integer("completion_percentage").default(0).notNull(),
+  clientVisible: boolean("client_visible").notNull().default(false),
   isRecurring: boolean("is_recurring").notNull().default(false),
   recurrenceRule: jsonb("recurrence_rule").$type<{
     frequency: "daily" | "weekly" | "monthly";
@@ -76,6 +77,7 @@ export const ticketComments = pgTable("ticket_comments", {
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id).notNull(),
   content: text("content").notNull(),
+  clientVisible: boolean("client_visible").notNull().default(false),
   parentCommentId: integer("parent_comment_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -93,6 +95,7 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  clientVisible: boolean("client_visible").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_ticket_attachments_ticket").on(table.ticketId),

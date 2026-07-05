@@ -105,6 +105,28 @@ export class InvProductsController {
     return this.products.listVariants(u.orgId, filters);
   }
 
+  @Post(":productId/archive")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
+  @HttpCode(HttpStatus.OK)
+  archive(
+    @Param("productId", ParseIntPipe) productId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.archiveProduct(u.orgId, productId, u.userId);
+  }
+
+  @Post(":productId/restore")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:products:update")
+  @HttpCode(HttpStatus.OK)
+  restore(
+    @Param("productId", ParseIntPipe) productId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.products.restoreProduct(u.orgId, productId, u.userId);
+  }
+
   @Get(":productId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")

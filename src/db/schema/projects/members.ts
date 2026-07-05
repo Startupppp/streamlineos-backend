@@ -100,6 +100,7 @@ export const projectMilestones = pgTable("project_milestones", {
   targetDate: date("target_date").notNull(),
   status: text("status").notNull().default("PENDING"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  clientVisible: boolean("client_visible").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

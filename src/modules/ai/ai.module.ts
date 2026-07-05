@@ -14,8 +14,10 @@ import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
+import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
+  imports: [CalendarModule],
   controllers: [CrmAiController, HrAiController, KbRagController, ChatAssistantController],
   providers: [
     LlmService,

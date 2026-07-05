@@ -292,6 +292,7 @@ export class GeneratePipelineService {
     month: string,
     previousSnapshot: CalculationSnapshot | null,
     hasAttendanceInput: boolean,
+    exceptionFlags: { isSalaryOnHold: boolean; duplicateBankAccountUserIds: string[] },
   ): { snapshot: CalculationSnapshot; exceptions: ReturnType<typeof detectExceptions> } {
     let fxRate: string | null = null;
     let missingFxRate = false;
@@ -347,6 +348,8 @@ export class GeneratePipelineService {
       isJoiningInMonth: false,
       isExitInMonth: false,
       missingFxRate,
+      isSalaryOnHold: exceptionFlags.isSalaryOnHold,
+      duplicateBankAccountUserIds: exceptionFlags.duplicateBankAccountUserIds,
     };
 
     const exceptions = detectExceptions(exceptionInput);

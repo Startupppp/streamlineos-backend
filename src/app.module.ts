@@ -41,6 +41,8 @@ import { OrgModule } from "./modules/org/org.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { BranchesModule } from "./modules/branches/branches.module";
 import { ProjectsExecutionModule } from "./modules/projects-execution/projects-execution.module";
+import { ProjectsQaModule } from "./modules/projects-qa/projects-qa.module";
+import { ProjectsClientPortalModule } from "./modules/projects-client-portal/projects-client-portal.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
 import { KbModule } from "./modules/kb/kb.module";
@@ -66,6 +68,19 @@ import { InvVendorsModule } from "./modules/inv-vendors/inv-vendors.module";
 import { InvPurchaseOrdersModule } from "./modules/inv-purchase-orders/inv-purchase-orders.module";
 import { InvSalesOrdersModule } from "./modules/inv-sales-orders/inv-sales-orders.module";
 import { InvReportsModule } from "./modules/inv-reports/inv-reports.module";
+import { InvBarcodeModule } from "./modules/inv-barcode/inv-barcode.module";
+import { InvCountsModule } from "./modules/inv-counts/inv-counts.module";
+import { InvReturnsModule } from "./modules/inv-returns/inv-returns.module";
+import { InvTraceabilityModule } from "./modules/inv-traceability/inv-traceability.module";
+import { InvValuationModule } from "./modules/inv-valuation/inv-valuation.module";
+import { InvReplenishmentModule } from "./modules/inv-replenishment/inv-replenishment.module";
+import { InvAiModule } from "./modules/inv-ai/inv-ai.module";
+import { InvQualityModule } from "./modules/inv-quality/inv-quality.module";
+import { InvShipmentsModule } from "./modules/inv-shipments/inv-shipments.module";
+import { InvChannelsModule } from "./modules/inv-channels/inv-channels.module";
+import { InvImportExportModule } from "./modules/inv-import-export/inv-import-export.module";
+import { InvWebhooksModule } from "./modules/inv-webhooks/inv-webhooks.module";
+import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
 import { EmailModule } from "./modules/email/email.module";
 import { AiModule } from "./modules/ai/ai.module";
 import { StorageModule } from "./modules/storage/storage.module";
@@ -89,6 +104,7 @@ import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/worksp
 import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
+import { TimesheetsCoreModule } from "./modules/timesheets/timesheets-core.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -135,6 +151,8 @@ import { MeService } from "./me/me.service";
     OrganizationModule,
     BranchesModule,
     ProjectsExecutionModule,
+    ProjectsQaModule,
+    ProjectsClientPortalModule,
     ProjectsModule,
     SupportModule,
     KbModule,
@@ -160,6 +178,19 @@ import { MeService } from "./me/me.service";
     InvPurchaseOrdersModule,
     InvSalesOrdersModule,
     InvReportsModule,
+    InvBarcodeModule,
+    InvCountsModule,
+    InvReturnsModule,
+    InvTraceabilityModule,
+    InvValuationModule,
+    InvReplenishmentModule,
+    InvAiModule,
+    InvQualityModule,
+    InvShipmentsModule,
+    InvChannelsModule,
+    InvImportExportModule,
+    InvWebhooksModule,
+    InvSettingsModule,
     EmailModule,
     AiModule,
     StorageModule,
@@ -183,6 +214,7 @@ import { MeService } from "./me/me.service";
     WorkflowsModule,
     PayrollModule,
     TimesheetsModule,
+    TimesheetsCoreModule,
     PaymentsModule,
   ],
   controllers: [HealthController, MeController],

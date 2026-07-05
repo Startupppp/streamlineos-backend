@@ -2181,6 +2181,84 @@ const SURVEYS_PERMISSIONS: Permission[] = [
   },
 ];
 
+const CLIENT_PORTAL_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:portal:view",
+    resource: "projects:portal",
+    action: "view",
+    description: "Access the client portal",
+  },
+  {
+    name: "projects:changerequests:view",
+    resource: "projects:changerequests",
+    action: "view",
+    description: "View change requests",
+  },
+  {
+    name: "projects:changerequests:create",
+    resource: "projects:changerequests",
+    action: "create",
+    description: "Submit new change requests",
+  },
+  {
+    name: "projects:changerequests:manage",
+    resource: "projects:changerequests",
+    action: "manage",
+    description: "Estimate, approve, reject, and progress change requests",
+  },
+  {
+    name: "projects:clientvisibility:manage",
+    resource: "projects:clientvisibility",
+    action: "manage",
+    description: "Toggle client-visibility of project items",
+  },
+];
+
+const QA_BUGS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:qa:view",
+    resource: "projects:qa",
+    action: "view",
+    description: "View QA test suites, cases, and runs",
+  },
+  {
+    name: "projects:qa:manage",
+    resource: "projects:qa",
+    action: "manage",
+    description: "Create, edit, and delete QA test suites, cases, and runs",
+  },
+  {
+    name: "projects:qa:execute",
+    resource: "projects:qa",
+    action: "execute",
+    description: "Record test results in QA test runs",
+  },
+  {
+    name: "projects:bugs:view",
+    resource: "projects:bugs",
+    action: "view",
+    description: "View bugs",
+  },
+  {
+    name: "projects:bugs:create",
+    resource: "projects:bugs",
+    action: "create",
+    description: "Report new bugs",
+  },
+  {
+    name: "projects:bugs:update",
+    resource: "projects:bugs",
+    action: "update",
+    description: "Update bug details and status",
+  },
+  {
+    name: "projects:bugs:delete",
+    resource: "projects:bugs",
+    action: "delete",
+    description: "Delete bugs",
+  },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -2200,6 +2278,8 @@ export const PERMISSIONS: Permission[] = [
   ...ONBOARDING_PERMISSIONS,
   ...PAYMENTS_PERMISSIONS,
   ...SURVEYS_PERMISSIONS,
+  ...QA_BUGS_PERMISSIONS,
+  ...CLIENT_PORTAL_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -2404,12 +2484,19 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:tickets:update",
     "projects:whiteboards:manage",
     "projects:workspace:manage",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
     "timesheets:entries:create",
     "timesheets:entries:update",
     "timesheets:entries:void",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   CUSTOMER_SUPPORT: [
@@ -2450,12 +2537,19 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:tickets:update",
     "projects:whiteboards:manage",
     "projects:workspace:manage",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
     "timesheets:entries:create",
     "timesheets:entries:update",
     "timesheets:entries:void",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   ENGINEERING: [
@@ -2469,6 +2563,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:whiteboards:manage",
     "projects:workspace:manage",
     "projects:sprints:view",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2479,6 +2575,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:roadmap:view",
     "kb:articles:view",
     "kb:spaces:view",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   DESIGN: [
@@ -2491,12 +2592,19 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:tickets:update",
     "projects:whiteboards:manage",
     "projects:workspace:manage",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
     "timesheets:entries:create",
     "timesheets:entries:update",
     "timesheets:entries:void",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   VIDEO_EDITOR: [
@@ -2509,12 +2617,19 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:tickets:update",
     "projects:whiteboards:manage",
     "projects:workspace:manage",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
     "timesheets:entries:create",
     "timesheets:entries:update",
     "timesheets:entries:void",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   DIGITAL_MARKETING: [
@@ -2531,12 +2646,19 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:tickets:update",
     "projects:whiteboards:manage",
     "projects:workspace:manage",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
     "timesheets:entries:create",
     "timesheets:entries:update",
     "timesheets:entries:void",
+    "projects:qa:view",
+    "projects:qa:execute",
+    "projects:bugs:view",
+    "projects:bugs:create",
+    "projects:bugs:update",
   ],
 
   BLOG_EDITOR: [
@@ -2661,6 +2783,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:rates:view",
     "timesheets:rates:manage",
     "timesheets:audit:view",
+    "projects:qa:view",
+    "projects:bugs:view",
   ],
 
   BRANCH_HR: [
@@ -2777,6 +2901,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:rates:view",
     "timesheets:rates:manage",
     "timesheets:audit:view",
+    "projects:qa:view",
+    "projects:bugs:view",
   ],
 
   INVENTORY_MANAGER: [
@@ -2866,6 +2992,12 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "payments:providers:view",
     "payments:webhooks:view",
     "payments:audit:view",
+  ],
+
+  CLIENT_USER: [
+    "projects:portal:view",
+    "projects:changerequests:view",
+    "projects:changerequests:create",
   ],
 };
 

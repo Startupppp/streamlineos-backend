@@ -25,9 +25,11 @@ import {
   createRunSchema,
   listRunsQuerySchema,
   listRunEmployeesQuerySchema,
+  setEmployeeHoldSchema,
   type CreateRunInput,
   type ListRunsQuery,
   type ListRunEmployeesQuery,
+  type SetEmployeeHoldInput,
 } from "./dto/runs.schemas";
 
 @Controller("payroll/runs")
@@ -137,6 +139,26 @@ export class RunsController {
     const result = await this.runsService.getRunEmployee(u.orgId, runId, runEmployeeId);
     if (!result) throw new NotFoundException("Employee record not found in this run");
     return result;
+  }
+
+  @Post(":runId/employees/:runEmployeeId/hold")
+  @RequirePermission("payroll:runs:manage")
+  async setEmployeeHold(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
+    @Body(new ZodValidationPipe(setEmployeeHoldSchema)) body: SetEmployeeHoldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.runsService.setEmployeeHold(
+      u.orgId,
+      runId,
+      runEmployeeId,
+      body.hold,
+      body.reason ?? null,
+      u.userId,
+    );
+    if (!result.ok) throw new NotFoundException("Employee record not found in this run");
+    return { ok: true };
   }
 
   @Get(":runId/variance")

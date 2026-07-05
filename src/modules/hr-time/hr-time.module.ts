@@ -12,6 +12,7 @@ import { OvertimeController } from "./overtime.controller";
 import { GeofencingController } from "./geofencing.controller";
 import { BiometricController } from "./biometric.controller";
 import { LeavePoliciesController } from "./leave-policies.controller";
+import { LeavePolicySummaryController } from "./leave-policy-summary.controller";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesPageService } from "./leaves-page.service";
@@ -39,6 +40,7 @@ import { LeavePoliciesService } from "./leave-policies.service";
     GeofencingController,
     BiometricController,
     LeavePoliciesController,
+    LeavePolicySummaryController,
   ],
   providers: [
     LeavesService,

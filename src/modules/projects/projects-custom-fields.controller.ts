@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -16,11 +18,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsCustomFieldsController {
   constructor(private readonly customFields: ProjectsCustomFieldsService) {}
 
   @Get(":projectId/custom-fields")
+  @RequirePermission("projects:view")
   listFields(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -29,6 +32,7 @@ export class ProjectsCustomFieldsController {
   }
 
   @Post(":projectId/custom-fields")
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   createField(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -39,6 +43,7 @@ export class ProjectsCustomFieldsController {
   }
 
   @Patch(":projectId/custom-fields/:fieldId")
+  @RequirePermission("projects:manage")
   updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
@@ -48,6 +53,7 @@ export class ProjectsCustomFieldsController {
   }
 
   @Delete(":projectId/custom-fields/:fieldId")
+  @RequirePermission("projects:manage")
   @HttpCode(204)
   deleteField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
@@ -57,6 +63,7 @@ export class ProjectsCustomFieldsController {
   }
 
   @Get(":projectId/tickets/:ticketId/custom-field-values")
+  @RequirePermission("projects:tickets:view")
   getTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -66,6 +73,7 @@ export class ProjectsCustomFieldsController {
   }
 
   @Post(":projectId/tickets/:ticketId/custom-field-values")
+  @RequirePermission("projects:tickets:update")
   @HttpCode(200)
   upsertTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,

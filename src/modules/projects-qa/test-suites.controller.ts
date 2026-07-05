@@ -1,0 +1,74 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { TestManagementService } from "./test-management.service";
+import {
+  createTestSuiteSchema,
+  updateTestSuiteSchema,
+  type CreateTestSuiteInput,
+  type UpdateTestSuiteInput,
+} from "./dto/qa.schemas";
+
+@RequireModule("projects")
+@Controller("projects/:projectId/test-suites")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class TestSuitesController {
+  constructor(private readonly svc: TestManagementService) {}
+
+  @Get()
+  @RequirePermission("projects:qa:view")
+  listSuites(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listSuites(u.orgId, projectId);
+  }
+
+  @Post()
+  @HttpCode(201)
+  @RequirePermission("projects:qa:manage")
+  createSuite(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body(new ZodValidationPipe(createTestSuiteSchema)) body: CreateTestSuiteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.createSuite(u.orgId, u.userId, projectId, body);
+  }
+
+  @Patch(":suiteId")
+  @RequirePermission("projects:qa:manage")
+  updateSuite(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("suiteId", ParseIntPipe) suiteId: number,
+    @Body(new ZodValidationPipe(updateTestSuiteSchema)) body: UpdateTestSuiteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.updateSuite(u.orgId, projectId, suiteId, body);
+  }
+
+  @Delete(":suiteId")
+  @RequirePermission("projects:qa:manage")
+  deleteSuite(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("suiteId", ParseIntPipe) suiteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.deleteSuite(u.orgId, projectId, suiteId);
+  }
+}

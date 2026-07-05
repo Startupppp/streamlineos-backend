@@ -1,33 +1,124 @@
-import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, eq, ilike, or, asc, desc, sql } from "drizzle-orm";
-import { invProducts, invProductVariants, invCategories, invUom } from "../../db/schema";
+import {
+  Inject,
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import { and, eq, ilike, or, asc, desc, sql, inArray, ne } from "drizzle-orm";
+import {
+  invProducts,
+  invProductVariants,
+  invCategories,
+  invUom,
+  invStockLevels,
+  invVendors,
+  invPurchaseOrders,
+  invPoLines,
+  invSalesOrders,
+  invSoLines,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import type { CreateProductInput, UpdateProductInput, ListProductsInput, CreateVariantInput, UpdateVariantInput, CreateCategoryInput, CreateUomInput, UpdateCategoryInput, UpdateUomInput } from "./dto/inv-products.schemas";
+import { InventoryAuditService } from "../inv-stock-engine/inventory-audit.service";
+import type {
+  CreateProductInput,
+  UpdateProductInput,
+  ListProductsInput,
+  CreateVariantInput,
+  UpdateVariantInput,
+  CreateCategoryInput,
+  CreateUomInput,
+  UpdateCategoryInput,
+  UpdateUomInput,
+} from "./dto/inv-products.schemas";
 
 @Injectable()
 export class InvProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly audit: InventoryAuditService,
   ) {}
+
+  private async assertNoBarcodeConflict(
+    orgId: string,
+    barcode: string,
+    excludeProductId?: number,
+    excludeVariantId?: number,
+  ): Promise<void> {
+    const productConditions = [eq(invProducts.orgId, orgId), eq(invProducts.barcode, barcode)];
+    if (excludeProductId !== undefined) {
+      productConditions.push(ne(invProducts.id, excludeProductId));
+    }
+    const variantConditions = [eq(invProductVariants.orgId, orgId), eq(invProductVariants.barcode, barcode)];
+    if (excludeVariantId !== undefined) {
+      variantConditions.push(ne(invProductVariants.id, excludeVariantId));
+    }
+
+    const [productHit, variantHit] = await Promise.all([
+      this.db.query.invProducts.findFirst({ where: and(...productConditions), columns: { id: true } }),
+      this.db.query.invProductVariants.findFirst({ where: and(...variantConditions), columns: { id: true } }),
+    ]);
+    if ((productHit ?? variantHit) !== undefined) {
+      throw new ConflictException("Barcode already in use in this organisation");
+    }
+  }
+
+  private async assertNoStockForVariants(
+    orgId: string,
+    productId: number,
+    errorCode: string,
+    message: string,
+  ): Promise<void> {
+    const variants = await this.db.query.invProductVariants.findMany({
+      where: and(eq(invProductVariants.productId, productId), eq(invProductVariants.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (variants.length === 0) return;
+    const variantIds = variants.map((v) => v.id);
+    const [result] = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
+      .from(invStockLevels)
+      .where(inArray(invStockLevels.productVariantId, variantIds));
+    if (parseFloat(result?.total ?? "0") > 0) {
+      throw new BadRequestException({ message, code: errorCode });
+    }
+  }
+
+  private async assertUomBelongsToOrg(orgId: string, uomId: number, fieldName: string): Promise<void> {
+    const uom = await this.db.query.invUom.findFirst({
+      where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!uom) throw new BadRequestException(`${fieldName} refers to a UOM not found in this organisation`);
+  }
+
+  private async assertVendorBelongsToOrg(orgId: string, vendorId: number): Promise<void> {
+    const vendor = await this.db.query.invVendors.findFirst({
+      where: and(eq(invVendors.id, vendorId), eq(invVendors.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!vendor) throw new BadRequestException("defaultVendorId refers to a vendor not found in this organisation");
+  }
 
   async listProducts(orgId: string, filters: ListProductsInput, scope: DataScope = "all", userId?: string) {
     if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
-    const { status, categoryId, search, page, limit } = filters;
+    const { status, productType, categoryId, search, page, limit } = filters;
     const offset = (page - 1) * limit;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${status ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
     const key = CACHE_KEYS.invProductsList(orgId, hash);
 
     return this.cache.cached(key, async () => {
       const conditions = [eq(invProducts.orgId, orgId)];
       if (status) conditions.push(eq(invProducts.status, status));
+      if (productType) conditions.push(eq(invProducts.productType, productType));
       if (categoryId) conditions.push(eq(invProducts.categoryId, categoryId));
       if (search) {
         conditions.push(or(
@@ -80,6 +171,11 @@ export class InvProductsService {
     });
     if (existing) throw new ConflictException("A product with this SKU already exists");
 
+    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
+    if (data.purchaseUomId) await this.assertUomBelongsToOrg(orgId, data.purchaseUomId, "purchaseUomId");
+    if (data.salesUomId) await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+    if (data.defaultVendorId) await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
+
     const [product] = await this.db.insert(invProducts).values({
       orgId,
       createdBy: userId,
@@ -106,9 +202,20 @@ export class InvProductsService {
   async updateProduct(orgId: string, productId: number, data: UpdateProductInput) {
     const existing = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      columns: { id: true },
+      columns: { id: true, trackingMethod: true, costingMethod: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
+
+    if (data.trackingMethod && data.trackingMethod !== existing.trackingMethod) {
+      await this.assertNoStockForVariants(orgId, productId, "TRACKING_METHOD_LOCKED", "Cannot change tracking method while non-zero stock exists");
+    }
+    if (data.costingMethod && data.costingMethod !== existing.costingMethod) {
+      await this.assertNoStockForVariants(orgId, productId, "COSTING_METHOD_LOCKED", "Cannot change costing method while non-zero stock exists");
+    }
+    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode, productId);
+    if (data.purchaseUomId) await this.assertUomBelongsToOrg(orgId, data.purchaseUomId, "purchaseUomId");
+    if (data.salesUomId) await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+    if (data.defaultVendorId) await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
 
     const [updated] = await this.db.update(invProducts)
       .set({ ...data, updatedAt: new Date() })
@@ -127,9 +234,113 @@ export class InvProductsService {
     });
     if (!existing) throw new NotFoundException("Product not found");
 
+    const variants = await this.db.query.invProductVariants.findMany({
+      where: and(eq(invProductVariants.productId, productId), eq(invProductVariants.orgId, orgId)),
+      columns: { id: true },
+    });
+
+    if (variants.length > 0) {
+      const variantIds = variants.map((v) => v.id);
+
+      const [stockResult] = await this.db
+        .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
+        .from(invStockLevels)
+        .where(inArray(invStockLevels.productVariantId, variantIds));
+
+      if (parseFloat(stockResult?.total ?? "0") > 0) {
+        throw new ConflictException("Cannot delete product with existing stock. Archive it instead.");
+      }
+
+      const openPoLines = await this.db
+        .select({ id: invPoLines.id })
+        .from(invPoLines)
+        .innerJoin(invPurchaseOrders, eq(invPoLines.poId, invPurchaseOrders.id))
+        .where(
+          and(
+            inArray(invPoLines.productVariantId, variantIds),
+            inArray(invPurchaseOrders.status, ["DRAFT", "SENT", "PARTIAL"]),
+          ),
+        )
+        .limit(1);
+
+      if (openPoLines.length > 0) {
+        throw new ConflictException("Cannot delete product referenced in open purchase or sales orders. Archive it instead.");
+      }
+
+      const openSoLines = await this.db
+        .select({ id: invSoLines.id })
+        .from(invSoLines)
+        .innerJoin(invSalesOrders, eq(invSoLines.soId, invSalesOrders.id))
+        .where(
+          and(
+            inArray(invSoLines.productVariantId, variantIds),
+            inArray(invSalesOrders.status, ["DRAFT", "CONFIRMED"]),
+          ),
+        )
+        .limit(1);
+
+      if (openSoLines.length > 0) {
+        throw new ConflictException("Cannot delete product referenced in open purchase or sales orders. Archive it instead.");
+      }
+    }
+
     await this.db.delete(invProducts).where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
     await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+  }
+
+  async archiveProduct(orgId: string, productId: number, userId: string) {
+    const existing = await this.db.query.invProducts.findFirst({
+      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+    });
+    if (!existing) throw new NotFoundException("Product not found");
+
+    const [updated] = await this.db
+      .update(invProducts)
+      .set({ status: "INACTIVE", updatedAt: new Date() })
+      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
+      .returning();
+
+    await this.audit.insert(this.db, {
+      orgId,
+      actorUserId: userId,
+      action: "product.archive",
+      resourceType: "product",
+      resourceId: String(productId),
+      before: { status: existing.status },
+      after: { status: "INACTIVE" },
+    });
+
+    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
+    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    return updated;
+  }
+
+  async restoreProduct(orgId: string, productId: number, userId: string) {
+    const existing = await this.db.query.invProducts.findFirst({
+      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+    });
+    if (!existing) throw new NotFoundException("Product not found");
+
+    const [updated] = await this.db
+      .update(invProducts)
+      .set({ status: "ACTIVE", updatedAt: new Date() })
+      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
+      .returning();
+
+    await this.audit.insert(this.db, {
+      orgId,
+      actorUserId: userId,
+      action: "product.restore",
+      resourceType: "product",
+      resourceId: String(productId),
+      before: { status: existing.status },
+      after: { status: "ACTIVE" },
+    });
+
+    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
+    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+    return updated;
   }
 
   async createVariant(orgId: string, productId: number, data: CreateVariantInput) {
@@ -145,12 +356,18 @@ export class InvProductsService {
     });
     if (existing) throw new ConflictException("A variant with this SKU already exists");
 
+    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
+
     const [variant] = await this.db.insert(invProductVariants).values({ orgId, productId, ...data }).returning();
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
     return variant;
   }
 
   async updateVariant(orgId: string, variantId: number, data: UpdateVariantInput) {
+    if (data.barcode) {
+      await this.assertNoBarcodeConflict(orgId, data.barcode, undefined, variantId);
+    }
+
     const [updated] = await this.db.update(invProductVariants)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(invProductVariants.id, variantId), eq(invProductVariants.orgId, orgId)))
@@ -203,6 +420,12 @@ export class InvProductsService {
   }
 
   async createUom(orgId: string, data: CreateUomInput) {
+    if (data.isBase && data.category) {
+      await this.db
+        .update(invUom)
+        .set({ isBase: false })
+        .where(and(eq(invUom.orgId, orgId), eq(invUom.category, data.category), eq(invUom.isBase, true)));
+    }
     const [uom] = await this.db.insert(invUom).values({ orgId, ...data }).returning();
     await this.cache.del(`inv:products:uom:${orgId}`);
     return uom;
@@ -219,6 +442,28 @@ export class InvProductsService {
   }
 
   async updateUom(orgId: string, uomId: number, data: UpdateUomInput) {
+    if (data.isBase) {
+      const existingUom = await this.db.query.invUom.findFirst({
+        where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
+        columns: { category: true },
+      });
+      if (!existingUom) throw new NotFoundException("UOM not found");
+      const effectiveCategory = data.category ?? existingUom.category;
+      if (effectiveCategory) {
+        await this.db
+          .update(invUom)
+          .set({ isBase: false })
+          .where(
+            and(
+              eq(invUom.orgId, orgId),
+              eq(invUom.category, effectiveCategory),
+              eq(invUom.isBase, true),
+              ne(invUom.id, uomId),
+            ),
+          );
+      }
+    }
+
     const [updated] = await this.db.update(invUom)
       .set({ ...data })
       .where(and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)))

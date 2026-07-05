@@ -1,0 +1,91 @@
+import { z } from "zod";
+
+export const listInspectionsQuerySchema = z.object({
+  status: z.enum(["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]).optional(),
+  sourceType: z.string().optional(),
+  productVariantId: z.coerce.number().int().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListInspectionsQueryInput = z.infer<typeof listInspectionsQuerySchema>;
+
+export const createInspectionSchema = z.object({
+  sourceType: z.string().optional(),
+  sourceId: z.string().optional(),
+  inspectorUserId: z.string().optional(),
+  notes: z.string().optional(),
+  lines: z.array(z.object({
+    productVariantId: z.number().int(),
+    lotId: z.number().int().optional(),
+    serialId: z.number().int().optional(),
+    quantity: z.string().regex(/^\d+(\.\d+)?$/),
+    notes: z.string().optional(),
+  })).min(1),
+});
+export type CreateInspectionInput = z.infer<typeof createInspectionSchema>;
+
+export const disposeLineSchema = z.object({
+  lineId: z.number().int(),
+  disposition: z.enum(["RELEASE_TO_AVAILABLE", "QUARANTINE", "RETURN_TO_VENDOR", "SCRAP"]),
+  vendorId: z.number().int().optional(),
+  locationId: z.number().int().optional(),
+});
+
+export const disposeInspectionSchema = z.object({
+  lines: z.array(disposeLineSchema).min(1),
+}).refine(d => d.lines.every(l => l.disposition !== "RETURN_TO_VENDOR" || l.vendorId != null), {
+  message: "vendorId required for RETURN_TO_VENDOR disposition",
+  path: ["lines"],
+});
+export type DisposeInspectionInput = z.infer<typeof disposeInspectionSchema>;
+
+export const failInspectionSchema = z.object({
+  lines: z.array(z.object({
+    lineId: z.number().int(),
+    disposition: z.enum(["RELEASE_TO_AVAILABLE", "QUARANTINE", "RETURN_TO_VENDOR", "SCRAP"]),
+    notes: z.string().optional(),
+  })).min(1),
+});
+export type FailInspectionInput = z.infer<typeof failInspectionSchema>;
+
+export const listHoldsQuerySchema = z.object({
+  status: z.enum(["ACTIVE", "RELEASED"]).optional(),
+  productVariantId: z.coerce.number().int().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListHoldsQueryInput = z.infer<typeof listHoldsQuerySchema>;
+
+export const createHoldSchema = z.object({
+  productVariantId: z.number().int(),
+  locationId: z.number().int(),
+  lotId: z.number().int().optional(),
+  serialId: z.number().int().optional(),
+  quantity: z.string().regex(/^\d+(\.\d+)?$/),
+  reason: z.string().min(1),
+});
+export type CreateHoldInput = z.infer<typeof createHoldSchema>;
+
+export const listRecallsQuerySchema = z.object({
+  status: z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListRecallsQueryInput = z.infer<typeof listRecallsQuerySchema>;
+
+export const createRecallSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  lines: z.array(z.object({
+    productVariantId: z.number().int().optional(),
+    lotId: z.number().int().optional(),
+    serialId: z.number().int().optional(),
+  })).min(1),
+});
+export type CreateRecallInput = z.infer<typeof createRecallSchema>;
+
+export const updateRecallSchema = z.object({
+  status: z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]).optional(),
+  notes: z.string().optional(),
+});
+export type UpdateRecallInput = z.infer<typeof updateRecallSchema>;

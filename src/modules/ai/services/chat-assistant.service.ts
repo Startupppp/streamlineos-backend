@@ -8,14 +8,17 @@ import {
   deals,
   leads,
   leaveRequests,
+  organizationMembers,
   payrolls,
   projects,
   tasks,
   tickets,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
+import { CalendarService } from "../../calendar/calendar.service";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -36,7 +39,10 @@ interface ChatContext {
 
 @Injectable()
 export class ChatAssistantService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly calendar: CalendarService,
+  ) {}
 
   private async fetchContext(userId: string, orgId: string): Promise<ChatContext> {
     const today = getTodayString();
@@ -136,15 +142,46 @@ ${context.topLeads.map((l) => `  - ${l.name} — ${l.status}${l.priority ? ` [${
 1. **HR**: Attendance, leaves, payroll, employee management
 2. **Projects**: Tickets, sprints, burndown, time tracking
 3. **CRM**: Leads, deals, pipeline, client management
-4. **Analytics**: Team performance, conversion rates, pipeline health
+4. **Calendar**: Schedule meetings and events, invite team members
+5. **Analytics**: Team performance, conversion rates, pipeline health
 
 ## Available Actions
 You can take the following actions on behalf of the user when asked:
 - **updateLeadStatus**: Change a lead's status (NEW/CONTACTED/INTERESTED/QUALIFIED/CONVERTED/LOST) or priority (HOT/WARM/COLD)
 - **createTask**: Create a new task (call, email, meeting, or custom) with optional due date
 - **searchLeads**: Search leads by name or company to answer questions
+- **scheduleEvent**: Schedule a calendar event or meeting with optional attendees. Always confirm the details (title, date/time, attendees) with the user BEFORE calling this tool.
 
-Tone: Professional, concise, actionable. Always confirm before taking destructive actions.`;
+Tone: Professional, concise, actionable. Always confirm details before scheduling events or taking destructive actions.`;
+  }
+
+  private async resolveAttendeeIds(orgId: string, names: string[]): Promise<{ resolved: string[]; unresolved: string[] }> {
+    if (names.length === 0) return { resolved: [], unresolved: [] };
+
+    const rows = await this.db
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, name: users.name })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+
+    const resolved: string[] = [];
+    const unresolved: string[] = [];
+
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      const match = rows.find((r) => {
+        const full = `${r.firstName ?? ""} ${r.lastName ?? ""}`.toLowerCase().trim();
+        const display = (r.name ?? "").toLowerCase();
+        return full.includes(lower) || display.includes(lower) || lower.includes((r.firstName ?? "").toLowerCase());
+      });
+      if (match) {
+        resolved.push(match.id);
+      } else {
+        unresolved.push(name);
+      }
+    }
+
+    return { resolved, unresolved };
   }
 
   async processChat(messages: ChatMessage[], userId: string, orgId: string) {
@@ -241,6 +278,47 @@ Tone: Professional, concise, actionable. Always confirm before taking destructiv
             });
             if (results.length === 0) return { results: [], message: `No leads found matching "${query}".` };
             return { results, message: `Found ${results.length} lead(s).` };
+          },
+        }),
+
+        scheduleEvent: tool({
+          description:
+            "Schedule a calendar event or meeting. Only call this after confirming the event title, date, time, and attendees with the user.",
+          inputSchema: z.object({
+            title: z.string().min(2).max(100).describe("Event title"),
+            startDate: z.string().describe("ISO 8601 start datetime, e.g. 2026-07-10T10:00:00.000Z"),
+            endDate: z.string().describe("ISO 8601 end datetime, e.g. 2026-07-10T11:00:00.000Z"),
+            attendeeNames: z.array(z.string()).optional().describe("Names of org members to invite"),
+            location: z.string().optional().describe("Event location or meeting link"),
+            description: z.string().optional().describe("Event description or agenda"),
+          }),
+          execute: async ({ title, startDate, endDate, attendeeNames, location, description }) => {
+            const { resolved, unresolved } = await this.resolveAttendeeIds(orgId, attendeeNames ?? []);
+
+            const { event } = await this.calendar.createEvent(orgId, userId, {
+              title,
+              startDate,
+              endDate,
+              attendeeIds: resolved,
+              location,
+              description,
+              category: "meeting",
+              color: "blue",
+            });
+
+            const start = new Date(startDate);
+            const dateStr = start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+            const timeStr = `${start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} – ${new Date(endDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+
+            const note = unresolved.length > 0
+              ? ` Note: could not find org members matching: ${unresolved.join(", ")}.`
+              : "";
+
+            return {
+              success: true,
+              eventId: event?.id,
+              message: `Event "${title}" scheduled for ${dateStr} at ${timeStr}${resolved.length > 0 ? ` with ${resolved.length} attendee(s)` : ""}.${note}`,
+            };
           },
         }),
       },

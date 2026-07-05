@@ -7,3 +7,27 @@ export const movementsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type MovementsQueryInput = z.infer<typeof movementsQuerySchema>;
+
+export const valuationReportSchema = z.object({
+  warehouseId: z.coerce.number().int().positive().optional(),
+  categoryId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ValuationReportInput = z.infer<typeof valuationReportSchema>;
+
+export const slowMovingQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).default(60),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type SlowMovingQueryInput = z.infer<typeof slowMovingQuerySchema>;
+
+export const expiryReportSchema = z.object({
+  withinDays: z.coerce.number().int().min(1).default(30),
+  warehouseId: z.coerce.number().int().positive().optional(),
+  status: z.enum(["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type ExpiryReportInput = z.infer<typeof expiryReportSchema>;

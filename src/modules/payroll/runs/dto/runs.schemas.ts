@@ -48,6 +48,12 @@ export const overrideExceptionSchema = z.object({
 });
 export type OverrideExceptionInput = z.infer<typeof overrideExceptionSchema>;
 
+export const setEmployeeHoldSchema = z.object({
+  hold: z.boolean(),
+  reason: z.string().max(500).optional(),
+});
+export type SetEmployeeHoldInput = z.infer<typeof setEmployeeHoldSchema>;
+
 export const loanAdjustmentSchema = z.object({
   loanId: z.number().int().positive(),
   type: z.enum(["SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST"]),

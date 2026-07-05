@@ -200,6 +200,7 @@ export class WhiteboardsController {
   constructor(private readonly whiteboards: WhiteboardsService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listWhiteboards(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -219,6 +220,7 @@ export class WhiteboardsController {
   }
 
   @Get(":whiteboardId")
+  @RequirePermission("projects:view")
   getWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -249,12 +251,14 @@ export class WhiteboardsController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/pages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PagesController {
   constructor(private readonly pages: PagesService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   listPages(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

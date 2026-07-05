@@ -34,11 +34,13 @@ export class ProjectsReportsController {
   ) {}
 
   @Get("resource-allocation")
+  @RequirePermission("projects:view")
   resourceAllocation(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.resourceAllocation(u.orgId);
   }
 
   @Get(":projectId/analytics")
+  @RequirePermission("projects:view")
   getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +49,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/burnup")
+  @RequirePermission("projects:view")
   burnup(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(burnupQuerySchema)) query: BurnupQuery,
@@ -56,6 +59,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/cfd")
+  @RequirePermission("projects:view")
   cfd(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query(new ZodValidationPipe(cfdQuerySchema)) query: CfdQuery,
@@ -65,6 +69,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/critical-path")
+  @RequirePermission("projects:view")
   criticalPath(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +78,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/velocity")
+  @RequirePermission("projects:view")
   velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +87,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/cycle-time")
+  @RequirePermission("projects:view")
   getCycleTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +96,7 @@ export class ProjectsReportsController {
   }
 
   @Get(":projectId/reports/lead-time")
+  @RequirePermission("projects:view")
   getLeadTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -97,8 +105,8 @@ export class ProjectsReportsController {
   }
 
   @Post(":projectId/reports/snapshot")
+  @RequirePermission("projects:manage")
   @HttpCode(200)
-  @RequirePermission("projects:read")
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

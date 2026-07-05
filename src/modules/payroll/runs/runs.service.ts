@@ -19,10 +19,51 @@ import type { ListRunsQuery, ListRunEmployeesQuery } from "./dto/runs.schemas";
 import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, VarianceSummary } from "../payroll.types";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
+import { AuditService } from "../../../common/audit/audit.service";
 
 @Injectable()
 export class RunsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
+
+  async setEmployeeHold(
+    orgId: string,
+    runId: number,
+    runEmployeeId: number,
+    hold: boolean,
+    reason: string | null,
+    actorId: string,
+  ): Promise<{ ok: boolean }> {
+    const existing = await this.db
+      .select({ id: payrollRunEmployees.id })
+      .from(payrollRunEmployees)
+      .where(and(
+        eq(payrollRunEmployees.id, runEmployeeId),
+        eq(payrollRunEmployees.runId, runId),
+        eq(payrollRunEmployees.orgId, orgId),
+      ))
+      .limit(1);
+
+    if (!existing[0]) return { ok: false };
+
+    await this.db
+      .update(payrollRunEmployees)
+      .set({ holdReason: hold ? (reason ?? "On hold") : null })
+      .where(eq(payrollRunEmployees.id, runEmployeeId));
+
+    this.audit.log({
+      action: hold ? "payroll.employee_held" : "payroll.employee_unheld",
+      userId: actorId,
+      orgId,
+      targetId: String(runEmployeeId),
+      targetType: "payroll_run_employee",
+      metadata: { runId, reason: reason ?? null },
+    });
+
+    return { ok: true };
+  }
 
   async createRun(
     orgId: string,

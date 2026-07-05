@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -521,5 +521,46 @@ export class ProjectsTicketsService {
       .limit(limit);
 
     return rows;
+  }
+
+  async getMyWork(orgId: string, userId: string) {
+    const assigneeRows = await this.db
+      .select({ ticketId: ticketAssignees.ticketId })
+      .from(ticketAssignees)
+      .where(eq(ticketAssignees.userId, userId));
+
+    const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
+
+    const assigneeCondition =
+      assigneeTicketIds.length > 0
+        ? or(eq(tickets.assigneeId, userId), inArray(tickets.id, assigneeTicketIds))
+        : eq(tickets.assigneeId, userId);
+
+    return this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        priority: tickets.priority,
+        type: tickets.type,
+        dueDate: tickets.dueDate,
+        ticketNumber: tickets.ticketNumber,
+        projectId: projects.id,
+        projectName: projects.name,
+        projectKey: projects.key,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          ne(projects.status, "ARCHIVED"),
+          assigneeCondition,
+        ),
+      )
+      .orderBy(
+        sql`${tickets.dueDate} ASC NULLS LAST`,
+        sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`,
+      );
   }
 }

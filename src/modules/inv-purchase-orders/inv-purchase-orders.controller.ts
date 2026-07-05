@@ -1,14 +1,6 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  ParseIntPipe,
-  Query,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
+  Controller, Get, Post, Patch, Body, Param,
+  ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -17,24 +9,27 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { InvPurchaseOrdersService } from "./inv-purchase-orders.service";
-import { resolveInvPoScope } from "../inventory/inventory-scope";
-import {
-  listPoSchema,
-  createPoSchema,
-  createGrnSchema,
-  type ListPoInput,
-  type CreatePoInput,
-  type CreateGrnInput,
-} from "./dto/inv-purchase-orders.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { resolveInvPoScope } from "../inventory/inventory-scope";
+import { PoService } from "./po.service";
+import { GrnService } from "./grn.service";
+import {
+  listPoSchema, createPoSchema, updatePoSchema, createGrnSchema,
+  type ListPoInput, type CreatePoInput, type UpdatePoInput, type CreateGrnInput,
+} from "./dto/inv-purchase-orders.schemas";
+
+function requireIdempotencyKey(key: string | undefined): string {
+  if (!key) throw Object.assign(new Error("Idempotency-Key header is required"), { status: 400 });
+  return key;
+}
 
 @RequireModule("inventory")
 @Controller("inventory/purchase-orders")
 @UseGuards(JwtAuthGuard)
 export class InvPurchaseOrdersController {
   constructor(
-    private readonly pos: InvPurchaseOrdersService,
+    private readonly pos: PoService,
+    private readonly grns: GrnService,
     private readonly access: AccessService,
   ) {}
 
@@ -69,6 +64,28 @@ export class InvPurchaseOrdersController {
     return this.pos.createPo(u.orgId, u.userId, body);
   }
 
+  @Patch(":poId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:update")
+  update(
+    @Param("poId", ParseIntPipe) poId: number,
+    @Body(new ZodValidationPipe(updatePoSchema)) body: UpdatePoInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.pos.updatePo(u.orgId, poId, body);
+  }
+
+  @Post(":poId/approve")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:approve")
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param("poId", ParseIntPipe) poId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.pos.approvePo(u.orgId, poId, u.userId);
+  }
+
   @Post(":poId/send")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
@@ -80,6 +97,28 @@ export class InvPurchaseOrdersController {
     return this.pos.sendPo(u.orgId, poId);
   }
 
+  @Post(":poId/close")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:approve")
+  @HttpCode(HttpStatus.OK)
+  close(
+    @Param("poId", ParseIntPipe) poId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.pos.closePo(u.orgId, poId);
+  }
+
+  @Post(":poId/cancel")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:purchase-orders:approve")
+  @HttpCode(HttpStatus.OK)
+  cancel(
+    @Param("poId", ParseIntPipe) poId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.pos.cancelPo(u.orgId, poId);
+  }
+
   @Post(":poId/receive")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
@@ -87,8 +126,10 @@ export class InvPurchaseOrdersController {
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
     @Body(new ZodValidationPipe(createGrnSchema)) body: CreateGrnInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.receiveGoods(u.orgId, poId, u.userId, body);
+    const idempotencyKey = requireIdempotencyKey(idempotencyKeyHeader);
+    return this.grns.receiveGoods(u.orgId, poId, u.userId, idempotencyKey, body);
   }
 }

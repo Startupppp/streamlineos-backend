@@ -45,6 +45,8 @@ export const invPurchaseOrders = pgTable("inv_purchase_orders", {
   currency: text("currency").default("INR").notNull(),
   notes: text("notes"),
   sentAt: timestamp("sent_at"),
+  approvedBy: text("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

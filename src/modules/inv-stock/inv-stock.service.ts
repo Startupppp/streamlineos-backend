@@ -1,22 +1,17 @@
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, lte, sql, gte } from "drizzle-orm";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import { Inject, Injectable } from "@nestjs/common";
+import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import {
-  invStockLevels, invStockTransactions, invStockAdjustments, invStockAdjustmentLines,
-  invStockTransfers, invStockTransferLines,
+  invStockLevels, invStockTransactions, invLocations,
+  invPurchaseOrders, invPoLines, invSalesOrders, invSoLines,
+  invProducts, invProductVariants,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListStockLevelsInput, ListTransactionsInput, ListAdjustmentsInput, CreateAdjustmentInput, CreateTransferInput, CompleteTransferInput, ListTransfersInput } from "./dto/inv-stock.schemas";
-
-function nextRefNumber(prefix: string): string {
-  const now = new Date();
-  const ts = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0") + String(now.getTime()).slice(-6);
-  return `${prefix}-${ts}`;
-}
+import type {
+  ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
+} from "./dto/inv-stock.schemas";
 
 @Injectable()
 export class InvStockService {
@@ -26,27 +21,77 @@ export class InvStockService {
   ) {}
 
   async listStockLevels(orgId: string, filters: ListStockLevelsInput) {
-    const { warehouseId, productId, lowStock, page, limit } = filters;
+    const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${warehouseId ?? ""}:${productId ?? ""}:${lowStock ?? ""}:${limit}:${offset}`;
+    const hash = `${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cached(CACHE_KEYS.invStockLevels(orgId, hash), async () => {
-      const rows = await this.db.query.invStockLevels.findMany({
-        where: and(
-          eq(invStockLevels.orgId, orgId),
-          lowStock
-            ? lte(invStockLevels.onHand, sql`(SELECT reorder_point FROM inv_products p JOIN inv_product_variants v ON v.product_id = p.id WHERE v.id = ${invStockLevels.productVariantId})`)
-            : undefined,
-        ),
-        with: {
-          productVariant: { with: { product: { columns: { id: true, name: true, sku: true, reorderPoint: true } } } },
-          location: { with: { warehouse: { columns: { id: true, name: true } } } },
-        },
-        orderBy: [desc(invStockLevels.updatedAt)],
-        limit,
-        offset,
-      });
-      return { items: rows, page, limit };
+      const conditions: ReturnType<typeof eq>[] = [eq(invStockLevels.orgId, orgId)];
+
+      if (locationId) conditions.push(eq(invStockLevels.locationId, locationId));
+      if (variantId) conditions.push(eq(invStockLevels.productVariantId, variantId));
+      if (lotId) conditions.push(eq(invStockLevels.lotId, lotId) as ReturnType<typeof eq>);
+      if (serialId) conditions.push(eq(invStockLevels.serialId, serialId) as ReturnType<typeof eq>);
+      if (negative) conditions.push(lt(invStockLevels.onHand, "0") as unknown as ReturnType<typeof eq>);
+
+      const warehouseFilter = warehouseId
+        ? sql`${invStockLevels.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`
+        : undefined;
+
+      const productFilter = productId
+        ? sql`${invStockLevels.productVariantId} IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})`
+        : undefined;
+
+      const searchFilter = search
+        ? sql`${invStockLevels.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))`
+        : undefined;
+
+      const lowStockFilter = lowStock
+        ? sql`${invStockLevels.onHand}::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = ${invStockLevels.productVariantId}), 0)`
+        : undefined;
+
+      const extraConditions = [warehouseFilter, productFilter, searchFilter, lowStockFilter].filter(Boolean);
+
+      const rows = await this.db.execute<{
+        id: number; org_id: string; product_variant_id: number; location_id: number;
+        lot_id: number | null; serial_id: number | null;
+        on_hand: string; committed: string; on_order: string;
+        blocked_qty: string | null; quality_hold_qty: string | null;
+        outgoing_qty: string | null; average_cost: string | null; updated_at: string;
+      }>(sql`
+        SELECT sl.*,
+          (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
+        FROM inv_stock_levels sl
+        WHERE sl.org_id = ${orgId}
+          ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
+          ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
+          ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
+          ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
+          ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
+          ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
+          ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
+          ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+          ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
+        ORDER BY sl.updated_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const [countResult] = await this.db.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count FROM inv_stock_levels sl
+        WHERE sl.org_id = ${orgId}
+          ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
+          ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
+          ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
+          ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
+          ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
+          ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
+          ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
+          ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+          ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
+      `);
+
+      const total = countResult?.count ?? 0;
+      return { items: rows, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }
 
@@ -60,9 +105,10 @@ export class InvStockService {
     if (fromDate) conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
 
+    const where = and(...conditions);
     const [items, countResult] = await Promise.all([
       this.db.query.invStockTransactions.findMany({
-        where: and(...conditions),
+        where,
         orderBy: [desc(invStockTransactions.createdAt)],
         limit,
         offset,
@@ -72,288 +118,85 @@ export class InvStockService {
           creator: { columns: { id: true, name: true } },
         },
       }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(and(...conditions)),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransactions).where(where),
     ]);
 
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
-  async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+  async getAvailability(orgId: string, filters: AvailabilityQueryInput) {
+    const { variantId, warehouseId } = filters;
 
-    const { page, limit } = filters;
-    const offset = (page - 1) * limit;
-    const conditions = [eq(invStockAdjustments.orgId, orgId)];
-    if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, userId, { ownerColumn: invStockAdjustments.createdBy }));
-    }
-    const where = and(...conditions);
+    const [stockRow] = await this.db.execute<{
+      on_hand: string; committed: string; blocked_qty: string; quality_hold_qty: string;
+    }>(sql`
+      SELECT
+        COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
+        COALESCE(SUM(committed::numeric), 0)::text AS committed,
+        COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
+        COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
+      FROM inv_stock_levels sl
+      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+      ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
+    `);
 
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockAdjustments.findMany({
-        where,
-        orderBy: [desc(invStockAdjustments.createdAt)],
-        limit,
-        offset,
-        with: {
-          creator: { columns: { id: true, name: true } },
-          lines: { columns: { id: true } },
-        },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
-    ]);
+    const [incomingRow] = await this.db.execute<{ incoming: string }>(sql`
+      SELECT COALESCE(SUM((pl.quantity::numeric - pl.quantity_received::numeric)), 0)::text AS incoming
+      FROM inv_po_lines pl
+      JOIN inv_purchase_orders po ON po.id = pl.po_id
+      WHERE po.org_id = ${orgId}
+        AND pl.product_variant_id = ${variantId}
+        AND po.status IN ('SENT', 'PARTIAL')
+        ${warehouseId ? sql`AND po.warehouse_id = ${warehouseId}` : sql``}
+    `);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
-  }
+    const [outgoingRow] = await this.db.execute<{ outgoing: string }>(sql`
+      SELECT COALESCE(SUM((sl.quantity::numeric - sl.quantity_shipped::numeric)), 0)::text AS outgoing
+      FROM inv_so_lines sl
+      JOIN inv_sales_orders so ON so.id = sl.so_id
+      WHERE so.org_id = ${orgId}
+        AND sl.product_variant_id = ${variantId}
+        AND so.status IN ('CONFIRMED', 'SHIPPED')
+        ${warehouseId ? sql`AND so.warehouse_id = ${warehouseId}` : sql``}
+    `);
 
-  async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput): Promise<void> {
-    const referenceNumber = nextRefNumber("ADJ");
+    const onHand = parseFloat(stockRow?.on_hand ?? "0");
+    const committed = parseFloat(stockRow?.committed ?? "0");
+    const blocked = parseFloat(stockRow?.blocked_qty ?? "0");
+    const qualityHold = parseFloat(stockRow?.quality_hold_qty ?? "0");
+    const incoming = parseFloat(incomingRow?.incoming ?? "0");
+    const outgoing = parseFloat(outgoingRow?.outgoing ?? "0");
 
-    const adjVariantIds = [...new Set(data.lines.map((l) => l.productVariantId))];
-    const existingLevels = await this.db.query.invStockLevels.findMany({
-      where: and(
-        eq(invStockLevels.orgId, orgId),
-        inArray(invStockLevels.productVariantId, adjVariantIds),
-      ),
-      columns: { productVariantId: true, locationId: true, onHand: true },
-    });
-    const levelMap = new Map(existingLevels.map((l) => [`${l.productVariantId}:${l.locationId}`, parseFloat(l.onHand)]));
+    const available = onHand - committed - blocked - qualityHold;
+    const forecasted = onHand + incoming - outgoing;
 
-    await this.db.transaction(async (tx) => {
-      const [adj] = await tx.insert(invStockAdjustments).values({
-        orgId, referenceNumber, reason: data.reason, notes: data.notes, createdBy: userId,
-      }).returning();
+    const warehouseBreakdown = await this.db.execute<{
+      warehouse_id: number; warehouse_name: string;
+      on_hand: string; committed: string; available: string;
+    }>(sql`
+      SELECT
+        w.id AS warehouse_id,
+        w.name AS warehouse_name,
+        COALESCE(SUM(sl.on_hand::numeric), 0)::text AS on_hand,
+        COALESCE(SUM(sl.committed::numeric), 0)::text AS committed,
+        COALESCE(SUM(sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric), 0)::text AS available
+      FROM inv_stock_levels sl
+      JOIN inv_locations loc ON loc.id = sl.location_id
+      JOIN inv_warehouses w ON w.id = loc.warehouse_id
+      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+      ${warehouseId ? sql`AND w.id = ${warehouseId}` : sql``}
+      GROUP BY w.id, w.name
+    `);
 
-      await tx.insert(invStockAdjustmentLines).values(
-        data.lines.map((line) => ({
-          adjustmentId: adj.id,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          quantityChange: line.quantityChange.toString(),
-          notes: line.notes,
-        }))
-      );
-
-      for (const line of data.lines) {
-        const before = levelMap.get(`${line.productVariantId}:${line.locationId}`) ?? 0;
-        const after = before + line.quantityChange;
-
-        await tx.insert(invStockLevels).values({
-          orgId,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          onHand: line.quantityChange.toString(),
-        }).onConflictDoUpdate({
-          target: [invStockLevels.productVariantId, invStockLevels.locationId],
-          set: { onHand: sql`${invStockLevels.onHand} + ${line.quantityChange}`, updatedAt: new Date() },
-        });
-
-        await tx.insert(invStockTransactions).values({
-          orgId,
-          productVariantId: line.productVariantId,
-          locationId: line.locationId,
-          transactionType: line.quantityChange > 0 ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT",
-          quantityChange: line.quantityChange.toString(),
-          quantityBefore: before.toString(),
-          quantityAfter: after.toString(),
-          referenceType: "inv_adjustment",
-          referenceId: adj.id.toString(),
-          notes: line.notes,
-          createdBy: userId,
-        });
-      }
-    });
-
-    await this.cache.del(CACHE_KEYS.invStockSummary(orgId));
-    await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
-  }
-
-  async createTransfer(orgId: string, userId: string, data: CreateTransferInput) {
-    if (data.fromLocationId === data.toLocationId) {
-      throw new BadRequestException("From and to locations must be different");
-    }
-
-    const referenceNumber = nextRefNumber("TRF");
-
-    const [transfer] = await this.db.insert(invStockTransfers).values({
-      orgId,
-      referenceNumber,
-      fromLocationId: data.fromLocationId,
-      toLocationId: data.toLocationId,
-      notes: data.notes,
-      createdBy: userId,
-    }).returning();
-
-    await this.db.insert(invStockTransferLines).values(
-      data.lines.map((line) => ({
-        transferId: transfer.id,
-        productVariantId: line.productVariantId,
-        quantity: line.quantity.toString(),
-      }))
-    );
-
-    for (const line of data.lines) {
-      await this.db.insert(invStockLevels).values({
-        orgId,
-        productVariantId: line.productVariantId,
-        locationId: data.fromLocationId,
-        committed: line.quantity.toString(),
-      }).onConflictDoUpdate({
-        target: [invStockLevels.productVariantId, invStockLevels.locationId],
-        set: { committed: sql`${invStockLevels.committed} + ${line.quantity}`, updatedAt: new Date() },
-      });
-    }
-
-    return transfer;
-  }
-
-  async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput): Promise<void> {
-    const transfer = await this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: { lines: true },
-    });
-    if (!transfer) throw new NotFoundException("Transfer not found");
-    if (transfer.status !== "PENDING" && transfer.status !== "IN_TRANSIT") {
-      throw new BadRequestException("Transfer cannot be completed in its current status");
-    }
-
-    const transferVariantIds = transfer.lines.map((l) => l.productVariantId);
-    const sourceLevels = await this.db.query.invStockLevels.findMany({
-      where: and(
-        eq(invStockLevels.orgId, orgId),
-        inArray(invStockLevels.productVariantId, transferVariantIds),
-        eq(invStockLevels.locationId, transfer.fromLocationId),
-      ),
-      columns: { productVariantId: true, onHand: true },
-    });
-    const sourceLevelMap = new Map(sourceLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
-
-    const destVariantIds = transfer.lines.map((l) => l.productVariantId);
-    const destLevels = await this.db.query.invStockLevels.findMany({
-      where: and(
-        eq(invStockLevels.orgId, orgId),
-        inArray(invStockLevels.productVariantId, destVariantIds),
-        eq(invStockLevels.locationId, transfer.toLocationId),
-      ),
-      columns: { productVariantId: true, onHand: true },
-    });
-    const destLevelMap = new Map(destLevels.map((l) => [l.productVariantId, parseFloat(l.onHand)]));
-
-    await this.db.transaction(async (tx) => {
-      for (const completion of data.lines) {
-        const line = transfer.lines.find((l) => l.id === completion.transferLineId);
-        if (!line) continue;
-
-        const qtyReceived = completion.quantityReceived;
-        const quantityMoved = parseFloat(line.quantity);
-        const sourceOnHand = sourceLevelMap.get(line.productVariantId) ?? 0;
-
-        await tx.update(invStockTransferLines)
-          .set({ quantityReceived: qtyReceived.toString() })
-          .where(eq(invStockTransferLines.id, completion.transferLineId));
-
-        await tx.insert(invStockLevels).values({
-          orgId,
-          productVariantId: line.productVariantId,
-          locationId: transfer.fromLocationId,
-          onHand: "0",
-        }).onConflictDoUpdate({
-          target: [invStockLevels.productVariantId, invStockLevels.locationId],
-          set: {
-            onHand: sql`${invStockLevels.onHand} - ${line.quantity}`,
-            committed: sql`GREATEST(0, ${invStockLevels.committed} - ${line.quantity})`,
-            updatedAt: new Date(),
-          },
-        });
-
-        await tx.insert(invStockLevels).values({
-          orgId,
-          productVariantId: line.productVariantId,
-          locationId: transfer.toLocationId,
-          onHand: qtyReceived.toString(),
-        }).onConflictDoUpdate({
-          target: [invStockLevels.productVariantId, invStockLevels.locationId],
-          set: { onHand: sql`${invStockLevels.onHand} + ${qtyReceived}`, updatedAt: new Date() },
-        });
-
-        await tx.insert(invStockTransactions).values([
-          {
-            orgId, productVariantId: line.productVariantId, locationId: transfer.fromLocationId,
-            transactionType: "TRANSFER_OUT", quantityChange: `-${quantityMoved}`,
-            quantityBefore: sourceOnHand.toString(), quantityAfter: (sourceOnHand - quantityMoved).toString(),
-            referenceType: "inv_transfer", referenceId: transferId.toString(), createdBy: userId,
-          },
-          {
-            orgId, productVariantId: line.productVariantId, locationId: transfer.toLocationId,
-            transactionType: "TRANSFER_IN", quantityChange: qtyReceived.toString(),
-            quantityBefore: (destLevelMap.get(line.productVariantId) ?? 0).toString(),
-            quantityAfter: ((destLevelMap.get(line.productVariantId) ?? 0) + qtyReceived).toString(),
-            referenceType: "inv_transfer", referenceId: transferId.toString(), createdBy: userId,
-          },
-        ]);
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "COMPLETED", completedAt: new Date(), updatedAt: new Date() })
-        .where(eq(invStockTransfers.id, transferId));
-    });
-
-    await this.cache.del(CACHE_KEYS.invStockSummary(orgId));
-    await this.cache.invalidatePattern(`inv:stock:levels:${orgId}:*`);
-  }
-
-  async dispatchTransfer(orgId: string, transferId: number): Promise<void> {
-    const transfer = await this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      columns: { id: true, status: true },
-    });
-    if (!transfer) throw new NotFoundException("Transfer not found");
-    if (transfer.status !== "PENDING") throw new BadRequestException("Only PENDING transfers can be dispatched");
-
-    await this.db.update(invStockTransfers)
-      .set({ status: "IN_TRANSIT", updatedAt: new Date() })
-      .where(eq(invStockTransfers.id, transferId));
-  }
-
-  async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
-    const { page, limit } = filters;
-    const offset = (page - 1) * limit;
-    const conditions = [eq(invStockTransfers.orgId, orgId)];
-    if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, userId, { ownerColumn: invStockTransfers.createdBy }));
-    }
-    const where = and(...conditions);
-
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockTransfers.findMany({
-        where,
-        orderBy: [desc(invStockTransfers.createdAt)],
-        limit,
-        offset,
-        with: {
-          fromLocation: { columns: { id: true, name: true, code: true } },
-          toLocation: { columns: { id: true, name: true, code: true } },
-          creator: { columns: { id: true, name: true } },
-          lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
-        },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(where),
-    ]);
-
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
-  }
-
-  getTransfer(orgId: string, transferId: number) {
-    return this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: {
-        fromLocation: true,
-        toLocation: true,
-        creator: { columns: { id: true, name: true } },
-        lines: { with: { productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } } } },
-      },
-    });
+    return {
+      variantId,
+      onHand: onHand.toFixed(4),
+      available: available.toFixed(4),
+      committed: committed.toFixed(4),
+      incoming: incoming.toFixed(4),
+      outgoing: outgoing.toFixed(4),
+      forecasted: forecasted.toFixed(4),
+      warehouseBreakdown,
+    };
   }
 }

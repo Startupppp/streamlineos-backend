@@ -1,8 +1,27 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { leavePolicies } from "../../db/schema";
+import { leavePolicies, leaveTypes } from "../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
+
+export interface LeavePolicySummary {
+  wfhMonthlyQuota: number;
+  leaveTypes: Array<{
+    name: string;
+    daysPerYear: number;
+    carryForward: boolean;
+    expiresMonthly: boolean;
+  }>;
+}
+
+const DEFAULT_SUMMARY: LeavePolicySummary = {
+  wfhMonthlyQuota: 4,
+  leaveTypes: [
+    { name: "Casual Leave", daysPerYear: 12, carryForward: false, expiresMonthly: true },
+    { name: "Sick Leave", daysPerYear: 6, carryForward: false, expiresMonthly: false },
+    { name: "Unpaid Leave", daysPerYear: 0, carryForward: false, expiresMonthly: false },
+  ],
+};
 
 export interface CreateLeavePolicyInput {
   leaveTypeId: number;
@@ -26,6 +45,36 @@ export type UpdateLeavePolicyInput = Partial<CreateLeavePolicyInput>;
 @Injectable()
 export class LeavePoliciesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async getOrgSummary(orgId: string): Promise<LeavePolicySummary> {
+    const [types, policies] = await Promise.all([
+      this.db
+        .select({ id: leaveTypes.id, name: leaveTypes.name, daysPerYear: leaveTypes.daysPerYear, carryForward: leaveTypes.carryForward })
+        .from(leaveTypes)
+        .where(eq(leaveTypes.orgId, orgId)),
+      this.db
+        .select({ leaveTypeId: leavePolicies.leaveTypeId, accrualType: leavePolicies.accrualType })
+        .from(leavePolicies)
+        .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
+    ]);
+
+    if (types.length === 0) return DEFAULT_SUMMARY;
+
+    const policyMap = new Map<number, string>();
+    for (const p of policies) {
+      if (!policyMap.has(p.leaveTypeId)) policyMap.set(p.leaveTypeId, p.accrualType);
+    }
+
+    return {
+      wfhMonthlyQuota: DEFAULT_SUMMARY.wfhMonthlyQuota,
+      leaveTypes: types.map((t) => ({
+        name: t.name,
+        daysPerYear: t.daysPerYear,
+        carryForward: t.carryForward,
+        expiresMonthly: policyMap.get(t.id) === "MONTHLY",
+      })),
+    };
+  }
 
   async list(orgId: string) {
     return this.db

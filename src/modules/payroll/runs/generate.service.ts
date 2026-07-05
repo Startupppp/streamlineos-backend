@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
-import { and, eq, inArray, count, desc, lt, lte } from "drizzle-orm";
+import { and, eq, inArray, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -13,7 +13,9 @@ import {
   reimbursements,
   incentives,
   salaryLoans,
+  users,
 } from "../../../db/schema";
+import { decryptBankDetails } from "../../hr-payroll/lib/encryption";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
@@ -56,6 +58,9 @@ export class GenerateService {
     const { toggles, config, policyVersionId } = policyResult;
 
     const profiles = await this.loadEligibleProfiles(orgId, run.month, toggles);
+    const eligibleUserIds = profiles.map((p) => p.userId);
+    const heldUserIds = await this.loadHeldUserIds(orgId, runId, eligibleUserIds);
+    const duplicateBankAccountUserIds = await this.findDuplicateBankAccounts(eligibleUserIds);
 
     if (isRecalc) {
       await this.clearPreviouslyConsumedReimbursements(orgId, runId);
@@ -90,6 +95,10 @@ export class GenerateService {
           run.month,
           prevSnap,
           hasAttendanceInput,
+          {
+            isSalaryOnHold: heldUserIds.has(profile.userId),
+            duplicateBankAccountUserIds,
+          },
         );
 
         const inputsWithConsumed: InputsSnapshot = {
@@ -168,6 +177,46 @@ export class GenerateService {
     }
 
     return { ok: true };
+  }
+
+  private async loadHeldUserIds(orgId: string, runId: number, userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const rows = await this.db
+      .select({ userId: payrollRunEmployees.userId })
+      .from(payrollRunEmployees)
+      .where(
+        and(
+          eq(payrollRunEmployees.orgId, orgId),
+          eq(payrollRunEmployees.runId, runId),
+          or(eq(payrollRunEmployees.status, "HELD"), isNotNull(payrollRunEmployees.holdReason)),
+        ),
+      );
+    return new Set(rows.map((r) => r.userId));
+  }
+
+  private async findDuplicateBankAccounts(userIds: string[]): Promise<string[]> {
+    if (userIds.length < 2) return [];
+    const rows = await this.db
+      .select({ id: users.id, bankDetails: users.bankDetails })
+      .from(users)
+      .where(inArray(users.id, userIds));
+
+    const keyToUserIds = new Map<string, string[]>();
+    for (const row of rows) {
+      const bank = decryptBankDetails(row.bankDetails ?? null);
+      const account = bank?.accountNumber?.trim().toLowerCase();
+      if (!account) continue;
+      const key = `${account}|${(bank?.ifsc ?? "").trim().toLowerCase()}`;
+      const list = keyToUserIds.get(key) ?? [];
+      list.push(row.id);
+      keyToUserIds.set(key, list);
+    }
+
+    const duplicates = new Set<string>();
+    for (const list of keyToUserIds.values()) {
+      if (list.length > 1) list.forEach((id) => duplicates.add(id));
+    }
+    return [...duplicates];
   }
 
   async postPayrollLock(orgId: string, runId: number, tx?: PayrollTx): Promise<void> {

@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -9,11 +11,12 @@ import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.sche
 
 @RequireModule("projects")
 @Controller("projects")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsWebhooksController {
   constructor(private readonly webhooks: ProjectsWebhooksService) {}
 
   @Get(":projectId/webhooks")
+  @RequirePermission("projects:manage")
   listWebhooks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -22,6 +25,7 @@ export class ProjectsWebhooksController {
   }
 
   @Post(":projectId/webhooks")
+  @RequirePermission("projects:manage")
   @HttpCode(201)
   createWebhook(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -32,6 +36,7 @@ export class ProjectsWebhooksController {
   }
 
   @Delete(":projectId/webhooks/:webhookId")
+  @RequirePermission("projects:manage")
   @HttpCode(204)
   deleteWebhook(
     @Param("webhookId", ParseIntPipe) webhookId: number,
@@ -41,6 +46,7 @@ export class ProjectsWebhooksController {
   }
 
   @Get(":projectId/webhooks/:webhookId/deliveries")
+  @RequirePermission("projects:manage")
   listDeliveries(@Param("webhookId", ParseIntPipe) webhookId: number) {
     return this.webhooks.listDeliveries(webhookId);
   }

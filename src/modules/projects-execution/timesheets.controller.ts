@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -34,11 +36,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("projects")
 @Controller("projects/time-entries")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TimeEntriesController {
   constructor(private readonly timesheets: TimesheetsService) {}
 
   @Get()
+  @RequirePermission("projects:timesheets:view")
   listTimeEntries(
     @Query(new ZodValidationPipe(timeEntriesListQuerySchema)) query: TimeEntriesListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +50,7 @@ export class TimeEntriesController {
   }
 
   @Get("team")
+  @RequirePermission("projects:timesheets:manage")
   teamTimesheets(
     @Query(new ZodValidationPipe(teamTimesheetsQuerySchema)) query: TeamTimesheetsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +59,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/approve")
+  @RequirePermission("projects:timesheets:manage")
   approveEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +68,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/reject")
+  @RequirePermission("projects:timesheets:manage")
   rejectEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(rejectEntrySchema)) body: RejectEntryInput,
@@ -72,6 +78,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId")
+  @RequirePermission("projects:timesheets:create")
   updateEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body(new ZodValidationPipe(updateEntrySchema)) body: UpdateEntryInput,
@@ -81,6 +88,7 @@ export class TimeEntriesController {
   }
 
   @Delete(":entryId")
+  @RequirePermission("projects:timesheets:create")
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,12 +97,14 @@ export class TimeEntriesController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/billing-summary")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BillingSummaryController {
   constructor(private readonly timesheets: TimesheetsService) {}
 
   @Get()
+  @RequirePermission("projects:view")
   billingSummary(
     @Query(new ZodValidationPipe(billingSummaryQuerySchema)) query: BillingSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -103,12 +113,14 @@ export class BillingSummaryController {
   }
 }
 
+@RequireModule("projects")
 @Controller("projects/:projectId/tickets/:ticketId/time-entries")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TicketTimeEntriesController {
   constructor(private readonly timesheets: TimesheetsService) {}
 
   @Get()
+  @RequirePermission("projects:timesheets:view")
   listTicketTimeEntries(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +130,7 @@ export class TicketTimeEntriesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("projects:timesheets:create")
   logTicketTime(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(logTimeSchema)) body: LogTimeInput,

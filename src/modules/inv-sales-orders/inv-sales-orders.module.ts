@@ -1,12 +1,14 @@
 import { Module } from "@nestjs/common";
 import { InvSalesOrdersController } from "./inv-sales-orders.controller";
-import { InvSalesOrdersService } from "./inv-sales-orders.service";
+import { SoCoreService } from "./so-core.service";
+import { SoFulfillmentService } from "./so-fulfillment.service";
+import { InvStockEngineModule } from "../inv-stock-engine/inv-stock-engine.module";
 import { AccountingModule } from "../accounting/accounting.module";
 
 @Module({
-  imports: [AccountingModule],
+  imports: [InvStockEngineModule, AccountingModule],
   controllers: [InvSalesOrdersController],
-  providers: [InvSalesOrdersService],
-  exports: [InvSalesOrdersService],
+  providers: [SoCoreService, SoFulfillmentService],
+  exports: [SoCoreService, SoFulfillmentService],
 })
 export class InvSalesOrdersModule {}

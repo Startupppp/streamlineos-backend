@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
+  productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -16,6 +17,14 @@ export const createProductSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   categoryId: z.number().int().positive().optional(),
   uomId: z.number().int().positive().optional(),
+  productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
+  trackingMethod: z.enum(["NONE", "LOT", "SERIAL"]).optional(),
+  costingMethod: z.enum(["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]).optional(),
+  standardCost: z.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
+  purchaseUomId: z.number().int().positive().optional(),
+  salesUomId: z.number().int().positive().optional(),
+  defaultVendorId: z.number().int().positive().optional(),
+  reorderEnabled: z.boolean().optional(),
   costPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
   sellingPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
   reorderPoint: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
@@ -53,6 +62,14 @@ export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export const createUomSchema = z.object({
   name: z.string().trim().min(1).max(100),
   abbreviation: z.string().trim().min(1).max(20),
+  category: z.string().trim().max(100).optional(),
+  ratioToBase: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/)
+    .refine((v) => parseFloat(v) > 0, { message: "ratioToBase must be greater than 0" })
+    .optional(),
+  roundingPrecision: z.number().int().min(0).max(6).optional(),
+  isBase: z.boolean().optional(),
 });
 export type CreateUomInput = z.infer<typeof createUomSchema>;
 
@@ -77,6 +94,14 @@ export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export const updateUomSchema = z.object({
   name: z.string().min(1).max(50).optional(),
   abbreviation: z.string().min(1).max(20).optional(),
+  category: z.string().trim().max(100).optional(),
+  ratioToBase: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/)
+    .refine((v) => parseFloat(v) > 0, { message: "ratioToBase must be greater than 0" })
+    .optional(),
+  roundingPrecision: z.number().int().min(0).max(6).optional(),
+  isBase: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 export type UpdateUomInput = z.infer<typeof updateUomSchema>;

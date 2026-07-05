@@ -66,6 +66,7 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   status: text("status").default("POSTED").notNull(),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
+  postedBy: text("posted_by").references(() => users.id),
   postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -135,6 +136,7 @@ export const invStockAdjustmentsRelations = relations(invStockAdjustments, ({ on
   organization: one(organizations, { fields: [invStockAdjustments.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invStockAdjustments.createdBy], references: [users.id] }),
   approver: one(users, { fields: [invStockAdjustments.approvedBy], references: [users.id], relationName: "adjApprover" }),
+  poster: one(users, { fields: [invStockAdjustments.postedBy], references: [users.id], relationName: "adjPoster" }),
   lines: many(invStockAdjustmentLines),
 }));
 

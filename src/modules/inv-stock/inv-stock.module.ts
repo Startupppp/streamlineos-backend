@@ -1,10 +1,17 @@
 import { Module } from "@nestjs/common";
+import { InvStockEngineModule } from "../inv-stock-engine/inv-stock-engine.module";
 import { InvStockController } from "./inv-stock.controller";
+import { InvStockAdjustmentsController } from "./inv-stock-adjustments.controller";
+import { InvStockTransfersController } from "./inv-stock-transfers.controller";
 import { InvStockService } from "./inv-stock.service";
+import { InvStockReservationsService } from "./inv-stock-reservations.service";
+import { InvStockAdjustmentsService } from "./inv-stock-adjustments.service";
+import { InvStockTransfersService } from "./inv-stock-transfers.service";
 
 @Module({
-  controllers: [InvStockController],
-  providers: [InvStockService],
-  exports: [InvStockService],
+  imports: [InvStockEngineModule],
+  controllers: [InvStockController, InvStockAdjustmentsController, InvStockTransfersController],
+  providers: [InvStockService, InvStockReservationsService, InvStockAdjustmentsService, InvStockTransfersService],
+  exports: [InvStockService, InvStockAdjustmentsService, InvStockTransfersService],
 })
 export class InvStockModule {}

@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 export const listSoSchema = z.object({
-  status: z.enum(["DRAFT", "CONFIRMED", "SHIPPED", "INVOICED", "CANCELLED"]).optional(),
+  status: z.enum([
+    "DRAFT", "CONFIRMED", "PARTIALLY_RESERVED", "RESERVED",
+    "PICKED", "PACKED", "SHIPPED", "PARTIALLY_SHIPPED", "INVOICED", "CANCELLED", "CLOSED",
+  ]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -28,8 +31,62 @@ export const createSoSchema = z.object({
 });
 export type CreateSoInput = z.infer<typeof createSoSchema>;
 
+export const updateSoSchema = z.object({
+  clientId: z.number().int().positive().optional(),
+  orderDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  shippingAddress: z.string().max(500).optional(),
+  warehouseId: z.number().int().positive().optional(),
+  currency: z.string().length(3).optional(),
+  notes: z.string().max(2000).optional(),
+  lines: z.array(soLineSchema).min(1).optional(),
+});
+export type UpdateSoInput = z.infer<typeof updateSoSchema>;
+
+export const reserveAllocationSchema = z.object({
+  soLineId: z.number().int().positive(),
+  locationId: z.number().int().positive(),
+  lotId: z.number().int().positive().optional(),
+  serialId: z.number().int().positive().optional(),
+  qty: z.number().positive(),
+});
+
+export const reserveSoSchema = z.object({
+  warehouseId: z.number().int().positive().optional(),
+  allocations: z.array(reserveAllocationSchema).optional(),
+});
+export type ReserveSoInput = z.infer<typeof reserveSoSchema>;
+
+export const pickLineSchema = z.object({
+  soLineId: z.number().int().positive(),
+  locationId: z.number().int().positive(),
+  lotId: z.number().int().positive().optional(),
+  serialId: z.number().int().positive().optional(),
+  quantityPicked: z.number().positive(),
+});
+
+export const pickSoSchema = z.object({
+  lines: z.array(pickLineSchema).min(1),
+});
+export type PickSoInput = z.infer<typeof pickSoSchema>;
+
+export const packSoSchema = z.object({
+  weight: z.number().positive().optional(),
+  dimensionsL: z.number().positive().optional(),
+  dimensionsW: z.number().positive().optional(),
+  dimensionsH: z.number().positive().optional(),
+});
+export type PackSoInput = z.infer<typeof packSoSchema>;
+
 export const shipSoSchema = z.object({
   shipDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  carrierId: z.number().int().positive().optional(),
+  trackingNumber: z.string().max(200).optional(),
   notes: z.string().max(500).optional(),
 });
 export type ShipSoInput = z.infer<typeof shipSoSchema>;
+
+export const cancelSoSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+export type CancelSoInput = z.infer<typeof cancelSoSchema>;

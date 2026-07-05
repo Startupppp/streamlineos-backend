@@ -1,28 +1,29 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Headers, Post, Body, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { InvStockService } from "./inv-stock.service";
-import { resolveInvStockScope } from "../inventory/inventory-scope";
-import {
-  listStockLevelsSchema, listTransactionsSchema, listAdjustmentsSchema, createAdjustmentSchema,
-  createTransferSchema, completeTransferSchema, listTransfersSchema,
-  type ListStockLevelsInput, type ListTransactionsInput, type ListAdjustmentsInput,
-  type CreateAdjustmentInput, type CreateTransferInput, type CompleteTransferInput, type ListTransfersInput,
-} from "./dto/inv-stock.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { InvStockService } from "./inv-stock.service";
+import { InvStockReservationsService } from "./inv-stock-reservations.service";
+import {
+  listStockLevelsSchema, listTransactionsSchema, availabilityQuerySchema,
+  listReservationsSchema, createReservationSchema, releaseReservationSchema, openingStockSchema,
+  type ListStockLevelsInput, type ListTransactionsInput, type AvailabilityQueryInput,
+  type ListReservationsInput, type CreateReservationInput, type ReleaseReservationInput,
+  type OpeningStockInput,
+} from "./dto/inv-stock.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/stock")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvStockController {
   constructor(
     private readonly stock: InvStockService,
-    private readonly access: AccessService,
+    private readonly reservations: InvStockReservationsService,
   ) {}
 
   @Get()
@@ -45,73 +46,57 @@ export class InvStockController {
     return this.stock.listTransactions(u.orgId, filters);
   }
 
-  @Get("adjustments")
+  @Get("availability")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
-  async listAdjustments(
-    @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
+  getAvailability(
+    @Query(new ZodValidationPipe(availabilityQuerySchema)) query: AvailabilityQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvStockScope(this.access, u);
-    return this.stock.listAdjustments(u.orgId, filters, scope, u.userId);
+    return this.stock.getAvailability(u.orgId, query);
   }
 
-  @Post("adjustments")
+  @Get("reservations")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:read")
+  listReservations(
+    @Query(new ZodValidationPipe(listReservationsSchema)) filters: ListReservationsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reservations.listReservations(u.orgId, filters);
+  }
+
+  @Post("reserve")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:reserve")
+  createReservation(
+    @Headers("idempotency-key") idempotencyKey: string,
+    @Body(new ZodValidationPipe(createReservationSchema)) body: CreateReservationInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
+    return this.reservations.createReservation(u.orgId, u.userId, body, idempotencyKey);
+  }
+
+  @Post("release-reservation")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:stock:reserve")
+  releaseReservation(
+    @Body(new ZodValidationPipe(releaseReservationSchema)) body: ReleaseReservationInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reservations.releaseReservation(u.orgId, u.userId, body);
+  }
+
+  @Post("opening")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
-  createAdjustment(
-    @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
+  createOpeningBalance(
+    @Headers("idempotency-key") idempotencyKey: string,
+    @Body(new ZodValidationPipe(openingStockSchema)) body: OpeningStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stock.createAdjustment(u.orgId, u.userId, body);
-  }
-
-  @Get("transfers")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:read")
-  async listTransfers(
-    @Query(new ZodValidationPipe(listTransfersSchema)) filters: ListTransfersInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const scope = await resolveInvStockScope(this.access, u);
-    return this.stock.listTransfers(u.orgId, filters, scope, u.userId);
-  }
-
-  @Get("transfers/:transferId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:read")
-  getTransfer(@Param("transferId", ParseIntPipe) transferId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.stock.getTransfer(u.orgId, transferId);
-  }
-
-  @Post("transfers")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:transfer")
-  createTransfer(
-    @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.stock.createTransfer(u.orgId, u.userId, body);
-  }
-
-  @Post("transfers/:transferId/dispatch")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:transfer")
-  dispatchTransfer(
-    @Param("transferId", ParseIntPipe) transferId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.stock.dispatchTransfer(u.orgId, transferId);
-  }
-
-  @Post("transfers/:transferId/complete")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:stock:transfer")
-  completeTransfer(
-    @Param("transferId", ParseIntPipe) transferId: number,
-    @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.stock.completeTransfer(u.orgId, u.userId, transferId, body);
+    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
+    return this.reservations.createOpeningBalance(u.orgId, u.userId, body, idempotencyKey);
   }
 }

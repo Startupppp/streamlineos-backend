@@ -9,5 +9,6 @@ import { IntegrationsModule } from "../integrations/integrations.module";
   imports: [IntegrationsModule],
   controllers: [CalendarController],
   providers: [CalendarService, ExternalCalendarEventsService, ExternalCalendarSyncService],
+  exports: [CalendarService],
 })
 export class CalendarModule {}

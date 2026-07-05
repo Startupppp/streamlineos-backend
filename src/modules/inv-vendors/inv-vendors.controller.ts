@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -14,7 +15,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/vendors")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvVendorsController {
   constructor(private readonly vendors: InvVendorsService) {}
 
@@ -36,6 +37,16 @@ export class InvVendorsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.vendors.getVendor(u.orgId, vendorId);
+  }
+
+  @Get(":vendorId/performance")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:vendors:read")
+  getPerformance(
+    @Param("vendorId", ParseIntPipe) vendorId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.vendors.getVendorPerformance(u.orgId, vendorId);
   }
 
   @Post()
