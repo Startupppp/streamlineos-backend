@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gte, lte, isNotNull, inArray } from "drizzle-orm";
 import {
   calendarEvents,
@@ -58,6 +58,8 @@ function dateOnly(date: Date): string {
 
 @Injectable()
 export class CalendarService {
+  private readonly logger = new Logger(CalendarService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sync: ExternalCalendarSyncService,
@@ -475,7 +477,11 @@ export class CalendarService {
           startIso: event.startDate.toISOString(),
           endIso: event.endDate.toISOString(),
         });
-      } catch {}
+      } catch (error) {
+        this.logger.warn(
+          `External sync update failed for event ${event.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     return event ?? null;
@@ -512,7 +518,11 @@ export class CalendarService {
       try {
         const conn = await this.ownedActiveConnection(orgId, userId, mapping.integrationConnectionId);
         await this.sync.pushDelete(userId, conn, mapping.externalEventId);
-      } catch {}
+      } catch (error) {
+        this.logger.warn(
+          `External sync delete failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     return { deleted: true };

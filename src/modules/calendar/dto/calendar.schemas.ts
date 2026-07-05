@@ -81,9 +81,13 @@ export const exportSchema = z.object({
   to: z.string(),
 });
 
+const parseableDate = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format");
+
 export const externalEventsQuerySchema = z.object({
-  start: z.string(),
-  end: z.string(),
+  start: parseableDate,
+  end: parseableDate,
 });
 
 export type ListEventsInput = z.infer<typeof listEventsSchema>;

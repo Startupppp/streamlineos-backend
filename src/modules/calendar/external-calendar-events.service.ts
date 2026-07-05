@@ -4,6 +4,7 @@ import { calendarEvents, userIntegrationConnections } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { ComposioGateway, ComposioToolError } from "../integrations/composio.gateway";
 import {
   TOOL_SLUGS,
@@ -83,7 +84,8 @@ export class ExternalCalendarEventsService {
           void this.db
             .update(userIntegrationConnections)
             .set({ status: "needs_reauth" })
-            .where(eq(userIntegrationConnections.id, conn.id));
+            .where(eq(userIntegrationConnections.id, conn.id))
+            .catch(() => undefined);
         }
       }
     });
@@ -102,7 +104,7 @@ export class ExternalCalendarEventsService {
     startIso: string,
     endIso: string,
   ): Promise<ExternalCalendarEventItem[]> {
-    const cacheKey = `integrations:extevents:${conn.id}:${startIso}:${endIso}`;
+    const cacheKey = CACHE_KEYS.externalCalendarEvents(conn.id, startIso, endIso);
     return this.cache.cached(
       cacheKey,
       async () => {

@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { ComposioGateway } from "../integrations/composio.gateway";
-import { TOOL_SLUGS } from "./external-event-normalizers";
+import { TOOL_SLUGS, unwrapComposioData } from "./external-event-normalizers";
 
 export interface PushEventInput {
   title: string;
@@ -38,13 +38,6 @@ const outlookCreateResponseSchema = z
   })
   .passthrough();
 
-function unwrap(data: unknown): unknown {
-  if (data !== null && typeof data === "object" && "response_data" in data) {
-    return (data as Record<string, unknown>).response_data;
-  }
-  return data;
-}
-
 @Injectable()
 export class ExternalCalendarSyncService {
   constructor(private readonly gateway: ComposioGateway) {}
@@ -55,7 +48,7 @@ export class ExternalCalendarSyncService {
     input: PushEventInput,
   ): Promise<PushCreateResult> {
     if (conn.toolkit === "googlecalendar") {
-      const data = unwrap(
+      const data = unwrapComposioData(
         await this.gateway.executeTool(
           TOOL_SLUGS.googleCreate,
           userId,
@@ -81,7 +74,7 @@ export class ExternalCalendarSyncService {
         meetingUrl: parsed.hangoutLink ?? null,
       };
     }
-    const data = unwrap(
+    const data = unwrapComposioData(
       await this.gateway.executeTool(
         TOOL_SLUGS.outlookCreate,
         userId,

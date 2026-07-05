@@ -53,6 +53,13 @@ const outlookEventSchema = z.object({
 
 const outlookListSchema = z.object({ value: z.array(z.unknown()).optional() });
 
+export function unwrapComposioData(data: unknown): unknown {
+  if (data !== null && typeof data === "object" && "response_data" in data) {
+    return (data as Record<string, unknown>).response_data;
+  }
+  return data;
+}
+
 function graphToIso(value: z.infer<typeof graphDateSchema>): string {
   if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value.dateTime)) return new Date(value.dateTime).toISOString();
   const raw = value.dateTime.replace(/\.\d+$/, "");
@@ -65,7 +72,7 @@ interface ConnectionMeta {
 }
 
 export function normalizeGoogleEvents(data: unknown, conn: ConnectionMeta): ExternalCalendarEventItem[] {
-  const list = googleListSchema.parse(data);
+  const list = googleListSchema.parse(unwrapComposioData(data));
   const items: ExternalCalendarEventItem[] = [];
   for (const raw of list.items ?? []) {
     const parsed = googleEventSchema.safeParse(raw);
@@ -95,7 +102,7 @@ export function normalizeGoogleEvents(data: unknown, conn: ConnectionMeta): Exte
 }
 
 export function normalizeOutlookEvents(data: unknown, conn: ConnectionMeta): ExternalCalendarEventItem[] {
-  const list = outlookListSchema.parse(data);
+  const list = outlookListSchema.parse(unwrapComposioData(data));
   const items: ExternalCalendarEventItem[] = [];
   for (const raw of list.value ?? []) {
     const parsed = outlookEventSchema.safeParse(raw);

@@ -1,3 +1,5 @@
+jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
+
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import type { ComposioGateway } from "../integrations/composio.gateway";
 

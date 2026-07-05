@@ -59,6 +59,8 @@ export const CACHE_KEYS = {
   supportTicketDetail: (orgId: string, id: number) => `support:detail:${orgId}:${id}`,
 
   calendarEvents: (orgId: string, hash: string) => `calendar:events:${orgId}:${hash}`,
+  externalCalendarEvents: (connectionId: number, startIso: string, endIso: string) =>
+    `integrations:extevents:${connectionId}:${startIso}:${endIso}`,
 
   targetsList: (orgId: string, hash: string) => `targets:list:${orgId}:${hash}`,
   targetLeaderboard: (orgId: string, metricType: string) => `targets:leaderboard:${orgId}:${metricType}`,
