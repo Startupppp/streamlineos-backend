@@ -15,8 +15,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { KbIndexingService } from "./kb-indexing.service";
 
 @Controller("kb/pages")
-@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-@RequireModule("kb")
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPageIndexingController {
   constructor(private readonly indexing: KbIndexingService) {}
 
