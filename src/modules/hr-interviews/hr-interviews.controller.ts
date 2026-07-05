@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -13,11 +12,12 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewsService } from "./hr-interviews.service";
-import { AccessService } from "../access/access.service";
 import {
   interviewListSchema,
   upsertSlaSchema,
@@ -26,14 +26,12 @@ import {
 } from "./dto/hr-interviews.schemas";
 
 @Controller("hr/recruitment/interviews")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrInterviewsController {
-  constructor(
-    private readonly interviews: HrInterviewsService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly interviews: HrInterviewsService) {}
 
   @Get()
+  @RequirePermission("hr:interviews:view")
   list(
     @Query(new ZodValidationPipe(interviewListSchema)) query: InterviewListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -42,42 +40,33 @@ export class HrInterviewsController {
   }
 
   @Get("slas")
+  @RequirePermission("hr:interviews:view")
   listSlas(@CurrentUser() u: CurrentUserContext) {
     return this.interviews.listSlas(u.orgId);
   }
 
   @Put("slas")
-  async upsertSla(
-    @Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
+  @RequirePermission("hr:interviews:manage")
+  upsertSla(@Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
     return this.interviews.upsertSla(u.orgId, body);
   }
 
   @Get("sla-report")
+  @RequirePermission("hr:interviews:view")
   slaReport(@CurrentUser() u: CurrentUserContext) {
     return this.interviews.slaReport(u.orgId);
   }
 
   @Get(":interviewId/scorecard/summary")
-  async scorecardSummary(
-    @Param("interviewId", ParseIntPipe) interviewId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
+  @RequirePermission("hr:interviews:view")
+  async scorecardSummary(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.interviews.scorecardSummary(u.orgId, interviewId);
     if (!result) throw new NotFoundException("Interview not found.");
     return result;
   }
 
   @Get(":interviewId/ics")
+  @RequirePermission("hr:interviews:view")
   async ics(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -93,6 +93,7 @@ export class RecruitmentJobsService {
         applicationDeadline: input.applicationDeadline ? formatDateOnly(new Date(input.applicationDeadline)) : undefined,
         status: input.status ?? "DRAFT",
         postedBy: userId,
+        screeningQuestions: input.screeningQuestions,
       })
       .returning();
 
@@ -131,13 +132,16 @@ export class RecruitmentJobsService {
     if (input.openings !== undefined) updateData.openings = input.openings;
     if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(new Date(input.applicationDeadline));
     if (input.hiringFlowId !== undefined) updateData.hiringFlowId = input.hiringFlowId;
+    if (input.screeningQuestions !== undefined) updateData.screeningQuestions = input.screeningQuestions;
 
     await this.db.update(jobPostings).set(updateData).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     return { success: true };
   }
 
   async remove(orgId: string, jobId: number) {
     await this.db.delete(jobPostings).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     return { success: true };
   }
 
@@ -181,6 +185,7 @@ export class RecruitmentJobsService {
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
         .where(eq(jobPostings.id, jobId));
+      await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
     }
 
     return { results, publishedCount, externalIds };

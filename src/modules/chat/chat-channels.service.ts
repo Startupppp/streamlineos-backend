@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import {
   chatAttachments,
   chatChannels,
@@ -34,11 +34,24 @@ export class ChatChannelsService {
   }
 
   async getMyChannels(userId: string, orgId: string) {
+    return this.listMemberChannels(userId, orgId, false);
+  }
+
+  async getArchivedChannels(userId: string, orgId: string) {
+    return this.listMemberChannels(userId, orgId, true);
+  }
+
+  private async listMemberChannels(userId: string, orgId: string, archived: boolean) {
     try {
       const memberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
         .from(chatChannelMembers)
-        .where(eq(chatChannelMembers.userId, userId));
+        .where(
+          and(
+            eq(chatChannelMembers.userId, userId),
+            archived ? isNotNull(chatChannelMembers.archivedAt) : isNull(chatChannelMembers.archivedAt),
+          ),
+        );
 
       if (memberships.length === 0) return [];
 
@@ -71,7 +84,6 @@ export class ChatChannelsService {
         .where(
           and(
             inArray(chatMessages.channelId, channelIds),
-            ne(chatMessages.senderId, userId),
             eq(chatMessages.isDeleted, false),
             gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
           ),
@@ -107,7 +119,7 @@ export class ChatChannelsService {
         lastMessage: lastMsgMap.get(ch.id) ?? null,
       }));
     } catch (error) {
-      logger.error("[chat.getMyChannels]", {
+      logger.error(archived ? "[chat.getArchivedChannels]" : "[chat.getMyChannels]", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
       return [];
@@ -375,20 +387,30 @@ export class ChatChannelsService {
   }
 
   async archiveChannel(channelId: number, userId: string) {
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
-    });
-    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can archive channels");
-    await this.db.update(chatChannels).set({ isArchived: true }).where(eq(chatChannels.id, channelId));
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ archivedAt: new Date() })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
     return { ok: true };
   }
 
   async unarchiveChannel(channelId: number, userId: string) {
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
-    });
-    if (!member || member.role !== "ADMIN") throw new ForbiddenException("Only admins can unarchive channels");
-    await this.db.update(chatChannels).set({ isArchived: false }).where(eq(chatChannels.id, channelId));
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ archivedAt: null })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
     return { ok: true };
   }
 
@@ -407,9 +429,21 @@ export class ChatChannelsService {
   }
 
   async markChannelUnread(channelId: number, userId: string) {
+    const latestMessage = await this.db
+      .select({ createdAt: chatMessages.createdAt })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.channelId, channelId), eq(chatMessages.isDeleted, false)))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    const lastReadAt = latestMessage?.createdAt
+      ? new Date(new Date(latestMessage.createdAt).getTime() - 1)
+      : new Date(0);
+
     await this.db
       .update(chatChannelMembers)
-      .set({ lastReadAt: new Date(0) })
+      .set({ lastReadAt })
       .where(
         and(
           eq(chatChannelMembers.channelId, channelId),
@@ -505,6 +539,48 @@ export class ChatChannelsService {
         ),
       );
     return { ok: true };
+  }
+
+  async favoriteChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ isFavorite: true })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async unfavoriteChannel(channelId: number, userId: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ isFavorite: false })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true };
+  }
+
+  async setNotificationPreference(channelId: number, userId: string, preference: string) {
+    await this.assertMember(channelId, userId);
+    await this.db
+      .update(chatChannelMembers)
+      .set({ notificationPreference: preference })
+      .where(
+        and(
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+      );
+    return { ok: true, notificationPreference: preference };
   }
 
   async listChannelFiles(channelId: number, userId: string, cursor?: number, limit = 20) {

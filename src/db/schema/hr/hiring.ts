@@ -7,6 +7,16 @@ import {
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
 
+export interface ScreeningQuestion {
+  id: string;
+  question: string;
+  type: "TEXT" | "YES_NO" | "SINGLE_SELECT" | "NUMBER";
+  required: boolean;
+  knockout: boolean;
+  knockoutAnswer?: string;
+  options?: string[];
+}
+
 export const hiringFlows = pgTable("hiring_flows", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -59,6 +69,7 @@ export const jobPostings = pgTable("job_postings", {
   postedBy: text("posted_by").references(() => users.id),
   externalPostingIds: jsonb("external_posting_ids").$type<Record<string, string>>(),
   isInternal: boolean("is_internal").notNull().default(false),
+  screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -134,6 +145,7 @@ export const candidateApplications = pgTable("candidate_applications", {
   coverLetter: text("cover_letter"),
   notes: text("notes"),
   trackingToken: text("tracking_token").unique(),
+  screeningAnswers: jsonb("screening_answers").$type<Record<string, string>>(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_applications_candidate").on(table.candidateId),
@@ -424,6 +436,49 @@ export const candidateOffers = pgTable("candidate_offers", {
   index("idx_candidate_offers_org").on(table.orgId),
 ]);
 
+export const offerVersions = pgTable("offer_versions", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
+  offeredDesignation: text("offered_designation"),
+  joiningDate: date("joining_date"),
+  validUntil: date("valid_until"),
+  notes: text("notes"),
+  changeReason: text("change_reason"),
+  changedBy: text("changed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_offer_versions_offer").on(table.offerId),
+]);
+
+export type OfferNegotiationDirection = "CANDIDATE_COUNTER" | "INTERNAL_RESPONSE";
+
+export const offerNegotiations = pgTable("offer_negotiations", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id),
+  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  direction: text("direction").$type<OfferNegotiationDirection>().notNull(),
+  proposedSalary: decimal("proposed_salary", { precision: 15, scale: 2 }),
+  proposedJoiningDate: date("proposed_joining_date"),
+  message: text("message"),
+  createdBy: text("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_offer_negotiations_offer").on(table.offerId),
+]);
+
+export const offerVersionsRelations = relations(offerVersions, ({ one }) => ({
+  offer: one(candidateOffers, { fields: [offerVersions.offerId], references: [candidateOffers.id] }),
+  changedByUser: one(users, { fields: [offerVersions.changedBy], references: [users.id] }),
+}));
+
+export const offerNegotiationsRelations = relations(offerNegotiations, ({ one }) => ({
+  offer: one(candidateOffers, { fields: [offerNegotiations.offerId], references: [candidateOffers.id] }),
+  createdByUser: one(users, { fields: [offerNegotiations.createdBy], references: [users.id] }),
+}));
+
 export const hiringFlowsRelations = relations(hiringFlows, ({ one, many }) => ({
   organization: one(organizations, { fields: [hiringFlows.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [hiringFlows.createdBy], references: [users.id] }),
@@ -644,6 +699,7 @@ export const emailSequenceEnrollmentsRelations = relations(emailSequenceEnrollme
 export type VendorStatus = "ACTIVE" | "INACTIVE";
 export type VendorPlacementStatus = "SUBMITTED" | "INTERVIEWING" | "PLACED" | "REJECTED";
 export type VendorInvoiceStatus = "NOT_INVOICED" | "INVOICED" | "PAID";
+export type VendorContractType = "CONTINGENCY" | "CONTRACT_STAFFING" | "BOTH";
 
 export const recruitmentVendors = pgTable("recruitment_vendors", {
   id: serial("id").primaryKey(),
@@ -655,11 +711,17 @@ export const recruitmentVendors = pgTable("recruitment_vendors", {
   website: text("website"),
   feePercent: decimal("fee_percent", { precision: 5, scale: 2 }),
   status: text("status").$type<VendorStatus>().notNull().default("ACTIVE"),
+  contractType: text("contract_type").$type<VendorContractType>().notNull().default("CONTINGENCY"),
+  slaDays: integer("sla_days"),
+  replacementGuaranteeDays: integer("replacement_guarantee_days"),
+  portalToken: text("portal_token"),
+  portalTokenExpiresAt: timestamp("portal_token_expires_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_recruitment_vendors_org").on(table.orgId),
+  uniqueIndex("idx_recruitment_vendors_portal_token").on(table.portalToken),
 ]);
 
 export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions", {
@@ -673,6 +735,10 @@ export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions"
   invoiceAmount: decimal("invoice_amount", { precision: 15, scale: 2 }),
   invoiceDate: date("invoice_date"),
   paidAt: date("paid_at"),
+  billRate: decimal("bill_rate", { precision: 10, scale: 2 }),
+  payRate: decimal("pay_rate", { precision: 10, scale: 2 }),
+  contractStartDate: date("contract_start_date"),
+  contractEndDate: date("contract_end_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_vendor_submissions_vendor").on(table.vendorId),

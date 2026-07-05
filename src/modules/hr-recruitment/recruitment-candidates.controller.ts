@@ -25,20 +25,24 @@ import {
   bgvStatusSchema,
   bulkImportSchema,
   bulkRejectSchema,
+  bulkShortlistSchema,
   candidateListSchema,
   createApplicationSchema,
   createCandidateSchema,
   importSchema,
+  linkDuplicateSchema,
   slaResetSchema,
   stageSchema,
   updateCandidateSchema,
   type BgvStatusInput,
   type BulkImportInput,
   type BulkRejectInput,
+  type BulkShortlistInput,
   type CandidateListInput,
   type CreateApplicationInput,
   type CreateCandidateInput,
   type ImportInput,
+  type LinkDuplicateInput,
   type SlaResetInput,
   type StageInput,
   type UpdateCandidateInput,
@@ -108,6 +112,23 @@ export class RecruitmentCandidatesController {
     return this.ops.bulkReject(u.orgId, u.userId, body);
   }
 
+  @Post("bulk-shortlist")
+  async bulkShortlist(
+    @Body(new ZodValidationPipe(bulkShortlistSchema)) body: BulkShortlistInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR/Admin role required");
+    }
+    return this.ops.bulkShortlist(u.orgId, u.userId, body);
+  }
+
+  @Get("duplicates")
+  findDuplicates(@CurrentUser() u: CurrentUserContext) {
+    return this.candidates.findDuplicates(u.orgId);
+  }
+
   @Get(":candidateId")
   getOne(
     @Param("candidateId", ParseIntPipe) candidateId: number,
@@ -172,6 +193,25 @@ export class RecruitmentCandidatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ops.createApplication(u.orgId, candidateId, body);
+  }
+
+  @Post(":candidateId/link-duplicate")
+  @RequirePermission("hr:employees:manage")
+  linkDuplicate(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Body(new ZodValidationPipe(linkDuplicateSchema)) body: LinkDuplicateInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.linkDuplicate(u.orgId, candidateId, body.duplicateOfId);
+  }
+
+  @Post(":candidateId/unlink-duplicate")
+  @RequirePermission("hr:employees:manage")
+  unlinkDuplicate(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.candidates.unlinkDuplicate(u.orgId, candidateId);
   }
 
   @Patch(":candidateId/bgv-status")

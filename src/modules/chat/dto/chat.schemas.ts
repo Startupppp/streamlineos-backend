@@ -62,8 +62,11 @@ export const sendMessageSchema = z.object({
             }),
           ]),
         )
-        .max(10),
+        .max(10)
+        .optional(),
+      forwardCount: z.number().int().positive().optional(),
     })
+    .passthrough()
     .optional(),
 });
 
@@ -105,7 +108,19 @@ export const muteChannelSchema = z.object({
   duration: z.enum(["15m", "1h", "8h", "24h", "forever"]),
 });
 
+export const notificationPreferenceSchema = z.object({
+  preference: z.enum(["DEFAULT", "ALL", "MENTIONS", "NOTHING"]),
+});
+
+export const updateChatOrgSettingsSchema = z.object({
+  defaultNotificationPreference: z.enum(["ALL", "MENTIONS", "NOTHING"]).optional(),
+  maxAttachmentSizeMb: z.number().int().min(1).max(1000).optional(),
+  maxHuddleParticipants: z.number().int().min(2).max(500).optional(),
+});
+
 export type MuteChannelInput = z.infer<typeof muteChannelSchema>;
+export type NotificationPreferenceInput = z.infer<typeof notificationPreferenceSchema>;
+export type UpdateChatOrgSettingsInput = z.infer<typeof updateChatOrgSettingsSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

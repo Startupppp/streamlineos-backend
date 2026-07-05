@@ -35,6 +35,11 @@ const HR_PERMISSIONS: Permission[] = [
   { name: "hr:goals:manage", resource: "hr:goals", action: "manage", description: "Manage goals" },
   { name: "hr:employees:read", resource: "hr:employees", action: "read", description: "Read employee records", scopable: true },
   { name: "hr:employees:manage", resource: "hr:employees", action: "manage", description: "Manage employees", scopable: true },
+  { name: "hr:interviews:view", resource: "hr:interviews", action: "view", description: "View interviews and scorecards" },
+  { name: "hr:interviews:manage", resource: "hr:interviews", action: "manage", description: "Schedule interviews and submit scorecards" },
+  { name: "hr:offers:view", resource: "hr:offers", action: "view", description: "View candidate offers" },
+  { name: "hr:offers:manage", resource: "hr:offers", action: "manage", description: "Create, edit, and submit offers for approval" },
+  { name: "hr:offers:approve", resource: "hr:offers", action: "approve", description: "Approve or reject offers submitted for approval" },
   { name: "hr:leaves:read", resource: "hr:leaves", action: "read", description: "Read leave requests" },
   { name: "hr:leaves:manage", resource: "hr:leaves", action: "manage", description: "Manage leave requests" },
   { name: "hr:expenses:read", resource: "hr:expenses", action: "read", description: "Read expense requests" },
@@ -290,6 +295,7 @@ const CHAT_PERMISSIONS: Permission[] = [
   { name: "chat:channels:write", resource: "chat:channels", action: "write", description: "Create and update chat channels" },
   { name: "chat:messages:read", resource: "chat:messages", action: "read", description: "Read chat messages" },
   { name: "chat:messages:write", resource: "chat:messages", action: "write", description: "Send and edit chat messages" },
+  { name: "ai:chat:use", resource: "ai:chat", action: "use", description: "Use the AI chat assistant" },
 ];
 
 const API_TOKEN_PERMISSIONS: Permission[] = [
@@ -333,6 +339,50 @@ const BILLING_PERMISSIONS: Permission[] = [
   { name: "billing:enterprise-quotes:approve", resource: "billing:enterprise-quotes", action: "approve", description: "Approve/reject/send enterprise quotes", scopable: false },
 ];
 
+const ONBOARDING_PERMISSIONS: Permission[] = [
+  { name: "onboarding:org:manage", resource: "onboarding:org", action: "manage", description: "Manage org setup wizard/session", scopable: false },
+  { name: "onboarding:module-checklists:view", resource: "onboarding:module-checklists", action: "view", description: "View module setup checklists", scopable: false },
+  { name: "onboarding:module-checklists:manage", resource: "onboarding:module-checklists", action: "manage", description: "Complete, skip, and dismiss module setup checklist items", scopable: false },
+  { name: "onboarding:tours:view", resource: "onboarding:tours", action: "view", description: "View and progress guided tours", scopable: false },
+  { name: "onboarding:tours:manage", resource: "onboarding:tours", action: "manage", description: "Manage guided tour definitions", scopable: false },
+  { name: "hr:onboarding:plans:manage", resource: "hr:onboarding:plans", action: "manage", description: "Create and launch employee onboarding plans", scopable: false },
+  { name: "hr:onboarding:tasks:view", resource: "hr:onboarding:tasks", action: "view", description: "View employee onboarding tasks", scopable: false },
+  { name: "hr:onboarding:tasks:complete", resource: "hr:onboarding:tasks", action: "complete", description: "Complete own or assigned employee onboarding tasks", scopable: false },
+];
+
+// Payment provider setup permissions (12_Payment_Integration_Setup_Page.md). Not yet
+// enforced by any route until the payment-provider module lands, but registered now
+// alongside the rest of the onboarding permission surface for a single source of truth.
+const PAYMENTS_PERMISSIONS: Permission[] = [
+  { name: "payments:providers:view", resource: "payments:providers", action: "view", description: "View configured payment providers and readiness", scopable: false },
+  { name: "payments:providers:manage", resource: "payments:providers", action: "manage", description: "Connect, configure, and disable payment providers", scopable: false },
+  { name: "payments:credentials:manage", resource: "payments:credentials", action: "manage", description: "Add, rotate, and disconnect provider credentials", scopable: false },
+  { name: "payments:webhooks:view", resource: "payments:webhooks", action: "view", description: "View webhook health and event history", scopable: false },
+  { name: "payments:webhooks:manage", resource: "payments:webhooks", action: "manage", description: "Generate, verify, and retry payment webhooks", scopable: false },
+  { name: "payments:test:run", resource: "payments:test", action: "run", description: "Run test transactions against a payment provider", scopable: false },
+  { name: "payments:live:activate", resource: "payments:live", action: "activate", description: "Activate live payment processing", scopable: false },
+  { name: "payments:manual-methods:manage", resource: "payments:manual-methods", action: "manage", description: "Configure manual/offline payment methods", scopable: false },
+  { name: "payments:audit:view", resource: "payments:audit", action: "view", description: "View payment provider audit log", scopable: false },
+];
+
+const SURVEYS_PERMISSIONS: Permission[] = [
+  { name: "surveys:view", resource: "surveys", action: "view", description: "View surveys, assessments, live sessions, and lead qualification forms", scopable: true },
+  { name: "surveys:create", resource: "surveys", action: "create", description: "Create surveys" },
+  { name: "surveys:update", resource: "surveys", action: "update", description: "Edit survey builder content", scopable: true },
+  { name: "surveys:publish", resource: "surveys", action: "publish", description: "Publish, pause, and close surveys", scopable: true },
+  { name: "surveys:delete", resource: "surveys", action: "delete", description: "Delete or archive surveys", scopable: true },
+  { name: "surveys:participants:view", resource: "surveys:participants", action: "view", description: "View survey participants and collectors" },
+  { name: "surveys:participants:manage", resource: "surveys:participants", action: "manage", description: "Import, invite, and remind survey participants" },
+  { name: "surveys:responses:view", resource: "surveys:responses", action: "view", description: "View survey responses" },
+  { name: "surveys:responses:export", resource: "surveys:responses", action: "export", description: "Export survey responses" },
+  { name: "surveys:analytics:view", resource: "surveys:analytics", action: "view", description: "View survey analytics and reports" },
+  { name: "surveys:templates:manage", resource: "surveys:templates", action: "manage", description: "Manage the survey template library" },
+  { name: "surveys:live:host", resource: "surveys:live", action: "host", description: "Host live survey sessions" },
+  { name: "surveys:assessments:manage", resource: "surveys:assessments", action: "manage", description: "Manage assessment scoring, attempts, and certificates" },
+  { name: "surveys:automations:manage", resource: "surveys:automations", action: "manage", description: "Manage survey automations and lead routing rules" },
+  { name: "surveys:settings:manage", resource: "surveys:settings", action: "manage", description: "Manage survey branding, anonymity, and collector settings" },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -349,6 +399,9 @@ export const PERMISSIONS: Permission[] = [
   ...BILLING_PERMISSIONS,
   ...WORKFLOW_PERMISSIONS,
   ...TIMESHEETS_PERMISSIONS,
+  ...ONBOARDING_PERMISSIONS,
+  ...PAYMENTS_PERMISSIONS,
+  ...SURVEYS_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(PERMISSIONS.filter((p) => p.scopable).map((p) => p.name));
@@ -368,10 +421,15 @@ const EMPLOYEE_SELF_SERVICE = [
   "chat:channels:read",
   "chat:messages:read",
   "chat:messages:write",
+  "ai:chat:use",
   "settings:api-tokens:read",
   "settings:api-tokens:write",
   "calendar:read",
   "calendar:write",
+  "onboarding:module-checklists:view",
+  "onboarding:tours:view",
+  "hr:onboarding:tasks:view",
+  "hr:onboarding:tasks:complete",
 ];
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);
@@ -419,6 +477,10 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "reports:export",
     "hr:employees:read",
     "hr:employees:manage",
+    "hr:interviews:view",
+    "hr:interviews:manage",
+    "hr:offers:view",
+    "hr:offers:manage",
     "hr:leaves:read",
     "hr:leaves:manage",
     "hr:expenses:read",
@@ -434,6 +496,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:handbook:manage",
     "hr:integrations:manage",
     "hr:onboarding:manage",
+    "hr:onboarding:plans:manage",
+    "onboarding:module-checklists:manage",
+    "onboarding:org:manage",
     "hr:alumni:read",
     "hr:analytics:read",
     "hr:headcount:read",
@@ -769,6 +834,10 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:goals:manage",
     "hr:employees:read",
     "hr:employees:manage",
+    "hr:interviews:view",
+    "hr:interviews:manage",
+    "hr:offers:view",
+    "hr:offers:manage",
     "hr:leaves:read",
     "hr:leaves:manage",
     "hr:expenses:read",
@@ -903,6 +972,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:payroll:publish",
     "hr:payroll:export",
     "hr:bank-details:view",
+    // Per 12_Payment_Integration_Setup_Page.md: accountants view provider status, webhooks,
+    // and audit; they cannot manage credentials, enable/disable a provider, or activate live.
+    "payments:providers:view",
+    "payments:webhooks:view",
+    "payments:audit:view",
   ],
 };
 
