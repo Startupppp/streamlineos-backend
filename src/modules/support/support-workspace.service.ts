@@ -146,6 +146,15 @@ export class SupportWorkspaceService {
     });
   }
 
+  async listTicketTags(orgId: string, ticketId: number) {
+    await this.assertTicketInOrg(orgId, ticketId);
+    const rows = await this.db.query.supportTicketTags.findMany({
+      where: eq(supportTicketTags.ticketId, ticketId),
+      with: { tag: true },
+    });
+    return rows.map((row) => row.tag).filter((tag) => tag.orgId === orgId);
+  }
+
   async createTag(orgId: string, input: CreateTagInput) {
     const existing = await this.db.query.supportTags.findFirst({
       where: and(eq(supportTags.orgId, orgId), eq(supportTags.name, input.name)),

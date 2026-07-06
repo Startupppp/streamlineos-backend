@@ -84,8 +84,8 @@ export class SupportTicketsService {
   ) {}
 
   listTickets(orgId: string, query: ListTicketsQuery) {
-    const { status, priority, assigneeId, page, limit, scope, userId } = query;
-    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
+    const { status, priority, assigneeId, queueId, page, limit, scope, userId } = query;
+    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
     return this.cache.cached(
       key,
       async () => {
@@ -94,6 +94,7 @@ export class SupportTicketsService {
         if (status) conditions.push(eq(supportTickets.status, status));
         if (priority) conditions.push(eq(supportTickets.priority, priority));
         if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
+        if (queueId) conditions.push(eq(supportTickets.queueId, queueId));
         if (scope && scope !== "none" && userId) {
           conditions.push(applyScope(scope, userId, { ownerColumn: supportTickets.assigneeId }));
         } else if (scope === "none") {

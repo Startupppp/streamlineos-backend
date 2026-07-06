@@ -118,6 +118,15 @@ export class SupportWorkspaceController {
     return this.workspace.createTag(u.orgId, body);
   }
 
+  @Get(":supportTicketId/tags")
+  @RequirePermission("support:tickets:view")
+  listTicketTags(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workspace.listTicketTags(u.orgId, supportTicketId);
+  }
+
   @Post(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
