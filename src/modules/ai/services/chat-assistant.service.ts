@@ -326,6 +326,51 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
             };
           },
         }),
+
+        searchProjects: tool({
+          description: "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",
+          inputSchema: z.object({
+            query: z.string().min(1).describe("Partial project name to search"),
+          }),
+          execute: async ({ query }) => {
+            const results = await this.db
+              .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
+              .from(projects)
+              .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`)))
+              .limit(10);
+            if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
+            return { results, message: `Found ${results.length} project(s).` };
+          },
+        }),
+
+        askProjectAI: tool({
+          description: "Ask an AI question about a specific project — e.g. what's blocked, why is it late, what are the risks. Requires a projectId; use searchProjects first if you only have a name.",
+          inputSchema: z.object({
+            projectId: z.number().int().positive().describe("Numeric project ID"),
+            question: z.string().min(1).describe("Question to ask about the project"),
+          }),
+          execute: async ({ projectId, question }) => {
+            try {
+              return await this.projectsAi.ask(orgId, projectId, question, userId);
+            } catch (_e) {
+              return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+            }
+          },
+        }),
+
+        getProjectSummary: tool({
+          description: "Get an AI-generated summary of a project's health, progress, and highlights. Requires a projectId; use searchProjects first if you only have a name.",
+          inputSchema: z.object({
+            projectId: z.number().int().positive().describe("Numeric project ID"),
+          }),
+          execute: async ({ projectId }) => {
+            try {
+              return await this.projectsAi.summarize(orgId, projectId, userId);
+            } catch (_e) {
+              return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+            }
+          },
+        }),
       },
     });
   }

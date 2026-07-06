@@ -11,6 +11,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { AccessService } from "../access/access.service";
+import { ChatChannelsService } from "../chat/chat-channels.service";
+import { ChatMessagesService } from "../chat/chat-messages.service";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
@@ -30,7 +32,30 @@ export class ApprovalsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly chatChannels: ChatChannelsService,
+    private readonly chatMessages: ChatMessagesService,
   ) {}
+
+  private async notifyProjectChannel(
+    orgId: string,
+    projectId: number,
+    requestedById: string,
+    title: string,
+  ): Promise<void> {
+    const channel = await this.chatChannels.getOrCreateEntityChannel(
+      "project",
+      String(projectId),
+      requestedById,
+      orgId,
+    );
+    await this.chatMessages.sendSystemMessage(
+      channel.id,
+      requestedById,
+      orgId,
+      `Approval requested: ${title}`,
+      { type: "approval_requested", projectId },
+    );
+  }
 
   private async assertProject(orgId: string, projectId: number): Promise<void> {
     const p = await this.db.query.projects.findFirst({
@@ -141,6 +166,7 @@ export class ApprovalsService {
       resourceId: String(approval.id),
       metadata: { projectId, approvalId: approval.id, title: approval.title, approverId: input.approverId },
     });
+    void this.notifyProjectChannel(orgId, projectId, userId, approval.title).catch(() => undefined);
     return approval;
   }
 

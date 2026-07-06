@@ -41,6 +41,6 @@ import { RealtimeModule } from "../realtime/realtime.module";
     ChatInviteLinksService,
     ChatOrgSettingsService,
   ],
-  exports: [ChatReplyRemindersService],
+  exports: [ChatReplyRemindersService, ChatChannelsService, ChatMessagesService],
 })
 export class ChatModule {}
