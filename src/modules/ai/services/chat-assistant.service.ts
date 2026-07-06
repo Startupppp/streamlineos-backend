@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
-import { stepCountIs, streamText, tool, type ModelMessage } from "ai";
+import { stepCountIs, streamText, tool, type LanguageModel, type ModelMessage } from "ai";
 import { and, count, desc, eq, ilike, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -20,6 +21,23 @@ import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
 import { CalendarService } from "../../calendar/calendar.service";
 import { ProjectsAiService } from "./projects-ai.service";
+
+const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
+const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o";
+
+function resolveChatModelId(): string {
+  if (process.env.AI_CHAT_PROVIDER === "openrouter") {
+    return DEFAULT_OPENROUTER_CHAT_MODEL;
+  }
+  return DEFAULT_GOOGLE_CHAT_MODEL;
+}
+
+function resolveChatModel(): LanguageModel {
+  if (process.env.AI_CHAT_PROVIDER === "openrouter") {
+    return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY }).chat(resolveChatModelId());
+  }
+  return google(resolveChatModelId());
+}
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -45,6 +63,10 @@ export class ChatAssistantService {
     private readonly calendar: CalendarService,
     private readonly projectsAi: ProjectsAiService,
   ) {}
+
+  getChatModelId(): string {
+    return resolveChatModelId();
+  }
 
   private async fetchContext(userId: string, orgId: string): Promise<ChatContext> {
     const today = getTodayString();
@@ -200,7 +222,7 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
     );
 
     return streamText({
-      model: google("gemini-1.5-pro-latest"),
+      model: resolveChatModel(),
       messages: modelMessages,
       system: contextPrompt,
       temperature: 0.7,

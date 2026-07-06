@@ -10,6 +10,9 @@ const COST_PER_1K_TOKENS: Record<string, { input: number; output: number }> = {
   "gpt-4o": { input: 0.005, output: 0.015 },
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
   "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
+  "openai/gpt-4o": { input: 0.005, output: 0.015 },
+  "openai/gpt-4o-mini": { input: 0.00015, output: 0.0006 },
+  "google/gemini-1.5-pro-latest": { input: 0.00125, output: 0.005 },
 };
 
 function estimateCost(model: string, promptTokens: number, completionTokens: number): number {

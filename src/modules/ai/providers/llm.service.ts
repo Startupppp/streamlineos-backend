@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ChatOpenAI } from "@langchain/openai";
 import type { z } from "zod";
+import { resolveLlmProvider, type LlmProviderConfig } from "./llm-provider.config";
 
 type ModelTier = "fast" | "standard";
 
@@ -27,36 +28,33 @@ interface JsonOptions {
 
 @Injectable()
 export class LlmService {
+  private readonly config: LlmProviderConfig = resolveLlmProvider();
   private fastModel: ChatOpenAI | null = null;
   private standardModel: ChatOpenAI | null = null;
 
   isConfigured(): boolean {
-    return Boolean(process.env.OPENAI_API_KEY);
+    return Boolean(this.config.apiKey);
+  }
+
+  private buildModel(model: string, temperature: number, timeout: number): ChatOpenAI {
+    if (!this.config.apiKey) throw new Error(`${this.config.provider} API key is not set`);
+    return new ChatOpenAI({
+      apiKey: this.config.apiKey,
+      model,
+      temperature,
+      timeout,
+      maxRetries: 2,
+      ...(this.config.baseURL ? { configuration: { baseURL: this.config.baseURL } } : {}),
+    });
   }
 
   private getFastModel(): ChatOpenAI {
-    if (this.fastModel) return this.fastModel;
-    if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-    this.fastModel = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      timeout: 30000,
-      maxRetries: 2,
-    });
+    if (!this.fastModel) this.fastModel = this.buildModel(this.config.fastModel, 0.3, 30000);
     return this.fastModel;
   }
 
   private getStandardModel(): ChatOpenAI {
-    if (this.standardModel) return this.standardModel;
-    if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set");
-    this.standardModel = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: "gpt-4o",
-      temperature: 0.3,
-      timeout: 60000,
-      maxRetries: 2,
-    });
+    if (!this.standardModel) this.standardModel = this.buildModel(this.config.standardModel, 0.3, 60000);
     return this.standardModel;
   }
 
@@ -94,13 +92,11 @@ export class LlmService {
   async invokeText(opts: TextOptions): Promise<string> {
     const model =
       opts.temperature !== undefined
-        ? new ChatOpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-            model: opts.model === "standard" ? "gpt-4o" : "gpt-4o-mini",
-            temperature: opts.temperature,
-            timeout: 30000,
-            maxRetries: 2,
-          })
+        ? this.buildModel(
+            opts.model === "standard" ? this.config.standardModel : this.config.fastModel,
+            opts.temperature,
+            30000,
+          )
         : this.modelFor(opts.model);
 
     const result = await this.run(() =>

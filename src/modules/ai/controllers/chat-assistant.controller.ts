@@ -46,6 +46,7 @@ export class ChatAssistantController {
 
     try {
       const result = await this.chat.processChat(parsed.data.messages, u.userId, u.orgId);
+      const model = this.chat.getChatModelId();
 
       void result.usage
         .then((usage) => {
@@ -54,7 +55,7 @@ export class ChatAssistantController {
             orgId: u.orgId,
             userId: u.userId,
             feature: "ai_chat",
-            model: "gemini-1.5-pro-latest",
+            model,
             promptTokens: usage.inputTokens ?? 0,
             completionTokens: usage.outputTokens ?? 0,
           });
