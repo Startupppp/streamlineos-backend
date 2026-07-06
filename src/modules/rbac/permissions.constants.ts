@@ -1140,6 +1140,18 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     action: "view",
     description: "View support reports and analytics",
   },
+  {
+    name: "support:queues:manage",
+    resource: "support:queues",
+    action: "manage",
+    description: "Create and manage support ticket queues",
+  },
+  {
+    name: "support:tags:manage",
+    resource: "support:tags",
+    action: "manage",
+    description: "Create and manage support ticket tags",
+  },
 ];
 
 const ACCOUNTING_PERMISSIONS: Permission[] = [
@@ -2726,6 +2738,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:tickets:create",
     "support:tickets:reply",
     "support:tickets:internal_note",
+    "support:queues:manage",
+    "support:tags:manage",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",

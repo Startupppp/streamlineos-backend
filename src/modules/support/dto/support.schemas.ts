@@ -32,6 +32,8 @@ export const updateTicketSchema = z.object({
   status: ticketStatusSchema.optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
+  queueId: z.number().int().positive().nullable().optional(),
+  expectedUpdatedAt: z.coerce.date().optional(),
 });
 
 const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -111,6 +113,54 @@ export const updateRoutingRuleSchema = z.object({
   setPriority: ticketPrioritySchema.nullable().optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createQueueSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  description: z.string().trim().max(500).optional(),
+  filter: z.record(z.string(), z.unknown()).default({}),
+  sortOrder: z.number().int().min(0).default(0),
+  isDefault: z.boolean().default(false),
+});
+
+export const updateQueueSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  isDefault: z.boolean().optional(),
+});
+
+export const savedViewVisibilitySchema = z.enum(["personal", "team", "global"]);
+
+export const createSavedViewSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  filter: z.record(z.string(), z.unknown()).default({}),
+  visibility: savedViewVisibilitySchema.default("personal"),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const updateSavedViewSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+  visibility: savedViewVisibilitySchema.optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createTagSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(50),
+  color: z.string().trim().max(20).optional(),
+});
+
+export const ticketLinkRelationSchema = z.enum(["duplicate", "related"]);
+
+export const createTicketLinkSchema = z.object({
+  linkedTicketId: z.number().int().positive(),
+  relation: ticketLinkRelationSchema,
+});
+
+export const mergeTicketSchema = z.object({
+  intoTicketId: z.number().int().positive(),
 });
 
 export const createKbCategorySchema = z.object({
@@ -195,6 +245,13 @@ export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
+export type CreateQueueInput = z.infer<typeof createQueueSchema>;
+export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
+export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;
+export type UpdateSavedViewInput = z.infer<typeof updateSavedViewSchema>;
+export type CreateTagInput = z.infer<typeof createTagSchema>;
+export type CreateTicketLinkInput = z.infer<typeof createTicketLinkSchema>;
+export type MergeTicketInput = z.infer<typeof mergeTicketSchema>;
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;
 export type UpdateKbCategoryInput = z.infer<typeof updateKbCategorySchema>;
 export type ListKbArticlesInput = z.infer<typeof listKbArticlesSchema>;

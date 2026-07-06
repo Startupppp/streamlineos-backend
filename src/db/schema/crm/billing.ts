@@ -155,6 +155,12 @@ export const supportTickets = pgTable("support_tickets", {
   slaDeadline: timestamp("sla_deadline"),
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
+  // Not a Drizzle-level FK to support_queues to avoid a circular import between
+  // this file and db/schema/support/support-workspace.ts; validated at the service layer.
+  queueId: integer("queue_id"),
+  // Self-referential; plain column (no .references()) to avoid Drizzle self-reference
+  // typing gymnastics. Validated at the service layer.
+  mergedIntoTicketId: integer("merged_into_ticket_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -164,6 +170,7 @@ export const supportTickets = pgTable("support_tickets", {
   index("idx_support_tickets_client").on(table.clientId),
   index("idx_support_tickets_priority").on(table.priority),
   index("idx_support_tickets_sla").on(table.slaDeadline),
+  index("idx_support_tickets_queue").on(table.queueId),
 ]);
 
 export const supportTicketMessages = pgTable("support_ticket_messages", {

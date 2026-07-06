@@ -22,12 +22,16 @@ import { authorize } from "../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import {
+  createTicketLinkSchema,
   createTicketSchema,
   listTicketsSchema,
+  mergeTicketSchema,
   replyMessageSchema,
   updateTicketSchema,
   type CreateTicketInput,
+  type CreateTicketLinkInput,
   type ListTicketsInput,
+  type MergeTicketInput,
   type ReplyMessageInput,
   type UpdateTicketInput,
 } from "./dto/support.schemas";
@@ -119,5 +123,36 @@ export class SupportTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.listActivity(u.orgId, supportTicketId);
+  }
+
+  @Get(":supportTicketId/links")
+  @RequirePermission("support:tickets:view")
+  listTicketLinks(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.listTicketLinks(u.orgId, supportTicketId);
+  }
+
+  @Post(":supportTicketId/links")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(201)
+  addTicketLink(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(createTicketLinkSchema)) body: CreateTicketLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.addTicketLink(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Post(":supportTicketId/merge")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(200)
+  mergeTicket(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(mergeTicketSchema)) body: MergeTicketInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.mergeTicket(u.orgId, supportTicketId, u.userId, body);
   }
 }

@@ -1,10 +1,11 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportRealtimeService } from "./support-realtime.service";
 
 const mockDb = {
   query: {
@@ -13,6 +14,7 @@ const mockDb = {
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1, orgId: "org1", title: "Login not working" }]),
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
@@ -38,6 +40,11 @@ const mockNotifications = {
   sendReplyEmail: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockRealtime = {
+  publishTicketUpdated: jest.fn().mockResolvedValue(undefined),
+  publishMessageCreated: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -54,6 +61,7 @@ describe("SupportTicketsService", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: SupportMacrosService, useValue: mockMacros },
         { provide: SupportNotificationsService, useValue: mockNotifications },
+        { provide: SupportRealtimeService, useValue: mockRealtime },
       ],
     }).compile();
     service = module.get(SupportTicketsService);
@@ -192,6 +200,121 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(service.listMessages("org1", 123)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("updateTicket — optimistic locking", () => {
+    const baseTicket = {
+      id: 1,
+      status: "OPEN",
+      priority: "MEDIUM",
+      assigneeId: null,
+      createdBy: "creator1",
+      title: "t",
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+    };
+
+    it("throws a 409 STALE_TICKET conflict when expectedUpdatedAt does not match the current row", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      let caught: { getStatus?: () => number; getResponse?: () => unknown } | undefined;
+      try {
+        await service.updateTicket("org1", 1, "user1", {
+          status: "IN_PROGRESS",
+          expectedUpdatedAt: new Date("2024-01-02T00:00:00.000Z"),
+        } as never);
+      } catch (error) {
+        caught = error as typeof caught;
+      }
+
+      expect(caught).toBeDefined();
+      expect(caught?.getStatus?.()).toBe(409);
+      expect(caught?.getResponse?.()).toMatchObject({ code: "STALE_TICKET" });
+    });
+
+    it("succeeds when expectedUpdatedAt matches the current row", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      await expect(
+        service.updateTicket("org1", 1, "user1", {
+          status: "IN_PROGRESS",
+          expectedUpdatedAt: baseTicket.updatedAt,
+        } as never),
+      ).resolves.toMatchObject({ success: true });
+    });
+
+    it("succeeds when no expectedUpdatedAt is provided (check is opt-in)", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      await expect(
+        service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never),
+      ).resolves.toMatchObject({ success: true });
+    });
+  });
+
+  describe("mergeTicket", () => {
+    it("rejects merging a ticket into itself", async () => {
+      await expect(
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 1 } as never),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws NotFoundException when the target ticket does not exist in the org", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: null })
+        .mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("throws ConflictException when the ticket has already been merged", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: 99 })
+        .mockResolvedValueOnce({ id: 2 });
+
+      await expect(
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("closes the source ticket and records a 'merged' activity entry on success", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: null })
+        .mockResolvedValueOnce({ id: 2 });
+
+      const result = await service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never);
+
+      expect(result).toMatchObject({ success: true, mergedIntoTicketId: 2 });
+      const mergedPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "merged");
+      expect(mergedPayload).toBeDefined();
+    });
+  });
+
+  describe("addTicketLink", () => {
+    it("rejects linking a ticket to itself", async () => {
+      await expect(
+        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 1, relation: "related" } as never),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws NotFoundException when the linked ticket does not exist in the org", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 }).mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("records a 'linked' activity entry on success", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 }).mockResolvedValueOnce({ id: 2 });
+      mockDb.returning.mockResolvedValueOnce([{ id: 5, ticketId: 1, linkedTicketId: 2, relation: "related" }]);
+
+      await service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never);
+
+      const linkedPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "linked");
+      expect(linkedPayload).toBeDefined();
     });
   });
 });

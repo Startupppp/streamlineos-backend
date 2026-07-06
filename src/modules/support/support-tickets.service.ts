@@ -1,9 +1,11 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { SupportTicketStaleException } from "../../common/http/api-exceptions";
 import { and, asc, count, desc, eq, lt, sql, type SQL } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketMessages,
   supportTicketActivity,
+  supportTicketLinks,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -13,11 +15,14 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportRealtimeService } from "./support-realtime.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import type {
   CreateTicketInput,
+  CreateTicketLinkInput,
   ListTicketsInput,
+  MergeTicketInput,
   ReplyMessageInput,
   TicketPriority,
   TicketStatus,
@@ -50,8 +55,8 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 // Mirrors the `support_activity_action` Postgres enum (db/schema/support/support-activity.ts).
-// merged/split/linked are reserved in ACTION_LABELS for later phases but can't be added here
-// until a migration extends the enum.
+// "split" is reserved in ACTION_LABELS for a future phase but isn't in the DB enum yet
+// (split itself isn't implemented — see mergeTicket()/addTicketLink() for merged/linked).
 type TicketActivityAction =
   | "created"
   | "status_changed"
@@ -60,7 +65,9 @@ type TicketActivityAction =
   | "replied"
   | "internal_note"
   | "resolved"
-  | "reopened";
+  | "reopened"
+  | "merged"
+  | "linked";
 
 function isTicketPriority(value: string): value is TicketPriority {
   return (TICKET_PRIORITIES as readonly string[]).includes(value);
@@ -73,6 +80,7 @@ export class SupportTicketsService {
     private readonly cache: CacheService,
     private readonly macros: SupportMacrosService,
     private readonly notifications: SupportNotificationsService,
+    private readonly realtime: SupportRealtimeService,
   ) {}
 
   listTickets(orgId: string, query: ListTicketsQuery) {
@@ -209,6 +217,10 @@ export class SupportTicketsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
+    if (input.expectedUpdatedAt && input.expectedUpdatedAt.getTime() !== ticket.updatedAt.getTime()) {
+      throw new SupportTicketStaleException();
+    }
+
     const updateData: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
     if (input.status) {
       updateData.status = input.status;
@@ -217,6 +229,7 @@ export class SupportTicketsService {
     }
     if (input.priority) updateData.priority = input.priority;
     if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
+    if (input.queueId !== undefined) updateData.queueId = input.queueId;
 
     await this.db
       .update(supportTickets)
@@ -226,6 +239,8 @@ export class SupportTicketsService {
     await this.logTicketActivity(orgId, ticketId, userId, ticket, input);
 
     await this.invalidateTicketCaches(orgId);
+
+    void this.realtime.publishTicketUpdated(orgId, ticketId, updateData.updatedAt as Date).catch(() => undefined);
 
     if (input.status) {
       void this.notifications
@@ -246,7 +261,7 @@ export class SupportTicketsService {
         .catch(() => undefined);
     }
 
-    return { success: true };
+    return { success: true, updatedAt: updateData.updatedAt };
   }
 
   async listMessages(orgId: string, ticketId: number) {
@@ -313,6 +328,8 @@ export class SupportTicketsService {
       null,
     );
 
+    void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
+
     if (ticket.status === "OPEN") {
       await this.db
         .update(supportTickets)
@@ -373,6 +390,89 @@ export class SupportTicketsService {
       userName: row.userName,
       userImage: row.userImage,
     }));
+  }
+
+  async addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput) {
+    if (input.linkedTicketId === ticketId) {
+      throw new BadRequestException("A ticket cannot be linked to itself");
+    }
+
+    const [ticket, linkedTicket] = await Promise.all([
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, input.linkedTicketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+    ]);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!linkedTicket) throw new NotFoundException("Linked ticket not found");
+
+    const [link] = await this.db
+      .insert(supportTicketLinks)
+      .values({
+        orgId,
+        ticketId,
+        linkedTicketId: input.linkedTicketId,
+        relation: input.relation,
+        createdBy: userId,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    await this.recordActivity(orgId, ticketId, userId, "linked", null, String(input.linkedTicketId));
+
+    return link ?? { success: true };
+  }
+
+  async listTicketLinks(orgId: string, ticketId: number) {
+    await this.assertTicketExists(orgId, ticketId);
+    return this.db.query.supportTicketLinks.findMany({
+      where: and(eq(supportTicketLinks.orgId, orgId), eq(supportTicketLinks.ticketId, ticketId)),
+      with: { linkedTicket: { columns: { id: true, title: true, status: true } } },
+    });
+  }
+
+  async mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput) {
+    if (input.intoTicketId === ticketId) {
+      throw new BadRequestException("A ticket cannot be merged into itself");
+    }
+
+    const [ticket, targetTicket] = await Promise.all([
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true, status: true, mergedIntoTicketId: true },
+      }),
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, input.intoTicketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+    ]);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!targetTicket) throw new NotFoundException("Target ticket not found");
+    if (ticket.mergedIntoTicketId) {
+      throw new ConflictException("This ticket has already been merged into another ticket");
+    }
+
+    await this.db
+      .update(supportTickets)
+      .set({ mergedIntoTicketId: input.intoTicketId, status: "CLOSED", closedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+
+    await this.recordActivity(orgId, ticketId, userId, "merged", ticket.status, String(input.intoTicketId));
+    await this.invalidateTicketCaches(orgId);
+
+    return { success: true, mergedIntoTicketId: input.intoTicketId };
+  }
+
+  private async assertTicketExists(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
   async stats(orgId: string) {

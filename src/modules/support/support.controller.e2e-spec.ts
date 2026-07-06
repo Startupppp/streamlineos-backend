@@ -66,6 +66,25 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/kb/articles/1/attachments"],
     ["post", "/support/kb/articles/1/attachments"],
     ["delete", "/support/kb/articles/1/attachments/1"],
+    ["get", "/support/queues"],
+    ["post", "/support/queues"],
+    ["patch", "/support/queues/1"],
+    ["delete", "/support/queues/1"],
+    ["get", "/support/views"],
+    ["post", "/support/views"],
+    ["patch", "/support/views/1"],
+    ["delete", "/support/views/1"],
+    ["get", "/support/tags"],
+    ["post", "/support/tags"],
+    ["post", "/support/1/tags/1"],
+    ["delete", "/support/1/tags/1"],
+    ["get", "/support/1/watchers"],
+    ["post", "/support/1/follow"],
+    ["delete", "/support/1/follow"],
+    ["get", "/support/1/links"],
+    ["post", "/support/1/links"],
+    ["post", "/support/1/merge"],
+    ["get", "/support/ably-token"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -144,6 +163,37 @@ describe("Support auth/RBAC (e2e)", () => {
       permission: "support:tickets:reply",
       body: { body: "hello", isInternal: false },
     },
+    { method: "get", path: "/support/queues", permission: "support:tickets:view" },
+    { method: "get", path: "/support/views", permission: "support:tickets:view" },
+    { method: "get", path: "/support/tags", permission: "support:tickets:view" },
+    { method: "get", path: "/support/1/watchers", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/follow", permission: "support:tickets:view" },
+    { method: "get", path: "/support/1/links", permission: "support:tickets:view" },
+    { method: "get", path: "/support/ably-token", permission: "support:tickets:view" },
+    {
+      method: "post",
+      path: "/support/queues",
+      permission: "support:queues:manage",
+      body: { name: "Billing" },
+    },
+    {
+      method: "post",
+      path: "/support/tags",
+      permission: "support:tags:manage",
+      body: { name: "billing" },
+    },
+    {
+      method: "post",
+      path: "/support/1/links",
+      permission: "support:tickets:manage",
+      body: { linkedTicketId: 2, relation: "related" },
+    },
+    {
+      method: "post",
+      path: "/support/1/merge",
+      permission: "support:tickets:manage",
+      body: { intoTicketId: 2 },
+    },
   ];
 
   it.each(ticketPermissionCases)(
@@ -175,5 +225,15 @@ describe("Support auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer()).get("/support").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ code: "MODULE_DISABLED" });
+  });
+
+  it("403 on POST /support/queues with only support:tickets:view (needs support:queues:manage)", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/queues")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Billing" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
   });
 });

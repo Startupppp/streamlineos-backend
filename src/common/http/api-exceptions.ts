@@ -93,3 +93,12 @@ export class ProjectsInvalidTicketStatusException extends HttpException {
     );
   }
 }
+
+export class SupportTicketStaleException extends HttpException {
+  constructor() {
+    super(
+      { code: "STALE_TICKET", message: "Ticket was modified by another request. Please refresh and try again." },
+      HttpStatus.CONFLICT,
+    );
+  }
+}
