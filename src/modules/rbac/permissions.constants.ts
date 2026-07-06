@@ -1152,6 +1152,30 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage support ticket tags",
   },
+  {
+    name: "support:portal:tickets:view",
+    resource: "support:portal:tickets",
+    action: "view",
+    description: "View own support tickets via the customer portal",
+  },
+  {
+    name: "support:portal:tickets:create",
+    resource: "support:portal:tickets",
+    action: "create",
+    description: "Create support tickets via the customer portal",
+  },
+  {
+    name: "support:portal:tickets:reply",
+    resource: "support:portal:tickets",
+    action: "reply",
+    description: "Reply to own support tickets via the customer portal",
+  },
+  {
+    name: "support:channels:manage",
+    resource: "support:channels",
+    action: "manage",
+    description: "Configure support channels (email inbox, chat, WhatsApp, SMS)",
+  },
 ];
 
 const ACCOUNTING_PERMISSIONS: Permission[] = [
@@ -2740,6 +2764,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:tickets:internal_note",
     "support:queues:manage",
     "support:tags:manage",
+    "support:channels:manage",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",
@@ -3306,6 +3331,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:portal:view",
     "projects:changerequests:view",
     "projects:changerequests:create",
+    "support:portal:tickets:view",
+    "support:portal:tickets:create",
+    "support:portal:tickets:reply",
   ],
 };
 

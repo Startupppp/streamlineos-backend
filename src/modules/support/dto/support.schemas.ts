@@ -227,6 +227,86 @@ export const updateSlaPolicySchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
+export const PORTAL_TICKET_CATEGORIES = [
+  "general",
+  "billing",
+  "bug_report",
+  "feature_request",
+  "onboarding",
+  "internal_it",
+] as const;
+
+export const createPortalTicketSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(5, "Title must be at least 5 characters")
+    .max(150, "Title must be at most 150 characters"),
+  category: z.enum(PORTAL_TICKET_CATEGORIES).default("general"),
+  description: z.string().trim().min(1, "Description is required").max(5000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(5)
+    .optional(),
+});
+
+export const createPortalMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message is required").max(5000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(5)
+    .optional(),
+});
+
+export const supportChannelTypeSchema = z.enum(["email", "chat", "whatsapp", "sms"]);
+
+export const createSupportChannelSchema = z.object({
+  type: supportChannelTypeSchema,
+  name: z.string().trim().min(1, "Name is required").max(100),
+  config: z.record(z.string(), z.unknown()).default({}),
+  isActive: z.boolean().default(true),
+});
+
+export const updateSupportChannelSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const inboundEmailSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  inReplyTo: z.string().trim().max(998).optional(),
+  fromEmail: z.string().trim().email().max(320),
+  fromName: z.string().trim().max(200).optional(),
+  subject: z.string().trim().max(998).optional(),
+  bodyText: z.string().max(50_000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(10)
+    .optional(),
+});
+
 export const createKbCategorySchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
@@ -313,6 +393,11 @@ export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>
 export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;
 export type CreateSlaPolicyInput = z.infer<typeof createSlaPolicySchema>;
 export type UpdateSlaPolicyInput = z.infer<typeof updateSlaPolicySchema>;
+export type CreatePortalTicketInput = z.infer<typeof createPortalTicketSchema>;
+export type CreatePortalMessageInput = z.infer<typeof createPortalMessageSchema>;
+export type CreateSupportChannelInput = z.infer<typeof createSupportChannelSchema>;
+export type UpdateSupportChannelInput = z.infer<typeof updateSupportChannelSchema>;
+export type InboundEmailInput = z.infer<typeof inboundEmailSchema>;
 export type CreateQueueInput = z.infer<typeof createQueueSchema>;
 export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
 export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;

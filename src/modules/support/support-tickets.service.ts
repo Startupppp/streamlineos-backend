@@ -121,7 +121,17 @@ export class SupportTicketsService {
     );
   }
 
-  async createTicket(orgId: string, userId: string, input: CreateTicketInput) {
+  async createTicket(
+    orgId: string,
+    userId: string,
+    input: CreateTicketInput,
+    source?: {
+      channel: string;
+      messageId?: string | null;
+      requesterEmail?: string | null;
+      requesterName?: string | null;
+    },
+  ) {
     const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
         eq(supportTickets.orgId, orgId),
@@ -171,6 +181,10 @@ export class SupportTicketsService {
         slaDeadline: resolutionDueAt,
         firstResponseDueAt,
         createdBy: userId,
+        sourceChannel: source?.channel ?? "web",
+        sourceMessageId: source?.messageId ?? null,
+        requesterEmail: source?.requesterEmail ?? null,
+        requesterName: source?.requesterName ?? null,
       })
       .returning();
 
@@ -318,7 +332,13 @@ export class SupportTicketsService {
     });
   }
 
-  async addMessage(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput) {
+  async addMessage(
+    orgId: string,
+    ticketId: number,
+    userId: string | null,
+    input: ReplyMessageInput,
+    source?: { channel: string; messageId?: string | null; contactEmail?: string | null; contactName?: string | null },
+  ) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       columns: {
@@ -340,6 +360,10 @@ export class SupportTicketsService {
         body: input.body,
         isInternal: input.isInternal,
         attachments: input.attachments ?? [],
+        sourceChannel: source?.channel ?? "web",
+        sourceMessageId: source?.messageId ?? null,
+        sourceContactEmail: source?.contactEmail ?? null,
+        sourceContactName: source?.contactName ?? null,
       })
       .returning();
 
@@ -354,7 +378,8 @@ export class SupportTicketsService {
 
     void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
 
-    const isFirstAgentReply = !input.isInternal && !ticket.firstRespondedAt && userId !== ticket.createdBy;
+    const isFirstAgentReply =
+      !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;
 
     if (ticket.status === "OPEN" || isFirstAgentReply) {
       const followUp: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
@@ -366,7 +391,7 @@ export class SupportTicketsService {
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
     }
 
-    if (!input.isInternal) {
+    if (!input.isInternal && userId) {
       void this.notifications
         .sendReplyEmail(
           { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
@@ -587,7 +612,7 @@ export class SupportTicketsService {
   private async recordActivity(
     orgId: string,
     ticketId: number,
-    userId: string,
+    userId: string | null,
     action: TicketActivityAction,
     fromValue: string | null,
     toValue: string | null,

@@ -150,6 +150,12 @@ export const supportTickets = pgTable("support_tickets", {
   title: text("title").notNull(),
   category: text("category"),
   description: text("description"),
+  // For channel-sourced tickets (email etc) where createdBy is attributed to
+  // the channel's owner rather than the actual external requester — see
+  // support-channels.service.ts. Null for normal agent/portal-created tickets
+  // where createdBy already identifies the real requester.
+  requesterEmail: text("requester_email"),
+  requesterName: text("requester_name"),
   status: supportTicketStatusEnum("status").default("OPEN").notNull(),
   priority: supportTicketPriorityEnum("priority").default("MEDIUM").notNull(),
   slaDeadline: timestamp("sla_deadline"),
@@ -167,6 +173,8 @@ export const supportTickets = pgTable("support_tickets", {
   // typing gymnastics. Validated at the service layer.
   mergedIntoTicketId: integer("merged_into_ticket_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  sourceChannel: text("source_channel").default("web").notNull(),
+  sourceMessageId: text("source_message_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -176,19 +184,25 @@ export const supportTickets = pgTable("support_tickets", {
   index("idx_support_tickets_priority").on(table.priority),
   index("idx_support_tickets_sla").on(table.slaDeadline),
   index("idx_support_tickets_queue").on(table.queueId),
+  index("idx_support_tickets_source_message").on(table.sourceMessageId),
 ]);
 
 export const supportTicketMessages = pgTable("support_ticket_messages", {
   id: serial("id").primaryKey(),
   ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-  authorId: text("author_id").references(() => users.id).notNull(),
+  authorId: text("author_id").references(() => users.id),
   body: text("body").notNull(),
   isInternal: boolean("is_internal").default(false).notNull(),
   attachments: jsonb("attachments").$type<{ fileName: string; fileUrl: string; fileSize: number; mimeType: string }[]>().default([]),
+  sourceChannel: text("source_channel").default("web").notNull(),
+  sourceMessageId: text("source_message_id"),
+  sourceContactEmail: text("source_contact_email"),
+  sourceContactName: text("source_contact_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_support_ticket_messages_ticket").on(table.ticketId),
   index("idx_support_ticket_messages_author").on(table.authorId),
+  index("idx_support_ticket_messages_source_message").on(table.sourceMessageId),
 ]);
 
 export const quotes = pgTable("quotes", {

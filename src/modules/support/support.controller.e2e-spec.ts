@@ -95,6 +95,14 @@ describe("Support auth/RBAC (e2e)", () => {
     ["delete", "/support/sla-policies/1"],
     ["post", "/support/sla/run-escalations"],
     ["get", "/support/1/risk"],
+    ["get", "/support/channels"],
+    ["post", "/support/channels"],
+    ["patch", "/support/channels/1"],
+    ["delete", "/support/channels/1"],
+    ["get", "/support/portal/tickets"],
+    ["post", "/support/portal/tickets"],
+    ["get", "/support/portal/tickets/1"],
+    ["post", "/support/portal/tickets/1/messages"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -220,6 +228,27 @@ describe("Support auth/RBAC (e2e)", () => {
     },
     { method: "post", path: "/support/sla/run-escalations", permission: "support:settings:manage" },
     { method: "get", path: "/support/1/risk", permission: "support:tickets:view" },
+    { method: "get", path: "/support/channels", permission: "support:channels:manage" },
+    {
+      method: "post",
+      path: "/support/channels",
+      permission: "support:channels:manage",
+      body: { type: "email", name: "Support inbox" },
+    },
+    { method: "get", path: "/support/portal/tickets", permission: "support:portal:tickets:view" },
+    {
+      method: "post",
+      path: "/support/portal/tickets",
+      permission: "support:portal:tickets:create",
+      body: { title: "My printer is broken", description: "It won't turn on." },
+    },
+    { method: "get", path: "/support/portal/tickets/1", permission: "support:portal:tickets:view" },
+    {
+      method: "post",
+      path: "/support/portal/tickets/1/messages",
+      permission: "support:portal:tickets:reply",
+      body: { body: "following up" },
+    },
   ];
 
   it.each(ticketPermissionCases)(
@@ -261,5 +290,22 @@ describe("Support auth/RBAC (e2e)", () => {
       .send({ name: "Billing" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  describe("POST /support/inbound/email/:orgId (webhook, no JWT)", () => {
+    it("401 when the webhook secret is missing, even with no auth token at all", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/email/org_1")
+        .send({ messageId: "abc", fromEmail: "customer@example.com", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+
+    it("401 when the webhook secret is wrong", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/email/org_1")
+        .set("X-Webhook-Secret", "wrong-secret")
+        .send({ messageId: "abc", fromEmail: "customer@example.com", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
   });
 });
