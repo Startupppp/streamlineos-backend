@@ -480,6 +480,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "projects:approvals:decide",
       "projects:approvals:manage",
       "projects:clientvisibility:manage",
+      "projects:ai:use",
       "projects:timesheets:view",
       "projects:timesheets:manage",
       "projects:goals:view",

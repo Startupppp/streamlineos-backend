@@ -3,6 +3,7 @@ import { CrmAiController } from "./controllers/crm-ai.controller";
 import { HrAiController } from "./controllers/hr-ai.controller";
 import { KbRagController } from "./controllers/kb-rag.controller";
 import { ChatAssistantController } from "./controllers/chat-assistant.controller";
+import { ProjectsAiController } from "./controllers/projects-ai.controller";
 import { LlmService } from "./providers/llm.service";
 import { EmbeddingsService } from "./providers/embeddings.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
@@ -14,11 +15,12 @@ import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
+import { ProjectsAiService } from "./services/projects-ai.service";
 import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
   imports: [CalendarModule],
-  controllers: [CrmAiController, HrAiController, KbRagController, ChatAssistantController],
+  controllers: [CrmAiController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController],
   providers: [
     LlmService,
     EmbeddingsService,
@@ -31,6 +33,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     ChatAssistantService,
     AiUsageService,
     OrgFeaturesService,
+    ProjectsAiService,
   ],
   exports: [LlmService, EmbeddingsService],
 })

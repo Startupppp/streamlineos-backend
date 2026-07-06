@@ -2286,6 +2286,15 @@ const PROJECT_APPROVALS_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECTS_AI_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:ai:use",
+    resource: "projects:ai",
+    action: "use",
+    description: "Use AI features on projects (summary, risks, client update, plan, task extraction, Q&A)",
+  },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -2308,6 +2317,7 @@ export const PERMISSIONS: Permission[] = [
   ...QA_BUGS_PERMISSIONS,
   ...CLIENT_PORTAL_PERMISSIONS,
   ...PROJECT_APPROVALS_PERMISSIONS,
+  ...PROJECTS_AI_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -2531,6 +2541,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   CUSTOMER_SUPPORT: [
@@ -2587,6 +2598,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   ENGINEERING: [
@@ -2620,6 +2632,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   DESIGN: [
@@ -2648,6 +2661,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   VIDEO_EDITOR: [
@@ -2676,6 +2690,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   DIGITAL_MARKETING: [
@@ -2708,6 +2723,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:view",
     "projects:bugs:create",
     "projects:bugs:update",
+    "projects:ai:use",
   ],
 
   BLOG_EDITOR: [
@@ -2834,6 +2850,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "projects:qa:view",
     "projects:bugs:view",
+    "projects:ai:use",
   ],
 
   BRANCH_HR: [
