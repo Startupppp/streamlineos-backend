@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { meetingTypeEnum, meetingStatusEnum, actionItemStatusEnum } from "../../../db/schema";
+import { meetingTypeEnum, projectMeetingStatusEnum, actionItemStatusEnum } from "../../../db/schema";
 
 export const createMeetingSchema = z.object({
   title: z.string().min(1).max(500),
   type: z.enum(meetingTypeEnum.enumValues).optional(),
-  status: z.enum(meetingStatusEnum.enumValues).optional(),
+  status: z.enum(projectMeetingStatusEnum.enumValues).optional(),
   agenda: z.string().optional(),
   notes: z.string().optional(),
   scheduledAt: z.coerce.date().optional(),
@@ -15,7 +15,7 @@ export const createMeetingSchema = z.object({
 export const updateMeetingSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   type: z.enum(meetingTypeEnum.enumValues).optional(),
-  status: z.enum(meetingStatusEnum.enumValues).optional(),
+  status: z.enum(projectMeetingStatusEnum.enumValues).optional(),
   agenda: z.string().nullish(),
   notes: z.string().nullish(),
   scheduledAt: z.coerce.date().nullish(),
@@ -24,7 +24,7 @@ export const updateMeetingSchema = z.object({
 });
 
 export const listMeetingsQuerySchema = z.object({
-  status: z.enum(meetingStatusEnum.enumValues).optional(),
+  status: z.enum(projectMeetingStatusEnum.enumValues).optional(),
   type: z.enum(meetingTypeEnum.enumValues).optional(),
 });
 
