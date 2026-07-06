@@ -231,6 +231,9 @@ export class ProjectsService {
           status: "ACTIVE",
           settings: {
             modules: input.modules ?? { sprints: true, epics: true, timeTracking: true, wiki: true },
+            ...(input.projectType !== undefined ? { projectType: input.projectType } : {}),
+            ...(input.workflow !== undefined ? { workflow: input.workflow } : {}),
+            ...(input.features !== undefined ? { features: input.features } : {}),
           },
         })
         .returning();

@@ -150,3 +150,19 @@ export const createTaskFromMessageSchema = z.object({
   title: z.string().min(1).max(255).optional(),
 });
 export type CreateTaskFromMessageInput = z.infer<typeof createTaskFromMessageSchema>;
+
+export const assignTicketFromChatSchema = z.object({
+  channelId: z.number().int().positive(),
+  projectId: z.number().int().positive(),
+  ticketId: z.number().int().positive(),
+  assigneeId: z.string().min(1),
+});
+export type AssignTicketFromChatInput = z.infer<typeof assignTicketFromChatSchema>;
+
+export const setDueDateFromChatSchema = z.object({
+  channelId: z.number().int().positive(),
+  projectId: z.number().int().positive(),
+  ticketId: z.number().int().positive(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
+});
+export type SetDueDateFromChatInput = z.infer<typeof setDueDateFromChatSchema>;

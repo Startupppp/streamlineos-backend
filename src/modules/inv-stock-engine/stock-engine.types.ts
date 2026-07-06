@@ -15,7 +15,7 @@ export const INV_ERRORS = {
   CHANNEL_SYNC_FAILED: "CHANNEL_SYNC_FAILED",
 } as const;
 
-export type QualityBucket = "ON_HAND" | "BLOCKED" | "QUALITY_HOLD";
+type QualityBucket = "ON_HAND" | "BLOCKED" | "QUALITY_HOLD";
 
 export interface StockMovement {
   transactionType: string;
@@ -36,7 +36,7 @@ export interface StockEngineCommand {
   movements: StockMovement[];
 }
 
-export interface StockLevelSnapshot {
+interface StockLevelSnapshot {
   productVariantId: number;
   locationId: number;
   onHand: string;

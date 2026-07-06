@@ -9,7 +9,7 @@ import { invImportJobs, invProducts, invProductVariants, invLocations } from "..
 import { parseCsv } from "./csv.util";
 import type { ImportType, CreateImportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
 
-export interface RowError {
+interface RowError {
   row: number;
   field: string;
   message: string;

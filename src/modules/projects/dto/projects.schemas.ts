@@ -24,6 +24,9 @@ export const createProjectSchema = z.object({
   endDate: z.string().optional(),
   memberIds: z.array(z.string()).optional(),
   modules: projectModulesSchema.optional(),
+  projectType: z.string().optional(),
+  workflow: z.string().optional(),
+  features: z.record(z.boolean()).optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -36,6 +39,9 @@ export const updateProjectSchema = z.object({
   endDate: z.string().nullable().optional(),
   memberIds: z.array(z.string()).optional(),
   reassignments: z.record(z.string(), z.string()).optional(),
+  projectType: z.string().optional(),
+  workflow: z.string().optional(),
+  features: z.record(z.boolean()).optional(),
 });
 
 export const updateBudgetSchema = z.object({

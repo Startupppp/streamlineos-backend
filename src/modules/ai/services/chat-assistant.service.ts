@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { google } from "@ai-sdk/google";
 import { stepCountIs, streamText, tool, type ModelMessage } from "ai";
-import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   attendance,

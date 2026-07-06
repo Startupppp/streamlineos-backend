@@ -28,6 +28,9 @@ export const projects = pgTable("projects", {
       timeTracking: boolean;
       wiki: boolean;
     };
+    projectType?: string;
+    workflow?: string;
+    features?: Record<string, boolean>;
   }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

@@ -11,9 +11,13 @@ import { type Db } from "../../db/drizzle.module";
 import { chatChannels, chatMessages, projectMembers, projects, ticketActivityLog, tickets } from "../../db/schema";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
+  assignTicketFromChatSchema,
   createTaskFromMessageSchema,
+  setDueDateFromChatSchema,
   ticketStatusActionSchema,
+  type AssignTicketFromChatInput,
   type CreateTaskFromMessageInput,
+  type SetDueDateFromChatInput,
   type TicketStatusActionInput,
 } from "./dto/chat.schemas";
 import { AuditService } from "../../common/audit/audit.service";
@@ -198,5 +202,117 @@ export class ChatActionsController {
       .catch(() => undefined);
 
     return { ticketId: newTicket.id, ticketNumber: newTicket.ticketNumber };
+  }
+
+  @Post("assign-ticket")
+  @RequirePermission("projects:tickets:assign")
+  async assignTicket(
+    @Body(new ZodValidationPipe(assignTicketFromChatSchema)) body: AssignTicketFromChatInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const membership = await this.db.query.projectMembers.findFirst({
+        where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
+        columns: { projectId: true },
+      });
+      if (!membership) throw new ChatActionForbiddenException();
+    }
+
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId)),
+      columns: { id: true, assigneeId: true },
+    });
+
+    if (!ticket) throw new ProjectsTicketNotFoundException();
+
+    await this.db
+      .update(tickets)
+      .set({ assigneeId: body.assigneeId, updatedAt: new Date() })
+      .where(and(eq(tickets.id, body.ticketId), eq(tickets.orgId, u.orgId)));
+
+    void this.db
+      .insert(ticketActivityLog)
+      .values({
+        orgId: u.orgId,
+        ticketId: body.ticketId,
+        userId: u.userId,
+        action: "assignee_changed",
+        fromValue: ticket.assigneeId ?? null,
+        toValue: body.assigneeId,
+      })
+      .catch(() => undefined);
+
+    this.audit.log({
+      action: "ticket.assignee_changed",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(body.ticketId),
+      targetType: "ticket",
+      metadata: { projectId: body.projectId, assigneeId: body.assigneeId },
+    });
+
+    void this.chatMessages
+      .sendSystemMessage(body.channelId, u.userId, u.orgId, `Assignee updated`, {
+        entities: [{ type: "ticket", id: String(body.ticketId), projectId: body.projectId }],
+      })
+      .catch(() => undefined);
+
+    return { success: true };
+  }
+
+  @Post("set-due-date")
+  @RequirePermission("projects:tickets:update")
+  async setDueDate(
+    @Body(new ZodValidationPipe(setDueDateFromChatSchema)) body: SetDueDateFromChatInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const membership = await this.db.query.projectMembers.findFirst({
+        where: and(eq(projectMembers.projectId, body.projectId), eq(projectMembers.userId, u.userId)),
+        columns: { projectId: true },
+      });
+      if (!membership) throw new ChatActionForbiddenException();
+    }
+
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, body.ticketId), eq(tickets.projectId, body.projectId), eq(tickets.orgId, u.orgId)),
+      columns: { id: true, dueDate: true },
+    });
+
+    if (!ticket) throw new ProjectsTicketNotFoundException();
+
+    await this.db
+      .update(tickets)
+      .set({ dueDate: body.dueDate, updatedAt: new Date() })
+      .where(and(eq(tickets.id, body.ticketId), eq(tickets.orgId, u.orgId)));
+
+    void this.db
+      .insert(ticketActivityLog)
+      .values({
+        orgId: u.orgId,
+        ticketId: body.ticketId,
+        userId: u.userId,
+        action: "due_date_changed",
+        fromValue: ticket.dueDate ?? null,
+        toValue: body.dueDate,
+      })
+      .catch(() => undefined);
+
+    this.audit.log({
+      action: "ticket.due_date_changed",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(body.ticketId),
+      targetType: "ticket",
+      metadata: { projectId: body.projectId, dueDate: body.dueDate },
+    });
+
+    void this.chatMessages
+      .sendSystemMessage(body.channelId, u.userId, u.orgId, `Due date set to ${body.dueDate}`, {
+        entities: [{ type: "ticket", id: String(body.ticketId), projectId: body.projectId }],
+      })
+      .catch(() => undefined);
+
+    return { success: true };
   }
 }
