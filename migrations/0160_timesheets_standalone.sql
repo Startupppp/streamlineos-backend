@@ -115,4 +115,22 @@ CREATE INDEX IF NOT EXISTS "idx_timesheet_rates_org_priority" ON "timesheet_rate
 CREATE INDEX IF NOT EXISTS "idx_timesheet_rates_org_project" ON "timesheet_rates" ("org_id","project_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_timesheets_org_project_date" ON "timesheets" ("org_id","project_id","date");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_timesheets_org_invoicing" ON "timesheets" ("org_id","invoicing_status");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_timesheets_period" ON "timesheets" ("timesheet_period_id");
+CREATE INDEX IF NOT EXISTS "idx_timesheets_period" ON "timesheets" ("timesheet_period_id");--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "timesheet_budgets" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
+	"project_id" integer REFERENCES "projects"("id") ON DELETE cascade,
+	"client_id" integer,
+	"budget_type" text DEFAULT 'HOURS' NOT NULL,
+	"budget_hours" numeric(10, 2),
+	"budget_amount" numeric(12, 2),
+	"currency" text DEFAULT 'USD' NOT NULL,
+	"alert_thresholds" jsonb DEFAULT '[50,80,100]'::jsonb NOT NULL,
+	"starts_at" date,
+	"ends_at" date,
+	"status" text DEFAULT 'ACTIVE' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_timesheet_budgets_org_status" ON "timesheet_budgets" ("org_id","status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_timesheet_budgets_org_project" ON "timesheet_budgets" ("org_id","project_id");

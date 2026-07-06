@@ -17,6 +17,8 @@ import { SettingsService } from "./settings.service";
 import { SettingsController } from "./settings.controller";
 import { RatesService } from "./rates.service";
 import { RatesController } from "./rates.controller";
+import { BudgetsService } from "./budgets.service";
+import { BudgetsController } from "./budgets.controller";
 import { AuditController } from "./audit.controller";
 
 @Module({
@@ -29,6 +31,7 @@ import { AuditController } from "./audit.controller";
     ReportsController,
     SettingsController,
     RatesController,
+    BudgetsController,
     AuditController,
   ],
   providers: [
@@ -42,6 +45,7 @@ import { AuditController } from "./audit.controller";
     ReportsService,
     SettingsService,
     RatesService,
+    BudgetsService,
   ],
   exports: [EntriesService, SettingsService],
 })

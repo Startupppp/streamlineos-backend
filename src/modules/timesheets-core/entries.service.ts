@@ -22,6 +22,7 @@ import { applyScope } from "../access/apply-scope";
 import { resolveEntriesScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { weekRange, formatDateOnly } from "./lib/period.helpers";
+import { roundHours } from "./lib/rounding";
 import type { CreateEntryInput, UpdateEntryInput, VoidEntryInput, EntriesQuery } from "./dto/entries.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -330,6 +331,7 @@ export class EntriesService {
     const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
     const allowBackdated = settings?.allowBackdatedEntries ?? true;
     const backdateLimitDays = settings?.backdateLimitDays ?? null;
+    const hours = roundHours(input.hours, settings?.roundingRule);
 
     const today = formatDateOnly(new Date());
     if (!allowBackdated && input.date < today) {
@@ -370,9 +372,9 @@ export class EntriesService {
       );
 
     const currentTotal = parseFloat(dailyHours?.total ?? "0");
-    if (currentTotal + input.hours > maxHoursPerDay) {
+    if (currentTotal + hours > maxHoursPerDay) {
       throw new BadRequestException(
-        `Logging ${input.hours}h would exceed the daily limit of ${maxHoursPerDay}h`,
+        `Logging ${hours}h would exceed the daily limit of ${maxHoursPerDay}h`,
       );
     }
 
@@ -390,7 +392,7 @@ export class EntriesService {
           ticketId: input.ticketId ?? null,
           projectId: input.projectId ?? null,
           date: input.date,
-          hours: input.hours.toString(),
+          hours: hours.toString(),
           description: input.description ?? null,
           isBillable,
           billingType,
@@ -425,7 +427,13 @@ export class EntriesService {
       entityType: "entry",
       entityId: entry.id.toString(),
       action: "entry.created",
-      after: { hours: input.hours, date: input.date, projectId: input.projectId, ticketId: input.ticketId },
+      after: {
+        hours,
+        ...(hours !== input.hours ? { rawHours: input.hours } : {}),
+        date: input.date,
+        projectId: input.projectId,
+        ticketId: input.ticketId,
+      },
     });
 
     return this.getEntryById(u.orgId, entry.id);
@@ -451,7 +459,10 @@ export class EntriesService {
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.hours !== undefined) updateData.hours = input.hours.toString();
+    if (input.hours !== undefined) {
+      const settings = await this.loadSettings(u.orgId);
+      updateData.hours = roundHours(input.hours, settings?.roundingRule).toString();
+    }
     if (input.description !== undefined) updateData.description = input.description;
     if (input.isBillable !== undefined) updateData.isBillable = input.isBillable;
     if (input.billingType !== undefined) {

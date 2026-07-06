@@ -11,9 +11,11 @@ import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsWebhooksController } from "./projects-webhooks.controller";
 import { ProjectsAutomationsController } from "./projects-automations.controller";
 import { ProjectsService } from "./projects.service";
+import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
+import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { ProjectsActivityService } from "./projects-activity.service";
@@ -43,9 +45,11 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
   ],
   providers: [
     ProjectsService,
+    ProjectsProvisionService,
     ProjectsEmailService,
     ProjectsMembersService,
     ProjectsTicketsService,
+    ProjectsTicketsQueryService,
     ProjectsTicketSubresourcesService,
     ProjectsTicketCommentsService,
     ProjectsActivityService,

@@ -1880,6 +1880,18 @@ const TIMESHEETS_PERMISSIONS: Permission[] = [
     action: "view",
     description: "View the timesheet audit trail",
   },
+  {
+    name: "timesheets:budgets:view",
+    resource: "timesheets:budgets",
+    action: "view",
+    description: "View project budgets and burn",
+  },
+  {
+    name: "timesheets:budgets:manage",
+    resource: "timesheets:budgets",
+    action: "manage",
+    description: "Create and manage project budgets",
+  },
 ];
 
 const BILLING_PERMISSIONS: Permission[] = [
@@ -2617,6 +2629,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:rates:view",
     "timesheets:rates:manage",
     "timesheets:audit:view",
+    "timesheets:budgets:view",
+    "timesheets:budgets:manage",
   ],
 
   SALES: [
@@ -3024,6 +3038,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:rates:view",
     "timesheets:rates:manage",
     "timesheets:audit:view",
+    "timesheets:budgets:view",
+    "timesheets:budgets:manage",
     "projects:qa:view",
     "projects:bugs:view",
     "projects:ai:use",
@@ -3151,6 +3167,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:rates:view",
     "timesheets:rates:manage",
     "timesheets:audit:view",
+    "timesheets:budgets:view",
+    "timesheets:budgets:manage",
     "projects:qa:view",
     "projects:bugs:view",
   ],
