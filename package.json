@@ -18,7 +18,8 @@
     "seed:permissions": "node scripts/seed-permissions.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
-    "test:e2e": "jest --config ./jest-e2e.json"
+    "test:e2e": "jest --config ./jest-e2e.json",
+    "test:e2e:support": "NODE_OPTIONS=--max-old-space-size=6144 jest --config ./jest-e2e.json --runInBand --testPathPattern=support"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.76",

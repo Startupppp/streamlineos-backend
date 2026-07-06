@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -17,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
+import { authorize } from "../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import {
@@ -30,10 +32,11 @@ import {
   type UpdateTicketInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 
 @RequireModule("support")
 @Controller("support")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportTicketsController {
   constructor(
     private readonly tickets: SupportTicketsService,
@@ -41,6 +44,7 @@ export class SupportTicketsController {
   ) {}
 
   @Get()
+  @RequirePermission("support:tickets:view")
   async listTickets(
     @Query(new ZodValidationPipe(listTicketsSchema)) query: ListTicketsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +54,7 @@ export class SupportTicketsController {
   }
 
   @Post()
+  @RequirePermission("support:tickets:create")
   @HttpCode(201)
   createTicket(
     @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
@@ -59,11 +64,13 @@ export class SupportTicketsController {
   }
 
   @Get("stats")
+  @RequirePermission("support:tickets:view")
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.tickets.stats(u.orgId);
   }
 
   @Get(":supportTicketId")
+  @RequirePermission("support:tickets:view")
   getTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,7 +79,6 @@ export class SupportTicketsController {
   }
 
   @Patch(":supportTicketId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("support:tickets:manage")
   updateTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
@@ -83,6 +89,7 @@ export class SupportTicketsController {
   }
 
   @Get(":supportTicketId/messages")
+  @RequirePermission("support:tickets:view")
   listMessages(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -91,16 +98,22 @@ export class SupportTicketsController {
   }
 
   @Post(":supportTicketId/messages")
+  @RequirePermission("support:tickets:reply")
   @HttpCode(201)
-  addMessage(
+  async addMessage(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body(new ZodValidationPipe(replyMessageSchema)) body: ReplyMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (body.isInternal) {
+      const result = await authorize(this.access, u, "support:tickets:internal_note");
+      if (!result.allow) throw new ForbiddenException("Permission denied");
+    }
     return this.tickets.addMessage(u.orgId, supportTicketId, u.userId, body);
   }
 
   @Get(":supportTicketId/activity")
+  @RequirePermission("support:tickets:view")
   listActivity(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,

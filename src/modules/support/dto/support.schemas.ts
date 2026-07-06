@@ -34,18 +34,41 @@ export const updateTicketSchema = z.object({
   assigneeId: z.string().optional(),
 });
 
+const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+const TICKET_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
+] as const;
+
 export const replyMessageSchema = z.object({
   body: z.string().min(1),
   isInternal: z.boolean().default(false),
   attachments: z
     .array(
       z.object({
-        fileName: z.string(),
-        fileUrl: z.string(),
-        fileSize: z.number(),
-        mimeType: z.string(),
+        fileName: z.string().trim().min(1, "File name is required").max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z
+          .number()
+          .int()
+          .positive()
+          .max(TICKET_ATTACHMENT_MAX_FILE_SIZE, "File too large (max 10MB)"),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES, {
+          message: "Unsupported file type. Allowed: PDF, images, Word, Excel, plain text, CSV.",
+        }),
       }),
     )
+    .max(10, "Too many attachments")
     .optional(),
 });
 

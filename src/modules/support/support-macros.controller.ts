@@ -31,10 +31,11 @@ import {
   type UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 
 @RequireModule("support")
 @Controller("support")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportMacrosController {
   constructor(private readonly macros: SupportMacrosService) {}
 

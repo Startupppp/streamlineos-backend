@@ -1101,6 +1101,45 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     description: "Manage support tickets",
     scopable: true,
   },
+  {
+    name: "support:tickets:view",
+    resource: "support:tickets",
+    action: "view",
+    description: "View support tickets, messages, and activity",
+    scopable: true,
+  },
+  {
+    name: "support:tickets:create",
+    resource: "support:tickets",
+    action: "create",
+    description: "Create support tickets",
+  },
+  {
+    name: "support:tickets:reply",
+    resource: "support:tickets",
+    action: "reply",
+    description: "Post public replies on support tickets",
+    scopable: true,
+  },
+  {
+    name: "support:tickets:internal_note",
+    resource: "support:tickets",
+    action: "internal_note",
+    description: "Post internal notes on support tickets",
+    scopable: true,
+  },
+  {
+    name: "support:settings:manage",
+    resource: "support:settings",
+    action: "manage",
+    description: "Manage support SLA policies, business hours, and routing settings",
+  },
+  {
+    name: "support:reports:view",
+    resource: "support:reports",
+    action: "view",
+    description: "View support reports and analytics",
+  },
 ];
 
 const ACCOUNTING_PERMISSIONS: Permission[] = [
@@ -2682,6 +2721,11 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:kb:manage",
     "support:macros:view",
     "support:macros:manage",
+    "support:tickets:manage",
+    "support:tickets:view",
+    "support:tickets:create",
+    "support:tickets:reply",
+    "support:tickets:internal_note",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",

@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, count, desc, eq, lt, sql, type SQL } from "drizzle-orm";
 import {
   supportTickets,
@@ -44,12 +44,21 @@ const ACTION_LABELS: Record<string, string> = {
   internal_note: "added an internal note",
   resolved: "resolved the ticket",
   reopened: "reopened the ticket",
+  merged: "merged the ticket",
+  split: "split the ticket",
+  linked: "linked a related ticket",
 };
 
+// Mirrors the `support_activity_action` Postgres enum (db/schema/support/support-activity.ts).
+// merged/split/linked are reserved in ACTION_LABELS for later phases but can't be added here
+// until a migration extends the enum.
 type TicketActivityAction =
+  | "created"
   | "status_changed"
   | "priority_changed"
   | "assignee_changed"
+  | "replied"
+  | "internal_note"
   | "resolved"
   | "reopened";
 
@@ -109,18 +118,14 @@ export class SupportTicketsService {
   }
 
   async createTicket(orgId: string, userId: string, input: CreateTicketInput) {
-    const existing = await this.db.query.supportTickets.findFirst({
+    const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
         eq(supportTickets.orgId, orgId),
         sql`LOWER(${supportTickets.title}) = LOWER(${input.title})`,
+        sql`${supportTickets.status} IN ('OPEN', 'IN_PROGRESS')`,
       ),
-      columns: { id: true },
+      columns: { id: true, title: true },
     });
-    if (existing) {
-      throw new ConflictException(
-        "A ticket with this title already exists. Please use a different title.",
-      );
-    }
 
     const callerSetPriority = input.priority !== undefined;
     let finalPriority: TicketPriority = input.priority ?? "MEDIUM";
@@ -165,6 +170,7 @@ export class SupportTicketsService {
       .returning();
 
     await this.invalidateTicketCaches(orgId);
+    await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
 
     if (finalAssigneeId) {
       void this.notifications
@@ -172,7 +178,12 @@ export class SupportTicketsService {
         .catch(() => undefined);
     }
 
-    return ticket;
+    return {
+      ...ticket,
+      possibleDuplicateOf: possibleDuplicate
+        ? { id: possibleDuplicate.id, title: possibleDuplicate.title }
+        : null,
+    };
   }
 
   async getTicket(orgId: string, ticketId: number) {
@@ -252,6 +263,29 @@ export class SupportTicketsService {
     });
   }
 
+  /**
+   * Internal-note-safe read path: filters isInternal at the query level.
+   * Not wired into any route yet — reserved for the future customer portal
+   * so it never has to reach for listMessages()/getTicket(), which
+   * intentionally include internal notes for agent-facing routes.
+   */
+  async listPublicMessages(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
+    return this.db.query.supportTicketMessages.findMany({
+      where: and(
+        eq(supportTicketMessages.ticketId, ticketId),
+        eq(supportTicketMessages.isInternal, false),
+      ),
+      with: { author: { columns: { id: true, name: true, image: true } } },
+      orderBy: [asc(supportTicketMessages.createdAt)],
+    });
+  }
+
   async addMessage(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
@@ -269,6 +303,15 @@ export class SupportTicketsService {
         attachments: input.attachments ?? [],
       })
       .returning();
+
+    await this.recordActivity(
+      orgId,
+      ticketId,
+      userId,
+      input.isInternal ? "internal_note" : "replied",
+      null,
+      null,
+    );
 
     if (ticket.status === "OPEN") {
       await this.db
@@ -401,22 +444,42 @@ export class SupportTicketsService {
       });
     }
 
-    if (entries.length === 0) return;
+    for (const entry of entries) {
+      await this.recordActivity(orgId, ticketId, userId, entry.action, entry.fromValue, entry.toValue);
+    }
+  }
 
+  /**
+   * Fire-and-forget-on-failure activity log write, callable from any write
+   * path (create/reply/update). Failures are caught and logged with full
+   * context rather than failing the caller's request — a transient audit
+   * insert failure shouldn't block an agent from replying to a customer.
+   */
+  private async recordActivity(
+    orgId: string,
+    ticketId: number,
+    userId: string,
+    action: TicketActivityAction,
+    fromValue: string | null,
+    toValue: string | null,
+  ) {
     try {
-      await this.db.insert(supportTicketActivity).values(
-        entries.map((entry) => ({
-          orgId,
-          supportTicketId: ticketId,
-          userId,
-          action: entry.action,
-          fromValue: entry.fromValue,
-          toValue: entry.toValue,
-        })),
-      );
+      await this.db.insert(supportTicketActivity).values({
+        orgId,
+        supportTicketId: ticketId,
+        userId,
+        action,
+        fromValue,
+        toValue,
+      });
     } catch (activityError) {
       logger.error("Failed to log support ticket activity", {
+        orgId,
         ticketId,
+        userId,
+        action,
+        fromValue,
+        toValue,
         error: activityError instanceof Error ? activityError.message : String(activityError),
       });
     }
