@@ -7,6 +7,7 @@ export const listTicketsSchema = z.object({
   status: ticketStatusSchema.optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
+  queueId: z.coerce.number().int().positive().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -32,7 +33,25 @@ export const updateTicketSchema = z.object({
   status: ticketStatusSchema.optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
+  queueId: z.number().int().positive().nullable().optional(),
+  expectedUpdatedAt: z.coerce.date().optional(),
 });
+
+const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+const TICKET_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
+] as const;
 
 export const replyMessageSchema = z.object({
   body: z.string().min(1),
@@ -40,12 +59,19 @@ export const replyMessageSchema = z.object({
   attachments: z
     .array(
       z.object({
-        fileName: z.string(),
-        fileUrl: z.string(),
-        fileSize: z.number(),
-        mimeType: z.string(),
+        fileName: z.string().trim().min(1, "File name is required").max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z
+          .number()
+          .int()
+          .positive()
+          .max(TICKET_ATTACHMENT_MAX_FILE_SIZE, "File too large (max 10MB)"),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES, {
+          message: "Unsupported file type. Allowed: PDF, images, Word, Excel, plain text, CSV.",
+        }),
       }),
     )
+    .max(10, "Too many attachments")
     .optional(),
 });
 
@@ -72,11 +98,15 @@ const routingConditionSchema = z.object({
   value: z.string().trim().min(1).max(200),
 });
 
+export const assignmentModeSchema = z.enum(["static", "round_robin", "load_balanced"]);
+
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
   conditions: z.array(routingConditionSchema).min(1, "At least one condition is required"),
   assigneeId: z.string().trim().min(1).optional(),
   setPriority: ticketPrioritySchema.optional(),
+  assignmentMode: assignmentModeSchema.default("static"),
+  candidateAgentIds: z.array(z.string().trim().min(1)).max(50).default([]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
 });
@@ -86,8 +116,195 @@ export const updateRoutingRuleSchema = z.object({
   conditions: z.array(routingConditionSchema).min(1).optional(),
   assigneeId: z.string().trim().min(1).nullable().optional(),
   setPriority: ticketPrioritySchema.nullable().optional(),
+  assignmentMode: assignmentModeSchema.optional(),
+  candidateAgentIds: z.array(z.string().trim().min(1)).max(50).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createQueueSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  description: z.string().trim().max(500).optional(),
+  filter: z.record(z.string(), z.unknown()).default({}),
+  sortOrder: z.number().int().min(0).default(0),
+  isDefault: z.boolean().default(false),
+});
+
+export const updateQueueSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  isDefault: z.boolean().optional(),
+});
+
+export const savedViewVisibilitySchema = z.enum(["personal", "team", "global"]);
+
+export const createSavedViewSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  filter: z.record(z.string(), z.unknown()).default({}),
+  visibility: savedViewVisibilitySchema.default("personal"),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const updateSavedViewSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+  visibility: savedViewVisibilitySchema.optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createTagSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(50),
+  color: z.string().trim().max(20).optional(),
+});
+
+export const ticketLinkRelationSchema = z.enum(["duplicate", "related"]);
+
+export const createTicketLinkSchema = z.object({
+  linkedTicketId: z.number().int().positive(),
+  relation: ticketLinkRelationSchema,
+});
+
+export const mergeTicketSchema = z.object({
+  intoTicketId: z.number().int().positive(),
+});
+
+const weekdayScheduleSchema = z.object({
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
+  end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
+});
+
+const weeklyScheduleSchema = z.object({
+  mon: weekdayScheduleSchema.optional(),
+  tue: weekdayScheduleSchema.optional(),
+  wed: weekdayScheduleSchema.optional(),
+  thu: weekdayScheduleSchema.optional(),
+  fri: weekdayScheduleSchema.optional(),
+  sat: weekdayScheduleSchema.optional(),
+  sun: weekdayScheduleSchema.optional(),
+});
+
+export const createBusinessHoursSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  timezone: z.string().trim().min(1).max(100).default("UTC"),
+  weeklySchedule: weeklyScheduleSchema.default({}),
+  holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format")).max(100).default([]),
+  is24x7: z.boolean().default(false),
+  isDefault: z.boolean().default(false),
+});
+
+export const updateBusinessHoursSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  timezone: z.string().trim().min(1).max(100).optional(),
+  weeklySchedule: weeklyScheduleSchema.optional(),
+  holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(100).optional(),
+  is24x7: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+export const createSlaPolicySchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  priority: ticketPrioritySchema.optional(),
+  category: z.string().trim().max(100).optional(),
+  businessHoursId: z.number().int().positive().optional(),
+  firstResponseTargetMins: z.number().int().positive(),
+  resolutionTargetMins: z.number().int().positive(),
+  pauseStatuses: z.array(ticketStatusSchema).default(["WAITING"]),
+  isEnabled: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const updateSlaPolicySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  priority: ticketPrioritySchema.nullable().optional(),
+  category: z.string().trim().max(100).nullable().optional(),
+  businessHoursId: z.number().int().positive().nullable().optional(),
+  firstResponseTargetMins: z.number().int().positive().optional(),
+  resolutionTargetMins: z.number().int().positive().optional(),
+  pauseStatuses: z.array(ticketStatusSchema).optional(),
+  isEnabled: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const PORTAL_TICKET_CATEGORIES = [
+  "general",
+  "billing",
+  "bug_report",
+  "feature_request",
+  "onboarding",
+  "internal_it",
+] as const;
+
+export const createPortalTicketSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(5, "Title must be at least 5 characters")
+    .max(150, "Title must be at most 150 characters"),
+  category: z.enum(PORTAL_TICKET_CATEGORIES).default("general"),
+  description: z.string().trim().min(1, "Description is required").max(5000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(5)
+    .optional(),
+});
+
+export const createPortalMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message is required").max(5000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(5)
+    .optional(),
+});
+
+export const supportChannelTypeSchema = z.enum(["email", "chat", "whatsapp", "sms"]);
+
+export const createSupportChannelSchema = z.object({
+  type: supportChannelTypeSchema,
+  name: z.string().trim().min(1, "Name is required").max(100),
+  config: z.record(z.string(), z.unknown()).default({}),
+  isActive: z.boolean().default(true),
+});
+
+export const updateSupportChannelSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const inboundEmailSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  inReplyTo: z.string().trim().max(998).optional(),
+  fromEmail: z.string().trim().email().max(320),
+  fromName: z.string().trim().max(200).optional(),
+  subject: z.string().trim().max(998).optional(),
+  bodyText: z.string().max(50_000),
+  attachments: z
+    .array(
+      z.object({
+        fileName: z.string().trim().min(1).max(255),
+        fileUrl: z.string().trim().min(1).max(2048),
+        fileSize: z.number().int().positive().max(TICKET_ATTACHMENT_MAX_FILE_SIZE),
+        mimeType: z.enum(TICKET_ATTACHMENT_ALLOWED_MIME_TYPES),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 export const createKbCategorySchema = z.object({
@@ -172,6 +389,22 @@ export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
+export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;
+export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;
+export type CreateSlaPolicyInput = z.infer<typeof createSlaPolicySchema>;
+export type UpdateSlaPolicyInput = z.infer<typeof updateSlaPolicySchema>;
+export type CreatePortalTicketInput = z.infer<typeof createPortalTicketSchema>;
+export type CreatePortalMessageInput = z.infer<typeof createPortalMessageSchema>;
+export type CreateSupportChannelInput = z.infer<typeof createSupportChannelSchema>;
+export type UpdateSupportChannelInput = z.infer<typeof updateSupportChannelSchema>;
+export type InboundEmailInput = z.infer<typeof inboundEmailSchema>;
+export type CreateQueueInput = z.infer<typeof createQueueSchema>;
+export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
+export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;
+export type UpdateSavedViewInput = z.infer<typeof updateSavedViewSchema>;
+export type CreateTagInput = z.infer<typeof createTagSchema>;
+export type CreateTicketLinkInput = z.infer<typeof createTicketLinkSchema>;
+export type MergeTicketInput = z.infer<typeof mergeTicketSchema>;
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;
 export type UpdateKbCategoryInput = z.infer<typeof updateKbCategorySchema>;
 export type ListKbArticlesInput = z.infer<typeof listKbArticlesSchema>;

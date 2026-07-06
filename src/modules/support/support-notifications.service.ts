@@ -4,6 +4,7 @@ import { users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
+import type { TicketEscalationLevel } from "../email/templates";
 
 type Contact = { id: string; email: string; name: string | null };
 
@@ -88,6 +89,24 @@ export class SupportNotificationsService {
       ticketId,
       author?.name ?? "Team Member",
       body,
+    );
+  }
+
+  async sendEscalationEmail(
+    recipientId: string,
+    ticketTitle: string,
+    ticketId: number,
+    escalationLevel: TicketEscalationLevel,
+  ): Promise<void> {
+    const [recipient] = await this.loadContacts([recipientId]);
+    if (!recipient?.email) return;
+
+    await this.email.sendSupportTicketEscalationEmail(
+      recipient.email,
+      recipient.name ?? "Team Member",
+      ticketTitle,
+      ticketId,
+      escalationLevel,
     );
   }
 }

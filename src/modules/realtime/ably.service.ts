@@ -72,6 +72,30 @@ export class AblyService {
     await this.rest().channels.get(`notifications:${orgId}:${userId}`).publish(event, data).catch(() => undefined);
   }
 
+  supportChannelName(orgId: string, ticketId: number): string {
+    return `support:${orgId}:${ticketId}`;
+  }
+
+  createSupportTokenRequest(clientId: string, orgId: string): Promise<Ably.TokenRequest> {
+    const capability: Ably.TokenParams["capability"] = {
+      [`support:${orgId}:*`]: ["subscribe", "publish", "presence"],
+    };
+    return this.rest().auth.createTokenRequest({ clientId, capability, ttl: CHAT_TOKEN_TTL_MS });
+  }
+
+  async publishSupportTicketEvent(
+    orgId: string,
+    ticketId: number,
+    event: string,
+    data: unknown,
+  ): Promise<void> {
+    if (!this.apiKey) return;
+    await this.rest()
+      .channels.get(this.supportChannelName(orgId, ticketId))
+      .publish(event, data)
+      .catch(() => undefined);
+  }
+
   private rest(): Ably.Rest {
     if (!this.apiKey) {
       throw new Error("Ably is not configured");

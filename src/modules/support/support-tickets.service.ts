@@ -1,9 +1,11 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { SupportTicketStaleException } from "../../common/http/api-exceptions";
 import { and, asc, count, desc, eq, lt, sql, type SQL } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketMessages,
   supportTicketActivity,
+  supportTicketLinks,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -13,11 +15,15 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportRealtimeService } from "./support-realtime.service";
+import { SupportSlaService } from "./support-sla.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import type {
   CreateTicketInput,
+  CreateTicketLinkInput,
   ListTicketsInput,
+  MergeTicketInput,
   ReplyMessageInput,
   TicketPriority,
   TicketStatus,
@@ -28,13 +34,6 @@ type ListTicketsQuery = ListTicketsInput & { scope?: DataScope; userId?: string 
 
 const TICKET_PRIORITIES: readonly TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
-const SLA_HOURS: Record<TicketPriority, number> = {
-  LOW: 48,
-  MEDIUM: 24,
-  HIGH: 8,
-  URGENT: 2,
-};
-
 const ACTION_LABELS: Record<string, string> = {
   created: "created the ticket",
   status_changed: "changed status",
@@ -44,14 +43,25 @@ const ACTION_LABELS: Record<string, string> = {
   internal_note: "added an internal note",
   resolved: "resolved the ticket",
   reopened: "reopened the ticket",
+  merged: "merged the ticket",
+  split: "split the ticket",
+  linked: "linked a related ticket",
 };
 
+// Mirrors the `support_activity_action` Postgres enum (db/schema/support/support-activity.ts).
+// "split" is reserved in ACTION_LABELS for a future phase but isn't in the DB enum yet
+// (split itself isn't implemented — see mergeTicket()/addTicketLink() for merged/linked).
 type TicketActivityAction =
+  | "created"
   | "status_changed"
   | "priority_changed"
   | "assignee_changed"
+  | "replied"
+  | "internal_note"
   | "resolved"
-  | "reopened";
+  | "reopened"
+  | "merged"
+  | "linked";
 
 function isTicketPriority(value: string): value is TicketPriority {
   return (TICKET_PRIORITIES as readonly string[]).includes(value);
@@ -64,11 +74,13 @@ export class SupportTicketsService {
     private readonly cache: CacheService,
     private readonly macros: SupportMacrosService,
     private readonly notifications: SupportNotificationsService,
+    private readonly realtime: SupportRealtimeService,
+    private readonly sla: SupportSlaService,
   ) {}
 
   listTickets(orgId: string, query: ListTicketsQuery) {
-    const { status, priority, assigneeId, page, limit, scope, userId } = query;
-    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
+    const { status, priority, assigneeId, queueId, page, limit, scope, userId } = query;
+    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
     return this.cache.cached(
       key,
       async () => {
@@ -77,6 +89,7 @@ export class SupportTicketsService {
         if (status) conditions.push(eq(supportTickets.status, status));
         if (priority) conditions.push(eq(supportTickets.priority, priority));
         if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
+        if (queueId) conditions.push(eq(supportTickets.queueId, queueId));
         if (scope && scope !== "none" && userId) {
           conditions.push(applyScope(scope, userId, { ownerColumn: supportTickets.assigneeId }));
         } else if (scope === "none") {
@@ -108,19 +121,25 @@ export class SupportTicketsService {
     );
   }
 
-  async createTicket(orgId: string, userId: string, input: CreateTicketInput) {
-    const existing = await this.db.query.supportTickets.findFirst({
+  async createTicket(
+    orgId: string,
+    userId: string,
+    input: CreateTicketInput,
+    source?: {
+      channel: string;
+      messageId?: string | null;
+      requesterEmail?: string | null;
+      requesterName?: string | null;
+    },
+  ) {
+    const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
         eq(supportTickets.orgId, orgId),
         sql`LOWER(${supportTickets.title}) = LOWER(${input.title})`,
+        sql`${supportTickets.status} IN ('OPEN', 'IN_PROGRESS')`,
       ),
-      columns: { id: true },
+      columns: { id: true, title: true },
     });
-    if (existing) {
-      throw new ConflictException(
-        "A ticket with this title already exists. Please use a different title.",
-      );
-    }
 
     const callerSetPriority = input.priority !== undefined;
     let finalPriority: TicketPriority = input.priority ?? "MEDIUM";
@@ -146,8 +165,8 @@ export class SupportTicketsService {
       });
     }
 
-    const slaHours = SLA_HOURS[finalPriority];
-    const slaDeadline = new Date(Date.now() + slaHours * 60 * 60 * 1000);
+    const resolvedPolicy = await this.sla.resolvePolicy(orgId, finalPriority, input.category ?? null);
+    const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
 
     const [ticket] = await this.db
       .insert(supportTickets)
@@ -159,12 +178,18 @@ export class SupportTicketsService {
         clientId: input.clientId ?? null,
         priority: finalPriority,
         assigneeId: finalAssigneeId ?? null,
-        slaDeadline,
+        slaDeadline: resolutionDueAt,
+        firstResponseDueAt,
         createdBy: userId,
+        sourceChannel: source?.channel ?? "web",
+        sourceMessageId: source?.messageId ?? null,
+        requesterEmail: source?.requesterEmail ?? null,
+        requesterName: source?.requesterName ?? null,
       })
       .returning();
 
     await this.invalidateTicketCaches(orgId);
+    await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
 
     if (finalAssigneeId) {
       void this.notifications
@@ -172,7 +197,12 @@ export class SupportTicketsService {
         .catch(() => undefined);
     }
 
-    return ticket;
+    return {
+      ...ticket,
+      possibleDuplicateOf: possibleDuplicate
+        ? { id: possibleDuplicate.id, title: possibleDuplicate.title }
+        : null,
+    };
   }
 
   async getTicket(orgId: string, ticketId: number) {
@@ -198,14 +228,39 @@ export class SupportTicketsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
+    if (input.expectedUpdatedAt && input.expectedUpdatedAt.getTime() !== ticket.updatedAt.getTime()) {
+      throw new SupportTicketStaleException();
+    }
+
     const updateData: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
     if (input.status) {
       updateData.status = input.status;
       if (input.status === "RESOLVED") updateData.resolvedAt = new Date();
       if (input.status === "CLOSED") updateData.closedAt = new Date();
+
+      const policy = await this.sla.resolvePolicy(orgId, ticket.priority, ticket.category);
+      const pauseTransition = this.sla.computePauseTransition(
+        ticket.status,
+        input.status,
+        policy.pauseStatuses,
+        ticket.slaPausedAt,
+        ticket.slaPausedMinutes,
+      );
+      updateData.slaPausedAt = pauseTransition.slaPausedAt;
+      updateData.slaPausedMinutes = pauseTransition.slaPausedMinutes;
+      if (pauseTransition.extendByMinutes > 0) {
+        const extendMs = pauseTransition.extendByMinutes * 60_000;
+        if (!ticket.firstRespondedAt && ticket.firstResponseDueAt) {
+          updateData.firstResponseDueAt = new Date(ticket.firstResponseDueAt.getTime() + extendMs);
+        }
+        if (ticket.slaDeadline) {
+          updateData.slaDeadline = new Date(ticket.slaDeadline.getTime() + extendMs);
+        }
+      }
     }
     if (input.priority) updateData.priority = input.priority;
     if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
+    if (input.queueId !== undefined) updateData.queueId = input.queueId;
 
     await this.db
       .update(supportTickets)
@@ -215,6 +270,8 @@ export class SupportTicketsService {
     await this.logTicketActivity(orgId, ticketId, userId, ticket, input);
 
     await this.invalidateTicketCaches(orgId);
+
+    void this.realtime.publishTicketUpdated(orgId, ticketId, updateData.updatedAt as Date).catch(() => undefined);
 
     if (input.status) {
       void this.notifications
@@ -235,7 +292,7 @@ export class SupportTicketsService {
         .catch(() => undefined);
     }
 
-    return { success: true };
+    return { success: true, updatedAt: updateData.updatedAt };
   }
 
   async listMessages(orgId: string, ticketId: number) {
@@ -252,10 +309,46 @@ export class SupportTicketsService {
     });
   }
 
-  async addMessage(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput) {
+  /**
+   * Internal-note-safe read path: filters isInternal at the query level.
+   * Not wired into any route yet — reserved for the future customer portal
+   * so it never has to reach for listMessages()/getTicket(), which
+   * intentionally include internal notes for agent-facing routes.
+   */
+  async listPublicMessages(orgId: string, ticketId: number) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true, status: true, title: true, createdBy: true, assigneeId: true },
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
+    return this.db.query.supportTicketMessages.findMany({
+      where: and(
+        eq(supportTicketMessages.ticketId, ticketId),
+        eq(supportTicketMessages.isInternal, false),
+      ),
+      with: { author: { columns: { id: true, name: true, image: true } } },
+      orderBy: [asc(supportTicketMessages.createdAt)],
+    });
+  }
+
+  async addMessage(
+    orgId: string,
+    ticketId: number,
+    userId: string | null,
+    input: ReplyMessageInput,
+    source?: { channel: string; messageId?: string | null; contactEmail?: string | null; contactName?: string | null },
+  ) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: {
+        id: true,
+        status: true,
+        title: true,
+        createdBy: true,
+        assigneeId: true,
+        firstRespondedAt: true,
+      },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -267,17 +360,38 @@ export class SupportTicketsService {
         body: input.body,
         isInternal: input.isInternal,
         attachments: input.attachments ?? [],
+        sourceChannel: source?.channel ?? "web",
+        sourceMessageId: source?.messageId ?? null,
+        sourceContactEmail: source?.contactEmail ?? null,
+        sourceContactName: source?.contactName ?? null,
       })
       .returning();
 
-    if (ticket.status === "OPEN") {
+    await this.recordActivity(
+      orgId,
+      ticketId,
+      userId,
+      input.isInternal ? "internal_note" : "replied",
+      null,
+      null,
+    );
+
+    void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
+
+    const isFirstAgentReply =
+      !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;
+
+    if (ticket.status === "OPEN" || isFirstAgentReply) {
+      const followUp: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
+      if (ticket.status === "OPEN") followUp.status = "IN_PROGRESS";
+      if (isFirstAgentReply) followUp.firstRespondedAt = new Date();
       await this.db
         .update(supportTickets)
-        .set({ status: "IN_PROGRESS", updatedAt: new Date() })
+        .set(followUp)
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
     }
 
-    if (!input.isInternal) {
+    if (!input.isInternal && userId) {
       void this.notifications
         .sendReplyEmail(
           { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
@@ -330,6 +444,89 @@ export class SupportTicketsService {
       userName: row.userName,
       userImage: row.userImage,
     }));
+  }
+
+  async addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput) {
+    if (input.linkedTicketId === ticketId) {
+      throw new BadRequestException("A ticket cannot be linked to itself");
+    }
+
+    const [ticket, linkedTicket] = await Promise.all([
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, input.linkedTicketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+    ]);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!linkedTicket) throw new NotFoundException("Linked ticket not found");
+
+    const [link] = await this.db
+      .insert(supportTicketLinks)
+      .values({
+        orgId,
+        ticketId,
+        linkedTicketId: input.linkedTicketId,
+        relation: input.relation,
+        createdBy: userId,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    await this.recordActivity(orgId, ticketId, userId, "linked", null, String(input.linkedTicketId));
+
+    return link ?? { success: true };
+  }
+
+  async listTicketLinks(orgId: string, ticketId: number) {
+    await this.assertTicketExists(orgId, ticketId);
+    return this.db.query.supportTicketLinks.findMany({
+      where: and(eq(supportTicketLinks.orgId, orgId), eq(supportTicketLinks.ticketId, ticketId)),
+      with: { linkedTicket: { columns: { id: true, title: true, status: true } } },
+    });
+  }
+
+  async mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput) {
+    if (input.intoTicketId === ticketId) {
+      throw new BadRequestException("A ticket cannot be merged into itself");
+    }
+
+    const [ticket, targetTicket] = await Promise.all([
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true, status: true, mergedIntoTicketId: true },
+      }),
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, input.intoTicketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      }),
+    ]);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    if (!targetTicket) throw new NotFoundException("Target ticket not found");
+    if (ticket.mergedIntoTicketId) {
+      throw new ConflictException("This ticket has already been merged into another ticket");
+    }
+
+    await this.db
+      .update(supportTickets)
+      .set({ mergedIntoTicketId: input.intoTicketId, status: "CLOSED", closedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+
+    await this.recordActivity(orgId, ticketId, userId, "merged", ticket.status, String(input.intoTicketId));
+    await this.invalidateTicketCaches(orgId);
+
+    return { success: true, mergedIntoTicketId: input.intoTicketId };
+  }
+
+  private async assertTicketExists(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
   async stats(orgId: string) {
@@ -401,22 +598,42 @@ export class SupportTicketsService {
       });
     }
 
-    if (entries.length === 0) return;
+    for (const entry of entries) {
+      await this.recordActivity(orgId, ticketId, userId, entry.action, entry.fromValue, entry.toValue);
+    }
+  }
 
+  /**
+   * Fire-and-forget-on-failure activity log write, callable from any write
+   * path (create/reply/update). Failures are caught and logged with full
+   * context rather than failing the caller's request — a transient audit
+   * insert failure shouldn't block an agent from replying to a customer.
+   */
+  private async recordActivity(
+    orgId: string,
+    ticketId: number,
+    userId: string | null,
+    action: TicketActivityAction,
+    fromValue: string | null,
+    toValue: string | null,
+  ) {
     try {
-      await this.db.insert(supportTicketActivity).values(
-        entries.map((entry) => ({
-          orgId,
-          supportTicketId: ticketId,
-          userId,
-          action: entry.action,
-          fromValue: entry.fromValue,
-          toValue: entry.toValue,
-        })),
-      );
+      await this.db.insert(supportTicketActivity).values({
+        orgId,
+        supportTicketId: ticketId,
+        userId,
+        action,
+        fromValue,
+        toValue,
+      });
     } catch (activityError) {
       logger.error("Failed to log support ticket activity", {
+        orgId,
         ticketId,
+        userId,
+        action,
+        fromValue,
+        toValue,
         error: activityError instanceof Error ? activityError.message : String(activityError),
       });
     }

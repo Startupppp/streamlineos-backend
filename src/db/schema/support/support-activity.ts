@@ -21,6 +21,8 @@ export const supportActivityActionEnum = pgEnum("support_activity_action", [
   "internal_note",
   "resolved",
   "reopened",
+  "merged",
+  "linked",
 ]);
 
 export const supportTicketActivity = pgTable(

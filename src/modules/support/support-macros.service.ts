@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, ilike, or } from "drizzle-orm";
-import { supportMacros, supportRoutingRules, type RoutingRuleCondition } from "../../db/schema";
+import { and, asc, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { supportMacros, supportRoutingRules, supportTickets, type RoutingRuleCondition } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -138,12 +138,52 @@ export class SupportMacrosService {
       if (!allMatch) continue;
 
       const outcome: RoutingOutcome = {};
-      if (rule.assigneeId) outcome.assigneeId = rule.assigneeId;
+      const candidates = Array.isArray(rule.candidateAgentIds) ? rule.candidateAgentIds : [];
+
+      if (rule.assignmentMode !== "static" && candidates.length > 0) {
+        outcome.assigneeId = await this.resolveAssignmentModeAgent(orgId, rule.assignmentMode, candidates);
+      } else if (rule.assigneeId) {
+        outcome.assigneeId = rule.assigneeId;
+      }
+
       if (rule.setPriority) outcome.setPriority = rule.setPriority;
       return outcome;
     }
 
     return {};
+  }
+
+  private async resolveAssignmentModeAgent(
+    orgId: string,
+    mode: string,
+    candidates: string[],
+  ): Promise<string> {
+    if (mode === "load_balanced") {
+      const workloads = await this.db
+        .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
+        .from(supportTickets)
+        .where(
+          and(
+            eq(supportTickets.orgId, orgId),
+            inArray(supportTickets.assigneeId, candidates),
+            or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
+          ),
+        )
+        .groupBy(supportTickets.assigneeId);
+
+      const workloadMap = new Map(workloads.map((w) => [w.assigneeId, Number(w.cnt)]));
+      return candidates.reduce((least, candidate) =>
+        (workloadMap.get(candidate) ?? 0) < (workloadMap.get(least) ?? 0) ? candidate : least,
+      );
+    }
+
+    // round_robin: use total ticket count for the org as a stateless rotating cursor.
+    const [totalResult] = await this.db
+      .select({ cnt: count() })
+      .from(supportTickets)
+      .where(eq(supportTickets.orgId, orgId));
+    const cursor = Number(totalResult?.cnt ?? 0) % candidates.length;
+    return candidates[cursor];
   }
 
   private resolveField(ticket: RoutableTicket, field: string): string | null {

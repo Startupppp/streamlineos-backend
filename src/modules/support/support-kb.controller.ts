@@ -39,10 +39,11 @@ import {
   type UpdateKbCategoryInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 
 @RequireModule("support")
 @Controller("support/kb")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportKbController {
   constructor(
     private readonly kb: SupportKbService,

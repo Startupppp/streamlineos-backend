@@ -18,7 +18,8 @@
     "seed:permissions": "node scripts/seed-permissions.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
-    "test:e2e": "jest --config ./jest-e2e.json"
+    "test:e2e": "jest --config ./jest-e2e.json",
+    "test:e2e:support": "NODE_OPTIONS=--max-old-space-size=6144 jest --config ./jest-e2e.json --runInBand --testPathPattern=support"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.76",
@@ -38,6 +39,7 @@
     "ai": "^5.0.206",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "helmet": "^8.0.0",
