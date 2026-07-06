@@ -98,11 +98,15 @@ const routingConditionSchema = z.object({
   value: z.string().trim().min(1).max(200),
 });
 
+export const assignmentModeSchema = z.enum(["static", "round_robin", "load_balanced"]);
+
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
   conditions: z.array(routingConditionSchema).min(1, "At least one condition is required"),
   assigneeId: z.string().trim().min(1).optional(),
   setPriority: ticketPrioritySchema.optional(),
+  assignmentMode: assignmentModeSchema.default("static"),
+  candidateAgentIds: z.array(z.string().trim().min(1)).max(50).default([]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
 });
@@ -112,6 +116,8 @@ export const updateRoutingRuleSchema = z.object({
   conditions: z.array(routingConditionSchema).min(1).optional(),
   assigneeId: z.string().trim().min(1).nullable().optional(),
   setPriority: ticketPrioritySchema.nullable().optional(),
+  assignmentMode: assignmentModeSchema.optional(),
+  candidateAgentIds: z.array(z.string().trim().min(1)).max(50).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
@@ -162,6 +168,63 @@ export const createTicketLinkSchema = z.object({
 
 export const mergeTicketSchema = z.object({
   intoTicketId: z.number().int().positive(),
+});
+
+const weekdayScheduleSchema = z.object({
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
+  end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
+});
+
+const weeklyScheduleSchema = z.object({
+  mon: weekdayScheduleSchema.optional(),
+  tue: weekdayScheduleSchema.optional(),
+  wed: weekdayScheduleSchema.optional(),
+  thu: weekdayScheduleSchema.optional(),
+  fri: weekdayScheduleSchema.optional(),
+  sat: weekdayScheduleSchema.optional(),
+  sun: weekdayScheduleSchema.optional(),
+});
+
+export const createBusinessHoursSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  timezone: z.string().trim().min(1).max(100).default("UTC"),
+  weeklySchedule: weeklyScheduleSchema.default({}),
+  holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format")).max(100).default([]),
+  is24x7: z.boolean().default(false),
+  isDefault: z.boolean().default(false),
+});
+
+export const updateBusinessHoursSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  timezone: z.string().trim().min(1).max(100).optional(),
+  weeklySchedule: weeklyScheduleSchema.optional(),
+  holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(100).optional(),
+  is24x7: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+export const createSlaPolicySchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100),
+  priority: ticketPrioritySchema.optional(),
+  category: z.string().trim().max(100).optional(),
+  businessHoursId: z.number().int().positive().optional(),
+  firstResponseTargetMins: z.number().int().positive(),
+  resolutionTargetMins: z.number().int().positive(),
+  pauseStatuses: z.array(ticketStatusSchema).default(["WAITING"]),
+  isEnabled: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const updateSlaPolicySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  priority: ticketPrioritySchema.nullable().optional(),
+  category: z.string().trim().max(100).nullable().optional(),
+  businessHoursId: z.number().int().positive().nullable().optional(),
+  firstResponseTargetMins: z.number().int().positive().optional(),
+  resolutionTargetMins: z.number().int().positive().optional(),
+  pauseStatuses: z.array(ticketStatusSchema).optional(),
+  isEnabled: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
 });
 
 export const createKbCategorySchema = z.object({
@@ -246,6 +309,10 @@ export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
+export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;
+export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;
+export type CreateSlaPolicyInput = z.infer<typeof createSlaPolicySchema>;
+export type UpdateSlaPolicyInput = z.infer<typeof updateSlaPolicySchema>;
 export type CreateQueueInput = z.infer<typeof createQueueSchema>;
 export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
 export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;

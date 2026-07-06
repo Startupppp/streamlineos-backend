@@ -166,6 +166,39 @@ export function getTicketStatusEmailTemplate(
   });
 }
 
+export type TicketEscalationLevel =
+  | "first_response_due_soon"
+  | "first_response_breached"
+  | "resolution_due_soon"
+  | "resolution_breached";
+
+const ESCALATION_LEVEL_COPY: Record<TicketEscalationLevel, { label: string; tone: Tone }> = {
+  first_response_due_soon: { label: "First response due soon", tone: "warning" },
+  first_response_breached: { label: "First response SLA breached", tone: "danger" },
+  resolution_due_soon: { label: "Resolution due soon", tone: "warning" },
+  resolution_breached: { label: "Resolution SLA breached", tone: "danger" },
+};
+
+export function getTicketEscalationEmailTemplate(
+  recipientName: string,
+  ticketTitle: string,
+  ticketId: number,
+  escalationLevel: TicketEscalationLevel,
+): string {
+  const { label, tone } = ESCALATION_LEVEL_COPY[escalationLevel];
+  const badge = renderBadge(label, tone);
+  const content = `
+    <p class="email-text">Hi ${escapeHtml(recipientName)},</p>
+    <p class="email-text">Ticket #${ticketId} — <strong>${escapeHtml(ticketTitle)}</strong> needs attention: ${badge}</p>
+    ${renderButton("View ticket", `${appUrl}/support/${ticketId}`)}
+  `;
+  return getEmailTemplate({
+    title: `SLA alert: ticket #${ticketId}`,
+    preheader: `${label} for ticket #${ticketId}`,
+    content,
+  });
+}
+
 export function getHelpdeskTicketEmailTemplate(
   recipientName: string,
   ticketTitle: string,

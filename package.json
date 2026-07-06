@@ -39,6 +39,7 @@
     "ai": "^5.0.206",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "helmet": "^8.0.0",

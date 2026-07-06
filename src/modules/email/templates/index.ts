@@ -106,6 +106,8 @@ export {
   getTicketCreatedEmailTemplate,
   getTicketReplyEmailTemplate,
   getTicketStatusEmailTemplate,
+  getTicketEscalationEmailTemplate,
+  type TicketEscalationLevel,
   getHelpdeskTicketEmailTemplate,
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,

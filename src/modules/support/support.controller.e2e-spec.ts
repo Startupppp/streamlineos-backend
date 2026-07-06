@@ -85,6 +85,16 @@ describe("Support auth/RBAC (e2e)", () => {
     ["post", "/support/1/links"],
     ["post", "/support/1/merge"],
     ["get", "/support/ably-token"],
+    ["get", "/support/business-hours"],
+    ["post", "/support/business-hours"],
+    ["patch", "/support/business-hours/1"],
+    ["delete", "/support/business-hours/1"],
+    ["get", "/support/sla-policies"],
+    ["post", "/support/sla-policies"],
+    ["patch", "/support/sla-policies/1"],
+    ["delete", "/support/sla-policies/1"],
+    ["post", "/support/sla/run-escalations"],
+    ["get", "/support/1/risk"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -194,6 +204,22 @@ describe("Support auth/RBAC (e2e)", () => {
       permission: "support:tickets:manage",
       body: { intoTicketId: 2 },
     },
+    { method: "get", path: "/support/business-hours", permission: "support:settings:manage" },
+    {
+      method: "post",
+      path: "/support/business-hours",
+      permission: "support:settings:manage",
+      body: { name: "9-5 weekdays" },
+    },
+    { method: "get", path: "/support/sla-policies", permission: "support:settings:manage" },
+    {
+      method: "post",
+      path: "/support/sla-policies",
+      permission: "support:settings:manage",
+      body: { name: "Default", firstResponseTargetMins: 60, resolutionTargetMins: 1440 },
+    },
+    { method: "post", path: "/support/sla/run-escalations", permission: "support:settings:manage" },
+    { method: "get", path: "/support/1/risk", permission: "support:tickets:view" },
   ];
 
   it.each(ticketPermissionCases)(

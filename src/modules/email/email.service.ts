@@ -22,6 +22,8 @@ import {
   getTicketCreatedEmailTemplate,
   getTicketReplyEmailTemplate,
   getTicketStatusEmailTemplate,
+  getTicketEscalationEmailTemplate,
+  type TicketEscalationLevel,
   getHelpdeskTicketEmailTemplate,
   generateMonthlyExpenseReportXlsx,
   type MonthlyExpenseReportRow,
@@ -299,6 +301,20 @@ export class EmailService extends EmailSendersBase {
       to: email,
       subject: `Ticket #${ticketId} status: ${newStatus}`,
       html: getTicketStatusEmailTemplate(recipientName, ticketTitle, ticketId, newStatus, updatedBy),
+    });
+  }
+
+  sendSupportTicketEscalationEmail(
+    email: string,
+    recipientName: string,
+    ticketTitle: string,
+    ticketId: number,
+    escalationLevel: TicketEscalationLevel,
+  ): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: `SLA alert: ticket #${ticketId}`,
+      html: getTicketEscalationEmailTemplate(recipientName, ticketTitle, ticketId, escalationLevel),
     });
   }
 

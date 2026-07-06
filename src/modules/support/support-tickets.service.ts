@@ -16,6 +16,7 @@ import { logger } from "../../common/logger/logger.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
+import { SupportSlaService } from "./support-sla.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import type {
@@ -32,13 +33,6 @@ import type {
 type ListTicketsQuery = ListTicketsInput & { scope?: DataScope; userId?: string };
 
 const TICKET_PRIORITIES: readonly TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-
-const SLA_HOURS: Record<TicketPriority, number> = {
-  LOW: 48,
-  MEDIUM: 24,
-  HIGH: 8,
-  URGENT: 2,
-};
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created the ticket",
@@ -81,6 +75,7 @@ export class SupportTicketsService {
     private readonly macros: SupportMacrosService,
     private readonly notifications: SupportNotificationsService,
     private readonly realtime: SupportRealtimeService,
+    private readonly sla: SupportSlaService,
   ) {}
 
   listTickets(orgId: string, query: ListTicketsQuery) {
@@ -160,8 +155,8 @@ export class SupportTicketsService {
       });
     }
 
-    const slaHours = SLA_HOURS[finalPriority];
-    const slaDeadline = new Date(Date.now() + slaHours * 60 * 60 * 1000);
+    const resolvedPolicy = await this.sla.resolvePolicy(orgId, finalPriority, input.category ?? null);
+    const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
 
     const [ticket] = await this.db
       .insert(supportTickets)
@@ -173,7 +168,8 @@ export class SupportTicketsService {
         clientId: input.clientId ?? null,
         priority: finalPriority,
         assigneeId: finalAssigneeId ?? null,
-        slaDeadline,
+        slaDeadline: resolutionDueAt,
+        firstResponseDueAt,
         createdBy: userId,
       })
       .returning();
@@ -227,6 +223,26 @@ export class SupportTicketsService {
       updateData.status = input.status;
       if (input.status === "RESOLVED") updateData.resolvedAt = new Date();
       if (input.status === "CLOSED") updateData.closedAt = new Date();
+
+      const policy = await this.sla.resolvePolicy(orgId, ticket.priority, ticket.category);
+      const pauseTransition = this.sla.computePauseTransition(
+        ticket.status,
+        input.status,
+        policy.pauseStatuses,
+        ticket.slaPausedAt,
+        ticket.slaPausedMinutes,
+      );
+      updateData.slaPausedAt = pauseTransition.slaPausedAt;
+      updateData.slaPausedMinutes = pauseTransition.slaPausedMinutes;
+      if (pauseTransition.extendByMinutes > 0) {
+        const extendMs = pauseTransition.extendByMinutes * 60_000;
+        if (!ticket.firstRespondedAt && ticket.firstResponseDueAt) {
+          updateData.firstResponseDueAt = new Date(ticket.firstResponseDueAt.getTime() + extendMs);
+        }
+        if (ticket.slaDeadline) {
+          updateData.slaDeadline = new Date(ticket.slaDeadline.getTime() + extendMs);
+        }
+      }
     }
     if (input.priority) updateData.priority = input.priority;
     if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
@@ -305,7 +321,14 @@ export class SupportTicketsService {
   async addMessage(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true, status: true, title: true, createdBy: true, assigneeId: true },
+      columns: {
+        id: true,
+        status: true,
+        title: true,
+        createdBy: true,
+        assigneeId: true,
+        firstRespondedAt: true,
+      },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -331,10 +354,15 @@ export class SupportTicketsService {
 
     void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
 
-    if (ticket.status === "OPEN") {
+    const isFirstAgentReply = !input.isInternal && !ticket.firstRespondedAt && userId !== ticket.createdBy;
+
+    if (ticket.status === "OPEN" || isFirstAgentReply) {
+      const followUp: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
+      if (ticket.status === "OPEN") followUp.status = "IN_PROGRESS";
+      if (isFirstAgentReply) followUp.firstRespondedAt = new Date();
       await this.db
         .update(supportTickets)
-        .set({ status: "IN_PROGRESS", updatedAt: new Date() })
+        .set(followUp)
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
     }
 

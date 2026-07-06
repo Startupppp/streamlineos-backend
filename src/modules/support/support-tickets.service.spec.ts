@@ -6,6 +6,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
+import { SupportSlaService } from "./support-sla.service";
 
 const mockDb = {
   query: {
@@ -45,6 +46,20 @@ const mockRealtime = {
   publishMessageCreated: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockSla = {
+  resolvePolicy: jest.fn().mockResolvedValue({
+    firstResponseTargetMins: 60,
+    resolutionTargetMins: 1440,
+    pauseStatuses: ["WAITING"],
+    businessHours: null,
+  }),
+  computeDueDates: jest.fn((_policy: unknown, from: Date) => ({
+    firstResponseDueAt: new Date(from.getTime() + 60 * 60_000),
+    resolutionDueAt: new Date(from.getTime() + 1440 * 60_000),
+  })),
+  computePauseTransition: jest.fn(() => ({ slaPausedAt: null, slaPausedMinutes: 0, extendByMinutes: 0 })),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -62,6 +77,7 @@ describe("SupportTicketsService", () => {
         { provide: SupportMacrosService, useValue: mockMacros },
         { provide: SupportNotificationsService, useValue: mockNotifications },
         { provide: SupportRealtimeService, useValue: mockRealtime },
+        { provide: SupportSlaService, useValue: mockSla },
       ],
     }).compile();
     service = module.get(SupportTicketsService);
@@ -164,6 +180,84 @@ describe("SupportTicketsService", () => {
 
       await service.addMessage("org1", 1, "user1", { body: "hello", isInternal: false } as never);
       expect(mockNotifications.sendReplyEmail).toHaveBeenCalled();
+    });
+
+    it("stamps firstRespondedAt on the first public agent reply", async () => {
+      await service.addMessage("org1", 1, "user1", { body: "hello", isInternal: false } as never);
+
+      const firstResponsePayload = mockDb.set.mock.calls
+        .map((call) => call[0])
+        .find((payload) => payload && "firstRespondedAt" in payload);
+      expect(firstResponsePayload).toBeDefined();
+    });
+
+    it("does not stamp firstRespondedAt for an internal note", async () => {
+      await service.addMessage("org1", 1, "user1", { body: "internal", isInternal: true } as never);
+
+      const firstResponsePayload = mockDb.set.mock.calls
+        .map((call) => call[0])
+        .find((payload) => payload && "firstRespondedAt" in payload);
+      expect(firstResponsePayload).toBeUndefined();
+    });
+  });
+
+  describe("updateTicket — SLA pause/resume wiring", () => {
+    it("consults the SLA service to compute a pause transition on status change", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({
+        id: 1,
+        status: "OPEN",
+        priority: "MEDIUM",
+        category: null,
+        createdBy: "creator1",
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        slaPausedAt: null,
+        slaPausedMinutes: 0,
+        firstResponseDueAt: null,
+        firstRespondedAt: null,
+        slaDeadline: null,
+      });
+
+      await service.updateTicket("org1", 1, "user1", { status: "WAITING" } as never);
+
+      expect(mockSla.resolvePolicy).toHaveBeenCalledWith("org1", "MEDIUM", null);
+      expect(mockSla.computePauseTransition).toHaveBeenCalledWith(
+        "OPEN",
+        "WAITING",
+        ["WAITING"],
+        null,
+        0,
+      );
+    });
+
+    it("extends due dates by the paused duration when resuming from a pause status", async () => {
+      mockSla.computePauseTransition.mockReturnValueOnce({
+        slaPausedAt: null,
+        slaPausedMinutes: 15,
+        extendByMinutes: 15,
+      });
+      const firstResponseDueAt = new Date("2026-01-01T01:00:00.000Z");
+      const slaDeadline = new Date("2026-01-02T00:00:00.000Z");
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({
+        id: 1,
+        status: "WAITING",
+        priority: "MEDIUM",
+        category: null,
+        createdBy: "creator1",
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        slaPausedAt: new Date("2026-01-01T00:00:00.000Z"),
+        slaPausedMinutes: 0,
+        firstResponseDueAt,
+        firstRespondedAt: null,
+        slaDeadline,
+      });
+
+      await service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never);
+
+      const extendedPayload = mockDb.set.mock.calls
+        .map((call) => call[0])
+        .find((payload) => payload && "slaDeadline" in payload);
+      expect(extendedPayload.slaDeadline.getTime()).toBe(slaDeadline.getTime() + 15 * 60_000);
+      expect(extendedPayload.firstResponseDueAt.getTime()).toBe(firstResponseDueAt.getTime() + 15 * 60_000);
     });
   });
 

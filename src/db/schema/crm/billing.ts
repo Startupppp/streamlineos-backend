@@ -153,6 +153,11 @@ export const supportTickets = pgTable("support_tickets", {
   status: supportTicketStatusEnum("status").default("OPEN").notNull(),
   priority: supportTicketPriorityEnum("priority").default("MEDIUM").notNull(),
   slaDeadline: timestamp("sla_deadline"),
+  firstResponseDueAt: timestamp("first_response_due_at"),
+  firstRespondedAt: timestamp("first_responded_at"),
+  slaPausedAt: timestamp("sla_paused_at"),
+  slaPausedMinutes: integer("sla_paused_minutes").default(0).notNull(),
+  slaEscalationLevel: integer("sla_escalation_level").default(0).notNull(),
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
   // Not a Drizzle-level FK to support_queues to avoid a circular import between
