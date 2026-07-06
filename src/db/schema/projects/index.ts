@@ -17,3 +17,6 @@ export * from "./approvals";
 export * from "./governance";
 export * from "./meetings";
 export * from "./incidents";
+export * from "./forms";
+export * from "./portfolios";
+export * from "./workflow";

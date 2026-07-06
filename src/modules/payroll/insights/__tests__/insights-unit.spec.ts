@@ -3,6 +3,16 @@ import { JournalService } from "../journal.service";
 import { AccountingMappingsService } from "../accounting-mappings.service";
 import { ReportsService } from "../reports.service";
 
+function chain(data: unknown) {
+  const c: Record<string, unknown> = {
+    then: (resolve: (value: unknown) => void) => resolve(data),
+  };
+  for (const method of ["limit", "offset", "orderBy", "groupBy", "having"]) {
+    c[method] = () => c;
+  }
+  return c;
+}
+
 function makeLineItem(overrides: {
   id?: number;
   runId?: number;
@@ -82,10 +92,10 @@ describe("JournalService — double-entry balancing", () => {
       select: jest.fn().mockReturnThis(),
       from: jest.fn().mockReturnThis(),
       where: jest.fn()
-        .mockResolvedValueOnce([run])
-        .mockResolvedValueOnce(lineItems)
-        .mockResolvedValueOnce(runEmployees)
-        .mockResolvedValueOnce(costCenters),
+        .mockReturnValueOnce(chain([run]))
+        .mockReturnValueOnce(chain(lineItems))
+        .mockReturnValueOnce(chain(runEmployees))
+        .mockReturnValueOnce(chain(costCenters)),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -117,10 +127,10 @@ describe("JournalService — double-entry balancing", () => {
       select: jest.fn().mockReturnThis(),
       from: jest.fn().mockReturnThis(),
       where: jest.fn()
-        .mockResolvedValueOnce([run])
-        .mockResolvedValueOnce(lineItems)
-        .mockResolvedValueOnce(runEmployees)
-        .mockResolvedValueOnce(costCenters),
+        .mockReturnValueOnce(chain([run]))
+        .mockReturnValueOnce(chain(lineItems))
+        .mockReturnValueOnce(chain(runEmployees))
+        .mockReturnValueOnce(chain(costCenters)),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -142,10 +152,10 @@ describe("JournalService — double-entry balancing", () => {
       select: jest.fn().mockReturnThis(),
       from: jest.fn().mockReturnThis(),
       where: jest.fn()
-        .mockResolvedValueOnce([run])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ net: "1000.00" }])
-        .mockResolvedValueOnce([]),
+        .mockReturnValueOnce(chain([run]))
+        .mockReturnValueOnce(chain([]))
+        .mockReturnValueOnce(chain([{ net: "1000.00" }]))
+        .mockReturnValueOnce(chain([])),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -164,7 +174,7 @@ describe("AccountingMappingsService — create XOR validation", () => {
   const mockDb = {
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([{ id: 1 }]),
+    where: jest.fn().mockReturnValue(chain([{ id: 1 }])),
     limit: jest.fn().mockReturnThis(),
     insert: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
@@ -190,7 +200,7 @@ describe("AccountingMappingsService — create XOR validation", () => {
   });
 
   it("succeeds with componentId only", async () => {
-    mockDb.where.mockResolvedValueOnce([{ id: 1 }]);
+    mockDb.where.mockReturnValueOnce(chain([{ id: 1 }]));
     mockDb.returning.mockResolvedValueOnce([{ id: 99, ledgerName: "Test Ledger", componentId: 1 }]);
     const result = await service.create("org1", { componentId: 1, ledgerName: "Test Ledger" });
     expect(result.id).toBe(99);
@@ -216,8 +226,8 @@ describe("ReportsService — pagination cap", () => {
   const service = new ReportsService(mockDb as never);
 
   it("caps limit at 100 for getBankPayout", async () => {
-    mockDb.where.mockResolvedValueOnce([{ id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" }]);
-    mockDb.where.mockResolvedValueOnce([]);
+    mockDb.where.mockReturnValueOnce(chain([{ id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" }]));
+    mockDb.where.mockReturnValueOnce(chain([]));
 
     const result = await service.getBankPayout("org1", "2026-07", { limit: 999, offset: 0 });
     expect(result.batches.length).toBeLessThanOrEqual(100);
@@ -226,10 +236,10 @@ describe("ReportsService — pagination cap", () => {
   it("respects offset for getVariance perEmployee", async () => {
     const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", grossTotal: "10000.00", netTotal: "9000.00" };
     mockDb.where
-      .mockResolvedValueOnce([run])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockReturnValueOnce(chain([run]))
+      .mockReturnValueOnce(chain([]))
+      .mockReturnValueOnce(chain([]))
+      .mockReturnValueOnce(chain([]));
 
     const result = await service.getVariance("org1", "2026-07", { limit: 10, offset: 100 });
     expect(result.perEmployee).toHaveLength(0);

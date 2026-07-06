@@ -5,7 +5,7 @@ const channelBaseSchema = z.object({
   description: z.string().optional(),
   avatarUrl: z.string().optional(),
   memberIds: z.array(z.string()).min(1),
-  entityType: z.enum(["project", "client", "task"]).optional(),
+  entityType: z.enum(["project", "client", "task", "sprint", "release", "incident"]).optional(),
   entityId: z.string().optional(),
 });
 
@@ -141,3 +141,12 @@ export const ticketStatusActionSchema = z.object({
   nextStatus: z.string().min(1).max(100),
 });
 export type TicketStatusActionInput = z.infer<typeof ticketStatusActionSchema>;
+
+export const createTaskFromMessageSchema = z.object({
+  channelId: z.number().int().positive(),
+  messageId: z.number().int().positive(),
+  projectId: z.number().int().positive(),
+  type: z.enum(["TASK", "BUG"]),
+  title: z.string().min(1).max(255).optional(),
+});
+export type CreateTaskFromMessageInput = z.infer<typeof createTaskFromMessageSchema>;

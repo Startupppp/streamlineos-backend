@@ -81,13 +81,21 @@ export class StorageService {
     return bucketName;
   }
 
+  private resolveBucket(override?: string): string {
+    const bucket = override || this.getConfig().bucketName;
+    if (!bucket) throw new ServiceUnavailableException("R2 bucket not configured");
+    return bucket;
+  }
+
   async uploadFile(
     buffer: Buffer,
     folder = "uploads",
     fileName = "file",
     mimeType = "application/octet-stream",
+    bucketOverride?: string,
+    publicUrlOverride?: string,
   ): Promise<UploadResult> {
-    const bucketName = this.requireBucket();
+    const bucketName = this.resolveBucket(bucketOverride);
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const key = `${folder}/${Date.now()}-${sanitizedName}`;
@@ -101,9 +109,8 @@ export class StorageService {
       }),
     );
 
-    const publicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL
-      ? `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`
-      : key;
+    const publicBase = publicUrlOverride || process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+    const publicUrl = publicBase ? `${publicBase}/${key}` : key;
 
     return { url: publicUrl, key, size: buffer.length, mimeType };
   }

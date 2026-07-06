@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, ne, or, type SQL } from "drizzle-orm";
 import {
   kbCategories,
@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { KbIndexingService } from "../kb/kb-indexing.service";
 import type {
   CreateKbArticleInput,
   CreateKbAttachmentInput,
@@ -30,7 +31,12 @@ function slugify(value: string): string {
 
 @Injectable()
 export class SupportKbService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  private readonly logger = new Logger(SupportKbService.name);
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly indexing: KbIndexingService,
+  ) {}
 
   listCategories(orgId: string) {
     return this.db.query.kbCategories.findMany({
@@ -355,6 +361,14 @@ export class SupportKbService {
         uploadedBy: kbArticleAttachments.uploadedBy,
         createdAt: kbArticleAttachments.createdAt,
       });
+
+    if (inserted) {
+      void this.indexing
+        .indexAttachment(orgId, inserted.id)
+        .catch((err) =>
+          this.logger.warn(`Attachment indexing failed (${inserted.id}): ${err}`),
+        );
+    }
 
     return inserted;
   }

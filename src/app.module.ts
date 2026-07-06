@@ -46,6 +46,10 @@ import { ProjectsClientPortalModule } from "./modules/projects-client-portal/pro
 import { ProjectsApprovalsModule } from "./modules/projects-approvals/projects-approvals.module";
 import { ProjectsGovernanceModule } from "./modules/projects-governance/projects-governance.module";
 import { ProjectsMeetingsModule } from "./modules/projects-meetings/projects-meetings.module";
+import { ProjectsPortfoliosModule } from "./modules/projects-portfolios/projects-portfolios.module";
+import { ProjectsIncidentsModule } from "./modules/projects-incidents/projects-incidents.module";
+import { ProjectsWorkflowModule } from "./modules/projects-workflow/projects-workflow.module";
+import { ProjectsFormsModule } from "./modules/projects-forms/projects-forms.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
 import { KbModule } from "./modules/kb/kb.module";
@@ -159,6 +163,10 @@ import { MeService } from "./me/me.service";
     ProjectsApprovalsModule,
     ProjectsGovernanceModule,
     ProjectsMeetingsModule,
+    ProjectsPortfoliosModule,
+    ProjectsIncidentsModule,
+    ProjectsWorkflowModule,
+    ProjectsFormsModule,
     ProjectsModule,
     SupportModule,
     KbModule,

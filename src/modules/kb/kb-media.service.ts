@@ -93,7 +93,17 @@ export class KbMediaService {
       }
     }
 
-    const result = await this.storage.uploadFile(uploadBuffer, folder, uploadName, uploadMime);
+    const kbBucket = process.env.R2_KB_BUCKET_NAME;
+    const kbPublicUrl = process.env.R2_KB_PUBLIC_URL;
+    const useKbBucket = Boolean(kbBucket && kbPublicUrl);
+    const result = await this.storage.uploadFile(
+      uploadBuffer,
+      folder,
+      uploadName,
+      uploadMime,
+      useKbBucket ? kbBucket : undefined,
+      useKbBucket ? kbPublicUrl : undefined,
+    );
 
     this.audit.log({
       action: "kb.media_upload",
