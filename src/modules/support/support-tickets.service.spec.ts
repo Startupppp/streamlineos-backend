@@ -9,6 +9,7 @@ import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
 import { AutomationService } from "../automation/automation.service";
 import { SupportCsatService } from "./support-csat.service";
+import { SupportAiService } from "./support-ai.service";
 
 const mockDb = {
   query: {
@@ -70,6 +71,10 @@ const mockCsat = {
   createRequestForTicket: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockAi = {
+  runFullAnalysis: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -90,6 +95,7 @@ describe("SupportTicketsService", () => {
         { provide: SupportSlaService, useValue: mockSla },
         { provide: AutomationService, useValue: mockAutomations },
         { provide: SupportCsatService, useValue: mockCsat },
+        { provide: SupportAiService, useValue: mockAi },
       ],
     }).compile();
     service = module.get(SupportTicketsService);

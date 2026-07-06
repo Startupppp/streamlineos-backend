@@ -35,6 +35,6 @@ import { CalendarModule } from "../calendar/calendar.module";
     OrgFeaturesService,
     ProjectsAiService,
   ],
-  exports: [LlmService, EmbeddingsService],
+  exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService],
 })
 export class AiModule {}

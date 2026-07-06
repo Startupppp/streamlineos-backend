@@ -442,3 +442,18 @@ export const kbAskSchema = z.object({
   articleId: z.number().int().positive().optional(),
 });
 export type KbAskInput = z.infer<typeof kbAskSchema>;
+
+export const resolveAiSuggestionSchema = z.object({
+  status: z.enum(["accepted", "rejected"]),
+  feedback: z.enum(["helpful", "not_helpful"]).optional(),
+});
+export type ResolveAiSuggestionInput = z.infer<typeof resolveAiSuggestionSchema>;
+
+export const supportReportFiltersSchema = z.object({
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+  agentId: z.string().trim().optional(),
+  queueId: z.coerce.number().int().positive().optional(),
+  channel: z.string().trim().optional(),
+});
+export type SupportReportFiltersInput = z.infer<typeof supportReportFiltersSchema>;

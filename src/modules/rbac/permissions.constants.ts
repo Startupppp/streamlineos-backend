@@ -2779,6 +2779,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:queues:manage",
     "support:tags:manage",
     "support:channels:manage",
+    "support:reports:view",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",

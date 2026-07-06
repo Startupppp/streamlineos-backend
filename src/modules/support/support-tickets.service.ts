@@ -18,6 +18,7 @@ import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportCsatService } from "./support-csat.service";
+import { SupportAiService } from "./support-ai.service";
 import { AutomationService } from "../automation/automation.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -80,6 +81,7 @@ export class SupportTicketsService {
     private readonly sla: SupportSlaService,
     private readonly automations: AutomationService,
     private readonly csat: SupportCsatService,
+    private readonly ai: SupportAiService,
   ) {}
 
   private buildAutomationPayload(ticket: {
@@ -216,6 +218,8 @@ export class SupportTicketsService {
     void this.automations
       .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
       .catch(() => undefined);
+
+    void this.ai.runFullAnalysis(orgId, ticket.id).catch(() => undefined);
 
     if (finalAssigneeId) {
       void this.notifications

@@ -122,6 +122,8 @@ export const CACHE_KEYS = {
   orgLocations: (orgId: string) => `org:locations:${orgId}`,
   orgCostCenters: (orgId: string) => `org:cost-centers:${orgId}`,
 
+  supportReportsOverview: (orgId: string) => `support:reports:overview:${orgId}`,
+
   payrollSummary: (orgId: string, hash: string) => `timesheets:payroll:summary:${orgId}:${hash}`,
   payrollExportsList: (orgId: string, page: number | "*", pageSize: number | "*") =>
     `timesheets:payroll:exports:${orgId}:${page}:${pageSize}`,

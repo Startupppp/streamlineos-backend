@@ -5,6 +5,10 @@ import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { signToken } from "../../../test/helpers/sign-token";
 
+// The AiModule import (langchain/openai + embeddings clients) added in Phase 6 measurably
+// increased per-request latency under --runInBand load; the default 5s timeout is too tight.
+jest.setTimeout(20000);
+
 describe("Support auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
@@ -113,6 +117,18 @@ describe("Support auth/RBAC (e2e)", () => {
     ["delete", "/support/automations/1"],
     ["post", "/support/automations/1/test"],
     ["get", "/support/automation-runs"],
+    ["get", "/support/1/ai/suggestions"],
+    ["post", "/support/1/ai/analyze"],
+    ["post", "/support/1/ai/find-duplicates"],
+    ["post", "/support/1/ai/suggest-kb-articles"],
+    ["post", "/support/1/ai/suggest-reply"],
+    ["post", "/support/1/ai/suggest-macro"],
+    ["post", "/support/ai-suggestions/1/resolve"],
+    ["get", "/support/reports/overview"],
+    ["get", "/support/reports/agent-performance"],
+    ["get", "/support/reports/queue-performance"],
+    ["get", "/support/reports/channel-performance"],
+    ["get", "/support/reports/automation-performance"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -306,6 +322,23 @@ describe("Support auth/RBAC (e2e)", () => {
     },
     { method: "post", path: "/support/automations/1/test", permission: "support:settings:manage" },
     { method: "get", path: "/support/automation-runs", permission: "support:settings:manage" },
+    { method: "get", path: "/support/1/ai/suggestions", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/ai/analyze", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/ai/find-duplicates", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/ai/suggest-kb-articles", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/ai/suggest-reply", permission: "support:tickets:reply" },
+    { method: "post", path: "/support/1/ai/suggest-macro", permission: "support:tickets:reply" },
+    {
+      method: "post",
+      path: "/support/ai-suggestions/1/resolve",
+      permission: "support:tickets:reply",
+      body: { status: "accepted" },
+    },
+    { method: "get", path: "/support/reports/overview", permission: "support:reports:view" },
+    { method: "get", path: "/support/reports/agent-performance", permission: "support:reports:view" },
+    { method: "get", path: "/support/reports/queue-performance", permission: "support:reports:view" },
+    { method: "get", path: "/support/reports/channel-performance", permission: "support:reports:view" },
+    { method: "get", path: "/support/reports/automation-performance", permission: "support:reports:view" },
   ];
 
   it.each(ticketPermissionCases)(

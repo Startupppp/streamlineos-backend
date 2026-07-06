@@ -10,6 +10,7 @@ export interface OrgFeatureFlags {
   aiEmailDraft: boolean;
   aiSmartNotifications: boolean;
   aiWeeklyRecap: boolean;
+  supportAi: boolean;
 }
 
 const DEFAULT_FLAGS: OrgFeatureFlags = {
@@ -18,6 +19,7 @@ const DEFAULT_FLAGS: OrgFeatureFlags = {
   aiEmailDraft: true,
   aiSmartNotifications: true,
   aiWeeklyRecap: true,
+  supportAi: true,
 };
 
 function parseOrgFeatureFlags(settings: Record<string, unknown> | null | undefined): OrgFeatureFlags {
@@ -28,6 +30,7 @@ function parseOrgFeatureFlags(settings: Record<string, unknown> | null | undefin
     aiEmailDraft: features.aiEmailDraft ?? DEFAULT_FLAGS.aiEmailDraft,
     aiSmartNotifications: features.aiSmartNotifications ?? DEFAULT_FLAGS.aiSmartNotifications,
     aiWeeklyRecap: features.aiWeeklyRecap ?? DEFAULT_FLAGS.aiWeeklyRecap,
+    supportAi: features.supportAi ?? DEFAULT_FLAGS.supportAi,
   };
 }
 
