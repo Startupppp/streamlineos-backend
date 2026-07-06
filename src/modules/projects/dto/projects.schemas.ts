@@ -26,7 +26,7 @@ export const createProjectSchema = z.object({
   modules: projectModulesSchema.optional(),
   projectType: z.string().optional(),
   workflow: z.string().optional(),
-  features: z.record(z.boolean()).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -41,7 +41,7 @@ export const updateProjectSchema = z.object({
   reassignments: z.record(z.string(), z.string()).optional(),
   projectType: z.string().optional(),
   workflow: z.string().optional(),
-  features: z.record(z.boolean()).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
 });
 
 export const updateBudgetSchema = z.object({

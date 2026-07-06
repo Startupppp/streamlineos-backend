@@ -11,7 +11,7 @@ const fieldSchema = z.object({
 
 const actionSchema = z.object({
   type: z.string().min(1),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const listFormsQuerySchema = z.object({
@@ -45,7 +45,7 @@ export const updateFormSchema = z.object({
 });
 
 export const createSubmissionSchema = z.object({
-  values: z.record(z.unknown()),
+  values: z.record(z.string(), z.unknown()),
   submittedByName: z.string().optional(),
 });
 
