@@ -19,11 +19,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportMacrosService } from "./support-macros.service";
 import {
+  applyMacroSchema,
   createMacroSchema,
   createRoutingRuleSchema,
   listMacrosSchema,
   updateMacroSchema,
   updateRoutingRuleSchema,
+  type ApplyMacroInput,
   type CreateMacroInput,
   type CreateRoutingRuleInput,
   type ListMacrosInput,
@@ -46,7 +48,14 @@ export class SupportMacrosController {
     @Query(new ZodValidationPipe(listMacrosSchema)) query: ListMacrosInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.listMacros(u.orgId, query);
+    return this.macros.listMacros(u.orgId, u.userId, query);
+  }
+
+  @Get("macros/usage")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
+  getMacroUsage(@CurrentUser() u: CurrentUserContext) {
+    return this.macros.getUsage(u.orgId);
   }
 
   @Post("macros")
@@ -79,6 +88,30 @@ export class SupportMacrosController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.macros.deleteMacro(u.orgId, macroId);
+  }
+
+  @Post("macros/:macroId/preview")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
+  @HttpCode(200)
+  previewMacro(
+    @Param("macroId", ParseIntPipe) macroId: number,
+    @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.macros.previewMacro(u.orgId, macroId, u.userId, body.ticketId);
+  }
+
+  @Post("macros/:macroId/apply")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:tickets:reply")
+  @HttpCode(200)
+  applyMacro(
+    @Param("macroId", ParseIntPipe) macroId: number,
+    @Body(new ZodValidationPipe(applyMacroSchema)) body: ApplyMacroInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.macros.applyMacro(u.orgId, macroId, u.userId, body);
   }
 
   @Get("routing-rules")

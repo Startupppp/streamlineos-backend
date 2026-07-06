@@ -17,6 +17,13 @@ export interface RoutingRuleCondition {
   value: string;
 }
 
+export interface MacroActions {
+  setStatus?: string;
+  setPriority?: string;
+  addTagId?: number;
+  isInternal?: boolean;
+}
+
 export const supportMacros = pgTable(
   "support_macros",
   {
@@ -25,6 +32,9 @@ export const supportMacros = pgTable(
     title: text("title").notNull(),
     body: text("body").notNull(),
     category: text("category"),
+    visibility: text("visibility").default("org").notNull(),
+    actions: jsonb("actions").$type<MacroActions>().default({}).notNull(),
+    usageCount: integer("usage_count").default(0).notNull(),
     createdBy: text("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

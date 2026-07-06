@@ -14,6 +14,8 @@ export const automationTriggerEnum = pgEnum("automation_trigger", [
   "ticket.created",
   "ticket.assigned",
   "ticket.status_changed",
+  "ticket.priority_changed",
+  "ticket.message_received",
   "ticket.escalated",
   "invoice.overdue",
   "invoice.paid",
@@ -68,7 +70,11 @@ export type AutomationAction =
   | { type: "notify_all"; config: { title: string; message: string; link?: string } }
   | { type: "email"; config: { to: string; subject: string; body: string } }
   | { type: "create_task"; config: { title: string; assigneeId?: string; dueInDays?: number } }
-  | { type: "webhook"; config: { event: string } };
+  | { type: "webhook"; config: { event: string } }
+  | { type: "support_assign_ticket"; config: { assigneeId: string } }
+  | { type: "support_set_priority"; config: { priority: string } }
+  | { type: "support_add_tag"; config: { tagId: number } }
+  | { type: "support_internal_note"; config: { body: string } };
 
 export const automationRules = pgTable("automation_rules", {
   id: serial("id").primaryKey(),

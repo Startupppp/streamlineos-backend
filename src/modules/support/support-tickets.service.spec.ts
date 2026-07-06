@@ -7,6 +7,8 @@ import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
+import { AutomationService } from "../automation/automation.service";
+import { SupportCsatService } from "./support-csat.service";
 
 const mockDb = {
   query: {
@@ -60,6 +62,14 @@ const mockSla = {
   computePauseTransition: jest.fn(() => ({ slaPausedAt: null, slaPausedMinutes: 0, extendByMinutes: 0 })),
 };
 
+const mockAutomations = {
+  runAutomationsForEvent: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockCsat = {
+  createRequestForTicket: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -78,6 +88,8 @@ describe("SupportTicketsService", () => {
         { provide: SupportNotificationsService, useValue: mockNotifications },
         { provide: SupportRealtimeService, useValue: mockRealtime },
         { provide: SupportSlaService, useValue: mockSla },
+        { provide: AutomationService, useValue: mockAutomations },
+        { provide: SupportCsatService, useValue: mockCsat },
       ],
     }).compile();
     service = module.get(SupportTicketsService);

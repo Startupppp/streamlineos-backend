@@ -9,6 +9,9 @@ import {
   tasks,
   webhookEndpoints,
   webhookLogs,
+  supportTickets,
+  supportTicketMessages,
+  supportTicketTags,
   type AutomationAction,
   type AutomationCondition,
 } from "../../db/schema";
@@ -18,8 +21,13 @@ import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
+import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
 
 export type AutomationTrigger = (typeof automationTriggerEnum.enumValues)[number];
+
+function isValidTrigger(value: string): value is AutomationTrigger {
+  return (automationTriggerEnum.enumValues as readonly string[]).includes(value);
+}
 
 interface RuleDefinition {
   id: number;
@@ -141,6 +149,15 @@ export class AutomationService {
     if (!success) throw new Error(`Webhook delivery failed: ${statusCode ?? "no response"}`);
   }
 
+  /** support_* actions only make sense for ticket-lifecycle triggers, which always include ticketId in the payload. */
+  private requireTicketId(payload: EventPayload): number {
+    const ticketId = payload.ticketId;
+    if (typeof ticketId !== "number") {
+      throw new Error("This action requires a ticketId in the event payload");
+    }
+    return ticketId;
+  }
+
   private async executeAction(
     orgId: string,
     action: AutomationAction,
@@ -187,6 +204,41 @@ export class AutomationService {
         }
         case "webhook": {
           await this.dispatchWebhook(orgId, action.config.event, payload);
+          return { type: action.type, ok: true };
+        }
+        case "support_assign_ticket": {
+          const ticketId = this.requireTicketId(payload);
+          await this.db
+            .update(supportTickets)
+            .set({ assigneeId: action.config.assigneeId, updatedAt: new Date() })
+            .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+          return { type: action.type, ok: true };
+        }
+        case "support_set_priority": {
+          const ticketId = this.requireTicketId(payload);
+          await this.db
+            .update(supportTickets)
+            .set({ priority: action.config.priority as (typeof supportTickets.$inferInsert)["priority"], updatedAt: new Date() })
+            .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+          return { type: action.type, ok: true };
+        }
+        case "support_add_tag": {
+          const ticketId = this.requireTicketId(payload);
+          await this.db
+            .insert(supportTicketTags)
+            .values({ ticketId, tagId: action.config.tagId })
+            .onConflictDoNothing();
+          return { type: action.type, ok: true };
+        }
+        case "support_internal_note": {
+          const ticketId = this.requireTicketId(payload);
+          await this.db.insert(supportTicketMessages).values({
+            ticketId,
+            authorId: null,
+            body: action.config.body,
+            isInternal: true,
+            sourceChannel: "internal",
+          });
           return { type: action.type, ok: true };
         }
         default:
@@ -304,5 +356,70 @@ export class AutomationService {
       .returning({ id: automationRuns.id });
 
     return { runId: run.id, matched, status, actionResults };
+  }
+
+  listRules(orgId: string, triggerPrefix?: string) {
+    return this.db.query.automationRules.findMany({
+      where: (fields, { and: andOp, eq: eqOp, like }) =>
+        triggerPrefix
+          ? andOp(eqOp(fields.orgId, orgId), like(fields.triggerEvent, `${triggerPrefix}%`))
+          : eqOp(fields.orgId, orgId),
+    });
+  }
+
+  async createRule(orgId: string, userId: string, input: CreateAutomationRuleInput) {
+    if (!isValidTrigger(input.triggerEvent)) {
+      throw new NotFoundException(`Unknown trigger event: ${input.triggerEvent}`);
+    }
+    const [rule] = await this.db
+      .insert(automationRules)
+      .values({
+        orgId,
+        name: input.name,
+        description: input.description ?? null,
+        triggerEvent: input.triggerEvent,
+        conditions: input.conditions as AutomationCondition[],
+        actions: input.actions as AutomationAction[],
+        isEnabled: input.isEnabled,
+        createdBy: userId,
+      })
+      .returning();
+    return rule;
+  }
+
+  async updateRule(orgId: string, ruleId: number, input: UpdateAutomationRuleInput) {
+    const [updated] = await this.db
+      .update(automationRules)
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.conditions !== undefined ? { conditions: input.conditions as AutomationCondition[] } : {}),
+        ...(input.actions !== undefined ? { actions: input.actions as AutomationAction[] } : {}),
+        ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Automation not found");
+    return updated;
+  }
+
+  async deleteRule(orgId: string, ruleId: number) {
+    const [deleted] = await this.db
+      .delete(automationRules)
+      .where(and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)))
+      .returning();
+    if (!deleted) throw new NotFoundException("Automation not found");
+    return { success: true };
+  }
+
+  listRuns(orgId: string, ruleId?: number) {
+    return this.db.query.automationRuns.findMany({
+      where: ruleId
+        ? and(eq(automationRuns.orgId, orgId), eq(automationRuns.ruleId, ruleId))
+        : eq(automationRuns.orgId, orgId),
+      orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
+      limit: 200,
+    });
   }
 }

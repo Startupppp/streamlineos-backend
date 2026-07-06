@@ -80,16 +80,33 @@ export const listMacrosSchema = z.object({
   search: z.string().trim().optional(),
 });
 
+const macroVisibilitySchema = z.enum(["org", "team", "private"]);
+
+const macroActionsSchema = z.object({
+  setStatus: ticketStatusSchema.optional(),
+  setPriority: ticketPrioritySchema.optional(),
+  addTagId: z.number().int().positive().optional(),
+  isInternal: z.boolean().optional(),
+});
+
 export const createMacroSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(150),
   body: z.string().trim().min(1, "Body is required").max(10000),
   category: z.string().trim().max(100).optional(),
+  visibility: macroVisibilitySchema.default("org"),
+  actions: macroActionsSchema.default({}),
 });
 
 export const updateMacroSchema = z.object({
   title: z.string().trim().min(1).max(150).optional(),
   body: z.string().trim().min(1).max(10000).optional(),
   category: z.string().trim().max(100).nullable().optional(),
+  visibility: macroVisibilitySchema.optional(),
+  actions: macroActionsSchema.optional(),
+});
+
+export const applyMacroSchema = z.object({
+  ticketId: z.number().int().positive(),
 });
 
 const routingConditionSchema = z.object({
@@ -387,6 +404,13 @@ export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
 export type ListMacrosInput = z.infer<typeof listMacrosSchema>;
 export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;
+export type ApplyMacroInput = z.infer<typeof applyMacroSchema>;
+
+export const submitCsatSchema = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().trim().max(2000).optional(),
+});
+export type SubmitCsatInput = z.infer<typeof submitCsatSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
 export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;

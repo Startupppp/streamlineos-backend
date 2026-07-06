@@ -46,6 +46,10 @@ describe("Support auth/RBAC (e2e)", () => {
     ["post", "/support/macros"],
     ["patch", "/support/macros/1"],
     ["delete", "/support/macros/1"],
+    ["get", "/support/macros/usage"],
+    ["post", "/support/macros/1/preview"],
+    ["post", "/support/macros/1/apply"],
+    ["get", "/support/reports/csat"],
     ["get", "/support/routing-rules"],
     ["post", "/support/routing-rules"],
     ["patch", "/support/routing-rules/1"],
@@ -103,6 +107,12 @@ describe("Support auth/RBAC (e2e)", () => {
     ["post", "/support/portal/tickets"],
     ["get", "/support/portal/tickets/1"],
     ["post", "/support/portal/tickets/1/messages"],
+    ["get", "/support/automations"],
+    ["post", "/support/automations"],
+    ["patch", "/support/automations/1"],
+    ["delete", "/support/automations/1"],
+    ["post", "/support/automations/1/test"],
+    ["get", "/support/automation-runs"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -145,6 +155,44 @@ describe("Support auth/RBAC (e2e)", () => {
       .post("/support/kb/articles")
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "x" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on GET /support/macros/usage without support:macros view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .get("/support/macros/usage")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/macros/1/preview without support:macros view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/macros/1/preview")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ ticketId: 1 });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/macros/1/apply without support:tickets:reply", async () => {
+    const token = await signToken({ permissions: ["support:macros:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/macros/1/apply")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ ticketId: 1 });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on GET /support/reports/csat without support:reports:view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .get("/support/reports/csat")
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
@@ -249,6 +297,15 @@ describe("Support auth/RBAC (e2e)", () => {
       permission: "support:portal:tickets:reply",
       body: { body: "following up" },
     },
+    { method: "get", path: "/support/automations", permission: "support:settings:manage" },
+    {
+      method: "post",
+      path: "/support/automations",
+      permission: "support:settings:manage",
+      body: { name: "Auto-tag urgent", triggerEvent: "ticket.created", actions: [] },
+    },
+    { method: "post", path: "/support/automations/1/test", permission: "support:settings:manage" },
+    { method: "get", path: "/support/automation-runs", permission: "support:settings:manage" },
   ];
 
   it.each(ticketPermissionCases)(
@@ -306,6 +363,20 @@ describe("Support auth/RBAC (e2e)", () => {
         .set("X-Webhook-Secret", "wrong-secret")
         .send({ messageId: "abc", fromEmail: "customer@example.com", bodyText: "help" });
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET/POST /support/csat/:token (public, no JWT)", () => {
+    it("404 on GET with an unknown token, no auth token required", async () => {
+      const res = await request(app.getHttpServer()).get("/support/csat/not-a-real-token");
+      expect(res.status).toBe(404);
+    });
+
+    it("404 on POST with an unknown token", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/csat/not-a-real-token")
+        .send({ score: 5 });
+      expect(res.status).toBe(404);
     });
   });
 });

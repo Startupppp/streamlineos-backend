@@ -17,6 +17,8 @@ import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
+import { SupportCsatService } from "./support-csat.service";
+import { AutomationService } from "../automation/automation.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import type {
@@ -76,7 +78,27 @@ export class SupportTicketsService {
     private readonly notifications: SupportNotificationsService,
     private readonly realtime: SupportRealtimeService,
     private readonly sla: SupportSlaService,
+    private readonly automations: AutomationService,
+    private readonly csat: SupportCsatService,
   ) {}
+
+  private buildAutomationPayload(ticket: {
+    id: number;
+    title: string;
+    status: string;
+    priority: string;
+    category?: string | null;
+    assigneeId?: string | null;
+  }): Record<string, unknown> {
+    return {
+      ticketId: ticket.id,
+      title: ticket.title,
+      status: ticket.status,
+      priority: ticket.priority,
+      category: ticket.category ?? null,
+      assigneeId: ticket.assigneeId ?? null,
+    };
+  }
 
   listTickets(orgId: string, query: ListTicketsQuery) {
     const { status, priority, assigneeId, queueId, page, limit, scope, userId } = query;
@@ -191,6 +213,10 @@ export class SupportTicketsService {
     await this.invalidateTicketCaches(orgId);
     await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
 
+    void this.automations
+      .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
+      .catch(() => undefined);
+
     if (finalAssigneeId) {
       void this.notifications
         .sendAssignmentEmail(finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
@@ -273,6 +299,30 @@ export class SupportTicketsService {
 
     void this.realtime.publishTicketUpdated(orgId, ticketId, updateData.updatedAt as Date).catch(() => undefined);
 
+    const updatedTicketForPayload = {
+      id: ticketId,
+      title: ticket.title,
+      status: updateData.status ?? ticket.status,
+      priority: updateData.priority ?? ticket.priority,
+      category: ticket.category,
+      assigneeId: updateData.assigneeId !== undefined ? updateData.assigneeId : ticket.assigneeId,
+    };
+
+    if (input.status && input.status !== ticket.status) {
+      void this.automations
+        .runAutomationsForEvent(orgId, "ticket.status_changed", this.buildAutomationPayload(updatedTicketForPayload))
+        .catch(() => undefined);
+    }
+    if (input.priority && input.priority !== ticket.priority) {
+      void this.automations
+        .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
+        .catch(() => undefined);
+    }
+
+    if (input.status === "RESOLVED" && ticket.status !== "RESOLVED") {
+      void this.csat.createRequestForTicket(orgId, ticketId).catch(() => undefined);
+    }
+
     if (input.status) {
       void this.notifications
         .sendStatusEmail(ticket.createdBy, userId, ticket.title, ticketId, input.status)
@@ -348,6 +398,8 @@ export class SupportTicketsService {
         createdBy: true,
         assigneeId: true,
         firstRespondedAt: true,
+        priority: true,
+        category: true,
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -377,6 +429,14 @@ export class SupportTicketsService {
     );
 
     void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
+
+    void this.automations
+      .runAutomationsForEvent(orgId, "ticket.message_received", {
+        ...this.buildAutomationPayload(ticket),
+        isInternal: input.isInternal,
+        messageBody: input.body,
+      })
+      .catch(() => undefined);
 
     const isFirstAgentReply =
       !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;

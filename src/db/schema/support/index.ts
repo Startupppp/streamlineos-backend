@@ -6,3 +6,4 @@ export * from "./support-activity";
 export * from "./support-workspace";
 export * from "./support-sla";
 export * from "./support-channels";
+export * from "./support-csat";

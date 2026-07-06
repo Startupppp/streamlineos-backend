@@ -1,9 +1,18 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, eq, ilike, inArray, or } from "drizzle-orm";
-import { supportMacros, supportRoutingRules, supportTickets, type RoutingRuleCondition } from "../../db/schema";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import {
+  supportMacros,
+  supportRoutingRules,
+  supportTickets,
+  users,
+  organizations,
+  type RoutingRuleCondition,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { appUrl } from "../email/app-url";
 import type {
+  ApplyMacroInput,
   CreateMacroInput,
   CreateRoutingRuleInput,
   ListMacrosInput,
@@ -27,8 +36,11 @@ export interface RoutingOutcome {
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listMacros(orgId: string, query: ListMacrosInput) {
-    const conditions = [eq(supportMacros.orgId, orgId)];
+  listMacros(orgId: string, userId: string, query: ListMacrosInput) {
+    const conditions = [
+      eq(supportMacros.orgId, orgId),
+      or(sql`${supportMacros.visibility} != 'private'`, eq(supportMacros.createdBy, userId))!,
+    ];
     if (query.category) conditions.push(eq(supportMacros.category, query.category));
     if (query.search) {
       const term = `%${query.search}%`;
@@ -51,6 +63,8 @@ export class SupportMacrosService {
         title: input.title,
         body: input.body,
         category: input.category ?? null,
+        visibility: input.visibility,
+        actions: input.actions,
         createdBy: userId,
       })
       .returning();
@@ -76,6 +90,95 @@ export class SupportMacrosService {
 
     if (!deleted) throw new NotFoundException("Macro not found");
     return { success: true };
+  }
+
+  /**
+   * Renders {{customer.name}}/{{ticket.id}}/{{agent.name}}/{{company.name}}/
+   * {{portal.link}} against the given ticket — no side effects, no usage
+   * bump. Used for the compose-time preview before an agent sends a reply.
+   */
+  async previewMacro(orgId: string, macroId: number, userId: string, ticketId: number): Promise<{ body: string }> {
+    const macro = await this.db.query.supportMacros.findFirst({
+      where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
+      columns: { id: true, body: true, visibility: true, createdBy: true },
+    });
+    if (!macro) throw new NotFoundException("Macro not found");
+    if (macro.visibility === "private" && macro.createdBy !== userId) {
+      throw new ForbiddenException("This macro is private to its creator");
+    }
+
+    const rendered = await this.renderMacroBody(orgId, userId, ticketId, macro.body);
+    return { body: rendered };
+  }
+
+  /**
+   * Renders the macro AND applies its configured actions (status/priority/tag)
+   * to the ticket in one call. Does not post the rendered body as a message —
+   * the caller (ticket reply flow) is responsible for that, since whether it's
+   * a public reply or internal note is a choice made at send time, not baked
+   * into the macro itself.
+   */
+  async applyMacro(orgId: string, macroId: number, userId: string, input: ApplyMacroInput) {
+    const macro = await this.db.query.supportMacros.findFirst({
+      where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
+    });
+    if (!macro) throw new NotFoundException("Macro not found");
+    if (macro.visibility === "private" && macro.createdBy !== userId) {
+      throw new ForbiddenException("This macro is private to its creator");
+    }
+
+    const rendered = await this.renderMacroBody(orgId, userId, input.ticketId, macro.body);
+
+    const ticketUpdate: Partial<typeof supportTickets.$inferInsert> = {};
+    if (macro.actions?.setStatus) ticketUpdate.status = macro.actions.setStatus as (typeof supportTickets.$inferInsert)["status"];
+    if (macro.actions?.setPriority) ticketUpdate.priority = macro.actions.setPriority as (typeof supportTickets.$inferInsert)["priority"];
+    if (Object.keys(ticketUpdate).length > 0) {
+      ticketUpdate.updatedAt = new Date();
+      await this.db
+        .update(supportTickets)
+        .set(ticketUpdate)
+        .where(and(eq(supportTickets.id, input.ticketId), eq(supportTickets.orgId, orgId)));
+    }
+
+    await this.db
+      .update(supportMacros)
+      .set({ usageCount: sql`${supportMacros.usageCount} + 1` })
+      .where(eq(supportMacros.id, macroId));
+
+    return { body: rendered, isInternal: macro.actions?.isInternal ?? false, actionsApplied: macro.actions ?? {} };
+  }
+
+  async getUsage(orgId: string) {
+    return this.db
+      .select({ id: supportMacros.id, title: supportMacros.title, usageCount: supportMacros.usageCount })
+      .from(supportMacros)
+      .where(eq(supportMacros.orgId, orgId))
+      .orderBy(sql`${supportMacros.usageCount} DESC`)
+      .limit(50);
+  }
+
+  private async renderMacroBody(orgId: string, userId: string, ticketId: number, body: string): Promise<string> {
+    const [ticket, agent, org] = await Promise.all([
+      this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true, requesterName: true, createdBy: true },
+        with: { creator: { columns: { name: true } } },
+      }),
+      this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
+      this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } }),
+    ]);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
+    const customerName = ticket.requesterName ?? ticket.creator?.name ?? "there";
+    const variables: Record<string, string> = {
+      "customer.name": customerName,
+      "ticket.id": String(ticket.id),
+      "agent.name": agent?.name ?? "Support",
+      "company.name": org?.name ?? "our team",
+      "portal.link": `${appUrl}/support/portal/tickets/${ticket.id}`,
+    };
+
+    return body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, key: string) => variables[key] ?? match);
   }
 
   listRoutingRules(orgId: string) {
