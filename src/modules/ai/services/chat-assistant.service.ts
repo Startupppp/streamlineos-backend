@@ -19,6 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
 import { CalendarService } from "../../calendar/calendar.service";
+import { ProjectsAiService } from "./projects-ai.service";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -42,6 +43,7 @@ export class ChatAssistantService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly calendar: CalendarService,
+    private readonly projectsAi: ProjectsAiService,
   ) {}
 
   private async fetchContext(userId: string, orgId: string): Promise<ChatContext> {
@@ -151,6 +153,9 @@ You can take the following actions on behalf of the user when asked:
 - **createTask**: Create a new task (call, email, meeting, or custom) with optional due date
 - **searchLeads**: Search leads by name or company to answer questions
 - **scheduleEvent**: Schedule a calendar event or meeting with optional attendees. Always confirm the details (title, date/time, attendees) with the user BEFORE calling this tool.
+- **searchProjects**: Find projects by name to resolve a project ID before calling project-AI tools.
+- **askProjectAI**: Ask an AI question about a specific project (e.g. "what's blocked?", "why is it late?", "what are the risks?"). Requires a projectId — use searchProjects first if you only have a name.
+- **getProjectSummary**: Get an AI-generated health summary (progress, highlights, risks) for a specific project.
 
 Tone: Professional, concise, actionable. Always confirm details before scheduling events or taking destructive actions.`;
   }
