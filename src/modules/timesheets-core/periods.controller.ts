@@ -11,14 +11,12 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 
-@RequireModule("projects")
 @Controller("timesheets/periods")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PeriodsController {

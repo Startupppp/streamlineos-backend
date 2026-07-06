@@ -352,6 +352,35 @@ export class KbSearchService {
     return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([key]) => key);
   }
 
+  async retrieveAttachmentSnippets(
+    orgId: string,
+    query: string,
+    articleIds: number[],
+  ): Promise<string> {
+    if (!this.embeddings.isConfigured() || articleIds.length === 0) return "";
+    try {
+      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const rows = await this.db
+        .select({ content: kbArticleChunks.content })
+        .from(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "attachment"),
+            inArray(kbArticleChunks.articleId, articleIds),
+          ),
+        )
+        .orderBy(distance)
+        .limit(4);
+      return rows
+        .map((row, index) => `[file ${index + 1}]\n${row.content.slice(0, 1200)}`)
+        .join("\n\n");
+    } catch {
+      return "";
+    }
+  }
+
   private buildSnippet(contentText: string | null, query: string): string {
     const text = (contentText ?? "").trim();
     if (!text) return "";

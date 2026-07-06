@@ -65,6 +65,18 @@ export class KbAskService {
       .map((source, index) => `[${index + 1}] ${source.title}\n${(source.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
       .join("\n\n---\n\n");
 
+    const articleIds = top
+      .filter((source) => source.kind === "article")
+      .map((source) => source.id);
+    const attachmentContext = await this.search.retrieveAttachmentSnippets(
+      user.orgId,
+      input.question,
+      articleIds,
+    );
+    const fullContext = attachmentContext
+      ? `${context}\n\n---\n\n${attachmentContext}`
+      : context;
+
     await this.credits.consume(user.orgId, ASK_COST, {
       reason: "kb_ask",
       feature: "ask",
@@ -77,7 +89,7 @@ export class KbAskService {
         model: "fast",
         temperature: 0.2,
         system: ASK_SYSTEM_PROMPT,
-        user: `Question: ${input.question}\n\nContext:\n${context}`,
+        user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
       });
     } catch (error) {
       await this.credits.grant(user.orgId, ASK_COST, {
