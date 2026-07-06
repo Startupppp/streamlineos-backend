@@ -16,3 +16,4 @@ export * from "./change-requests";
 export * from "./approvals";
 export * from "./governance";
 export * from "./meetings";
+export * from "./incidents";

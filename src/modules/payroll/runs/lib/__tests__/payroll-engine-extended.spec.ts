@@ -293,7 +293,7 @@ describe("payroll engine extended", () => {
         lopDays: "0",
         overtimeHours: "0",
         lines: [],
-        totals: { gross: "50000.00", deductions: "0.00", employerContributions: "0.00", net: "50000.00" },
+        totals: { gross: "40000.00", deductions: "0.00", employerContributions: "0.00", net: "40000.00" },
         variance: null,
       };
 

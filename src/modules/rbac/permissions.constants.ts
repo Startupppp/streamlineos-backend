@@ -2310,6 +2310,21 @@ const PROJECT_MEETINGS_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECT_INCIDENTS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:incidents:view",
+    resource: "projects:incidents",
+    action: "view",
+    description: "View project incidents and SLA timelines",
+  },
+  {
+    name: "projects:incidents:manage",
+    resource: "projects:incidents",
+    action: "manage",
+    description: "Create, update, and resolve project incidents",
+  },
+];
+
 const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
   {
     name: "projects:risks:view",
@@ -2362,6 +2377,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECTS_AI_PERMISSIONS,
   ...PROJECT_GOVERNANCE_PERMISSIONS,
   ...PROJECT_MEETINGS_PERMISSIONS,
+  ...PROJECT_INCIDENTS_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -2577,6 +2593,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:risks:view",
     "projects:decisions:view",
     "projects:meetings:view",
+    "projects:incidents:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",

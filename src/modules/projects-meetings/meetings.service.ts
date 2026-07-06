@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   projectMeetings,
   meetingAttendees,
@@ -56,7 +56,7 @@ export class MeetingsService {
 
   async listMeetings(orgId: string, projectId: number, query: ListMeetingsQuery) {
     await this.assertProject(orgId, projectId);
-    return this.db
+    const meetings = await this.db
       .select()
       .from(projectMeetings)
       .where(
@@ -69,6 +69,33 @@ export class MeetingsService {
         ),
       )
       .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`);
+    if (meetings.length === 0) return meetings;
+    const ids = meetings.map((m) => m.id);
+    const [attCounts, aiCounts] = await Promise.all([
+      this.db
+        .select({ meetingId: meetingAttendees.meetingId, count: sql<number>`count(*)::int` })
+        .from(meetingAttendees)
+        .where(and(eq(meetingAttendees.orgId, orgId), inArray(meetingAttendees.meetingId, ids)))
+        .groupBy(meetingAttendees.meetingId),
+      this.db
+        .select({ meetingId: meetingActionItems.meetingId, count: sql<number>`count(*)::int` })
+        .from(meetingActionItems)
+        .where(
+          and(
+            eq(meetingActionItems.orgId, orgId),
+            inArray(meetingActionItems.meetingId, ids),
+            isNull(meetingActionItems.deletedAt),
+          ),
+        )
+        .groupBy(meetingActionItems.meetingId),
+    ]);
+    const attMap = new Map(attCounts.map((r) => [r.meetingId, r.count]));
+    const aiMap = new Map(aiCounts.map((r) => [r.meetingId, r.count]));
+    return meetings.map((m) => ({
+      ...m,
+      attendeeCount: attMap.get(m.id) ?? 0,
+      actionItemCount: aiMap.get(m.id) ?? 0,
+    }));
   }
 
   async getMeeting(orgId: string, projectId: number, meetingId: number) {
@@ -93,7 +120,7 @@ export class MeetingsService {
         .from(meetingStandupEntries)
         .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, orgId))),
     ]);
-    return { meeting, attendees, actionItems, standupEntries };
+    return { ...meeting, attendees, actionItems, standupEntries };
   }
 
   async createMeeting(orgId: string, userId: string, projectId: number, input: CreateMeetingInput) {
