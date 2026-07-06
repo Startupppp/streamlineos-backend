@@ -14,3 +14,4 @@ export * from "./qa";
 export * from "./bugs";
 export * from "./change-requests";
 export * from "./approvals";
+export * from "./governance";

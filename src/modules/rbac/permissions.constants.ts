@@ -2295,6 +2295,33 @@ const PROJECTS_AI_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:risks:view",
+    resource: "projects:risks",
+    action: "view",
+    description: "View project risks",
+  },
+  {
+    name: "projects:risks:manage",
+    resource: "projects:risks",
+    action: "manage",
+    description: "Create, update, and delete project risks",
+  },
+  {
+    name: "projects:decisions:view",
+    resource: "projects:decisions",
+    action: "view",
+    description: "View project decisions",
+  },
+  {
+    name: "projects:decisions:manage",
+    resource: "projects:decisions",
+    action: "manage",
+    description: "Create, update, and delete project decisions",
+  },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -2318,6 +2345,7 @@ export const PERMISSIONS: Permission[] = [
   ...CLIENT_PORTAL_PERMISSIONS,
   ...PROJECT_APPROVALS_PERMISSIONS,
   ...PROJECTS_AI_PERMISSIONS,
+  ...PROJECT_GOVERNANCE_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -2530,6 +2558,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2587,6 +2617,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2617,6 +2649,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2650,6 +2684,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2679,6 +2715,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2712,6 +2750,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:approvals:view",
     "projects:approvals:request",
     "projects:approvals:decide",
+    "projects:risks:view",
+    "projects:decisions:view",
     "projects:timesheets:view",
     "projects:timesheets:create",
     "timesheets:entries:view",
@@ -2787,6 +2827,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "reports:schedule",
     "projects:view",
     "projects:tickets:view",
+    "projects:risks:view",
+    "projects:decisions:view",
     "reports:view",
     "settings:view",
     "dashboard:sales:view",
@@ -2905,6 +2947,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "reports:schedule",
     "projects:view",
     "projects:tickets:view",
+    "projects:risks:view",
+    "projects:decisions:view",
     "reports:view",
     "settings:email-templates:manage",
     "settings:onboarding:manage",

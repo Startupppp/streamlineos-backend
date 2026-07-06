@@ -7,7 +7,7 @@ import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { UpdateBudgetInput } from "./dto/projects.schemas";
 
-interface MemberCost {
+export interface MemberCost {
   userId: string;
   hours: number;
   cost: number;

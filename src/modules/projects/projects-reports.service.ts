@@ -9,13 +9,13 @@ import type { BurnupQuery, CfdQuery } from "./dto/projects.schemas";
 const STATE_GROUPS = ["backlog", "unstarted", "started", "completed", "cancelled"] as const;
 type StateGroup = (typeof STATE_GROUPS)[number];
 
-interface BurnupPoint {
+export interface BurnupPoint {
   date: string;
   scope: number;
   completed: number;
 }
 
-interface VelocitySprint {
+export interface VelocitySprint {
   sprintId: number;
   name: string;
   startDate: string;
@@ -26,7 +26,7 @@ interface VelocitySprint {
   completedCount: number;
 }
 
-interface CriticalPathNode {
+export interface CriticalPathNode {
   ticketId: number;
   title: string;
   estimate: number;
