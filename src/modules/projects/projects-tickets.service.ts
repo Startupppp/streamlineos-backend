@@ -293,11 +293,13 @@ export class ProjectsTicketsService {
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     if (input.status !== undefined) {
-      await this.query.validateTicketStatus(before.projectId, orgId, input.status);
-    }
-
-    if (input.status !== undefined && input.status !== before.status) {
-      await this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status);
+      const statusChanged = input.status !== before.status;
+      await Promise.all([
+        this.query.validateTicketStatus(before.projectId, orgId, input.status),
+        statusChanged
+          ? this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status)
+          : Promise.resolve(),
+      ]);
     }
 
     await this.db
@@ -305,21 +307,23 @@ export class ProjectsTicketsService {
       .set(updateData)
       .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
 
-    try {
-      await this.activity.logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
-        title: input.title,
-        status: input.status,
-        priority: input.priority,
-        assigneeId: resolveAssigneeId(input.assigneeId),
-        sprintId: input.sprintId,
-        dueDate: input.dueDate,
-      });
-    } catch (error) {
-      logger.error("Failed to log ticket activity", { error });
-    }
+    await Promise.all([
+      this.syncAssignees(ticketId, actingUserId, input),
+      this.activity
+        .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
+          title: input.title,
+          status: input.status,
+          priority: input.priority,
+          assigneeId: resolveAssigneeId(input.assigneeId),
+          sprintId: input.sprintId,
+          dueDate: input.dueDate,
+        })
+        .catch((error) => logger.error("Failed to log ticket activity", { error })),
+    ]);
 
-    await this.syncAssignees(ticketId, actingUserId, input);
-    await this.notifyNewAssignees(orgId, ticketId, actingUserId, input);
+    void this.notifyNewAssignees(orgId, ticketId, actingUserId, input).catch((error) =>
+      logger.error("Failed to notify ticket assignees", { error }),
+    );
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
       void this.projectsEmail.notifyStatusReview(ticketId, actingUserId, input.status).catch(() => undefined);

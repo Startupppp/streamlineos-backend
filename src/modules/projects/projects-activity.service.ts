@@ -153,9 +153,18 @@ export class ProjectsActivityService {
       entries.push({ action: "due_date_changed", from: normalize(before.dueDate), to: normalize(changes.dueDate) });
     }
 
-    for (const entry of entries) {
-      await this.logTicketActivity(orgId, ticketId, userId, entry.action, entry.from, entry.to);
-    }
+    if (entries.length === 0) return;
+
+    await this.db.insert(ticketActivityLog).values(
+      entries.map((entry) => ({
+        orgId,
+        ticketId,
+        userId,
+        action: entry.action,
+        fromValue: entry.from,
+        toValue: entry.to,
+      })),
+    );
   }
 
   private async resolveUserNames(ids: string[]): Promise<Map<string, string>> {

@@ -247,10 +247,6 @@ export class ProjectsService {
         tickets: {
           with: {
             assignee: true,
-            reporter: true,
-            assignees: { with: { user: true } },
-            comments: { with: { user: true } },
-            attachments: true,
             labels: { with: { label: true } },
           },
         },
