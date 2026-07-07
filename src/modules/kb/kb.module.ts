@@ -51,6 +51,8 @@ import { KbArticleMigrationController } from "./kb-article-migration.controller"
 import { KbArticleMigrationService } from "./kb-article-migration.service";
 import { KbMediaController } from "./kb-media.controller";
 import { KbMediaService } from "./kb-media.service";
+import { KbSourcesController } from "./kb-sources.controller";
+import { KbSourcesService } from "./kb-sources.service";
 
 @Module({
   imports: [AiModule, NotificationsModule],
@@ -79,6 +81,7 @@ import { KbMediaService } from "./kb-media.service";
     KbPageIndexingController,
     KbArticleMigrationController,
     KbMediaController,
+    KbSourcesController,
   ],
   providers: [
     KbCreditsService,

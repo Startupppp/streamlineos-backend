@@ -19,7 +19,8 @@ const ASK_SYSTEM_PROMPT =
 
 export type AskCitation =
   | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null }
-  | { kind: "page"; pageId: number; title: string; spaceId: number | null };
+  | { kind: "page"; pageId: number; title: string; spaceId: number | null }
+  | { kind: "source"; sourceId: number; title: string; spaceId: number | null };
 
 @Injectable()
 export class KbAskService {
@@ -52,7 +53,8 @@ export class KbAskService {
       MAX_CONTEXT_ARTICLES,
       input.spaceId,
     );
-    if (top.length === 0) {
+    const sources = await this.search.retrieveTopSources(user.orgId, input.question, 4);
+    if (top.length === 0 && sources.length === 0) {
       return {
         answer:
           "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
@@ -77,9 +79,13 @@ export class KbAskService {
       articleIds,
       pageIds,
     );
-    const fullContext = attachmentContext
+    const sourceContext = sources
+      .map((s, index) => `[doc ${index + 1}] ${s.title}\n${s.snippet}`)
+      .join("\n\n---\n\n");
+    let fullContext = attachmentContext
       ? `${context}\n\n---\n\n${attachmentContext}`
       : context;
+    if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
 
     await this.credits.consume(user.orgId, ASK_COST, {
       reason: "kb_ask",
@@ -110,12 +116,15 @@ export class KbAskService {
       metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
     });
 
-    const citations: AskCitation[] = top.map((source) => {
-      if (source.kind === "article") {
-        return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId };
-      }
-      return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId };
-    });
+    const citations: AskCitation[] = [
+      ...top.map((source): AskCitation => {
+        if (source.kind === "article") {
+          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId };
+        }
+        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId };
+      }),
+      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId })),
+    ];
 
     return { answer, citations, hasContext: true };
   }

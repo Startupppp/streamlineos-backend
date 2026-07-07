@@ -385,6 +385,51 @@ export class KbSearchService {
     }
   }
 
+  async retrieveTopSources(
+    orgId: string,
+    query: string,
+    limit: number,
+  ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string }>> {
+    if (!this.embeddings.isConfigured() || !query.trim()) return [];
+    try {
+      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const rows = await this.db
+        .select({
+          sourceId: kbSources.id,
+          title: kbSources.title,
+          spaceId: kbSources.spaceId,
+          content: kbArticleChunks.content,
+        })
+        .from(kbArticleChunks)
+        .innerJoin(kbSources, eq(kbSources.id, kbArticleChunks.sourceId))
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "source"),
+            isNull(kbSources.deletedAt),
+            eq(kbSources.status, "ready"),
+            eq(kbSources.orgId, orgId),
+          ),
+        )
+        .orderBy(distance)
+        .limit(limit * 4);
+
+      const seen = new Set<number>();
+      const result: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string }> = [];
+      for (const row of rows) {
+        const id = row.sourceId;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        result.push({ sourceId: id, title: row.title, spaceId: row.spaceId, snippet: row.content.slice(0, 1200) });
+        if (result.length >= limit) break;
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
   private buildSnippet(contentText: string | null, query: string): string {
     const text = (contentText ?? "").trim();
     if (!text) return "";

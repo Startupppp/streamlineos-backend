@@ -6,7 +6,7 @@
   "scripts": {
     "build": "nest build",
     "start": "nest start",
-    "start:dev": "node --max-old-space-size=4096 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --watch",
+    "start:dev": "node --max-old-space-size=8192 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start:prod": "node --max-old-space-size=8192 dist/main.js",
     "db:push": "drizzle-kit push --config drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
