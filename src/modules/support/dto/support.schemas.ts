@@ -3,6 +3,38 @@ import { z } from "zod";
 export const ticketStatusSchema = z.enum(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 export const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 
+export const customFieldTypeSchema = z.enum(["text", "number", "select", "checkbox", "date"]);
+
+export const createCustomFieldSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, "Key is required")
+    .max(60)
+    .regex(/^[a-z][a-z0-9_]*$/, "Key must be lowercase snake_case, e.g. order_number"),
+  label: z.string().trim().min(1, "Label is required").max(150),
+  fieldType: customFieldTypeSchema,
+  options: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  required: z.boolean().default(false),
+  category: z.string().trim().max(100).optional(),
+  sortOrder: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
+});
+
+export const updateCustomFieldSchema = z.object({
+  label: z.string().trim().min(1).max(150).optional(),
+  options: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  required: z.boolean().optional(),
+  category: z.string().trim().max(100).nullable().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const customFieldValueSchema = z.object({
+  fieldId: z.number().int().positive(),
+  value: z.string().trim().max(2000).nullable(),
+});
+
 export const listTicketsSchema = z.object({
   status: ticketStatusSchema.optional(),
   priority: ticketPrioritySchema.optional(),
@@ -28,6 +60,7 @@ export const createTicketSchema = z.object({
   clientId: z.number().optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 export const updateTicketSchema = z.object({
@@ -36,6 +69,7 @@ export const updateTicketSchema = z.object({
   assigneeId: z.string().optional(),
   queueId: z.number().int().positive().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -273,6 +307,7 @@ export const createPortalTicketSchema = z.object({
     )
     .max(5)
     .optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 export const createPortalMessageSchema = z.object({
@@ -323,6 +358,30 @@ export const inboundEmailSchema = z.object({
     )
     .max(10)
     .optional(),
+});
+
+export const inboundWhatsAppSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  inReplyTo: z.string().trim().max(998).optional(),
+  from: z.string().trim().min(1, "from is required").max(32),
+  fromName: z.string().trim().max(200).optional(),
+  bodyText: z.string().max(4096),
+});
+
+export const inboundSmsSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  from: z.string().trim().min(1, "from is required").max(32),
+  bodyText: z.string().max(1600),
+});
+
+export const startChatSessionSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  email: z.string().trim().email().max(320).optional(),
+  message: z.string().trim().min(1, "Message is required").max(4000),
+});
+
+export const sendChatMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message is required").max(4000),
 });
 
 export const createKbCategorySchema = z.object({
@@ -423,6 +482,10 @@ export type CreatePortalMessageInput = z.infer<typeof createPortalMessageSchema>
 export type CreateSupportChannelInput = z.infer<typeof createSupportChannelSchema>;
 export type UpdateSupportChannelInput = z.infer<typeof updateSupportChannelSchema>;
 export type InboundEmailInput = z.infer<typeof inboundEmailSchema>;
+export type InboundWhatsAppInput = z.infer<typeof inboundWhatsAppSchema>;
+export type InboundSmsInput = z.infer<typeof inboundSmsSchema>;
+export type StartChatSessionInput = z.infer<typeof startChatSessionSchema>;
+export type SendChatMessageInput = z.infer<typeof sendChatMessageSchema>;
 export type CreateQueueInput = z.infer<typeof createQueueSchema>;
 export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
 export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;
@@ -458,3 +521,7 @@ export const supportReportFiltersSchema = z.object({
   channel: z.string().trim().optional(),
 });
 export type SupportReportFiltersInput = z.infer<typeof supportReportFiltersSchema>;
+
+export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
+export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;
+export type CustomFieldValueInput = z.infer<typeof customFieldValueSchema>;

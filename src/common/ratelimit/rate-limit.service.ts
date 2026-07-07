@@ -27,6 +27,9 @@ const TIERS: Record<string, Tier> = {
   "survey:public-submit": { limit: 20, windowSecs: 60 },
   "support:portal-ticket-create": { limit: 10, windowSecs: 3600 },
   "support:inbound-email": { limit: 120, windowSecs: 60 },
+  "support:inbound-whatsapp": { limit: 120, windowSecs: 60 },
+  "support:inbound-sms": { limit: 120, windowSecs: 60 },
+  "support:chat-widget": { limit: 60, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

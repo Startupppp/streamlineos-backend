@@ -129,6 +129,12 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/reports/queue-performance"],
     ["get", "/support/reports/channel-performance"],
     ["get", "/support/reports/automation-performance"],
+    ["get", "/support/custom-fields"],
+    ["post", "/support/custom-fields"],
+    ["patch", "/support/custom-fields/1"],
+    ["delete", "/support/custom-fields/1"],
+    ["get", "/support/1/custom-fields"],
+    ["get", "/support/portal/custom-fields"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -339,6 +345,17 @@ describe("Support auth/RBAC (e2e)", () => {
     { method: "get", path: "/support/reports/queue-performance", permission: "support:reports:view" },
     { method: "get", path: "/support/reports/channel-performance", permission: "support:reports:view" },
     { method: "get", path: "/support/reports/automation-performance", permission: "support:reports:view" },
+    { method: "get", path: "/support/custom-fields", permission: "support:tickets:view" },
+    {
+      method: "post",
+      path: "/support/custom-fields",
+      permission: "support:settings:manage",
+      body: { key: "order_number", label: "Order #", fieldType: "text" },
+    },
+    { method: "patch", path: "/support/custom-fields/1", permission: "support:settings:manage", body: { label: "x" } },
+    { method: "delete", path: "/support/custom-fields/1", permission: "support:settings:manage" },
+    { method: "get", path: "/support/1/custom-fields", permission: "support:tickets:view" },
+    { method: "get", path: "/support/portal/custom-fields", permission: "support:portal:tickets:create" },
   ];
 
   it.each(ticketPermissionCases)(
@@ -396,6 +413,63 @@ describe("Support auth/RBAC (e2e)", () => {
         .set("X-Webhook-Secret", "wrong-secret")
         .send({ messageId: "abc", fromEmail: "customer@example.com", bodyText: "help" });
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/inbound/whatsapp/:orgId (webhook, no JWT)", () => {
+    it("401 when the webhook secret is missing", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/whatsapp/org_1")
+        .send({ messageId: "wamid.abc", from: "+15551234567", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+
+    it("401 when the webhook secret is wrong", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/whatsapp/org_1")
+        .set("X-Webhook-Secret", "wrong-secret")
+        .send({ messageId: "wamid.abc", from: "+15551234567", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/inbound/sms/:orgId (webhook, no JWT)", () => {
+    it("401 when the webhook secret is missing", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/sms/org_1")
+        .send({ messageId: "SM123", from: "+15559876543", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+
+    it("401 when the webhook secret is wrong", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/sms/org_1")
+        .set("X-Webhook-Secret", "wrong-secret")
+        .send({ messageId: "SM123", from: "+15559876543", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/chat/:orgId/start (public, no JWT)", () => {
+    it("404 when no chat channel is configured for the org, no auth token required", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/chat/org_1/start")
+        .send({ name: "Jane", message: "hi" });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET/POST /support/chat/:orgId/:sessionToken/messages (public, no JWT)", () => {
+    it("404 on GET with an unknown session token", async () => {
+      const res = await request(app.getHttpServer()).get("/support/chat/org_1/not-a-real-token/messages");
+      expect(res.status).toBe(404);
+    });
+
+    it("404 on POST with an unknown session token", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/chat/org_1/not-a-real-token/messages")
+        .send({ body: "still there?" });
+      expect(res.status).toBe(404);
     });
   });
 

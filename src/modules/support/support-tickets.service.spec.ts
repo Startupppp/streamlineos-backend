@@ -10,6 +10,7 @@ import { SupportSlaService } from "./support-sla.service";
 import { AutomationService } from "../automation/automation.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
 
 const mockDb = {
   query: {
@@ -75,6 +76,11 @@ const mockAi = {
   runFullAnalysis: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockCustomFields = {
+  setFieldValues: jest.fn().mockResolvedValue(undefined),
+  getFieldValues: jest.fn().mockResolvedValue([]),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -96,6 +102,7 @@ describe("SupportTicketsService", () => {
         { provide: AutomationService, useValue: mockAutomations },
         { provide: SupportCsatService, useValue: mockCsat },
         { provide: SupportAiService, useValue: mockAi },
+        { provide: SupportCustomFieldsService, useValue: mockCustomFields },
       ],
     }).compile();
     service = module.get(SupportTicketsService);

@@ -14,6 +14,7 @@ import { SupportAutomationsController } from "./support-automations.controller";
 import { SupportCsatController } from "./support-csat.controller";
 import { SupportAiController } from "./support-ai.controller";
 import { SupportReportsController } from "./support-reports.controller";
+import { SupportCustomFieldsController } from "./support-custom-fields.controller";
 import { SupportTicketsController } from "./support-tickets.controller";
 import { SupportKbService } from "./support-kb.service";
 import { SupportMacrosService } from "./support-macros.service";
@@ -25,6 +26,7 @@ import { SupportChannelsService } from "./support-channels.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportReportsService } from "./support-reports.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 
@@ -41,6 +43,7 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportCsatController,
     SupportAiController,
     SupportReportsController,
+    SupportCustomFieldsController,
     SupportPortalController,
     SupportTicketsController,
   ],
@@ -55,6 +58,7 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportCsatService,
     SupportAiService,
     SupportReportsService,
+    SupportCustomFieldsService,
     SupportTicketsService,
     SupportNotificationsService,
   ],

@@ -19,6 +19,7 @@ import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../automation/automation.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -82,6 +83,7 @@ export class SupportTicketsService {
     private readonly automations: AutomationService,
     private readonly csat: SupportCsatService,
     private readonly ai: SupportAiService,
+    private readonly customFields: SupportCustomFieldsService,
   ) {}
 
   private buildAutomationPayload(ticket: {
@@ -215,6 +217,7 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
     await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
+    await this.customFields.setFieldValues(orgId, ticket.id, input.customFields ?? [], true);
 
     void this.automations
       .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
@@ -250,7 +253,8 @@ export class SupportTicketsService {
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    return ticket;
+    const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
+    return { ...ticket, customFieldValues };
   }
 
   async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {
@@ -299,6 +303,9 @@ export class SupportTicketsService {
       .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
 
     await this.logTicketActivity(orgId, ticketId, userId, ticket, input);
+    if (input.customFields) {
+      await this.customFields.setFieldValues(orgId, ticketId, input.customFields, false);
+    }
 
     await this.invalidateTicketCaches(orgId);
 

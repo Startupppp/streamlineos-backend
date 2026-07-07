@@ -25,9 +25,17 @@ import { SupportChannelsService } from "./support-channels.service";
 import {
   createSupportChannelSchema,
   inboundEmailSchema,
+  inboundSmsSchema,
+  inboundWhatsAppSchema,
+  sendChatMessageSchema,
+  startChatSessionSchema,
   updateSupportChannelSchema,
   type CreateSupportChannelInput,
   type InboundEmailInput,
+  type InboundSmsInput,
+  type InboundWhatsAppInput,
+  type SendChatMessageInput,
+  type StartChatSessionInput,
   type UpdateSupportChannelInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -99,7 +107,83 @@ export class SupportChannelsController {
       throw new HttpException("Too many inbound emails", HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    const channel = await this.channels.verifyInboundSecret(orgId, secret);
+    const channel = await this.channels.verifyInboundSecret(orgId, "email", secret);
     return this.channels.ingestInboundEmail(orgId, channel, body);
+  }
+
+  /** Same trust model as inboundEmail — the WhatsApp Business API webhook relay posts here directly. */
+  @Public()
+  @Post("inbound/whatsapp/:orgId")
+  @HttpCode(200)
+  async inboundWhatsApp(
+    @Param("orgId") orgId: string,
+    @Headers("x-webhook-secret") secret: string | undefined,
+    @Body(new ZodValidationPipe(inboundWhatsAppSchema)) body: InboundWhatsAppInput,
+  ) {
+    const rate = await this.rateLimit.check("support:inbound-whatsapp", orgId);
+    if (!rate.allowed) {
+      throw new HttpException("Too many inbound WhatsApp messages", HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const channel = await this.channels.verifyInboundSecret(orgId, "whatsapp", secret);
+    return this.channels.ingestInboundWhatsApp(orgId, channel, body);
+  }
+
+  /** Same trust model as inboundEmail — the SMS provider (e.g. Twilio) webhook posts here directly. */
+  @Public()
+  @Post("inbound/sms/:orgId")
+  @HttpCode(200)
+  async inboundSms(
+    @Param("orgId") orgId: string,
+    @Headers("x-webhook-secret") secret: string | undefined,
+    @Body(new ZodValidationPipe(inboundSmsSchema)) body: InboundSmsInput,
+  ) {
+    const rate = await this.rateLimit.check("support:inbound-sms", orgId);
+    if (!rate.allowed) {
+      throw new HttpException("Too many inbound SMS messages", HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const channel = await this.channels.verifyInboundSecret(orgId, "sms", secret);
+    return this.channels.ingestInboundSms(orgId, channel, body);
+  }
+
+  /**
+   * Live chat widget endpoints — public, called directly from the visitor's
+   * browser (no webhook secret model; a per-conversation sessionToken is
+   * generated on start and must be presented on every subsequent call).
+   */
+  @Public()
+  @Post("chat/:orgId/start")
+  @HttpCode(201)
+  async startChatSession(
+    @Param("orgId") orgId: string,
+    @Body(new ZodValidationPipe(startChatSessionSchema)) body: StartChatSessionInput,
+  ) {
+    const rate = await this.rateLimit.check("support:chat-widget", orgId);
+    if (!rate.allowed) {
+      throw new HttpException("Too many chat sessions", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    return this.channels.startChatSession(orgId, body);
+  }
+
+  @Public()
+  @Get("chat/:orgId/:sessionToken/messages")
+  async getChatSession(@Param("orgId") orgId: string, @Param("sessionToken") sessionToken: string) {
+    return this.channels.getChatSession(orgId, sessionToken);
+  }
+
+  @Public()
+  @Post("chat/:orgId/:sessionToken/messages")
+  @HttpCode(201)
+  async sendChatMessage(
+    @Param("orgId") orgId: string,
+    @Param("sessionToken") sessionToken: string,
+    @Body(new ZodValidationPipe(sendChatMessageSchema)) body: SendChatMessageInput,
+  ) {
+    const rate = await this.rateLimit.check("support:chat-widget", `${orgId}:${sessionToken}`);
+    if (!rate.allowed) {
+      throw new HttpException("Too many messages", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    return this.channels.sendChatMessage(orgId, sessionToken, body);
   }
 }

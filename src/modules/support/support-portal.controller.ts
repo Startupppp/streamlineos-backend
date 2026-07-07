@@ -18,6 +18,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { SupportPortalService } from "./support-portal.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import {
   createPortalMessageSchema,
   createPortalTicketSchema,
@@ -34,12 +35,19 @@ export class SupportPortalController {
   constructor(
     private readonly portal: SupportPortalService,
     private readonly rateLimit: RateLimitService,
+    private readonly customFields: SupportCustomFieldsService,
   ) {}
 
   @Get("tickets")
   @RequirePermission("support:portal:tickets:view")
   listMyTickets(@CurrentUser() u: CurrentUserContext) {
     return this.portal.listMyTickets(u.orgId, u.userId);
+  }
+
+  @Get("custom-fields")
+  @RequirePermission("support:portal:tickets:create")
+  listActiveCustomFields(@CurrentUser() u: CurrentUserContext) {
+    return this.customFields.listFields(u.orgId, true);
   }
 
   @Post("tickets")
