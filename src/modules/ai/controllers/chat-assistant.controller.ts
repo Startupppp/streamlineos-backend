@@ -2,9 +2,12 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
+  Get,
   InternalServerErrorException,
   Post,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -16,18 +19,38 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { logger } from "../../../common/logger/logger.service";
 import { ChatAssistantService } from "../services/chat-assistant.service";
+import { ChatHistoryService } from "../services/chat-history.service";
 import { OrgFeaturesService } from "../services/org-features.service";
 import { AiUsageService } from "../services/ai-usage.service";
-import { chatRequestSchema } from "../dto/request.schemas";
+import { chatHistoryQuerySchema, chatRequestSchema } from "../dto/request.schemas";
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatAssistantController {
   constructor(
     private readonly chat: ChatAssistantService,
+    private readonly history: ChatHistoryService,
     private readonly orgFeatures: OrgFeaturesService,
     private readonly usage: AiUsageService,
   ) {}
+
+  @Get("history")
+  @RequirePermission("ai:chat:use")
+  async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
+    const parsed = chatHistoryQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+    return this.history.list(u.orgId, u.userId, {
+      cursor: parsed.data.cursor,
+      limit: parsed.data.limit,
+    });
+  }
+
+  @Delete("history")
+  @RequirePermission("ai:chat:use")
+  async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
+    await this.history.clear(u.orgId, u.userId);
+    return { success: true };
+  }
 
   @Post()
   @RequirePermission("ai:chat:use")

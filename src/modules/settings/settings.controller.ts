@@ -16,7 +16,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { requireAuthorize } from "../../common/access/authorize";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SettingsService } from "./settings.service";
 import {
@@ -82,10 +81,6 @@ export class SettingsController {
   @Get("automations")
   @RequirePermission("settings:automations:view")
   listAutomations(@CurrentUser() u: CurrentUserContext) {
-    requireAuthorize(u, {
-      permission: "settings:automations:view",
-      requiredModule: "settings",
-    });
     return this.settings.listAutomations(u.orgId);
   }
 
@@ -97,10 +92,6 @@ export class SettingsController {
     body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:automations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.createAutomation(u.orgId, u.userId, body);
   }
 
@@ -110,10 +101,6 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:automations:view",
-      requiredModule: "settings",
-    });
     return this.settings.getAutomation(u.orgId, ruleId);
   }
 
@@ -125,10 +112,6 @@ export class SettingsController {
     body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:automations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.updateAutomation(u.orgId, ruleId, body);
   }
 
@@ -138,10 +121,6 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:automations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.deleteAutomation(u.orgId, ruleId);
   }
 
@@ -151,10 +130,6 @@ export class SettingsController {
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:automations:view",
-      requiredModule: "settings",
-    });
     return this.settings.listAutomationRuns(u.orgId, ruleId);
   }
 
@@ -165,10 +140,6 @@ export class SettingsController {
     query: CustomFieldsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:custom-fields:manage",
-      requiredModule: "settings",
-    });
     return this.settings.listCustomFields(u.orgId, query.entityType);
   }
 
@@ -180,10 +151,6 @@ export class SettingsController {
     body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:custom-fields:manage",
-      requiredModule: "settings",
-    });
     return this.settings.createCustomField(u.orgId, u.userId, body);
   }
 
@@ -195,10 +162,6 @@ export class SettingsController {
     body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:custom-fields:manage",
-      requiredModule: "settings",
-    });
     return this.settings.updateCustomField(u.orgId, fieldId, body);
   }
 
@@ -208,10 +171,6 @@ export class SettingsController {
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:custom-fields:manage",
-      requiredModule: "settings",
-    });
     return this.settings.deleteCustomField(u.orgId, fieldId);
   }
 
@@ -231,10 +190,6 @@ export class SettingsController {
   @Get("integrations/git")
   @RequirePermission("settings:manage")
   listGitConnections(@CurrentUser() u: CurrentUserContext) {
-    requireAuthorize(u, {
-      permission: "settings:integrations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.listGitConnections(u.orgId);
   }
 
@@ -246,10 +201,6 @@ export class SettingsController {
     body: CreateGitConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:integrations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.createGitConnection(u.orgId, u.userId, body);
   }
 
@@ -261,10 +212,6 @@ export class SettingsController {
     body: UpdateGitConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:integrations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.updateGitConnection(u.orgId, connectionId, body);
   }
 
@@ -274,10 +221,6 @@ export class SettingsController {
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    requireAuthorize(u, {
-      permission: "settings:integrations:manage",
-      requiredModule: "settings",
-    });
     return this.settings.deleteGitConnection(u.orgId, connectionId);
   }
 

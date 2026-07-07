@@ -13,6 +13,7 @@ import { CrmTasksService } from "./services/crm-tasks.service";
 import { HrAiService } from "./services/hr-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
+import { ChatHistoryService } from "./services/chat-history.service";
 import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
@@ -31,6 +32,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     HrAiService,
     KbRagService,
     ChatAssistantService,
+    ChatHistoryService,
     AiUsageService,
     OrgFeaturesService,
     ProjectsAiService,

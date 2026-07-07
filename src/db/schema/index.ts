@@ -26,3 +26,4 @@ export * from "./integrations";
 export * from "./onboarding";
 export * from "./payment-providers";
 export * from "./surveys";
+export * from "./ai-chat";

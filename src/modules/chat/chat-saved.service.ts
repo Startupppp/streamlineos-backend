@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, lt } from "drizzle-orm";
 import { chatChannelMembers, chatMessages, chatSavedMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

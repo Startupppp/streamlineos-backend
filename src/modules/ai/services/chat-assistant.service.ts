@@ -20,10 +20,12 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
+import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CalendarService } from "../../calendar/calendar.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { KbAskService } from "../../kb/kb-ask.service";
+import { ChatHistoryService } from "./chat-history.service";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
 const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o";
@@ -65,6 +67,7 @@ export class ChatAssistantService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly calendar: CalendarService,
     private readonly projectsAi: ProjectsAiService,
+    private readonly history: ChatHistoryService,
     private readonly moduleRef: ModuleRef,
   ) {}
 
@@ -221,6 +224,11 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
     const context = await this.fetchContext(userId, orgId);
     const contextPrompt = this.buildContextPrompt(context);
 
+    const latest = messages.at(-1);
+    if (latest?.role === "user") {
+      await this.history.append(orgId, userId, "user", latest.content);
+    }
+
     const modelMessages: ModelMessage[] = messages.map((m) =>
       m.role === "user"
         ? { role: "user", content: m.content }
@@ -233,6 +241,13 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
       system: contextPrompt,
       temperature: 0.7,
       stopWhen: stepCountIs(5),
+      onFinish: async ({ text }) => {
+        try {
+          await this.history.append(orgId, userId, "assistant", text);
+        } catch (error) {
+          logger.error("Failed to persist assistant chat message", { error });
+        }
+      },
       tools: {
         updateLeadStatus: tool({
           description:
