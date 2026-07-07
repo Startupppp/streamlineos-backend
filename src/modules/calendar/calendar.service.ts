@@ -36,6 +36,7 @@ export interface CalendarEventItem {
   category: string;
   source: "event" | "leave" | "interview" | "task" | "holiday";
   location?: string | null;
+  meetingUrl?: string | null;
   description?: string | null;
   creatorName?: string | null;
   entityId?: string | null;
@@ -249,6 +250,7 @@ export class CalendarService {
         category: ev.category,
         source: "event",
         location: ev.location,
+        meetingUrl: ev.meetingUrl,
         description: ev.description,
         creatorName: ev.creator?.name ?? null,
         entityId: ev.entityId,
@@ -382,6 +384,7 @@ export class CalendarService {
           title: input.title,
           description: input.description ?? null,
           location: input.location ?? null,
+          meetingUrl: input.meetingUrl ?? null,
           startDate,
           endDate,
           allDay: input.allDay ?? false,
@@ -417,13 +420,13 @@ export class CalendarService {
           attendeeEmails: attendeeEmailList,
           addConference: input.addConference ?? false,
         });
-        meetingUrl = pushed.meetingUrl;
+        meetingUrl = input.meetingUrl ?? pushed.meetingUrl ?? null;
         const rows = await this.db
           .update(calendarEvents)
           .set({
             integrationConnectionId: conn.id,
             externalEventId: pushed.externalEventId,
-            location: event.location ?? pushed.meetingUrl ?? null,
+            meetingUrl,
           })
           .where(eq(calendarEvents.id, event.id))
           .returning();
@@ -440,6 +443,7 @@ export class CalendarService {
     if (input.title !== undefined) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description ?? null;
     if (input.location !== undefined) updateData.location = input.location ?? null;
+    if (input.meetingUrl !== undefined) updateData.meetingUrl = input.meetingUrl ?? null;
     if (input.startDate !== undefined) updateData.startDate = new Date(input.startDate);
     if (input.endDate !== undefined) updateData.endDate = new Date(input.endDate);
     if (input.allDay !== undefined) updateData.allDay = input.allDay;

@@ -1,6 +1,6 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { IntegrationsService } from "./integrations.service";
 import type { ComposioGateway } from "./composio.gateway";
 import type { Db } from "../../db/drizzle.module";
@@ -20,32 +20,27 @@ function selectChain(rows: unknown[]) {
 describe("IntegrationsService", () => {
   const config = { APP_URL: "http://localhost:1000" } as AppConfig;
 
-  it("finalize rejects an account owned by another user", async () => {
+  it("finalize rejects an account not owned by the caller", async () => {
     const gateway = {
-      getConnectedAccount: jest.fn().mockResolvedValue({
-        id: "ca_x",
-        status: "ACTIVE",
-        userId: "user-B",
-        toolkitSlug: "googlecalendar",
-        email: "b@x.com",
-      }),
+      getOwnedConnectedAccount: jest.fn().mockResolvedValue(null),
     } as unknown as ComposioGateway;
     const service = new IntegrationsService({} as Db, config, gateway);
     await expect(service.finalize("org-1", "user-A", "ca_x")).rejects.toBeInstanceOf(ForbiddenException);
+    expect(gateway.getOwnedConnectedAccount).toHaveBeenCalledWith("user-A", "ca_x");
   });
 
-  it("finalize rejects when the account has no owning user id", async () => {
+  it("finalize rejects a connection that is not active yet", async () => {
     const gateway = {
-      getConnectedAccount: jest.fn().mockResolvedValue({
+      getOwnedConnectedAccount: jest.fn().mockResolvedValue({
         id: "ca_x",
-        status: "ACTIVE",
-        userId: null,
+        status: "INITIATED",
+        userId: "user-A",
         toolkitSlug: "googlecalendar",
         email: null,
       }),
     } as unknown as ComposioGateway;
     const service = new IntegrationsService({} as Db, config, gateway);
-    await expect(service.finalize("org-1", "user-A", "ca_x")).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.finalize("org-1", "user-A", "ca_x")).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("disconnect 404s when the connection belongs to someone else", async () => {

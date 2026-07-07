@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
 import { stepCountIs, streamText, tool, type LanguageModel, type ModelMessage } from "ai";
@@ -19,8 +20,10 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CalendarService } from "../../calendar/calendar.service";
 import { ProjectsAiService } from "./projects-ai.service";
+import { KbAskService } from "../../kb/kb-ask.service";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
 const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o";
@@ -62,6 +65,7 @@ export class ChatAssistantService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly calendar: CalendarService,
     private readonly projectsAi: ProjectsAiService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   getChatModelId(): string {
@@ -168,6 +172,7 @@ ${context.topLeads.map((l) => `  - ${l.name} — ${l.status}${l.priority ? ` [${
 3. **CRM**: Leads, deals, pipeline, client management
 4. **Calendar**: Schedule meetings and events, invite team members
 5. **Analytics**: Team performance, conversion rates, pipeline health
+6. **Knowledge Base**: Search wiki pages, uploaded documents, company policies, and notes to answer questions with grounded information
 
 ## Available Actions
 You can take the following actions on behalf of the user when asked:
@@ -178,6 +183,7 @@ You can take the following actions on behalf of the user when asked:
 - **searchProjects**: Find projects by name to resolve a project ID before calling project-AI tools.
 - **askProjectAI**: Ask an AI question about a specific project (e.g. "what's blocked?", "why is it late?", "what are the risks?"). Requires a projectId — use searchProjects first if you only have a name.
 - **getProjectSummary**: Get an AI-generated health summary (progress, highlights, risks) for a specific project.
+- **searchKnowledgeBase**: Search the organization's knowledge base (wiki pages, uploaded documents, policies, notes) to answer questions grounded in company content.
 
 Tone: Professional, concise, actionable. Always confirm details before scheduling events or taking destructive actions.`;
   }
@@ -390,6 +396,35 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
               return await this.projectsAi.summarize(orgId, projectId, userId);
             } catch (_e) {
               return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+            }
+          },
+        }),
+
+        searchKnowledgeBase: tool({
+          description:
+            "Search the organization's knowledge base (wiki pages and uploaded documents/notes) to answer the user's question with grounded information. Use this whenever the user asks about company docs, policies, uploaded files, notes, or wiki content.",
+          inputSchema: z.object({
+            query: z.string().describe("The question to answer from the knowledge base"),
+          }),
+          execute: async ({ query }) => {
+            try {
+              const kbUserCtx: CurrentUserContext = {
+                userId,
+                orgId,
+                branchId: null,
+                role: "",
+                permissions: [],
+                enabledModules: [],
+                plan: null,
+                isPlatformAdmin: false,
+                isOrgOwner: false,
+                sessionId: "",
+              };
+              const kbAsk = this.moduleRef.get(KbAskService, { strict: false });
+              const result = await kbAsk.ask(kbUserCtx, { question: query });
+              return { answer: result.answer, hasContext: result.hasContext };
+            } catch (_e) {
+              return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
             }
           },
         }),

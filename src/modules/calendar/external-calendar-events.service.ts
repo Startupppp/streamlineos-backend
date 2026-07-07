@@ -120,7 +120,7 @@ export class ExternalCalendarEventsService {
         const data = await this.gateway.executeTool(
           TOOL_SLUGS.outlookList,
           userId,
-          { startDateTime: startIso, endDateTime: endIso, top: 100 },
+          { start_datetime: startIso, end_datetime: endIso, top: 100 },
           conn.composioConnectedAccountId,
         );
         return normalizeOutlookEvents(data, conn);

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -24,9 +24,17 @@ export class OrgController {
   ) {}
 
   @Get("members")
-  listMembers(@CurrentUser() u: CurrentUserContext) {
+  listMembers(
+    @CurrentUser() u: CurrentUserContext,
+    @Query("search") search?: string,
+    @Query("limit") limit?: string,
+  ) {
     const ctx: BranchContext = { role: u.role, branchId: u.branchId, userId: u.userId };
-    return this.members.listMembers(u.orgId, ctx);
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
+    return this.members.listMembers(u.orgId, ctx, {
+      search: typeof search === "string" ? search : undefined,
+      limit: parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
   }
 
   // Legacy single-call setup — kept working for the current frontend wizard.

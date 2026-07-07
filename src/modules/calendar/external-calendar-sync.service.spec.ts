@@ -40,6 +40,19 @@ describe("ExternalCalendarSyncService", () => {
     const service = new ExternalCalendarSyncService(gateway);
     const result = await service.pushCreate("u1", { ...conn, toolkit: "outlook" }, input);
     expect(result).toEqual({ externalEventId: "oev1", meetingUrl: "https://teams.microsoft.com/l/j" });
+    expect(gateway.executeTool).toHaveBeenCalledWith(
+      "OUTLOOK_CALENDAR_CREATE_EVENT",
+      "u1",
+      expect.objectContaining({
+        start_datetime: "2026-07-10T10:00:00",
+        end_datetime: "2026-07-10T11:00:00",
+        time_zone: "UTC",
+        is_online_meeting: true,
+        online_meeting_provider: "teamsForBusiness",
+        attendees_info: [{ email: "a@x.com" }],
+      }),
+      "ca_1",
+    );
   });
 
   it("throws when Google returns no event id", async () => {

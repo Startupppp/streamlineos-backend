@@ -81,18 +81,16 @@ export class ExternalCalendarSyncService {
         {
           subject: input.title,
           body: input.description ?? undefined,
-          start: { dateTime: input.startIso, timeZone: "UTC" },
-          end: { dateTime: input.endIso, timeZone: "UTC" },
+          start_datetime: input.startIso.slice(0, 19),
+          end_datetime: input.endIso.slice(0, 19),
+          time_zone: "UTC",
           is_online_meeting: input.addConference,
           online_meeting_provider: input.addConference
             ? "teamsForBusiness"
             : undefined,
-          attendees:
+          attendees_info:
             input.attendeeEmails.length > 0
-              ? input.attendeeEmails.map((email) => ({
-                  emailAddress: { address: email },
-                  type: "required",
-                }))
+              ? input.attendeeEmails.map((email) => ({ email }))
               : undefined,
         },
         conn.composioConnectedAccountId,

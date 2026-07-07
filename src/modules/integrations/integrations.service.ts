@@ -67,10 +67,18 @@ export class IntegrationsService {
   }
 
   async finalize(orgId: string, userId: string, connectedAccountId: string) {
-    const account = await this.gateway.getConnectedAccount(connectedAccountId);
-    if (!account.userId || account.userId !== userId) {
+    const account = await this.gateway.getOwnedConnectedAccount(
+      userId,
+      connectedAccountId,
+    );
+    if (!account) {
       throw new ForbiddenException(
         "Connected account does not belong to the current user",
+      );
+    }
+    if (account.status.toUpperCase() !== "ACTIVE") {
+      throw new BadRequestException(
+        "Connection is not active yet. Complete the authorization and try again.",
       );
     }
     const toolkit = this.toToolkit(account.toolkitSlug);
