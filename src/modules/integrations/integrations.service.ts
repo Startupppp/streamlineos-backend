@@ -19,19 +19,19 @@ import { ComposioGateway } from "./composio.gateway";
 
 const CONNECTION_COLUMNS = {
   id: userIntegrationConnections.id,
-  toolkit: userIntegrationConnections.toolkit,
-  accountEmail: userIntegrationConnections.accountEmail,
-  accountLabel: userIntegrationConnections.accountLabel,
   status: userIntegrationConnections.status,
+  toolkit: userIntegrationConnections.toolkit,
   isPrimary: userIntegrationConnections.isPrimary,
   createdAt: userIntegrationConnections.createdAt,
+  accountEmail: userIntegrationConnections.accountEmail,
+  accountLabel: userIntegrationConnections.accountLabel,
 } as const;
 
 const OWNED_CONNECTION_COLUMNS = {
   id: userIntegrationConnections.id,
+  isPrimary: userIntegrationConnections.isPrimary,
   composioConnectedAccountId:
     userIntegrationConnections.composioConnectedAccountId,
-  isPrimary: userIntegrationConnections.isPrimary,
 } as const;
 
 @Injectable()

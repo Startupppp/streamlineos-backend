@@ -18,7 +18,7 @@ function selectChain(rows: unknown[]) {
 }
 
 describe("IntegrationsService", () => {
-  const config = { APP_URL: "http://localhost:1000" } as AppConfig;
+  const config = { APP_URL: "https://app.example.com" } as AppConfig;
 
   it("finalize rejects an account not owned by the caller", async () => {
     const gateway = {
@@ -59,7 +59,7 @@ describe("IntegrationsService", () => {
     expect(gateway.initiateConnection).toHaveBeenCalledWith(
       "user-A",
       "googlecalendar",
-      "http://localhost:1000/calendar",
+      "https://app.example.com/calendar",
     );
   });
 });

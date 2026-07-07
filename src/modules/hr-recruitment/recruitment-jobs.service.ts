@@ -239,7 +239,7 @@ export class RecruitmentJobsService {
     if (!job) throw new NotFoundException("Job posting not found");
     if (!org?.slug) throw new InternalServerErrorException("Organization not configured");
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? "https://app.streamlineos.com";
+    const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
     const baseJobUrl = `${appUrl}/careers/${org.slug}/jobs/${jobId}/apply`;
 
     const shareLinks = SHARE_PLATFORMS.map(({ key, name, baseUrl }) => {

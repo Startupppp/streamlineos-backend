@@ -15,7 +15,7 @@ export class KbWidgetController {
   } {
     return {
       orgId,
-      helpCenterUrl: `https://app.streamlineos.com/help/${orgId}`,
+      helpCenterUrl: `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/help/${orgId}`,
       buttonLabel: "Help",
       primaryColor: "#6366f1",
       position: "bottom-right",
@@ -24,7 +24,7 @@ export class KbWidgetController {
 
   @Get(":orgId/script")
   script(@Param("orgId") orgId: string, @Res() res: Response): void {
-    const helpUrl = `https://app.streamlineos.com/help/${encodeURIComponent(orgId)}`;
+    const helpUrl = `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/help/${encodeURIComponent(orgId)}`;
     const snippet = `(function () {
   if (document.getElementById('sleos-help-widget')) return;
   var btn = document.createElement('button');

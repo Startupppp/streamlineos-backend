@@ -213,9 +213,9 @@ export class OnboardingController {
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "http";
-    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:1000";
-    const appUrl = `${String(protocol)}://${String(host)}`;
+    const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+    const appUrl = host ? `${String(protocol)}://${String(host)}` : (process.env.APP_URL ?? "").replace(/\/$/, "");
     return this.onboarding.sendReminders(u.orgId, appUrl);
   }
 

@@ -31,6 +31,5 @@ export function getSupportEmail(): string {
 }
 
 export function getBrandUrl(): string {
-  const configured = process.env.BRAND_URL?.trim();
-  return (configured || "https://www.streamlineos.in").replace(/\/$/, "");
+  return (process.env.APP_URL?.trim() ?? "").replace(/\/$/, "");
 }

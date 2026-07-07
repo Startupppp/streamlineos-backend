@@ -44,7 +44,7 @@ function toInterviewType(value: string | undefined): InterviewType {
 }
 
 function bookingBaseUrl(): string {
-  return process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://streamlineos.app";
+  return process.env.APP_URL ?? "https://streamlineos.app";
 }
 
 interface InterviewRow {

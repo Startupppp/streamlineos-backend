@@ -85,7 +85,7 @@ export class WebPushService {
   }
 
   private vapidSubject(): string {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+    const appUrl = process.env.APP_URL?.trim();
     if (appUrl?.startsWith("https://")) return appUrl;
 
     const from = process.env.EMAIL_FROM_ADDRESS?.trim();

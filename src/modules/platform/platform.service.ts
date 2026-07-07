@@ -30,7 +30,7 @@ export interface VisitMeta {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inr = (paise: number) => Math.round(paise / 100);
 
-const BRAND_URL = "https://www.streamlineos.in";
+const BRAND_URL = (process.env.APP_URL ?? "").replace(/\/$/, "");
 const BRAND_SUPPORT_EMAIL = "support@streamlineos.in";
 
 const TOPIC_LABEL: Record<string, string> = {

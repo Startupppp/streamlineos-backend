@@ -7,8 +7,8 @@ const schema = z.object({
   BACKEND_JWT_SECRET: z
     .string()
     .min(44, "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)"),
-  CORS_ORIGINS: z.string().default("http://localhost:1000"),
-  APP_URL: z.string().url().default("http://localhost:1000"),
+  CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
+  APP_URL: z.string().url("APP_URL must be a valid URL"),
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   COMPOSIO_API_KEY: z.string().optional(),

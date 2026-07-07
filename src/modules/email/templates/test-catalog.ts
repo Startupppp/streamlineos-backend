@@ -61,7 +61,7 @@ import {
   getOnboardingReminderEmailTemplate,
 } from "./index";
 
-const BASE_URL = process.env.NEXTAUTH_URL ?? "https://streamlineos.app";
+const BASE_URL = process.env.APP_URL ?? "https://streamlineos.app";
 
 export interface TemplateEntry {
   category: string;

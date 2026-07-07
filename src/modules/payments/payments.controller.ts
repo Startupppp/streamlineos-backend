@@ -66,8 +66,8 @@ export class PaymentsController {
 
   private apiBaseUrl(req: Request): string {
     const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
-    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:1000";
-    return `${String(protocol)}://${String(host)}`;
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+    return host ? `${String(protocol)}://${String(host)}` : (process.env.APP_URL ?? "").replace(/\/$/, "");
   }
 
   private actorContext(u: CurrentUserContext, req: Request): ActorContext {

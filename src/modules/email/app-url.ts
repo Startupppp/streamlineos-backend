@@ -1,10 +1,11 @@
 function resolveAppUrl(): string {
-  const configured =
-    process.env.APP_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.NEXTAUTH_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  return "http://localhost:1000";
+  const url = process.env.APP_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "[email] APP_URL is not set. Add APP_URL=https://your-domain.com to the backend environment variables.",
+    );
+  }
+  return url.replace(/\/$/, "");
 }
 
 export const appUrl = resolveAppUrl();
