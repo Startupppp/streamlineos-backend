@@ -15,7 +15,7 @@ export class KbAskController {
 
   @Post("ask")
   @HttpCode(200)
-  @RequirePermission("kb:ai:generate")
+  @RequirePermission("kb:pages:view")
   async askQuestion(
     @Body(new ZodValidationPipe(askSchema)) body: AskInput,
     @CurrentUser() u: CurrentUserContext,
