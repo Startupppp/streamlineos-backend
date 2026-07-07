@@ -12,8 +12,9 @@ import { organizations } from "../auth";
 import { kbArticles } from "./kb";
 import { kbArticleAttachments } from "./kb-attachments";
 import { kbPages } from "../kb/pages";
+import { kbSources } from "../kb/sources";
 
-export const KB_CHUNK_SOURCES = ["article_body", "attachment", "page_body"] as const;
+export const KB_CHUNK_SOURCES = ["article_body", "attachment", "page_body", "source"] as const;
 export type KbChunkSource = (typeof KB_CHUNK_SOURCES)[number];
 
 export const KB_EMBEDDING_DIMENSIONS = 1536;
@@ -31,6 +32,9 @@ export const kbArticleChunks = pgTable(
       () => kbArticleAttachments.id,
       { onDelete: "cascade" },
     ),
+    sourceId: integer("source_id").references(() => kbSources.id, {
+      onDelete: "cascade",
+    }),
     source: text("source").notNull(),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
@@ -45,6 +49,7 @@ export const kbArticleChunks = pgTable(
     index("idx_kb_chunks_article").on(table.articleId),
     index("idx_kb_chunks_org_article").on(table.orgId, table.articleId),
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
+    index("idx_kb_chunks_org_source").on(table.orgId, table.sourceId),
   ],
 );
 
@@ -60,5 +65,9 @@ export const kbArticleChunksRelations = relations(kbArticleChunks, ({ one }) => 
   attachment: one(kbArticleAttachments, {
     fields: [kbArticleChunks.attachmentId],
     references: [kbArticleAttachments.id],
+  }),
+  sourceDocument: one(kbSources, {
+    fields: [kbArticleChunks.sourceId],
+    references: [kbSources.id],
   }),
 }));

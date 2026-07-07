@@ -8,3 +8,4 @@ export * from "./credits";
 export * from "./pages";
 export * from "./page-collab";
 export * from "./governance";
+export * from "./sources";
