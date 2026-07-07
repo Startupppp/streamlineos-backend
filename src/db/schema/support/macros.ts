@@ -55,6 +55,7 @@ export const supportRoutingRules = pgTable(
     setPriority: text("set_priority"),
     assignmentMode: text("assignment_mode").default("static").notNull(),
     candidateAgentIds: jsonb("candidate_agent_ids").$type<string[]>().default([]).notNull(),
+    requiredSkills: jsonb("required_skills").$type<string[]>().default([]).notNull(),
     isEnabled: boolean("is_enabled").default(true).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     createdBy: text("created_by"),

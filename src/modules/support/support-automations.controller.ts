@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AutomationService } from "../automation/automation.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
   createAutomationRuleSchema,
   testAutomationSchema,
@@ -36,7 +37,10 @@ const TICKET_TRIGGER_PREFIX = "ticket.";
 @Controller("support")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportAutomationsController {
-  constructor(private readonly automations: AutomationService) {}
+  constructor(
+    private readonly automations: AutomationService,
+    private readonly audit: SupportSettingsAuditService,
+  ) {}
 
   @Get("automations")
   @RequirePermission("support:settings:manage")
@@ -47,30 +51,36 @@ export class SupportAutomationsController {
   @Post("automations")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
-  createAutomation(
+  async createAutomation(
     @Body(new ZodValidationPipe(createAutomationRuleSchema)) body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!body.triggerEvent.startsWith(TICKET_TRIGGER_PREFIX)) {
       throw new NotFoundException(`Support automations must use a "${TICKET_TRIGGER_PREFIX}*" trigger`);
     }
-    return this.automations.createRule(u.orgId, u.userId, body);
+    const result = await this.automations.createRule(u.orgId, u.userId, body);
+    await this.audit.record(u.orgId, u.userId, "automation", result.id, "created", body);
+    return result;
   }
 
   @Patch("automations/:id")
   @RequirePermission("support:settings:manage")
-  updateAutomation(
+  async updateAutomation(
     @Param("id", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.updateRule(u.orgId, id, body);
+    const result = await this.automations.updateRule(u.orgId, id, body);
+    await this.audit.record(u.orgId, u.userId, "automation", id, "updated", body);
+    return result;
   }
 
   @Delete("automations/:id")
   @RequirePermission("support:settings:manage")
-  deleteAutomation(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.automations.deleteRule(u.orgId, id);
+  async deleteAutomation(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.automations.deleteRule(u.orgId, id);
+    await this.audit.record(u.orgId, u.userId, "automation", id, "deleted");
+    return result;
   }
 
   @Post("automations/:id/test")

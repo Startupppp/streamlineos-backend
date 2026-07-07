@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportMacrosService } from "./support-macros.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const mockDb = {
@@ -17,6 +18,7 @@ const mockDb = {
   delete: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   selectDistinct: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
 };
 
@@ -24,16 +26,24 @@ const mockNotifications = {
   sendEscalationEmail: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockMacros = {
+  applyRoutingRules: jest.fn().mockResolvedValue({}),
+};
+
 describe("SupportSlaService", () => {
   let service: SupportSlaService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.where.mockReturnThis();
+    mockMacros.applyRoutingRules.mockResolvedValue({});
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportSlaService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: SupportNotificationsService, useValue: mockNotifications },
+        { provide: SupportMacrosService, useValue: mockMacros },
       ],
     }).compile();
     service = module.get(SupportSlaService);
@@ -148,19 +158,21 @@ describe("SupportSlaService", () => {
       );
     });
 
-    it("does not re-notify when the ticket's escalation level already covers the current risk", async () => {
+    it("does not re-escalate a still-due-soon ticket that hasn't reached a breach yet", async () => {
       mockDb.query.supportTickets.findMany.mockResolvedValueOnce([
         {
           id: 1,
           title: "Broken checkout",
           status: "OPEN",
+          category: null,
+          priority: "HIGH",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
           assigneeId: "agent1",
           firstRespondedAt: null,
-          firstResponseDueAt: new Date(Date.now() - 1000),
+          firstResponseDueAt: new Date(Date.now() + 30 * 60 * 1000), // still 30m out, due-soon territory
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
           slaPausedAt: null,
-          slaEscalationLevel: 2, // already at the highest level for this risk
+          slaEscalationLevel: 1, // already notified for due-soon
         },
       ]);
 
@@ -168,6 +180,79 @@ describe("SupportSlaService", () => {
 
       expect(result).toEqual({ checked: 1, escalated: 0 });
       expect(mockNotifications.sendEscalationEmail).not.toHaveBeenCalled();
+    });
+
+    it("treats a ticket still breached on a subsequent sweep as a repeat breach: re-notifies the assignee, escalates to managers, and attempts reassignment", async () => {
+      mockDb.query.supportTickets.findMany.mockResolvedValueOnce([
+        {
+          id: 1,
+          title: "Broken checkout",
+          status: "OPEN",
+          category: "billing",
+          priority: "URGENT",
+          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+          assigneeId: "agent1",
+          firstRespondedAt: null,
+          firstResponseDueAt: new Date(Date.now() - 1000),
+          slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
+          slaPausedAt: null,
+          slaEscalationLevel: 2, // already breached on a prior sweep
+        },
+      ]);
+      mockMacros.applyRoutingRules.mockResolvedValueOnce({ assigneeId: "agent2" });
+      // 1st where() call = the auto-reassign UPDATE (stays chainable); 2nd = the managers SELECT (resolves to rows).
+      mockDb.where.mockReturnValueOnce(mockDb);
+      mockDb.where.mockResolvedValueOnce([{ userId: "owner1" }, { userId: "admin1" }]);
+
+      const result = await service.runEscalations("org1");
+
+      expect(result).toEqual({ checked: 1, escalated: 1 });
+      expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "agent1",
+        "Broken checkout",
+        1,
+        "first_response_breached",
+      );
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeId: "agent2" }),
+      );
+      expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "owner1",
+        "Broken checkout",
+        1,
+        "first_response_breached",
+      );
+      expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "admin1",
+        "Broken checkout",
+        1,
+        "first_response_breached",
+      );
+    });
+
+    it("does not reassign on repeat breach when routing rules resolve to the same assignee", async () => {
+      mockDb.query.supportTickets.findMany.mockResolvedValueOnce([
+        {
+          id: 1,
+          title: "Broken checkout",
+          status: "OPEN",
+          category: "billing",
+          priority: "URGENT",
+          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+          assigneeId: "agent1",
+          firstRespondedAt: null,
+          firstResponseDueAt: new Date(Date.now() - 1000),
+          slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
+          slaPausedAt: null,
+          slaEscalationLevel: 2,
+        },
+      ]);
+      mockMacros.applyRoutingRules.mockResolvedValueOnce({ assigneeId: "agent1" });
+      mockDb.where.mockResolvedValueOnce([]);
+
+      await service.runEscalations("org1");
+
+      expect(mockDb.set).not.toHaveBeenCalledWith(expect.objectContaining({ assigneeId: expect.anything() }));
     });
 
     it("skips notification when the ticket has no assignee, but still checks it", async () => {

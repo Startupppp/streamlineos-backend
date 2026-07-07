@@ -8,6 +8,9 @@ const mockDb = {
     supportRoutingRules: { findMany: jest.fn() },
     supportMacros: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     supportTickets: { findFirst: jest.fn() },
+    supportAgentSkills: { findMany: jest.fn().mockResolvedValue([]) },
+    supportAgentAvailability: { findMany: jest.fn().mockResolvedValue([]) },
+    supportVipClients: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     users: { findFirst: jest.fn() },
     organizations: { findFirst: jest.fn() },
   },
@@ -19,8 +22,11 @@ const mockDb = {
   limit: jest.fn().mockResolvedValue([]),
   insert: jest.fn().mockReturnThis(),
   update: jest.fn().mockReturnThis(),
+  delete: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+  onConflictDoUpdate: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([]),
 };
 
@@ -107,6 +113,180 @@ describe("SupportMacrosService — applyRoutingRules assignment modes", () => {
 
     const outcome = await service.applyRoutingRules("org1", { priority: "URGENT" });
     expect(outcome.assigneeId).toBe("agent-b");
+  });
+
+  it("skill_based: filters candidates to those with every required skill, then load-balances among them", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "priority", op: "eq", value: "URGENT" }],
+        assigneeId: null,
+        assignmentMode: "skill_based",
+        candidateAgentIds: ["agent-a", "agent-b", "agent-c"],
+        requiredSkills: ["billing"],
+        setPriority: null,
+      },
+    ]);
+    // only agent-a and agent-c have the "billing" skill
+    mockDb.where.mockResolvedValueOnce([
+      { userId: "agent-a", skill: "billing" },
+      { userId: "agent-c", skill: "billing" },
+    ]);
+    mockDb.groupBy.mockResolvedValueOnce([{ assigneeId: "agent-a", cnt: 5 }]); // agent-c has no rows -> 0
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT" });
+    expect(outcome.assigneeId).toBe("agent-c");
+  });
+
+  it("skill_based: falls back to the full candidate list when nobody has the required skill", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "priority", op: "eq", value: "URGENT" }],
+        assigneeId: null,
+        assignmentMode: "skill_based",
+        candidateAgentIds: ["agent-a", "agent-b"],
+        requiredSkills: ["billing"],
+        setPriority: null,
+      },
+    ]);
+    mockDb.where.mockResolvedValueOnce([]); // nobody has the skill
+    mockDb.groupBy.mockResolvedValueOnce([{ assigneeId: "agent-a", cnt: 3 }]); // agent-b -> 0
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT" });
+    expect(outcome.assigneeId).toBe("agent-b");
+  });
+
+  it("availability_based: filters out unavailable candidates, then load-balances among the rest", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "priority", op: "eq", value: "URGENT" }],
+        assigneeId: null,
+        assignmentMode: "availability_based",
+        candidateAgentIds: ["agent-a", "agent-b"],
+        requiredSkills: [],
+        setPriority: null,
+      },
+    ]);
+    mockDb.where.mockResolvedValueOnce([{ userId: "agent-a", isAvailable: false }]); // agent-b has no row -> available
+    mockDb.groupBy.mockResolvedValueOnce([]);
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT" });
+    expect(outcome.assigneeId).toBe("agent-b");
+  });
+
+  it("availability_based: falls back to the full candidate list when nobody is available", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "priority", op: "eq", value: "URGENT" }],
+        assigneeId: null,
+        assignmentMode: "availability_based",
+        candidateAgentIds: ["agent-a", "agent-b"],
+        requiredSkills: [],
+        setPriority: null,
+      },
+    ]);
+    mockDb.where.mockResolvedValueOnce([
+      { userId: "agent-a", isAvailable: false },
+      { userId: "agent-b", isAvailable: false },
+    ]);
+    mockDb.groupBy.mockResolvedValueOnce([{ assigneeId: "agent-a", cnt: 3 }]); // agent-b -> 0
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT" });
+    expect(outcome.assigneeId).toBe("agent-b");
+  });
+
+  it("matches a rule condition on the isVip field", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "isVip", op: "eq", value: "true" }],
+        assigneeId: "vip-agent",
+        assignmentMode: "static",
+        candidateAgentIds: [],
+        requiredSkills: [],
+        setPriority: null,
+      },
+    ]);
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT", isVip: true });
+    expect(outcome.assigneeId).toBe("vip-agent");
+  });
+
+  it("does not match an isVip rule for a non-VIP ticket", async () => {
+    mockDb.query.supportRoutingRules.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        conditions: [{ field: "isVip", op: "eq", value: "true" }],
+        assigneeId: "vip-agent",
+        assignmentMode: "static",
+        candidateAgentIds: [],
+        requiredSkills: [],
+        setPriority: null,
+      },
+    ]);
+
+    const outcome = await service.applyRoutingRules("org1", { priority: "URGENT", isVip: false });
+    expect(outcome.assigneeId).toBeUndefined();
+  });
+});
+
+describe("SupportMacrosService — agent skills, availability, and VIP clients", () => {
+  let service: SupportMacrosService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockDb.where.mockReturnThis();
+    mockDb.groupBy.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [SupportMacrosService, { provide: DRIZZLE, useValue: mockDb }],
+    }).compile();
+    service = module.get(SupportMacrosService);
+  });
+
+  it("replaces an agent's skills atomically (delete then insert)", async () => {
+    const result = await service.setAgentSkills("org1", "user1", ["billing", "technical"]);
+
+    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skills: ["billing", "technical"] });
+  });
+
+  it("skips the insert step when clearing all skills", async () => {
+    const result = await service.setAgentSkills("org1", "user1", []);
+
+    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skills: [] });
+  });
+
+  it("upserts agent availability", async () => {
+    mockDb.returning.mockResolvedValueOnce([{ userId: "user1", isAvailable: false }]);
+
+    const result = await service.setAgentAvailability("org1", "user1", false);
+
+    expect(result).toEqual({ userId: "user1", isAvailable: false });
+  });
+
+  it("isVipClient returns false for a null/undefined clientId without querying the db", async () => {
+    const result = await service.isVipClient("org1", null);
+    expect(result).toBe(false);
+    expect(mockDb.query.supportVipClients.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("isVipClient returns true when a matching row exists", async () => {
+    mockDb.query.supportVipClients.findFirst.mockResolvedValueOnce({ id: 1 });
+    const result = await service.isVipClient("org1", 42);
+    expect(result).toBe(true);
+  });
+
+  it("isVipClient returns false when no matching row exists", async () => {
+    mockDb.query.supportVipClients.findFirst.mockResolvedValueOnce(undefined);
+    const result = await service.isVipClient("org1", 42);
+    expect(result).toBe(false);
   });
 });
 

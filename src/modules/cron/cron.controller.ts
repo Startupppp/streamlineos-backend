@@ -381,4 +381,26 @@ export class CronController {
       throw new InternalServerErrorException("Internal server error");
     }
   }
+
+  @Get("support-unsnooze")
+  getSupportUnsnooze(@Headers("authorization") authorization?: string) {
+    return this.runSupportUnsnooze(authorization);
+  }
+
+  @Post("support-unsnooze")
+  @HttpCode(200)
+  postSupportUnsnooze(@Headers("authorization") authorization?: string) {
+    return this.runSupportUnsnooze(authorization);
+  }
+
+  private async runSupportUnsnooze(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.support.runUnsnooze();
+      return { success: true, message: `Unsnoozed ${result.unsnoozed} tickets`, ...result };
+    } catch (error) {
+      logger.error("Support unsnooze cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 }

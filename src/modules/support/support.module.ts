@@ -3,6 +3,7 @@ import { KbModule } from "../kb/kb.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { AutomationModule } from "../automation/automation.module";
 import { AiModule } from "../ai/ai.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SupportKbController } from "./support-kb.controller";
 import { SupportMacrosController } from "./support-macros.controller";
 import { SupportWorkspaceController } from "./support-workspace.controller";
@@ -14,6 +15,7 @@ import { SupportAutomationsController } from "./support-automations.controller";
 import { SupportCsatController } from "./support-csat.controller";
 import { SupportAiController } from "./support-ai.controller";
 import { SupportReportsController } from "./support-reports.controller";
+import { SupportCustomFieldsController } from "./support-custom-fields.controller";
 import { SupportTicketsController } from "./support-tickets.controller";
 import { SupportKbService } from "./support-kb.service";
 import { SupportMacrosService } from "./support-macros.service";
@@ -25,11 +27,16 @@ import { SupportChannelsService } from "./support-channels.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportReportsService } from "./support-reports.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportMentionsService } from "./support-mentions.service";
+import { SupportDraftsService } from "./support-drafts.service";
+import { SupportIntegrationsService } from "./support-integrations.service";
 
 @Module({
-  imports: [KbModule, RealtimeModule, AutomationModule, AiModule],
+  imports: [KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
   controllers: [
     SupportKbController,
     SupportMacrosController,
@@ -41,6 +48,7 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportCsatController,
     SupportAiController,
     SupportReportsController,
+    SupportCustomFieldsController,
     SupportPortalController,
     SupportTicketsController,
   ],
@@ -55,9 +63,14 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportCsatService,
     SupportAiService,
     SupportReportsService,
+    SupportCustomFieldsService,
+    SupportSettingsAuditService,
     SupportTicketsService,
     SupportNotificationsService,
+    SupportMentionsService,
+    SupportDraftsService,
+    SupportIntegrationsService,
   ],
-  exports: [SupportSlaService],
+  exports: [SupportSlaService, SupportTicketsService],
 })
 export class SupportModule {}

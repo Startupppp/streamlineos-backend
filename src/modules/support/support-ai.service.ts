@@ -17,11 +17,13 @@ import { LlmService } from "../ai/providers/llm.service";
 import { EmbeddingsService, EMBEDDING_MODEL } from "../ai/providers/embeddings.service";
 import { AiUsageService } from "../ai/services/ai-usage.service";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
+import { redactSensitiveData } from "../ai/redaction.util";
 import { logger } from "../../common/logger/logger.service";
 import type { ResolveAiSuggestionInput } from "./dto/support.schemas";
 
 const AI_FEATURE_NAME = "support.ai";
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.86;
+const ROOT_CAUSE_SIMILARITY_THRESHOLD = 0.75;
 const KB_SIMILARITY_THRESHOLD = 0.2;
 
 const analysisSchema = z.object({
@@ -37,6 +39,22 @@ const macroPickSchema = z.object({
   macroId: z.number().int().nullable().describe("The id of the best-matching macro, or null if none fit well"),
   reason: z.string(),
   confidence: z.number().min(0).max(1),
+});
+
+const translationSchema = z.object({
+  translatedText: z.string(),
+  detectedSourceLanguage: z.string().describe("Best guess at the source language, e.g. 'Spanish'"),
+});
+
+const handoffSummarySchema = z.object({
+  summary: z.string().describe("A 2-4 sentence summary of the ticket for an agent it's being handed off to"),
+  keyPoints: z.array(z.string()).max(6).describe("Short bullet points of what's been tried / decided so far"),
+  suggestedNextStep: z.string().describe("The single most useful next action for the new assignee"),
+});
+
+const rootCauseSchema = z.object({
+  rootCause: z.string().describe("A short (1 sentence) name for the likely shared underlying issue"),
+  summary: z.string().describe("A 1-3 sentence explanation of why these tickets look related"),
 });
 
 type SuggestionType = (typeof supportAiSuggestions.$inferInsert)["type"];
@@ -107,14 +125,14 @@ export class SupportAiService {
 
     const thread = messages
       .filter((m) => !m.isInternal)
-      .map((m) => `- ${m.body}`)
+      .map((m) => `- ${redactSensitiveData(m.body)}`)
       .join("\n");
 
     const system =
       "You are an assistant helping a support team triage tickets. Analyze the ticket below and return " +
       "structured data only. Never invent facts not present in the ticket.";
-    const user = `Title: ${ticket.title}\nCategory: ${ticket.category ?? "none"}\nDescription: ${
-      ticket.description ?? "none"
+    const user = `Title: ${redactSensitiveData(ticket.title)}\nCategory: ${ticket.category ?? "none"}\nDescription: ${
+      redactSensitiveData(ticket.description ?? "none")
     }\n\nConversation so far:\n${thread || "(no replies yet)"}`;
 
     let result: z.infer<typeof analysisSchema>;
@@ -170,11 +188,15 @@ export class SupportAiService {
       columns: { body: true, authorId: true, createdAt: true },
     });
 
-    const thread = messages.map((m) => `${m.authorId ? "Agent" : "Customer"}: ${m.body}`).join("\n\n");
+    const thread = messages
+      .map((m) => `${m.authorId ? "Agent" : "Customer"}: ${redactSensitiveData(m.body)}`)
+      .join("\n\n");
     const system =
       "You draft support-agent replies. Write a helpful, concise, professional reply the agent can review " +
       "and edit before sending. Never claim to have taken an action that hasn't happened.";
-    const user = `Ticket: ${ticket.title}\n\nConversation:\n${thread || ticket.description || "(no messages yet)"}`;
+    const user = `Ticket: ${redactSensitiveData(ticket.title)}\n\nConversation:\n${
+      thread || redactSensitiveData(ticket.description ?? "") || "(no messages yet)"
+    }`;
 
     let body: string;
     try {
@@ -204,10 +226,14 @@ export class SupportAiService {
     });
     if (macros.length === 0) return null;
 
-    const catalog = macros.map((m) => `#${m.id}: ${m.title} — ${m.body.slice(0, 200)}`).join("\n");
+    const catalog = macros
+      .map((m) => `#${m.id}: ${m.title} — ${redactSensitiveData(m.body.slice(0, 200))}`)
+      .join("\n");
     const system =
       "Pick the single macro (canned response) that best fits replying to this ticket. If none are a good fit, return null.";
-    const user = `Ticket: ${ticket.title}\n${ticket.description ?? ""}\n\nAvailable macros:\n${catalog}`;
+    const user = `Ticket: ${redactSensitiveData(ticket.title)}\n${
+      redactSensitiveData(ticket.description ?? "")
+    }\n\nAvailable macros:\n${catalog}`;
 
     let result: z.infer<typeof macroPickSchema>;
     try {
@@ -243,7 +269,7 @@ export class SupportAiService {
     if (!flags.supportAi) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
 
-    const query = `${ticket.title}\n${ticket.description ?? ""}`.trim();
+    const query = redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim());
     const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
     const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
 
@@ -279,7 +305,7 @@ export class SupportAiService {
     if (!flags.supportAi) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
 
-    const text = `${ticket.title}\n${ticket.description ?? ""}`.trim();
+    const text = redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim());
     const vector = await this.embeddings.embedQuery(text);
     const vectorLiteral = this.embeddings.toVectorLiteral(vector);
 
@@ -320,6 +346,164 @@ export class SupportAiService {
       "duplicate",
       { candidateTicketId: best.candidateTicketId, title: best.title },
       best.similarity,
+    );
+  }
+
+  /** On-demand, stateless: translate a single message's body into the requested language. */
+  async translateMessage(orgId: string, ticketId: number, messageId: number, targetLanguage: string) {
+    if (!(await this.isAvailable(orgId))) return null;
+    await this.getTicketOrThrow(orgId, ticketId);
+
+    const message = await this.db.query.supportTicketMessages.findFirst({
+      where: and(eq(supportTicketMessages.id, messageId), eq(supportTicketMessages.ticketId, ticketId)),
+      columns: { body: true },
+    });
+    if (!message) throw new NotFoundException("Message not found");
+
+    const system =
+      "You translate support-ticket messages faithfully, preserving tone and meaning. Return only the " +
+      "translation and your best guess at the source language — never add commentary.";
+    const user = `Translate the following message into ${targetLanguage}:\n\n${redactSensitiveData(message.body)}`;
+
+    let result: z.infer<typeof translationSchema>;
+    try {
+      result = await this.llm.invokeStructured({
+        model: "fast",
+        schema: translationSchema,
+        schemaName: "message_translation",
+        system,
+        user,
+      });
+    } catch (error) {
+      logger.error("support message translation failed", { orgId, ticketId, messageId, error });
+      return null;
+    }
+
+    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    return result;
+  }
+
+  /** On-demand: a condensed briefing for an agent a ticket is being reassigned to. */
+  async generateHandoffSummary(orgId: string, ticketId: number) {
+    if (!(await this.isAvailable(orgId))) return null;
+    const ticket = await this.getTicketOrThrow(orgId, ticketId);
+
+    const messages = await this.db.query.supportTicketMessages.findMany({
+      where: eq(supportTicketMessages.ticketId, ticketId),
+      orderBy: [supportTicketMessages.createdAt],
+      limit: 40,
+      columns: { body: true, isInternal: true, authorId: true },
+    });
+
+    const thread = messages
+      .map((m) => `${m.isInternal ? "Internal note" : m.authorId ? "Agent" : "Customer"}: ${redactSensitiveData(m.body)}`)
+      .join("\n\n");
+
+    const system =
+      "You brief a support agent who is picking up a ticket from a teammate. Be concrete about what's " +
+      "already been tried and what's still unresolved. Never invent facts not present below.";
+    const user = `Ticket: ${redactSensitiveData(ticket.title)}\nStatus: ${ticket.status}\nPriority: ${
+      ticket.priority
+    }\n\nFull history (including internal notes):\n${thread || "(no messages yet)"}`;
+
+    let result: z.infer<typeof handoffSummarySchema>;
+    try {
+      result = await this.llm.invokeStructured({
+        model: "fast",
+        schema: handoffSummarySchema,
+        schemaName: "handoff_summary",
+        system,
+        user,
+      });
+    } catch (error) {
+      logger.error("support handoff summary failed", { orgId, ticketId, error });
+      return null;
+    }
+
+    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    await this.replacePendingSuggestions(orgId, ticketId, ["handoff_summary"]);
+    return this.insertSuggestion(orgId, ticketId, "handoff_summary", { ...result }, null);
+  }
+
+  /**
+   * Finds other open/in-progress tickets similar enough to this one to suggest a shared
+   * root cause (a broader similarity band than findDuplicates(), and requires >=1 match).
+   */
+  async findRootCauseCluster(orgId: string, ticketId: number) {
+    if (!this.embeddings.isConfigured()) return null;
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags.supportAi) return null;
+    const ticket = await this.getTicketOrThrow(orgId, ticketId);
+
+    const text = redactSensitiveData(`${ticket.title}\n${ticket.description ?? ""}`.trim());
+    const vector = await this.embeddings.embedQuery(text);
+    const vectorLiteral = this.embeddings.toVectorLiteral(vector);
+
+    await this.db
+      .insert(supportTicketEmbeddings)
+      .values({ orgId, ticketId, embedding: vector, embeddingModel: EMBEDDING_MODEL })
+      .onConflictDoUpdate({
+        target: supportTicketEmbeddings.ticketId,
+        set: { embedding: vector, embeddingModel: EMBEDDING_MODEL, updatedAt: new Date() },
+      });
+
+    const distance = sql`${supportTicketEmbeddings.embedding} <=> ${vectorLiteral}::vector`;
+    const conditions: SQL[] = [
+      eq(supportTicketEmbeddings.orgId, orgId),
+      ne(supportTicketEmbeddings.ticketId, ticketId),
+      or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS"))!,
+    ];
+
+    const candidates = await this.db
+      .select({
+        candidateTicketId: supportTicketEmbeddings.ticketId,
+        title: supportTickets.title,
+        similarity: sql<number>`(1 - (${distance}))::float8`,
+      })
+      .from(supportTicketEmbeddings)
+      .innerJoin(supportTickets, eq(supportTickets.id, supportTicketEmbeddings.ticketId))
+      .where(and(...conditions))
+      .orderBy(distance)
+      .limit(5);
+
+    const related = candidates.filter((c) => c.similarity >= ROOT_CAUSE_SIMILARITY_THRESHOLD);
+    if (related.length === 0) return null;
+
+    const catalog = [{ title: ticket.title }, ...related.map((r) => ({ title: r.title }))]
+      .map((t, i) => `${i + 1}. ${redactSensitiveData(t.title)}`)
+      .join("\n");
+
+    const system =
+      "You look at a set of similar support tickets and name the likely shared root cause. If they don't " +
+      "actually look related, say so plainly in the summary.";
+    const user = `These tickets were flagged as similar:\n${catalog}`;
+
+    let result: z.infer<typeof rootCauseSchema>;
+    try {
+      result = await this.llm.invokeStructured({
+        model: "fast",
+        schema: rootCauseSchema,
+        schemaName: "root_cause_cluster",
+        system,
+        user,
+      });
+    } catch (error) {
+      logger.error("support root-cause clustering failed", { orgId, ticketId, error });
+      return null;
+    }
+
+    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    await this.replacePendingSuggestions(orgId, ticketId, ["root_cause_cluster"]);
+    return this.insertSuggestion(
+      orgId,
+      ticketId,
+      "root_cause_cluster",
+      {
+        relatedTicketIds: related.map((r) => r.candidateTicketId),
+        rootCause: result.rootCause,
+        summary: result.summary,
+      },
+      related[0].similarity,
     );
   }
 

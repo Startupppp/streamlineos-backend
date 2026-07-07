@@ -10,7 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 const mockDb = {
   query: {
     supportTickets: { findFirst: jest.fn() },
-    supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]) },
+    supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
     supportMacros: { findMany: jest.fn().mockResolvedValue([]) },
     supportAiSuggestions: { findFirst: jest.fn() },
   },
@@ -227,6 +227,104 @@ describe("SupportAiService", () => {
       expect(mockDb.onConflictDoUpdate).toHaveBeenCalled();
       expect(mockDb.values).toHaveBeenCalledWith(
         expect.objectContaining({ type: "duplicate", payload: { candidateTicketId: 10, title: "Can't sign in" } }),
+      );
+    });
+  });
+
+  describe("translateMessage", () => {
+    it("returns null when AI is unavailable", async () => {
+      mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
+      const result = await service.translateMessage("org1", 42, 1, "Spanish");
+      expect(result).toBeNull();
+    });
+
+    it("throws NotFoundException when the message doesn't belong to the ticket", async () => {
+      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      await expect(service.translateMessage("org1", 42, 999, "Spanish")).rejects.toThrow(NotFoundException);
+    });
+
+    it("returns the translated text without persisting a suggestion", async () => {
+      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce({ body: "My login is broken" });
+      mockLlm.invokeStructured.mockResolvedValueOnce({
+        translatedText: "Mi inicio de sesión está roto",
+        detectedSourceLanguage: "English",
+      });
+
+      const result = await service.translateMessage("org1", 42, 1, "Spanish");
+
+      expect(result).toMatchObject({ translatedText: "Mi inicio de sesión está roto" });
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it("returns null gracefully when the LLM call throws", async () => {
+      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce({ body: "hello" });
+      mockLlm.invokeStructured.mockRejectedValueOnce(new Error("provider timeout"));
+      const result = await service.translateMessage("org1", 42, 1, "French");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("generateHandoffSummary", () => {
+    it("returns null when AI is unavailable", async () => {
+      mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
+      const result = await service.generateHandoffSummary("org1", 42);
+      expect(result).toBeNull();
+    });
+
+    it("persists a handoff_summary suggestion", async () => {
+      mockLlm.invokeStructured.mockResolvedValueOnce({
+        summary: "Customer locked out after a password change.",
+        keyPoints: ["Password reset link sent", "Customer says link expired"],
+        suggestedNextStep: "Manually reset the password and confirm 2FA is still enrolled",
+      });
+
+      const result = await service.generateHandoffSummary("org1", 42);
+
+      expect(result).not.toBeNull();
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "handoff_summary",
+          payload: expect.objectContaining({ summary: "Customer locked out after a password change." }),
+        }),
+      );
+    });
+  });
+
+  describe("findRootCauseCluster", () => {
+    it("returns null when embeddings aren't configured", async () => {
+      mockEmbeddings.isConfigured.mockReturnValueOnce(false);
+      const result = await service.findRootCauseCluster("org1", 42);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when no candidate clears the root-cause similarity threshold", async () => {
+      mockDb.limit.mockResolvedValueOnce([{ candidateTicketId: 10, title: "Unrelated", similarity: 0.4 }]);
+      const result = await service.findRootCauseCluster("org1", 42);
+      expect(result).toBeNull();
+      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+    });
+
+    it("persists a root_cause_cluster suggestion when related tickets clear the threshold", async () => {
+      mockDb.limit.mockResolvedValueOnce([
+        { candidateTicketId: 10, title: "Login keeps timing out", similarity: 0.82 },
+        { candidateTicketId: 11, title: "Session expires immediately", similarity: 0.78 },
+      ]);
+      mockLlm.invokeStructured.mockResolvedValueOnce({
+        rootCause: "Session token expiry misconfiguration",
+        summary: "All three tickets describe being logged out immediately after signing in.",
+      });
+
+      const result = await service.findRootCauseCluster("org1", 42);
+
+      expect(result).not.toBeNull();
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "root_cause_cluster",
+          payload: expect.objectContaining({
+            relatedTicketIds: [10, 11],
+            rootCause: "Session token expiry misconfiguration",
+          }),
+        }),
       );
     });
   });

@@ -4,6 +4,9 @@ import {
   supportMacros,
   supportRoutingRules,
   supportTickets,
+  supportAgentSkills,
+  supportAgentAvailability,
+  supportVipClients,
   users,
   organizations,
   type RoutingRuleCondition,
@@ -25,6 +28,7 @@ export interface RoutableTicket {
   category?: string | null;
   description?: string | null;
   priority?: string | null;
+  isVip?: boolean;
 }
 
 export interface RoutingOutcome {
@@ -198,6 +202,9 @@ export class SupportMacrosService {
         conditions: input.conditions,
         assigneeId: input.assigneeId ?? null,
         setPriority: input.setPriority ?? null,
+        assignmentMode: input.assignmentMode,
+        candidateAgentIds: input.candidateAgentIds,
+        requiredSkills: input.requiredSkills,
         isEnabled: input.isEnabled,
         sortOrder: input.sortOrder,
         createdBy: userId,
@@ -242,9 +249,10 @@ export class SupportMacrosService {
 
       const outcome: RoutingOutcome = {};
       const candidates = Array.isArray(rule.candidateAgentIds) ? rule.candidateAgentIds : [];
+      const requiredSkills = Array.isArray(rule.requiredSkills) ? rule.requiredSkills : [];
 
       if (rule.assignmentMode !== "static" && candidates.length > 0) {
-        outcome.assigneeId = await this.resolveAssignmentModeAgent(orgId, rule.assignmentMode, candidates);
+        outcome.assigneeId = await this.resolveAssignmentModeAgent(orgId, rule.assignmentMode, candidates, requiredSkills);
       } else if (rule.assigneeId) {
         outcome.assigneeId = rule.assigneeId;
       }
@@ -256,28 +264,84 @@ export class SupportMacrosService {
     return {};
   }
 
+  private async loadBalance(orgId: string, candidates: string[]): Promise<string> {
+    const workloads = await this.db
+      .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
+      .from(supportTickets)
+      .where(
+        and(
+          eq(supportTickets.orgId, orgId),
+          inArray(supportTickets.assigneeId, candidates),
+          or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
+        ),
+      )
+      .groupBy(supportTickets.assigneeId);
+
+    const workloadMap = new Map(workloads.map((w) => [w.assigneeId, Number(w.cnt)]));
+    return candidates.reduce((least, candidate) =>
+      (workloadMap.get(candidate) ?? 0) < (workloadMap.get(least) ?? 0) ? candidate : least,
+    );
+  }
+
+  /**
+   * Filters candidates down to those who have EVERY skill in requiredSkills.
+   * Falls back to the full candidate list (rather than returning nothing) if
+   * no candidate qualifies — a misconfigured skill requirement shouldn't
+   * leave a ticket unassigned.
+   */
+  private async filterBySkills(candidates: string[], requiredSkills: string[]): Promise<string[]> {
+    if (requiredSkills.length === 0) return candidates;
+
+    const rows = await this.db
+      .select({ userId: supportAgentSkills.userId, skill: supportAgentSkills.skill })
+      .from(supportAgentSkills)
+      .where(and(inArray(supportAgentSkills.userId, candidates), inArray(supportAgentSkills.skill, requiredSkills)));
+
+    const skillsByUser = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const set = skillsByUser.get(row.userId) ?? new Set<string>();
+      set.add(row.skill);
+      skillsByUser.set(row.userId, set);
+    }
+
+    const qualified = candidates.filter((c) => requiredSkills.every((skill) => skillsByUser.get(c)?.has(skill)));
+    return qualified.length > 0 ? qualified : candidates;
+  }
+
+  /**
+   * Filters candidates down to those currently marked available (no row =
+   * available by default). Falls back to the full candidate list if nobody
+   * is available — better to assign someone than leave the ticket unassigned.
+   */
+  private async filterByAvailability(candidates: string[]): Promise<string[]> {
+    const rows = await this.db
+      .select({ userId: supportAgentAvailability.userId, isAvailable: supportAgentAvailability.isAvailable })
+      .from(supportAgentAvailability)
+      .where(inArray(supportAgentAvailability.userId, candidates));
+
+    const availabilityByUser = new Map(rows.map((r) => [r.userId, r.isAvailable]));
+    const available = candidates.filter((c) => availabilityByUser.get(c) ?? true);
+    return available.length > 0 ? available : candidates;
+  }
+
   private async resolveAssignmentModeAgent(
     orgId: string,
     mode: string,
     candidates: string[],
+    requiredSkills: string[],
   ): Promise<string> {
     if (mode === "load_balanced") {
-      const workloads = await this.db
-        .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
-        .from(supportTickets)
-        .where(
-          and(
-            eq(supportTickets.orgId, orgId),
-            inArray(supportTickets.assigneeId, candidates),
-            or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
-          ),
-        )
-        .groupBy(supportTickets.assigneeId);
+      return this.loadBalance(orgId, candidates);
+    }
 
-      const workloadMap = new Map(workloads.map((w) => [w.assigneeId, Number(w.cnt)]));
-      return candidates.reduce((least, candidate) =>
-        (workloadMap.get(candidate) ?? 0) < (workloadMap.get(least) ?? 0) ? candidate : least,
-      );
+    if (mode === "skill_based") {
+      const qualified = await this.filterBySkills(candidates, requiredSkills);
+      return this.loadBalance(orgId, qualified);
+    }
+
+    if (mode === "availability_based") {
+      const available = await this.filterByAvailability(candidates);
+      return this.loadBalance(orgId, available);
     }
 
     // round_robin: use total ticket count for the org as a stateless rotating cursor.
@@ -287,6 +351,62 @@ export class SupportMacrosService {
       .where(eq(supportTickets.orgId, orgId));
     const cursor = Number(totalResult?.cnt ?? 0) % candidates.length;
     return candidates[cursor];
+  }
+
+  async setAgentSkills(orgId: string, userId: string, skills: string[]) {
+    await this.db.delete(supportAgentSkills).where(eq(supportAgentSkills.userId, userId));
+    if (skills.length > 0) {
+      await this.db
+        .insert(supportAgentSkills)
+        .values(skills.map((skill) => ({ orgId, userId, skill })))
+        .onConflictDoNothing();
+    }
+    return { success: true, skills };
+  }
+
+  listAgentSkills(orgId: string) {
+    return this.db.query.supportAgentSkills.findMany({ where: eq(supportAgentSkills.orgId, orgId) });
+  }
+
+  async setAgentAvailability(orgId: string, userId: string, isAvailable: boolean) {
+    const [row] = await this.db
+      .insert(supportAgentAvailability)
+      .values({ orgId, userId, isAvailable })
+      .onConflictDoUpdate({
+        target: supportAgentAvailability.userId,
+        set: { isAvailable, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
+  }
+
+  listAgentAvailability(orgId: string) {
+    return this.db.query.supportAgentAvailability.findMany({ where: eq(supportAgentAvailability.orgId, orgId) });
+  }
+
+  async addVipClient(orgId: string, clientId: number) {
+    await this.db.insert(supportVipClients).values({ orgId, clientId }).onConflictDoNothing();
+    return { success: true };
+  }
+
+  async removeVipClient(orgId: string, clientId: number) {
+    await this.db
+      .delete(supportVipClients)
+      .where(and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)));
+    return { success: true };
+  }
+
+  listVipClients(orgId: string) {
+    return this.db.query.supportVipClients.findMany({ where: eq(supportVipClients.orgId, orgId) });
+  }
+
+  async isVipClient(orgId: string, clientId: number | null | undefined): Promise<boolean> {
+    if (!clientId) return false;
+    const row = await this.db.query.supportVipClients.findFirst({
+      where: and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)),
+      columns: { id: true },
+    });
+    return Boolean(row);
   }
 
   private resolveField(ticket: RoutableTicket, field: string): string | null {
@@ -300,6 +420,8 @@ export class SupportMacrosService {
         return ticket.description ?? null;
       case "priority":
         return ticket.priority ?? null;
+      case "isVip":
+        return ticket.isVip ? "true" : "false";
       default:
         return null;
     }

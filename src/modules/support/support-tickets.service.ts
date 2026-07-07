@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SupportTicketStaleException } from "../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   supportTickets,
   supportTicketMessages,
@@ -15,10 +15,12 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportMentionsService } from "./support-mentions.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
+import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../automation/automation.service";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -28,6 +30,8 @@ import type {
   ListTicketsInput,
   MergeTicketInput,
   ReplyMessageInput,
+  SnoozeTicketInput,
+  SplitTicketInput,
   TicketPriority,
   TicketStatus,
   UpdateTicketInput,
@@ -49,11 +53,11 @@ const ACTION_LABELS: Record<string, string> = {
   merged: "merged the ticket",
   split: "split the ticket",
   linked: "linked a related ticket",
+  snoozed: "snoozed the ticket",
+  unsnoozed: "unsnoozed the ticket",
 };
 
 // Mirrors the `support_activity_action` Postgres enum (db/schema/support/support-activity.ts).
-// "split" is reserved in ACTION_LABELS for a future phase but isn't in the DB enum yet
-// (split itself isn't implemented — see mergeTicket()/addTicketLink() for merged/linked).
 type TicketActivityAction =
   | "created"
   | "status_changed"
@@ -64,7 +68,10 @@ type TicketActivityAction =
   | "resolved"
   | "reopened"
   | "merged"
-  | "linked";
+  | "linked"
+  | "split"
+  | "snoozed"
+  | "unsnoozed";
 
 function isTicketPriority(value: string): value is TicketPriority {
   return (TICKET_PRIORITIES as readonly string[]).includes(value);
@@ -82,6 +89,8 @@ export class SupportTicketsService {
     private readonly automations: AutomationService,
     private readonly csat: SupportCsatService,
     private readonly ai: SupportAiService,
+    private readonly customFields: SupportCustomFieldsService,
+    private readonly mentions: SupportMentionsService,
   ) {}
 
   private buildAutomationPayload(ticket: {
@@ -103,8 +112,8 @@ export class SupportTicketsService {
   }
 
   listTickets(orgId: string, query: ListTicketsQuery) {
-    const { status, priority, assigneeId, queueId, channel, page, limit, scope, userId } = query;
-    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${channel ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
+    const { status, priority, assigneeId, queueId, channel, snoozed, page, limit, scope, userId } = query;
+    const key = `support:tickets:${orgId}:${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${channel ?? ""}:${snoozed ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
     return this.cache.cached(
       key,
       async () => {
@@ -115,6 +124,12 @@ export class SupportTicketsService {
         if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
         if (queueId) conditions.push(eq(supportTickets.queueId, queueId));
         if (channel) conditions.push(eq(supportTickets.sourceChannel, channel));
+        if (snoozed === true) {
+          conditions.push(sql`${supportTickets.snoozedUntil} > now()`);
+        } else if (snoozed === false || snoozed === undefined) {
+          const notSnoozed = or(isNull(supportTickets.snoozedUntil), sql`${supportTickets.snoozedUntil} <= now()`);
+          if (notSnoozed) conditions.push(notSnoozed);
+        }
         if (scope && scope !== "none" && userId) {
           conditions.push(applyScope(scope, userId, { ownerColumn: supportTickets.assigneeId }));
         } else if (scope === "none") {
@@ -171,11 +186,13 @@ export class SupportTicketsService {
     let finalAssigneeId = input.assigneeId;
 
     try {
+      const isVip = await this.macros.isVipClient(orgId, input.clientId ?? null);
       const routing = await this.macros.applyRoutingRules(orgId, {
         title: input.title,
         category: input.category ?? null,
         description: input.description ?? null,
         priority: finalPriority,
+        isVip,
       });
       if (routing.assigneeId && !input.assigneeId) {
         finalAssigneeId = routing.assigneeId;
@@ -215,6 +232,7 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
     await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
+    await this.customFields.setFieldValues(orgId, ticket.id, input.customFields ?? [], true);
 
     void this.automations
       .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
@@ -250,7 +268,8 @@ export class SupportTicketsService {
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    return ticket;
+    const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
+    return { ...ticket, customFieldValues };
   }
 
   async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {
@@ -299,6 +318,9 @@ export class SupportTicketsService {
       .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
 
     await this.logTicketActivity(orgId, ticketId, userId, ticket, input);
+    if (input.customFields) {
+      await this.customFields.setFieldValues(orgId, ticketId, input.customFields, false);
+    }
 
     await this.invalidateTicketCaches(orgId);
 
@@ -434,6 +456,23 @@ export class SupportTicketsService {
     );
 
     void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(() => undefined);
+
+    if (input.isInternal && userId) {
+      void this.db.query.users
+        .findFirst({ where: eq(users.id, userId), columns: { name: true, email: true } })
+        .then((author) =>
+          this.mentions.processMessageMentions({
+            orgId,
+            ticketId,
+            ticketTitle: ticket.title,
+            messageId: message.id,
+            content: input.body,
+            authorId: userId,
+            authorName: author?.name ?? author?.email ?? "A teammate",
+          }),
+        )
+        .catch(() => undefined);
+    }
 
     void this.automations
       .runAutomationsForEvent(orgId, "ticket.message_received", {
@@ -584,6 +623,74 @@ export class SupportTicketsService {
     await this.invalidateTicketCaches(orgId);
 
     return { success: true, mergedIntoTicketId: input.intoTicketId };
+  }
+
+  async snoozeTicket(orgId: string, ticketId: number, userId: string, input: SnoozeTicketInput) {
+    await this.assertTicketExists(orgId, ticketId);
+
+    await this.db
+      .update(supportTickets)
+      .set({ snoozedUntil: input.snoozedUntil, snoozedBy: userId, updatedAt: new Date() })
+      .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+
+    await this.recordActivity(orgId, ticketId, userId, "snoozed", null, input.snoozedUntil.toISOString());
+    await this.invalidateTicketCaches(orgId);
+
+    return { success: true, snoozedUntil: input.snoozedUntil };
+  }
+
+  async unsnoozeTicket(orgId: string, ticketId: number, userId: string) {
+    await this.assertTicketExists(orgId, ticketId);
+
+    await this.db
+      .update(supportTickets)
+      .set({ snoozedUntil: null, snoozedBy: null, updatedAt: new Date() })
+      .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+
+    await this.recordActivity(orgId, ticketId, userId, "unsnoozed", null, null);
+    await this.invalidateTicketCaches(orgId);
+
+    return { success: true };
+  }
+
+  /** Clears expired snoozes across all orgs so tickets reappear once their snooze passes. Called by a cron sweep. */
+  async unsnoozeExpiredTickets(): Promise<{ unsnoozed: number }> {
+    const result = await this.db
+      .update(supportTickets)
+      .set({ snoozedUntil: null, snoozedBy: null, updatedAt: new Date() })
+      .where(sql`${supportTickets.snoozedUntil} IS NOT NULL AND ${supportTickets.snoozedUntil} <= now()`)
+      .returning({ id: supportTickets.id, orgId: supportTickets.orgId });
+
+    const orgIds = new Set(result.map((r) => r.orgId));
+    await Promise.all(Array.from(orgIds).map((orgId) => this.invalidateTicketCaches(orgId)));
+
+    return { unsnoozed: result.length };
+  }
+
+  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput) {
+    const original = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: { id: true, category: true, clientId: true, priority: true, requesterEmail: true, requesterName: true },
+    });
+    if (!original) throw new NotFoundException("Ticket not found");
+
+    const newTicket = await this.createTicket(orgId, userId, {
+      title: input.title,
+      description: input.description,
+      category: original.category ?? undefined,
+      clientId: original.clientId ?? undefined,
+      priority: original.priority,
+    });
+
+    await this.db
+      .insert(supportTicketLinks)
+      .values({ orgId, ticketId: newTicket.id, linkedTicketId: ticketId, relation: "split", createdBy: userId })
+      .onConflictDoNothing();
+
+    await this.recordActivity(orgId, ticketId, userId, "split", null, String(newTicket.id));
+    await this.recordActivity(orgId, newTicket.id, userId, "split", String(ticketId), null);
+
+    return newTicket;
   }
 
   private async assertTicketExists(orgId: string, ticketId: number) {

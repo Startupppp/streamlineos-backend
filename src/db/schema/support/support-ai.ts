@@ -27,6 +27,8 @@ export const supportSuggestionTypeEnum = pgEnum("support_suggestion_type", [
   "macro",
   "kb_article",
   "duplicate",
+  "handoff_summary",
+  "root_cause_cluster",
 ]);
 
 export const supportSuggestionStatusEnum = pgEnum("support_suggestion_status", [

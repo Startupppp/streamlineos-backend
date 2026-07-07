@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -8,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -20,20 +22,30 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { authorize } from "../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
+import { SupportDraftsService } from "./support-drafts.service";
+import { SupportIntegrationsService } from "./support-integrations.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import {
+  createExternalLinkSchema,
   createTicketLinkSchema,
   createTicketSchema,
   listTicketsSchema,
   mergeTicketSchema,
   replyMessageSchema,
+  snoozeTicketSchema,
+  splitTicketSchema,
   updateTicketSchema,
+  upsertDraftSchema,
+  type CreateExternalLinkInput,
   type CreateTicketInput,
   type CreateTicketLinkInput,
   type ListTicketsInput,
   type MergeTicketInput,
   type ReplyMessageInput,
+  type SnoozeTicketInput,
+  type SplitTicketInput,
   type UpdateTicketInput,
+  type UpsertDraftInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -45,6 +57,8 @@ export class SupportTicketsController {
   constructor(
     private readonly tickets: SupportTicketsService,
     private readonly access: AccessService,
+    private readonly drafts: SupportDraftsService,
+    private readonly integrations: SupportIntegrationsService,
   ) {}
 
   @Get()
@@ -154,5 +168,94 @@ export class SupportTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tickets.mergeTicket(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Post(":supportTicketId/snooze")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(200)
+  snoozeTicket(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(snoozeTicketSchema)) body: SnoozeTicketInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.snoozeTicket(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Delete(":supportTicketId/snooze")
+  @RequirePermission("support:tickets:manage")
+  unsnoozeTicket(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.unsnoozeTicket(u.orgId, supportTicketId, u.userId);
+  }
+
+  @Post(":supportTicketId/split")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(201)
+  splitTicket(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(splitTicketSchema)) body: SplitTicketInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.splitTicket(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Get(":supportTicketId/draft")
+  @RequirePermission("support:tickets:view")
+  getDraft(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.drafts.getDraft(u.orgId, supportTicketId, u.userId);
+  }
+
+  @Put(":supportTicketId/draft")
+  @RequirePermission("support:tickets:reply")
+  upsertDraft(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(upsertDraftSchema)) body: UpsertDraftInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Delete(":supportTicketId/draft")
+  @RequirePermission("support:tickets:reply")
+  deleteDraft(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId);
+  }
+
+  @Get(":supportTicketId/external-links")
+  @RequirePermission("support:tickets:view")
+  listExternalLinks(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.listLinks(u.orgId, supportTicketId);
+  }
+
+  @Post(":supportTicketId/external-links")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(201)
+  addExternalLink(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(createExternalLinkSchema)) body: CreateExternalLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.addLink(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Delete(":supportTicketId/external-links/:linkId")
+  @RequirePermission("support:tickets:manage")
+  removeExternalLink(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.removeLink(u.orgId, supportTicketId, linkId);
   }
 }

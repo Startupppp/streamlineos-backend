@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -18,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportMacrosService } from "./support-macros.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
   applyMacroSchema,
   createMacroSchema,
@@ -25,12 +27,18 @@ import {
   listMacrosSchema,
   updateMacroSchema,
   updateRoutingRuleSchema,
+  setAgentSkillsSchema,
+  setAgentAvailabilitySchema,
+  addVipClientSchema,
   type ApplyMacroInput,
   type CreateMacroInput,
   type CreateRoutingRuleInput,
   type ListMacrosInput,
   type UpdateMacroInput,
   type UpdateRoutingRuleInput,
+  type SetAgentSkillsInput,
+  type SetAgentAvailabilityInput,
+  type AddVipClientInput,
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -39,7 +47,10 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
 @Controller("support")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportMacrosController {
-  constructor(private readonly macros: SupportMacrosService) {}
+  constructor(
+    private readonly macros: SupportMacrosService,
+    private readonly audit: SupportSettingsAuditService,
+  ) {}
 
   @Get("macros")
   @UseGuards(PermissionGuard)
@@ -125,31 +136,106 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
-  createRoutingRule(
+  async createRoutingRule(
     @Body(new ZodValidationPipe(createRoutingRuleSchema)) body: CreateRoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.createRoutingRule(u.orgId, u.userId, body);
+    const result = await this.macros.createRoutingRule(u.orgId, u.userId, body);
+    await this.audit.record(u.orgId, u.userId, "routing_rule", result.id, "created", body);
+    return result;
   }
 
   @Patch("routing-rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
-  updateRoutingRule(
+  async updateRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body(new ZodValidationPipe(updateRoutingRuleSchema)) body: UpdateRoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.updateRoutingRule(u.orgId, ruleId, body);
+    const result = await this.macros.updateRoutingRule(u.orgId, ruleId, body);
+    await this.audit.record(u.orgId, u.userId, "routing_rule", ruleId, "updated", body);
+    return result;
   }
 
   @Delete("routing-rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
-  deleteRoutingRule(
+  async deleteRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.deleteRoutingRule(u.orgId, ruleId);
+    const result = await this.macros.deleteRoutingRule(u.orgId, ruleId);
+    await this.audit.record(u.orgId, u.userId, "routing_rule", ruleId, "deleted");
+    return result;
+  }
+
+  @Get("agent-skills")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
+  listAgentSkills(@CurrentUser() u: CurrentUserContext) {
+    return this.macros.listAgentSkills(u.orgId);
+  }
+
+  @Put("agent-skills/:userId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
+  async setAgentSkills(
+    @Param("userId") userId: string,
+    @Body(new ZodValidationPipe(setAgentSkillsSchema)) body: SetAgentSkillsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.macros.setAgentSkills(u.orgId, userId, body.skills);
+    await this.audit.record(u.orgId, u.userId, "agent_skill", userId, "updated", body);
+    return result;
+  }
+
+  @Get("agent-availability")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
+  listAgentAvailability(@CurrentUser() u: CurrentUserContext) {
+    return this.macros.listAgentAvailability(u.orgId);
+  }
+
+  @Put("agent-availability/me")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:tickets:reply")
+  setMyAvailability(
+    @Body(new ZodValidationPipe(setAgentAvailabilitySchema)) body: SetAgentAvailabilityInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.macros.setAgentAvailability(u.orgId, u.userId, body.isAvailable);
+  }
+
+  @Get("vip-clients")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:view")
+  listVipClients(@CurrentUser() u: CurrentUserContext) {
+    return this.macros.listVipClients(u.orgId);
+  }
+
+  @Post("vip-clients")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
+  @HttpCode(201)
+  async addVipClient(
+    @Body(new ZodValidationPipe(addVipClientSchema)) body: AddVipClientInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.macros.addVipClient(u.orgId, body.clientId);
+    await this.audit.record(u.orgId, u.userId, "vip_client", body.clientId, "created");
+    return result;
+  }
+
+  @Delete("vip-clients/:clientId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:macros:manage")
+  async removeVipClient(
+    @Param("clientId", ParseIntPipe) clientId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.macros.removeVipClient(u.orgId, clientId);
+    await this.audit.record(u.orgId, u.userId, "vip_client", clientId, "deleted");
+    return result;
   }
 }

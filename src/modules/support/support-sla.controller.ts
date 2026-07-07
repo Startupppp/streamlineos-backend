@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -17,6 +18,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportSlaService } from "./support-sla.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
+import type { SettingsAuditEntityType } from "../../db/schema";
 import {
   createBusinessHoursSchema,
   createSlaPolicySchema,
@@ -34,7 +37,10 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
 @Controller("support")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportSlaController {
-  constructor(private readonly sla: SupportSlaService) {}
+  constructor(
+    private readonly sla: SupportSlaService,
+    private readonly audit: SupportSettingsAuditService,
+  ) {}
 
   @Get("business-hours")
   @RequirePermission("support:settings:manage")
@@ -45,27 +51,33 @@ export class SupportSlaController {
   @Post("business-hours")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
-  createBusinessHours(
+  async createBusinessHours(
     @Body(new ZodValidationPipe(createBusinessHoursSchema)) body: CreateBusinessHoursInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sla.createBusinessHours(u.orgId, body);
+    const result = await this.sla.createBusinessHours(u.orgId, body);
+    await this.audit.record(u.orgId, u.userId, "business_hours", result.id, "created", body);
+    return result;
   }
 
   @Patch("business-hours/:id")
   @RequirePermission("support:settings:manage")
-  updateBusinessHours(
+  async updateBusinessHours(
     @Param("id", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateBusinessHoursSchema)) body: UpdateBusinessHoursInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sla.updateBusinessHours(u.orgId, id, body);
+    const result = await this.sla.updateBusinessHours(u.orgId, id, body);
+    await this.audit.record(u.orgId, u.userId, "business_hours", id, "updated", body);
+    return result;
   }
 
   @Delete("business-hours/:id")
   @RequirePermission("support:settings:manage")
-  deleteBusinessHours(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sla.deleteBusinessHours(u.orgId, id);
+  async deleteBusinessHours(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.sla.deleteBusinessHours(u.orgId, id);
+    await this.audit.record(u.orgId, u.userId, "business_hours", id, "deleted");
+    return result;
   }
 
   @Get("sla-policies")
@@ -77,27 +89,33 @@ export class SupportSlaController {
   @Post("sla-policies")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
-  createSlaPolicy(
+  async createSlaPolicy(
     @Body(new ZodValidationPipe(createSlaPolicySchema)) body: CreateSlaPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sla.createSlaPolicy(u.orgId, body);
+    const result = await this.sla.createSlaPolicy(u.orgId, body);
+    await this.audit.record(u.orgId, u.userId, "sla_policy", result.id, "created", body);
+    return result;
   }
 
   @Patch("sla-policies/:id")
   @RequirePermission("support:settings:manage")
-  updateSlaPolicy(
+  async updateSlaPolicy(
     @Param("id", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateSlaPolicySchema)) body: UpdateSlaPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sla.updateSlaPolicy(u.orgId, id, body);
+    const result = await this.sla.updateSlaPolicy(u.orgId, id, body);
+    await this.audit.record(u.orgId, u.userId, "sla_policy", id, "updated", body);
+    return result;
   }
 
   @Delete("sla-policies/:id")
   @RequirePermission("support:settings:manage")
-  deleteSlaPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sla.deleteSlaPolicy(u.orgId, id);
+  async deleteSlaPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.sla.deleteSlaPolicy(u.orgId, id);
+    await this.audit.record(u.orgId, u.userId, "sla_policy", id, "deleted");
+    return result;
   }
 
   @Post("sla/run-escalations")
@@ -105,6 +123,15 @@ export class SupportSlaController {
   @HttpCode(200)
   runEscalations(@CurrentUser() u: CurrentUserContext) {
     return this.sla.runEscalations(u.orgId);
+  }
+
+  @Get("settings/audit-log")
+  @RequirePermission("support:settings:manage")
+  listSettingsAuditLog(
+    @Query("entityType") entityType: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.audit.list(u.orgId, entityType as SettingsAuditEntityType | undefined);
   }
 
   @Get(":supportTicketId/risk")

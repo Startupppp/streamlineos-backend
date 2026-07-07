@@ -24,7 +24,12 @@ export class SupportPortalService {
     return this.tickets.createTicket(
       orgId,
       userId,
-      { title: input.title, category: input.category, description: input.description },
+      {
+        title: input.title,
+        category: input.category,
+        description: input.description,
+        customFields: input.customFields,
+      },
       { channel: "portal" },
     );
   }

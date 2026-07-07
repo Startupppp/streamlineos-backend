@@ -21,7 +21,7 @@ describe("Support auth/RBAC (e2e)", () => {
   });
   afterAll(async () => app.close());
 
-  type Method = "get" | "post" | "patch" | "delete";
+  type Method = "get" | "post" | "patch" | "put" | "delete";
 
   function callRoute(method: Method, path: string): request.Test {
     const agent = request(app.getHttpServer());
@@ -32,6 +32,8 @@ describe("Support auth/RBAC (e2e)", () => {
         return agent.post(path);
       case "patch":
         return agent.patch(path);
+      case "put":
+        return agent.put(path);
       case "delete":
         return agent.delete(path);
     }
@@ -123,12 +125,38 @@ describe("Support auth/RBAC (e2e)", () => {
     ["post", "/support/1/ai/suggest-kb-articles"],
     ["post", "/support/1/ai/suggest-reply"],
     ["post", "/support/1/ai/suggest-macro"],
+    ["post", "/support/1/ai/translate"],
+    ["post", "/support/1/ai/handoff-summary"],
+    ["post", "/support/1/ai/root-cause-cluster"],
     ["post", "/support/ai-suggestions/1/resolve"],
     ["get", "/support/reports/overview"],
     ["get", "/support/reports/agent-performance"],
     ["get", "/support/reports/queue-performance"],
     ["get", "/support/reports/channel-performance"],
     ["get", "/support/reports/automation-performance"],
+    ["get", "/support/custom-fields"],
+    ["post", "/support/custom-fields"],
+    ["patch", "/support/custom-fields/1"],
+    ["delete", "/support/custom-fields/1"],
+    ["get", "/support/1/custom-fields"],
+    ["get", "/support/portal/custom-fields"],
+    ["get", "/support/settings/audit-log"],
+    ["get", "/support/agent-skills"],
+    ["put", "/support/agent-skills/user1"],
+    ["get", "/support/agent-availability"],
+    ["put", "/support/agent-availability/me"],
+    ["get", "/support/vip-clients"],
+    ["post", "/support/vip-clients"],
+    ["delete", "/support/vip-clients/1"],
+    ["post", "/support/1/snooze"],
+    ["delete", "/support/1/snooze"],
+    ["post", "/support/1/split"],
+    ["get", "/support/1/draft"],
+    ["put", "/support/1/draft"],
+    ["delete", "/support/1/draft"],
+    ["get", "/support/1/external-links"],
+    ["post", "/support/1/external-links"],
+    ["delete", "/support/1/external-links/1"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -200,6 +228,36 @@ describe("Support auth/RBAC (e2e)", () => {
       .post("/support/macros/1/apply")
       .set("Authorization", `Bearer ${token}`)
       .send({ ticketId: 1 });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/agent-skills/user1 without support:macros:manage", async () => {
+    const token = await signToken({ permissions: ["support:macros:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/agent-skills/user1")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ skills: ["billing"] });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/agent-availability/me without support:tickets:reply", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/agent-availability/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ isAvailable: false });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/vip-clients without support:macros:manage", async () => {
+    const token = await signToken({ permissions: ["support:macros:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/vip-clients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ clientId: 1 });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
@@ -330,6 +388,14 @@ describe("Support auth/RBAC (e2e)", () => {
     { method: "post", path: "/support/1/ai/suggest-macro", permission: "support:tickets:reply" },
     {
       method: "post",
+      path: "/support/1/ai/translate",
+      permission: "support:tickets:view",
+      body: { messageId: 1, targetLanguage: "Spanish" },
+    },
+    { method: "post", path: "/support/1/ai/handoff-summary", permission: "support:tickets:view" },
+    { method: "post", path: "/support/1/ai/root-cause-cluster", permission: "support:tickets:view" },
+    {
+      method: "post",
       path: "/support/ai-suggestions/1/resolve",
       permission: "support:tickets:reply",
       body: { status: "accepted" },
@@ -339,6 +405,18 @@ describe("Support auth/RBAC (e2e)", () => {
     { method: "get", path: "/support/reports/queue-performance", permission: "support:reports:view" },
     { method: "get", path: "/support/reports/channel-performance", permission: "support:reports:view" },
     { method: "get", path: "/support/reports/automation-performance", permission: "support:reports:view" },
+    { method: "get", path: "/support/custom-fields", permission: "support:tickets:view" },
+    {
+      method: "post",
+      path: "/support/custom-fields",
+      permission: "support:settings:manage",
+      body: { key: "order_number", label: "Order #", fieldType: "text" },
+    },
+    { method: "patch", path: "/support/custom-fields/1", permission: "support:settings:manage", body: { label: "x" } },
+    { method: "delete", path: "/support/custom-fields/1", permission: "support:settings:manage" },
+    { method: "get", path: "/support/1/custom-fields", permission: "support:tickets:view" },
+    { method: "get", path: "/support/portal/custom-fields", permission: "support:portal:tickets:create" },
+    { method: "get", path: "/support/settings/audit-log", permission: "support:settings:manage" },
   ];
 
   it.each(ticketPermissionCases)(
@@ -361,6 +439,46 @@ describe("Support auth/RBAC (e2e)", () => {
       .post("/support/1/messages")
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "internal note attempt", isInternal: true });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/snooze without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/snooze")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/split without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/split")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "New split-off issue" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/1/draft without support:tickets:reply", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/1/draft")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ body: "draft text" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/external-links without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/external-links")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ entityType: "project", entityId: 1 });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
@@ -396,6 +514,63 @@ describe("Support auth/RBAC (e2e)", () => {
         .set("X-Webhook-Secret", "wrong-secret")
         .send({ messageId: "abc", fromEmail: "customer@example.com", bodyText: "help" });
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/inbound/whatsapp/:orgId (webhook, no JWT)", () => {
+    it("401 when the webhook secret is missing", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/whatsapp/org_1")
+        .send({ messageId: "wamid.abc", from: "+15551234567", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+
+    it("401 when the webhook secret is wrong", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/whatsapp/org_1")
+        .set("X-Webhook-Secret", "wrong-secret")
+        .send({ messageId: "wamid.abc", from: "+15551234567", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/inbound/sms/:orgId (webhook, no JWT)", () => {
+    it("401 when the webhook secret is missing", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/sms/org_1")
+        .send({ messageId: "SM123", from: "+15559876543", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+
+    it("401 when the webhook secret is wrong", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/inbound/sms/org_1")
+        .set("X-Webhook-Secret", "wrong-secret")
+        .send({ messageId: "SM123", from: "+15559876543", bodyText: "help" });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /support/chat/:orgId/start (public, no JWT)", () => {
+    it("404 when no chat channel is configured for the org, no auth token required", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/chat/org_1/start")
+        .send({ name: "Jane", message: "hi" });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET/POST /support/chat/:orgId/:sessionToken/messages (public, no JWT)", () => {
+    it("404 on GET with an unknown session token", async () => {
+      const res = await request(app.getHttpServer()).get("/support/chat/org_1/not-a-real-token/messages");
+      expect(res.status).toBe(404);
+    });
+
+    it("404 on POST with an unknown session token", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/support/chat/org_1/not-a-real-token/messages")
+        .send({ body: "still there?" });
+      expect(res.status).toBe(404);
     });
   });
 

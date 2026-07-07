@@ -3,12 +3,45 @@ import { z } from "zod";
 export const ticketStatusSchema = z.enum(["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 export const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 
+export const customFieldTypeSchema = z.enum(["text", "number", "select", "checkbox", "date"]);
+
+export const createCustomFieldSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, "Key is required")
+    .max(60)
+    .regex(/^[a-z][a-z0-9_]*$/, "Key must be lowercase snake_case, e.g. order_number"),
+  label: z.string().trim().min(1, "Label is required").max(150),
+  fieldType: customFieldTypeSchema,
+  options: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  required: z.boolean().default(false),
+  category: z.string().trim().max(100).optional(),
+  sortOrder: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
+});
+
+export const updateCustomFieldSchema = z.object({
+  label: z.string().trim().min(1).max(150).optional(),
+  options: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  required: z.boolean().optional(),
+  category: z.string().trim().max(100).nullable().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const customFieldValueSchema = z.object({
+  fieldId: z.number().int().positive(),
+  value: z.string().trim().max(2000).nullable(),
+});
+
 export const listTicketsSchema = z.object({
   status: ticketStatusSchema.optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
   queueId: z.coerce.number().int().positive().optional(),
   channel: z.string().trim().optional(),
+  snoozed: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -28,6 +61,7 @@ export const createTicketSchema = z.object({
   clientId: z.number().optional(),
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 export const updateTicketSchema = z.object({
@@ -36,6 +70,7 @@ export const updateTicketSchema = z.object({
   assigneeId: z.string().optional(),
   queueId: z.number().int().positive().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -116,7 +151,13 @@ const routingConditionSchema = z.object({
   value: z.string().trim().min(1).max(200),
 });
 
-export const assignmentModeSchema = z.enum(["static", "round_robin", "load_balanced"]);
+export const assignmentModeSchema = z.enum([
+  "static",
+  "round_robin",
+  "load_balanced",
+  "skill_based",
+  "availability_based",
+]);
 
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -125,6 +166,7 @@ export const createRoutingRuleSchema = z.object({
   setPriority: ticketPrioritySchema.optional(),
   assignmentMode: assignmentModeSchema.default("static"),
   candidateAgentIds: z.array(z.string().trim().min(1)).max(50).default([]),
+  requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
 });
@@ -136,8 +178,21 @@ export const updateRoutingRuleSchema = z.object({
   setPriority: ticketPrioritySchema.nullable().optional(),
   assignmentMode: assignmentModeSchema.optional(),
   candidateAgentIds: z.array(z.string().trim().min(1)).max(50).optional(),
+  requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+});
+
+export const setAgentSkillsSchema = z.object({
+  skills: z.array(z.string().trim().min(1).max(50)).max(50),
+});
+
+export const setAgentAvailabilitySchema = z.object({
+  isAvailable: z.boolean(),
+});
+
+export const addVipClientSchema = z.object({
+  clientId: z.coerce.number().int().positive(),
 });
 
 export const createQueueSchema = z.object({
@@ -177,7 +232,7 @@ export const createTagSchema = z.object({
   color: z.string().trim().max(20).optional(),
 });
 
-export const ticketLinkRelationSchema = z.enum(["duplicate", "related"]);
+export const ticketLinkRelationSchema = z.enum(["duplicate", "related", "split"]);
 
 export const createTicketLinkSchema = z.object({
   linkedTicketId: z.number().int().positive(),
@@ -186,6 +241,31 @@ export const createTicketLinkSchema = z.object({
 
 export const mergeTicketSchema = z.object({
   intoTicketId: z.number().int().positive(),
+});
+
+export const snoozeTicketSchema = z.object({
+  snoozedUntil: z.coerce.date().refine((d) => d.getTime() > Date.now(), "Snooze date must be in the future"),
+});
+
+export const externalEntityTypeSchema = z.enum(["project", "invoice", "calendar_event", "chat_channel"]);
+
+export const createExternalLinkSchema = z.object({
+  entityType: externalEntityTypeSchema,
+  entityId: z.number().int().positive(),
+});
+
+export const splitTicketSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(5, "Title must be at least 5 characters")
+    .max(150, "Title must be at most 150 characters"),
+  description: z.string().max(5000).optional(),
+});
+
+export const upsertDraftSchema = z.object({
+  body: z.string().max(10000),
+  isInternal: z.boolean().default(false),
 });
 
 const weekdayScheduleSchema = z.object({
@@ -273,6 +353,7 @@ export const createPortalTicketSchema = z.object({
     )
     .max(5)
     .optional(),
+  customFields: z.array(customFieldValueSchema).max(50).optional(),
 });
 
 export const createPortalMessageSchema = z.object({
@@ -323,6 +404,30 @@ export const inboundEmailSchema = z.object({
     )
     .max(10)
     .optional(),
+});
+
+export const inboundWhatsAppSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  inReplyTo: z.string().trim().max(998).optional(),
+  from: z.string().trim().min(1, "from is required").max(32),
+  fromName: z.string().trim().max(200).optional(),
+  bodyText: z.string().max(4096),
+});
+
+export const inboundSmsSchema = z.object({
+  messageId: z.string().trim().min(1, "messageId is required").max(998),
+  from: z.string().trim().min(1, "from is required").max(32),
+  bodyText: z.string().max(1600),
+});
+
+export const startChatSessionSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  email: z.string().trim().email().max(320).optional(),
+  message: z.string().trim().min(1, "Message is required").max(4000),
+});
+
+export const sendChatMessageSchema = z.object({
+  body: z.string().trim().min(1, "Message is required").max(4000),
 });
 
 export const createKbCategorySchema = z.object({
@@ -413,6 +518,9 @@ export const submitCsatSchema = z.object({
 });
 export type SubmitCsatInput = z.infer<typeof submitCsatSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
+export type SetAgentSkillsInput = z.infer<typeof setAgentSkillsSchema>;
+export type SetAgentAvailabilityInput = z.infer<typeof setAgentAvailabilitySchema>;
+export type AddVipClientInput = z.infer<typeof addVipClientSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
 export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;
 export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;
@@ -423,6 +531,10 @@ export type CreatePortalMessageInput = z.infer<typeof createPortalMessageSchema>
 export type CreateSupportChannelInput = z.infer<typeof createSupportChannelSchema>;
 export type UpdateSupportChannelInput = z.infer<typeof updateSupportChannelSchema>;
 export type InboundEmailInput = z.infer<typeof inboundEmailSchema>;
+export type InboundWhatsAppInput = z.infer<typeof inboundWhatsAppSchema>;
+export type InboundSmsInput = z.infer<typeof inboundSmsSchema>;
+export type StartChatSessionInput = z.infer<typeof startChatSessionSchema>;
+export type SendChatMessageInput = z.infer<typeof sendChatMessageSchema>;
 export type CreateQueueInput = z.infer<typeof createQueueSchema>;
 export type UpdateQueueInput = z.infer<typeof updateQueueSchema>;
 export type CreateSavedViewInput = z.infer<typeof createSavedViewSchema>;
@@ -430,6 +542,10 @@ export type UpdateSavedViewInput = z.infer<typeof updateSavedViewSchema>;
 export type CreateTagInput = z.infer<typeof createTagSchema>;
 export type CreateTicketLinkInput = z.infer<typeof createTicketLinkSchema>;
 export type MergeTicketInput = z.infer<typeof mergeTicketSchema>;
+export type CreateExternalLinkInput = z.infer<typeof createExternalLinkSchema>;
+export type SnoozeTicketInput = z.infer<typeof snoozeTicketSchema>;
+export type SplitTicketInput = z.infer<typeof splitTicketSchema>;
+export type UpsertDraftInput = z.infer<typeof upsertDraftSchema>;
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;
 export type UpdateKbCategoryInput = z.infer<typeof updateKbCategorySchema>;
 export type ListKbArticlesInput = z.infer<typeof listKbArticlesSchema>;
@@ -450,6 +566,12 @@ export const resolveAiSuggestionSchema = z.object({
 });
 export type ResolveAiSuggestionInput = z.infer<typeof resolveAiSuggestionSchema>;
 
+export const translateMessageSchema = z.object({
+  messageId: z.number().int().positive(),
+  targetLanguage: z.string().trim().min(2).max(50),
+});
+export type TranslateMessageInput = z.infer<typeof translateMessageSchema>;
+
 export const supportReportFiltersSchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
@@ -458,3 +580,7 @@ export const supportReportFiltersSchema = z.object({
   channel: z.string().trim().optional(),
 });
 export type SupportReportFiltersInput = z.infer<typeof supportReportFiltersSchema>;
+
+export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
+export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;
+export type CustomFieldValueInput = z.infer<typeof customFieldValueSchema>;
