@@ -3,6 +3,7 @@ import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
+  ticketActivityLog,
   ticketAssignees,
   ticketAttachments,
   ticketComments,
@@ -185,6 +186,13 @@ export class ProjectsTicketsService {
       await tx.insert(ticketWatchers).values(
         Array.from(watcherIds).map((userId) => ({ ticketId: created.id, userId })),
       );
+
+      await tx.insert(ticketActivityLog).values({
+        orgId: u.orgId,
+        ticketId: created.id,
+        userId: u.userId,
+        action: "created",
+      });
 
       return [created];
     });

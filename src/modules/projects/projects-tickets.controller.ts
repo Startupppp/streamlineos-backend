@@ -29,6 +29,7 @@ import {
   createTicketSchema,
   reorderSchema,
   searchTicketsQuerySchema,
+  ticketActivityQuerySchema,
   ticketsListQuerySchema,
   updateCommentSchema,
   updateTicketSchema,
@@ -41,6 +42,7 @@ import {
   type CreateTicketInput,
   type ReorderInput,
   type SearchTicketsQuery,
+  type TicketActivityQuery,
   type TicketsListQuery,
   type UpdateCommentInput,
   type UpdateTicketInput,
@@ -128,9 +130,13 @@ export class ProjectsTicketsController {
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Query(new ZodValidationPipe(ticketActivityQuerySchema)) query: TicketActivityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getActivity(u.orgId, projectId, ticketId);
+    return this.subresources.getActivity(u.orgId, projectId, ticketId, {
+      limit: query.limit,
+      before: query.before,
+    });
   }
 
   @Post(":projectId/tickets/:ticketId/comments")
@@ -258,7 +264,7 @@ export class ProjectsTicketsController {
     @Body(new ZodValidationPipe(addLabelSchema)) body: AddLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addLabel(u.orgId, ticketId, body);
+    return this.subresources.addLabel(u.orgId, u.userId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
@@ -268,7 +274,7 @@ export class ProjectsTicketsController {
     @Param("labelId", ParseIntPipe) labelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeLabel(u.orgId, ticketId, labelId);
+    return this.subresources.removeLabel(u.orgId, u.userId, ticketId, labelId);
   }
 
   @Post(":projectId/tickets/:ticketId/attachments")

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import {
   gitTicketLinks,
   projectMembers,
@@ -16,6 +16,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
@@ -30,6 +31,8 @@ const ACTION_LABELS: Record<string, string> = {
   sprint_changed: "changed sprint",
   due_date_changed: "changed due date",
   comment_added: "added a comment",
+  comment_updated: "edited a comment",
+  comment_deleted: "deleted a comment",
   label_changed: "changed labels",
 };
 
@@ -73,12 +76,23 @@ export class ProjectsTicketSubresourcesService {
     return this.comments.getCommentReactions(commentId);
   }
 
-  async getActivity(orgId: string, projectId: number, ticketId: number) {
+  async getActivity(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    opts: { limit: number; before?: number },
+  ) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
+
+    const conditions = [
+      eq(ticketActivityLog.ticketId, ticketId),
+      eq(ticketActivityLog.orgId, orgId),
+    ];
+    if (opts.before !== undefined) conditions.push(lt(ticketActivityLog.id, opts.before));
 
     const rows = await this.db
       .select({
@@ -95,8 +109,9 @@ export class ProjectsTicketSubresourcesService {
       })
       .from(ticketActivityLog)
       .leftJoin(users, eq(users.id, ticketActivityLog.userId))
-      .where(and(eq(ticketActivityLog.ticketId, ticketId), eq(ticketActivityLog.orgId, orgId)))
-      .orderBy(desc(ticketActivityLog.createdAt), desc(ticketActivityLog.id));
+      .where(and(...conditions))
+      .orderBy(desc(ticketActivityLog.id))
+      .limit(opts.limit);
 
     return rows.map((row) => {
       const fallbackName = `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
@@ -221,21 +236,33 @@ export class ProjectsTicketSubresourcesService {
     return { success: true };
   }
 
-  async addLabel(orgId: string, ticketId: number, body: AddLabelInput) {
+  async addLabel(orgId: string, userId: string, ticketId: number, body: AddLabelInput) {
     await this.requireTicket(orgId, ticketId);
-    await this.db
+    const [mapping] = await this.db
       .insert(ticketLabelMappings)
       .values({ ticketId, labelId: body.labelId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: ticketLabelMappings.id });
+    if (mapping) await this.logLabelChange(orgId, ticketId, userId);
     return { success: true };
   }
 
-  async removeLabel(orgId: string, ticketId: number, labelId: number) {
+  async removeLabel(orgId: string, userId: string, ticketId: number, labelId: number) {
     await this.requireTicket(orgId, ticketId);
-    await this.db
+    const deleted = await this.db
       .delete(ticketLabelMappings)
-      .where(and(eq(ticketLabelMappings.ticketId, ticketId), eq(ticketLabelMappings.labelId, labelId)));
+      .where(and(eq(ticketLabelMappings.ticketId, ticketId), eq(ticketLabelMappings.labelId, labelId)))
+      .returning({ id: ticketLabelMappings.id });
+    if (deleted.length > 0) await this.logLabelChange(orgId, ticketId, userId);
     return { success: true };
+  }
+
+  private async logLabelChange(orgId: string, ticketId: number, userId: string): Promise<void> {
+    try {
+      await this.activity.logTicketActivity(orgId, ticketId, userId, "label_changed");
+    } catch (error) {
+      logger.error("Failed to log label activity", { error });
+    }
   }
 
   async addAttachment(u: CurrentUserContext, ticketId: number, body: AttachmentInput) {
