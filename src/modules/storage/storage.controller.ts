@@ -52,7 +52,7 @@ export class StorageController {
   ) {}
 
   @Post("upload")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,

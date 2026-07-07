@@ -80,7 +80,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Post("resume-parse")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
   async resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,

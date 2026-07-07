@@ -34,7 +34,7 @@ export class OnboardingDocumentsController {
 
   @Post("documents")
   @HttpCode(201)
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("type") typeField: unknown,

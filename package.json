@@ -4,9 +4,9 @@
   "private": true,
   "packageManager": "pnpm@10.18.0",
   "scripts": {
-    "build": "nest build",
+    "build": "node --max-old-space-size=8192 ./node_modules/@nestjs/cli/bin/nest.js build",
     "typecheck": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.build.json",
-    "start": "nest start",
+    "start": "node --max-old-space-size=8192 ./node_modules/@nestjs/cli/bin/nest.js start",
     "start:dev": "node --max-old-space-size=8192 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --builder swc --watch",
     "start:prod": "node --max-old-space-size=8192 dist/main.js",
     "db:push": "drizzle-kit push --config drizzle.config.ts",
@@ -20,7 +20,7 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./jest-e2e.json",
-    "test:e2e:support": "NODE_OPTIONS=--max-old-space-size=6144 jest --config ./jest-e2e.json --runInBand --testPathPattern=support"
+    "test:e2e:support": "node --max-old-space-size=6144 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --testPathPattern=support"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.76",
@@ -105,6 +105,7 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
+    "workerIdleMemoryLimit": "1GB",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/$1"
     }
