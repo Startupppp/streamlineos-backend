@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, Res,
 } from "@nestjs/common";
-import { Response } from "express";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";

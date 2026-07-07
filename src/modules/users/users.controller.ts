@@ -1,7 +1,7 @@
 import {
   Controller, Get, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
 } from "@nestjs/common";
-import { Response } from "express";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
