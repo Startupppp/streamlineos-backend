@@ -19,6 +19,7 @@ export interface OrgFeatureFlags {
   aiEmailDraft: boolean;
   aiSmartNotifications: boolean;
   aiWeeklyRecap: boolean;
+  supportAi: boolean;
 }
 
 const DEFAULT_FEATURE_FLAGS: OrgFeatureFlags = {
@@ -27,6 +28,7 @@ const DEFAULT_FEATURE_FLAGS: OrgFeatureFlags = {
   aiEmailDraft: true,
   aiSmartNotifications: true,
   aiWeeklyRecap: true,
+  supportAi: true,
 };
 
 export function generateWebhookSecret(): string {
@@ -63,5 +65,6 @@ export function parseOrgFeatureFlags(
     aiEmailDraft: features.aiEmailDraft ?? DEFAULT_FEATURE_FLAGS.aiEmailDraft,
     aiSmartNotifications: features.aiSmartNotifications ?? DEFAULT_FEATURE_FLAGS.aiSmartNotifications,
     aiWeeklyRecap: features.aiWeeklyRecap ?? DEFAULT_FEATURE_FLAGS.aiWeeklyRecap,
+    supportAi: features.supportAi ?? DEFAULT_FEATURE_FLAGS.supportAi,
   };
 }

@@ -340,6 +340,23 @@ export class SupportSlaService {
 
     return { checked: tickets.length, escalated };
   }
+
+  /** Cron entrypoint — sweeps every org with at least one open ticket, not just the caller's own. */
+  async runEscalationsForAllOrgs(): Promise<{ orgsProcessed: number; checked: number; escalated: number }> {
+    const orgs = await this.db
+      .selectDistinct({ orgId: supportTickets.orgId })
+      .from(supportTickets)
+      .where(notInArray(supportTickets.status, ["RESOLVED", "CLOSED"]));
+
+    let checked = 0;
+    let escalated = 0;
+    for (const { orgId } of orgs) {
+      const result = await this.runEscalations(orgId);
+      checked += result.checked;
+      escalated += result.escalated;
+    }
+    return { orgsProcessed: orgs.length, checked, escalated };
+  }
 }
 
 function riskToEscalationLevel(risk: SlaRiskLevel): number {

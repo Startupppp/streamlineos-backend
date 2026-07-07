@@ -58,5 +58,6 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportTicketsService,
     SupportNotificationsService,
   ],
+  exports: [SupportSlaService],
 })
 export class SupportModule {}
