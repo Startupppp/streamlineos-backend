@@ -7,6 +7,7 @@ const mockDb = {
   query: {
     supportCsatRequests: { findFirst: jest.fn(), findMany: jest.fn() },
     supportTickets: { findFirst: jest.fn() },
+    csatSurveys: { findMany: jest.fn().mockResolvedValue([]) },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -15,6 +16,9 @@ const mockDb = {
   set: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1, score: 5 }]),
+  select: jest.fn().mockReturnThis(),
+  from: jest.fn().mockReturnThis(),
+  innerJoin: jest.fn().mockReturnThis(),
 };
 
 describe("SupportCsatService", () => {
@@ -86,7 +90,13 @@ describe("SupportCsatService", () => {
 
       const report = await service.getReport("org1");
 
-      expect(report).toEqual({
+      expect(report).toMatchObject({
+        totalRequests: 4,
+        totalResponses: 2,
+        responseRate: 0.5,
+        averageScore: 4,
+      });
+      expect(report.sources.ticket).toMatchObject({
         totalRequests: 4,
         totalResponses: 2,
         responseRate: 0.5,
@@ -101,6 +111,48 @@ describe("SupportCsatService", () => {
 
       expect(report.averageScore).toBeNull();
       expect(report.responseRate).toBe(0);
+    });
+
+    it("excludes the general surveys module explicitly, with a reason, rather than silently omitting it", async () => {
+      mockDb.query.supportCsatRequests.findMany.mockResolvedValueOnce([]);
+
+      const report = await service.getReport("org1");
+
+      expect(report.sources.generalSurveys).toMatchObject({ excluded: true });
+      expect(report.sources.generalSurveys.reason).toContain("normalized satisfaction rating");
+    });
+
+    it("returns null crmCampaigns when the org has no CRM CSAT campaigns at all", async () => {
+      mockDb.query.supportCsatRequests.findMany.mockResolvedValueOnce([]);
+      mockDb.query.csatSurveys.findMany.mockResolvedValueOnce([]);
+
+      const report = await service.getReport("org1");
+
+      expect(report.sources.crmCampaigns).toBeNull();
+    });
+
+    it("reports zero responses distinctly from no campaigns at all", async () => {
+      mockDb.query.supportCsatRequests.findMany.mockResolvedValueOnce([]);
+      mockDb.query.csatSurveys.findMany.mockResolvedValueOnce([{ id: 1 }]);
+      mockDb.where.mockResolvedValueOnce([]);
+
+      const report = await service.getReport("org1");
+
+      expect(report.sources.crmCampaigns).toEqual({ totalSurveys: 1, totalResponses: 0, averageScore: null });
+    });
+
+    it("normalizes crmCampaigns ratings onto the same 1-5 scale as ticket CSAT before averaging", async () => {
+      mockDb.query.supportCsatRequests.findMany.mockResolvedValueOnce([]);
+      mockDb.query.csatSurveys.findMany.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
+      // a 10-point-scale survey rated 8/10 (=4/5) and a 5-point-scale survey rated 5/5 (=5/5)
+      mockDb.where.mockResolvedValueOnce([
+        { rating: 8, scaleMax: 10 },
+        { rating: 5, scaleMax: 5 },
+      ]);
+
+      const report = await service.getReport("org1");
+
+      expect(report.sources.crmCampaigns).toEqual({ totalSurveys: 2, totalResponses: 2, averageScore: 4.5 });
     });
   });
 });

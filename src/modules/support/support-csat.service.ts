@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { supportCsatRequests, supportTickets } from "../../db/schema";
+import { supportCsatRequests, supportTickets, csatSurveys, csatResponses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { SubmitCsatInput } from "./dto/support.schemas";
@@ -43,6 +43,17 @@ export class SupportCsatService {
     return { success: true, score: updated.score };
   }
 
+  /**
+   * StreamlineOS has three independent CSAT-adjacent systems (a known "extend, don't
+   * duplicate" miss): this per-ticket auto-CSAT flow, the generic campaign-style `csat`
+   * module (client-scoped, no ticket linkage), and the general-purpose `surveys` module
+   * (no ticket/client linkage, no normalized rating semantics). Rather than a risky data
+   * migration onto one schema, this report surfaces all comparable sources side by side —
+   * `sources.crmCampaigns` normalizes each survey's `rating/scaleMax` onto the same 1-5
+   * scale as ticket CSAT so the two averages are actually comparable. The general `surveys`
+   * module is deliberately excluded (see `sources.generalSurveys.reason`) rather than
+   * silently blended in, since its `score` isn't a guaranteed satisfaction rating.
+   */
   async getReport(orgId: string) {
     const rows = await this.db.query.supportCsatRequests.findMany({
       where: and(eq(supportCsatRequests.orgId, orgId)),
@@ -50,12 +61,54 @@ export class SupportCsatService {
     });
     const responded = rows.filter((r) => r.score !== null);
     const average = responded.length > 0 ? responded.reduce((sum, r) => sum + (r.score ?? 0), 0) / responded.length : null;
-    return {
+    const ticketCsat = {
       totalRequests: rows.length,
       totalResponses: responded.length,
       responseRate: rows.length > 0 ? responded.length / rows.length : 0,
       averageScore: average,
     };
+
+    const crmCampaigns = await this.getCrmCampaignCsat(orgId);
+
+    return {
+      ...ticketCsat,
+      sources: {
+        ticket: ticketCsat,
+        crmCampaigns,
+        generalSurveys: {
+          excluded: true as const,
+          reason:
+            "Survey scores in the general surveys module aren't a normalized satisfaction rating (NPS/quiz/lead-qualification scoring varies per survey) and have no ticket or client linkage, so they can't be meaningfully compared here.",
+        },
+      },
+    };
+  }
+
+  /** Client-scoped, not ticket-scoped — the generic csat module has no ticketId at all. */
+  private async getCrmCampaignCsat(orgId: string) {
+    const [surveys, responses] = await Promise.all([
+      this.db.query.csatSurveys.findMany({
+        where: eq(csatSurveys.orgId, orgId),
+        columns: { id: true },
+      }),
+      this.db
+        .select({ rating: csatResponses.rating, scaleMax: csatSurveys.scaleMax })
+        .from(csatResponses)
+        .innerJoin(csatSurveys, eq(csatSurveys.id, csatResponses.surveyId))
+        .where(eq(csatResponses.orgId, orgId)),
+    ]);
+
+    if (surveys.length === 0) return null;
+    if (responses.length === 0) {
+      return { totalSurveys: surveys.length, totalResponses: 0, averageScore: null };
+    }
+
+    // Normalize each response onto the same 1-5 scale as ticket CSAT before averaging,
+    // since scaleMax is configurable per survey (default 5, but not guaranteed).
+    const normalized = responses.map((r) => (r.rating / r.scaleMax) * 5);
+    const averageScore = normalized.reduce((sum, n) => sum + n, 0) / normalized.length;
+
+    return { totalSurveys: surveys.length, totalResponses: responses.length, averageScore };
   }
 
   private async assertTicketInOrg(orgId: string, ticketId: number) {
