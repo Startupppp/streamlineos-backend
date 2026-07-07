@@ -85,6 +85,8 @@ const automationTriggerSchema = z.enum([
   "ticket.assigned",
   "ticket.status_changed",
   "ticket.escalated",
+  "ticket.priority_changed",
+  "ticket.message_received",
   "invoice.overdue",
   "invoice.paid",
   "candidate.application_created",
@@ -165,6 +167,30 @@ const automationActionSchema = z.discriminatedUnion("type", [
     type: z.literal("webhook"),
     config: z.object({
       event: z.string().min(1),
+    }),
+  }),
+  z.object({
+    type: z.literal("support_assign_ticket"),
+    config: z.object({
+      assigneeId: z.string().min(1),
+    }),
+  }),
+  z.object({
+    type: z.literal("support_set_priority"),
+    config: z.object({
+      priority: z.string().min(1),
+    }),
+  }),
+  z.object({
+    type: z.literal("support_add_tag"),
+    config: z.object({
+      tagId: z.number().int().positive(),
+    }),
+  }),
+  z.object({
+    type: z.literal("support_internal_note"),
+    config: z.object({
+      body: z.string().min(1),
     }),
   }),
 ]);
