@@ -558,6 +558,12 @@ export const resolveAiSuggestionSchema = z.object({
 });
 export type ResolveAiSuggestionInput = z.infer<typeof resolveAiSuggestionSchema>;
 
+export const translateMessageSchema = z.object({
+  messageId: z.number().int().positive(),
+  targetLanguage: z.string().trim().min(2).max(50),
+});
+export type TranslateMessageInput = z.infer<typeof translateMessageSchema>;
+
 export const supportReportFiltersSchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
