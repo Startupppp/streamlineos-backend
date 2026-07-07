@@ -173,6 +173,51 @@ export class KbIndexingService {
       .where(and(eq(kbArticleChunks.pageId, pageId), eq(kbArticleChunks.orgId, orgId)));
   }
 
+  async indexSource(orgId: string, sourceId: number, text: string): Promise<number> {
+    if (!this.embeddings.isConfigured()) return 0;
+    const chunks = this.chunkText(text);
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.sourceId, sourceId),
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "source"),
+          ),
+        );
+
+      if (chunks.length === 0) return;
+
+      const embeddings = await Promise.all(chunks.map((c) => this.embeddings.embedQuery(c)));
+
+      const valuesToInsert = chunks.map((chunk, index) => ({
+        orgId,
+        articleId: null,
+        pageId: null,
+        attachmentId: null,
+        sourceId,
+        source: "source" as const,
+        chunkIndex: index,
+        content: chunk,
+        tokens: Math.ceil(chunk.length / 4),
+        embedding: embeddings[index],
+        embeddingModel: EMBEDDING_MODEL,
+      }));
+
+      await tx.insert(kbArticleChunks).values(valuesToInsert);
+    });
+
+    return chunks.length;
+  }
+
+  async removeSourceChunks(orgId: string, sourceId: number): Promise<void> {
+    await this.db
+      .delete(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.sourceId, sourceId), eq(kbArticleChunks.orgId, orgId)));
+  }
+
   private async streamToBuffer(stream: Readable): Promise<Buffer> {
     const chunks: Buffer[] = [];
     for await (const chunk of stream) {
