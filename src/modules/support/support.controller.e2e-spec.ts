@@ -21,7 +21,7 @@ describe("Support auth/RBAC (e2e)", () => {
   });
   afterAll(async () => app.close());
 
-  type Method = "get" | "post" | "patch" | "delete";
+  type Method = "get" | "post" | "patch" | "put" | "delete";
 
   function callRoute(method: Method, path: string): request.Test {
     const agent = request(app.getHttpServer());
@@ -32,6 +32,8 @@ describe("Support auth/RBAC (e2e)", () => {
         return agent.post(path);
       case "patch":
         return agent.patch(path);
+      case "put":
+        return agent.put(path);
       case "delete":
         return agent.delete(path);
     }
@@ -136,6 +138,13 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/1/custom-fields"],
     ["get", "/support/portal/custom-fields"],
     ["get", "/support/settings/audit-log"],
+    ["get", "/support/agent-skills"],
+    ["put", "/support/agent-skills/user1"],
+    ["get", "/support/agent-availability"],
+    ["put", "/support/agent-availability/me"],
+    ["get", "/support/vip-clients"],
+    ["post", "/support/vip-clients"],
+    ["delete", "/support/vip-clients/1"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -207,6 +216,36 @@ describe("Support auth/RBAC (e2e)", () => {
       .post("/support/macros/1/apply")
       .set("Authorization", `Bearer ${token}`)
       .send({ ticketId: 1 });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/agent-skills/user1 without support:macros:manage", async () => {
+    const token = await signToken({ permissions: ["support:macros:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/agent-skills/user1")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ skills: ["billing"] });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/agent-availability/me without support:tickets:reply", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/agent-availability/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ isAvailable: false });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/vip-clients without support:macros:manage", async () => {
+    const token = await signToken({ permissions: ["support:macros:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/vip-clients")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ clientId: 1 });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });

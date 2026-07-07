@@ -173,11 +173,13 @@ export class SupportTicketsService {
     let finalAssigneeId = input.assigneeId;
 
     try {
+      const isVip = await this.macros.isVipClient(orgId, input.clientId ?? null);
       const routing = await this.macros.applyRoutingRules(orgId, {
         title: input.title,
         category: input.category ?? null,
         description: input.description ?? null,
         priority: finalPriority,
+        isVip,
       });
       if (routing.assigneeId && !input.assigneeId) {
         finalAssigneeId = routing.assigneeId;

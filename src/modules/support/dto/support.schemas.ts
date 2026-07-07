@@ -150,7 +150,13 @@ const routingConditionSchema = z.object({
   value: z.string().trim().min(1).max(200),
 });
 
-export const assignmentModeSchema = z.enum(["static", "round_robin", "load_balanced"]);
+export const assignmentModeSchema = z.enum([
+  "static",
+  "round_robin",
+  "load_balanced",
+  "skill_based",
+  "availability_based",
+]);
 
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -159,6 +165,7 @@ export const createRoutingRuleSchema = z.object({
   setPriority: ticketPrioritySchema.optional(),
   assignmentMode: assignmentModeSchema.default("static"),
   candidateAgentIds: z.array(z.string().trim().min(1)).max(50).default([]),
+  requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
 });
@@ -170,8 +177,21 @@ export const updateRoutingRuleSchema = z.object({
   setPriority: ticketPrioritySchema.nullable().optional(),
   assignmentMode: assignmentModeSchema.optional(),
   candidateAgentIds: z.array(z.string().trim().min(1)).max(50).optional(),
+  requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+});
+
+export const setAgentSkillsSchema = z.object({
+  skills: z.array(z.string().trim().min(1).max(50)).max(50),
+});
+
+export const setAgentAvailabilitySchema = z.object({
+  isAvailable: z.boolean(),
+});
+
+export const addVipClientSchema = z.object({
+  clientId: z.coerce.number().int().positive(),
 });
 
 export const createQueueSchema = z.object({
@@ -472,6 +492,9 @@ export const submitCsatSchema = z.object({
 });
 export type SubmitCsatInput = z.infer<typeof submitCsatSchema>;
 export type CreateRoutingRuleInput = z.infer<typeof createRoutingRuleSchema>;
+export type SetAgentSkillsInput = z.infer<typeof setAgentSkillsSchema>;
+export type SetAgentAvailabilityInput = z.infer<typeof setAgentAvailabilitySchema>;
+export type AddVipClientInput = z.infer<typeof addVipClientSchema>;
 export type UpdateRoutingRuleInput = z.infer<typeof updateRoutingRuleSchema>;
 export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;
 export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;

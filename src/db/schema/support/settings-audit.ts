@@ -7,6 +7,10 @@ export const SETTINGS_AUDIT_ENTITY_TYPES = [
   "automation",
   "channel",
   "custom_field",
+  "routing_rule",
+  "agent_skill",
+  "agent_availability",
+  "vip_client",
 ] as const;
 export type SettingsAuditEntityType = (typeof SETTINGS_AUDIT_ENTITY_TYPES)[number];
 
