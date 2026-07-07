@@ -145,6 +145,12 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/vip-clients"],
     ["post", "/support/vip-clients"],
     ["delete", "/support/vip-clients/1"],
+    ["post", "/support/1/snooze"],
+    ["delete", "/support/1/snooze"],
+    ["post", "/support/1/split"],
+    ["get", "/support/1/draft"],
+    ["put", "/support/1/draft"],
+    ["delete", "/support/1/draft"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -419,6 +425,36 @@ describe("Support auth/RBAC (e2e)", () => {
       .post("/support/1/messages")
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "internal note attempt", isInternal: true });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/snooze without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/snooze")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ snoozedUntil: new Date(Date.now() + 86_400_000).toISOString() });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/split without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/split")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "New split-off issue" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on PUT /support/1/draft without support:tickets:reply", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .put("/support/1/draft")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ body: "draft text" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });

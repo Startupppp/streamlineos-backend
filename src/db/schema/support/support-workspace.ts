@@ -24,6 +24,7 @@ export const supportSavedViewVisibilityEnum = pgEnum("support_saved_view_visibil
 export const supportTicketLinkRelationEnum = pgEnum("support_ticket_link_relation", [
   "duplicate",
   "related",
+  "split",
 ]);
 
 export const supportQueues = pgTable(

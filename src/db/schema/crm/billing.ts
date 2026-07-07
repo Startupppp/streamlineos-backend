@@ -172,6 +172,8 @@ export const supportTickets = pgTable("support_tickets", {
   // Self-referential; plain column (no .references()) to avoid Drizzle self-reference
   // typing gymnastics. Validated at the service layer.
   mergedIntoTicketId: integer("merged_into_ticket_id"),
+  snoozedUntil: timestamp("snoozed_until"),
+  snoozedBy: text("snoozed_by").references(() => users.id),
   createdBy: text("created_by").references(() => users.id).notNull(),
   sourceChannel: text("source_channel").default("web").notNull(),
   sourceMessageId: text("source_message_id"),
@@ -185,6 +187,7 @@ export const supportTickets = pgTable("support_tickets", {
   index("idx_support_tickets_sla").on(table.slaDeadline),
   index("idx_support_tickets_queue").on(table.queueId),
   index("idx_support_tickets_source_message").on(table.sourceMessageId),
+  index("idx_support_tickets_snoozed_until").on(table.snoozedUntil),
 ]);
 
 export const supportTicketMessages = pgTable("support_ticket_messages", {

@@ -11,11 +11,13 @@ import { AutomationService } from "../automation/automation.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
+import { SupportMentionsService } from "./support-mentions.service";
 
 const mockDb = {
   query: {
     supportTickets: { findFirst: jest.fn(), findMany: jest.fn() },
     supportTicketMessages: { findFirst: jest.fn(), findMany: jest.fn() },
+    users: { findFirst: jest.fn().mockResolvedValue({ name: "Agent", email: "agent@example.com" }) },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -37,6 +39,7 @@ const mockCache = {
 
 const mockMacros = {
   applyRoutingRules: jest.fn().mockResolvedValue({}),
+  isVipClient: jest.fn().mockResolvedValue(false),
 };
 
 const mockNotifications = {
@@ -81,6 +84,10 @@ const mockCustomFields = {
   getFieldValues: jest.fn().mockResolvedValue([]),
 };
 
+const mockMentions = {
+  processMessageMentions: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
@@ -103,6 +110,7 @@ describe("SupportTicketsService", () => {
         { provide: SupportCsatService, useValue: mockCsat },
         { provide: SupportAiService, useValue: mockAi },
         { provide: SupportCustomFieldsService, useValue: mockCustomFields },
+        { provide: SupportMentionsService, useValue: mockMentions },
       ],
     }).compile();
     service = module.get(SupportTicketsService);
@@ -205,6 +213,16 @@ describe("SupportTicketsService", () => {
 
       await service.addMessage("org1", 1, "user1", { body: "hello", isInternal: false } as never);
       expect(mockNotifications.sendReplyEmail).toHaveBeenCalled();
+    });
+
+    it("kicks off mention processing for an internal note with an author", async () => {
+      await service.addMessage("org1", 1, "user1", { body: "cc @jane", isInternal: true } as never);
+      expect(mockDb.query.users.findFirst).toHaveBeenCalled();
+    });
+
+    it("never kicks off mention processing for a public reply", async () => {
+      await service.addMessage("org1", 1, "user1", { body: "cc @jane", isInternal: false } as never);
+      expect(mockDb.query.users.findFirst).not.toHaveBeenCalled();
     });
 
     it("stamps firstRespondedAt on the first public agent reply", async () => {
@@ -408,6 +426,91 @@ describe("SupportTicketsService", () => {
       expect(result).toMatchObject({ success: true, mergedIntoTicketId: 2 });
       const mergedPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "merged");
       expect(mergedPayload).toBeDefined();
+    });
+  });
+
+  describe("snoozeTicket / unsnoozeTicket", () => {
+    it("throws NotFoundException when the ticket doesn't exist", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.snoozeTicket("org1", 1, "user1", { snoozedUntil: new Date(Date.now() + 86_400_000) } as never),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("sets snoozedUntil/snoozedBy and records a 'snoozed' activity entry", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 });
+      const until = new Date(Date.now() + 86_400_000);
+
+      const result = await service.snoozeTicket("org1", 1, "user1", { snoozedUntil: until } as never);
+
+      expect(result).toMatchObject({ success: true, snoozedUntil: until });
+      const setPayload = mockDb.set.mock.calls.map((c) => c[0]).find((p) => p && "snoozedUntil" in p);
+      expect(setPayload).toMatchObject({ snoozedUntil: until, snoozedBy: "user1" });
+      const activityPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "snoozed");
+      expect(activityPayload).toBeDefined();
+    });
+
+    it("clears snoozedUntil/snoozedBy and records an 'unsnoozed' activity entry", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 });
+
+      const result = await service.unsnoozeTicket("org1", 1, "user1");
+
+      expect(result).toMatchObject({ success: true });
+      const setPayload = mockDb.set.mock.calls
+        .map((c) => c[0])
+        .find((p) => p && "snoozedUntil" in p && p.snoozedUntil === null);
+      expect(setPayload).toBeDefined();
+      const activityPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "unsnoozed");
+      expect(activityPayload).toBeDefined();
+    });
+  });
+
+  describe("unsnoozeExpiredTickets", () => {
+    it("clears expired snoozes and invalidates caches per affected org", async () => {
+      mockDb.where.mockReturnValueOnce(mockDb);
+      mockDb.returning.mockResolvedValueOnce([
+        { id: 1, orgId: "org1" },
+        { id: 2, orgId: "org2" },
+      ]);
+
+      const result = await service.unsnoozeExpiredTickets();
+
+      expect(result).toEqual({ unsnoozed: 2 });
+      expect(mockCache.invalidatePattern).toHaveBeenCalledWith("support:tickets:org1:*");
+      expect(mockCache.invalidatePattern).toHaveBeenCalledWith("support:tickets:org2:*");
+    });
+  });
+
+  describe("splitTicket", () => {
+    it("throws NotFoundException when the original ticket does not exist", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("creates a new ticket, links it back to the original, and records split activity on both", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce({
+          id: 1,
+          category: "billing",
+          clientId: 5,
+          priority: "HIGH",
+          requesterEmail: null,
+          requesterName: null,
+        })
+        .mockResolvedValueOnce(undefined);
+      mockDb.returning.mockResolvedValueOnce([{ id: 2, orgId: "org1", title: "New split ticket issue" }]);
+
+      const result = await service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never);
+
+      expect(result).toMatchObject({ id: 2 });
+      const linkPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.relation === "split");
+      expect(linkPayload).toMatchObject({ ticketId: 2, linkedTicketId: 1, relation: "split" });
+      const splitActivities = mockDb.values.mock.calls.map((c) => c[0]).filter((p) => p && p.action === "split");
+      expect(splitActivities.length).toBe(2);
     });
   });
 

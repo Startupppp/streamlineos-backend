@@ -3,6 +3,7 @@ import { KbModule } from "../kb/kb.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { AutomationModule } from "../automation/automation.module";
 import { AiModule } from "../ai/ai.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SupportKbController } from "./support-kb.controller";
 import { SupportMacrosController } from "./support-macros.controller";
 import { SupportWorkspaceController } from "./support-workspace.controller";
@@ -30,9 +31,11 @@ import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportNotificationsService } from "./support-notifications.service";
+import { SupportMentionsService } from "./support-mentions.service";
+import { SupportDraftsService } from "./support-drafts.service";
 
 @Module({
-  imports: [KbModule, RealtimeModule, AutomationModule, AiModule],
+  imports: [KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
   controllers: [
     SupportKbController,
     SupportMacrosController,
@@ -63,7 +66,9 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportSettingsAuditService,
     SupportTicketsService,
     SupportNotificationsService,
+    SupportMentionsService,
+    SupportDraftsService,
   ],
-  exports: [SupportSlaService],
+  exports: [SupportSlaService, SupportTicketsService],
 })
 export class SupportModule {}

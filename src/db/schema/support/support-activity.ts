@@ -23,6 +23,9 @@ export const supportActivityActionEnum = pgEnum("support_activity_action", [
   "reopened",
   "merged",
   "linked",
+  "split",
+  "snoozed",
+  "unsnoozed",
 ]);
 
 export const supportTicketActivity = pgTable(

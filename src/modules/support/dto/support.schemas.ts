@@ -41,6 +41,7 @@ export const listTicketsSchema = z.object({
   assigneeId: z.string().optional(),
   queueId: z.coerce.number().int().positive().optional(),
   channel: z.string().trim().optional(),
+  snoozed: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -231,7 +232,7 @@ export const createTagSchema = z.object({
   color: z.string().trim().max(20).optional(),
 });
 
-export const ticketLinkRelationSchema = z.enum(["duplicate", "related"]);
+export const ticketLinkRelationSchema = z.enum(["duplicate", "related", "split"]);
 
 export const createTicketLinkSchema = z.object({
   linkedTicketId: z.number().int().positive(),
@@ -240,6 +241,24 @@ export const createTicketLinkSchema = z.object({
 
 export const mergeTicketSchema = z.object({
   intoTicketId: z.number().int().positive(),
+});
+
+export const snoozeTicketSchema = z.object({
+  snoozedUntil: z.coerce.date().refine((d) => d.getTime() > Date.now(), "Snooze date must be in the future"),
+});
+
+export const splitTicketSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(5, "Title must be at least 5 characters")
+    .max(150, "Title must be at most 150 characters"),
+  description: z.string().max(5000).optional(),
+});
+
+export const upsertDraftSchema = z.object({
+  body: z.string().max(10000),
+  isInternal: z.boolean().default(false),
 });
 
 const weekdayScheduleSchema = z.object({
@@ -516,6 +535,9 @@ export type UpdateSavedViewInput = z.infer<typeof updateSavedViewSchema>;
 export type CreateTagInput = z.infer<typeof createTagSchema>;
 export type CreateTicketLinkInput = z.infer<typeof createTicketLinkSchema>;
 export type MergeTicketInput = z.infer<typeof mergeTicketSchema>;
+export type SnoozeTicketInput = z.infer<typeof snoozeTicketSchema>;
+export type SplitTicketInput = z.infer<typeof splitTicketSchema>;
+export type UpsertDraftInput = z.infer<typeof upsertDraftSchema>;
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;
 export type UpdateKbCategoryInput = z.infer<typeof updateKbCategorySchema>;
 export type ListKbArticlesInput = z.infer<typeof listKbArticlesSchema>;
