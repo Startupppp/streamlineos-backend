@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -19,6 +19,10 @@ function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
   const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
   return (namePart.length >= 2 ? namePart : "PRJ") + "-" + randomPart;
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
 }
 
 @Injectable()
@@ -77,6 +81,11 @@ export class ProjectsProvisionService {
       await tx.insert(projectMembers).values(memberRows);
 
       return created;
+    }).catch((err: unknown) => {
+      if (isDuplicateKeyError(err)) {
+        throw new ConflictException(`A project with key "${projectKey}" already exists in this organization.`);
+      }
+      throw err;
     });
 
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
@@ -145,6 +154,11 @@ export class ProjectsProvisionService {
       await tx.insert(projectMembers).values({ projectId: created.id, userId, role: "OWNER" });
 
       return created;
+    }).catch((err: unknown) => {
+      if (isDuplicateKeyError(err)) {
+        throw new ConflictException(`A project with key "${projectKey}" already exists in this organization.`);
+      }
+      throw err;
     });
 
     this.audit.log({

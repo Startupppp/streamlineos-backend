@@ -9,10 +9,12 @@ import { StorageService } from "../storage/storage.service";
 import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
 
 export function isPageIndexable(page: {
+  status: string;
   visibility: string;
   deletedAt: Date | null;
 }): boolean {
   return (
+    page.status !== "archived" &&
     (page.visibility === "org" || page.visibility === "public") &&
     page.deletedAt === null
   );
@@ -113,6 +115,7 @@ export class KbIndexingService {
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
       columns: {
+        status: true,
         visibility: true,
         deletedAt: true,
         contentText: true,
@@ -332,7 +335,7 @@ export class KbIndexingService {
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
-    const indexable = sql`${kbPages.visibility} IN ('org', 'public')`;
+    const indexable = sql`${kbPages.visibility} IN ('org', 'public') AND ${kbPages.status} <> 'archived'`;
     const where = orgId
       ? and(eq(kbPages.orgId, orgId), indexable, isNull(kbPages.deletedAt))
       : and(indexable, isNull(kbPages.deletedAt));

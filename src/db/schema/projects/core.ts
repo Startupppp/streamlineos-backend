@@ -13,7 +13,7 @@ export const projects = pgTable("projects", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  key: text("key").notNull().unique(),
+  key: text("key").notNull(),
   clientId: text("client_id").references(() => users.id),
   managerId: text("manager_id").references(() => users.id),
   startDate: timestamp("start_date"),
@@ -35,6 +35,7 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key),
   index("idx_projects_org_status").on(table.orgId, table.status),
   index("idx_projects_manager").on(table.managerId),
   index("idx_projects_deal").on(table.dealId),

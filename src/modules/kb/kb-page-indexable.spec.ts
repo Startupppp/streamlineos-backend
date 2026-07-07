@@ -20,12 +20,12 @@ describe("isPageIndexable", () => {
     expect(isPageIndexable(make({ visibility: "public" }))).toBe(true);
   });
 
-  it("returns false for a draft page", () => {
-    expect(isPageIndexable(make({ status: "draft" }))).toBe(false);
+  it("returns true for a draft org-visible page (draft is the working state)", () => {
+    expect(isPageIndexable(make({ status: "draft" }))).toBe(true);
   });
 
-  it("returns false for an in_review page", () => {
-    expect(isPageIndexable(make({ status: "in_review" }))).toBe(false);
+  it("returns true for an in_review page", () => {
+    expect(isPageIndexable(make({ status: "in_review" }))).toBe(true);
   });
 
   it("returns false for an archived page", () => {

@@ -181,6 +181,7 @@ export class KbSearchService {
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.id, pageIds),
             isNull(kbPages.deletedAt),
+            ne(kbPages.status, "archived"),
             sql`${kbPages.visibility} IN ('org', 'public')`,
           ),
         );
