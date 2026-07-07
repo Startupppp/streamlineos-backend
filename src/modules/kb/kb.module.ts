@@ -110,6 +110,7 @@ import { KbSourcesService } from "./kb-sources.service";
     KbPageRecordLinksService,
     KbArticleMigrationService,
     KbMediaService,
+    KbSourcesService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
 })
