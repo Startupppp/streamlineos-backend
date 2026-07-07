@@ -18,18 +18,11 @@ export const listEventsSchema = z.object({
   end: z.string(),
 });
 
-const meetingUrlSchema = z
-  .string()
-  .trim()
-  .url("Meeting link must be a valid URL")
-  .max(2048, "Meeting link is too long");
-
 export const createEventSchema = z
   .object({
     title: titleSchema,
     description: z.string().optional(),
     location: z.string().optional(),
-    meetingUrl: meetingUrlSchema.optional(),
     startDate: z.string(),
     endDate: z.string(),
     allDay: z.boolean().optional(),
@@ -63,7 +56,6 @@ export const updateEventSchema = z.object({
   title: titleSchema.optional(),
   description: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
-  meetingUrl: meetingUrlSchema.nullable().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   allDay: z.boolean().optional(),

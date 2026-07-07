@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne, inArray } from "drizzle-orm";
 import {
   userIntegrationConnections,
   type IntegrationToolkit,
@@ -82,7 +82,10 @@ export class IntegrationsService {
       );
     }
     const toolkit = this.toToolkit(account.toolkitSlug);
-    return this.db.transaction(async (tx) => {
+    const email =
+      (await this.gateway.getAccountEmail(userId, account.id, toolkit)) ??
+      account.email;
+    const { row, staleComposioIds } = await this.db.transaction(async (tx) => {
       const existing = await tx
         .select({ id: userIntegrationConnections.id })
         .from(userIntegrationConnections)
@@ -100,8 +103,8 @@ export class IntegrationsService {
           userId,
           toolkit,
           composioConnectedAccountId: account.id,
-          accountEmail: account.email,
-          accountLabel: account.email,
+          accountEmail: email,
+          accountLabel: email,
           status: "active",
           isPrimary: existing.length === 0,
           scope: "user",
@@ -110,13 +113,71 @@ export class IntegrationsService {
           target: userIntegrationConnections.composioConnectedAccountId,
           set: {
             status: "active",
-            accountEmail: account.email,
+            accountEmail: email,
+            accountLabel: email,
             updatedAt: new Date(),
           },
         })
         .returning(CONNECTION_COLUMNS);
-      return rows[0];
+      const saved = rows[0];
+      if (!saved) throw new BadRequestException("Failed to save connection");
+
+      let staleComposioIds: string[] = [];
+      let madePrimary = false;
+      if (email) {
+        const dupes = await tx
+          .select({
+            id: userIntegrationConnections.id,
+            composioConnectedAccountId:
+              userIntegrationConnections.composioConnectedAccountId,
+            isPrimary: userIntegrationConnections.isPrimary,
+          })
+          .from(userIntegrationConnections)
+          .where(
+            and(
+              eq(userIntegrationConnections.orgId, orgId),
+              eq(userIntegrationConnections.userId, userId),
+              eq(userIntegrationConnections.toolkit, toolkit),
+              eq(userIntegrationConnections.accountEmail, email),
+              ne(
+                userIntegrationConnections.composioConnectedAccountId,
+                account.id,
+              ),
+            ),
+          );
+        if (dupes.length > 0) {
+          staleComposioIds = dupes.map((d) => d.composioConnectedAccountId);
+          await tx.delete(userIntegrationConnections).where(
+            inArray(
+              userIntegrationConnections.id,
+              dupes.map((d) => d.id),
+            ),
+          );
+          if (!saved.isPrimary && dupes.some((d) => d.isPrimary)) {
+            await tx
+              .update(userIntegrationConnections)
+              .set({ isPrimary: true })
+              .where(eq(userIntegrationConnections.id, saved.id));
+            madePrimary = true;
+          }
+        }
+      }
+      return {
+        row: madePrimary ? { ...saved, isPrimary: true } : saved,
+        staleComposioIds,
+      };
     });
+
+    for (const staleId of staleComposioIds) {
+      try {
+        await this.gateway.deleteConnectedAccount(staleId);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to delete duplicate Composio account ${staleId}: ${String(error)}`,
+        );
+      }
+    }
+    return row;
   }
 
   async disconnect(orgId: string, userId: string, connectionId: number) {

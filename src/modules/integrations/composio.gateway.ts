@@ -22,6 +22,17 @@ const toolkitVersionsSchema = z.object({
   meta: z.object({ availableVersions: z.array(z.string()) }),
 });
 
+const googleCalendarInfoSchema = z.object({
+  calendar_data: z.object({ id: z.string().optional() }).optional(),
+});
+
+function unwrapResponseData(value: unknown): unknown {
+  if (value !== null && typeof value === "object" && "response_data" in value) {
+    return (value as Record<string, unknown>).response_data;
+  }
+  return value;
+}
+
 export interface ComposioConnectedAccount {
   id: string;
   status: string;
@@ -147,6 +158,31 @@ export class ComposioGateway {
       throw new ServiceUnavailableException(`No published toolkit versions for ${toolkitSlug}`);
     }
     return version;
+  }
+
+  async getAccountEmail(
+    userId: string,
+    connectedAccountId: string,
+    toolkit: IntegrationToolkit,
+  ): Promise<string | null> {
+    try {
+      if (toolkit === "googlecalendar") {
+        const raw = await this.executeTool(
+          "GOOGLECALENDAR_GET_CALENDAR",
+          userId,
+          {},
+          connectedAccountId,
+        );
+        const parsed = googleCalendarInfoSchema.safeParse(
+          unwrapResponseData(raw),
+        );
+        const id = parsed.success ? parsed.data.calendar_data?.id : undefined;
+        return id && id.includes("@") ? id : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   async executeTool(

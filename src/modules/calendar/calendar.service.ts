@@ -17,6 +17,8 @@ import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
+import { EmailService } from "../email/email.service";
+import { getCalendarInviteEmail } from "../email/templates/calendar";
 
 export interface LinkedTicket {
   id: number;
@@ -64,6 +66,7 @@ export class CalendarService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly sync: ExternalCalendarSyncService,
+    private readonly email: EmailService,
   ) {}
 
   async getEvents(
@@ -384,7 +387,6 @@ export class CalendarService {
           title: input.title,
           description: input.description ?? null,
           location: input.location ?? null,
-          meetingUrl: input.meetingUrl ?? null,
           startDate,
           endDate,
           allDay: input.allDay ?? false,
@@ -420,7 +422,7 @@ export class CalendarService {
           attendeeEmails: attendeeEmailList,
           addConference: input.addConference ?? false,
         });
-        meetingUrl = input.meetingUrl ?? pushed.meetingUrl ?? null;
+        meetingUrl = pushed.meetingUrl ?? null;
         const rows = await this.db
           .update(calendarEvents)
           .set({
@@ -435,7 +437,91 @@ export class CalendarService {
         syncError = error instanceof Error ? error.message : "Failed to sync to external calendar";
       }
     }
+    if (event) {
+      void this.dispatchInviteEmails({
+        organizerId: userId,
+        attendeeIds,
+        title: input.title,
+        start: startDate,
+        end: endDate,
+        allDay: input.allDay ?? false,
+        location: input.location ?? null,
+        meetingUrl,
+        description: input.description ?? null,
+      }).catch((err) =>
+        this.logger.warn(
+          `Failed to dispatch calendar invite emails for event ${event.id}: ${String(err)}`,
+        ),
+      );
+    }
     return { event: syncedEvent, oooConflicts, meetingUrl, syncError };
+  }
+
+  private async dispatchInviteEmails(params: {
+    organizerId: string;
+    attendeeIds: string[];
+    title: string;
+    start: Date;
+    end: Date;
+    allDay: boolean;
+    location: string | null;
+    meetingUrl: string | null;
+    description: string | null;
+  }): Promise<void> {
+    const recipientIds = params.attendeeIds.filter(
+      (id) => id !== params.organizerId,
+    );
+    if (recipientIds.length === 0) return;
+
+    const [recipients, organizerRows] = await Promise.all([
+      this.db
+        .select({
+          email: users.email,
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(users)
+        .where(inArray(users.id, recipientIds)),
+      this.db
+        .select({
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(users)
+        .where(eq(users.id, params.organizerId))
+        .limit(1),
+    ]);
+
+    const org = organizerRows[0];
+    const organizerName = org
+      ? org.firstName
+        ? `${org.firstName} ${org.lastName ?? ""}`.trim()
+        : (org.name ?? "A colleague")
+      : "A colleague";
+
+    await Promise.allSettled(
+      recipients
+        .filter((r) => r.email)
+        .map((r) => {
+          const recipientName = r.firstName
+            ? `${r.firstName} ${r.lastName ?? ""}`.trim()
+            : (r.name ?? r.email);
+          const { subject, html } = getCalendarInviteEmail({
+            recipientName,
+            organizerName,
+            title: params.title,
+            start: params.start,
+            end: params.end,
+            allDay: params.allDay,
+            location: params.location,
+            meetingUrl: params.meetingUrl,
+            description: params.description,
+          });
+          return this.email.sendEmail({ to: r.email, subject, html });
+        }),
+    );
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
@@ -443,7 +529,6 @@ export class CalendarService {
     if (input.title !== undefined) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description ?? null;
     if (input.location !== undefined) updateData.location = input.location ?? null;
-    if (input.meetingUrl !== undefined) updateData.meetingUrl = input.meetingUrl ?? null;
     if (input.startDate !== undefined) updateData.startDate = new Date(input.startDate);
     if (input.endDate !== undefined) updateData.endDate = new Date(input.endDate);
     if (input.allDay !== undefined) updateData.allDay = input.allDay;

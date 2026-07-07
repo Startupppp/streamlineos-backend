@@ -37,8 +37,6 @@ import {
   type RsvpInput,
   type UpdateEventInput,
 } from "./dto/calendar.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
-import { ModuleGuard } from "../../common/rbac/module.guard";
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -59,9 +57,8 @@ function csvEscape(value: string): string {
   return value;
 }
 
-@RequireModule("calendar")
 @Controller("calendar")
-@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CalendarController {
   constructor(
     private readonly calendar: CalendarService,
