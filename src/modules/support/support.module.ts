@@ -33,6 +33,7 @@ import { SupportTicketsService } from "./support-tickets.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMentionsService } from "./support-mentions.service";
 import { SupportDraftsService } from "./support-drafts.service";
+import { SupportIntegrationsService } from "./support-integrations.service";
 
 @Module({
   imports: [KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
@@ -68,6 +69,7 @@ import { SupportDraftsService } from "./support-drafts.service";
     SupportNotificationsService,
     SupportMentionsService,
     SupportDraftsService,
+    SupportIntegrationsService,
   ],
   exports: [SupportSlaService, SupportTicketsService],
 })

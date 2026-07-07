@@ -12,3 +12,4 @@ export * from "./custom-fields";
 export * from "./settings-audit";
 export * from "./agent-routing";
 export * from "./support-productivity";
+export * from "./support-integrations";

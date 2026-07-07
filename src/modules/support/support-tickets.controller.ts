@@ -23,8 +23,10 @@ import { AccessService } from "../access/access.service";
 import { authorize } from "../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportDraftsService } from "./support-drafts.service";
+import { SupportIntegrationsService } from "./support-integrations.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import {
+  createExternalLinkSchema,
   createTicketLinkSchema,
   createTicketSchema,
   listTicketsSchema,
@@ -34,6 +36,7 @@ import {
   splitTicketSchema,
   updateTicketSchema,
   upsertDraftSchema,
+  type CreateExternalLinkInput,
   type CreateTicketInput,
   type CreateTicketLinkInput,
   type ListTicketsInput,
@@ -55,6 +58,7 @@ export class SupportTicketsController {
     private readonly tickets: SupportTicketsService,
     private readonly access: AccessService,
     private readonly drafts: SupportDraftsService,
+    private readonly integrations: SupportIntegrationsService,
   ) {}
 
   @Get()
@@ -223,5 +227,35 @@ export class SupportTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId);
+  }
+
+  @Get(":supportTicketId/external-links")
+  @RequirePermission("support:tickets:view")
+  listExternalLinks(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.listLinks(u.orgId, supportTicketId);
+  }
+
+  @Post(":supportTicketId/external-links")
+  @RequirePermission("support:tickets:manage")
+  @HttpCode(201)
+  addExternalLink(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Body(new ZodValidationPipe(createExternalLinkSchema)) body: CreateExternalLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.addLink(u.orgId, supportTicketId, u.userId, body);
+  }
+
+  @Delete(":supportTicketId/external-links/:linkId")
+  @RequirePermission("support:tickets:manage")
+  removeExternalLink(
+    @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.integrations.removeLink(u.orgId, supportTicketId, linkId);
   }
 }

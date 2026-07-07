@@ -247,6 +247,13 @@ export const snoozeTicketSchema = z.object({
   snoozedUntil: z.coerce.date().refine((d) => d.getTime() > Date.now(), "Snooze date must be in the future"),
 });
 
+export const externalEntityTypeSchema = z.enum(["project", "invoice", "calendar_event", "chat_channel"]);
+
+export const createExternalLinkSchema = z.object({
+  entityType: externalEntityTypeSchema,
+  entityId: z.number().int().positive(),
+});
+
 export const splitTicketSchema = z.object({
   title: z
     .string()
@@ -535,6 +542,7 @@ export type UpdateSavedViewInput = z.infer<typeof updateSavedViewSchema>;
 export type CreateTagInput = z.infer<typeof createTagSchema>;
 export type CreateTicketLinkInput = z.infer<typeof createTicketLinkSchema>;
 export type MergeTicketInput = z.infer<typeof mergeTicketSchema>;
+export type CreateExternalLinkInput = z.infer<typeof createExternalLinkSchema>;
 export type SnoozeTicketInput = z.infer<typeof snoozeTicketSchema>;
 export type SplitTicketInput = z.infer<typeof splitTicketSchema>;
 export type UpsertDraftInput = z.infer<typeof upsertDraftSchema>;

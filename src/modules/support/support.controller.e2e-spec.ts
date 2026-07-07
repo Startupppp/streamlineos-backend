@@ -154,6 +154,9 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/1/draft"],
     ["put", "/support/1/draft"],
     ["delete", "/support/1/draft"],
+    ["get", "/support/1/external-links"],
+    ["post", "/support/1/external-links"],
+    ["delete", "/support/1/external-links/1"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -466,6 +469,16 @@ describe("Support auth/RBAC (e2e)", () => {
       .put("/support/1/draft")
       .set("Authorization", `Bearer ${token}`)
       .send({ body: "draft text" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Permission denied" });
+  });
+
+  it("403 on POST /support/1/external-links without support:tickets:manage", async () => {
+    const token = await signToken({ permissions: ["support:tickets:view"], enabledModules: ["support"] });
+    const res = await request(app.getHttpServer())
+      .post("/support/1/external-links")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ entityType: "project", entityId: 1 });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: "Permission denied" });
   });
