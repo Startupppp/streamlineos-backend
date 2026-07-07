@@ -19,6 +19,7 @@ import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
+import { CronSupportService } from "./cron-support.service";
 
 @Public()
 @Controller("cron")
@@ -33,6 +34,7 @@ export class CronController {
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
+    private readonly support: CronSupportService,
     private readonly chatReplyReminders: ChatReplyRemindersService,
   ) {}
 
@@ -350,6 +352,32 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Email outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("support-sla-escalations")
+  getSupportSlaEscalations(@Headers("authorization") authorization?: string) {
+    return this.runSupportSlaEscalations(authorization);
+  }
+
+  @Post("support-sla-escalations")
+  @HttpCode(200)
+  postSupportSlaEscalations(@Headers("authorization") authorization?: string) {
+    return this.runSupportSlaEscalations(authorization);
+  }
+
+  private async runSupportSlaEscalations(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.support.runSlaEscalations();
+      return {
+        success: true,
+        message: `Checked ${result.checked} tickets across ${result.orgsProcessed} orgs, escalated ${result.escalated}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Support SLA escalation cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

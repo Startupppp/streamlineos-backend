@@ -8,6 +8,7 @@ export const listTicketsSchema = z.object({
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
   queueId: z.coerce.number().int().positive().optional(),
+  channel: z.string().trim().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

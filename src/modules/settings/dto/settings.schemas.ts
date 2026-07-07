@@ -56,6 +56,7 @@ export const featureFlagSchema = z.object({
     "aiEmailDraft",
     "aiSmartNotifications",
     "aiWeeklyRecap",
+    "supportAi",
   ]),
   enabled: z.boolean(),
 });

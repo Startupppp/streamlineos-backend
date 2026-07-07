@@ -16,6 +16,8 @@ const mockDb = {
   set: jest.fn().mockReturnThis(),
   delete: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
+  selectDistinct: jest.fn().mockReturnThis(),
+  from: jest.fn().mockReturnThis(),
 };
 
 const mockNotifications = {
@@ -188,6 +190,40 @@ describe("SupportSlaService", () => {
 
       expect(result).toEqual({ checked: 1, escalated: 1 });
       expect(mockNotifications.sendEscalationEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("runEscalationsForAllOrgs", () => {
+    it("sweeps every org with at least one open ticket and aggregates the results", async () => {
+      mockDb.where.mockResolvedValueOnce([{ orgId: "org1" }, { orgId: "org2" }]);
+      mockDb.query.supportTickets.findMany.mockResolvedValueOnce([
+        {
+          id: 1,
+          title: "org1 ticket",
+          status: "OPEN",
+          createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+          assigneeId: "agent1",
+          firstRespondedAt: null,
+          firstResponseDueAt: new Date(Date.now() - 1000),
+          slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
+          slaPausedAt: null,
+          slaEscalationLevel: 0,
+        },
+      ]);
+      mockDb.query.supportTickets.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.runEscalationsForAllOrgs();
+
+      expect(result).toEqual({ orgsProcessed: 2, checked: 1, escalated: 1 });
+    });
+
+    it("processes zero orgs without error when nothing has an open ticket", async () => {
+      mockDb.where.mockResolvedValueOnce([]);
+
+      const result = await service.runEscalationsForAllOrgs();
+
+      expect(result).toEqual({ orgsProcessed: 0, checked: 0, escalated: 0 });
+      expect(mockDb.query.supportTickets.findMany).not.toHaveBeenCalled();
     });
   });
 });
