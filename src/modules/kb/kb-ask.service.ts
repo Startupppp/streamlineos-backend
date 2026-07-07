@@ -13,7 +13,8 @@ const MAX_CONTEXT_CHARS = 1500;
 
 const ASK_SYSTEM_PROMPT =
   "You are a knowledge base assistant. Answer the user's question using ONLY the information in the provided context. " +
-  "Cite the sources you rely on inline using their bracket numbers, e.g. [1]. " +
+  "Write a clear, well-structured answer in Markdown: open with a one-sentence summary, then use bullet or numbered lists with short **bold labels** where it aids readability. Keep it concise and scannable. " +
+  "Do NOT include inline citations, reference numbers, or bracketed markers such as [1] or [doc 2] — the user is shown the list of sources separately. " +
   "If the context does not contain the answer, say you don't have that information and suggest opening a support ticket. " +
   "Never invent facts that are not present in the context.";
 
@@ -64,7 +65,7 @@ export class KbAskService {
     }
 
     const context = top
-      .map((source, index) => `[${index + 1}] ${source.title}\n${(source.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
+      .map((source, index) => `Source ${index + 1} — ${source.title}\n${(source.contentText || "").slice(0, MAX_CONTEXT_CHARS)}`)
       .join("\n\n---\n\n");
 
     const articleIds = top
@@ -80,7 +81,7 @@ export class KbAskService {
       pageIds,
     );
     const sourceContext = sources
-      .map((s, index) => `[doc ${index + 1}] ${s.title}\n${s.snippet}`)
+      .map((s, index) => `Document ${index + 1} — ${s.title}\n${s.snippet}`)
       .join("\n\n---\n\n");
     let fullContext = attachmentContext
       ? `${context}\n\n---\n\n${attachmentContext}`
