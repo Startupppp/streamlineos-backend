@@ -9,3 +9,4 @@ export * from "./pages";
 export * from "./page-collab";
 export * from "./governance";
 export * from "./sources";
+export * from "./chat";

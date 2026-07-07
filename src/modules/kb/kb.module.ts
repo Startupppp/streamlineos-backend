@@ -9,6 +9,7 @@ import { KbCategoriesService } from "./kb-categories.service";
 import { KbArticlesService } from "./kb-articles.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAskService } from "./kb-ask.service";
+import { KbChatHistoryService } from "./kb-chat-history.service";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { KbMembersService } from "./kb-members.service";
 import { KbAuthoringService } from "./kb-authoring.service";
@@ -92,6 +93,7 @@ import { KbSourcesService } from "./kb-sources.service";
     KbArticlesService,
     KbSearchService,
     KbAskService,
+    KbChatHistoryService,
     KbAnalyticsService,
     KbMembersService,
     KbAuthoringService,

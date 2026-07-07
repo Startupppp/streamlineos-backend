@@ -13,3 +13,9 @@ export const askSchema = z.object({
   spaceId: z.coerce.number().int().positive().optional(),
 });
 export type AskInput = z.infer<typeof askSchema>;
+
+export const chatHistoryQuerySchema = z.object({
+  cursor: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ChatHistoryQueryInput = z.infer<typeof chatHistoryQuerySchema>;
