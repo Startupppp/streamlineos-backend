@@ -102,11 +102,12 @@ export class CronHrService {
 
     if (employeeRows.length === 0) return { fired: 0 };
 
+    const statsByUserId = new Map(fullyCompleted.map((s) => [s.userId, s]));
     const now = new Date();
     let fired = 0;
 
     for (const employee of employeeRows) {
-      const stats = fullyCompleted.find((s) => s.userId === employee.id);
+      const stats = statsByUserId.get(employee.id);
       if (!stats) continue;
 
       await this.automation.runAutomationsForEvent(stats.orgId, "onboarding.completed", {

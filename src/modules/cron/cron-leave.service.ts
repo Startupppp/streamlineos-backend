@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { leaveBalances, leaveRequests, leaveTypes, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -70,12 +70,14 @@ export class CronLeaveService {
     const orgCasualMap = new Map(casualTypes.map((ct) => [ct.orgId, ct]));
     const casualTypeIds = casualTypes.map((ct) => ct.id);
 
-    const allBalances = await this.db.query.leaveBalances.findMany({
-      where: and(inArray(leaveBalances.leaveTypeId, casualTypeIds), eq(leaveBalances.year, prevMonthYear)),
+    const positiveBalances = await this.db.query.leaveBalances.findMany({
+      where: and(
+        inArray(leaveBalances.leaveTypeId, casualTypeIds),
+        eq(leaveBalances.year, prevMonthYear),
+        gt(leaveBalances.balance, "0"),
+      ),
       columns: { id: true, orgId: true, userId: true, leaveTypeId: true, balance: true },
     });
-
-    const positiveBalances = allBalances.filter((b) => Number(b.balance) > 0);
     if (positiveBalances.length === 0) return { expiredCount: 0 };
 
     const usedLeaveResults = await this.db

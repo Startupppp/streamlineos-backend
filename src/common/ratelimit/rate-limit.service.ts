@@ -64,7 +64,9 @@ export class RateLimitService {
       } catch {}
     }
     const memKey = `${tier}:${identifier}`;
-    const hits = (this.mem.get(memKey) ?? []).filter((ts) => now - ts < windowMs);
+    const raw = this.mem.get(memKey);
+    const hits = (raw ?? []).filter((ts) => now - ts < windowMs);
+    if (hits.length === 0 && raw !== undefined) this.mem.delete(memKey);
     if (hits.length >= effectiveLimit) {
       const oldest = hits[0] ?? now;
       const retryAfterSecs = Math.ceil((windowMs - (now - oldest)) / 1000);
