@@ -68,10 +68,14 @@ export class KbAskService {
     const articleIds = top
       .filter((source) => source.kind === "article")
       .map((source) => source.id);
+    const pageIds = top
+      .filter((source) => source.kind === "page")
+      .map((source) => source.id);
     const attachmentContext = await this.search.retrieveAttachmentSnippets(
       user.orgId,
       input.question,
       articleIds,
+      pageIds,
     );
     const fullContext = attachmentContext
       ? `${context}\n\n---\n\n${attachmentContext}`

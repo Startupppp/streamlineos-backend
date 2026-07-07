@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -180,7 +180,6 @@ export class KbSearchService {
           and(
             eq(kbPages.orgId, user.orgId),
             inArray(kbPages.id, pageIds),
-            eq(kbPages.status, "published"),
             isNull(kbPages.deletedAt),
             sql`${kbPages.visibility} IN ('org', 'public')`,
           ),
@@ -277,7 +276,6 @@ export class KbSearchService {
       .where(
         and(
           eq(kbPages.orgId, orgId),
-          eq(kbPages.status, "published"),
           isNull(kbPages.deletedAt),
           sql`${kbPages.visibility} IN ('org', 'public')`,
           sql`(fts @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${kbPages.title} ILIKE ${term}))`,
@@ -303,7 +301,6 @@ export class KbSearchService {
           kbPages,
           and(
             eq(kbPages.id, kbArticleChunks.pageId),
-            eq(kbPages.status, "published"),
             isNull(kbPages.deletedAt),
             sql`${kbPages.visibility} IN ('org', 'public')`,
           ),
@@ -356,11 +353,17 @@ export class KbSearchService {
     orgId: string,
     query: string,
     articleIds: number[],
+    pageIds: number[] = [],
   ): Promise<string> {
-    if (!this.embeddings.isConfigured() || articleIds.length === 0) return "";
+    if (!this.embeddings.isConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
+      return "";
+    }
     try {
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+      const scope: SQL[] = [];
+      if (articleIds.length > 0) scope.push(inArray(kbArticleChunks.articleId, articleIds));
+      if (pageIds.length > 0) scope.push(inArray(kbArticleChunks.pageId, pageIds));
       const rows = await this.db
         .select({ content: kbArticleChunks.content })
         .from(kbArticleChunks)
@@ -368,7 +371,7 @@ export class KbSearchService {
           and(
             eq(kbArticleChunks.orgId, orgId),
             eq(kbArticleChunks.source, "attachment"),
-            inArray(kbArticleChunks.articleId, articleIds),
+            or(...scope),
           ),
         )
         .orderBy(distance)

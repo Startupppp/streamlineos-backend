@@ -167,7 +167,7 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       if (contentChanged) {
         await this.snapshotIfNeeded(tx, orgId, current, user.userId);
       }
@@ -194,6 +194,14 @@ export class KbPagesService {
 
       return updated;
     });
+
+    if (contentChanged) {
+      this.indexing.indexPage(orgId, pageId).catch((err: unknown) => {
+        this.logger.error(`Failed to index page ${pageId}: ${err}`);
+      });
+    }
+
+    return result;
   }
 
   async lock(user: CurrentUserContext, pageId: number, isLocked: boolean): Promise<PageRow> {

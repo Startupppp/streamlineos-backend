@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Post,
   UploadedFile,
@@ -27,8 +28,11 @@ export class KbMediaController {
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() u: CurrentUserContext,
+    @Body("pageId") rawPageId?: string,
   ): Promise<KbMediaUploadResult> {
     if (!file) throw new BadRequestException("No file provided");
-    return this.media.upload(file, u);
+    const parsed = rawPageId ? Number(rawPageId) : undefined;
+    const pageId = parsed !== undefined && Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+    return this.media.upload(file, u, pageId);
   }
 }

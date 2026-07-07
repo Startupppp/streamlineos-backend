@@ -9,12 +9,10 @@ import { StorageService } from "../storage/storage.service";
 import { extractAttachmentText, isExtractableMime } from "./kb-attachment-extract.util";
 
 export function isPageIndexable(page: {
-  status: string;
   visibility: string;
   deletedAt: Date | null;
 }): boolean {
   return (
-    page.status === "published" &&
     (page.visibility === "org" || page.visibility === "public") &&
     page.deletedAt === null
   );
@@ -115,7 +113,6 @@ export class KbIndexingService {
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
       columns: {
-        status: true,
         visibility: true,
         deletedAt: true,
         contentText: true,
@@ -260,6 +257,50 @@ export class KbIndexingService {
       );
   }
 
+  async indexPageDocument(
+    orgId: string,
+    pageId: number,
+    buffer: Buffer,
+    mimeType: string,
+    fileName: string,
+  ): Promise<{ chunks: number; warning: string | null }> {
+    if (!this.embeddings.isConfigured() || !isExtractableMime(mimeType)) {
+      return { chunks: 0, warning: null };
+    }
+
+    let text = "";
+    try {
+      text = await extractAttachmentText(buffer, mimeType);
+    } catch (err) {
+      this.logger.error(`Page document extract failed (page ${pageId}, ${fileName}): ${err}`);
+      return { chunks: 0, warning: `${fileName}: could not read file` };
+    }
+
+    const chunks = this.chunkText(text);
+    if (chunks.length === 0) {
+      return { chunks: 0, warning: `${fileName}: no extractable text` };
+    }
+
+    const embeddings = await Promise.all(chunks.map((c) => this.embeddings.embedQuery(c)));
+
+    const valuesToInsert = chunks.map((chunk, index) => ({
+      orgId,
+      articleId: null,
+      pageId,
+      attachmentId: null,
+      source: "attachment" as const,
+      chunkIndex: index,
+      content: chunk,
+      tokens: Math.ceil(chunk.length / 4),
+      embedding: embeddings[index],
+      embeddingModel: EMBEDDING_MODEL,
+    }));
+
+    await this.db.insert(kbArticleChunks).values(valuesToInsert);
+
+    return { chunks: chunks.length, warning: null };
+  }
+
   async reindexAll(
     orgId: string,
   ): Promise<{ total: number; indexed: number; totalChunks: number; failures: { articleId: number; error: string }[] }> {
@@ -291,9 +332,10 @@ export class KbIndexingService {
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
+    const indexable = sql`${kbPages.visibility} IN ('org', 'public')`;
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), eq(kbPages.status, "published"), isNull(kbPages.deletedAt))
-      : and(eq(kbPages.status, "published"), isNull(kbPages.deletedAt));
+      ? and(eq(kbPages.orgId, orgId), indexable, isNull(kbPages.deletedAt))
+      : and(indexable, isNull(kbPages.deletedAt));
 
     const pages = await this.db
       .select({ id: kbPages.id, orgId: kbPages.orgId })

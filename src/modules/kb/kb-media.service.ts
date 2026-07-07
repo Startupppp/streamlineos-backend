@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import sharp from "sharp";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { StorageService, type UploadResult } from "../storage/storage.service";
 import { validateMagicBytes } from "../storage/file-signatures";
+import { KbIndexingService } from "./kb-indexing.service";
 
 export interface KbMediaUploadResult extends UploadResult {
   name: string;
@@ -50,12 +51,19 @@ function sizeCap(mimeType: string): number {
 
 @Injectable()
 export class KbMediaService {
+  private readonly logger = new Logger(KbMediaService.name);
+
   constructor(
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
-  async upload(file: Express.Multer.File, u: CurrentUserContext): Promise<KbMediaUploadResult> {
+  async upload(
+    file: Express.Multer.File,
+    u: CurrentUserContext,
+    pageId?: number,
+  ): Promise<KbMediaUploadResult> {
     if (!this.storage.isConfigured()) {
       throw new ServiceUnavailableException("File storage is not available");
     }
@@ -111,6 +119,14 @@ export class KbMediaService {
       orgId: u.orgId,
       metadata: { fileKey: result.key, size: result.size, mimeType: result.mimeType },
     });
+
+    if (pageId != null && DOC_TYPES.has(mimetype)) {
+      this.indexing
+        .indexPageDocument(u.orgId, pageId, buffer, mimetype, originalname)
+        .catch((err: unknown) => {
+          this.logger.error(`Failed to index page document (page ${pageId}): ${err}`);
+        });
+    }
 
     return { ...result, name: originalname };
   }
