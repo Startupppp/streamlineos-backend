@@ -9,3 +9,4 @@ export * from "./support-channels";
 export * from "./support-csat";
 export * from "./support-ai";
 export * from "./custom-fields";
+export * from "./settings-audit";

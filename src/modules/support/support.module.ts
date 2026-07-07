@@ -27,6 +27,7 @@ import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportReportsService } from "./support-reports.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 
@@ -59,6 +60,7 @@ import { SupportNotificationsService } from "./support-notifications.service";
     SupportAiService,
     SupportReportsService,
     SupportCustomFieldsService,
+    SupportSettingsAuditService,
     SupportTicketsService,
     SupportNotificationsService,
   ],

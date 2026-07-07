@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { SupportChannelsService } from "./support-channels.service";
+import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
   createSupportChannelSchema,
   inboundEmailSchema,
@@ -47,6 +48,7 @@ export class SupportChannelsController {
   constructor(
     private readonly channels: SupportChannelsService,
     private readonly rateLimit: RateLimitService,
+    private readonly audit: SupportSettingsAuditService,
   ) {}
 
   @Get("channels")
@@ -60,29 +62,35 @@ export class SupportChannelsController {
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
   @HttpCode(201)
-  createChannel(
+  async createChannel(
     @Body(new ZodValidationPipe(createSupportChannelSchema)) body: CreateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.createChannel(u.orgId, body);
+    const result = await this.channels.createChannel(u.orgId, body);
+    await this.audit.record(u.orgId, u.userId, "channel", result.id, "created", { ...body, config: undefined });
+    return result;
   }
 
   @Patch("channels/:id")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
-  updateChannel(
+  async updateChannel(
     @Param("id", ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateSupportChannelSchema)) body: UpdateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.updateChannel(u.orgId, id, body);
+    const result = await this.channels.updateChannel(u.orgId, id, body);
+    await this.audit.record(u.orgId, u.userId, "channel", id, "updated", { ...body, config: undefined });
+    return result;
   }
 
   @Delete("channels/:id")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
-  deleteChannel(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.channels.deleteChannel(u.orgId, id);
+  async deleteChannel(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.channels.deleteChannel(u.orgId, id);
+    await this.audit.record(u.orgId, u.userId, "channel", id, "deleted");
+    return result;
   }
 
   /**

@@ -135,6 +135,7 @@ describe("Support auth/RBAC (e2e)", () => {
     ["delete", "/support/custom-fields/1"],
     ["get", "/support/1/custom-fields"],
     ["get", "/support/portal/custom-fields"],
+    ["get", "/support/settings/audit-log"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -356,6 +357,7 @@ describe("Support auth/RBAC (e2e)", () => {
     { method: "delete", path: "/support/custom-fields/1", permission: "support:settings:manage" },
     { method: "get", path: "/support/1/custom-fields", permission: "support:tickets:view" },
     { method: "get", path: "/support/portal/custom-fields", permission: "support:portal:tickets:create" },
+    { method: "get", path: "/support/settings/audit-log", permission: "support:settings:manage" },
   ];
 
   it.each(ticketPermissionCases)(
