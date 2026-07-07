@@ -1473,6 +1473,12 @@ const KB_PERMISSIONS: Permission[] = [
     description: "Delete wiki pages (soft-delete subtree)",
   },
   {
+    name: "kb:pages:purge",
+    resource: "kb:pages",
+    action: "purge",
+    description: "Permanently delete wiki pages and empty the trash",
+  },
+  {
     name: "kb:pages:manage",
     resource: "kb:pages",
     action: "manage",
@@ -2794,6 +2800,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "kb:pages:create",
     "kb:pages:update",
     "kb:pages:delete",
+    "kb:pages:purge",
     "kb:pages:manage",
     "kb:templates:manage",
     "kb:reviews:view",

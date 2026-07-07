@@ -146,9 +146,16 @@ export class KbPagesController {
     return this.tree.restore(u, pageId);
   }
 
+  @Delete("pages/trash/empty")
+  @HttpCode(200)
+  @RequirePermission("kb:pages:purge")
+  async emptyTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return this.tree.emptyTrash(u);
+  }
+
   @Delete("pages/:pageId/permanent")
   @HttpCode(204)
-  @RequirePermission("kb:pages:delete")
+  @RequirePermission("kb:pages:purge")
   async hardDelete(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,

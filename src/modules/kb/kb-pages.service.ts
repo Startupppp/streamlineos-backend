@@ -8,7 +8,7 @@
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces } from "../../db/schema";
+import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces, users } from "../../db/schema";
 import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -168,10 +168,6 @@ export class KbPagesService {
     }
 
     const result = await this.db.transaction(async (tx) => {
-      if (contentChanged) {
-        await this.snapshotIfNeeded(tx, orgId, current, user.userId);
-      }
-
       const [updated] = await tx
         .update(kbPages)
         .set(values)
@@ -180,6 +176,7 @@ export class KbPagesService {
       if (!updated) throw new NotFoundException("Page not found");
 
       if (contentChanged && input.content !== undefined) {
+        await this.snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null);
         await this.resyncLinks(tx, orgId, pageId, input.content);
 
         const oldMentions = new Set(extractMentionUserIds(current.content));
@@ -460,26 +457,56 @@ export class KbPagesService {
       );
   }
 
-  async listVersions(user: CurrentUserContext, pageId: number): Promise<(typeof kbPageVersions.$inferSelect)[]> {
+  async listVersions(user: CurrentUserContext, pageId: number) {
     const orgId = user.orgId;
     await this.assertPageAccessible(user, pageId);
     return this.db
-      .select()
+      .select({
+        id: kbPageVersions.id,
+        orgId: kbPageVersions.orgId,
+        pageId: kbPageVersions.pageId,
+        versionNumber: kbPageVersions.versionNumber,
+        title: kbPageVersions.title,
+        content: kbPageVersions.content,
+        contentText: kbPageVersions.contentText,
+        changeSummary: kbPageVersions.changeSummary,
+        authorId: kbPageVersions.authorId,
+        authorName: users.name,
+        createdAt: kbPageVersions.createdAt,
+      })
       .from(kbPageVersions)
+      .leftJoin(users, eq(kbPageVersions.authorId, users.id))
       .where(and(eq(kbPageVersions.pageId, pageId), eq(kbPageVersions.orgId, orgId)))
       .orderBy(desc(kbPageVersions.versionNumber));
   }
 
-  async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number): Promise<typeof kbPageVersions.$inferSelect> {
+  async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number) {
     const orgId = user.orgId;
     await this.assertPageAccessible(user, pageId);
-    const version = await this.db.query.kbPageVersions.findFirst({
-      where: and(
-        eq(kbPageVersions.pageId, pageId),
-        eq(kbPageVersions.versionNumber, versionNumber),
-        eq(kbPageVersions.orgId, orgId),
-      ),
-    });
+    const rows = await this.db
+      .select({
+        id: kbPageVersions.id,
+        orgId: kbPageVersions.orgId,
+        pageId: kbPageVersions.pageId,
+        versionNumber: kbPageVersions.versionNumber,
+        title: kbPageVersions.title,
+        content: kbPageVersions.content,
+        contentText: kbPageVersions.contentText,
+        changeSummary: kbPageVersions.changeSummary,
+        authorId: kbPageVersions.authorId,
+        authorName: users.name,
+        createdAt: kbPageVersions.createdAt,
+      })
+      .from(kbPageVersions)
+      .leftJoin(users, eq(kbPageVersions.authorId, users.id))
+      .where(
+        and(
+          eq(kbPageVersions.pageId, pageId),
+          eq(kbPageVersions.versionNumber, versionNumber),
+          eq(kbPageVersions.orgId, orgId),
+        ),
+      );
+    const version = rows[0];
     if (!version) throw new NotFoundException("Version not found");
     return version;
   }
@@ -505,18 +532,24 @@ export class KbPagesService {
     if (!version) throw new NotFoundException("Version not found");
 
     return this.db.transaction(async (tx) => {
-      await this.snapshotIfNeeded(tx, orgId, current, user.userId);
+      await this.snapshotIfNeeded(tx, orgId, current, user.userId, null, true);
 
       const [updated] = await tx
         .update(kbPages)
         .set({
           title: version.title,
-          content: version.content ?? undefined,
+          content: version.content,
+          contentText: version.contentText,
           lastEditedById: user.userId,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Page not found");
+
+      await this.snapshotIfNeeded(
+        tx, orgId, updated, user.userId,
+        `Restored from version ${versionNumber}`, true,
+      );
 
       if (version.content) {
         await this.resyncLinks(tx, orgId, pageId, version.content);
@@ -612,29 +645,33 @@ export class KbPagesService {
   private async snapshotIfNeeded(
     tx: KbTransaction,
     orgId: string,
-    current: PageRow,
+    page: { id: number; title: string; content: typeof kbPageVersions.$inferSelect["content"]; contentText: string | null | undefined },
     authorId: string,
+    changeSummary: string | null = null,
+    force = false,
   ): Promise<void> {
+    if (!page.content) return;
+
     const newest = await tx.query.kbPageVersions.findFirst({
-      where: and(eq(kbPageVersions.pageId, current.id), eq(kbPageVersions.orgId, orgId)),
+      where: and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)),
       orderBy: [desc(kbPageVersions.versionNumber)],
       columns: { versionNumber: true, createdAt: true },
     });
 
     const windowPassed =
-      !newest || Date.now() - newest.createdAt.getTime() > VERSION_WINDOW_MS;
+      force || !newest || Date.now() - newest.createdAt.getTime() > VERSION_WINDOW_MS;
 
     if (!windowPassed) return;
 
     const [countRow] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(kbPageVersions)
-      .where(and(eq(kbPageVersions.pageId, current.id), eq(kbPageVersions.orgId, orgId)));
+      .where(and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)));
     const total = countRow?.count ?? 0;
 
     if (total >= MAX_VERSIONS) {
       const oldest = await tx.query.kbPageVersions.findFirst({
-        where: and(eq(kbPageVersions.pageId, current.id), eq(kbPageVersions.orgId, orgId)),
+        where: and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)),
         orderBy: [asc(kbPageVersions.versionNumber)],
         columns: { id: true },
       });
@@ -646,10 +683,12 @@ export class KbPagesService {
     const nextVer = (newest?.versionNumber ?? 0) + 1;
     await tx.insert(kbPageVersions).values({
       orgId,
-      pageId: current.id,
+      pageId: page.id,
       versionNumber: nextVer,
-      title: current.title,
-      content: current.content ?? null,
+      title: page.title,
+      content: page.content,
+      contentText: page.contentText ?? null,
+      changeSummary,
       authorId,
     });
   }

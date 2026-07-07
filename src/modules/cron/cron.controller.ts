@@ -19,6 +19,7 @@ import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
+import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
 
 @Public()
@@ -34,6 +35,7 @@ export class CronController {
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
+    private readonly kb: CronKbService,
     private readonly support: CronSupportService,
     private readonly chatReplyReminders: ChatReplyRemindersService,
   ) {}
@@ -400,6 +402,32 @@ export class CronController {
       return { success: true, message: `Unsnoozed ${result.unsnoozed} tickets`, ...result };
     } catch (error) {
       logger.error("Support unsnooze cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("kb-trash-purge")
+  getKbTrashPurge(@Headers("authorization") authorization?: string) {
+    return this.runKbTrashPurge(authorization);
+  }
+
+  @Post("kb-trash-purge")
+  @HttpCode(200)
+  postKbTrashPurge(@Headers("authorization") authorization?: string) {
+    return this.runKbTrashPurge(authorization);
+  }
+
+  private async runKbTrashPurge(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.kb.purgeExpiredTrash();
+      return {
+        success: true,
+        message: `Purged ${result.purgedCount} KB pages across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB trash purge cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

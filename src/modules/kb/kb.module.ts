@@ -54,6 +54,8 @@ import { KbMediaController } from "./kb-media.controller";
 import { KbMediaService } from "./kb-media.service";
 import { KbSourcesController } from "./kb-sources.controller";
 import { KbSourcesService } from "./kb-sources.service";
+import { KbSettingsController } from "./kb-settings.controller";
+import { KbSettingsService } from "./kb-settings.service";
 
 @Module({
   imports: [AiModule, NotificationsModule],
@@ -83,6 +85,7 @@ import { KbSourcesService } from "./kb-sources.service";
     KbArticleMigrationController,
     KbMediaController,
     KbSourcesController,
+    KbSettingsController,
   ],
   providers: [
     KbCreditsService,
@@ -113,7 +116,8 @@ import { KbSourcesService } from "./kb-sources.service";
     KbArticleMigrationService,
     KbMediaService,
     KbSourcesService,
+    KbSettingsService,
   ],
-  exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService],
+  exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService],
 })
 export class KbModule {}

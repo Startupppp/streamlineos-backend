@@ -3,12 +3,14 @@ import { AiModule } from "../ai/ai.module";
 import { AutomationModule } from "../automation/automation.module";
 import { ChatModule } from "../chat/chat.module";
 import { EmailModule } from "../email/email.module";
+import { KbModule } from "../kb/kb.module";
 import { SupportModule } from "../support/support.module";
 import { CronController } from "./cron.controller";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
+import { CronKbService } from "./cron-kb.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
@@ -17,7 +19,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, EmailModule, ChatModule, SupportModule],
+  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,
@@ -25,6 +27,7 @@ import { CronSupportService } from "./cron-support.service";
     CronLeaveService,
     CronNotificationsService,
     CronHolidayService,
+    CronKbService,
     CronRecruitmentService,
     CronHrService,
     CronWeeklyRecapService,

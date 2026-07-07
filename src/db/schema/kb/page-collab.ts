@@ -21,6 +21,8 @@ export const kbPageVersions = pgTable(
     versionNumber: integer("version_number").notNull(),
     title: text("title").notNull().default(""),
     content: jsonb("content").$type<KbPageContent>(),
+    contentText: text("content_text"),
+    changeSummary: text("change_summary"),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

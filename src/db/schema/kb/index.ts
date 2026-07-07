@@ -10,3 +10,4 @@ export * from "./page-collab";
 export * from "./governance";
 export * from "./sources";
 export * from "./chat";
+export * from "./settings";

@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ConflictException,
   Inject,
@@ -6,13 +6,14 @@
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lt, sql } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { kbPages, kbPageLinks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KbIndexingService } from "./kb-indexing.service";
+import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 
@@ -45,6 +46,7 @@ export class KbPageTreeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly indexing: KbIndexingService,
+    private readonly audit: AuditService,
   ) {}
 
   async getTree(user: CurrentUserContext): Promise<{
@@ -84,7 +86,7 @@ export class KbPageTreeService {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-      columns: { id: true, deletedAt: true },
+      columns: { id: true, deletedAt: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");
 
@@ -106,6 +108,15 @@ export class KbPageTreeService {
       return { deleted: ids.length, subtreeIds: ids };
     });
 
+    this.audit.log({
+      action: "kb.page.deleted",
+      userId: user.userId,
+      orgId,
+      resourceType: "kb_page",
+      resourceId: String(pageId),
+      metadata: { pageTitle: page.title, subtreeSize: deleted },
+    });
+
     for (const id of subtreeIds) {
       this.indexing.removePageChunks(orgId, id).catch((err: unknown) => {
         this.logger.error(`Failed to remove chunks for trashed page ${id}: ${err}`);
@@ -119,12 +130,12 @@ export class KbPageTreeService {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-      columns: { id: true, parentPageId: true, deletedAt: true },
+      columns: { id: true, parentPageId: true, deletedAt: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");
     if (!page.deletedAt) throw new ConflictException("Page is not in trash");
 
-    return this.db.transaction(async (tx) => {
+    const restored = await this.db.transaction(async (tx) => {
       const subtreeIds = await this.collectSubtreeIds(tx, orgId, pageId);
 
       let parentPageId = page.parentPageId;
@@ -153,20 +164,31 @@ export class KbPageTreeService {
           .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
       }
 
-      const [restored] = await tx
+      const [restoredPage] = await tx
         .select()
         .from(kbPages)
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
-      if (!restored) throw new NotFoundException("Page not found after restore");
-      return restored;
+      if (!restoredPage) throw new NotFoundException("Page not found after restore");
+      return restoredPage;
     });
+
+    this.audit.log({
+      action: "kb.page.restored",
+      userId: user.userId,
+      orgId,
+      resourceType: "kb_page",
+      resourceId: String(pageId),
+      metadata: { pageTitle: page.title },
+    });
+
+    return restored;
   }
 
   async hardDelete(user: CurrentUserContext, pageId: number): Promise<void> {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-      columns: { id: true },
+      columns: { id: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");
 
@@ -181,6 +203,80 @@ export class KbPageTreeService {
           ),
         );
     });
+
+    this.audit.log({
+      action: "kb.page.permanently_deleted",
+      userId: user.userId,
+      orgId,
+      resourceType: "kb_page",
+      resourceId: String(pageId),
+      metadata: { pageTitle: page.title },
+    });
+  }
+
+  async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
+    const orgId = user.orgId;
+    const trashedPages = await this.db
+      .select({ id: kbPages.id, title: kbPages.title })
+      .from(kbPages)
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)));
+
+    if (trashedPages.length === 0) return { purgedCount: 0 };
+
+    const ids = trashedPages.map((p) => p.id);
+    await this.db
+      .delete(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+        ),
+      );
+
+    this.audit.log({
+      action: "kb.trash.emptied",
+      userId: user.userId,
+      orgId,
+      resourceType: "kb_page",
+      metadata: { purgedCount: ids.length },
+    });
+
+    return { purgedCount: ids.length };
+  }
+
+  async purgeExpired(orgId: string, olderThan: Date): Promise<number> {
+    const expired = await this.db
+      .select({ id: kbPages.id, title: kbPages.title })
+      .from(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          isNotNull(kbPages.deletedAt),
+          lt(kbPages.deletedAt, olderThan),
+        ),
+      );
+
+    if (expired.length === 0) return 0;
+
+    const ids = expired.map((p) => p.id);
+    await this.db
+      .delete(kbPages)
+      .where(
+        and(
+          eq(kbPages.orgId, orgId),
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+        ),
+      );
+
+    this.audit.log({
+      action: "kb.page.auto_purged",
+      userId: "system",
+      orgId,
+      resourceType: "kb_page",
+      metadata: { purgedCount: ids.length, olderThan: olderThan.toISOString() },
+    });
+
+    return ids.length;
   }
 
   async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {

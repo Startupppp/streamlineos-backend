@@ -32,6 +32,7 @@ export const updatePageSchema = z.object({
     "playbook",
   ]).optional(),
   ownerUserId: z.string().nullable().optional(),
+  changeSummary: z.string().max(500).optional(),
 });
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 
