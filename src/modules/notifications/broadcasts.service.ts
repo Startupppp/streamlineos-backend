@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, desc, lt, sql } from "drizzle-orm";
-import { broadcasts, notifications, userMemberships } from "../../db/schema";
+import { eq, and, desc, lt, inArray } from "drizzle-orm";
+import { broadcasts, notifications, userMemberships, userRoles, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -114,10 +114,7 @@ export class BroadcastsService {
       return updated;
     }
 
-    const recipientUserIds = await this.resolveRecipients(orgId, broadcast.audience as {
-      type: "all" | "roles" | "departments" | "users";
-      userIds?: string[];
-    });
+    const recipientUserIds = await this.resolveRecipients(orgId, broadcast.audience);
 
     const now = new Date();
     if (recipientUserIds.length > 0 && broadcast.channels.includes("IN_APP")) {
@@ -181,15 +178,48 @@ export class BroadcastsService {
     return { success: true };
   }
 
-  private async resolveRecipients(orgId: string, audience: { type: string; userIds?: string[] }): Promise<string[]> {
-    if (audience.type === "users" && audience.userIds) {
-      return audience.userIds;
+  private async resolveRecipients(
+    orgId: string,
+    audience: { type: string; roleIds?: string[]; departmentIds?: string[]; userIds?: string[] },
+  ): Promise<string[]> {
+    const dedupe = (ids: string[]): string[] => [...new Set(ids.filter(Boolean))];
+
+    if (audience.type === "users") {
+      const ids = dedupe(audience.userIds ?? []);
+      if (ids.length === 0) return [];
+      const rows = await this.db
+        .select({ userId: userMemberships.userId })
+        .from(userMemberships)
+        .where(and(eq(userMemberships.orgId, orgId), inArray(userMemberships.userId, ids)));
+      return dedupe(rows.map((r) => r.userId));
     }
+
+    if (audience.type === "roles") {
+      const roleIds = (audience.roleIds ?? []).map(Number).filter((n) => Number.isInteger(n));
+      if (roleIds.length === 0) return [];
+      const rows = await this.db
+        .select({ userId: userRoles.userId })
+        .from(userRoles)
+        .where(and(eq(userRoles.orgId, orgId), inArray(userRoles.roleId, roleIds)));
+      return dedupe(rows.map((r) => r.userId));
+    }
+
+    if (audience.type === "departments") {
+      const deptIds = (audience.departmentIds ?? []).map(Number).filter((n) => Number.isInteger(n));
+      if (deptIds.length === 0) return [];
+      const rows = await this.db
+        .select({ userId: userMemberships.userId })
+        .from(userMemberships)
+        .innerJoin(users, eq(users.id, userMemberships.userId))
+        .where(and(eq(userMemberships.orgId, orgId), inArray(users.departmentId, deptIds)));
+      return dedupe(rows.map((r) => r.userId));
+    }
+
     const memberships = await this.db
       .select({ userId: userMemberships.userId })
       .from(userMemberships)
       .where(eq(userMemberships.orgId, orgId));
-    return memberships.map((m) => m.userId);
+    return dedupe(memberships.map((m) => m.userId));
   }
 
   private async invalidateCache(orgId: string) {

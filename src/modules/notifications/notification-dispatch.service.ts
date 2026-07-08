@@ -59,9 +59,11 @@ export class NotificationDispatchService {
       .where(inArray(users.id, targets));
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
+    const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
     const announcements: AnnounceInput[] = [];
     for (const userId of targets) {
-      const routingResult = await this.routing.route(input.orgId, userId, definition, priority);
+      const routingResult = routingResults.get(userId);
+      if (!routingResult) continue;
       const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null);
       result.notified += perUser.createdInApp ? 1 : 0;
       result.deliveriesQueued += perUser.queued;

@@ -246,73 +246,115 @@ export class NotificationRoutingService {
     };
   }
 
-  private async loadSuppression(orgId: string, userId: string, def: NotificationEventDefinition): Promise<Map<NotificationChannel, SuppressionReason>> {
-    const map = new Map<NotificationChannel, SuppressionReason>();
+  private matchesScope(scopeType: string, scopeKey: string, def: NotificationEventDefinition): boolean {
+    if (scopeType === "event") return scopeKey === def.eventKey;
+    if (scopeType === "module") return scopeKey === def.sourceModule;
+    if (scopeType === "category") return scopeKey === def.category;
+    return false;
+  }
+
+  private async loadSuppressionBatch(
+    orgId: string,
+    userIds: string[],
+    def: NotificationEventDefinition,
+  ): Promise<Map<string, Map<NotificationChannel, SuppressionReason>>> {
+    const perUser = new Map<string, Map<NotificationChannel, SuppressionReason>>();
+    for (const u of userIds) perUser.set(u, new Map());
+    if (userIds.length === 0) return perUser;
+
     const now = new Date();
     const rows = await this.db.query.notificationSuppressionRules.findMany({
       where: and(
         eq(notificationSuppressionRules.orgId, orgId),
-        or(isNull(notificationSuppressionRules.userId), eq(notificationSuppressionRules.userId, userId)),
+        or(isNull(notificationSuppressionRules.userId), inArray(notificationSuppressionRules.userId, userIds)),
         or(isNull(notificationSuppressionRules.expiresAt), gte(notificationSuppressionRules.expiresAt, now)),
       ),
     });
-    const scopeMatches = (scopeType: string, scopeKey: string): boolean => {
-      if (scopeType === "event") return scopeKey === def.eventKey;
-      if (scopeType === "module") return scopeKey === def.sourceModule;
-      if (scopeType === "category") return scopeKey === def.category;
-      return false;
-    };
     for (const r of rows) {
-      if (!scopeMatches(r.scopeType, r.scopeKey)) continue;
+      if (!this.matchesScope(r.scopeType, r.scopeKey, def)) continue;
       const channels = r.channel ? [r.channel as NotificationChannel] : ALL_CHANNELS;
-      for (const ch of channels) if (!map.has(ch)) map.set(ch, r.reason as SuppressionReason);
+      const applyTo = r.userId ? [r.userId] : userIds;
+      for (const u of applyTo) {
+        const m = perUser.get(u);
+        if (!m) continue;
+        for (const ch of channels) if (!m.has(ch)) m.set(ch, r.reason as SuppressionReason);
+      }
     }
-    return map;
+    return perUser;
   }
 
-  private async applyRateLimits(orgId: string, userId: string, def: NotificationEventDefinition, suppressed: Map<NotificationChannel, SuppressionReason>): Promise<void> {
-    if (def.rateLimitMax <= 0 || def.rateLimitWindowSeconds <= 0) return;
+  private async applyRateLimitsBatch(
+    orgId: string,
+    userIds: string[],
+    def: NotificationEventDefinition,
+    perUser: Map<string, Map<NotificationChannel, SuppressionReason>>,
+  ): Promise<void> {
+    if (def.rateLimitMax <= 0 || def.rateLimitWindowSeconds <= 0 || userIds.length === 0) return;
     const since = new Date(Date.now() - def.rateLimitWindowSeconds * 1000);
     const rows = await this.db
-      .select({ channel: notificationDeliveries.channel, count: sql<number>`count(*)::int` })
+      .select({ userId: notificationDeliveries.userId, channel: notificationDeliveries.channel, count: sql<number>`count(*)::int` })
       .from(notificationDeliveries)
       .where(
         and(
           eq(notificationDeliveries.orgId, orgId),
-          eq(notificationDeliveries.userId, userId),
+          inArray(notificationDeliveries.userId, userIds),
           eq(notificationDeliveries.eventKey, def.eventKey),
           gte(notificationDeliveries.createdAt, since),
           inArray(notificationDeliveries.status, ["SENT", "DELIVERED", "QUEUED", "SENDING", "PENDING"]),
         ),
       )
-      .groupBy(notificationDeliveries.channel);
+      .groupBy(notificationDeliveries.userId, notificationDeliveries.channel);
     for (const r of rows) {
-      if (Number(r.count) >= def.rateLimitMax && !suppressed.has(r.channel as NotificationChannel)) {
-        suppressed.set(r.channel as NotificationChannel, "RATE_LIMIT");
-      }
+      if (Number(r.count) < def.rateLimitMax) continue;
+      const m = perUser.get(r.userId);
+      if (m && !m.has(r.channel as NotificationChannel)) m.set(r.channel as NotificationChannel, "RATE_LIMIT");
     }
   }
 
-  async route(orgId: string, userId: string, definition: NotificationEventDefinition, priority: NotificationPriority): Promise<RoutingResult> {
-    const [prefRow, availableChannels, orgPolicy] = await Promise.all([
-      this.db.query.notificationPreferences.findFirst({
-        where: and(eq(notificationPreferences.orgId, orgId), eq(notificationPreferences.userId, userId)),
-      }),
+  /**
+   * Resolve routing for many recipients of the same event in a fixed number of queries:
+   * org providers + org policy once, and preferences + suppression batched — instead of
+   * per-recipient round trips. Scales to large fan-out without N×queries.
+   */
+  async routeMany(
+    orgId: string,
+    userIds: string[],
+    definition: NotificationEventDefinition,
+    priority: NotificationPriority,
+  ): Promise<Map<string, RoutingResult>> {
+    const results = new Map<string, RoutingResult>();
+    if (userIds.length === 0) return results;
+
+    const [availableChannels, orgPolicy, prefRows] = await Promise.all([
       this.loadOrgAvailability(orgId),
       this.loadOrgPolicy(orgId, definition),
+      this.db
+        .select()
+        .from(notificationPreferences)
+        .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
     ]);
-    const suppressedChannels = await this.loadSuppression(orgId, userId, definition);
-    await this.applyRateLimits(orgId, userId, definition, suppressedChannels);
+    const prefsByUser = new Map(prefRows.map((r) => [r.userId, r]));
+    const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, definition);
+    await this.applyRateLimitsBatch(orgId, userIds, definition, suppressionByUser);
 
-    const result = computeRouting({
-      definition,
-      priority,
-      now: new Date(),
-      prefs: this.resolvePrefs(prefRow),
-      orgPolicy,
-      availableChannels,
-      suppressedChannels,
-    });
-    return { ...result, userId };
+    const now = new Date();
+    for (const userId of userIds) {
+      const result = computeRouting({
+        definition,
+        priority,
+        now,
+        prefs: this.resolvePrefs(prefsByUser.get(userId)),
+        orgPolicy,
+        availableChannels,
+        suppressedChannels: suppressionByUser.get(userId) ?? new Map(),
+      });
+      results.set(userId, { ...result, userId });
+    }
+    return results;
+  }
+
+  async route(orgId: string, userId: string, definition: NotificationEventDefinition, priority: NotificationPriority): Promise<RoutingResult> {
+    const results = await this.routeMany(orgId, [userId], definition, priority);
+    return results.get(userId) ?? { userId, createInApp: true, channels: [], priority, deferredUntil: null, reasonText: "" };
   }
 }
