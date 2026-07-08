@@ -2502,6 +2502,69 @@ const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
   },
 ];
 
+const FEEDBUCKET_PERMISSIONS: Permission[] = [
+  {
+    name: "feedbucket:widgets:view",
+    resource: "feedbucket:widgets",
+    action: "view",
+    description: "View feedback widgets",
+  },
+  {
+    name: "feedbucket:widgets:create",
+    resource: "feedbucket:widgets",
+    action: "create",
+    description: "Create feedback widgets",
+  },
+  {
+    name: "feedbucket:widgets:update",
+    resource: "feedbucket:widgets",
+    action: "update",
+    description: "Update feedback widgets",
+  },
+  {
+    name: "feedbucket:widgets:delete",
+    resource: "feedbucket:widgets",
+    action: "delete",
+    description: "Delete feedback widgets",
+  },
+  {
+    name: "feedbucket:widgets:manage",
+    resource: "feedbucket:widgets",
+    action: "manage",
+    description: "Manage feedback widgets (rotate keys, etc.)",
+  },
+  {
+    name: "feedbucket:submissions:view",
+    resource: "feedbucket:submissions",
+    action: "view",
+    description: "View feedback submissions",
+  },
+  {
+    name: "feedbucket:submissions:update",
+    resource: "feedbucket:submissions",
+    action: "update",
+    description: "Update feedback submissions",
+  },
+  {
+    name: "feedbucket:submissions:delete",
+    resource: "feedbucket:submissions",
+    action: "delete",
+    description: "Delete feedback submissions",
+  },
+  {
+    name: "feedbucket:submissions:manage",
+    resource: "feedbucket:submissions",
+    action: "manage",
+    description: "Manage feedback submissions (convert to ticket, etc.)",
+  },
+  {
+    name: "feedbucket:submissions:assign",
+    resource: "feedbucket:submissions",
+    action: "assign",
+    description: "Assign feedback submissions to team members",
+  },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -2531,6 +2594,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_FORMS_PERMISSIONS,
   ...PROJECT_PORTFOLIO_PERMISSIONS,
   ...PROJECT_WORKFLOW_PERMISSIONS,
+  ...FEEDBUCKET_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -2840,6 +2904,16 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:create",
     "projects:bugs:update",
     "projects:ai:use",
+    "feedbucket:widgets:view",
+    "feedbucket:widgets:create",
+    "feedbucket:widgets:update",
+    "feedbucket:widgets:delete",
+    "feedbucket:widgets:manage",
+    "feedbucket:submissions:view",
+    "feedbucket:submissions:update",
+    "feedbucket:submissions:delete",
+    "feedbucket:submissions:manage",
+    "feedbucket:submissions:assign",
   ],
 
   ENGINEERING: [
@@ -2882,6 +2956,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:create",
     "projects:bugs:update",
     "projects:ai:use",
+    "feedbucket:widgets:view",
+    "feedbucket:submissions:view",
   ],
 
   DESIGN: [
@@ -3134,6 +3210,16 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:qa:view",
     "projects:bugs:view",
     "projects:ai:use",
+    "feedbucket:widgets:view",
+    "feedbucket:widgets:create",
+    "feedbucket:widgets:update",
+    "feedbucket:widgets:delete",
+    "feedbucket:widgets:manage",
+    "feedbucket:submissions:view",
+    "feedbucket:submissions:update",
+    "feedbucket:submissions:delete",
+    "feedbucket:submissions:manage",
+    "feedbucket:submissions:assign",
   ],
 
   BRANCH_HR: [

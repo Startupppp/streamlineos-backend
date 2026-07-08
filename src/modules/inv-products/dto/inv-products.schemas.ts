@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const SKU_PATTERN = /^[A-Z0-9][A-Z0-9_-]*$/;
+const DECIMAL_PATTERN = /^\d+(\.\d{1,4})?$/;
+
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
   productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
@@ -12,24 +15,30 @@ export type ListProductsInput = z.infer<typeof listProductsSchema>;
 
 export const createProductSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  sku: z.string().trim().min(1).max(100),
+  sku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(SKU_PATTERN, "SKU must contain only uppercase letters, digits, hyphens, or underscores"),
   barcode: z.string().trim().max(100).optional(),
   description: z.string().trim().max(2000).optional(),
   categoryId: z.number().int().positive().optional(),
   uomId: z.number().int().positive().optional(),
+  status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
   productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
   trackingMethod: z.enum(["NONE", "LOT", "SERIAL"]).optional(),
   costingMethod: z.enum(["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]).optional(),
-  standardCost: z.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
+  standardCost: z.string().regex(DECIMAL_PATTERN).optional(),
   purchaseUomId: z.number().int().positive().optional(),
   salesUomId: z.number().int().positive().optional(),
   defaultVendorId: z.number().int().positive().optional(),
   reorderEnabled: z.boolean().optional(),
-  costPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  sellingPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  reorderPoint: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  minStockLevel: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  maxStockLevel: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
+  costPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
+  sellingPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
+  reorderPoint: z.string().regex(DECIMAL_PATTERN).default("0"),
+  minStockLevel: z.string().regex(DECIMAL_PATTERN).default("0"),
+  maxStockLevel: z.string().regex(DECIMAL_PATTERN).default("0"),
   hasVariants: z.boolean().default(false),
   imageUrl: z.string().url().optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
@@ -41,10 +50,15 @@ export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
 export const createVariantSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  sku: z.string().trim().min(1).max(100),
+  sku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(SKU_PATTERN, "SKU must contain only uppercase letters, digits, hyphens, or underscores"),
   barcode: z.string().trim().max(100).optional(),
-  costPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
-  sellingPrice: z.string().regex(/^\d+(\.\d{1,4})?$/).default("0"),
+  costPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
+  sellingPrice: z.string().regex(DECIMAL_PATTERN).default("0"),
   attributeValues: z.record(z.string(), z.string()).default({}),
 });
 export type CreateVariantInput = z.infer<typeof createVariantSchema>;

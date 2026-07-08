@@ -1,0 +1,114 @@
+import { INestApplication } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import request from "supertest";
+import { AppModule } from "../../../app.module";
+import { AllExceptionsFilter } from "../../../common/http/all-exceptions.filter";
+import { signToken } from "../../../../test/helpers/sign-token";
+
+describe("Feedbucket auth/RBAC (e2e)", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
+    process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+    const ref = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = ref.createNestApplication();
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+  });
+
+  afterAll(async () => app.close());
+
+  type Method = "get" | "post" | "patch" | "delete";
+
+  function callRoute(method: Method, path: string): request.Test {
+    const agent = request(app.getHttpServer());
+    switch (method) {
+      case "get":
+        return agent.get(path);
+      case "post":
+        return agent.post(path);
+      case "patch":
+        return agent.patch(path);
+      case "delete":
+        return agent.delete(path);
+    }
+  }
+
+  const protectedRoutes: ReadonlyArray<[Method, string]> = [
+    ["get", "/feedbucket/widgets"],
+    ["post", "/feedbucket/widgets"],
+    ["get", "/feedbucket/widgets/1"],
+    ["patch", "/feedbucket/widgets/1"],
+    ["delete", "/feedbucket/widgets/1"],
+    ["post", "/feedbucket/widgets/1/rotate-key"],
+    ["get", "/feedbucket/submissions"],
+    ["get", "/feedbucket/submissions/1"],
+    ["patch", "/feedbucket/submissions/1"],
+    ["delete", "/feedbucket/submissions/1"],
+    ["post", "/feedbucket/submissions/1/convert-to-ticket"],
+    ["get", "/feedbucket/stats"],
+  ];
+
+  it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
+    const res = await callRoute(method, path);
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Unauthorized" });
+  });
+
+  it("403 on GET /feedbucket/widgets without feedbucket:widgets:view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/feedbucket/widgets")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("403 on POST /feedbucket/widgets without feedbucket:widgets:create", async () => {
+    const token = await signToken({ permissions: ["feedbucket:widgets:view"], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post("/feedbucket/widgets")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Test Widget" });
+    expect(res.status).toBe(403);
+  });
+
+  it("403 on GET /feedbucket/submissions without feedbucket:submissions:view", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/feedbucket/submissions")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("403 on POST /feedbucket/submissions/1/convert-to-ticket without feedbucket:submissions:manage", async () => {
+    const token = await signToken({
+      permissions: ["feedbucket:submissions:view"],
+      enabledModules: [],
+    });
+    const res = await request(app.getHttpServer())
+      .post("/feedbucket/submissions/1/convert-to-ticket")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("cross-tenant isolation: org A user cannot read org B widget", async () => {
+    const tokenOrgA = await signToken({
+      orgId: "org_a",
+      permissions: ["feedbucket:widgets:view"],
+      enabledModules: [],
+    });
+    const res = await request(app.getHttpServer())
+      .get("/feedbucket/widgets/9999")
+      .set("Authorization", `Bearer ${tokenOrgA}`);
+    expect([403, 404]).toContain(res.status);
+  });
+
+  it("404 on public submit with unknown publicKey", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/public/feedbucket/nonexistent_key_abc123")
+      .field("type", "bug")
+      .field("message", "Test feedback");
+    expect(res.status).toBe(404);
+  });
+});

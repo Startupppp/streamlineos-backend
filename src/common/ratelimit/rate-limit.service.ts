@@ -30,6 +30,8 @@ const TIERS: Record<string, Tier> = {
   "support:inbound-whatsapp": { limit: 120, windowSecs: 60 },
   "support:inbound-sms": { limit: 120, windowSecs: 60 },
   "support:chat-widget": { limit: 60, windowSecs: 60 },
+  "feedbucket:widget-submit": { limit: 10, windowSecs: 60 },
+  "feedbucket:widget-config": { limit: 60, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

@@ -18,6 +18,7 @@ const MODULE_CATALOG = [
   "support",
   "surveys",
   "payroll",
+  "feedbucket",
 ] as const;
 
 const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {

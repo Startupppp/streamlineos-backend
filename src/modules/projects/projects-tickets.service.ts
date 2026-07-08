@@ -220,6 +220,51 @@ export class ProjectsTicketsService {
     return ticket;
   }
 
+  async createFromFeedback(
+    orgId: string,
+    actingUserId: string,
+    projectId: number,
+    input: { title: string; description: string; type?: string },
+  ): Promise<{ id: number }> {
+    const [ticket] = await this.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
+
+      const maxResult = await tx
+        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+
+      const nextNum = (maxResult[0]?.maxNum ?? 0) + 1;
+
+      const [created] = await tx
+        .insert(tickets)
+        .values({
+          orgId,
+          projectId,
+          ticketNumber: nextNum,
+          title: input.title,
+          description: input.description,
+          type: normalizeTicketType(input.type ?? "BUG"),
+          priority: "MEDIUM",
+          reporterId: actingUserId,
+          status: "TODO",
+        })
+        .returning({ id: tickets.id });
+
+      await tx.insert(ticketWatchers).values({ ticketId: created.id, userId: actingUserId });
+      await tx.insert(ticketActivityLog).values({
+        orgId,
+        ticketId: created.id,
+        userId: actingUserId,
+        action: "created",
+      });
+
+      return [created];
+    });
+
+    return ticket;
+  }
+
   async getTicket(u: CurrentUserContext, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),

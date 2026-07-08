@@ -113,6 +113,7 @@ import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
 import { TimesheetsCoreModule } from "./modules/timesheets-core/timesheets-core.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
+import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -230,6 +231,7 @@ import { MeService } from "./me/me.service";
     TimesheetsModule,
     TimesheetsCoreModule,
     PaymentsModule,
+    FeedbucketModule,
   ],
   controllers: [HealthController, MeController],
   providers: [
