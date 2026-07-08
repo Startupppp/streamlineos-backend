@@ -11,7 +11,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   ALL_CHANNELS,
-  EXTERNAL_CHANNELS,
   type ChannelDecision,
   type NotificationChannel,
   type NotificationEventDefinition,

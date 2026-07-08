@@ -7,8 +7,9 @@ import type { QueueListInput } from "./dto/queue.schemas";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import type { NotificationChannel } from "./notification.types";
 
-const ACTIVE_STATUSES = ["PENDING", "QUEUED", "SENDING"] as const;
-const FAILED_STATUSES = ["FAILED", "DEAD", "BOUNCED"] as const;
+type DeliveryStatus = (typeof notificationDeliveries.$inferSelect)["status"];
+const ACTIVE_STATUSES: readonly DeliveryStatus[] = ["PENDING", "QUEUED", "SENDING"];
+const FAILED_STATUSES: readonly DeliveryStatus[] = ["FAILED", "DEAD", "BOUNCED"];
 
 @Injectable()
 export class NotificationQueueService {
@@ -42,7 +43,7 @@ export class NotificationQueueService {
     };
   }
 
-  private async listByStatuses(orgId: string, statuses: readonly string[], filters: QueueListInput) {
+  private async listByStatuses(orgId: string, statuses: readonly DeliveryStatus[], filters: QueueListInput) {
     const conditions = [
       eq(notificationDeliveries.orgId, orgId),
       inArray(notificationDeliveries.status, filters.status ? [filters.status] : [...statuses]),

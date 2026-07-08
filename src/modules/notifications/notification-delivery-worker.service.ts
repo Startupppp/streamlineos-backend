@@ -52,7 +52,10 @@ export class NotificationDeliveryWorker {
         .where(
           and(
             eq(notificationQueue.id, candidate.id),
-            or(eq(notificationQueue.status, "PENDING"), eq(notificationQueue.status, "LOCKED")),
+            or(
+              eq(notificationQueue.status, "PENDING"),
+              and(eq(notificationQueue.status, "LOCKED"), lt(notificationQueue.lockedAt, staleBefore)),
+            ),
           ),
         )
         .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId, attemptCount: notificationQueue.attemptCount });

@@ -5,7 +5,7 @@ const channelMap = z.record(z.string(), z.boolean());
 export const eventPreferenceSchema = z.object({
   channels: channelMap.optional(),
   muted: z.boolean().optional(),
-  mode: z.enum(["immediate", "digest", "in_app", "muted"]).optional(),
+  mode: z.string().optional(),
 });
 
 export const updatePreferenceSchema = z.object({
