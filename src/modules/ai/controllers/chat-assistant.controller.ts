@@ -6,6 +6,8 @@ import {
   ForbiddenException,
   Get,
   InternalServerErrorException,
+  Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -22,7 +24,14 @@ import { ChatAssistantService } from "../services/chat-assistant.service";
 import { ChatHistoryService } from "../services/chat-history.service";
 import { OrgFeaturesService } from "../services/org-features.service";
 import { AiUsageService } from "../services/ai-usage.service";
-import { chatHistoryQuerySchema, chatRequestSchema } from "../dto/request.schemas";
+import {
+  chatHistoryQuerySchema,
+  chatRequestSchema,
+  conversationCreateSchema,
+  conversationMessagesQuerySchema,
+  conversationRenameSchema,
+  conversationsListQuerySchema,
+} from "../dto/request.schemas";
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -52,6 +61,68 @@ export class ChatAssistantController {
     return { success: true };
   }
 
+  @Get("conversations")
+  @RequirePermission("ai:chat:use")
+  async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
+    const parsed = conversationsListQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+    return this.history.listConversations(u.orgId, u.userId, {
+      cursor: parsed.data.cursor,
+      limit: parsed.data.limit,
+    });
+  }
+
+  @Post("conversations")
+  @RequirePermission("ai:chat:use")
+  async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+    const parsed = conversationCreateSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Invalid request body");
+    return this.history.createConversation(u.orgId, u.userId, parsed.data.title);
+  }
+
+  @Patch("conversations/:conversationId")
+  @RequirePermission("ai:chat:use")
+  async renameConversation(
+    @Param("conversationId") conversationIdParam: string,
+    @Body() body: unknown,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const conversationId = parseInt(conversationIdParam, 10);
+    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
+    const parsed = conversationRenameSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Invalid request body");
+    return this.history.renameConversation(u.orgId, u.userId, conversationId, parsed.data.title);
+  }
+
+  @Delete("conversations/:conversationId")
+  @RequirePermission("ai:chat:use")
+  async deleteConversation(
+    @Param("conversationId") conversationIdParam: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<{ success: boolean }> {
+    const conversationId = parseInt(conversationIdParam, 10);
+    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
+    await this.history.deleteConversation(u.orgId, u.userId, conversationId);
+    return { success: true };
+  }
+
+  @Get("conversations/:conversationId/messages")
+  @RequirePermission("ai:chat:use")
+  async getConversationMessages(
+    @Param("conversationId") conversationIdParam: string,
+    @Query() query: unknown,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const conversationId = parseInt(conversationIdParam, 10);
+    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
+    const parsed = conversationMessagesQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException("Invalid query parameters");
+    return this.history.listMessages(u.orgId, u.userId, conversationId, {
+      cursor: parsed.data.cursor,
+      limit: parsed.data.limit,
+    });
+  }
+
   @Post()
   @RequirePermission("ai:chat:use")
   async chatAssistant(
@@ -68,7 +139,12 @@ export class ChatAssistantController {
     }
 
     try {
-      const result = await this.chat.processChat(parsed.data.messages, u.userId, u.orgId);
+      const result = await this.chat.processChat(
+        parsed.data.messages,
+        u.userId,
+        u.orgId,
+        parsed.data.conversationId,
+      );
       const model = this.chat.getChatModelId();
 
       void result.usage

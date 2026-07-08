@@ -155,6 +155,7 @@ export const chatRequestSchema = z.object({
     )
     .min(1)
     .max(50),
+  conversationId: z.number().int().positive().optional(),
 });
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
@@ -163,3 +164,25 @@ export const chatHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 export type ChatHistoryQueryInput = z.infer<typeof chatHistoryQuerySchema>;
+
+export const conversationCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+});
+export type ConversationCreateInput = z.infer<typeof conversationCreateSchema>;
+
+export const conversationRenameSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+});
+export type ConversationRenameInput = z.infer<typeof conversationRenameSchema>;
+
+export const conversationsListQuerySchema = z.object({
+  cursor: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type ConversationsListQueryInput = z.infer<typeof conversationsListQuerySchema>;
+
+export const conversationMessagesQuerySchema = z.object({
+  cursor: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ConversationMessagesQueryInput = z.infer<typeof conversationMessagesQuerySchema>;

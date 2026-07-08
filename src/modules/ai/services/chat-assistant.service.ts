@@ -220,13 +220,22 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
     return { resolved, unresolved };
   }
 
-  async processChat(messages: ChatMessage[], userId: string, orgId: string) {
+  async processChat(
+    messages: ChatMessage[],
+    userId: string,
+    orgId: string,
+    conversationId?: number,
+  ) {
     const context = await this.fetchContext(userId, orgId);
     const contextPrompt = this.buildContextPrompt(context);
 
     const latest = messages.at(-1);
     if (latest?.role === "user") {
-      await this.history.append(orgId, userId, "user", latest.content);
+      if (conversationId !== undefined) {
+        await this.history.appendToConversation(orgId, userId, conversationId, "user", latest.content);
+      } else {
+        await this.history.append(orgId, userId, "user", latest.content);
+      }
     }
 
     const modelMessages: ModelMessage[] = messages.map((m) =>
@@ -243,7 +252,11 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
       stopWhen: stepCountIs(5),
       onFinish: async ({ text }) => {
         try {
-          await this.history.append(orgId, userId, "assistant", text);
+          if (conversationId !== undefined) {
+            await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
+          } else {
+            await this.history.append(orgId, userId, "assistant", text);
+          }
         } catch (error) {
           logger.error("Failed to persist assistant chat message", { error });
         }
