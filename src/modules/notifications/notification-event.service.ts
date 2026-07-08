@@ -2,10 +2,21 @@ import { Injectable } from "@nestjs/common";
 import { Subject, Observable } from "rxjs";
 import { filter, map } from "rxjs/operators";
 
+export interface NotifEventPayload {
+  id: number;
+  title: string;
+  message: string;
+  priority: string;
+  category: string;
+  link?: string | null;
+  eventKey?: string | null;
+}
+
 interface NotifEvent {
   userId: string;
   orgId: string;
   type: string;
+  notification?: NotifEventPayload;
 }
 
 interface StreamToken {
@@ -26,7 +37,7 @@ export class NotificationEventService {
   stream(userId: string, orgId: string): Observable<MessageEvent> {
     return this.events$.pipe(
       filter((e) => e.userId === userId && e.orgId === orgId),
-      map((e) => ({ data: JSON.stringify({ type: e.type }) } as MessageEvent)),
+      map((e) => ({ data: JSON.stringify({ type: e.type, notification: e.notification }) } as MessageEvent)),
     );
   }
 

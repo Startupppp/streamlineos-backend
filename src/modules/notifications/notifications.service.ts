@@ -7,6 +7,20 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInput, SnoozeInput, BulkActionInput, AuditLogsInput } from "./dto/notification.schemas";
 import { NotificationEventService } from "./notification-event.service";
+import { WebPushService } from "../realtime/web-push.service";
+
+export interface AnnounceInput {
+  id: number;
+  userId: string;
+  orgId: string;
+  title: string;
+  message: string;
+  priority: string;
+  category: string;
+  link?: string | null;
+  sourceModule?: string | null;
+  eventKey?: string | null;
+}
 
 export type NotificationCategoryValue =
   | "SECURITY" | "CRM" | "HRMS" | "BILLING" | "AI" | "PROJECTS" | "WORKFLOW" | "MARKETING" | "SYSTEM"
@@ -38,6 +52,7 @@ export class NotificationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly notifEvents: NotificationEventService,
+    private readonly webPush: WebPushService,
   ) {}
 
   async create(input: CreateNotificationInput) {
@@ -65,13 +80,62 @@ export class NotificationsService {
       .returning();
 
     await this.audit(input.orgId, input.actorUserId ?? null, "notification.created", notification?.id, input.eventKey ? { eventKey: input.eventKey } : undefined);
-    await this.notifyChanged(input.userId, input.orgId);
+    if (notification) {
+      await this.announce({
+        id: notification.id,
+        userId: input.userId,
+        orgId: input.orgId,
+        title: notification.title,
+        message: notification.message,
+        priority: notification.priority,
+        category: notification.category,
+        link: notification.link,
+        sourceModule: notification.sourceModule,
+        eventKey: notification.eventKey,
+      });
+    }
     return notification;
   }
 
   async notifyChanged(userId: string, orgId: string): Promise<void> {
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
+  }
+
+  /**
+   * Push a freshly-created notification to the user's live tab (SSE) and, for the direct
+   * create() path, their devices (web push). The event engine sets pushToDevices=false and
+   * routes PUSH through its own preference-aware channel instead.
+   */
+  async announce(input: AnnounceInput, pushToDevices = true): Promise<void> {
+    await this.invalidateCache(input.userId, input.orgId);
+    this.notifEvents.emit({
+      userId: input.userId,
+      orgId: input.orgId,
+      type: "notification",
+      notification: {
+        id: input.id,
+        title: input.title,
+        message: input.message,
+        priority: input.priority,
+        category: input.category,
+        link: input.link,
+        eventKey: input.eventKey,
+      },
+    });
+    if (pushToDevices) this.pushToDevice(input);
+  }
+
+  private pushToDevice(input: AnnounceInput): void {
+    if (input.priority === "LOW") return;
+    if (input.sourceModule === "chat") return;
+    void this.webPush
+      .sendToUser(input.userId, {
+        title: input.title,
+        body: input.message.slice(0, 140),
+        url: input.link ?? "/notifications",
+      })
+      .catch(() => undefined);
   }
 
   list(orgId: string, userId: string, filters: ListInput) {

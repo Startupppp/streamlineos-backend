@@ -17,7 +17,9 @@ import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
 import { NotificationEmailProvider } from "./providers/notification-email.provider";
+import { NotificationWebPushProvider } from "./providers/notification-web-push.provider";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
+import { RealtimeModule } from "../realtime/realtime.module";
 import { NotificationProvidersService } from "./notification-providers.service";
 import { NotificationProvidersController } from "./notification-providers.controller";
 import { NotificationEventsController } from "./notification-events.controller";
@@ -25,6 +27,7 @@ import { NotificationPolicyService } from "./notification-policy.service";
 import { NotificationPolicyController } from "./notification-policy.controller";
 
 @Module({
+  imports: [RealtimeModule],
   controllers: [
     NotificationsController,
     NotificationTemplatesController,
@@ -49,6 +52,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationDispatchService,
     NotificationDeliveryWorker,
     NotificationEmailProvider,
+    NotificationWebPushProvider,
     NotificationProviderRegistry,
     NotificationProvidersService,
     NotificationPolicyService,

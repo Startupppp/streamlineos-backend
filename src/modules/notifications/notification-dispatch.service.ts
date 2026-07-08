@@ -6,7 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
-import { NotificationsService, type NotificationCategoryValue } from "./notifications.service";
+import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
 import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEAMS" | "WEBHOOK";
@@ -59,7 +59,7 @@ export class NotificationDispatchService {
       .where(inArray(users.id, targets));
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
-    const changedUsers: string[] = [];
+    const announcements: AnnounceInput[] = [];
     for (const userId of targets) {
       const routingResult = await this.routing.route(input.orgId, userId, definition, priority);
       const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null);
@@ -67,11 +67,11 @@ export class NotificationDispatchService {
       result.deliveriesQueued += perUser.queued;
       result.suppressed += perUser.suppressed;
       result.deduped += perUser.deduped ? 1 : 0;
-      if (perUser.createdInApp) changedUsers.push(userId);
+      if (perUser.announce) announcements.push(perUser.announce);
     }
 
-    for (const userId of changedUsers) {
-      await this.notificationsService.notifyChanged(userId, input.orgId);
+    for (const announcement of announcements) {
+      await this.notificationsService.announce(announcement, false);
     }
     return result;
   }
@@ -88,7 +88,7 @@ export class NotificationDispatchService {
     userId: string,
     routingResult: Awaited<ReturnType<NotificationRoutingService["route"]>>,
     email: string | null,
-  ): Promise<{ createdInApp: boolean; queued: number; suppressed: number; deduped: boolean }> {
+  ): Promise<{ createdInApp: boolean; queued: number; suppressed: number; deduped: boolean; announce?: AnnounceInput }> {
     const now = new Date();
     const title = input.title ?? definition.displayName;
     const message = input.message ?? definition.description;
@@ -115,7 +115,7 @@ export class NotificationDispatchService {
         .returning({ id: notificationDeliveries.id });
 
       if (!inAppDelivery) {
-        return { createdInApp: false, queued: 0, suppressed: 0, deduped: true };
+        return { createdInApp: false, queued: 0, suppressed: 0, deduped: true, announce: undefined };
       }
 
       let notificationId: number | null = null;
@@ -190,7 +190,23 @@ export class NotificationDispatchService {
         }
       }
 
-      return { createdInApp: createInApp && notificationId !== null, queued, suppressed, deduped: false };
+      const announce: AnnounceInput | undefined =
+        createInApp && notificationId !== null
+          ? {
+              id: notificationId,
+              userId,
+              orgId: input.orgId,
+              title,
+              message,
+              priority: routingResult.priority,
+              category: definition.category,
+              link: input.link ?? null,
+              sourceModule: definition.sourceModule,
+              eventKey: input.eventKey,
+            }
+          : undefined;
+
+      return { createdInApp: createInApp && notificationId !== null, queued, suppressed, deduped: false, announce };
     });
   }
 }
