@@ -44,6 +44,7 @@ export interface FeedbucketWidgetTheme {
 export const feedbucketSubmissionTypeEnum = pgEnum("feedbucket_submission_type", [
   "bug",
   "idea",
+  "feature",
   "question",
   "praise",
   "other",

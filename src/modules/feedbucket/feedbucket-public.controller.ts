@@ -10,10 +10,10 @@ import {
   Param,
   Post,
   Req,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileFieldsInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
@@ -30,6 +30,12 @@ import type { Db } from "../../db/drizzle.module";
 
 const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
+const ALLOWED_VIDEO_MIMES = new Set(["video/webm", "video/mp4"]);
+const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
+
+function projectFolder(widget: typeof feedbucketWidgets.$inferSelect): string {
+  return widget.projectId ? `project-${widget.projectId}` : `org-${widget.orgId}`;
+}
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -79,11 +85,19 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey")
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor("screenshot"))
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: "screenshot", maxCount: 1 },
+        { name: "recording", maxCount: 1 },
+      ],
+      { limits: { fileSize: MAX_RECORDING_BYTES } },
+    ),
+  )
   async submit(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,
-    @UploadedFile() screenshot: Express.Multer.File | undefined,
+    @UploadedFiles() files: { screenshot?: Express.Multer.File[]; recording?: Express.Multer.File[] },
     @Req() req: Request,
   ) {
     const widget = await this.publicService.resolveWidget(publicKey);
@@ -109,31 +123,66 @@ export class FeedbucketPublicController {
     }
     const dto = publicSubmitSchema.parse(normalizedBody);
 
+    const folder = projectFolder(widget);
+    const screenshot = files?.screenshot?.[0];
+    const recording = files?.recording?.[0];
+
     let screenshotUrl: string | undefined;
     if (screenshot) {
       if (screenshot.size > MAX_SCREENSHOT_BYTES) {
         throw new BadRequestException("Screenshot must be under 5MB");
       }
-      const mime = screenshot.mimetype;
-      if (!ALLOWED_IMAGE_MIMES.has(mime)) {
+      if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype)) {
         throw new BadRequestException("Screenshot must be an image (JPEG, PNG, GIF, or WebP)");
       }
-      if (!validateMagicBytes(screenshot.buffer, mime)) {
+      if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype)) {
         throw new BadRequestException("Screenshot file content does not match its type");
       }
       const result = await this.storage.uploadFile(
         screenshot.buffer,
-        "feedbucket/screenshots",
+        `feedbucket/${folder}/screenshots`,
         screenshot.originalname,
-        mime,
+        screenshot.mimetype,
       );
       screenshotUrl = result.url;
     }
 
+    let recordingUrl: string | undefined;
+    if (recording) {
+      if (recording.size > MAX_RECORDING_BYTES) {
+        throw new BadRequestException("Recording must be under 100MB");
+      }
+      if (!ALLOWED_VIDEO_MIMES.has(recording.mimetype)) {
+        throw new BadRequestException("Recording must be a WebM or MP4 video");
+      }
+      const result = await this.storage.uploadFile(
+        recording.buffer,
+        `feedbucket/${folder}/recordings`,
+        recording.originalname,
+        recording.mimetype,
+      );
+      recordingUrl = result.url;
+    }
+
     const submissionId = await this.publicService.createSubmission(widget, dto, screenshotUrl);
 
+    if (recording && recordingUrl) {
+      await this.db.insert(feedbucketAttachments).values({
+        orgId: widget.orgId,
+        submissionId,
+        fileUrl: recordingUrl,
+        mimeType: recording.mimetype,
+        fileName: recording.originalname,
+        fileSize: recording.size,
+      });
+    }
+
     if (widget.autoCreateTicket && widget.projectId) {
-      void this.autoLinkTicket(widget, submissionId, dto.type, dto.message, screenshot, screenshotUrl);
+      void this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
+        screenshot,
+        screenshotUrl,
+        recordingUrl,
+      });
     }
 
     if (widget.createdBy) {
@@ -159,19 +208,24 @@ export class FeedbucketPublicController {
     submissionId: number,
     type: string,
     message: string,
-    screenshot: Express.Multer.File | undefined,
-    screenshotUrl: string | undefined,
+    media: {
+      screenshot?: Express.Multer.File;
+      screenshotUrl?: string;
+      recordingUrl?: string;
+    },
   ) {
     if (!widget.projectId) return;
     try {
       const actingUserId = widget.createdBy ?? widget.orgId;
+      const descriptionParts = [`**Feedback type:** ${type}`, "", message];
+      if (media.recordingUrl) descriptionParts.push("", `**Screen recording:** ${media.recordingUrl}`);
       const ticket = await this.ticketsService.createFromFeedback(
         widget.orgId,
         actingUserId,
         widget.projectId,
         {
           title: message.slice(0, 255),
-          description: `**Feedback type:** ${type}\n\n${message}`,
+          description: descriptionParts.join("\n"),
           type: widget.defaultTicketType,
         },
       );
@@ -180,14 +234,14 @@ export class FeedbucketPublicController {
         .set({ linkedTicketId: ticket.id })
         .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, widget.orgId)));
 
-      if (screenshotUrl && screenshot) {
+      if (media.screenshotUrl && media.screenshot) {
         await this.db.insert(feedbucketAttachments).values({
           orgId: widget.orgId,
           submissionId,
-          fileUrl: screenshotUrl,
-          mimeType: screenshot.mimetype,
-          fileName: screenshot.originalname,
-          fileSize: screenshot.size,
+          fileUrl: media.screenshotUrl,
+          mimeType: media.screenshot.mimetype,
+          fileName: media.screenshot.originalname,
+          fileSize: media.screenshot.size,
         });
       }
     } catch {}

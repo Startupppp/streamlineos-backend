@@ -45,7 +45,7 @@ export const listSubmissionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   widgetId: z.coerce.number().int().positive().optional(),
-  type: z.enum(["bug", "idea", "question", "praise", "other"]).optional(),
+  type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
   assigneeId: z.string().optional(),
   search: z.string().optional(),
@@ -58,7 +58,7 @@ export const updateSubmissionSchema = z.object({
 });
 
 export const publicSubmitSchema = z.object({
-  type: z.enum(["bug", "idea", "question", "praise", "other"]),
+  type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]),
   message: z.string().min(1).max(5000),
   pageUrl: z.string().url().max(2048).optional(),
   reporterName: z.string().max(100).optional(),
