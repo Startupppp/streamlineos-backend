@@ -21,7 +21,6 @@ import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { ProjectsTicketsService } from "../projects/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import {
   createWidgetSchema,
   listSubmissionsQuerySchema,
@@ -101,7 +100,7 @@ export class FeedbucketController {
     @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
     @Req() req: Request,
   ) {
-    const scope = (req.rbacScope ?? "all") as DataScope;
+    const scope = req.rbacScope ?? "all";
     return this.submissions.list(user.orgId, user.userId, query, scope);
   }
 

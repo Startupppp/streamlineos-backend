@@ -7,8 +7,8 @@ import type { Db } from "../../db/drizzle.module";
 import type { CreateWidgetInput, UpdateWidgetInput } from "./feedbucket.schemas";
 
 function isDuplicateKeyError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  return "code" in error && (error as { code: unknown }).code === "23505";
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("23505");
 }
 
 @Injectable()

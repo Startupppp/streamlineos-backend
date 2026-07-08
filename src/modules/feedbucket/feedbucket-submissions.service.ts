@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
-import { feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
+import { feedbucketSubmissions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";

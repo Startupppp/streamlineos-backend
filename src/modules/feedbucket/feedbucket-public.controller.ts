@@ -39,8 +39,10 @@ function clientIp(req: Request): string | undefined {
 }
 
 function originHostname(req: Request): string | undefined {
-  const origin = req.headers["origin"] as string | undefined;
-  const referer = req.headers["referer"] as string | undefined;
+  const originHeader = req.headers["origin"];
+  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+  const refererHeader = req.headers["referer"];
+  const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
   const src = origin ?? referer;
   if (!src) return undefined;
   try {
@@ -160,7 +162,7 @@ export class FeedbucketPublicController {
     screenshot: Express.Multer.File | undefined,
     screenshotUrl: string | undefined,
   ) {
-    if (!widget || !widget.projectId) return;
+    if (!widget.projectId) return;
     try {
       const actingUserId = widget.createdBy ?? widget.orgId;
       const ticket = await this.ticketsService.createFromFeedback(
@@ -188,8 +190,6 @@ export class FeedbucketPublicController {
           fileSize: screenshot.size,
         });
       }
-    } catch {
-      // fire-and-forget — never crash the public response
-    }
+    } catch {}
   }
 }

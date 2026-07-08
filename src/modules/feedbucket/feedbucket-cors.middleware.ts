@@ -10,7 +10,8 @@ export class FeedbucketCorsMiddleware implements NestMiddleware {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
-    const origin = req.headers["origin"] as string | undefined;
+    const originHeader = req.headers["origin"];
+    const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
     if (!origin) return next();
 
     const url = req.url;
