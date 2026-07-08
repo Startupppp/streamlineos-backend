@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -25,11 +27,12 @@ import {
 } from "./dto/broadcast.schemas";
 
 @Controller("broadcasts")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BroadcastsController {
   constructor(private readonly broadcastsService: BroadcastsService) {}
 
   @Get()
+  @RequirePermission("notifications:broadcasts:view")
   list(
     @Query(new ZodValidationPipe(listBroadcastsSchema)) filters: ListBroadcastsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -38,6 +41,7 @@ export class BroadcastsController {
   }
 
   @Post()
+  @RequirePermission("notifications:broadcasts:manage")
   create(
     @Body(new ZodValidationPipe(createBroadcastSchema)) dto: CreateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
@@ -46,6 +50,7 @@ export class BroadcastsController {
   }
 
   @Patch(":broadcastId")
+  @RequirePermission("notifications:broadcasts:manage")
   update(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @Body(new ZodValidationPipe(updateBroadcastSchema)) dto: UpdateBroadcastInput,
@@ -55,6 +60,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @RequirePermission("notifications:broadcasts:manage")
   publish(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +69,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/cancel")
+  @RequirePermission("notifications:broadcasts:manage")
   cancel(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +78,7 @@ export class BroadcastsController {
   }
 
   @Delete(":broadcastId")
+  @RequirePermission("notifications:broadcasts:manage")
   remove(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,

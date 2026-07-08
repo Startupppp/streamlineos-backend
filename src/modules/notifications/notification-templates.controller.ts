@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -29,11 +31,12 @@ import {
 } from "./dto/template.schemas";
 
 @Controller("notification-templates")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class NotificationTemplatesController {
   constructor(private readonly templates: NotificationTemplatesService) {}
 
   @Get()
+  @RequirePermission("notifications:templates:view")
   list(
     @Query(new ZodValidationPipe(listTemplatesSchema)) filters: ListTemplatesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -42,6 +45,7 @@ export class NotificationTemplatesController {
   }
 
   @Post()
+  @RequirePermission("notifications:templates:manage")
   create(
     @Body(new ZodValidationPipe(createTemplateSchema)) dto: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +54,7 @@ export class NotificationTemplatesController {
   }
 
   @Patch(":templateId")
+  @RequirePermission("notifications:templates:manage")
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateTemplateSchema)) dto: UpdateTemplateInput,
@@ -59,6 +64,7 @@ export class NotificationTemplatesController {
   }
 
   @Delete(":templateId")
+  @RequirePermission("notifications:templates:manage")
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +73,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/preview")
+  @RequirePermission("notifications:templates:view")
   preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(previewTemplateSchema)) dto: PreviewTemplateInput,
@@ -76,6 +83,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/test")
+  @RequirePermission("notifications:templates:manage")
   testSend(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(testSendTemplateSchema)) dto: TestSendTemplateInput,

@@ -8,16 +8,27 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInput, SnoozeInput, BulkActionInput, AuditLogsInput } from "./dto/notification.schemas";
 import { NotificationEventService } from "./notification-event.service";
 
+export type NotificationCategoryValue =
+  | "SECURITY" | "CRM" | "HRMS" | "BILLING" | "AI" | "PROJECTS" | "WORKFLOW" | "MARKETING" | "SYSTEM"
+  | "CHAT" | "PAYROLL" | "RECRUITMENT" | "KNOWLEDGE" | "SIGN" | "INVENTORY" | "SURVEYS" | "CALENDAR" | "SUPPORT";
+
 export interface CreateNotificationInput {
   orgId: string;
   userId: string;
   type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
   priority?: "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
-  category?: "SECURITY" | "CRM" | "HRMS" | "BILLING" | "AI" | "PROJECTS" | "WORKFLOW" | "MARKETING" | "SYSTEM";
+  category?: NotificationCategoryValue;
   sourceModule?: string;
+  eventKey?: string;
+  entityType?: string;
+  entityId?: string;
+  actorUserId?: string | null;
+  groupKey?: string;
+  reason?: string;
   title: string;
   message: string;
   link?: string;
+  channel?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -39,17 +50,28 @@ export class NotificationsService {
         priority: input.priority ?? "NORMAL",
         category: input.category ?? "SYSTEM",
         sourceModule: input.sourceModule,
+        eventKey: input.eventKey,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        actorUserId: input.actorUserId ?? null,
+        groupKey: input.groupKey,
+        reason: input.reason,
         title: input.title,
         message: input.message,
         link: input.link,
+        channel: input.channel ?? "IN_APP",
         metadata: input.metadata,
       })
       .returning();
 
-    await this.audit(input.orgId, null, "notification.created", notification?.id);
-    await this.invalidateCache(input.userId, input.orgId);
-    this.notifEvents.emit({ userId: input.userId, orgId: input.orgId, type: "count_changed" });
+    await this.audit(input.orgId, input.actorUserId ?? null, "notification.created", notification?.id, input.eventKey ? { eventKey: input.eventKey } : undefined);
+    await this.notifyChanged(input.userId, input.orgId);
     return notification;
+  }
+
+  async notifyChanged(userId: string, orgId: string): Promise<void> {
+    await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
   }
 
   list(orgId: string, userId: string, filters: ListInput) {
@@ -456,8 +478,7 @@ export class NotificationsService {
 
   private async invalidateCache(userId: string, orgId: string) {
     await Promise.all([
-      this.cache.del(`notifications:list:${userId}:${orgId}:ALL:::`),
-      this.cache.del(`notifications:list:${userId}:${orgId}:UNREAD:::`),
+      this.cache.invalidatePattern(`notifications:list:${userId}:${orgId}:*`),
       this.cache.del(`notifications:unread-count:${userId}:${orgId}`),
     ]);
   }

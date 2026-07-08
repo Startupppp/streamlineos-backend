@@ -1,5 +1,7 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationAnalyticsService } from "./notification-analytics.service";
@@ -13,11 +15,12 @@ const daysSchema = z.object({
 type DaysInput = z.infer<typeof daysSchema>;
 
 @Controller("notification-analytics")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class NotificationAnalyticsController {
   constructor(private readonly analytics: NotificationAnalyticsService) {}
 
   @Get()
+  @RequirePermission("notifications:analytics:view")
   overview(
     @Query(new ZodValidationPipe(daysSchema)) q: DaysInput,
     @CurrentUser() u: CurrentUserContext,
@@ -26,6 +29,7 @@ export class NotificationAnalyticsController {
   }
 
   @Get("categories")
+  @RequirePermission("notifications:analytics:view")
   byCategory(
     @Query(new ZodValidationPipe(daysSchema)) q: DaysInput,
     @CurrentUser() u: CurrentUserContext,
@@ -34,6 +38,7 @@ export class NotificationAnalyticsController {
   }
 
   @Get("priorities")
+  @RequirePermission("notifications:analytics:view")
   byPriority(
     @Query(new ZodValidationPipe(daysSchema)) q: DaysInput,
     @CurrentUser() u: CurrentUserContext,
@@ -42,6 +47,7 @@ export class NotificationAnalyticsController {
   }
 
   @Get("channels")
+  @RequirePermission("notifications:analytics:view")
   byChannel(
     @Query(new ZodValidationPipe(daysSchema)) q: DaysInput,
     @CurrentUser() u: CurrentUserContext,

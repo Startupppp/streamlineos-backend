@@ -1,0 +1,177 @@
+import type { NotificationChannel, NotificationEventDefinition } from "./notification.types";
+
+type EventOverrides = Partial<Omit<NotificationEventDefinition, "eventKey" | "sourceModule" | "category" | "displayName">>;
+
+const IA: NotificationChannel[] = ["IN_APP"];
+const IA_EMAIL: NotificationChannel[] = ["IN_APP", "EMAIL"];
+const IA_PUSH: NotificationChannel[] = ["IN_APP", "PUSH"];
+const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
+const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SLACK", "TEAMS"];
+const ALLOWED_URGENT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS"];
+
+function e(
+  eventKey: string,
+  sourceModule: string,
+  category: string,
+  displayName: string,
+  overrides: EventOverrides = {},
+): NotificationEventDefinition {
+  return {
+    eventKey,
+    sourceModule,
+    category,
+    displayName,
+    description: overrides.description ?? displayName,
+    defaultPriority: overrides.defaultPriority ?? "NORMAL",
+    defaultType: overrides.defaultType ?? "INFO",
+    defaultChannels: overrides.defaultChannels ?? IA,
+    allowedChannels: overrides.allowedChannels ?? ALLOWED_DEFAULT,
+    mandatory: overrides.mandatory ?? false,
+    userConfigurable: overrides.userConfigurable ?? true,
+    adminConfigurable: overrides.adminConfigurable ?? true,
+    quietHoursBehavior: overrides.quietHoursBehavior ?? "respect",
+    dedupeWindowSeconds: overrides.dedupeWindowSeconds ?? 60,
+    rateLimitWindowSeconds: overrides.rateLimitWindowSeconds ?? 0,
+    rateLimitMax: overrides.rateLimitMax ?? 0,
+    templateKey: overrides.templateKey,
+    audienceResolver: overrides.audienceResolver,
+  };
+}
+
+const CHAT = [
+  e("chat.message.direct", "chat", "CHAT", "Direct message", { defaultChannels: IA_PUSH, dedupeWindowSeconds: 0 }),
+  e("chat.message.mention", "chat", "CHAT", "You were mentioned", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 }),
+  e("chat.thread.reply", "chat", "CHAT", "New thread reply", { defaultChannels: IA_PUSH }),
+  e("chat.channel.invited", "chat", "CHAT", "Added to a channel", { defaultChannels: IA_EMAIL }),
+  e("chat.huddle.invite", "chat", "CHAT", "Huddle invitation", { defaultPriority: "HIGH", defaultChannels: IA_PUSH, quietHoursBehavior: "bypass_if_high", dedupeWindowSeconds: 0 }),
+  e("chat.reply.reminder", "chat", "CHAT", "Reply reminder", { defaultChannels: IA }),
+];
+
+const PROJECTS = [
+  e("project.task.assigned", "projects", "PROJECTS", "Task assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL }),
+  e("project.task.due_soon", "projects", "PROJECTS", "Task due soon", { defaultChannels: IA_EMAIL }),
+  e("project.task.overdue", "projects", "PROJECTS", "Task overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("project.task.comment.mention", "projects", "PROJECTS", "Mentioned in a comment", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL, dedupeWindowSeconds: 0 }),
+  e("project.task.status.changed", "projects", "PROJECTS", "Task status changed", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("project.sprint.started", "projects", "PROJECTS", "Sprint started", { defaultChannels: IA }),
+  e("project.sprint.ending", "projects", "PROJECTS", "Sprint ending soon", { defaultChannels: IA_EMAIL }),
+  e("project.blocker.created", "projects", "PROJECTS", "Blocker reported", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("project.approval.requested", "projects", "WORKFLOW", "Approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+];
+
+const CRM = [
+  e("crm.lead.assigned", "crm", "CRM", "Lead assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("crm.lead.created", "crm", "CRM", "New lead created", { defaultChannels: IA }),
+  e("crm.deal.stage_changed", "crm", "CRM", "Deal stage changed", { defaultChannels: IA }),
+  e("crm.followup.due", "crm", "CRM", "Follow-up due", { defaultChannels: IA_EMAIL }),
+  e("crm.followup.overdue", "crm", "CRM", "Follow-up overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("crm.customer.message_received", "crm", "CRM", "Customer message received", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
+  e("crm.automation.failed", "crm", "CRM", "Automation failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
+];
+
+const HR = [
+  e("hr.leave.requested", "hr", "WORKFLOW", "Leave request submitted", { defaultChannels: IA_EMAIL }),
+  e("hr.leave.approved", "hr", "HRMS", "Leave approved", { defaultType: "SUCCESS", defaultChannels: IA_EMAIL }),
+  e("hr.leave.rejected", "hr", "HRMS", "Leave rejected", { defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("hr.attendance.missing", "hr", "HRMS", "Missing attendance", { defaultChannels: IA }),
+  e("hr.document.expiring", "hr", "HRMS", "Document expiring", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("hr.announcement.created", "hr", "HRMS", "New announcement", { defaultChannels: IA_EMAIL }),
+];
+
+const PAYROLL = [
+  e("payroll.run.created", "payroll", "PAYROLL", "Payroll run created", { defaultChannels: IA }),
+  e("payroll.run.approval_requested", "payroll", "WORKFLOW", "Payroll approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("payroll.run.approved", "payroll", "PAYROLL", "Payroll approved", { defaultType: "SUCCESS", defaultChannels: IA_EMAIL }),
+  e("payroll.payment.failed", "payroll", "PAYROLL", "Payroll payment failed", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("payroll.payslip.ready", "payroll", "PAYROLL", "Payslip ready", { defaultChannels: IA_EMAIL }),
+  e("payroll.tax.document.ready", "payroll", "PAYROLL", "Tax document ready", { defaultChannels: IA_EMAIL }),
+];
+
+const RECRUITMENT = [
+  e("recruitment.candidate.applied", "recruitment", "RECRUITMENT", "New application", { defaultChannels: IA }),
+  e("recruitment.candidate.referred", "recruitment", "RECRUITMENT", "Candidate referred", { defaultChannels: IA }),
+  e("recruitment.interview.scheduled", "recruitment", "RECRUITMENT", "Interview scheduled", { defaultPriority: "HIGH", defaultChannels: IA_PUSH_EMAIL }),
+  e("recruitment.interview.feedback_due", "recruitment", "RECRUITMENT", "Interview feedback due", { defaultChannels: IA_EMAIL }),
+  e("recruitment.offer.approval_requested", "recruitment", "WORKFLOW", "Offer approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("recruitment.offer.accepted", "recruitment", "RECRUITMENT", "Offer accepted", { defaultType: "SUCCESS", defaultChannels: IA_EMAIL }),
+];
+
+const KNOWLEDGE = [
+  e("knowledge.article.mentioned", "knowledge", "KNOWLEDGE", "Mentioned in an article", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, dedupeWindowSeconds: 0 }),
+  e("knowledge.article.comment_created", "knowledge", "KNOWLEDGE", "New article comment", { defaultChannels: IA }),
+  e("knowledge.article.approval_requested", "knowledge", "WORKFLOW", "Article approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("knowledge.article.published", "knowledge", "KNOWLEDGE", "Article published", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("knowledge.ai.answer_ready", "knowledge", "AI", "AI answer ready", { defaultChannels: IA }),
+  e("knowledge.document.ingestion_failed", "knowledge", "KNOWLEDGE", "Document ingestion failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
+];
+
+const SIGN = [
+  e("sign.document.sent", "sign", "SIGN", "Document sent for signature", { defaultChannels: IA_EMAIL }),
+  e("sign.document.viewed", "sign", "SIGN", "Document viewed", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("sign.document.signed", "sign", "SIGN", "Document signed", { defaultType: "SUCCESS", defaultChannels: IA_EMAIL }),
+  e("sign.document.completed", "sign", "SIGN", "Document completed", { defaultPriority: "HIGH", defaultType: "SUCCESS", defaultChannels: IA_EMAIL, mandatory: true, quietHoursBehavior: "bypass_if_high" }),
+  e("sign.document.expiring", "sign", "SIGN", "Document expiring", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("sign.document.declined", "sign", "SIGN", "Document declined", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+];
+
+const INVENTORY = [
+  e("inventory.stock.low", "inventory", "INVENTORY", "Low stock", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("inventory.stock.out", "inventory", "INVENTORY", "Out of stock", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("inventory.reorder.suggested", "inventory", "INVENTORY", "Reorder suggested", { defaultChannels: IA }),
+  e("inventory.transfer.requested", "inventory", "INVENTORY", "Transfer requested", { defaultChannels: IA }),
+  e("inventory.transfer.completed", "inventory", "INVENTORY", "Transfer completed", { defaultType: "SUCCESS", defaultChannels: IA }),
+  e("inventory.adjustment.approval_requested", "inventory", "WORKFLOW", "Adjustment approval requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+];
+
+const SURVEYS = [
+  e("survey.response.received", "surveys", "SURVEYS", "Survey response received", { defaultPriority: "LOW", defaultChannels: IA }),
+  e("survey.deadline.due_soon", "surveys", "SURVEYS", "Survey deadline soon", { defaultChannels: IA_EMAIL }),
+  e("survey.certification.passed", "surveys", "SURVEYS", "Certification passed", { defaultType: "SUCCESS", defaultChannels: IA }),
+  e("survey.certification.failed", "surveys", "SURVEYS", "Certification failed", { defaultType: "WARNING", defaultChannels: IA }),
+  e("survey.live_session.started", "surveys", "SURVEYS", "Live session started", { defaultPriority: "HIGH", defaultChannels: IA_PUSH, quietHoursBehavior: "bypass_if_high", dedupeWindowSeconds: 0 }),
+];
+
+const CALENDAR = [
+  e("calendar.event.invited", "calendar", "CALENDAR", "Event invitation", { defaultChannels: IA_EMAIL }),
+  e("calendar.event.starting_soon", "calendar", "CALENDAR", "Event starting soon", { defaultPriority: "HIGH", defaultChannels: IA_PUSH, quietHoursBehavior: "bypass_if_high", dedupeWindowSeconds: 0 }),
+  e("calendar.event.changed", "calendar", "CALENDAR", "Event updated", { defaultChannels: IA_EMAIL }),
+  e("calendar.event.cancelled", "calendar", "CALENDAR", "Event cancelled", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("calendar.reminder", "calendar", "CALENDAR", "Reminder", { defaultChannels: IA_PUSH }),
+];
+
+const BILLING = [
+  e("billing.invoice.created", "billing", "BILLING", "Invoice created", { defaultChannels: IA_EMAIL }),
+  e("billing.invoice.due_soon", "billing", "BILLING", "Invoice due soon", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("billing.payment.failed", "billing", "BILLING", "Payment failed", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("billing.subscription.changed", "billing", "BILLING", "Subscription changed", { defaultChannels: IA_EMAIL }),
+  e("billing.subscription.cancelled", "billing", "BILLING", "Subscription cancelled", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+];
+
+const SECURITY = [
+  e("security.login.new_device", "security", "SECURITY", "New device sign-in", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("security.password.changed", "security", "SECURITY", "Password changed", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("security.mfa.disabled", "security", "SECURITY", "Two-factor disabled", { defaultPriority: "CRITICAL", defaultType: "WARNING", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("security.role.changed", "security", "SECURITY", "Role or permissions changed", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("security.api_key.created", "security", "SECURITY", "API key created", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+  e("security.suspicious_activity", "security", "SECURITY", "Suspicious activity detected", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+];
+
+const SUPPORT = [
+  e("support.ticket.assigned", "support", "SUPPORT", "Ticket assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("support.ticket.customer_replied", "support", "SUPPORT", "Customer replied", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
+  e("support.ticket.sla_breached", "support", "SUPPORT", "SLA breached", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, quietHoursBehavior: "bypass_if_high" }),
+  e("support.ticket.escalated", "support", "SUPPORT", "Ticket escalated", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+];
+
+const SYSTEM = [
+  e("compliance.policy.updated", "system", "SYSTEM", "Compliance policy updated", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
+];
+
+export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] = [
+  ...CHAT, ...PROJECTS, ...CRM, ...HR, ...PAYROLL, ...RECRUITMENT, ...KNOWLEDGE,
+  ...SIGN, ...INVENTORY, ...SURVEYS, ...CALENDAR, ...BILLING, ...SECURITY, ...SUPPORT, ...SYSTEM,
+];
+
+export const NOTIFICATION_EVENT_MAP: ReadonlyMap<string, NotificationEventDefinition> = new Map(
+  NOTIFICATION_EVENT_CATALOG.map((def) => [def.eventKey, def]),
+);

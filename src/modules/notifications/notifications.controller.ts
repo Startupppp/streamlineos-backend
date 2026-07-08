@@ -15,6 +15,8 @@ import {
 import type { MessageEvent } from "@nestjs/common";
 import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -33,7 +35,7 @@ import {
 } from "./dto/notification.schemas";
 
 @Controller("notifications")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class NotificationsController {
   constructor(
     private readonly notifications: NotificationsService,
@@ -54,6 +56,7 @@ export class NotificationsController {
   }
 
   @Get("audit")
+  @RequirePermission("notifications:audit:view")
   listAuditLogs(
     @Query(new ZodValidationPipe(auditLogsSchema)) filters: AuditLogsInput,
     @CurrentUser() u: CurrentUserContext,

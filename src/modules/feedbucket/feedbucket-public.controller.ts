@@ -30,11 +30,19 @@ import type { Db } from "../../db/drizzle.module";
 
 const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
-const ALLOWED_VIDEO_MIMES = new Set(["video/webm", "video/mp4"]);
 const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
 
 function projectFolder(widget: typeof feedbucketWidgets.$inferSelect): string {
   return widget.projectId ? `project-${widget.projectId}` : `org-${widget.orgId}`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function clientIp(req: Request): string | undefined {
@@ -152,14 +160,13 @@ export class FeedbucketPublicController {
       if (recording.size > MAX_RECORDING_BYTES) {
         throw new BadRequestException("Recording must be under 100MB");
       }
-      if (!ALLOWED_VIDEO_MIMES.has(recording.mimetype)) {
-        throw new BadRequestException("Recording must be a WebM or MP4 video");
-      }
+      const rawMime = recording.mimetype.split(";")[0]?.trim() ?? "";
+      const storeMime = rawMime.startsWith("video/") ? rawMime : "video/webm";
       const result = await this.storage.uploadFile(
         recording.buffer,
         `feedbucket/${folder}/recordings`,
-        recording.originalname,
-        recording.mimetype,
+        recording.originalname || "recording.webm",
+        storeMime,
       );
       recordingUrl = result.url;
     }
@@ -217,15 +224,27 @@ export class FeedbucketPublicController {
     if (!widget.projectId) return;
     try {
       const actingUserId = widget.createdBy ?? widget.orgId;
-      const descriptionParts = [`**Feedback type:** ${type}`, "", message];
-      if (media.recordingUrl) descriptionParts.push("", `**Screen recording:** ${media.recordingUrl}`);
+      const parts: string[] = [
+        `<p><strong>Feedback type:</strong> ${escapeHtml(type)}</p>`,
+      ];
+      if (message.trim()) {
+        parts.push(`<p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`);
+      }
+      if (media.screenshotUrl) {
+        parts.push(`<p><img src="${escapeHtml(media.screenshotUrl)}" alt="Feedback screenshot"></p>`);
+      }
+      if (media.recordingUrl) {
+        parts.push(
+          `<p><strong>Screen recording:</strong> <a href="${escapeHtml(media.recordingUrl)}" target="_blank" rel="noopener noreferrer">Watch recording</a></p>`,
+        );
+      }
       const ticket = await this.ticketsService.createFromFeedback(
         widget.orgId,
         actingUserId,
         widget.projectId,
         {
-          title: message.slice(0, 255),
-          description: descriptionParts.join("\n"),
+          title: message.slice(0, 255) || `${type} feedback`,
+          description: parts.join(""),
           type: widget.defaultTicketType,
         },
       );

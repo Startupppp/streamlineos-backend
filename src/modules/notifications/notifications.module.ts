@@ -12,6 +12,17 @@ import { NotificationPreferencesController } from "./notification-preferences.co
 import { NotificationPreferencesService } from "./notification-preferences.service";
 import { NotificationQueueController } from "./notification-queue.controller";
 import { NotificationQueueService } from "./notification-queue.service";
+import { NotificationEventRegistryService } from "./notification-event-registry.service";
+import { NotificationRoutingService } from "./notification-routing.service";
+import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDeliveryWorker } from "./notification-delivery-worker.service";
+import { NotificationEmailProvider } from "./providers/notification-email.provider";
+import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
+import { NotificationProvidersService } from "./notification-providers.service";
+import { NotificationProvidersController } from "./notification-providers.controller";
+import { NotificationEventsController } from "./notification-events.controller";
+import { NotificationPolicyService } from "./notification-policy.service";
+import { NotificationPolicyController } from "./notification-policy.controller";
 
 @Module({
   controllers: [
@@ -21,6 +32,9 @@ import { NotificationQueueService } from "./notification-queue.service";
     NotificationAnalyticsController,
     NotificationPreferencesController,
     NotificationQueueController,
+    NotificationProvidersController,
+    NotificationEventsController,
+    NotificationPolicyController,
   ],
   providers: [
     NotificationsService,
@@ -30,7 +44,21 @@ import { NotificationQueueService } from "./notification-queue.service";
     NotificationAnalyticsService,
     NotificationPreferencesService,
     NotificationQueueService,
+    NotificationEventRegistryService,
+    NotificationRoutingService,
+    NotificationDispatchService,
+    NotificationDeliveryWorker,
+    NotificationEmailProvider,
+    NotificationProviderRegistry,
+    NotificationProvidersService,
+    NotificationPolicyService,
   ],
-  exports: [NotificationsService, NotificationEventService],
+  exports: [
+    NotificationsService,
+    NotificationEventService,
+    NotificationDispatchService,
+    NotificationEventRegistryService,
+    NotificationDeliveryWorker,
+  ],
 })
 export class NotificationsModule {}

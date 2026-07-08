@@ -18,6 +18,7 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
+import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
@@ -35,6 +36,7 @@ export class CronController {
     private readonly hr: CronHrService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
+    private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly kb: CronKbService,
     private readonly support: CronSupportService,
     private readonly chatReplyReminders: ChatReplyRemindersService,
@@ -354,6 +356,32 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Email outbox flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("notification-delivery-flush")
+  getNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDeliveryFlush(authorization);
+  }
+
+  @Post("notification-delivery-flush")
+  @HttpCode(200)
+  postNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
+    return this.runNotificationDeliveryFlush(authorization);
+  }
+
+  private async runNotificationDeliveryFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.notificationDelivery.flush();
+      return {
+        success: true,
+        message: `Processed ${result.processed} deliveries: ${result.sent} sent, ${result.failed} retrying, ${result.dead} dead`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification delivery flush cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

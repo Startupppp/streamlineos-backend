@@ -79,6 +79,7 @@ export const notificationTypeEnum = pgEnum("notification_type", ["INFO", "SUCCES
 export const notificationPriorityEnum = pgEnum("notification_priority", ["LOW", "NORMAL", "HIGH", "CRITICAL"]);
 export const notificationCategoryEnum = pgEnum("notification_category", [
   "SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM",
+  "CHAT", "PAYROLL", "RECRUITMENT", "KNOWLEDGE", "SIGN", "INVENTORY", "SURVEYS", "CALENDAR", "SUPPORT",
 ]);
 export const broadcastStatusEnum = pgEnum("broadcast_status", [
   "DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED",
@@ -88,6 +89,28 @@ export const deliveryStatusEnum = pgEnum("delivery_status", [
 ]);
 export const notificationChannelEnum = pgEnum("notification_channel", [
   "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
+]);
+
+// Delivery engine (notifications) — one row per channel per recipient tracks its full lifecycle.
+export const notificationDeliveryStatusEnum = pgEnum("notification_delivery_status", [
+  "PENDING", "QUEUED", "SENDING", "SENT", "DELIVERED", "READ", "CLICKED",
+  "FAILED", "BOUNCED", "SUPPRESSED", "CANCELLED", "DEAD",
+]);
+export const notificationQueueStatusEnum = pgEnum("notification_queue_status", [
+  "PENDING", "LOCKED", "DONE", "FAILED", "DEAD",
+]);
+export const notificationPolicyScopeEnum = pgEnum("notification_policy_scope", [
+  "ORG", "ROLE", "DEPARTMENT", "TEAM", "PROJECT",
+]);
+export const notificationProviderEnum = pgEnum("notification_provider", [
+  "SMTP", "SENDGRID", "TWILIO", "META_WHATSAPP", "SLACK", "TEAMS", "WEBHOOK", "WEB_PUSH", "INTERNAL", "SANDBOX",
+]);
+export const notificationQuietHoursBehaviorEnum = pgEnum("notification_quiet_hours_behavior", [
+  "respect", "bypass_if_high", "always_bypass",
+]);
+export const notificationSuppressionReasonEnum = pgEnum("notification_suppression_reason", [
+  "DEDUPE", "MUTE", "UNSUBSCRIBE", "INVALID_RECIPIENT", "RATE_LIMIT", "QUIET_HOURS",
+  "NO_PROVIDER", "CONSENT_MISSING", "CHANNEL_DISABLED", "COST_LIMIT",
 ]);
 
 export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "ISSUED", "PAID", "FAILED", "VOIDED"]);

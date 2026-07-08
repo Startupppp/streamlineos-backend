@@ -5,7 +5,9 @@ import { ChatModule } from "../chat/chat.module";
 import { EmailModule } from "../email/email.module";
 import { KbModule } from "../kb/kb.module";
 import { SupportModule } from "../support/support.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { CronController } from "./cron.controller";
+import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronHolidayService } from "./cron-holiday.service";
@@ -19,7 +21,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule],
+  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,
@@ -33,6 +35,7 @@ import { CronSupportService } from "./cron-support.service";
     CronWeeklyRecapService,
     CronEmailOutboxService,
     CronSupportService,
+    CronNotificationDeliveryService,
   ],
 })
 export class CronModule {}
