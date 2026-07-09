@@ -352,7 +352,7 @@ export class ProjectsTicketsService {
       }
     }
 
-    const hasAccess = await this.checkProjectAccess(orgId, actingUserId, before.projectId);
+    const hasAccess = u.isOrgOwner || u.isPlatformAdmin || await this.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     if (input.status !== undefined) {

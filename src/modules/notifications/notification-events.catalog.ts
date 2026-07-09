@@ -163,6 +163,7 @@ const SUPPORT = [
   e("support.ticket.customer_replied", "support", "SUPPORT", "Customer replied", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
   e("support.ticket.sla_breached", "support", "SUPPORT", "SLA breached", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, quietHoursBehavior: "bypass_if_high" }),
   e("support.ticket.escalated", "support", "SUPPORT", "Ticket escalated", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
+  e("support.ticket.mention", "support", "SUPPORT", "Mentioned in an internal note", { defaultPriority: "HIGH", defaultChannels: IA_PUSH, dedupeWindowSeconds: 0 }),
 ];
 
 const SYSTEM = [

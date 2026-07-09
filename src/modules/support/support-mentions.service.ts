@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { supportMessageMentions, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { logger } from "../../common/logger/logger.service";
 
 interface OrgUser {
@@ -51,7 +51,7 @@ function matchMentionedUsers(content: string, orgUsers: OrgUser[]): OrgUser[] {
 export class SupportMentionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async processMessageMentions(input: {
@@ -98,22 +98,21 @@ export class SupportMentionsService {
       return;
     }
 
-    for (const user of mentioned) {
-      try {
-        await this.notifications.create({
-          orgId: input.orgId,
-          userId: user.id,
-          type: "INFO",
-          category: "SYSTEM",
-          sourceModule: "support",
-          title: "You were mentioned",
-          message: `${input.authorName} mentioned you in an internal note on "${input.ticketTitle}".`,
-          link: `/support/inbox?ticketId=${input.ticketId}`,
-          metadata: { ticketId: input.ticketId, messageId: input.messageId },
-        });
-      } catch (error) {
-        logger.error("Failed to notify mentioned user", { error });
-      }
+    try {
+      await this.dispatch.emit({
+        eventKey: "support.ticket.mention",
+        orgId: input.orgId,
+        actorUserId: input.authorId,
+        targetUserIds: mentioned.map((user) => user.id),
+        entityType: "support_ticket",
+        entityId: String(input.ticketId),
+        title: "You were mentioned",
+        message: `${input.authorName} mentioned you in an internal note on "${input.ticketTitle}".`,
+        link: `/support/inbox?ticketId=${input.ticketId}`,
+        metadata: { ticketId: input.ticketId, messageId: input.messageId },
+      });
+    } catch (error) {
+      logger.error("Failed to notify mentioned users", { error });
     }
   }
 }
