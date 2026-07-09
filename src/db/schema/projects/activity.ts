@@ -15,6 +15,9 @@ export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
   "comment_updated",
   "comment_deleted",
   "label_changed",
+  "estimate_changed",
+  "cycle_changed",
+  "type_changed",
 ]);
 
 export const ticketActivityLog = pgTable("ticket_activity_log", {

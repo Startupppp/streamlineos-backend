@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, inArray } from "drizzle-orm";
 import {
+  cycles,
   organizationMembers,
   ticketActivityLog,
   ticketCommentMentions,
@@ -20,6 +21,9 @@ interface TicketSnapshot {
   assigneeId: string | null;
   sprintId: number | null;
   dueDate: string | null;
+  points: number | null;
+  type: string;
+  cycleId: number | null;
 }
 
 interface TicketChanges {
@@ -29,6 +33,9 @@ interface TicketChanges {
   assigneeId?: string | null;
   sprintId?: number | null;
   dueDate?: string | null;
+  points?: number | null;
+  type?: string;
+  cycleId?: number | null;
 }
 
 interface ProcessMentionsInput {
@@ -152,6 +159,21 @@ export class ProjectsActivityService {
     if (changes.dueDate !== undefined && normalize(changes.dueDate) !== normalize(before.dueDate)) {
       entries.push({ action: "due_date_changed", from: normalize(before.dueDate), to: normalize(changes.dueDate) });
     }
+    if (changes.points !== undefined && normalize(changes.points) !== normalize(before.points)) {
+      entries.push({ action: "estimate_changed", from: normalize(before.points), to: normalize(changes.points) });
+    }
+    if (changes.type !== undefined && normalize(changes.type) !== normalize(before.type)) {
+      entries.push({ action: "type_changed", from: normalize(before.type), to: normalize(changes.type) });
+    }
+    if (changes.cycleId !== undefined && normalize(changes.cycleId) !== normalize(before.cycleId)) {
+      const cycleIds = [before.cycleId, changes.cycleId].filter((id): id is number => id != null);
+      const cycleNameById = await this.resolveCycleNames(cycleIds);
+      entries.push({
+        action: "cycle_changed",
+        from: before.cycleId != null ? (cycleNameById.get(before.cycleId) ?? String(before.cycleId)) : null,
+        to: changes.cycleId != null ? (cycleNameById.get(changes.cycleId) ?? String(changes.cycleId)) : null,
+      });
+    }
 
     if (entries.length === 0) return;
 
@@ -185,6 +207,22 @@ export class ProjectsActivityService {
 
     for (const row of rows) {
       map.set(row.id, displayName(row));
+    }
+    return map;
+  }
+
+  private async resolveCycleNames(ids: number[]): Promise<Map<number, string>> {
+    const map = new Map<number, string>();
+    const unique = Array.from(new Set(ids));
+    if (unique.length === 0) return map;
+
+    const rows = await this.db
+      .select({ id: cycles.id, name: cycles.name })
+      .from(cycles)
+      .where(inArray(cycles.id, unique));
+
+    for (const row of rows) {
+      map.set(row.id, row.name);
     }
     return map;
   }

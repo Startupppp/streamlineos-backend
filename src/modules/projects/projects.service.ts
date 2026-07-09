@@ -248,6 +248,7 @@ export class ProjectsService {
           with: {
             assignee: true,
             labels: { with: { label: true } },
+            cycle: { columns: { id: true, name: true, status: true, startDate: true, endDate: true } },
           },
         },
       },

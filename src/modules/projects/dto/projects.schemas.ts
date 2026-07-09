@@ -139,6 +139,7 @@ export const updateTicketSchema = z.object({
   originalEstimate: z.number().nullable().optional(),
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  cycleId: z.number().nullable().optional(),
   expectedUpdatedAt: z.string().optional(),
 });
 

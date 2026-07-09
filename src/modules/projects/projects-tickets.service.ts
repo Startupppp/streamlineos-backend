@@ -333,13 +333,14 @@ export class ProjectsTicketsService {
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
     if (input.points !== undefined) updateData.points = input.points;
+    if (input.cycleId !== undefined) updateData.cycleId = input.cycleId;
     if (input.originalEstimate !== undefined) updateData.originalEstimate = input.originalEstimate?.toString();
     if (input.startDate !== undefined) updateData.startDate = input.startDate;
     if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
 
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true, updatedAt: true },
+      columns: { title: true, status: true, priority: true, assigneeId: true, sprintId: true, dueDate: true, projectId: true, updatedAt: true, points: true, type: true, cycleId: true },
     });
     if (!before || !before.projectId) throw new NotFoundException("Ticket not found");
 
@@ -384,6 +385,9 @@ export class ProjectsTicketsService {
           assigneeId: resolveAssigneeId(input.assigneeId),
           sprintId: input.sprintId,
           dueDate: input.dueDate,
+          points: input.points,
+          type: input.type,
+          cycleId: input.cycleId,
         })
         .catch((error) => logger.error("Failed to log ticket activity", { error })),
     ]);
