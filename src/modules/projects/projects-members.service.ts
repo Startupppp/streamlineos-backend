@@ -10,10 +10,14 @@ import type {
   UpdateLabelInput,
   UpdateCustomStateInput,
 } from "./dto/projects.schemas";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 
 @Injectable()
 export class ProjectsMembersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+  ) {}
 
   listMembers(projectId: number) {
     return this.db
@@ -32,7 +36,7 @@ export class ProjectsMembersService {
       .where(eq(projectMembers.projectId, projectId));
   }
 
-  async addMember(projectId: number, body: AddMemberInput) {
+  async addMember(projectId: number, body: AddMemberInput, orgId: string, actorId: string) {
     const existing = await this.db.query.projectMembers.findFirst({
       where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.userId)),
     });
@@ -42,10 +46,20 @@ export class ProjectsMembersService {
       .insert(projectMembers)
       .values({ projectId, userId: body.userId, role: body.role })
       .returning();
+
+    this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {
+      id: member.id,
+      projectId,
+      userId: body.userId,
+      role: body.role,
+      actor: actorId,
+      timestamp: new Date().toISOString(),
+    });
+
     return member;
   }
 
-  async removeMember(projectId: number, userId: string) {
+  async removeMember(projectId: number, userId: string, orgId: string, actorId: string) {
     await this.db
       .delete(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
@@ -79,6 +93,14 @@ export class ProjectsMembersService {
         .delete(ticketAssignees)
         .where(and(eq(ticketAssignees.userId, userId), inArray(ticketAssignees.ticketId, ids)));
     }
+
+    this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
+      id: projectId,
+      projectId,
+      userId,
+      actor: actorId,
+      timestamp: new Date().toISOString(),
+    });
 
     return { success: true };
   }

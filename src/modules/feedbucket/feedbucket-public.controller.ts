@@ -173,6 +173,17 @@ export class FeedbucketPublicController {
 
     const submissionId = await this.publicService.createSubmission(widget, dto, screenshotUrl);
 
+    if (screenshot && screenshotUrl) {
+      await this.db.insert(feedbucketAttachments).values({
+        orgId: widget.orgId,
+        submissionId,
+        fileUrl: screenshotUrl,
+        mimeType: screenshot.mimetype,
+        fileName: screenshot.originalname,
+        fileSize: screenshot.size,
+      });
+    }
+
     if (recording && recordingUrl) {
       await this.db.insert(feedbucketAttachments).values({
         orgId: widget.orgId,
@@ -253,16 +264,6 @@ export class FeedbucketPublicController {
         .set({ linkedTicketId: ticket.id })
         .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, widget.orgId)));
 
-      if (media.screenshotUrl && media.screenshot) {
-        await this.db.insert(feedbucketAttachments).values({
-          orgId: widget.orgId,
-          submissionId,
-          fileUrl: media.screenshotUrl,
-          mimeType: media.screenshot.mimetype,
-          fileName: media.screenshot.originalname,
-          fileSize: media.screenshot.size,
-        });
-      }
     } catch {}
   }
 }

@@ -20,11 +20,13 @@ import { KbService } from "./kb.service";
 import { CrmService } from "./crm.service";
 import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
+import { PublicFormsService } from "./public-forms.service";
 import {
   applySchema,
   externalReferralSubmitSchema,
   externalReferrerRegisterSchema,
   intakeSchema,
+  publicFormSubmitSchema,
   kbFeedbackSchema,
   kbListQuerySchema,
   leadFormBodySchema,
@@ -38,6 +40,7 @@ import {
   type ExternalReferralSubmitInput,
   type ExternalReferrerRegisterInput,
   type IntakeInput,
+  type PublicFormSubmitInput,
   type KbFeedbackInput,
   type KbListInput,
   type LeadFormBody,
@@ -66,6 +69,7 @@ export class PublicController {
     private readonly crm: CrmService,
     private readonly intake: IntakeService,
     private readonly org: OrgService,
+    private readonly publicForms: PublicFormsService,
   ) {}
 
   @Get("application-status/:token")
@@ -153,6 +157,20 @@ export class PublicController {
     @Body(new ZodValidationPipe(intakeSchema)) body: IntakeInput,
   ) {
     return this.intake.submitIntake(projectId, body);
+  }
+
+  @Get("forms/:token")
+  getPublicForm(@Param("token") token: string) {
+    return this.publicForms.getFormByToken(token);
+  }
+
+  @Post("forms/:token/submit")
+  @HttpCode(201)
+  submitPublicForm(
+    @Param("token") token: string,
+    @Body(new ZodValidationPipe(publicFormSubmitSchema)) body: PublicFormSubmitInput,
+  ) {
+    return this.publicForms.submitByToken(token, body);
   }
 
   @Get("lead-form/:token")

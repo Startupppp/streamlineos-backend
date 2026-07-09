@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   projects,
@@ -18,6 +18,7 @@ import {
   ProjectsCommentNotFoundException,
   ProjectsForbiddenTicketException,
 } from "../../common/http/api-exceptions";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type { CommentInput } from "./dto/projects.schemas";
 
 @Injectable()
@@ -26,6 +27,7 @@ export class ProjectsTicketCommentsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly activity: ProjectsActivityService,
     private readonly access: AccessService,
+    private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
   ) {}
 
   private async resolveTicketForComment(u: CurrentUserContext, ticketId: number) {
@@ -53,9 +55,30 @@ export class ProjectsTicketCommentsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
+    if (body.parentCommentId !== undefined) {
+      const parent = await this.db.query.ticketComments.findFirst({
+        where: and(
+          eq(ticketComments.id, body.parentCommentId),
+          eq(ticketComments.ticketId, ticketId),
+          eq(ticketComments.orgId, u.orgId),
+        ),
+        columns: { id: true, parentCommentId: true },
+      });
+      if (!parent) throw new NotFoundException("Parent comment not found");
+      if (parent.parentCommentId !== null) {
+        throw new BadRequestException("Replies can only be one level deep");
+      }
+    }
+
     const [comment] = await this.db
       .insert(ticketComments)
-      .values({ orgId: u.orgId, ticketId, userId: u.userId, content: body.content })
+      .values({
+        orgId: u.orgId,
+        ticketId,
+        userId: u.userId,
+        content: body.content,
+        parentCommentId: body.parentCommentId ?? null,
+      })
       .returning();
 
     try {
@@ -77,6 +100,17 @@ export class ProjectsTicketCommentsService {
       });
     } catch (error) {
       logger.error("Failed to process comment mentions", { error });
+    }
+
+    if (ticket.projectId) {
+      this.webhooksDispatch.dispatch(u.orgId, ticket.projectId, "comment.created", {
+        id: comment.id,
+        projectId: ticket.projectId,
+        ticketId,
+        parentCommentId: body.parentCommentId ?? null,
+        actor: u.userId,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return comment;

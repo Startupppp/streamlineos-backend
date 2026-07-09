@@ -129,8 +129,9 @@ export class ProjectsController {
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.addMember(projectId, body);
+    return this.members.addMember(projectId, body, u.orgId, u.userId);
   }
 
   @Delete(":projectId/members")
@@ -138,8 +139,9 @@ export class ProjectsController {
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.removeMember(projectId, body.userId);
+    return this.members.removeMember(projectId, body.userId, u.orgId, u.userId);
   }
 
   @Get(":projectId/custom-states")

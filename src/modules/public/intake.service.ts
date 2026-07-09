@@ -42,6 +42,9 @@ export class IntakeService {
           : null,
         source: "web_form",
         submitterEmail: input.submitterEmail ?? null,
+        submitterName: input.submitterName ?? null,
+        priority: input.priority ?? null,
+        requestType: input.requestType ?? null,
       })
       .returning({ id: intakeItems.id });
 

@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { projectForms, projects } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -67,6 +68,7 @@ export class FormsService {
         .from(projectForms)
         .where(and(eq(projectForms.projectId, projectId), eq(projectForms.orgId, orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+      const isPublic = input.isPublic ?? false;
       return tx.insert(projectForms).values({
         orgId,
         projectId,
@@ -77,7 +79,8 @@ export class FormsService {
         fields: input.fields,
         actions: input.actions,
         isActive: input.isActive ?? true,
-        isPublic: input.isPublic ?? false,
+        isPublic,
+        publicToken: isPublic ? randomBytes(24).toString("hex") : null,
         createdBy: userId,
       }).returning();
     });
@@ -94,7 +97,7 @@ export class FormsService {
   }
 
   async updateForm(orgId: string, userId: string, projectId: number, formId: number, input: UpdateFormInput) {
-    await this.loadForm(orgId, projectId, formId);
+    const existing = await this.loadForm(orgId, projectId, formId);
     const patch: FormPatch = {};
     if (input.name !== undefined) patch.name = input.name;
     if (input.description !== undefined) patch.description = input.description ?? null;
@@ -102,7 +105,12 @@ export class FormsService {
     if (input.fields !== undefined) patch.fields = input.fields;
     if (input.actions !== undefined) patch.actions = input.actions;
     if (input.isActive !== undefined) patch.isActive = input.isActive;
-    if (input.isPublic !== undefined) patch.isPublic = input.isPublic;
+    if (input.isPublic !== undefined) {
+      patch.isPublic = input.isPublic;
+      if (input.isPublic && !existing.publicToken) {
+        patch.publicToken = randomBytes(24).toString("hex");
+      }
+    }
     const [updated] = await this.db
       .update(projectForms)
       .set(patch)

@@ -19,6 +19,9 @@ export const createIntakeSchema = z.object({
   description: z.unknown().optional(),
   source: z.enum(["manual", "web_form", "email"]).default("manual"),
   submitterEmail: z.string().email().optional(),
+  submitterName: z.string().max(200).optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  requestType: z.enum(["bug", "feature", "task", "question", "other"]).optional(),
 });
 
 export const updateIntakeSchema = z.object({

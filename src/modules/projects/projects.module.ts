@@ -27,6 +27,7 @@ import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
 @Module({
@@ -61,8 +62,9 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsCustomFieldsService,
     ProjectsReleasesService,
     ProjectsWebhooksService,
+    ProjectsWebhooksDispatchService,
     ProjectsAutomationsService,
   ],
-  exports: [ProjectsTicketsService],
+  exports: [ProjectsTicketsService, ProjectsWebhooksDispatchService],
 })
 export class ProjectsModule {}

@@ -91,7 +91,7 @@ export class SprintsController {
     @Body(new ZodValidationPipe(updateSprintSchema)) body: UpdateSprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sprints.updateSprint(u.orgId, sprintId, body);
+    return this.sprints.updateSprint(u.orgId, sprintId, body, u.userId);
   }
 
   @Delete(":sprintId")

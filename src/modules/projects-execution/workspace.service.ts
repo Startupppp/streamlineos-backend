@@ -116,6 +116,9 @@ export class IntakeService {
         description: input.description ?? null,
         source: input.source,
         submitterEmail: input.submitterEmail,
+        submitterName: input.submitterName ?? null,
+        priority: input.priority ?? null,
+        requestType: input.requestType ?? null,
       })
       .returning();
     return item;

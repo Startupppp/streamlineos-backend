@@ -30,6 +30,7 @@ import {
   ProjectsTicketConflictException,
   ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type {
   BulkUpdateInput,
   CreateTicketInput,
@@ -62,6 +63,7 @@ export class ProjectsTicketsService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly query: ProjectsTicketsQueryService,
+    private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
   ) {}
 
   private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
@@ -217,6 +219,18 @@ export class ProjectsTicketsService {
       }
     }
 
+    this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
+      id: ticket.id,
+      projectId,
+      title: ticket.title,
+      status: ticket.status,
+      type: ticket.type,
+      priority: ticket.priority,
+      assigneeId: ticket.assigneeId ?? null,
+      actor: u.userId,
+      timestamp: new Date().toISOString(),
+    });
+
     return ticket;
   }
 
@@ -303,7 +317,9 @@ export class ProjectsTicketsService {
     return ticket;
   }
 
-  async updateTicket(orgId: string, actingUserId: string, ticketId: number, input: UpdateTicketInput) {
+  async updateTicket(u: CurrentUserContext, ticketId: number, input: UpdateTicketInput) {
+    const orgId = u.orgId;
+    const actingUserId = u.userId;
     const now = new Date();
     const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     if (input.title) updateData.title = input.title;
@@ -342,7 +358,13 @@ export class ProjectsTicketsService {
       await Promise.all([
         this.query.validateTicketStatus(before.projectId, orgId, input.status),
         statusChanged
-          ? this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status)
+          ? this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status, {
+              userId: actingUserId,
+              userProjectRole: await this.resolveProjectRole(orgId, actingUserId, before.projectId),
+              isOrgOwner: u.isOrgOwner,
+              isPlatformAdmin: u.isPlatformAdmin,
+              ticketId,
+            })
           : Promise.resolve(),
       ]);
     }
@@ -372,6 +394,30 @@ export class ProjectsTicketsService {
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
       void this.projectsEmail.notifyStatusReview(ticketId, actingUserId, input.status).catch(() => undefined);
+    }
+
+    const ticketProjectId = before.projectId;
+    this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.updated", {
+      id: ticketId,
+      projectId: ticketProjectId,
+      title: input.title ?? before.title,
+      status: input.status ?? before.status,
+      priority: input.priority ?? before.priority,
+      actor: actingUserId,
+      timestamp: now.toISOString(),
+    });
+
+    const newAssignee = resolveAssigneeId(input.assigneeId);
+    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+      this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.assigned", {
+        id: ticketId,
+        projectId: ticketProjectId,
+        title: input.title ?? before.title,
+        status: input.status ?? before.status,
+        assigneeId: newAssignee,
+        actor: actingUserId,
+        timestamp: now.toISOString(),
+      });
     }
 
     return { updated: true, updatedAt: now.toISOString() };
@@ -444,7 +490,7 @@ export class ProjectsTicketsService {
   async deleteTicket(orgId: string, userId: string, ticketId: number, force: boolean) {
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { id: true, projectId: true },
+      columns: { id: true, projectId: true, title: true },
     });
     if (!existing || !existing.projectId) throw new NotFoundException("Ticket not found");
 
@@ -483,6 +529,14 @@ export class ProjectsTicketsService {
       await tx.delete(tickets).where(eq(tickets.id, ticketId));
     });
 
+    this.webhooksDispatch.dispatch(orgId, existing.projectId, "ticket.deleted", {
+      id: ticketId,
+      projectId: existing.projectId,
+      title: existing.title,
+      actor: userId,
+      timestamp: new Date().toISOString(),
+    });
+
     return { deleted: true };
   }
 
@@ -490,8 +544,23 @@ export class ProjectsTicketsService {
     return this.query.bulkUpdate(u, projectId, body);
   }
 
-  async reorder(orgId: string, projectId: number, body: ReorderInput) {
-    return this.query.reorder(orgId, projectId, body);
+  async reorder(u: CurrentUserContext, projectId: number, body: ReorderInput) {
+    return this.query.reorder(u.orgId, projectId, body, {
+      userId: u.userId,
+      isOrgOwner: u.isOrgOwner,
+      isPlatformAdmin: u.isPlatformAdmin,
+    });
+  }
+
+  private async resolveProjectRole(orgId: string, userId: string, projectId: number): Promise<string | null> {
+    const perms = await this.access.resolveUserPermissions(orgId, userId);
+    if (perms.has("projects:manage")) return "OWNER";
+    const memberRows = await this.db
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+      .limit(1);
+    return memberRows[0]?.role ?? null;
   }
 
   async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {

@@ -287,6 +287,9 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   responseCode: integer("response_code"),
   responseBody: text("response_body"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("idx_webhook_deliveries_webhook_id").on(t.webhookId),

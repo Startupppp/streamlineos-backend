@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ProjectsModule } from "../projects/projects.module";
 import {
   CyclesController,
   EpicsController,
@@ -39,6 +40,7 @@ import {
 import { TimesheetsService } from "./timesheets.service";
 
 @Module({
+  imports: [ProjectsModule],
   controllers: [
     SprintsController,
     CyclesController,

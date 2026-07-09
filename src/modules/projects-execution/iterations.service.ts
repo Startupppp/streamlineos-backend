@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { cycles, modules, sprints, tickets, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,10 +15,14 @@ import type {
   UpdateModuleInput,
   UpdateSprintInput,
 } from "./dto/iterations.schemas";
+import { ProjectsWebhooksDispatchService } from "../projects/projects-webhooks-dispatch.service";
 
 @Injectable()
 export class SprintsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Optional() private readonly webhooksDispatch: ProjectsWebhooksDispatchService | null,
+  ) {}
 
   listSprints(orgId: string, projectId: number) {
     return this.db.query.sprints.findMany({
@@ -54,7 +58,12 @@ export class SprintsService {
     return sprint;
   }
 
-  async updateSprint(orgId: string, sprintId: number, input: UpdateSprintInput) {
+  async updateSprint(orgId: string, sprintId: number, input: UpdateSprintInput, actorId?: string) {
+    const before = await this.db.query.sprints.findFirst({
+      where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)),
+      columns: { id: true, name: true, status: true, projectId: true },
+    });
+
     await this.db
       .update(sprints)
       .set({
@@ -65,6 +74,25 @@ export class SprintsService {
         ...(input.status && { status: input.status }),
       })
       .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+
+    if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
+      const eventName =
+        input.status === "ACTIVE"
+          ? "sprint.started"
+          : input.status === "COMPLETED"
+            ? "sprint.completed"
+            : null;
+      if (eventName) {
+        this.webhooksDispatch.dispatch(orgId, before.projectId, eventName, {
+          id: sprintId,
+          projectId: before.projectId,
+          name: input.name ?? before.name,
+          status: input.status,
+          actor: actorId ?? "system",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
 
     return { success: true };
   }

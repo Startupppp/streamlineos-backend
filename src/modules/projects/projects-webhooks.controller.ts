@@ -7,13 +7,17 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
 
 @RequireModule("projects")
 @Controller("projects")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsWebhooksController {
-  constructor(private readonly webhooks: ProjectsWebhooksService) {}
+  constructor(
+    private readonly webhooks: ProjectsWebhooksService,
+    private readonly dispatch: ProjectsWebhooksDispatchService,
+  ) {}
 
   @Get(":projectId/webhooks")
   @RequirePermission("projects:manage")
@@ -47,7 +51,23 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks/:webhookId/deliveries")
   @RequirePermission("projects:manage")
-  listDeliveries(@Param("webhookId", ParseIntPipe) webhookId: number) {
-    return this.webhooks.listDeliveries(webhookId);
+  listDeliveries(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("webhookId", ParseIntPipe) webhookId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.webhooks.listDeliveries(u.orgId, projectId, webhookId);
+  }
+
+  @Post(":projectId/webhooks/:webhookId/test")
+  @RequirePermission("projects:manage")
+  @HttpCode(200)
+  async sendTest(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("webhookId", ParseIntPipe) webhookId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.webhooks.assertWebhookOwnership(u.orgId, projectId, webhookId);
+    return this.dispatch.sendTest(u.orgId, projectId, webhookId);
   }
 }

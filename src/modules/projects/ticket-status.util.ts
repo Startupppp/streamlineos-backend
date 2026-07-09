@@ -8,10 +8,8 @@ export async function resolveValidTicketStatuses(
   db: Db,
   projectId: number,
   orgId: string,
-  statuses: string[],
+  _statuses: string[],
 ): Promise<Set<string>> {
-  const nonCanonical = statuses.filter((s) => !CANONICAL_TICKET_STATUSES.has(s));
-  if (nonCanonical.length === 0) return CANONICAL_TICKET_STATUSES;
   const rows = await db
     .select({ name: projectStatuses.name })
     .from(projectStatuses)

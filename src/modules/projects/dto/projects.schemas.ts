@@ -169,7 +169,10 @@ export const reorderSchema = z.object({
   ),
 });
 
-export const commentSchema = z.object({ content: z.string().min(1) });
+export const commentSchema = z.object({
+  content: z.string().min(1),
+  parentCommentId: z.number().int().positive().optional(),
+});
 
 export const addRelationSchema = z.object({
   relatedTicketId: z.number().int().positive(),

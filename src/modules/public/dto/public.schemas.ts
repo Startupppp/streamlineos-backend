@@ -66,6 +66,14 @@ export const intakeSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),
   submitterEmail: z.string().email().optional(),
+  submitterName: z.string().max(200).optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  requestType: z.enum(["bug", "feature", "task", "question", "other"]).optional(),
+});
+
+export const publicFormSubmitSchema = z.object({
+  values: z.record(z.string(), z.unknown()),
+  submittedByName: z.string().max(200).optional(),
 });
 
 export const externalReferrerRegisterSchema = z.object({
@@ -94,5 +102,6 @@ export type KbFeedbackInput = z.infer<typeof kbFeedbackSchema>;
 export type NpsSubmitInput = z.infer<typeof npsSubmitSchema>;
 export type LeadFormBody = z.infer<typeof leadFormBodySchema>;
 export type IntakeInput = z.infer<typeof intakeSchema>;
+export type PublicFormSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegisterSchema>;
 export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;

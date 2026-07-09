@@ -122,7 +122,7 @@ export class ProjectsTicketsController {
     @Body(new ZodValidationPipe(reorderSchema)) body: ReorderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.reorder(u.orgId, projectId, body);
+    return this.tickets.reorder(u, projectId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/activity")
@@ -387,7 +387,7 @@ export class ProjectsTicketsController {
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.updateTicket(u.orgId, u.userId, ticketId, body);
+    return this.tickets.updateTicket(u, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId")

@@ -6,6 +6,7 @@ import { KbService } from "./kb.service";
 import { CrmService } from "./crm.service";
 import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
+import { PublicFormsService } from "./public-forms.service";
 
 @Module({
   controllers: [PublicController],
@@ -16,6 +17,7 @@ import { OrgService } from "./org.service";
     CrmService,
     IntakeService,
     OrgService,
+    PublicFormsService,
   ],
 })
 export class PublicModule {}
