@@ -117,6 +117,7 @@ export const createTicketSchema = z.object({
   reporterId: z.string().optional(),
   sprintId: z.number().optional(),
   epicId: z.number().optional(),
+  cycleId: z.number().optional(),
   points: z.number().optional(),
   link: z.string().optional(),
   originalEstimate: z.number().optional(),

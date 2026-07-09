@@ -161,6 +161,7 @@ export class ProjectsTicketsService {
           reporterId: body.reporterId ?? u.userId,
           sprintId: body.sprintId,
           epicId: body.epicId,
+          cycleId: body.cycleId,
           points: body.points,
           link: body.link,
           originalEstimate: body.originalEstimate?.toString(),

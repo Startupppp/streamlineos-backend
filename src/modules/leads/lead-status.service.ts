@@ -16,7 +16,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { appUrl } from "../email/app-url";
 import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
@@ -33,7 +33,7 @@ export class LeadStatusService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly email: EmailService,
   ) {}
 
@@ -126,7 +126,10 @@ export class LeadStatusService {
       }
 
       const existingClientAccount = await tx.query.clientAccounts.findFirst({
-        where: and(eq(clientAccounts.leadId, lead.id), eq(clientAccounts.orgId, orgId)),
+        where: and(
+          eq(clientAccounts.leadId, lead.id),
+          eq(clientAccounts.orgId, orgId),
+        ),
       });
       if (!existingClientAccount) {
         await tx.insert(clientAccounts).values({
@@ -139,7 +142,10 @@ export class LeadStatusService {
           clientPhone: lead.phone,
           clientWhatsapp: lead.whatsappNumber,
           estimatedInvestment:
-            input.estimatedInvestment || lead.potentialValue || lead.investmentInterest || null,
+            input.estimatedInvestment ||
+            lead.potentialValue ||
+            lead.investmentInterest ||
+            null,
           status: "ACCOUNT_OPENING",
           convertedAt: new Date(),
         });
@@ -151,7 +157,10 @@ export class LeadStatusService {
           .set({
             ...(input.conversionNotes ? { notes: input.conversionNotes } : {}),
             ...(input.estimatedInvestment
-              ? { potentialValue: input.estimatedInvestment, investmentInterest: input.estimatedInvestment }
+              ? {
+                  potentialValue: input.estimatedInvestment,
+                  investmentInterest: input.estimatedInvestment,
+                }
               : {}),
           })
           .where(eq(leads.id, lead.id));
@@ -189,25 +198,30 @@ export class LeadStatusService {
         });
       }
 
-      await this.notifications.create({
+      await this.dispatch.emit({
+        eventKey: "crm.lead.converted",
         orgId,
-        userId: lead.assignedToId || userId,
-        type: "SUCCESS",
+        actorUserId: userId,
+        targetUserIds: [lead.assignedToId || userId],
+        entityType: "lead",
+        entityId: String(lead.id),
         title: "Lead Converted",
         message: `Lead "${lead.name}" has been converted to a client.${crmAssigneeId ? " A CRM executive has been assigned." : ""}`,
         link: `/crm/clients`,
       });
 
-      if (crmAssigneeId) {
-        await this.notifications.create({
+      if (crmAssigneeId)
+        await this.dispatch.emit({
+          eventKey: "crm.client.assigned",
           orgId,
-          userId: crmAssigneeId,
-          type: "INFO",
+          actorUserId: userId,
+          targetUserIds: [crmAssigneeId],
+          entityType: "lead",
+          entityId: String(lead.id),
           title: "New Client Assigned",
           message: `Client "${lead.name}" has been assigned to you for onboarding. Estimated investment: ${lead.potentialValue ?? "N/A"}.`,
           link: `/crm/clients`,
         });
-      }
 
       const salesRep = await this.db.query.users.findFirst({
         where: eq(users.id, lead.assignedToId || userId),
@@ -266,10 +280,12 @@ export class LeadStatusService {
       updatedAt: new Date(),
     };
     if (input.status === "CONVERTED") updateData.convertedAt = new Date();
-    if (input.status === "LOST" && input.lostReason) updateData.lostReason = input.lostReason;
+    if (input.status === "LOST" && input.lostReason)
+      updateData.lostReason = input.lostReason;
 
     const conditions = [eq(leads.id, leadId), eq(leads.orgId, orgId)];
-    if (input.expectedStatus) conditions.push(eq(leads.status, input.expectedStatus));
+    if (input.expectedStatus)
+      conditions.push(eq(leads.status, input.expectedStatus));
 
     const [updated] = await this.db
       .update(leads)
@@ -285,8 +301,19 @@ export class LeadStatusService {
 
     if (input.status === "CONVERTED") {
       const crmAssigneeId = await this.getNextCrmAssignee(orgId);
-      await this.convertLeadToClient(orgId, userId, updated, input, crmAssigneeId);
-      void this.dispatchConversionSideEffects(orgId, userId, updated, crmAssigneeId);
+      await this.convertLeadToClient(
+        orgId,
+        userId,
+        updated,
+        input,
+        crmAssigneeId,
+      );
+      void this.dispatchConversionSideEffects(
+        orgId,
+        userId,
+        updated,
+        crmAssigneeId,
+      );
     }
 
     return { ok: true, lead: updated };
@@ -298,7 +325,12 @@ export class LeadStatusService {
     leadId: number,
     input: TransitionLeadStatusInput,
   ): Promise<TransitionLeadStatusResult> {
-    const result = await this.transitionLeadStatus(orgId, userId, leadId, input);
+    const result = await this.transitionLeadStatus(
+      orgId,
+      userId,
+      leadId,
+      input,
+    );
     if (!result.ok) return result;
 
     await this.cache.invalidatePattern(`leads:*:${orgId}:*`);

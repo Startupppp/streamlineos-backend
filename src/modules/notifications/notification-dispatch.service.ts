@@ -60,7 +60,7 @@ export class NotificationDispatchService {
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
     const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
-    const announcements: AnnounceInput[] = [];
+    const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
     for (const userId of targets) {
       const routingResult = routingResults.get(userId);
       if (!routingResult) continue;
@@ -69,11 +69,11 @@ export class NotificationDispatchService {
       result.deliveriesQueued += perUser.queued;
       result.suppressed += perUser.suppressed;
       result.deduped += perUser.deduped ? 1 : 0;
-      if (perUser.announce) announcements.push(perUser.announce);
+      if (perUser.announce) announcements.push({ input: perUser.announce, pushToDevices: !perUser.pushHandledByEngine });
     }
 
     for (const announcement of announcements) {
-      await this.notificationsService.announce(announcement, false);
+      await this.notificationsService.announce(announcement.input, announcement.pushToDevices);
     }
     return result;
   }
@@ -90,11 +90,12 @@ export class NotificationDispatchService {
     userId: string,
     routingResult: Awaited<ReturnType<NotificationRoutingService["route"]>>,
     email: string | null,
-  ): Promise<{ createdInApp: boolean; queued: number; suppressed: number; deduped: boolean; announce?: AnnounceInput }> {
+  ): Promise<{ createdInApp: boolean; queued: number; suppressed: number; deduped: boolean; announce?: AnnounceInput; pushHandledByEngine: boolean }> {
     const now = new Date();
     const title = input.title ?? definition.displayName;
     const message = input.message ?? definition.description;
     const createInApp = routingResult.createInApp;
+    const pushHandledByEngine = routingResult.channels.some((c) => c.channel === "PUSH" && c.action === "SEND");
 
     return this.db.transaction(async (tx) => {
       const inAppKey = this.buildIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds);
@@ -117,7 +118,7 @@ export class NotificationDispatchService {
         .returning({ id: notificationDeliveries.id });
 
       if (!inAppDelivery) {
-        return { createdInApp: false, queued: 0, suppressed: 0, deduped: true, announce: undefined };
+        return { createdInApp: false, queued: 0, suppressed: 0, deduped: true, announce: undefined, pushHandledByEngine };
       }
 
       let notificationId: number | null = null;
@@ -207,7 +208,7 @@ export class NotificationDispatchService {
             }
           : undefined;
 
-      return { createdInApp: createInApp && notificationId !== null, queued, suppressed, deduped: false, announce };
+      return { createdInApp: createInApp && notificationId !== null, queued, suppressed, deduped: false, announce, pushHandledByEngine };
     });
   }
 }

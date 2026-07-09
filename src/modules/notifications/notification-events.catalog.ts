@@ -67,6 +67,8 @@ const CRM = [
   e("crm.followup.overdue", "crm", "CRM", "Follow-up overdue", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
   e("crm.customer.message_received", "crm", "CRM", "Customer message received", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
   e("crm.automation.failed", "crm", "CRM", "Automation failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
+  e("crm.lead.converted", "crm", "CRM", "Lead converted to client", { defaultType: "SUCCESS", defaultChannels: IA_PUSH }),
+  e("crm.client.assigned", "crm", "CRM", "New client assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
 ];
 
 const HR = [
