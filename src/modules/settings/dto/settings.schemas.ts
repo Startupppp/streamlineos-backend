@@ -65,12 +65,14 @@ export const createGitConnectionSchema = z.object({
   provider: z.enum(["github", "gitlab", "bitbucket"]),
   repoUrl: z.string().url().max(500),
   repoName: z.string().max(200).optional(),
+  projectId: z.number().int().positive().nullable().optional(),
 });
 
 export const updateGitConnectionSchema = z.object({
   isActive: z.boolean().optional(),
   repoUrl: z.string().url().max(500).optional(),
   repoName: z.string().max(200).nullable().optional(),
+  projectId: z.number().int().positive().nullable().optional(),
 });
 
 const automationTriggerSchema = z.enum([

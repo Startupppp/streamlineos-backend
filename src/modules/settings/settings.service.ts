@@ -343,6 +343,7 @@ export class SettingsService {
     return rows.map((row) => ({
       id: row.id,
       provider: row.provider,
+      projectId: row.projectId,
       repoUrl: row.repoUrl,
       repoName: row.repoName,
       isActive: row.isActive,
@@ -363,6 +364,7 @@ export class SettingsService {
         provider: input.provider,
         repoUrl: input.repoUrl,
         repoName: input.repoName ?? null,
+        projectId: input.projectId ?? null,
         webhookSecret: secret,
         createdBy: userId,
       })
@@ -371,6 +373,7 @@ export class SettingsService {
     return {
       id: created.id,
       provider: created.provider,
+      projectId: created.projectId,
       repoUrl: created.repoUrl,
       repoName: created.repoName,
       isActive: created.isActive,
@@ -385,7 +388,8 @@ export class SettingsService {
     if (
       input.isActive === undefined &&
       input.repoUrl === undefined &&
-      input.repoName === undefined
+      input.repoName === undefined &&
+      input.projectId === undefined
     ) {
       throw new BadRequestException("No fields to update");
     }
@@ -396,6 +400,7 @@ export class SettingsService {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.repoUrl !== undefined ? { repoUrl: input.repoUrl } : {}),
         ...(input.repoName !== undefined ? { repoName: input.repoName } : {}),
+        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
@@ -406,6 +411,7 @@ export class SettingsService {
     return {
       id: updated.id,
       provider: updated.provider,
+      projectId: updated.projectId,
       repoUrl: updated.repoUrl,
       repoName: updated.repoName,
       isActive: updated.isActive,

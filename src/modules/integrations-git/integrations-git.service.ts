@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
-import { gitConnections, gitTicketLinks, projects, tickets } from "../../db/schema";
+import { asc, and, eq, inArray } from "drizzle-orm";
+import { gitConnections, gitTicketLinks, projectStatuses, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
+import { ProjectsTicketsService } from "../projects/projects-tickets.service";
 import type {
   GitLinkInput,
   GitProvider,
@@ -13,10 +14,26 @@ import type {
   ResolvedTicket,
   WebhookRequest,
 } from "./git.types";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+const SYSTEM_ACTOR: Omit<CurrentUserContext, "orgId"> = {
+  userId: "system",
+  branchId: null,
+  role: "SYSTEM",
+  permissions: [],
+  enabledModules: [],
+  plan: null,
+  isPlatformAdmin: true,
+  isOrgOwner: true,
+  sessionId: "git-webhook",
+};
 
 @Injectable()
 export class IntegrationsGitService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly projectsTickets: ProjectsTicketsService,
+  ) {}
 
   async processWebhook(req: WebhookRequest): Promise<void> {
     const connectionId = Number(req.connectionIdRaw ?? null);
@@ -69,6 +86,57 @@ export class IntegrationsGitService {
 
     if (links.length > 0) {
       await this.recordLinks(links);
+    }
+
+    const mergedPrLinks = links.filter((l) => l.refType === "pull_request" && l.status === "merged");
+    if (mergedPrLinks.length > 0) {
+      void this.autoTransitionOnMerge(connection.orgId, mergedPrLinks).catch((error) =>
+        logger.error("[git-webhook] auto-transition failed", { error }),
+      );
+    }
+  }
+
+  private async autoTransitionOnMerge(orgId: string, mergedLinks: GitLinkInput[]): Promise<void> {
+    const ticketIds = Array.from(new Set(mergedLinks.map((l) => l.ticketId)));
+    if (ticketIds.length === 0) return;
+
+    const ticketRows = await this.db
+      .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status })
+      .from(tickets)
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketIds)));
+
+    const projectIds = Array.from(new Set(ticketRows.map((t) => t.projectId).filter((p): p is number => p !== null)));
+    if (projectIds.length === 0) return;
+
+    const completedStatuses = await this.db
+      .select({ projectId: projectStatuses.projectId, name: projectStatuses.name })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.orgId, orgId),
+          inArray(projectStatuses.projectId, projectIds),
+          eq(projectStatuses.type, "completed"),
+        ),
+      )
+      .orderBy(asc(projectStatuses.order));
+
+    const projectCompletedStatus = new Map<number, string>();
+    for (const row of completedStatuses) {
+      if (!projectCompletedStatus.has(row.projectId)) {
+        projectCompletedStatus.set(row.projectId, row.name);
+      }
+    }
+
+    for (const ticket of ticketRows) {
+      if (!ticket.projectId) continue;
+      const targetStatus = projectCompletedStatus.get(ticket.projectId);
+      if (!targetStatus || ticket.status === targetStatus) continue;
+      const systemCtx: CurrentUserContext = { ...SYSTEM_ACTOR, orgId };
+      try {
+        await this.projectsTickets.updateTicket(systemCtx, ticket.id, { status: targetStatus });
+      } catch (error) {
+        logger.warn("[git-webhook] skipped auto-transition", { ticketId: ticket.id, error });
+      }
     }
   }
 
