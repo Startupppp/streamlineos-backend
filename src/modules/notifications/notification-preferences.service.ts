@@ -23,13 +23,10 @@ const DEFAULT_PREFERENCES = {
   quietHoursWeekends: true,
   allowCriticalOverride: true,
   digestMode: "disabled" as "disabled" | "hourly" | "daily" | "weekly",
-  digestChannel: "EMAIL",
-  digestTime: null as string | null,
   categories: {} as Record<string, boolean>,
   channelCategories: {} as Record<string, Record<string, boolean>>,
   eventPreferences: {} as EventPrefMap,
   modulePreferences: {} as Record<string, { mode?: string; muted?: boolean }>,
-  priorityPreferences: {} as Record<string, { channels?: Record<string, boolean> }>,
 };
 
 @Injectable()

@@ -4,6 +4,8 @@ import { notificationProviderAccounts, notificationAuditLogs, users } from "../.
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { encryptSecret } from "../../common/security/secret-encryption.util";
+import { CacheService } from "../../common/cache/cache.service";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
 import type { CreateProviderInput, UpdateProviderInput, TestProviderInput } from "./dto/provider.schemas";
 import type { NotificationChannel, NotificationPriority } from "./notification.types";
@@ -14,6 +16,7 @@ type ProviderRow = typeof notificationProviderAccounts.$inferSelect;
 export class NotificationProvidersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
     private readonly registry: NotificationProviderRegistry,
   ) {}
 
@@ -68,6 +71,7 @@ export class NotificationProvidersService {
       .returning();
     if (!row) throw new BadRequestException("Failed to create provider");
     await this.audit(orgId, userId, "provider.created", row.id, dto.channel);
+    await this.cache.del(NOTIF_CACHE.availability(orgId));
     return this.sanitize(row);
   }
 
@@ -92,6 +96,7 @@ export class NotificationProvidersService {
       .returning();
     if (!row) throw new NotFoundException("Provider not found");
     await this.audit(orgId, userId, "provider.updated", row.id, row.channel);
+    await this.cache.del(NOTIF_CACHE.availability(orgId));
     return this.sanitize(row);
   }
 
@@ -102,6 +107,7 @@ export class NotificationProvidersService {
     if (!existing) throw new NotFoundException("Provider not found");
     await this.db.delete(notificationProviderAccounts).where(eq(notificationProviderAccounts.id, id));
     await this.audit(orgId, userId, "provider.deleted", id, existing.channel);
+    await this.cache.del(NOTIF_CACHE.availability(orgId));
     return { success: true };
   }
 

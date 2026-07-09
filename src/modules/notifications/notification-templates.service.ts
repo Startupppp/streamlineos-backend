@@ -72,7 +72,7 @@ export class NotificationTemplatesService {
         createdBy: userId,
       })
       .returning();
-    await this.cache.del(`notification-templates:list:${orgId}`);
+    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
     return created;
   }
 
@@ -97,7 +97,7 @@ export class NotificationTemplatesService {
         ),
       )
       .returning();
-    await this.cache.del(`notification-templates:list:${orgId}`);
+    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
     return updated;
   }
 
@@ -112,7 +112,7 @@ export class NotificationTemplatesService {
           eq(notificationTemplates.orgId, orgId),
         ),
       );
-    await this.cache.del(`notification-templates:list:${orgId}`);
+    await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
     return { success: true };
   }
 

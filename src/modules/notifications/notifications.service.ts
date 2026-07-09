@@ -37,7 +37,6 @@ export interface CreateNotificationInput {
   entityType?: string;
   entityId?: string;
   actorUserId?: string | null;
-  groupKey?: string;
   reason?: string;
   title: string;
   message: string;
@@ -45,6 +44,27 @@ export interface CreateNotificationInput {
   channel?: string;
   metadata?: Record<string, unknown>;
 }
+
+const LIST_COLUMNS = {
+  id: notifications.id,
+  orgId: notifications.orgId,
+  userId: notifications.userId,
+  type: notifications.type,
+  priority: notifications.priority,
+  category: notifications.category,
+  sourceModule: notifications.sourceModule,
+  eventKey: notifications.eventKey,
+  reason: notifications.reason,
+  title: notifications.title,
+  message: notifications.message,
+  link: notifications.link,
+  isRead: notifications.isRead,
+  pinned: notifications.pinned,
+  channel: notifications.channel,
+  archivedAt: notifications.archivedAt,
+  snoozedUntil: notifications.snoozedUntil,
+  createdAt: notifications.createdAt,
+} as const;
 
 @Injectable()
 export class NotificationsService {
@@ -69,7 +89,6 @@ export class NotificationsService {
         entityType: input.entityType,
         entityId: input.entityId,
         actorUserId: input.actorUserId ?? null,
-        groupKey: input.groupKey,
         reason: input.reason,
         title: input.title,
         message: input.message,
@@ -77,9 +96,17 @@ export class NotificationsService {
         channel: input.channel ?? "IN_APP",
         metadata: input.metadata,
       })
-      .returning();
+      .returning({
+        id: notifications.id,
+        title: notifications.title,
+        message: notifications.message,
+        priority: notifications.priority,
+        category: notifications.category,
+        link: notifications.link,
+        sourceModule: notifications.sourceModule,
+        eventKey: notifications.eventKey,
+      });
 
-    await this.audit(input.orgId, input.actorUserId ?? null, "notification.created", notification?.id, input.eventKey ? { eventKey: input.eventKey } : undefined);
     if (notification) {
       await this.announce({
         id: notification.id,
@@ -206,11 +233,12 @@ export class NotificationsService {
       conditions.push(lt(notifications.id, filters.cursor));
     }
 
-    return this.db.query.notifications.findMany({
-      where: and(...conditions),
-      orderBy: [desc(notifications.createdAt)],
-      limit: filters.limit,
-    });
+    return this.db
+      .select(LIST_COLUMNS)
+      .from(notifications)
+      .where(and(...conditions))
+      .orderBy(desc(notifications.createdAt))
+      .limit(filters.limit);
   }
 
   async approve(orgId: string, userId: string, notificationId: number) {
@@ -225,7 +253,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.approved", notificationId);
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -242,7 +269,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.rejected", notificationId);
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -258,7 +284,7 @@ export class NotificationsService {
 
   private async queryUnreadCount(orgId: string, userId: string) {
     const [result] = await this.db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
       .where(
         and(
@@ -284,7 +310,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.read", notificationId);
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -302,7 +327,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.all_read");
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -320,7 +344,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.archived", notificationId);
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -338,7 +361,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.unarchived", notificationId);
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -354,8 +376,8 @@ export class NotificationsService {
           eq(notifications.orgId, orgId),
         ),
       );
-    await this.audit(orgId, userId, "notification.deleted", notificationId);
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -371,7 +393,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.pinned", notificationId);
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -388,7 +409,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.unpinned", notificationId);
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -405,7 +425,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.snoozed", notificationId, { snoozedUntil: input.snoozedUntil });
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -422,7 +441,6 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.bulk_read", undefined, { ids: input.ids });
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -440,8 +458,8 @@ export class NotificationsService {
           isNull(notifications.deletedAt),
         ),
       );
-    await this.audit(orgId, userId, "notification.bulk_archived", undefined, { ids: input.ids });
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -456,8 +474,8 @@ export class NotificationsService {
           eq(notifications.orgId, orgId),
         ),
       );
-    await this.audit(orgId, userId, "notification.bulk_deleted", undefined, { ids: input.ids });
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
@@ -468,7 +486,6 @@ export class NotificationsService {
       .where(
         and(eq(notifications.orgId, orgId), eq(notifications.userId, userId), isNull(notifications.deletedAt)),
       );
-    await this.audit(orgId, userId, "notification.clear_all");
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -489,7 +506,7 @@ export class NotificationsService {
 
     const where = and(...conditions);
 
-    const [rows, [{ count }]] = await Promise.all([
+    const [rows, [countRow]] = await Promise.all([
       this.db
         .select({
           id: notificationAuditLogs.id,
@@ -516,28 +533,13 @@ export class NotificationsService {
         .where(where),
     ]);
 
+    const total = Number(countRow?.count ?? 0);
     return {
       logs: rows,
-      total: count,
+      total,
       page,
-      totalPages: Math.ceil(count / pageSize),
+      totalPages: Math.ceil(total / pageSize),
     };
-  }
-
-  private async audit(
-    orgId: string,
-    actorId: string | null,
-    action: string,
-    notificationId?: number,
-    metadata?: Record<string, unknown>,
-  ) {
-    await this.db.insert(notificationAuditLogs).values({
-      orgId,
-      actorId,
-      action,
-      notificationId: notificationId ?? null,
-      metadata: metadata ?? null,
-    });
   }
 
   private async invalidateCache(userId: string, orgId: string) {

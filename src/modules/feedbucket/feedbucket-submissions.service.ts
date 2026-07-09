@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
-import { feedbucketSubmissions } from "../../db/schema";
+import { and, count, desc, eq, ilike, isNull, like } from "drizzle-orm";
+import { feedbucketAttachments, feedbucketSubmissions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
@@ -50,16 +50,30 @@ export class FeedbucketSubmissionsService {
   }
 
   async findOne(orgId: string, submissionId: number) {
-    const submission = await this.db.query.feedbucketSubmissions.findFirst({
-      where: and(
-        eq(feedbucketSubmissions.id, submissionId),
-        eq(feedbucketSubmissions.orgId, orgId),
-        isNull(feedbucketSubmissions.deletedAt),
-      ),
-      with: { widget: true, assignee: true, linkedTicket: true },
-    });
+    const [submission, recordingRows] = await Promise.all([
+      this.db.query.feedbucketSubmissions.findFirst({
+        where: and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, orgId),
+          isNull(feedbucketSubmissions.deletedAt),
+        ),
+        with: { widget: true, assignee: true, linkedTicket: true },
+      }),
+      this.db
+        .select({ fileUrl: feedbucketAttachments.fileUrl })
+        .from(feedbucketAttachments)
+        .where(
+          and(
+            eq(feedbucketAttachments.submissionId, submissionId),
+            eq(feedbucketAttachments.orgId, orgId),
+            like(feedbucketAttachments.mimeType, "video/%"),
+          ),
+        )
+        .orderBy(desc(feedbucketAttachments.createdAt))
+        .limit(1),
+    ]);
     if (!submission) throw new NotFoundException("Submission not found");
-    return submission;
+    return { ...submission, recordingUrl: recordingRows[0]?.fileUrl ?? null };
   }
 
   async update(orgId: string, submissionId: number, dto: UpdateSubmissionInput) {

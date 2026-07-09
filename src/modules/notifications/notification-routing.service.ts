@@ -9,6 +9,9 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import {
   ALL_CHANNELS,
   type ChannelDecision,
@@ -189,18 +192,34 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   };
 }
 
+interface CachedPolicy {
+  defaultChannels: NotificationChannel[];
+  eventOverrides: Record<string, { channels?: string[]; muted?: boolean }>;
+  categoryOverrides: Record<string, { channels?: string[]; muted?: boolean }>;
+  moduleOverrides: Record<string, { channels?: string[]; muted?: boolean }>;
+  canUserOverride: boolean;
+}
+
 @Injectable()
 export class NotificationRoutingService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async loadOrgAvailability(orgId: string): Promise<Set<NotificationChannel>> {
-    const available = new Set<NotificationChannel>(["IN_APP", "EMAIL"]);
-    const rows = await this.db
-      .select({ channel: notificationProviderAccounts.channel })
-      .from(notificationProviderAccounts)
-      .where(and(eq(notificationProviderAccounts.orgId, orgId), eq(notificationProviderAccounts.enabled, true)));
-    for (const r of rows) available.add(r.channel as NotificationChannel);
-    return available;
+    const enabled = await this.cache.cached(
+      NOTIF_CACHE.availability(orgId),
+      async () => {
+        const rows = await this.db
+          .select({ channel: notificationProviderAccounts.channel })
+          .from(notificationProviderAccounts)
+          .where(and(eq(notificationProviderAccounts.orgId, orgId), eq(notificationProviderAccounts.enabled, true)));
+        return rows.map((r) => r.channel as NotificationChannel);
+      },
+      CACHE_TTL.MEDIUM,
+    );
+    return new Set<NotificationChannel>(["IN_APP", "EMAIL", ...enabled]);
   }
 
   private resolvePrefs(row: typeof notificationPreferences.$inferSelect | undefined): ResolvedPreferences {
@@ -229,20 +248,42 @@ export class NotificationRoutingService {
     };
   }
 
+  private async loadOrgPolicyData(orgId: string): Promise<CachedPolicy | null> {
+    const wrapped = await this.cache.cached(
+      NOTIF_CACHE.policy(orgId),
+      async (): Promise<{ policy: CachedPolicy | null }> => {
+        const row = await this.db.query.notificationPolicyDefaults.findFirst({
+          where: and(
+            eq(notificationPolicyDefaults.orgId, orgId),
+            eq(notificationPolicyDefaults.scopeType, "ORG"),
+            isNull(notificationPolicyDefaults.scopeId),
+          ),
+        });
+        if (!row) return { policy: null };
+        return {
+          policy: {
+            defaultChannels: (row.defaultChannels ?? []) as NotificationChannel[],
+            eventOverrides: row.eventOverrides,
+            categoryOverrides: row.categoryOverrides,
+            moduleOverrides: row.moduleOverrides,
+            canUserOverride: row.canUserOverride,
+          },
+        };
+      },
+      CACHE_TTL.MEDIUM,
+    );
+    return wrapped.policy;
+  }
+
   private async loadOrgPolicy(orgId: string, def: NotificationEventDefinition): Promise<OrgPolicyResolved | null> {
-    const row = await this.db.query.notificationPolicyDefaults.findFirst({
-      where: and(eq(notificationPolicyDefaults.orgId, orgId), eq(notificationPolicyDefaults.scopeType, "ORG")),
-    });
-    if (!row) return null;
-    const eventOverrides = (row.eventOverrides as Record<string, { channels?: string[]; muted?: boolean }>) ?? {};
-    const categoryOverrides = (row.categoryOverrides as Record<string, { channels?: string[]; muted?: boolean }>) ?? {};
-    const moduleOverrides = (row.moduleOverrides as Record<string, { channels?: string[]; muted?: boolean }>) ?? {};
+    const policy = await this.loadOrgPolicyData(orgId);
+    if (!policy) return null;
     return {
-      defaultChannels: (row.defaultChannels as NotificationChannel[]) ?? [],
-      eventOverride: eventOverrides[def.eventKey],
-      categoryOverride: categoryOverrides[def.category],
-      moduleOverride: moduleOverrides[def.sourceModule],
-      canUserOverride: row.canUserOverride,
+      defaultChannels: policy.defaultChannels,
+      eventOverride: policy.eventOverrides[def.eventKey],
+      categoryOverride: policy.categoryOverrides[def.category],
+      moduleOverride: policy.moduleOverrides[def.sourceModule],
+      canUserOverride: policy.canUserOverride,
     };
   }
 

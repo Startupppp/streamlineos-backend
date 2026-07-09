@@ -159,25 +159,6 @@ export const notificationSuppressionRules = pgTable("notification_suppression_ru
   index("idx_notification_suppression_expiry").on(table.orgId, table.expiresAt),
 ]);
 
-export const notificationDigests = pgTable("notification_digests", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  digestMode: text("digest_mode").notNull(),
-  channel: notificationChannelEnum("channel").default("EMAIL").notNull(),
-  periodStart: timestamp("period_start").notNull(),
-  periodEnd: timestamp("period_end").notNull(),
-  status: text("status").default("PENDING").notNull(),
-  notificationIds: jsonb("notification_ids").$type<number[]>().default([]).notNull(),
-  summary: text("summary"),
-  sentAt: timestamp("sent_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_notification_digests_user").on(table.orgId, table.userId, table.status),
-  index("idx_notification_digests_due").on(table.status, table.periodEnd),
-]);
-
 export const notificationDeliveriesRelations = relations(notificationDeliveries, ({ one }) => ({
   notification: one(notifications, {
     fields: [notificationDeliveries.notificationId],

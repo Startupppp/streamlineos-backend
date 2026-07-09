@@ -67,7 +67,6 @@ export interface DispatchEventInput {
   link?: string;
   priority?: NotificationPriority;
   category?: string;
-  groupKey?: string;
   variables?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }

@@ -135,7 +135,6 @@ export class NotificationDispatchService {
             entityType: input.entityType,
             entityId: input.entityId,
             actorUserId: input.actorUserId ?? null,
-            groupKey: input.groupKey,
             reason: routingResult.reasonText,
             title,
             message,

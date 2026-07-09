@@ -25,7 +25,6 @@ export const notifications = pgTable("notifications", {
   entityType: text("entity_type"),
   entityId: text("entity_id"),
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  groupKey: text("group_key"),
   reason: text("reason"),
   title: text("title").notNull(),
   message: text("message").notNull(),
@@ -47,7 +46,6 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_org_category").on(table.orgId, table.category),
   index("idx_notifications_priority").on(table.priority),
   index("idx_notifications_dedupe").on(table.orgId, table.eventKey, table.entityType, table.entityId),
-  index("idx_notifications_user_group").on(table.userId, table.groupKey),
 ]);
 
 export const notificationTemplates = pgTable("notification_templates", {
@@ -207,15 +205,12 @@ export const notificationPreferences = pgTable("notification_preferences", {
   quietHoursEnd: text("quiet_hours_end"),
   quietHoursTimezone: text("quiet_hours_timezone").default("UTC"),
   digestMode: text("digest_mode").$type<"disabled" | "hourly" | "daily" | "weekly">().default("disabled").notNull(),
-  digestChannel: text("digest_channel").default("EMAIL").notNull(),
-  digestTime: text("digest_time"),
   quietHoursWeekends: boolean("quiet_hours_weekends").default(true).notNull(),
   allowCriticalOverride: boolean("allow_critical_override").default(true).notNull(),
   categories: jsonb("categories").$type<Record<string, boolean>>().default({}).notNull(),
   channelCategories: jsonb("channel_categories").$type<Record<string, Record<string, boolean>>>().default({}).notNull(),
   eventPreferences: jsonb("event_preferences").$type<Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>>().default({}).notNull(),
   modulePreferences: jsonb("module_preferences").$type<Record<string, { mode?: string; muted?: boolean }>>().default({}).notNull(),
-  priorityPreferences: jsonb("priority_preferences").$type<Record<string, { channels?: Record<string, boolean> }>>().default({}).notNull(),
   updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

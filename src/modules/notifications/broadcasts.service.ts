@@ -223,6 +223,6 @@ export class BroadcastsService {
   }
 
   private async invalidateCache(orgId: string) {
-    await this.cache.del(`broadcasts:list:${orgId}`);
+    await this.cache.invalidatePattern(`broadcasts:list:${orgId}:*`);
   }
 }

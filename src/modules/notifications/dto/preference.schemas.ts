@@ -23,13 +23,10 @@ export const updatePreferenceSchema = z.object({
   quietHoursWeekends: z.boolean().optional(),
   allowCriticalOverride: z.boolean().optional(),
   digestMode: z.enum(["disabled", "hourly", "daily", "weekly"]).optional(),
-  digestChannel: z.string().optional(),
-  digestTime: z.string().nullable().optional(),
   categories: channelMap.optional(),
   channelCategories: z.record(z.string(), channelMap).optional(),
   eventPreferences: z.record(z.string(), eventPreferenceSchema).optional(),
   modulePreferences: z.record(z.string(), z.object({ mode: z.string().optional(), muted: z.boolean().optional() })).optional(),
-  priorityPreferences: z.record(z.string(), z.object({ channels: channelMap.optional() })).optional(),
 });
 
 export type UpdatePreferenceInput = z.infer<typeof updatePreferenceSchema>;

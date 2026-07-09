@@ -3,6 +3,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import { notificationEvents, notificationAuditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NOTIFICATION_EVENT_CATALOG, NOTIFICATION_EVENT_MAP } from "./notification-events.catalog";
 import type { NotificationChannel, NotificationEventDefinition, NotificationPriority, NotificationLevel, QuietHoursBehavior } from "./notification.types";
 
@@ -25,7 +28,27 @@ export interface EventPolicyPatch {
 export class NotificationEventRegistryService implements OnModuleInit {
   private readonly logger = new Logger(NotificationEventRegistryService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
+
+  private loadOrgDefinitions(orgId: string): Promise<Record<string, { definition: NotificationEventDefinition; enabled: boolean }>> {
+    return this.cache.cached(
+      NOTIF_CACHE.events(orgId),
+      async () => {
+        const rows = await this.db.query.notificationEvents.findMany({
+          where: eq(notificationEvents.orgId, orgId),
+        });
+        const map: Record<string, { definition: NotificationEventDefinition; enabled: boolean }> = {};
+        for (const row of rows) {
+          map[row.eventKey] = { definition: this.rowToDefinition(row, NOTIFICATION_EVENT_MAP.get(row.eventKey)), enabled: row.enabled };
+        }
+        return map;
+      },
+      CACHE_TTL.MEDIUM,
+    );
+  }
 
   async onModuleInit(): Promise<void> {
     try {
@@ -97,13 +120,10 @@ export class NotificationEventRegistryService implements OnModuleInit {
   }
 
   async resolveDefinition(orgId: string, eventKey: string): Promise<{ definition: NotificationEventDefinition; enabled: boolean } | null> {
+    const overrides = await this.loadOrgDefinitions(orgId);
+    const override = overrides[eventKey];
+    if (override) return override;
     const base = NOTIFICATION_EVENT_MAP.get(eventKey);
-    const override = await this.db.query.notificationEvents.findFirst({
-      where: and(eq(notificationEvents.orgId, orgId), eq(notificationEvents.eventKey, eventKey)),
-    });
-    if (override) {
-      return { definition: this.rowToDefinition(override, base), enabled: override.enabled };
-    }
     if (base) return { definition: base, enabled: true };
     return null;
   }
@@ -115,13 +135,10 @@ export class NotificationEventRegistryService implements OnModuleInit {
   }
 
   async listForOrg(orgId: string): Promise<Array<NotificationEventDefinition & { enabled: boolean; overridden: boolean }>> {
-    const overrides = await this.db.query.notificationEvents.findMany({
-      where: eq(notificationEvents.orgId, orgId),
-    });
-    const overrideMap = new Map(overrides.map((r) => [r.eventKey, r]));
+    const overrides = await this.loadOrgDefinitions(orgId);
     return NOTIFICATION_EVENT_CATALOG.map((base) => {
-      const row = overrideMap.get(base.eventKey);
-      if (row) return { ...this.rowToDefinition(row, base), enabled: row.enabled, overridden: true };
+      const o = overrides[base.eventKey];
+      if (o) return { ...o.definition, enabled: o.enabled, overridden: true };
       return { ...base, enabled: true, overridden: false };
     });
   }
@@ -173,6 +190,7 @@ export class NotificationEventRegistryService implements OnModuleInit {
       sourceModule: base.sourceModule,
       metadata: { entityType: "event", eventKey, patch },
     });
+    await this.cache.del(NOTIF_CACHE.events(orgId));
 
     const resolved = await this.resolveDefinition(orgId, eventKey);
     return { ...(resolved?.definition ?? base), enabled: merged.enabled };

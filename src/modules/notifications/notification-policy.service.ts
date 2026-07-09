@@ -3,11 +3,16 @@ import { and, eq, isNull } from "drizzle-orm";
 import { notificationPolicyDefaults, notificationAuditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import type { UpsertPolicyInput } from "./dto/policy.schemas";
 
 @Injectable()
 export class NotificationPolicyService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   list(orgId: string) {
     return this.db.query.notificationPolicyDefaults.findMany({
@@ -55,6 +60,7 @@ export class NotificationPolicyService {
       action: existing ? "policy.updated" : "policy.created",
       metadata: { entityType: "policy", scopeType, scopeId },
     });
+    await this.cache.del(NOTIF_CACHE.policy(orgId));
     return row;
   }
 }
