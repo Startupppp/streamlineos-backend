@@ -105,6 +105,10 @@ const KNOWLEDGE = [
   e("knowledge.article.published", "knowledge", "KNOWLEDGE", "Article published", { defaultPriority: "LOW", defaultChannels: IA }),
   e("knowledge.ai.answer_ready", "knowledge", "AI", "AI answer ready", { defaultChannels: IA }),
   e("knowledge.document.ingestion_failed", "knowledge", "KNOWLEDGE", "Document ingestion failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
+  e("knowledge.page.comment_created", "knowledge", "KNOWLEDGE", "New comment on your page", { defaultChannels: IA }),
+  e("knowledge.page.review_requested", "knowledge", "WORKFLOW", "Page review requested", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("knowledge.page.review_approved", "knowledge", "KNOWLEDGE", "Page review approved", { defaultType: "SUCCESS", defaultChannels: IA }),
+  e("knowledge.page.review_rejected", "knowledge", "KNOWLEDGE", "Page review rejected", { defaultType: "WARNING", defaultChannels: IA }),
 ];
 
 const SIGN = [

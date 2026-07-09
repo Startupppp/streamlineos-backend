@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-page-comments.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { pageVisibleTo } from "./kb-page-visibility";
-import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
 
@@ -14,7 +14,7 @@ type CommentRow = typeof kbPageComments.$inferSelect;
 export class KbPageCommentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async list(user: CurrentUserContext, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
@@ -72,14 +72,15 @@ export class KbPageCommentsService {
     if (page.createdById && page.createdById !== authorId) toNotify.add(page.createdById);
     if (page.ownerUserId && page.ownerUserId !== authorId) toNotify.add(page.ownerUserId);
 
-    for (const userId of toNotify) {
-      void this.notifications
-        .create({
+    if (toNotify.size > 0) {
+      void this.dispatch
+        .emit({
+          eventKey: "knowledge.page.comment_created",
           orgId,
-          userId,
-          type: "INFO",
-          category: "SYSTEM",
-          sourceModule: "kb",
+          actorUserId: authorId,
+          targetUserIds: Array.from(toNotify),
+          entityType: "kb_page",
+          entityId: String(pageId),
           title: "New comment on your page",
           message: input.content.slice(0, 200),
         })

@@ -5,7 +5,7 @@ import { kbPageReviews, kbPages, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   CreatePageReviewInput,
@@ -26,7 +26,7 @@ export class KbPageReviewsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly notifications: NotificationsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async list(
@@ -146,13 +146,14 @@ export class KbPageReviewsService {
     });
 
     if (review.reviewerId && review.reviewerId !== user.userId) {
-      void this.notifications
-        .create({
+      void this.dispatch
+        .emit({
+          eventKey: "knowledge.page.review_requested",
           orgId: user.orgId,
-          userId: review.reviewerId,
-          type: "INFO",
-          category: "SYSTEM",
-          sourceModule: "kb",
+          actorUserId: user.userId,
+          targetUserIds: [review.reviewerId],
+          entityType: "kb_page",
+          entityId: String(pageId),
           title: `Review requested: ${page.title}`,
           message: `You have been assigned a ${input.type} review for "${page.title}".`,
         })
@@ -197,13 +198,14 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.notifications
-        .create({
+      void this.dispatch
+        .emit({
+          eventKey: "knowledge.page.review_approved",
           orgId: user.orgId,
-          userId: existing.requestedById,
-          type: "SUCCESS",
-          category: "SYSTEM",
-          sourceModule: "kb",
+          actorUserId: user.userId,
+          targetUserIds: [existing.requestedById],
+          entityType: "kb_page_review",
+          entityId: String(reviewId),
           title: "Page review approved",
           message: `Your review request (ID ${reviewId}) was approved.`,
         })
@@ -249,13 +251,14 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.notifications
-        .create({
+      void this.dispatch
+        .emit({
+          eventKey: "knowledge.page.review_rejected",
           orgId: user.orgId,
-          userId: existing.requestedById,
-          type: "WARNING",
-          category: "SYSTEM",
-          sourceModule: "kb",
+          actorUserId: user.userId,
+          targetUserIds: [existing.requestedById],
+          entityType: "kb_page_review",
+          entityId: String(reviewId),
           title: "Page review rejected",
           message: `Your review request (ID ${reviewId}) was rejected. Note: ${input.note}`,
         })

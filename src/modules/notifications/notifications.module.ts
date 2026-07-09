@@ -6,12 +6,8 @@ import { NotificationTemplatesController } from "./notification-templates.contro
 import { NotificationTemplatesService } from "./notification-templates.service";
 import { BroadcastsController } from "./broadcasts.controller";
 import { BroadcastsService } from "./broadcasts.service";
-import { NotificationAnalyticsController } from "./notification-analytics.controller";
-import { NotificationAnalyticsService } from "./notification-analytics.service";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
 import { NotificationPreferencesService } from "./notification-preferences.service";
-import { NotificationQueueController } from "./notification-queue.controller";
-import { NotificationQueueService } from "./notification-queue.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
@@ -32,9 +28,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationsController,
     NotificationTemplatesController,
     BroadcastsController,
-    NotificationAnalyticsController,
     NotificationPreferencesController,
-    NotificationQueueController,
     NotificationProvidersController,
     NotificationEventsController,
     NotificationPolicyController,
@@ -44,9 +38,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationEventService,
     NotificationTemplatesService,
     BroadcastsService,
-    NotificationAnalyticsService,
     NotificationPreferencesService,
-    NotificationQueueService,
     NotificationEventRegistryService,
     NotificationRoutingService,
     NotificationDispatchService,

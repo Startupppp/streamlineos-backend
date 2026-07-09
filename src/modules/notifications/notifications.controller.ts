@@ -27,11 +27,9 @@ import {
   listSchema,
   snoozeSchema,
   bulkActionSchema,
-  auditLogsSchema,
   type ListInput,
   type SnoozeInput,
   type BulkActionInput,
-  type AuditLogsInput,
 } from "./dto/notification.schemas";
 
 @Controller("notifications")
@@ -53,15 +51,6 @@ export class NotificationsController {
   @Get("unread-count")
   unreadCount(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.unreadCount(u.orgId, u.userId);
-  }
-
-  @Get("audit")
-  @RequirePermission("notifications:audit:view")
-  listAuditLogs(
-    @Query(new ZodValidationPipe(auditLogsSchema)) filters: AuditLogsInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.notifications.listAuditLogs(u.orgId, filters);
   }
 
   @Post("events/token")
