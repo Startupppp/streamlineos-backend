@@ -35,6 +35,7 @@ export class BroadcastsService {
         priority: broadcasts.priority,
         category: broadcasts.category,
         channels: broadcasts.channels,
+        audience: broadcasts.audience,
         status: broadcasts.status,
         scheduledAt: broadcasts.scheduledAt,
         sentAt: broadcasts.sentAt,

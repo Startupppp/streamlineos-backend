@@ -3,4 +3,5 @@ export const NOTIF_CACHE = {
   availability: (orgId: string): string => `notif:avail:${orgId}`,
   policy: (orgId: string): string => `notif:policy:${orgId}`,
   events: (orgId: string): string => `notif:events:${orgId}`,
+  templates: (orgId: string): string => `notif:templates:${orgId}`,
 } as const;

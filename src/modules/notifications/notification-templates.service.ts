@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -73,6 +74,7 @@ export class NotificationTemplatesService {
       })
       .returning();
     await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.del(NOTIF_CACHE.templates(orgId));
     return created;
   }
 
@@ -98,6 +100,7 @@ export class NotificationTemplatesService {
       )
       .returning();
     await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.del(NOTIF_CACHE.templates(orgId));
     return updated;
   }
 
@@ -113,6 +116,7 @@ export class NotificationTemplatesService {
         ),
       );
     await this.cache.invalidatePattern(`notification-templates:list:${orgId}:*`);
+    await this.cache.del(NOTIF_CACHE.templates(orgId));
     return { success: true };
   }
 

@@ -4,6 +4,9 @@ import { inArray, eq, and } from "drizzle-orm";
 import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
@@ -13,6 +16,8 @@ type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEA
 
 type RenderedTemplate = { subject: string | null; body: string };
 type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
+type RawTemplate = { channel: string; subject: string | null; body: string; locale: string };
+type OrgTemplateMap = Record<string, RawTemplate[]>;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   IN_APP: "INTERNAL",
@@ -42,6 +47,7 @@ export class NotificationDispatchService {
     private readonly registry: NotificationEventRegistryService,
     private readonly routing: NotificationRoutingService,
     private readonly notificationsService: NotificationsService,
+    private readonly cache: CacheService,
   ) {}
 
   async emit(input: DispatchEventInput): Promise<DispatchResult> {
@@ -83,22 +89,47 @@ export class NotificationDispatchService {
     return result;
   }
 
+  private loadOrgTemplateMap(orgId: string): Promise<OrgTemplateMap> {
+    return this.cache.cached(
+      NOTIF_CACHE.templates(orgId),
+      async () => {
+        const rows = await this.db
+          .select({
+            templateKey: notificationTemplates.templateKey,
+            channel: notificationTemplates.channel,
+            subject: notificationTemplates.subject,
+            body: notificationTemplates.body,
+            locale: notificationTemplates.locale,
+          })
+          .from(notificationTemplates)
+          .where(and(eq(notificationTemplates.orgId, orgId), eq(notificationTemplates.isActive, true)));
+        const map: OrgTemplateMap = {};
+        for (const row of rows) {
+          (map[row.templateKey] ??= []).push({
+            channel: row.channel,
+            subject: row.subject,
+            body: row.body,
+            locale: row.locale,
+          });
+        }
+        return map;
+      },
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
   private async loadTemplates(orgId: string, definition: NotificationEventDefinition, variables: Record<string, unknown>): Promise<TemplateMap> {
     if (!definition.templateKey) return new Map();
 
-    const rows = await this.db.query.notificationTemplates.findMany({
-      where: and(
-        eq(notificationTemplates.orgId, orgId),
-        eq(notificationTemplates.templateKey, definition.templateKey),
-        eq(notificationTemplates.isActive, true),
-      ),
-    });
+    const orgTemplates = await this.loadOrgTemplateMap(orgId);
+    const rows = orgTemplates[definition.templateKey];
+    if (!rows || rows.length === 0) return new Map();
 
     const stringVars: Record<string, string> = Object.fromEntries(
       Object.entries(variables).map(([k, v]) => [k, v == null ? "" : String(v)]),
     );
 
-    const byChannel = new Map<NotificationChannel, typeof rows>();
+    const byChannel = new Map<NotificationChannel, RawTemplate[]>();
     for (const row of rows) {
       const ch = row.channel as NotificationChannel;
       const existing = byChannel.get(ch);
