@@ -35,29 +35,29 @@ export class NotificationProvidersController {
     return this.providers.create(u.orgId, u.userId, body);
   }
 
-  @Patch(":id")
+  @Patch(":providerId")
   @RequirePermission("notifications:providers:manage")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("providerId", ParseIntPipe) providerId: number,
     @Body(new ZodValidationPipe(updateProviderSchema)) body: UpdateProviderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.providers.update(u.orgId, u.userId, id, body);
+    return this.providers.update(u.orgId, u.userId, providerId, body);
   }
 
-  @Post(":id/test")
+  @Post(":providerId/test")
   @RequirePermission("notifications:providers:manage")
   test(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("providerId", ParseIntPipe) providerId: number,
     @Body(new ZodValidationPipe(testProviderSchema)) body: TestProviderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.providers.test(u.orgId, u.userId, id, body);
+    return this.providers.test(u.orgId, u.userId, providerId, body);
   }
 
-  @Delete(":id")
+  @Delete(":providerId")
   @RequirePermission("notifications:providers:manage")
-  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.providers.remove(u.orgId, u.userId, id);
+  remove(@Param("providerId", ParseIntPipe) providerId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.providers.remove(u.orgId, u.userId, providerId);
   }
 }

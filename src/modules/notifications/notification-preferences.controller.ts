@@ -63,8 +63,8 @@ export class NotificationPreferencesController {
     return this.preferences.createSuppression(u.orgId, u.userId, body);
   }
 
-  @Delete("suppressions/:id")
-  removeSuppression(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.preferences.removeSuppression(u.orgId, u.userId, id);
+  @Delete("suppressions/:suppressionId")
+  removeSuppression(@Param("suppressionId", ParseIntPipe) suppressionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.preferences.removeSuppression(u.orgId, u.userId, suppressionId);
   }
 }
