@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -7,8 +7,10 @@ import { NotificationPreferencesService } from "./notification-preferences.servi
 import {
   updatePreferenceSchema,
   eventPreferenceSchema,
+  createSuppressionSchema,
   type UpdatePreferenceInput,
   type EventPreferenceInput,
+  type CreateSuppressionInput,
 } from "./dto/preference.schemas";
 
 @Controller("notification-preferences")
@@ -46,5 +48,23 @@ export class NotificationPreferencesController {
   @Post("reset")
   reset(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.reset(u.orgId, u.userId);
+  }
+
+  @Get("suppressions")
+  listSuppressions(@CurrentUser() u: CurrentUserContext) {
+    return this.preferences.listSuppressions(u.orgId, u.userId);
+  }
+
+  @Post("suppressions")
+  createSuppression(
+    @Body(new ZodValidationPipe(createSuppressionSchema)) body: CreateSuppressionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.preferences.createSuppression(u.orgId, u.userId, body);
+  }
+
+  @Delete("suppressions/:id")
+  removeSuppression(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
+    return this.preferences.removeSuppression(u.orgId, u.userId, id);
   }
 }

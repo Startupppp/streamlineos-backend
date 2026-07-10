@@ -29,5 +29,15 @@ export const updatePreferenceSchema = z.object({
   modulePreferences: z.record(z.string(), z.object({ mode: z.string().optional(), muted: z.boolean().optional() })).optional(),
 });
 
+const SUPPRESSION_CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"] as const;
+
+export const createSuppressionSchema = z.object({
+  scopeType: z.enum(["event", "module", "category"]),
+  scopeKey: z.string().min(1).max(200),
+  channel: z.enum(SUPPRESSION_CHANNELS).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
 export type UpdatePreferenceInput = z.infer<typeof updatePreferenceSchema>;
 export type EventPreferenceInput = z.infer<typeof eventPreferenceSchema>;
+export type CreateSuppressionInput = z.infer<typeof createSuppressionSchema>;

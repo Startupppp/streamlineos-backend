@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, isNull } from "drizzle-orm";
-import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs } from "../../db/schema";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { eq, and, isNull, desc } from "drizzle-orm";
+import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { UpdatePreferenceInput, EventPreferenceInput } from "./dto/preference.schemas";
+import type { UpdatePreferenceInput, EventPreferenceInput, CreateSuppressionInput } from "./dto/preference.schemas";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
@@ -121,5 +121,56 @@ export class NotificationPreferencesService {
       .where(and(eq(notificationPreferences.userId, userId), eq(notificationPreferences.orgId, orgId)));
     await this.audit(orgId, userId, "preference.reset");
     return { ...DEFAULT_PREFERENCES, userId, orgId };
+  }
+
+  listSuppressions(orgId: string, userId: string) {
+    return this.db
+      .select({
+        id: notificationSuppressionRules.id,
+        scopeType: notificationSuppressionRules.scopeType,
+        scopeKey: notificationSuppressionRules.scopeKey,
+        channel: notificationSuppressionRules.channel,
+        reason: notificationSuppressionRules.reason,
+        expiresAt: notificationSuppressionRules.expiresAt,
+        createdAt: notificationSuppressionRules.createdAt,
+      })
+      .from(notificationSuppressionRules)
+      .where(and(eq(notificationSuppressionRules.orgId, orgId), eq(notificationSuppressionRules.userId, userId)))
+      .orderBy(desc(notificationSuppressionRules.createdAt));
+  }
+
+  async createSuppression(orgId: string, userId: string, dto: CreateSuppressionInput) {
+    const [row] = await this.db
+      .insert(notificationSuppressionRules)
+      .values({
+        orgId,
+        userId,
+        scopeType: dto.scopeType,
+        scopeKey: dto.scopeKey,
+        channel: dto.channel ?? null,
+        reason: "MUTE",
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        createdBy: userId,
+      })
+      .returning();
+    await this.audit(orgId, userId, "suppression.created", { scopeType: dto.scopeType, scopeKey: dto.scopeKey });
+    return row;
+  }
+
+  async removeSuppression(orgId: string, userId: string, id: number) {
+    const [existing] = await this.db
+      .select({ id: notificationSuppressionRules.id })
+      .from(notificationSuppressionRules)
+      .where(
+        and(
+          eq(notificationSuppressionRules.id, id),
+          eq(notificationSuppressionRules.orgId, orgId),
+          eq(notificationSuppressionRules.userId, userId),
+        ),
+      );
+    if (!existing) throw new NotFoundException("Suppression rule not found");
+    await this.db.delete(notificationSuppressionRules).where(eq(notificationSuppressionRules.id, id));
+    await this.audit(orgId, userId, "suppression.removed", { id });
+    return { success: true };
   }
 }
