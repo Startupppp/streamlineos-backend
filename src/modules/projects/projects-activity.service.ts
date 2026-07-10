@@ -266,20 +266,20 @@ export class ProjectsActivityService {
     const link = input.projectId
       ? `/projects/${input.projectId}?ticket=${input.ticketId}&comment=${input.commentId}`
       : undefined;
-    for (const user of mentioned) {
-      try {
-        await this.notifications.create({
-          orgId: input.orgId,
-          userId: user.id,
-          type: "INFO",
-          title: "You were mentioned",
-          message: `${input.authorName} mentioned you in a comment on "${input.ticketTitle}".`,
-          link,
-          metadata: { ticketId: input.ticketId, commentId: input.commentId },
-        });
-      } catch (error) {
-        logger.error("Failed to notify mentioned user", { error });
-      }
-    }
+    await Promise.all(
+      mentioned.map((user) =>
+        this.notifications
+          .create({
+            orgId: input.orgId,
+            userId: user.id,
+            type: "INFO",
+            title: "You were mentioned",
+            message: `${input.authorName} mentioned you in a comment on "${input.ticketTitle}".`,
+            link,
+            metadata: { ticketId: input.ticketId, commentId: input.commentId },
+          })
+          .catch((error) => logger.error("Failed to notify mentioned user", { error })),
+      ),
+    );
   }
 }

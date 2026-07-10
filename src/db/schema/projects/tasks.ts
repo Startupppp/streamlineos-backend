@@ -48,6 +48,7 @@ export const tickets = pgTable("tickets", {
     endDate?: string | null;
   }>(),
   recurrenceParentId: integer("recurrence_parent_id"),
+  recurrenceNextRunAt: timestamp("recurrence_next_run_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
@@ -58,6 +59,10 @@ export const tickets = pgTable("tickets", {
   index("idx_tickets_assignee").on(t.assigneeId),
   index("idx_tickets_sprint").on(t.sprintId),
   index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
+  index("idx_tickets_org_project").on(t.orgId, t.projectId),
+  index("idx_tickets_cycle").on(t.cycleId),
+  index("idx_tickets_parent").on(t.parentTicketId),
+  index("idx_tickets_recurrence_next").on(t.recurrenceNextRunAt).where(sql`is_recurring = true`),
 ]);
 
 export const ticketAssignees = pgTable("ticket_assignees", {

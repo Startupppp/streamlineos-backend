@@ -209,16 +209,31 @@ export class ProjectsService {
 
   async getProject(u: CurrentUserContext, projectId: number) {
     const orgId = u.orgId;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+
+    const [perms, project] = await Promise.all([
+      this.access.resolveUserPermissions(u.orgId, u.userId),
+      this.db.query.projects.findFirst({
+        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+        with: {
+          statuses: { orderBy: [asc(projectStatuses.order)] },
+          members: { with: { user: true } },
+          tickets: {
+            with: {
+              assignee: true,
+              labels: { with: { label: true } },
+              cycle: { columns: { id: true, name: true, status: true, startDate: true, endDate: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!project) throw new ProjectsNotFoundException();
+
     const isOwnerOrAdmin = perms.has("projects:manage");
 
-    const projectCheck = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-    });
-    if (!projectCheck) throw new ProjectsNotFoundException();
-
     if (!isOwnerOrAdmin) {
-      const isManager = projectCheck.managerId === u.userId;
+      const isManager = project.managerId === u.userId;
       if (!isManager) {
         const memberOf = await this.db
           .select({ projectId: projectMembers.projectId })
@@ -238,22 +253,6 @@ export class ProjectsService {
         }
       }
     }
-
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-      with: {
-        statuses: { orderBy: [asc(projectStatuses.order)] },
-        members: { with: { user: true } },
-        tickets: {
-          with: {
-            assignee: true,
-            labels: { with: { label: true } },
-            cycle: { columns: { id: true, name: true, status: true, startDate: true, endDate: true } },
-          },
-        },
-      },
-    });
-    if (!project) throw new NotFoundException("Project not found");
 
     return project;
   }

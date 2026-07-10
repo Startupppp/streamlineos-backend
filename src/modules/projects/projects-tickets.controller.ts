@@ -27,6 +27,7 @@ import {
   bulkUpdateSchema,
   commentSchema,
   createTicketSchema,
+  importTicketsSchema,
   reorderSchema,
   searchTicketsQuerySchema,
   ticketActivityQuerySchema,
@@ -40,6 +41,7 @@ import {
   type BulkUpdateInput,
   type CommentInput,
   type CreateTicketInput,
+  type ImportTicketsInput,
   type ReorderInput,
   type SearchTicketsQuery,
   type TicketActivityQuery,
@@ -81,6 +83,26 @@ export class ProjectsTicketsController {
   @RequirePermission("projects:tickets:view")
   getMyWork(@CurrentUser() u: CurrentUserContext) {
     return this.tickets.getMyWork(u.orgId, u.userId);
+  }
+
+  @Get(":projectId/tickets/export")
+  @RequirePermission("projects:tickets:view")
+  exportTickets(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.exportTickets(u, projectId);
+  }
+
+  @Post(":projectId/tickets/import")
+  @RequirePermission("projects:tickets:create")
+  @HttpCode(200)
+  importTickets(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body(new ZodValidationPipe(importTicketsSchema)) body: ImportTicketsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.importTickets(u, projectId, body);
   }
 
   @Get(":projectId/tickets")

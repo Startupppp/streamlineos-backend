@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   projectMembers,
+  projectStatuses,
   projects,
   ticketActivityLog,
   ticketAssignees,
@@ -12,6 +13,7 @@ import {
   ticketTypeEnum,
   ticketWatchers,
   timesheets,
+  users,
   workItemRelations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -34,10 +36,12 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import type {
   BulkUpdateInput,
   CreateTicketInput,
+  ImportTicketsInput,
   ReorderInput,
   TicketsListQuery,
   UpdateTicketInput,
 } from "./dto/projects.schemas";
+import { computeNextRunAt } from "./projects-recurrence.util";
 
 type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 
@@ -95,10 +99,7 @@ export class ProjectsTicketsService {
       search && search.trim()
         ? [
             ...baseConditions,
-            or(
-              sql`${tickets.title} ILIKE ${"%" + search + "%"}`,
-              sql`${tickets.description} ILIKE ${"%" + search + "%"}`,
-            ),
+            sql`${tickets.title} ILIKE ${"%" + search + "%"}`,
           ]
         : baseConditions;
     const filtered = searchConditions.filter((c): c is NonNullable<typeof c> => c !== undefined);
@@ -147,6 +148,11 @@ export class ProjectsTicketsService {
 
       const nextTicketNumber = (maxTicketResult[0]?.maxTicketNumber || 0) + 1;
 
+      const isRecurring = body.isRecurring === true && body.recurrenceRule != null;
+      const recurrenceNextRunAt = isRecurring && body.recurrenceRule
+        ? computeNextRunAt(body.recurrenceRule)
+        : undefined;
+
       const [created] = await tx
         .insert(tickets)
         .values({
@@ -167,6 +173,9 @@ export class ProjectsTicketsService {
           originalEstimate: body.originalEstimate?.toString(),
           parentTicketId: body.parentTicketId,
           status: body.status ?? "TODO",
+          isRecurring,
+          recurrenceRule: isRecurring ? body.recurrenceRule : undefined,
+          recurrenceNextRunAt,
         })
         .returning();
 
@@ -204,21 +213,22 @@ export class ProjectsTicketsService {
     if (body.assigneeId) allNotifyIds.add(body.assigneeId);
     if (body.assigneeIds) body.assigneeIds.forEach((uid) => allNotifyIds.add(uid));
 
-    for (const userId of allNotifyIds) {
-      if (userId === u.userId) continue;
-      try {
-        await this.notifications.create({
-          orgId: u.orgId,
-          userId,
-          type: "INFO",
-          title: "Ticket Assigned to You",
-          message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
-          link: `/projects/${projectId}?ticket=${ticket.id}`,
-        });
-      } catch (error) {
-        logger.error("Failed to create ticket assignment notification", { error });
-      }
-    }
+    await Promise.all(
+      Array.from(allNotifyIds)
+        .filter((userId) => userId !== u.userId)
+        .map((userId) =>
+          this.notifications
+            .create({
+              orgId: u.orgId,
+              userId,
+              type: "INFO",
+              title: "Ticket Assigned to You",
+              message: `You have been assigned to ticket "${body.title}" (${body.type}).`,
+              link: `/projects/${projectId}?ticket=${ticket.id}`,
+            })
+            .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
+        ),
+    );
 
     this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
       id: ticket.id,
@@ -338,6 +348,17 @@ export class ProjectsTicketsService {
     if (input.originalEstimate !== undefined) updateData.originalEstimate = input.originalEstimate?.toString();
     if (input.startDate !== undefined) updateData.startDate = input.startDate;
     if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
+    if (input.recurrenceRule != null) {
+      updateData.recurrenceRule = input.recurrenceRule;
+      updateData.isRecurring = input.isRecurring !== false;
+      updateData.recurrenceNextRunAt = computeNextRunAt(input.recurrenceRule);
+    } else if (input.recurrenceRule === null || input.isRecurring === false) {
+      updateData.recurrenceRule = null;
+      updateData.isRecurring = false;
+      updateData.recurrenceNextRunAt = null;
+    } else if (input.isRecurring === true) {
+      updateData.isRecurring = true;
+    }
 
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
@@ -357,18 +378,22 @@ export class ProjectsTicketsService {
 
     if (input.status !== undefined) {
       const statusChanged = input.status !== before.status;
-      await Promise.all([
-        this.query.validateTicketStatus(before.projectId, orgId, input.status),
-        statusChanged
-          ? this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status, {
-              userId: actingUserId,
-              userProjectRole: await this.resolveProjectRole(orgId, actingUserId, before.projectId),
-              isOrgOwner: u.isOrgOwner,
-              isPlatformAdmin: u.isPlatformAdmin,
-              ticketId,
-            })
-          : Promise.resolve(),
-      ]);
+      if (statusChanged) {
+        const [userProjectRole] = await Promise.all([
+          this.resolveProjectRole(orgId, actingUserId, before.projectId),
+          this.query.validateTicketStatus(before.projectId, orgId, input.status),
+          this.query.enforceWipLimitForStatus(orgId, before.projectId, input.status, ticketId),
+        ]);
+        await this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status, {
+          userId: actingUserId,
+          userProjectRole,
+          isOrgOwner: u.isOrgOwner,
+          isPlatformAdmin: u.isPlatformAdmin,
+          ticketId,
+        });
+      } else {
+        await this.query.validateTicketStatus(before.projectId, orgId, input.status);
+      }
     }
 
     await this.db
@@ -471,21 +496,22 @@ export class ProjectsTicketsService {
       columns: { title: true, projectId: true },
     });
 
-    for (const userId of notifyIds) {
-      if (userId === actingUserId) continue;
-      try {
-        await this.notifications.create({
-          orgId,
-          userId,
-          type: "INFO",
-          title: "Ticket Assigned to You",
-          message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-          link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
-        });
-      } catch (error) {
-        logger.error("Failed to create ticket assignment notification", { error });
-      }
-    }
+    await Promise.all(
+      Array.from(notifyIds)
+        .filter((userId) => userId !== actingUserId)
+        .map((userId) =>
+          this.notifications
+            .create({
+              orgId,
+              userId,
+              type: "INFO",
+              title: "Ticket Assigned to You",
+              message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
+              link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
+            })
+            .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
+        ),
+    );
 
     void this.projectsEmail
       .notifyTicketAssignees(actingUserId, ticketId, Array.from(notifyIds))
@@ -566,6 +592,133 @@ export class ProjectsTicketsService {
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
     return memberRows[0]?.role ?? null;
+  }
+
+  async exportTickets(u: CurrentUserContext, projectId: number) {
+    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    if (!hasAccess) throw new NotFoundException("Not found");
+
+    const rows = await this.db
+      .select({
+        number: tickets.ticketNumber,
+        title: tickets.title,
+        type: tickets.type,
+        status: tickets.status,
+        priority: tickets.priority,
+        points: tickets.points,
+        dueDate: tickets.dueDate,
+        assigneeName: users.name,
+        assigneeFirstName: users.firstName,
+        assigneeLastName: users.lastName,
+        assigneeEmail: users.email,
+      })
+      .from(tickets)
+      .leftJoin(users, eq(tickets.assigneeId, users.id))
+      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId)))
+      .orderBy(tickets.ticketNumber);
+
+    return rows.map((r) => ({
+      number: r.number,
+      title: r.title,
+      type: r.type,
+      status: r.status,
+      priority: r.priority,
+      points: r.points ?? null,
+      dueDate: r.dueDate ?? null,
+      assignee: r.assigneeName ?? (r.assigneeFirstName && r.assigneeLastName
+        ? `${r.assigneeFirstName} ${r.assigneeLastName}`.trim()
+        : r.assigneeEmail ?? null),
+    }));
+  }
+
+  async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
+    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    if (!hasAccess) throw new NotFoundException("Not found");
+
+    const [validStatuses, memberEmails] = await Promise.all([
+      this.db
+        .select({ name: projectStatuses.name })
+        .from(projectStatuses)
+        .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
+      this.db
+        .select({ userId: projectMembers.userId, email: users.email })
+        .from(projectMembers)
+        .innerJoin(users, eq(projectMembers.userId, users.id))
+        .where(eq(projectMembers.projectId, projectId)),
+    ]);
+
+    const validStatusSet = new Set(validStatuses.map((s) => s.name));
+    const emailToUserId = new Map(memberEmails.map((m) => [m.email, m.userId]));
+    const defaultStatus = validStatuses[0]?.name ?? "TODO";
+
+    const skipped: Array<{ row: number; reason: string }> = [];
+    const toCreate: Array<typeof tickets.$inferInsert & { _rowIndex: number }> = [];
+
+    for (let i = 0; i < body.rows.length; i++) {
+      const row = body.rows[i];
+      if (!row) continue;
+
+      if (row.status && !validStatusSet.has(row.status)) {
+        skipped.push({ row: i + 1, reason: `Status '${row.status}' does not exist in this project` });
+        continue;
+      }
+
+      let assigneeId: string | undefined;
+      if (row.assigneeEmail) {
+        const uid = emailToUserId.get(row.assigneeEmail);
+        if (!uid) {
+          skipped.push({ row: i + 1, reason: `Email '${row.assigneeEmail}' is not a project member` });
+          continue;
+        }
+        assigneeId = uid;
+      }
+
+      toCreate.push({
+        orgId: u.orgId,
+        projectId,
+        ticketNumber: 0,
+        title: row.title,
+        type: row.type ?? "TASK",
+        status: row.status ?? defaultStatus,
+        priority: row.priority ?? "MEDIUM",
+        points: row.points ?? undefined,
+        assigneeId,
+        dueDate: row.dueDate ?? undefined,
+        reporterId: u.userId,
+        _rowIndex: i + 1,
+      });
+    }
+
+    if (toCreate.length === 0) {
+      return { created: 0, skipped };
+    }
+
+    let createdCount = 0;
+
+    await this.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
+
+      const [maxRow] = await tx
+        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)));
+
+      let nextNum = (maxRow?.maxNum ?? 0) + 1;
+
+      for (const item of toCreate) {
+        const { _rowIndex, ...values } = item;
+        try {
+          await tx.insert(tickets).values({ ...values, ticketNumber: nextNum });
+          nextNum++;
+          createdCount++;
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Unknown error";
+          skipped.push({ row: _rowIndex, reason: msg });
+        }
+      }
+    });
+
+    return { created: createdCount, skipped };
   }
 
   async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {

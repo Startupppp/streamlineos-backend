@@ -15,6 +15,7 @@ import { CronHrService } from "./cron-hr.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
+import { CronProjectsService } from "./cron-projects.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
@@ -30,6 +31,7 @@ import { CronSupportService } from "./cron-support.service";
     CronNotificationsService,
     CronHolidayService,
     CronKbService,
+    CronProjectsService,
     CronRecruitmentService,
     CronHrService,
     CronWeeklyRecapService,

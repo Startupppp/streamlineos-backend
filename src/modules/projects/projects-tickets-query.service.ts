@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   projectMembers,
@@ -24,6 +24,26 @@ export class ProjectsTicketsQueryService {
     if (!valid.has(status)) throw new ProjectsInvalidTicketStatusException(status);
   }
 
+  private async fetchTransitionsAndStatuses(orgId: string, projectId: number) {
+    const [transitions, statuses] = await Promise.all([
+      this.db
+        .select({
+          fromStatusId: workflowTransitions.fromStatusId,
+          toStatusId: workflowTransitions.toStatusId,
+          requiresApproval: workflowTransitions.requiresApproval,
+          requiredFields: workflowTransitions.requiredFields,
+          allowedRoles: workflowTransitions.allowedRoles,
+        })
+        .from(workflowTransitions)
+        .where(and(eq(workflowTransitions.orgId, orgId), eq(workflowTransitions.projectId, projectId), isNull(workflowTransitions.deletedAt))),
+      this.db
+        .select({ id: projectStatuses.id, name: projectStatuses.name, wipLimit: projectStatuses.wipLimit })
+        .from(projectStatuses)
+        .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId))),
+    ]);
+    return { transitions, statuses };
+  }
+
   async assertTransitionAllowed(
     orgId: string,
     projectId: number,
@@ -36,24 +56,20 @@ export class ProjectsTicketsQueryService {
       isPlatformAdmin: boolean;
       ticketId: number;
     },
+    prefetched?: {
+      transitions: {
+        fromStatusId: number | null;
+        toStatusId: number;
+        requiresApproval: boolean | null;
+        requiredFields: string[] | null;
+        allowedRoles: string[] | null;
+      }[];
+      statuses: { id: number; name: string; wipLimit: number | null }[];
+    },
   ): Promise<void> {
-    const transitions = await this.db
-      .select({
-        fromStatusId: workflowTransitions.fromStatusId,
-        toStatusId: workflowTransitions.toStatusId,
-        requiresApproval: workflowTransitions.requiresApproval,
-        requiredFields: workflowTransitions.requiredFields,
-        allowedRoles: workflowTransitions.allowedRoles,
-      })
-      .from(workflowTransitions)
-      .where(and(eq(workflowTransitions.orgId, orgId), eq(workflowTransitions.projectId, projectId), isNull(workflowTransitions.deletedAt)));
+    const { transitions, statuses } = prefetched ?? await this.fetchTransitionsAndStatuses(orgId, projectId);
 
     if (transitions.length === 0) return;
-
-    const statuses = await this.db
-      .select({ id: projectStatuses.id, name: projectStatuses.name, wipLimit: projectStatuses.wipLimit })
-      .from(projectStatuses)
-      .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId)));
 
     const nameToId = new Map(statuses.map((s) => [s.name, s.id]));
     const idToStatus = new Map(statuses.map((s) => [s.id, s]));
@@ -124,24 +140,46 @@ export class ProjectsTicketsQueryService {
 
     const toStatus = idToStatus.get(resolvedTo);
     if (toStatus?.wipLimit != null) {
-      const [countResult] = await this.db
-        .select({ cnt: count() })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            eq(tickets.projectId, projectId),
-            eq(tickets.status, toText),
-            ne(tickets.id, context.ticketId),
-          ),
-        );
-      const currentCount = Number(countResult?.cnt ?? 0);
-      if (currentCount >= toStatus.wipLimit) {
-        throw new BadRequestException(
-          `Column '${toText}' has reached its WIP limit of ${toStatus.wipLimit}. Move or complete an existing ticket first.`,
-        );
-      }
+      await this.assertWipLimit(orgId, projectId, toText, toStatus.wipLimit, context.ticketId);
     }
+  }
+
+  async assertWipLimit(orgId: string, projectId: number, statusName: string, wipLimit: number, excludeTicketId?: number): Promise<void> {
+    const conditions = [
+      eq(tickets.orgId, orgId),
+      eq(tickets.projectId, projectId),
+      eq(tickets.status, statusName),
+    ];
+    if (excludeTicketId !== undefined) {
+      conditions.push(ne(tickets.id, excludeTicketId));
+    }
+    const [countResult] = await this.db
+      .select({ cnt: count() })
+      .from(tickets)
+      .where(and(...conditions));
+    const currentCount = Number(countResult?.cnt ?? 0);
+    if (currentCount >= wipLimit) {
+      throw new ConflictException(
+        `Column '${statusName}' is at its WIP limit of ${wipLimit}. Move or complete an existing ticket first.`,
+      );
+    }
+  }
+
+  async enforceWipLimitForStatus(orgId: string, projectId: number, statusName: string, excludeTicketId: number): Promise<void> {
+    const rows = await this.db
+      .select({ wipLimit: projectStatuses.wipLimit, name: projectStatuses.name })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.orgId, orgId),
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.name, statusName),
+        ),
+      )
+      .limit(1);
+    const wipLimit = rows[0]?.wipLimit;
+    if (wipLimit == null) return;
+    await this.assertWipLimit(orgId, projectId, statusName, wipLimit, excludeTicketId);
   }
 
   async bulkUpdate(u: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
@@ -191,38 +229,93 @@ export class ProjectsTicketsQueryService {
     const userProjectRole = memberRow[0]?.role ?? null;
 
     const itemIds = body.items.map((i) => i.id);
-    const prevRows = await this.db
-      .select({ id: tickets.id, status: tickets.status })
-      .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), inArray(tickets.id, itemIds)));
+
+    const [prevRows, prefetched] = await Promise.all([
+      this.db
+        .select({ id: tickets.id, status: tickets.status })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), inArray(tickets.id, itemIds))),
+      this.fetchTransitionsAndStatuses(orgId, projectId),
+    ]);
+
     const prevMap = new Map(prevRows.map((r) => [r.id, r.status]));
-    for (const item of body.items) {
+    const statusChangingItems = body.items.filter((item) => {
       const prev = prevMap.get(item.id);
-      if (prev !== undefined && prev !== item.status) {
+      return prev !== undefined && prev !== item.status;
+    });
+
+    for (const item of statusChangingItems) {
+      const prev = prevMap.get(item.id);
+      if (prev !== undefined) {
         await this.assertTransitionAllowed(orgId, projectId, prev, item.status, {
           userId: context.userId,
           userProjectRole,
           isOrgOwner: context.isOrgOwner,
           isPlatformAdmin: context.isPlatformAdmin,
           ticketId: item.id,
-        });
+        }, prefetched);
       }
     }
 
-    await this.db.transaction(async (tx) => {
-      for (const item of body.items) {
-        await tx
-          .update(tickets)
-          .set({ status: item.status, order: item.order, updatedAt: new Date() })
-          .where(
-            and(
-              eq(tickets.id, item.id),
-              eq(tickets.projectId, projectId),
-              eq(tickets.orgId, orgId),
-            ),
-          );
+    const movedItemIds = new Set(statusChangingItems.map((i) => i.id));
+    const incomingByStatus = new Map<string, number>();
+    for (const item of statusChangingItems) {
+      incomingByStatus.set(item.status, (incomingByStatus.get(item.status) ?? 0) + 1);
+    }
+
+    const { statuses } = prefetched;
+    const wipByName = new Map(statuses.filter((s) => s.wipLimit != null).map((s) => [s.name, s.wipLimit as number]));
+
+    for (const [statusName, incomingCount] of incomingByStatus) {
+      const wipLimit = wipByName.get(statusName);
+      if (wipLimit == null) continue;
+
+      const movingAwayIds = [...movedItemIds];
+      const conditions = [
+        eq(tickets.orgId, orgId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.status, statusName),
+      ];
+      if (movingAwayIds.length > 0) {
+        conditions.push(sql`${tickets.id} NOT IN (${sql.join(movingAwayIds.map((id) => sql`${id}`), sql`, `)})`);
       }
-    });
+      const [countResult] = await this.db
+        .select({ cnt: count() })
+        .from(tickets)
+        .where(and(...conditions));
+      const currentInTarget = Number(countResult?.cnt ?? 0);
+      if (currentInTarget + incomingCount > wipLimit) {
+        throw new ConflictException(
+          `Column '${statusName}' is at its WIP limit of ${wipLimit}. Move or complete an existing ticket first.`,
+        );
+      }
+    }
+
+    const now = new Date();
+
+    const orderWhen = sql.join(
+      body.items.map((item) => sql`WHEN ${item.id} THEN ${item.order}`),
+      sql` `,
+    );
+    const statusWhen = sql.join(
+      body.items.map((item) => sql`WHEN ${item.id} THEN ${item.status}`),
+      sql` `,
+    );
+
+    await this.db
+      .update(tickets)
+      .set({
+        order: sql<number>`CASE ${tickets.id} ${orderWhen} END`,
+        status: sql<string>`CASE ${tickets.id} ${statusWhen} END`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          inArray(tickets.id, itemIds),
+          eq(tickets.projectId, projectId),
+          eq(tickets.orgId, orgId),
+        ),
+      );
 
     return { success: true };
   }
@@ -272,7 +365,8 @@ export class ProjectsTicketsQueryService {
     const assigneeRows = await this.db
       .select({ ticketId: ticketAssignees.ticketId })
       .from(ticketAssignees)
-      .where(eq(ticketAssignees.userId, userId));
+      .where(eq(ticketAssignees.userId, userId))
+      .limit(500);
 
     const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
 
@@ -306,6 +400,7 @@ export class ProjectsTicketsQueryService {
       .orderBy(
         sql`${tickets.dueDate} ASC NULLS LAST`,
         sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`,
-      );
+      )
+      .limit(200);
   }
 }

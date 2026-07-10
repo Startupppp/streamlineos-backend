@@ -107,6 +107,15 @@ export const ticketActivityQuerySchema = z.object({
 });
 export type TicketActivityQuery = z.infer<typeof ticketActivityQuerySchema>;
 
+export const recurrenceRuleSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly"]),
+  interval: z.number().int().min(1).max(99),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+  endDate: z.string().nullable().optional(),
+});
+
+export type RecurrenceRuleInput = z.infer<typeof recurrenceRuleSchema>;
+
 export const createTicketSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -123,6 +132,8 @@ export const createTicketSchema = z.object({
   originalEstimate: z.number().optional(),
   parentTicketId: z.number().optional(),
   status: z.string().optional(),
+  isRecurring: z.boolean().optional(),
+  recurrenceRule: recurrenceRuleSchema.nullable().optional(),
 });
 
 export const updateTicketSchema = z.object({
@@ -142,6 +153,8 @@ export const updateTicketSchema = z.object({
   dueDate: z.string().nullable().optional(),
   cycleId: z.number().nullable().optional(),
   expectedUpdatedAt: z.string().optional(),
+  isRecurring: z.boolean().optional(),
+  recurrenceRule: recurrenceRuleSchema.nullable().optional(),
 });
 
 export const bulkUpdateSchema = z
@@ -345,3 +358,20 @@ export type UpdateChangelogInput = z.infer<typeof updateChangelogSchema>;
 
 export const updateCommentSchema = z.object({ content: z.string().min(1) });
 export type UpdateCommentInput = z.infer<typeof updateCommentSchema>;
+
+export const importTicketRowSchema = z.object({
+  title: z.string().min(1).max(500),
+  type: z.enum(["TASK", "BUG", "STORY", "EPIC"]).optional(),
+  status: z.string().optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+  points: z.number().int().min(0).optional(),
+  assigneeEmail: z.string().email().optional(),
+  dueDate: z.string().optional(),
+});
+
+export const importTicketsSchema = z.object({
+  rows: z.array(importTicketRowSchema).min(1).max(500),
+});
+
+export type ImportTicketRow = z.infer<typeof importTicketRowSchema>;
+export type ImportTicketsInput = z.infer<typeof importTicketsSchema>;

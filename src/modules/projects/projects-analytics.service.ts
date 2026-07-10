@@ -3,12 +3,22 @@ import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { cycles, projects, ticketAssignees, tickets, timesheets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 
 @Injectable()
 export class ProjectsAnalyticsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async getProjectAnalytics(orgId: string, projectId: number) {
+    const key = `projects:analytics:${orgId}:${projectId}`;
+    return this.cache.cached(key, () => this.computeProjectAnalytics(orgId, projectId), CACHE_TTL.MEDIUM);
+  }
+
+  private async computeProjectAnalytics(orgId: string, projectId: number) {
     const orgFilter = and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId));
 
     const [stateDistribution, priorityBreakdown, assigneeCompletion] = await Promise.all([

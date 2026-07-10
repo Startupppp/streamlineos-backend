@@ -19,6 +19,7 @@ import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
+import { CronProjectsService } from "./cron-projects.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
@@ -37,6 +38,7 @@ export class CronController {
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
+    private readonly cronProjects: CronProjectsService,
     private readonly kb: CronKbService,
     private readonly support: CronSupportService,
     private readonly chatReplyReminders: ChatReplyRemindersService,
@@ -430,6 +432,32 @@ export class CronController {
       return { success: true, message: `Unsnoozed ${result.unsnoozed} tickets`, ...result };
     } catch (error) {
       logger.error("Support unsnooze cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("projects-recurring-flush")
+  getProjectsRecurringFlush(@Headers("authorization") authorization?: string) {
+    return this.runProjectsRecurringFlush(authorization);
+  }
+
+  @Post("projects-recurring-flush")
+  @HttpCode(200)
+  postProjectsRecurringFlush(@Headers("authorization") authorization?: string) {
+    return this.runProjectsRecurringFlush(authorization);
+  }
+
+  private async runProjectsRecurringFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.cronProjects.spawnDueRecurringTickets();
+      return {
+        success: true,
+        message: `Spawned ${result.spawned} recurring tickets, advanced ${result.advanced} schedules`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Projects recurring flush cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
