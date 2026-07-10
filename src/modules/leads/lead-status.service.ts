@@ -223,10 +223,15 @@ export class LeadStatusService {
           link: `/crm/clients`,
         });
 
-      const salesRep = await this.db.query.users.findFirst({
-        where: eq(users.id, lead.assignedToId || userId),
-        columns: { email: true, name: true },
-      });
+      const salesRepId = lead.assignedToId || userId;
+      const idsToFetch = [...new Set([salesRepId, ...(crmAssigneeId ? [crmAssigneeId] : [])])];
+      const userRows = await this.db
+        .select({ id: users.id, email: users.email, name: users.name })
+        .from(users)
+        .where(inArray(users.id, idsToFetch));
+      const userMap = new Map(userRows.map((u) => [u.id, u]));
+
+      const salesRep = userMap.get(salesRepId);
       if (salesRep?.email) {
         const { subject, html } = getLeadStatusChangeEmailTemplate({
           recipientName: salesRep.name ?? "Team Member",
@@ -239,10 +244,7 @@ export class LeadStatusService {
       }
 
       if (crmAssigneeId) {
-        const crmUser = await this.db.query.users.findFirst({
-          where: eq(users.id, crmAssigneeId),
-          columns: { email: true, name: true },
-        });
+        const crmUser = userMap.get(crmAssigneeId);
         if (crmUser?.email) {
           const { subject, html } = getLeadStatusChangeEmailTemplate({
             recipientName: crmUser.name ?? "Team Member",

@@ -5,13 +5,17 @@ import * as bcrypt from "bcryptjs";
 import { userApiTokens } from "../../db/schema/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CreateUserApiTokenInput } from "./dto/user-api-tokens.schemas";
 
 @Injectable()
 export class UserApiTokensService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly dispatch: NotificationDispatchService,
+  ) {}
 
-  async create(userId: string, input: CreateUserApiTokenInput) {
+  async create(userId: string, orgId: string, input: CreateUserApiTokenInput) {
     const rawToken = randomBytes(32).toString("hex");
     const prefix = rawToken.slice(0, 8);
     const tokenHash = await bcrypt.hash(rawToken, 12);
@@ -37,6 +41,18 @@ export class UserApiTokensService {
         lastUsedAt: userApiTokens.lastUsedAt,
         createdAt: userApiTokens.createdAt,
       });
+
+    void this.dispatch.emit({
+      eventKey: "security.api_key.created",
+      orgId,
+      actorUserId: userId,
+      targetUserIds: [userId],
+      entityType: "api_key",
+      entityId: row.id,
+      title: "New personal API token created",
+      message: `A new personal API token "${input.name}" was created on your account. If you did not do this, revoke it immediately.`,
+      link: "/settings/security",
+    }).catch(() => undefined);
 
     return { ...row, rawToken };
   }

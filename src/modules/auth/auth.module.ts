@@ -6,9 +6,10 @@ import { PasswordService } from "./password.service";
 import { SessionService } from "./session.service";
 import { DeviceService } from "./device.service";
 import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  imports: [RateLimitModule],
+  imports: [RateLimitModule, NotificationsModule],
   controllers: [AuthController],
   providers: [AuthService, AuthTokensService, PasswordService, SessionService, DeviceService],
   exports: [AuthService, AuthTokensService, PasswordService, SessionService, DeviceService],

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { inArray, eq } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, users } from "../../db/schema";
+import { inArray, eq, and } from "drizzle-orm";
+import { notifications, notificationDeliveries, notificationQueue, notificationTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
@@ -10,6 +10,9 @@ import { NotificationsService, type NotificationCategoryValue, type AnnounceInpu
 import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEAMS" | "WEBHOOK";
+
+type RenderedTemplate = { subject: string | null; body: string };
+type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   IN_APP: "INTERNAL",
@@ -59,12 +62,14 @@ export class NotificationDispatchService {
       .where(inArray(users.id, targets));
     const emailMap = new Map(emailRows.map((r) => [r.id, r.email]));
 
+    const templateMap = await this.loadTemplates(input.orgId, definition, input.variables ?? {});
+
     const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
     for (const userId of targets) {
       const routingResult = routingResults.get(userId);
       if (!routingResult) continue;
-      const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null);
+      const perUser = await this.persistForUser(input, definition, userId, routingResult, emailMap.get(userId) ?? null, templateMap);
       result.notified += perUser.createdInApp ? 1 : 0;
       result.deliveriesQueued += perUser.queued;
       result.suppressed += perUser.suppressed;
@@ -76,6 +81,49 @@ export class NotificationDispatchService {
       announcements.map((a) => this.notificationsService.announce(a.input, a.pushToDevices)),
     );
     return result;
+  }
+
+  private async loadTemplates(orgId: string, definition: NotificationEventDefinition, variables: Record<string, unknown>): Promise<TemplateMap> {
+    if (!definition.templateKey) return new Map();
+
+    const rows = await this.db.query.notificationTemplates.findMany({
+      where: and(
+        eq(notificationTemplates.orgId, orgId),
+        eq(notificationTemplates.templateKey, definition.templateKey),
+        eq(notificationTemplates.isActive, true),
+      ),
+    });
+
+    const stringVars: Record<string, string> = Object.fromEntries(
+      Object.entries(variables).map(([k, v]) => [k, v == null ? "" : String(v)]),
+    );
+
+    const byChannel = new Map<NotificationChannel, typeof rows>();
+    for (const row of rows) {
+      const ch = row.channel as NotificationChannel;
+      const existing = byChannel.get(ch);
+      if (!existing) {
+        byChannel.set(ch, [row]);
+      } else {
+        existing.push(row);
+      }
+    }
+
+    const map: TemplateMap = new Map();
+    for (const [channel, channelRows] of byChannel) {
+      const preferred = channelRows.find((r) => r.locale === "en") ?? channelRows[0];
+      if (!preferred) continue;
+      map.set(channel, {
+        subject: preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null,
+        body: this.renderPlaceholders(preferred.body, stringVars),
+      });
+    }
+
+    return map;
+  }
+
+  private renderPlaceholders(template: string, variables: Record<string, string>): string {
+    return template.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => variables[key.trim()] ?? "");
   }
 
   private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
@@ -90,10 +138,14 @@ export class NotificationDispatchService {
     userId: string,
     routingResult: Awaited<ReturnType<NotificationRoutingService["route"]>>,
     email: string | null,
+    templateMap: TemplateMap,
   ): Promise<{ createdInApp: boolean; queued: number; suppressed: number; deduped: boolean; announce?: AnnounceInput; pushHandledByEngine: boolean }> {
     const now = new Date();
-    const title = input.title ?? definition.displayName;
-    const message = input.message ?? definition.description;
+    const fallbackTitle = input.title ?? definition.displayName;
+    const fallbackMessage = input.message ?? definition.description;
+    const inAppTemplate = templateMap.get("IN_APP");
+    const title = inAppTemplate ? (inAppTemplate.subject ?? fallbackTitle) : fallbackTitle;
+    const message = inAppTemplate ? inAppTemplate.body : fallbackMessage;
     const createInApp = routingResult.createInApp;
     const pushHandledByEngine = routingResult.channels.some((c) => c.channel === "PUSH" && c.action === "SEND");
 
@@ -157,6 +209,9 @@ export class NotificationDispatchService {
         const key = this.buildIdempotencyKey(input, userId, decision.channel, definition.dedupeWindowSeconds);
         const isSend = decision.action === "SEND";
         const recipientAddress = decision.channel === "EMAIL" ? email : null;
+        const channelTemplate = templateMap.get(decision.channel);
+        const deliveryTitle = channelTemplate ? (channelTemplate.subject ?? fallbackTitle) : fallbackTitle;
+        const deliveryMessage = channelTemplate ? channelTemplate.body : fallbackMessage;
         const [delivery] = await tx
           .insert(notificationDeliveries)
           .values({
@@ -172,7 +227,7 @@ export class NotificationDispatchService {
             suppressionReason: isSend ? null : decision.reason ?? null,
             nextAttemptAt: isSend ? (routingResult.deferredUntil ?? now) : null,
             idempotencyKey: key,
-            metadata: { title, message, link: input.link ?? null },
+            metadata: { title: deliveryTitle, message: deliveryMessage, link: input.link ?? null },
           })
           .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
           .returning({ id: notificationDeliveries.id });

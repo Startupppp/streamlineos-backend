@@ -41,7 +41,7 @@ export class MfaController {
     @Body(new ZodValidationPipe(disableMfaSchema)) body: DisableMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mfa.disable(u.userId, body);
+    return this.mfa.disable(u.userId, u.orgId, body);
   }
 
   @Get("status")

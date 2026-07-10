@@ -26,7 +26,24 @@ export class BroadcastsService {
   private async queryBroadcasts(orgId: string, filters: ListBroadcastsInput) {
     const limit = Math.min(filters.limit ?? 20, 100);
     const rows = await this.db
-      .select()
+      .select({
+        id: broadcasts.id,
+        orgId: broadcasts.orgId,
+        title: broadcasts.title,
+        message: broadcasts.message,
+        type: broadcasts.type,
+        priority: broadcasts.priority,
+        category: broadcasts.category,
+        channels: broadcasts.channels,
+        status: broadcasts.status,
+        scheduledAt: broadcasts.scheduledAt,
+        sentAt: broadcasts.sentAt,
+        recipientCount: broadcasts.recipientCount,
+        deliveredCount: broadcasts.deliveredCount,
+        createdBy: broadcasts.createdBy,
+        createdAt: broadcasts.createdAt,
+        updatedAt: broadcasts.updatedAt,
+      })
       .from(broadcasts)
       .where(
         and(
@@ -117,36 +134,40 @@ export class BroadcastsService {
     const recipientUserIds = await this.resolveRecipients(orgId, broadcast.audience);
 
     const now = new Date();
-    if (recipientUserIds.length > 0 && broadcast.channels.includes("IN_APP")) {
-      const notifValues = recipientUserIds.map((uid) => ({
-        orgId,
-        userId: uid,
-        type: broadcast.type,
-        priority: broadcast.priority,
-        category: broadcast.category,
-        title: broadcast.title,
-        message: broadcast.message,
-        channel: "IN_APP",
-        sourceModule: "BROADCAST",
-        metadata: { broadcastId: id } as Record<string, unknown>,
-      }));
+    const sent = await this.db.transaction(async (tx) => {
+      if (recipientUserIds.length > 0 && broadcast.channels.includes("IN_APP")) {
+        const notifValues = recipientUserIds.map((uid) => ({
+          orgId,
+          userId: uid,
+          type: broadcast.type,
+          priority: broadcast.priority,
+          category: broadcast.category,
+          title: broadcast.title,
+          message: broadcast.message,
+          channel: "IN_APP",
+          sourceModule: "BROADCAST",
+          metadata: { broadcastId: id } as Record<string, unknown>,
+        }));
 
-      const batchSize = 100;
-      for (let i = 0; i < notifValues.length; i += batchSize) {
-        await this.db.insert(notifications).values(notifValues.slice(i, i + batchSize));
+        const batchSize = 100;
+        for (let i = 0; i < notifValues.length; i += batchSize) {
+          await tx.insert(notifications).values(notifValues.slice(i, i + batchSize));
+        }
       }
-    }
 
-    const [sent] = await this.db
-      .update(broadcasts)
-      .set({
-        status: "SENT",
-        sentAt: now,
-        recipientCount: recipientUserIds.length,
-        deliveredCount: broadcast.channels.includes("IN_APP") ? recipientUserIds.length : 0,
-      })
-      .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
-      .returning();
+      const [row] = await tx
+        .update(broadcasts)
+        .set({
+          status: "SENT",
+          sentAt: now,
+          recipientCount: recipientUserIds.length,
+          deliveredCount: broadcast.channels.includes("IN_APP") ? recipientUserIds.length : 0,
+        })
+        .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
+        .returning();
+
+      return row;
+    });
 
     await this.invalidateCache(orgId);
     return sent;

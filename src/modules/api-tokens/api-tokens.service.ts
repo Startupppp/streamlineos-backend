@@ -11,11 +11,15 @@ import { randomUUID } from "node:crypto";
 import { apiKeys } from "../../db/schema/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CreateApiTokenInput, ListApiTokensQuery } from "./dto/api-tokens.schemas";
 
 @Injectable()
 export class ApiTokensService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly dispatch: NotificationDispatchService,
+  ) {}
 
   async listTokens(orgId: string, query: ListApiTokensQuery) {
     const offset = (query.page - 1) * query.limit;
@@ -86,6 +90,18 @@ export class ApiTokensService {
         createdBy: apiKeys.createdBy,
         createdAt: apiKeys.createdAt,
       });
+
+    void this.dispatch.emit({
+      eventKey: "security.api_key.created",
+      orgId,
+      actorUserId: userId,
+      targetUserIds: [userId],
+      entityType: "api_key",
+      entityId: created.id,
+      title: "New API key created",
+      message: `A new API key "${input.name}" was created on your organization. If you did not do this, revoke it immediately.`,
+      link: "/settings/api-keys",
+    }).catch(() => undefined);
 
     return { token: rawKey, apiKey: created };
   }

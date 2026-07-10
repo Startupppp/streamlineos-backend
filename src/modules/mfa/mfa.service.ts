@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { users, mfaBackupCodes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { VerifyMfaInput, DisableMfaInput } from "./dto/mfa.schemas";
 
 const ALGORITHM = "aes-256-gcm";
@@ -81,7 +82,10 @@ async function verifyBackupCode(plain: string, hash: string): Promise<boolean> {
 
 @Injectable()
 export class MfaService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly dispatch: NotificationDispatchService,
+  ) {}
 
   async setup(userId: string) {
     const user = await this.db.query.users.findFirst({
@@ -155,7 +159,7 @@ export class MfaService {
     return { enabled: true };
   }
 
-  async disable(userId: string, body: DisableMfaInput) {
+  async disable(userId: string, orgId: string, body: DisableMfaInput) {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { totpSecret: true, totpEnabled: true },
@@ -172,6 +176,18 @@ export class MfaService {
       .update(users)
       .set({ totpEnabled: false, totpSecret: null })
       .where(eq(users.id, userId));
+
+    void this.dispatch.emit({
+      eventKey: "security.mfa.disabled",
+      orgId,
+      actorUserId: userId,
+      targetUserIds: [userId],
+      entityType: "user",
+      entityId: userId,
+      title: "Two-factor authentication disabled",
+      message: "Two-factor authentication (2FA) has been turned off on your account. If you did not do this, secure your account immediately.",
+      link: "/settings/security",
+    }).catch(() => undefined);
 
     return { disabled: true };
   }

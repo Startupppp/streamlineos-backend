@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
 import {
@@ -69,6 +70,7 @@ export class AuthService {
     private readonly email: EmailService,
     private readonly access: AccessService,
     private readonly authTokens: AuthTokensService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   private assertPasswordNotEmail(password: string, email: string): void {
@@ -314,6 +316,20 @@ export class AuthService {
       metadata: { userAgent: context.userAgent },
     });
 
+    if (!device.trusted && orgId) {
+      void this.dispatch.emit({
+        eventKey: "security.login.new_device",
+        orgId,
+        actorUserId: user.id,
+        targetUserIds: [user.id],
+        entityType: "user",
+        entityId: user.id,
+        title: "New device sign-in",
+        message: "Your account was accessed from a new or unrecognized device.",
+        link: "/settings/security",
+      }).catch(() => undefined);
+    }
+
     await this.cache.invalidate(CACHE_KEYS.userSession(user.id));
 
     const baseline = user.passwordChangedAt ?? user.createdAt;
@@ -367,6 +383,21 @@ export class AuthService {
     void this.email
       .sendPasswordChangeConfirmationEmail?.(user.email, user.name ?? user.email)
       .catch(() => {});
+
+    const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
+    if (membership) {
+      void this.dispatch.emit({
+        eventKey: "security.password.changed",
+        orgId: membership.orgId,
+        actorUserId: userId,
+        targetUserIds: [userId],
+        entityType: "user",
+        entityId: userId,
+        title: "Your password was changed",
+        message: "Your account password was successfully changed. If you did not do this, contact support immediately.",
+        link: "/settings/security",
+      }).catch(() => undefined);
+    }
   }
 
   async forceChangePassword(userId: string, password: string, sessionId: string): Promise<{ success: true }> {
@@ -387,6 +418,21 @@ export class AuthService {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
     this.audit.log({ action: "auth.password_changed", userId, metadata: { forced: true } });
+
+    const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
+    if (membership) {
+      void this.dispatch.emit({
+        eventKey: "security.password.changed",
+        orgId: membership.orgId,
+        actorUserId: userId,
+        targetUserIds: [userId],
+        entityType: "user",
+        entityId: userId,
+        title: "Your password was changed",
+        message: "Your account password was successfully changed. If you did not do this, contact support immediately.",
+        link: "/settings/security",
+      }).catch(() => undefined);
+    }
 
     return { success: true };
   }

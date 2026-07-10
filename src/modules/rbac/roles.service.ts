@@ -26,6 +26,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
 import type {
@@ -46,6 +47,7 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async getRoles(orgId: string) {
@@ -450,6 +452,20 @@ export class RolesService {
       },
     });
 
+    if (input.principalType === "user") {
+      void this.dispatch.emit({
+        eventKey: "security.role.changed",
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        targetUserIds: [input.principalId],
+        entityType: "role",
+        entityId: String(roleId),
+        title: "Your role or permissions were updated",
+        message: "A role has been assigned to your account. Your access permissions may have changed.",
+        link: "/settings/security",
+      }).catch(() => undefined);
+    }
+
     return { success: true };
   }
 
@@ -508,6 +524,20 @@ export class RolesService {
         principalId: input.principalId,
       },
     });
+
+    if (input.principalType === "user") {
+      void this.dispatch.emit({
+        eventKey: "security.role.changed",
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        targetUserIds: [input.principalId],
+        entityType: "role",
+        entityId: String(roleId),
+        title: "Your role or permissions were updated",
+        message: "A role has been removed from your account. Your access permissions may have changed.",
+        link: "/settings/security",
+      }).catch(() => undefined);
+    }
 
     return { success: true };
   }

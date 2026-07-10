@@ -38,7 +38,7 @@ export class UserApiTokensController {
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createUserApiTokenSchema)) body: CreateUserApiTokenInput,
   ) {
-    return this.userApiTokensService.create(u.userId, body);
+    return this.userApiTokensService.create(u.userId, u.orgId, body);
   }
 
   @Delete(":tokenId")
