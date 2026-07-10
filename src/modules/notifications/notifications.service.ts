@@ -237,7 +237,7 @@ export class NotificationsService {
       .select(LIST_COLUMNS)
       .from(notifications)
       .where(and(...conditions))
-      .orderBy(desc(notifications.createdAt))
+      .orderBy(desc(notifications.id))
       .limit(filters.limit);
   }
 

@@ -213,7 +213,9 @@ export class FeedbucketPublicController {
           sourceModule: "feedbucket",
           title: "New Feedback Received",
           message: `New ${dto.type} feedback received via widget "${widget.name}"`,
-          link: `/feedbucket/submissions`,
+          link: widget.projectId
+            ? `/projects/${widget.projectId}/feedbucket/${submissionId}`
+            : `/projects/feedbucket`,
         })
         .catch(() => undefined);
     }

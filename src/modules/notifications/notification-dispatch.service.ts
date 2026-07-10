@@ -72,9 +72,9 @@ export class NotificationDispatchService {
       if (perUser.announce) announcements.push({ input: perUser.announce, pushToDevices: !perUser.pushHandledByEngine });
     }
 
-    for (const announcement of announcements) {
-      await this.notificationsService.announce(announcement.input, announcement.pushToDevices);
-    }
+    await Promise.all(
+      announcements.map((a) => this.notificationsService.announce(a.input, a.pushToDevices)),
+    );
     return result;
   }
 

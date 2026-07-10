@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { and, eq, lte, lt, or, desc } from "drizzle-orm";
+import { and, eq, lte, lt, or, desc, inArray } from "drizzle-orm";
 import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -31,8 +31,10 @@ export class NotificationDeliveryWorker {
   async processQueue(): Promise<QueueRunResult> {
     const now = new Date();
     const staleBefore = new Date(now.getTime() - STALE_LOCK_MS);
+    const result: QueueRunResult = { processed: 0, sent: 0, failed: 0, dead: 0 };
+
     const candidates = await this.db
-      .select({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId, attemptCount: notificationQueue.attemptCount })
+      .select({ id: notificationQueue.id })
       .from(notificationQueue)
       .where(
         or(
@@ -42,61 +44,73 @@ export class NotificationDeliveryWorker {
       )
       .orderBy(notificationQueue.runAt)
       .limit(BATCH_SIZE);
+    if (candidates.length === 0) return result;
 
-    const result: QueueRunResult = { processed: 0, sent: 0, failed: 0, dead: 0 };
-
-    for (const candidate of candidates) {
-      const [claimed] = await this.db
-        .update(notificationQueue)
-        .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
-        .where(
-          and(
-            eq(notificationQueue.id, candidate.id),
-            or(
-              eq(notificationQueue.status, "PENDING"),
-              and(eq(notificationQueue.status, "LOCKED"), lt(notificationQueue.lockedAt, staleBefore)),
-            ),
+    const claimed = await this.db
+      .update(notificationQueue)
+      .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
+      .where(
+        and(
+          inArray(notificationQueue.id, candidates.map((c) => c.id)),
+          or(
+            eq(notificationQueue.status, "PENDING"),
+            and(eq(notificationQueue.status, "LOCKED"), lt(notificationQueue.lockedAt, staleBefore)),
           ),
-        )
-        .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId, attemptCount: notificationQueue.attemptCount });
-      if (!claimed) continue;
+        ),
+      )
+      .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId });
+    if (claimed.length === 0) return result;
 
+    const deliveries = await this.db.query.notificationDeliveries.findMany({
+      where: inArray(notificationDeliveries.id, claimed.map((c) => c.deliveryId)),
+    });
+    const deliveryById = new Map(deliveries.map((d) => [d.id, d]));
+    const sandboxByKey = await this.loadSandboxStates(deliveries);
+
+    for (const job of claimed) {
+      const delivery = deliveryById.get(job.deliveryId);
       result.processed += 1;
+      if (!delivery) {
+        await this.db.update(notificationQueue).set({ status: "DONE", lastError: "delivery missing" }).where(eq(notificationQueue.id, job.id));
+        continue;
+      }
+      const sandbox = sandboxByKey.get(`${delivery.orgId}:${delivery.channel}`) ?? process.env.NODE_ENV !== "production";
       try {
-        await this.processJob(claimed.id, claimed.deliveryId, result);
+        await this.processJob(job.id, delivery, sandbox, result);
       } catch (error) {
-        this.logger.error(`Queue job ${claimed.id} crashed: ${error instanceof Error ? error.message : String(error)}`);
+        this.logger.error(`Queue job ${job.id} crashed: ${error instanceof Error ? error.message : String(error)}`);
         await this.db
           .update(notificationQueue)
           .set({ status: "PENDING", runAt: new Date(Date.now() + BACKOFF_MINUTES[0] * 60_000), lastError: "worker exception" })
-          .where(eq(notificationQueue.id, claimed.id));
+          .where(eq(notificationQueue.id, job.id));
         result.failed += 1;
       }
     }
     return result;
   }
 
-  private async isSandbox(orgId: string, channel: NotificationChannel): Promise<boolean> {
-    const account = await this.db.query.notificationProviderAccounts.findFirst({
-      where: and(
-        eq(notificationProviderAccounts.orgId, orgId),
-        eq(notificationProviderAccounts.channel, channel),
-        eq(notificationProviderAccounts.enabled, true),
-      ),
-    });
-    if (account) return account.sandboxMode;
-    return process.env.NODE_ENV !== "production";
+  private async loadSandboxStates(
+    deliveries: Array<{ orgId: string; channel: NotificationChannel }>,
+  ): Promise<Map<string, boolean>> {
+    const orgIds = [...new Set(deliveries.map((d) => d.orgId))];
+    if (orgIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        orgId: notificationProviderAccounts.orgId,
+        channel: notificationProviderAccounts.channel,
+        sandboxMode: notificationProviderAccounts.sandboxMode,
+      })
+      .from(notificationProviderAccounts)
+      .where(and(eq(notificationProviderAccounts.enabled, true), inArray(notificationProviderAccounts.orgId, orgIds)));
+    return new Map(rows.map((r) => [`${r.orgId}:${r.channel}`, r.sandboxMode]));
   }
 
-  private async processJob(jobId: number, deliveryId: number, result: QueueRunResult): Promise<void> {
-    const delivery = await this.db.query.notificationDeliveries.findFirst({
-      where: eq(notificationDeliveries.id, deliveryId),
-    });
-    if (!delivery) {
-      await this.db.update(notificationQueue).set({ status: "DONE", lastError: "delivery missing" }).where(eq(notificationQueue.id, jobId));
-      return;
-    }
-
+  private async processJob(
+    jobId: number,
+    delivery: typeof notificationDeliveries.$inferSelect,
+    sandbox: boolean,
+    result: QueueRunResult,
+  ): Promise<void> {
     const channel = delivery.channel as NotificationChannel;
     const provider = this.registry.get(channel);
     if (!provider) {
@@ -110,7 +124,6 @@ export class NotificationDeliveryWorker {
     await this.db.update(notificationDeliveries).set({ status: "SENDING", attemptCount: attempt }).where(eq(notificationDeliveries.id, delivery.id));
 
     const meta = (delivery.metadata as { title?: string; message?: string; link?: string | null } | null) ?? {};
-    const sandbox = await this.isSandbox(delivery.orgId, channel);
     const sendResult = await provider.send({
       orgId: delivery.orgId,
       userId: delivery.userId,

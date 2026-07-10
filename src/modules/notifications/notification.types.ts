@@ -30,10 +30,6 @@ export const ALL_CHANNELS: readonly NotificationChannel[] = [
   "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
 ];
 
-export const EXTERNAL_CHANNELS: readonly NotificationChannel[] = [
-  "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
-];
-
 export interface NotificationEventDefinition {
   eventKey: string;
   sourceModule: string;
@@ -116,8 +112,3 @@ export interface ProviderValidationResult {
   message?: string;
 }
 
-export interface EffectiveChannelState {
-  channel: NotificationChannel;
-  enabled: boolean;
-  source: "user" | "org" | "system";
-}

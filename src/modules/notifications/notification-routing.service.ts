@@ -287,13 +287,6 @@ export class NotificationRoutingService {
     };
   }
 
-  private matchesScope(scopeType: string, scopeKey: string, def: NotificationEventDefinition): boolean {
-    if (scopeType === "event") return scopeKey === def.eventKey;
-    if (scopeType === "module") return scopeKey === def.sourceModule;
-    if (scopeType === "category") return scopeKey === def.category;
-    return false;
-  }
-
   private async loadSuppressionBatch(
     orgId: string,
     userIds: string[],
@@ -309,10 +302,14 @@ export class NotificationRoutingService {
         eq(notificationSuppressionRules.orgId, orgId),
         or(isNull(notificationSuppressionRules.userId), inArray(notificationSuppressionRules.userId, userIds)),
         or(isNull(notificationSuppressionRules.expiresAt), gte(notificationSuppressionRules.expiresAt, now)),
+        or(
+          and(eq(notificationSuppressionRules.scopeType, "event"), eq(notificationSuppressionRules.scopeKey, def.eventKey)),
+          and(eq(notificationSuppressionRules.scopeType, "module"), eq(notificationSuppressionRules.scopeKey, def.sourceModule)),
+          and(eq(notificationSuppressionRules.scopeType, "category"), eq(notificationSuppressionRules.scopeKey, def.category)),
+        ),
       ),
     });
     for (const r of rows) {
-      if (!this.matchesScope(r.scopeType, r.scopeKey, def)) continue;
       const channels = r.channel ? [r.channel as NotificationChannel] : ALL_CHANNELS;
       const applyTo = r.userId ? [r.userId] : userIds;
       for (const u of applyTo) {
