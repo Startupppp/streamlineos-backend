@@ -101,7 +101,7 @@ export class AttendancePolicyService {
           eq(employeeShiftAssignments.orgId, orgId),
           eq(employeeShiftAssignments.isActive, true),
           lte(employeeShiftAssignments.effectiveFrom, date),
-          or(isNull(employeeShiftAssignments.effectiveTo), lte(date, employeeShiftAssignments.effectiveTo)),
+          or(isNull(employeeShiftAssignments.effectiveTo), lte(employeeShiftAssignments.effectiveTo, date)),
         ),
       )
       .limit(1);

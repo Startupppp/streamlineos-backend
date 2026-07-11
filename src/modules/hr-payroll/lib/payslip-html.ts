@@ -51,6 +51,7 @@ export async function renderPayslipHtml(
   payroll: PayrollRow,
   employee: UserRow | undefined,
   org: OrgRow | undefined,
+  professionalTaxOverride?: number,
 ): Promise<PayslipRender> {
   const monthLabel = payroll.month
     ? formatMonthYear(new Date(payroll.month + "-01"))
@@ -91,7 +92,7 @@ export async function renderPayslipHtml(
     ? "XXXX" + bank.accountNumber.slice(-4)
     : "—";
   const pfUan = bank?.pfUanNumber || null;
-  const professionalTax = 200;
+  const professionalTax = professionalTaxOverride ?? 200;
   const otherDeductions = deductions - professionalTax;
   const joiningDate = employee?.joiningDate
     ? formatDayMonthYear(new Date(employee.joiningDate))

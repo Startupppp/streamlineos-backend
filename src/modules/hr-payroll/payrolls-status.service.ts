@@ -114,8 +114,14 @@ export class PayrollStatusService {
       const bank = decryptBankDetails(employee.bankDetails);
       const maskedAccount = bank?.accountNumber ? "XXXX" + bank.accountNumber.slice(-4) : "—";
 
+      const payMonth = payroll.month ?? "";
+      const [payYearStr, payMonthStr] = payMonth.split("-");
+      const workingDays = payMonth
+        ? new Date(Number(payYearStr), Number(payMonthStr), 0).getDate()
+        : 30;
+
       const pdfBuffer = await generatePayslipPdf({
-        orgName: org?.name ?? "Company",
+        orgName: org?.legalName ?? org?.name ?? "Company",
         orgAddress: addressLine || undefined,
         employeeName: employee.name ?? "Employee",
         employeeId: employee.employeeId ?? undefined,
@@ -128,13 +134,13 @@ export class PayrollStatusService {
         ifsc: bank?.ifsc ?? undefined,
         joiningDate: employee.joiningDate ? formatJoiningDate(employee.joiningDate) : undefined,
         monthLabel,
+        workingDays,
         basicSalary: basic,
         hra,
         allowances,
         overtimeAmount,
         grossSalary,
         deductions,
-        professionalTax: 200,
         netSalary,
       });
 

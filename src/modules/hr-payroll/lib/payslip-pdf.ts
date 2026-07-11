@@ -3,6 +3,8 @@ import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf
 export interface PayslipPdfData {
   orgName: string;
   orgAddress?: string;
+  currencyCode?: string;
+  currencyLocale?: string;
   employeeName: string;
   employeeId?: string;
   designation?: string;
@@ -99,8 +101,10 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const oblique = await doc.embedFont(StandardFonts.HelveticaOblique);
 
+  const currencySymbol = data.currencyCode === "INR" || !data.currencyCode ? "Rs" : (data.currencyCode ?? "Rs");
+  const currencyLocale = data.currencyLocale ?? "en-IN";
   const fmt = (v: number) =>
-    "Rs " + v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    currencySymbol + " " + v.toLocaleString(currencyLocale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const { height } = page.getSize();
   const margin = 40;

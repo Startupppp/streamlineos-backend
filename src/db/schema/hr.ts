@@ -7,6 +7,7 @@ export * from "./hr/policy-engine";
 export * from "./hr/workflow-engine";
 export * from "./hr/template-engine";
 export * from "./hr/attendance";
+export * from "./hr/attendance-regularizations";
 export * from "./hr/leaves";
 export * from "./hr/leave-ledger";
 export * from "./hr/assets";

@@ -210,6 +210,12 @@ export class OnboardingService {
         await this.db.insert(onboardingTasks).values(taskInserts);
         const ownerRoles = [...new Set(taskInserts.map((t) => t.ownerRole))];
         void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, ownerRoles).catch(() => undefined);
+        void this.hrAutomation.emit(orgId, "employee.created", {
+          userId: input.userId,
+          employeeName: targetUser?.name ?? "",
+          employeeEmail: targetUser?.email ?? "",
+          createdAt: new Date().toISOString(),
+        }).catch(() => undefined);
         return { success: true, tasksCreated: taskInserts.length, fromTemplate: true };
       }
     }
@@ -230,6 +236,12 @@ export class OnboardingService {
     await this.db.insert(onboardingTasks).values(defaultInserts);
     const defaultOwnerRoles = [...new Set(defaultInserts.map((t) => t.ownerRole))];
     void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, defaultOwnerRoles).catch(() => undefined);
+    void this.hrAutomation.emit(orgId, "employee.created", {
+      userId: input.userId,
+      employeeName: targetUser?.name ?? "",
+      employeeEmail: targetUser?.email ?? "",
+      createdAt: new Date().toISOString(),
+    }).catch(() => undefined);
     return { success: true, tasksCreated: defaultInserts.length, fromTemplate: false };
   }
 
@@ -510,7 +522,7 @@ export class OnboardingService {
       const hrMembers = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR")));
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_NOTIFY_ROLES])));
       if (hrMembers.length === 0) return;
 
       const hrUsers = await this.db
@@ -525,13 +537,15 @@ export class OnboardingService {
         ),
       );
 
-      void this.automation.runAutomationsForEvent(orgId, "onboarding.completed", {
+      const onboardedPayload = {
         userId: employeeUserId,
         employeeName: employee?.name ?? "",
         employeeEmail: employee?.email ?? "",
         totalTasks: 0,
         completedAt: new Date().toISOString(),
-      }).catch(() => undefined);
+      };
+      void this.automation.runAutomationsForEvent(orgId, "onboarding.completed", onboardedPayload).catch(() => undefined);
+      void this.hrAutomation.emit(orgId, "employee.onboarded", onboardedPayload).catch(() => undefined);
     })().catch(() => undefined);
   }
 
