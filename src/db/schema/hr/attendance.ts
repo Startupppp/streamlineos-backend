@@ -61,11 +61,39 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
   priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
   status: ticketStatusEnum("status").default("TODO").notNull(),
   assigneeId: text("assignee_id").references(() => users.id),
+  isConfidential: boolean("is_confidential").default(false).notNull(),
+  slaDueAt: timestamp("sla_due_at"),
   resolvedAt: timestamp("resolved_at"),
   resolution: text("resolution"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  index("idx_helpdesk_tickets_org_status").on(table.orgId, table.status),
+  index("idx_helpdesk_tickets_org_user").on(table.orgId, table.userId),
+]);
+
+export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  category: text("category").notNull(),
+  assigneeUserId: text("assignee_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_hr_helpdesk_routing_org").on(table.orgId),
+  uniqueIndex("uniq_helpdesk_routing_org_category").on(table.orgId, table.category),
+]);
+
+export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").references(() => helpdeskTickets.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  authorId: text("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_hr_helpdesk_comments_ticket").on(table.ticketId),
+]);
 
 export const employeeDevices = pgTable("employee_devices", {
   id: serial("id").primaryKey(),
@@ -95,4 +123,19 @@ export const wfhRequestsRelations = relations(wfhRequests, ({ one }) => ({
 
 export const employeeDevicesRelations = relations(employeeDevices, ({ one }) => ({
   user: one(users, { fields: [employeeDevices.userId], references: [users.id] }),
+}));
+
+export const helpdeskTicketsRelations = relations(helpdeskTickets, ({ one, many }) => ({
+  user: one(users, { fields: [helpdeskTickets.userId], references: [users.id] }),
+  assignee: one(users, { fields: [helpdeskTickets.assigneeId], references: [users.id], relationName: "helpdeskAssignee" }),
+  comments: many(hrHelpdeskComments),
+}));
+
+export const hrHelpdeskCommentsRelations = relations(hrHelpdeskComments, ({ one }) => ({
+  ticket: one(helpdeskTickets, { fields: [hrHelpdeskComments.ticketId], references: [helpdeskTickets.id] }),
+  author: one(users, { fields: [hrHelpdeskComments.authorId], references: [users.id] }),
+}));
+
+export const hrHelpdeskRoutingRelations = relations(hrHelpdeskRouting, ({ one }) => ({
+  assignee: one(users, { fields: [hrHelpdeskRouting.assigneeUserId], references: [users.id] }),
 }));

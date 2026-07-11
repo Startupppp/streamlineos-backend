@@ -50,5 +50,6 @@ import { ExitChecklistService } from "./exit-checklist.service";
     ProbationService,
     ExitChecklistService,
   ],
+  exports: [ProbationService],
 })
 export class HrLifecycleModule {}

@@ -1,4 +1,4 @@
-import { ExecutionContext, UnauthorizedException } from "@nestjs/common";
+import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { signToken } from "../../../test/helpers/sign-token";
@@ -15,8 +15,16 @@ function ctxWith(headers: Record<string, string>): ExecutionContext {
 describe("JwtAuthGuard", () => {
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
   const reflector = { getAllAndOverride: jest.fn() } as unknown as jest.Mocked<Reflector>;
+  function emptySelectChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    for (const method of ["from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
+      chain[method] = jest.fn().mockReturnValue(chain);
+    }
+    chain.then = (onFulfilled: (rows: unknown[]) => unknown) => Promise.resolve([]).then(onFulfilled);
+    return chain;
+  }
   const mockDb = {
-    select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+    select: jest.fn(() => emptySelectChain()),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ catch: jest.fn() }) }) }),
     query: { users: { findFirst: jest.fn() }, organizationMembers: { findFirst: jest.fn() }, organizations: { findFirst: jest.fn() } },
   };
@@ -71,7 +79,7 @@ describe("JwtAuthGuard", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it("rejects a token with an empty-string orgId for a non-platform-admin", async () => {
+  it("rejects a token with an empty-string orgId for a non-platform-admin with 403", async () => {
     const { SignJWT } = await import("jose");
     const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
     const token = await new SignJWT({ sub: "u", orgId: "", sessionId: "sess_1", isPlatformAdmin: false })
@@ -80,7 +88,7 @@ describe("JwtAuthGuard", () => {
       .sign(new TextEncoder().encode(secret));
     await expect(
       guard.canActivate(ctxWith({ authorization: `Bearer ${token}` })),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("accepts a platform-admin token with no orgId", async () => {

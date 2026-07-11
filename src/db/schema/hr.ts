@@ -43,3 +43,4 @@ export * from "./hr/payroll-workforce";
 export * from "./hr/access-requests";
 export * from "./hr/probation";
 export * from "./hr/succession";
+export * from "./hr/engagement-extras";

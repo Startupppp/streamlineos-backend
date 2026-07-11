@@ -1,8 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -15,12 +19,24 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHelpdeskService } from "./hr-helpdesk.service";
 import {
+  addCommentSchema,
   createSchema,
   listSchema,
+  routingRuleSchema,
+  suggestSchema,
+  updateTicketSchema,
+  type AddCommentInput,
   type CreateInput,
   type ListInput,
+  type RoutingRuleInput,
+  type SuggestInput,
+  type UpdateTicketInput,
 } from "./dto/hr-helpdesk.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+
+function isAdmin(u: CurrentUserContext): boolean {
+  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:helpdesk:manage");
+}
 
 @RequireModule("hr")
 @Controller("hr/helpdesk")
@@ -34,8 +50,31 @@ export class HrHelpdeskController {
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:helpdesk:manage");
-    return this.helpdesk.list(u.orgId, u.userId, isAdmin, filters);
+    return this.helpdesk.list(u.orgId, u.userId, isAdmin(u), filters);
+  }
+
+  @Get("suggest")
+  @RequirePermission("hr:helpdesk:view")
+  suggest(
+    @Query(new ZodValidationPipe(suggestSchema)) input: SuggestInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.suggest(u.orgId, input);
+  }
+
+  @Get("routing")
+  @RequirePermission("hr:helpdesk:manage")
+  listRouting(@CurrentUser() u: CurrentUserContext) {
+    return this.helpdesk.listRoutingRules(u.orgId);
+  }
+
+  @Get(":ticketId")
+  @RequirePermission("hr:helpdesk:view")
+  getById(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.getById(u.orgId, u.userId, isAdmin(u), ticketId);
   }
 
   @Post()
@@ -46,5 +85,45 @@ export class HrHelpdeskController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.helpdesk.create(u.orgId, u.userId, body);
+  }
+
+  @Patch(":ticketId")
+  @RequirePermission("hr:helpdesk:manage")
+  update(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.updateTicket(u.orgId, u.userId, isAdmin(u), ticketId, body);
+  }
+
+  @Post(":ticketId/comments")
+  @HttpCode(201)
+  @RequirePermission("hr:helpdesk:view")
+  addComment(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addCommentSchema)) body: AddCommentInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.addComment(u.orgId, u.userId, isAdmin(u), ticketId, body);
+  }
+
+  @Post("routing")
+  @HttpCode(201)
+  @RequirePermission("hr:helpdesk:manage")
+  upsertRouting(
+    @Body(new ZodValidationPipe(routingRuleSchema)) body: RoutingRuleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.upsertRoutingRule(u.orgId, body);
+  }
+
+  @Delete("routing/:ruleId")
+  @RequirePermission("hr:helpdesk:manage")
+  deleteRouting(
+    @Param("ruleId", ParseIntPipe) ruleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.helpdesk.deleteRoutingRule(u.orgId, ruleId);
   }
 }

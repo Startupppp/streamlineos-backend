@@ -16,6 +16,7 @@ import {
 import type { Request } from "express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -81,6 +82,7 @@ export class OnboardingController {
   }
 
   @Post("module-recommendations")
+  @AllowNoOrg()
   @HttpCode(200)
   getModuleRecommendations(
     @Body(new ZodValidationPipe(moduleRecommendationInputSchema)) body: ModuleRecommendationInput,

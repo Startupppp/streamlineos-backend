@@ -4,6 +4,7 @@ import {
   Headers,
   HttpCode,
   InternalServerErrorException,
+  Param,
   Post,
 } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
@@ -14,6 +15,7 @@ import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
+import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
@@ -35,6 +37,7 @@ export class CronController {
     private readonly holiday: CronHolidayService,
     private readonly recruitment: CronRecruitmentService,
     private readonly hr: CronHrService,
+    private readonly hrEngines: CronHrEnginesService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly emailOutbox: CronEmailOutboxService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
@@ -484,6 +487,63 @@ export class CronController {
       };
     } catch (error) {
       logger.error("KB trash purge cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Post("hr-engines-sweep")
+  @HttpCode(200)
+  postHrEnginesSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrEnginesSweep(authorization);
+  }
+
+  @Get("hr-engines-sweep")
+  getHrEnginesSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrEnginesSweep(authorization);
+  }
+
+  @Post("hr-engines-sweep/:sweepName")
+  @HttpCode(200)
+  postHrEnginesSweepByName(
+    @Headers("authorization") authorization?: string,
+    @Param("sweepName") sweepName?: string,
+  ) {
+    return this.runHrEnginesSweepByName(authorization, sweepName);
+  }
+
+  @Get("hr-engines-sweep/:sweepName")
+  getHrEnginesSweepByName(
+    @Headers("authorization") authorization?: string,
+    @Param("sweepName") sweepName?: string,
+  ) {
+    return this.runHrEnginesSweepByName(authorization, sweepName);
+  }
+
+  private async runHrEnginesSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.hrEngines.runAll();
+      return {
+        success: true,
+        message: `HR engines sweep complete: ${result.succeeded} succeeded, ${result.failed} failed across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("HR engines sweep (all) cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runHrEnginesSweepByName(authorization?: string, sweepName?: string) {
+    assertCronSecret(authorization);
+    try {
+      if (sweepName === "workflow-sla") {
+        const result = await this.hrEngines.sweepWorkflowSlaEscalations();
+        return { success: true, message: `Swept ${result.swept} overdue workflow steps`, ...result };
+      }
+      return { success: false, message: `Unknown sweep name: ${sweepName ?? ""}` };
+    } catch (error) {
+      logger.error(`HR engines sweep (${sweepName ?? "unknown"}) cron failed`, error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

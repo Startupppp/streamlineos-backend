@@ -11,6 +11,7 @@ import {
   assessmentAttempts,
   enpsScores,
   feedbackRequests,
+  hrAuditLogs,
   pulseSurveys,
   recognitions,
   skillAssessments,
@@ -212,6 +213,15 @@ export class EngagementService {
         category: input.category,
       })
       .returning();
+
+    await this.db.insert(hrAuditLogs).values({
+      orgId,
+      actorId: userId,
+      entityType: "hr_recognition",
+      entityId: String(recognition.id),
+      action: "kudos_given",
+      after: { toUserId: input.toUserId, message: input.message, category: input.category },
+    });
 
     return recognition;
   }

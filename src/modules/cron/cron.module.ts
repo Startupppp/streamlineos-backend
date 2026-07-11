@@ -8,12 +8,16 @@ import { SupportModule } from "../support/support.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
 import { HrTimeModule } from "../hr-time/hr-time.module";
+import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
+import { HrCoreModule } from "../hr-core/hr-core.module";
+import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
 import { CronController } from "./cron.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
+import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronLeaveService } from "./cron-leave.service";
 import { CronNotificationsService } from "./cron-notifications.service";
@@ -24,7 +28,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule],
+  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,
@@ -36,6 +40,7 @@ import { CronSupportService } from "./cron-support.service";
     CronProjectsService,
     CronRecruitmentService,
     CronHrService,
+    CronHrEnginesService,
     CronWeeklyRecapService,
     CronEmailOutboxService,
     CronSupportService,

@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
@@ -129,8 +130,9 @@ export class JwtAuthGuard implements CanActivate {
         }
       }
 
+      // 403, not 401: the session is valid — a 401 would make the api-client force a sign-out loop for users who haven't created their org yet.
       if (!orgId && !claims.isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
-        throw new UnauthorizedException("Organization not found");
+        throw new ForbiddenException("Organization not found");
       }
 
       req.user = {

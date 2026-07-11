@@ -422,6 +422,18 @@ const HR_PERMISSIONS: Permission[] = [
     description: "Manage succession plans (sensitive)",
   },
   {
+    name: "hr:engagement:view",
+    resource: "hr:engagement",
+    action: "view",
+    description: "View engagement hub (mood, recognition, polls, communities)",
+  },
+  {
+    name: "hr:engagement:manage",
+    resource: "hr:engagement",
+    action: "manage",
+    description: "Manage engagement features and view aggregated analytics",
+  },
+  {
     name: "hr:feedback:manage",
     resource: "hr:feedback",
     action: "manage",

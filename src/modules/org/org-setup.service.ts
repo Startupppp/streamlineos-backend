@@ -193,11 +193,26 @@ export class OrgSetupService {
     return { success: true, orgId, autoLoginToken };
   }
 
+  // Pre-org users have no organizations row (org_id FK is NOT NULL), so the wizard session stays client-side until complete/skip creates the org.
+  private ephemeralSession(patch?: SessionPatch) {
+    return {
+      id: 0,
+      type: "org_setup" as const,
+      status: patch ? ("in_progress" as const) : ("not_started" as const),
+      currentStep: patch?.currentStep ?? null,
+      completedSteps: patch?.completedSteps ?? [],
+      skippedSteps: patch?.skippedSteps ?? [],
+      data: patch?.data ?? {},
+    };
+  }
+
   async getSetupSession(u: CurrentUserContext) {
+    if (!u.orgId) return this.ephemeralSession();
     return this.sessions.getOrCreateSession(u.orgId, u.userId, "org_setup");
   }
 
   async patchSetupSession(u: CurrentUserContext, patch: SessionPatch) {
+    if (!u.orgId) return this.ephemeralSession(patch);
     return this.sessions.patchSession(u.orgId, u.userId, "org_setup", patch);
   }
 
