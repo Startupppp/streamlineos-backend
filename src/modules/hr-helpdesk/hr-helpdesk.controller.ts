@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   Post,
@@ -9,6 +8,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -21,29 +22,25 @@ import {
 } from "./dto/hr-helpdesk.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
-function isHrAdmin(u: CurrentUserContext): boolean {
-  return u.isOrgOwner || u.isPlatformAdmin || ["HR", "ADMIN", "CEO", "BRANCH_HR", "BRANCH_MANAGER"].includes(u.role);
-}
-
 @RequireModule("hr")
 @Controller("hr/helpdesk")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHelpdeskController {
   constructor(private readonly helpdesk: HrHelpdeskService) {}
 
   @Get()
+  @RequirePermission("hr:helpdesk:view")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (filters.userId && filters.userId !== u.userId && !isHrAdmin(u)) {
-      throw new ForbiddenException("Not authorized to view other users' tickets.");
-    }
-    return this.helpdesk.list(u.orgId, u.userId, isHrAdmin(u), filters);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:helpdesk:manage");
+    return this.helpdesk.list(u.orgId, u.userId, isAdmin, filters);
   }
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:helpdesk:create")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,

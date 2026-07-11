@@ -22,6 +22,16 @@ import { historyTypeSchema, listTimelineSchema, type HistoryTypeInput, type List
 export class HrEmployeeSubroutesController {
   constructor(private readonly timeline: HrTimelineService) {}
 
+  @Get(":userId/employment")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:read")
+  getEmployment(
+    @Param("userId") userId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.timeline.getEmploymentByUserId(u.orgId, userId);
+  }
+
   @Get(":employeeId/timeline")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:read")

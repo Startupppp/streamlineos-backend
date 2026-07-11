@@ -14,31 +14,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { AccountingExportInput, TaxCalcInput } from "./dto/payroll.schemas";
-
-const SALARY_BANDS = [
-  { label: "< 3L", min: 0, max: 300_000 },
-  { label: "3–6L", min: 300_000, max: 600_000 },
-  { label: "6–10L", min: 600_000, max: 1_000_000 },
-  { label: "10–15L", min: 1_000_000, max: 1_500_000 },
-  { label: "15–25L", min: 1_500_000, max: 2_500_000 },
-  { label: "> 25L", min: 2_500_000, max: Infinity },
-];
-
-const OLD_REGIME_SLABS = [
-  { min: 0, max: 250000, rate: 0 },
-  { min: 250000, max: 500000, rate: 5 },
-  { min: 500000, max: 1000000, rate: 20 },
-  { min: 1000000, max: Infinity, rate: 30 },
-];
-
-const NEW_REGIME_SLABS = [
-  { min: 0, max: 300000, rate: 0 },
-  { min: 300000, max: 700000, rate: 5 },
-  { min: 700000, max: 1000000, rate: 10 },
-  { min: 1000000, max: 1200000, rate: 15 },
-  { min: 1200000, max: 1500000, rate: 20 },
-  { min: 1500000, max: Infinity, rate: 30 },
-];
+import { getStatutoryConfig, calculateIncomeTax } from "./lib/statutory-config";
 
 type PayrollExportRow = {
   firstName: string | null;
@@ -47,16 +23,6 @@ type PayrollExportRow = {
   netSalary: string;
   deductions: string | null;
 };
-
-function calculateTax(taxableIncome: number, slabs: typeof OLD_REGIME_SLABS): number {
-  let tax = 0;
-  for (const slab of slabs) {
-    if (taxableIncome <= slab.min) break;
-    const taxableInSlab = Math.min(taxableIncome, slab.max) - slab.min;
-    tax += (taxableInSlab * slab.rate) / 100;
-  }
-  return Math.round(tax);
-}
 
 function generateTallyXml(payroll: PayrollExportRow[], month: string): string {
   const vouchers = payroll
@@ -148,6 +114,8 @@ export class CompensationService {
 
   getSalaryBands(orgId: string) {
     return this.cache.cached(`hr:salary-bands:${orgId}`, async () => {
+      const config = getStatutoryConfig("IN");
+
       const rows = await this.db
         .select({
           departmentName: departments.name,
@@ -170,7 +138,7 @@ export class CompensationService {
 
       const annualSalaries = allSalaries.map((r) => Number(r.basicSalary) * 12);
 
-      const bandDistribution = SALARY_BANDS.map((band) => ({
+      const bandDistribution = config.salaryBands.map((band) => ({
         label: band.label,
         count: annualSalaries.filter((s) => s >= band.min && (band.max === Infinity ? true : s < band.max)).length,
       }));
@@ -317,26 +285,28 @@ export class CompensationService {
 
   calculateTax(body: TaxCalcInput) {
     const { annualCtc, basicPercentage, hraPercentage, regime, pfOptOut } = body;
+    const cfg = getStatutoryConfig("IN");
+    const { pf, esi, professionalTaxAnnual, incomeTax } = cfg;
 
     const basic = (annualCtc * basicPercentage) / 100;
     const hra = (basic * hraPercentage) / 100;
-    const pfEmployee = pfOptOut ? 0 : Math.min(basic * 0.12, 21600);
-    const pfEmployer = pfOptOut ? 0 : Math.min(basic * 0.12, 21600);
-    const esiEmployee = annualCtc <= 252000 ? annualCtc * 0.0075 : 0;
-    const esiEmployer = annualCtc <= 252000 ? annualCtc * 0.0325 : 0;
-    const professionalTax = 2400;
-    const standardDeduction = 75000;
+    const pfEmployee = pfOptOut ? 0 : Math.min(basic * (pf.employeePercent / 100), pf.annualWageCeiling);
+    const pfEmployer = pfOptOut ? 0 : Math.min(basic * (pf.employerPercent / 100), pf.annualWageCeiling);
+    const esiMonthlyWageCeiling = esi.monthlyWageCeiling * 12;
+    const esiEmployee = annualCtc <= esiMonthlyWageCeiling ? annualCtc * (esi.employeePercent / 100) : 0;
+    const esiEmployer = annualCtc <= esiMonthlyWageCeiling ? annualCtc * (esi.employerPercent / 100) : 0;
+    const standardDeduction = incomeTax.standardDeduction;
 
     const grossSalary = annualCtc - pfEmployer - esiEmployer;
     const taxableIncome = Math.max(0, grossSalary - standardDeduction - (regime === "OLD" ? pfEmployee : 0));
 
-    const slabs = regime === "NEW" ? NEW_REGIME_SLABS : OLD_REGIME_SLABS;
-    const incomeTax = calculateTax(taxableIncome, slabs);
-    const cess = Math.round(incomeTax * 0.04);
-    const totalTax = incomeTax + cess;
+    const slabs = regime === "NEW" ? incomeTax.newRegimeSlabs : incomeTax.oldRegimeSlabs;
+    const incomeTaxAmount = calculateIncomeTax(taxableIncome, slabs);
+    const cess = Math.round(incomeTaxAmount * (incomeTax.cessPercent / 100));
+    const totalTax = incomeTaxAmount + cess;
     const monthlyTds = Math.round(totalTax / 12);
 
-    const monthlyNet = Math.round((grossSalary - pfEmployee - esiEmployee - professionalTax - totalTax) / 12);
+    const monthlyNet = Math.round((grossSalary - pfEmployee - esiEmployee - professionalTaxAnnual - totalTax) / 12);
 
     return {
       annual: {
@@ -347,11 +317,11 @@ export class CompensationService {
         pfEmployer: Math.round(pfEmployer),
         esiEmployee: Math.round(esiEmployee),
         esiEmployer: Math.round(esiEmployer),
-        professionalTax,
+        professionalTax: professionalTaxAnnual,
         standardDeduction,
         grossSalary: Math.round(grossSalary),
         taxableIncome: Math.round(taxableIncome),
-        incomeTax,
+        incomeTax: incomeTaxAmount,
         cess,
         totalTax,
       },
@@ -361,13 +331,13 @@ export class CompensationService {
         hra: Math.round(hra / 12),
         pf: Math.round(pfEmployee / 12),
         esi: Math.round(esiEmployee / 12),
-        professionalTax: Math.round(professionalTax / 12),
+        professionalTax: Math.round(professionalTaxAnnual / 12),
         tds: monthlyTds,
         netTakeHome: monthlyNet,
       },
       regime,
       slabs: slabs.map((s) => ({
-        range: `${s.min.toLocaleString("en-IN")} - ${s.max === Infinity ? "Above" : s.max.toLocaleString("en-IN")}`,
+        range: `${s.min.toLocaleString(cfg.locale)} - ${s.max === Infinity ? "Above" : s.max.toLocaleString(cfg.locale)}`,
         rate: `${s.rate}%`,
       })),
     };

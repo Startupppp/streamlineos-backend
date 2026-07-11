@@ -8,6 +8,8 @@ import {
   users,
   organizations,
   attendance,
+  payrollPolicies,
+  payrollPolicyVersions,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -17,6 +19,7 @@ import { decrypt } from "./lib/encryption";
 import type { GenerateSinglePayrollInput } from "./dto/payroll.schemas";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
+import { resolvePayrollDefaults, countWorkingDays } from "./lib/payroll-defaults";
 
 type PayrollRow = typeof payrolls.$inferSelect;
 type UserRow = typeof users.$inferSelect;
@@ -37,6 +40,24 @@ export class PayrollsService {
     private readonly audit: AuditService,
   ) {}
 
+  private async resolveDefaults(orgId: string) {
+    try {
+      const policy = await this.db.query.payrollPolicies.findFirst({
+        where: eq(payrollPolicies.orgId, orgId),
+        columns: { activeVersionId: true },
+      });
+      if (!policy?.activeVersionId) return resolvePayrollDefaults(null);
+
+      const version = await this.db.query.payrollPolicyVersions.findFirst({
+        where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+        columns: { config: true },
+      });
+      return resolvePayrollDefaults(version?.config ?? null);
+    } catch {
+      return resolvePayrollDefaults(null);
+    }
+  }
+
   getPayrolls(orgId: string, userId: string) {
     return this.db.query.payrolls.findMany({
       where: and(eq(payrolls.userId, userId), eq(payrolls.orgId, orgId)),
@@ -52,7 +73,7 @@ export class PayrollsService {
     const memberUserIds = memberships.map((m) => m.userId).filter(Boolean);
     if (memberUserIds.length === 0) return { generated: 0, hadMembers: false };
 
-    const [allSalaryStructures, existingPayrolls, allUsers] = await Promise.all([
+    const [allSalaryStructures, existingPayrolls, allUsers, defaults] = await Promise.all([
       this.db.query.salaryStructures.findMany({
         where: and(
           inArray(salaryStructures.userId, memberUserIds),
@@ -71,6 +92,7 @@ export class PayrollsService {
         where: inArray(users.id, memberUserIds),
         columns: { id: true, monthlySalary: true },
       }),
+      this.resolveDefaults(orgId),
     ]);
 
     const salaryMap = new Map(allSalaryStructures.map((s) => [s.userId, s]));
@@ -81,12 +103,9 @@ export class PayrollsService {
     const year = parseInt(yearStr, 10);
     const monthNum = parseInt(monthStr, 10);
     const daysInMonth = new Date(year, monthNum, 0).getDate();
-    let totalBusinessDays = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const day = new Date(year, monthNum - 1, d).getDay();
-      if (day !== 0 && day !== 6) totalBusinessDays++;
-    }
-    if (totalBusinessDays <= 0) totalBusinessDays = 22;
+
+    let totalBusinessDays = countWorkingDays(year, monthNum, defaults.workWeekDays);
+    if (totalBusinessDays <= 0) totalBusinessDays = defaults.standardWorkingDaysPerMonth;
 
     const monthStart = `${month}-01`;
     const monthEnd = `${month}-${String(daysInMonth).padStart(2, "0")}`;
@@ -119,6 +138,14 @@ export class PayrollsService {
       });
     }
 
+    const {
+      defaultBasicPercent,
+      defaultHraPercent,
+      defaultAllowancePercent,
+      professionalTaxMonthly,
+      lopBasis,
+    } = defaults;
+
     const newPayrolls = memberUserIds
       .filter((uId) => {
         if (existingPayrollUserIds.has(uId)) return false;
@@ -131,23 +158,30 @@ export class PayrollsService {
         const monthlySalaryStr = userMap.get(uId);
         const monthlySalary = monthlySalaryStr ? parseFloat(monthlySalaryStr) : 0;
 
-        const basic = salaryStructure ? parseFloat(salaryStructure.basicSalary) : monthlySalary * 0.5;
-        const hraPercentage = salaryStructure ? parseFloat(salaryStructure.hraPercentage || "50") : 50;
-        const hra = salaryStructure ? basic * (hraPercentage / 100) : monthlySalary * 0.25;
-        const allowances = salaryStructure ? parseFloat(salaryStructure.allowances || "0") : monthlySalary * 0.25;
+        const basic = salaryStructure
+          ? parseFloat(salaryStructure.basicSalary)
+          : monthlySalary * (defaultBasicPercent / 100);
+        const hraPercentage = salaryStructure
+          ? parseFloat(salaryStructure.hraPercentage || String(defaultHraPercent))
+          : defaultHraPercent;
+        const hra = salaryStructure ? basic * (hraPercentage / 100) : monthlySalary * (defaultHraPercent / 100);
+        const allowances = salaryStructure
+          ? parseFloat(salaryStructure.allowances || "0")
+          : monthlySalary * (defaultAllowancePercent / 100);
         const deductions = salaryStructure ? parseFloat(salaryStructure.deductions || "0") : 0;
         const gross = basic + hra + allowances;
+
+        const lopDivisor = lopBasis === "calendar" ? daysInMonth : totalBusinessDays;
 
         let lopDeduction = 0;
         const daysAttended = attendanceMap.get(uId);
         if (daysAttended !== undefined && daysAttended < totalBusinessDays) {
-          const dailySalary = gross / totalBusinessDays;
+          const dailySalary = gross / lopDivisor;
           const absentDays = totalBusinessDays - daysAttended;
           lopDeduction = Math.round(dailySalary * absentDays * 100) / 100;
         }
 
-        const PROFESSIONAL_TAX = 200;
-        const totalDeductions = deductions + lopDeduction + PROFESSIONAL_TAX;
+        const totalDeductions = deductions + lopDeduction + professionalTaxMonthly;
         const net = gross - totalDeductions;
 
         return {
@@ -254,13 +288,16 @@ export class PayrollsService {
   }
 
   async generateSingle(orgId: string, userId: string, body: GenerateSinglePayrollInput): Promise<GenerateSingleResult> {
-    const salary = await this.db.query.salaryStructures.findFirst({
-      where: and(
-        eq(salaryStructures.userId, body.userId),
-        eq(salaryStructures.orgId, orgId),
-        eq(salaryStructures.isActive, true),
-      ),
-    });
+    const [salary, defaults] = await Promise.all([
+      this.db.query.salaryStructures.findFirst({
+        where: and(
+          eq(salaryStructures.userId, body.userId),
+          eq(salaryStructures.orgId, orgId),
+          eq(salaryStructures.isActive, true),
+        ),
+      }),
+      this.resolveDefaults(orgId),
+    ]);
 
     if (!salary) return { ok: false, reason: "no_salary_structure", month: body.month };
 
@@ -275,7 +312,7 @@ export class PayrollsService {
     if (existingPayroll) return { ok: false, reason: "duplicate", month: body.month };
 
     const basicSalary = Number(salary.basicSalary);
-    const hraPercentage = Number(salary.hraPercentage || 50);
+    const hraPercentage = Number(salary.hraPercentage || defaults.defaultHraPercent);
     const allowances = Number(salary.allowances || 0);
     const deductions = Number(salary.deductions || 0);
 
@@ -287,10 +324,11 @@ export class PayrollsService {
     const [payYear, payMonth] = body.month.split("-").map(Number);
     const daysInMonth = new Date(payYear, payMonth, 0).getDate();
 
-    const PROFESSIONAL_TAX = 200;
-    const lopDeduction = body.lopDays ? round2((basicSalary / daysInMonth) * body.lopDays) : 0;
-    const halfDayDeduction = body.halfDays ? round2(((basicSalary / daysInMonth) * body.halfDays) / 2) : 0;
-    const totalDeductions = round2(deductions + lopDeduction + halfDayDeduction + (body.otherDeductions || 0) + PROFESSIONAL_TAX);
+    const { professionalTaxMonthly, lopBasis } = defaults;
+    const lopDivisor = lopBasis === "calendar" ? daysInMonth : countWorkingDays(payYear, payMonth, defaults.workWeekDays);
+    const lopDeduction = body.lopDays ? round2((basicSalary / lopDivisor) * body.lopDays) : 0;
+    const halfDayDeduction = body.halfDays ? round2(((basicSalary / lopDivisor) * body.halfDays) / 2) : 0;
+    const totalDeductions = round2(deductions + lopDeduction + halfDayDeduction + (body.otherDeductions || 0) + professionalTaxMonthly);
 
     const netSalary = round2(grossSalary - totalDeductions);
 

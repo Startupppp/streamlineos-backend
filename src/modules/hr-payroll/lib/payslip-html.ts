@@ -44,7 +44,7 @@ function numberToWords(n: number): string {
     if (num < 10000000) return helper(Math.floor(num / 100000)) + " Lakh" + (num % 100000 ? " " + helper(num % 100000) : "");
     return helper(Math.floor(num / 10000000)) + " Crore" + (num % 10000000 ? " " + helper(num % 10000000) : "");
   }
-  return helper(Math.floor(n)) + " Rupees Only";
+  return helper(Math.floor(n)) + " Only";
 }
 
 export async function renderPayslipHtml(
@@ -63,13 +63,17 @@ export async function renderPayslipHtml(
       })()
     : 30;
 
+  const orgCurrency = org?.currency ?? "INR";
+  const orgLocale = orgCurrency === "INR" ? "en-IN" : "en-US";
+  const currencySymbol = orgCurrency === "INR" ? "₹" : orgCurrency;
+
   const fmt = (v: string | null | undefined) =>
-    `₹${parseFloat(v || "0").toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+    `${currencySymbol}${parseFloat(v || "0").toLocaleString(orgLocale, { minimumFractionDigits: 2 })}`;
 
   const empName = `${employee?.name ?? "Employee"}`;
   const empDesignation = employee?.designation ?? "—";
-  const orgName = org?.name ?? "StreamlineOS Advisors LLP";
-  const orgFullName = "StreamlineOS Advisors LLP";
+  const orgName = org?.legalName ?? org?.name ?? "—";
+  const orgFullName = orgName;
 
   const hra = parseFloat(payroll.hra || "0");
   const allowances = parseFloat(payroll.allowances || "0");

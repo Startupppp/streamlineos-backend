@@ -22,8 +22,10 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
+import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
+import { getTerminationEmailTemplate } from "../email/templates/hr";
 import { formatDdMmmYyyy } from "./date.helpers";
-import { generateTerminationLetterHtml } from "./letters";
 import type { TerminationCreateInput, TerminationReviewInput } from "./dto/hr-lifecycle.schemas";
 
 @Injectable()
@@ -34,6 +36,8 @@ export class TerminationService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly hrAutomation: HrAutomationEngineService,
+    private readonly templateRender: HrTemplateRenderService,
   ) {}
 
   list(orgId: string) {
@@ -235,20 +239,40 @@ export class TerminationService {
     });
     if (!termination) throw new NotFoundException("Termination not found.");
 
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-    });
+    const [org] = await this.db
+      .select({ name: organizations.name, supportEmail: organizations.supportEmail })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
 
     const employee = termination.user;
-    const letterHtml = generateTerminationLetterHtml({
-      employeeName: employee?.name ?? "Employee",
-      designation: employee?.designation ?? "N/A",
-      companyName: org?.name ?? "the Company",
-      reasons: termination.reasons ?? [],
-      effectiveDate: termination.effectiveDate ? formatDdMmmYyyy(termination.effectiveDate) : "N/A",
-      severanceAmount: termination.severanceAmount,
-      date: formatDdMmmYyyy(new Date()),
-    });
+    const employeeName = employee?.name ?? "Employee";
+    const companyName = org?.name ?? "the Company";
+    const hrEmail = org?.supportEmail ?? "";
+    const reasonsList = (termination.reasons ?? []).map((r) => `<li>${r}</li>`).join("\n");
+    const effectiveDate = termination.effectiveDate ? formatDdMmmYyyy(termination.effectiveDate) : "N/A";
+    const severance = termination.severanceAmount;
+
+    const letterHtml = `<div style="font-family:'Times New Roman',serif;max-width:700px;margin:0 auto;padding:40px;line-height:1.8">
+  <div style="text-align:center;margin-bottom:30px;border-bottom:2px solid #333;padding-bottom:15px">
+    <h2 style="margin:0">${companyName}</h2>
+    <p style="margin:5px 0 0;font-size:12px;color:#666">CONFIDENTIAL</p>
+  </div>
+  <p style="text-align:right">Date: ${formatDdMmmYyyy(new Date())}</p>
+  <p>To,<br/><strong>${employeeName}</strong><br/>${employee?.designation ?? "N/A"}<br/>${companyName}</p>
+  <p><strong>Subject: Termination of Employment</strong></p>
+  <p>Dear ${employeeName},</p>
+  <p>This letter is to formally notify you that your employment with <strong>${companyName}</strong> is being terminated, effective <strong>${effectiveDate}</strong>.</p>
+  <p><strong>Reason(s) for Termination:</strong></p>
+  <ul>${reasonsList}</ul>
+  ${severance ? `<p><strong>Severance:</strong> You will receive a severance payment of <strong>${companyName.includes("INR") ? "" : "INR "}${severance}</strong>, subject to applicable deductions and taxes. This amount will be included in your final settlement.</p>` : ""}
+  <p><strong>Final Settlement:</strong> Your final settlement, including any pending salary, leave encashment, and other dues, will be processed within 45 days from the effective date of termination.</p>
+  <p><strong>Return of Company Property:</strong> You are requested to hand over all company assets, documents, and responsibilities to <strong>Reporting Manager/HR</strong> on your last working day.</p>
+  <p><strong>Confidentiality:</strong> All confidentiality and non-disclosure agreements remain in full effect even after termination.</p>
+  <p>We wish you the best in your future endeavours.</p>
+  <p style="margin-top:40px">Sincerely,<br/><br/><strong>Human Resources Department</strong><br/>${companyName}</p>
+  ${hrEmail ? `<p style="margin-top:20px;font-size:11px;color:#999;text-align:center">For queries, please contact HR at <a href="mailto:${hrEmail}">${hrEmail}</a></p>` : ""}
+</div>`;
 
     return { html: letterHtml };
   }
@@ -269,6 +293,14 @@ export class TerminationService {
     const employee = existing.user;
     if (!employee?.email) throw new BadRequestException("Employee email not found.");
 
+    const [org] = await this.db
+      .select({ supportEmail: organizations.supportEmail })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const hrContactEmail = org?.supportEmail ?? "";
+
     const actor = await this.db.query.users.findFirst({
       where: eq(users.id, actorUserId),
       columns: { name: true },
@@ -277,14 +309,18 @@ export class TerminationService {
     const effectiveDateFormatted = existing.effectiveDate ? formatDdMmmYyyy(existing.effectiveDate) : "N/A";
 
     try {
-      await this.email.sendTerminationEmail(
-        employee.email,
-        employee.name ?? "Employee",
-        employee.designation ?? "N/A",
-        effectiveDateFormatted,
-        actor?.name ?? "HR",
-        existing.reasons?.join(", ") ?? "",
-      );
+      await this.email.sendEmail({
+        to: employee.email,
+        subject: "Notice of employment termination",
+        html: getTerminationEmailTemplate(
+          employee.name ?? "Employee",
+          employee.designation ?? "N/A",
+          effectiveDateFormatted,
+          actor?.name ?? "HR",
+          existing.reasons?.join(", ") ?? "",
+          hrContactEmail,
+        ),
+      });
 
       await this.db
         .update(terminations)
@@ -414,14 +450,20 @@ export class TerminationService {
         where: eq(users.id, employeeId),
         columns: { name: true },
       });
-      await this.automation.runAutomationsForEvent(orgId, "employee.terminated", {
+      const payload = {
         terminationId,
         userId: employeeId,
         employeeName: employee?.name ?? "Employee",
         effectiveDate: new Date().toISOString(),
         reasons,
         noticePeriodWaived,
+        exitType: "termination",
+      };
+      await this.hrAutomation.emit(orgId, "exit.completed", {
+        ...payload,
+        exitType: "termination",
       });
+      await this.automation.runAutomationsForEvent(orgId, "employee.terminated", payload);
     })().catch(() => undefined);
   }
 }

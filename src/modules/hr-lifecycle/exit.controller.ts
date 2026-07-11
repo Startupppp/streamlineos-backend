@@ -11,12 +11,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
-import { userCan } from "./ability.helper";
 import {
   experienceLetterSchema,
   resignationCreateSchema,
@@ -33,7 +34,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/exit")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExitController {
   constructor(
     private readonly exit: ExitService,
@@ -41,12 +42,15 @@ export class ExitController {
   ) {}
 
   @Get()
+  @RequirePermission("hr:exit:view")
   list(@CurrentUser() u: CurrentUserContext) {
-    return this.exit.list(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"));
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
+    return this.exit.list(u.orgId, u.userId, isAdmin);
   }
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:exit:create")
   create(
     @Body(new ZodValidationPipe(resignationCreateSchema)) body: ResignationCreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -58,89 +62,94 @@ export class ExitController {
   }
 
   @Patch(":resignationId/hr-review")
+  @RequirePermission("hr:exit:manage")
   hrReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationHrReviewSchema)) body: ResignationHrReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!userCan(u, "manage", "hr:exit")) throw new ForbiddenException("Forbidden");
-    if (u.role !== "HR" && u.role !== "CEO") {
-      throw new ForbiddenException("Only HR can perform HR review.");
-    }
     return this.exitWrite.hrReview(u.orgId, u.userId, resignationId, body);
   }
 
   @Patch(":resignationId/ceo-review")
+  @RequirePermission("hr:exit:approve")
   ceoReview(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationCeoReviewSchema)) body: ResignationCeoReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.role !== "CEO") throw new ForbiddenException("Only CEO can perform CEO review.");
     return this.exitWrite.ceoReview(u.orgId, u.userId, resignationId, body);
   }
 
   @Patch(":resignationId")
+  @RequirePermission("hr:exit:view")
   update(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationUpdateSchema)) body: ResignationUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const isApprover = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
     return this.exitWrite.update(
       u.orgId,
-      { userId: u.userId, role: u.role, isApprover: userCan(u, "approve", "hr:leaves") },
+      { userId: u.userId, role: u.role, isApprover },
       resignationId,
       body,
     );
   }
 
   @Get("analytics")
+  @RequirePermission("hr:exit:manage")
   getAnalytics(@CurrentUser() u: CurrentUserContext) {
-    if (!userCan(u, "approve", "hr:leaves")) throw new ForbiddenException("Forbidden");
     return this.exit.getAnalytics(u.orgId);
   }
 
   @Post("experience-letter")
   @HttpCode(201)
+  @RequirePermission("hr:exit:manage")
   createExperienceLetter(
     @Body(new ZodValidationPipe(experienceLetterSchema)) body: ExperienceLetterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!userCan(u, "approve", "hr:leaves")) {
-      throw new ForbiddenException("Only admins can generate experience letters.");
-    }
     return this.exit.createExperienceLetter(u.orgId, u.userId, body);
   }
 
   @Get(":resignationId/letter")
+  @RequirePermission("hr:exit:view")
   getLetter(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exit.getLetter(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
+    return this.exit.getLetter(u.orgId, u.userId, isAdmin, resignationId);
   }
 
   @Get(":resignationId/progress")
+  @RequirePermission("hr:exit:view")
   getProgress(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exit.getProgress(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
+    return this.exit.getProgress(u.orgId, u.userId, isAdmin, resignationId);
   }
 
   @Patch(":resignationId/withdraw")
+  @RequirePermission("hr:exit:view")
   withdraw(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exit.withdraw(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
+    return this.exit.withdraw(u.orgId, u.userId, isAdmin, resignationId);
   }
 
   @Get(":resignationId")
+  @RequirePermission("hr:exit:view")
   getDetail(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exit.getDetail(u.orgId, u.userId, userCan(u, "approve", "hr:leaves"), resignationId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
+    return this.exit.getDetail(u.orgId, u.userId, isAdmin, resignationId);
   }
 }

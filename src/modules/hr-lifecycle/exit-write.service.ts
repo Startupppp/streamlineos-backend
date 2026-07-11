@@ -18,8 +18,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { ResignationJobsService } from "./resignation-jobs.service";
 import { formatDdMmmYyyy } from "./date.helpers";
+import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
   ResignationCreateInput,
   ResignationUpdateInput,
@@ -39,6 +41,7 @@ export class ExitWriteService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly hrAutomation: HrAutomationEngineService,
     private readonly resignationJobs: ResignationJobsService,
   ) {}
 
@@ -84,9 +87,7 @@ export class ExitWriteService {
     if (!existing) throw new NotFoundException("Resignation not found.");
 
     if (input.status === "HR_APPROVED") {
-      if (actor.role !== "HR" && actor.role !== "CEO") {
-        throw new ForbiddenException("Only HR can perform HR review.");
-      }
+      if (!actor.isApprover) throw new ForbiddenException("Only HR admins can perform HR review.");
       if (existing.status !== "PENDING_HR" && existing.status !== "SUBMITTED") {
         throw new BadRequestException("Resignation is not pending HR review.");
       }
@@ -105,7 +106,7 @@ export class ExitWriteService {
     }
 
     if (input.status === "CEO_APPROVED") {
-      if (actor.role !== "CEO") throw new ForbiddenException("Only CEO can approve at this stage.");
+      if (!actor.isApprover) throw new ForbiddenException("Only approvers can approve at this stage.");
       if (existing.status !== "HR_APPROVED") {
         throw new BadRequestException("Resignation must be HR-approved first.");
       }
@@ -140,10 +141,9 @@ export class ExitWriteService {
     if (input.status === "REJECTED") {
       if (!actor.isApprover) throw new ForbiddenException("Only admins can reject.");
       if (!input.remarks) throw new BadRequestException("Remarks are required when rejecting.");
-      const reviewFields =
-        actor.role === "HR"
-          ? { hrReviewedBy: actor.userId, hrReviewedAt: new Date(), hrRemarks: input.remarks }
-          : { ceoReviewedBy: actor.userId, ceoReviewedAt: new Date(), ceoRemarks: input.remarks };
+      const reviewFields = actor.isApprover
+        ? { hrReviewedBy: actor.userId, hrReviewedAt: new Date(), hrRemarks: input.remarks }
+        : { ceoReviewedBy: actor.userId, ceoReviewedAt: new Date(), ceoRemarks: input.remarks };
       await this.db
         .update(resignations)
         .set({ status: "REJECTED", updatedAt: new Date(), ...reviewFields })
@@ -169,6 +169,8 @@ export class ExitWriteService {
         .update(resignations)
         .set({ status: "COMPLETED", updatedAt: new Date() })
         .where(eq(resignations.id, resignationId));
+
+      this.dispatchExitCompleted(orgId, resignationId, existing.userId);
       return { success: true };
     }
 
@@ -272,7 +274,7 @@ export class ExitWriteService {
       const adminMembers = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, ["CEO", "HR"])));
+        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_NOTIFY_ROLES])));
 
       const submittingUser = await this.db.query.users.findFirst({
         where: eq(users.id, actorUserId),
@@ -307,6 +309,17 @@ export class ExitWriteService {
         }
       }
 
+      await this.hrAutomation.emit(orgId, "resignation.submitted", {
+        resignationId,
+        userId: actorUserId,
+        employeeName: submittingUser?.name ?? "Employee",
+        employeeEmail: submittingUser?.email ?? "",
+        lastWorkingDate: input.lastWorkingDate,
+        noticePeriodDays: input.noticePeriodDays,
+        reasonCategory: input.reasonCategory ?? null,
+        submittedAt: new Date().toISOString(),
+      });
+
       await this.automation.runAutomationsForEvent(orgId, "resignation.submitted", {
         resignationId,
         userId: actorUserId,
@@ -338,7 +351,7 @@ export class ExitWriteService {
       await this.email.sendResignationApprovedEmail(
         employee.email,
         employee.name ?? "Employee",
-        approver?.name ?? "CEO",
+        approver?.name ?? "Approver",
         formatDdMmmYyyy(lwd),
         noticePeriodDays ?? 30,
         formatDdMmmYyyy(sub),
@@ -365,6 +378,22 @@ export class ExitWriteService {
         lastWorkingDate,
         approvedBy: actorUserId,
         approvedAt: new Date().toISOString(),
+      });
+    })().catch(() => undefined);
+  }
+
+  private dispatchExitCompleted(orgId: string, resignationId: number, employeeId: string): void {
+    void (async () => {
+      const employee = await this.db.query.users.findFirst({
+        where: eq(users.id, employeeId),
+        columns: { name: true },
+      });
+      await this.hrAutomation.emit(orgId, "exit.completed", {
+        resignationId,
+        userId: employeeId,
+        employeeName: employee?.name ?? "Employee",
+        exitType: "resignation",
+        completedAt: new Date().toISOString(),
       });
     })().catch(() => undefined);
   }

@@ -1,8 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   hrEffectiveDatedChanges,
   hrEmploymentHistory,
+  hrEmployments,
+  hrPeople,
 } from "../../db/schema/hr/core-people";
 import { hrAuditLogs } from "../../db/schema/hr/core-audit";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -119,6 +121,41 @@ export class HrTimelineService {
       data: paginated,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async getEmploymentByUserId(orgId: string, userId: string) {
+    const person = await this.db
+      .select({ id: hrPeople.id })
+      .from(hrPeople)
+      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, userId), isNull(hrPeople.deletedAt)))
+      .limit(1);
+
+    if (!person[0]) throw new NotFoundException("Employee not found");
+
+    const employment = await this.db
+      .select({
+        id: hrEmployments.id,
+        employeeNumber: hrEmployments.employeeNumber,
+        lifecycleStatus: hrEmployments.lifecycleStatus,
+        workerType: hrEmployments.workerType,
+        departmentId: hrEmployments.departmentId,
+        designation: hrEmployments.designation,
+        joiningDate: hrEmployments.joiningDate,
+      })
+      .from(hrEmployments)
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.personId, person[0].id),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!employment[0]) throw new NotFoundException("Employment record not found");
+
+    return employment[0];
   }
 
   async getHistory(

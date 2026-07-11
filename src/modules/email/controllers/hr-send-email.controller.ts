@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   HttpCode,
   Inject,
   Post,
@@ -11,6 +10,8 @@ import {
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -39,7 +40,7 @@ function replaceVariables(text: string, vars: Record<string, string>): string {
 }
 
 @Controller("hr/integrations/send-email")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSendEmailController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -48,14 +49,11 @@ export class HrSendEmailController {
 
   @Post()
   @HttpCode(200)
+  @RequirePermission("hr:communications:send")
   async send(
     @Body(new ZodValidationPipe(sendEmailSchema)) body: SendEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (u.role !== "CEO" && u.role !== "HR" && u.role !== "ADMIN") {
-      throw new ForbiddenException("Only admins can send emails.");
-    }
-
     const providerConfigured =
       process.env["RESEND_API_KEY"] ?? process.env["SENDGRID_API_KEY"];
     if (!providerConfigured) {

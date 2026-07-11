@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
-import { attendance, departments, organizationMembers, organizations, orgHolidays, users } from "../../db/schema";
+import { attendance, departments, geofences, organizationMembers, organizations, orgHolidays, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -10,8 +10,20 @@ import { formatDateOnly, getTodayString } from "./date.helpers";
 import type { AttendanceEmailReportInput, CheckInInput } from "./dto/attendance.schemas";
 import { resolveAttendanceScope } from "./attendance-scope";
 import { randomUUID } from "node:crypto";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
+import { AttendancePolicyService } from "./attendance-policy.service";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 @Injectable()
 export class AttendanceService {
@@ -19,10 +31,49 @@ export class AttendanceService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly email: EmailService,
+    private readonly automations: HrAutomationEngineService,
+    private readonly policyService: AttendancePolicyService,
   ) {}
 
   async checkIn(orgId: string, userId: string, body: CheckInInput) {
     const today = body.localDate ?? getTodayString();
+
+    const policy = await this.policyService.getAttendanceRules(orgId, userId, today);
+    const shiftInfo = await this.policyService.getEffectiveShiftStartWithGrace(orgId, userId, today);
+
+    let locationVerified = false;
+
+    if (policy.enforceGeofence && body.location) {
+      const fences = await this.db
+        .select()
+        .from(geofences)
+        .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
+
+      if (fences.length > 0) {
+        const within = fences.some(
+          (f) =>
+            haversineMeters(body.location!.lat, body.location!.lng, Number(f.lat), Number(f.lng)) <=
+            f.radiusMeters,
+        );
+        if (!within) {
+          throw new BadRequestException("Check-in location is outside allowed geofences.");
+        }
+        locationVerified = true;
+      }
+    } else if (body.location) {
+      const fences = await this.db
+        .select()
+        .from(geofences)
+        .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
+
+      if (fences.length > 0) {
+        locationVerified = fences.some(
+          (f) =>
+            haversineMeters(body.location!.lat, body.location!.lng, Number(f.lat), Number(f.lng)) <=
+            f.radiusMeters,
+        );
+      }
+    }
 
     await this.db.transaction(async (tx) => {
       const result = await tx
@@ -49,8 +100,10 @@ export class AttendanceService {
         const lastCheckOut = new Date(existing.checkOut);
         const cooldownDiff = new Date().getTime() - lastCheckOut.getTime();
         const diffMinutes = cooldownDiff / (1000 * 60);
-        if (diffMinutes < 2) {
-          throw new BadRequestException("Please wait 2 minutes before clocking in again.");
+        if (diffMinutes < policy.minReclockInMinutes) {
+          throw new BadRequestException(
+            `Please wait ${policy.minReclockInMinutes} minute${policy.minReclockInMinutes !== 1 ? "s" : ""} before clocking in again.`,
+          );
         }
 
         const now = new Date();
@@ -71,6 +124,7 @@ export class AttendanceService {
             checkOut: null,
             breaks: newBreaks,
             breakHours: newBreakHours.toFixed(2),
+            locationVerified,
           })
           .where(eq(attendance.id, existing.id));
 
@@ -84,14 +138,29 @@ export class AttendanceService {
         checkIn: new Date(),
         status: "PRESENT",
         locationData: body.location ?? null,
+        locationVerified,
       });
     });
+
+    const checkInTime = new Date();
+    const checkInMinutes = checkInTime.getHours() * 60 + checkInTime.getMinutes();
+    const lateThreshold = shiftInfo.shiftStartMinutes + shiftInfo.graceMinutes;
+
+    if (checkInMinutes > lateThreshold) {
+      const minutesLate = checkInMinutes - shiftInfo.shiftStartMinutes;
+      this.automations
+        .emit(orgId, "attendance.late", { employeeId: userId, minutesLate, attendanceStatus: "late" })
+        .catch(() => undefined);
+    }
 
     return { success: true };
   }
 
   async checkOut(orgId: string, userId: string, localDate?: string) {
     const today = localDate ?? getTodayString();
+
+    const overtimeRules = await this.policyService.getOvertimeRules(orgId, userId, today);
+    const dailyThresholdHours = overtimeRules.dailyThresholdMinutes / 60;
 
     await this.db.transaction(async (tx) => {
       const result = await tx
@@ -146,7 +215,7 @@ export class AttendanceService {
       }
 
       const totalDailyWork = previousWorkHours + sessionWorkHours;
-      const isOvertime = totalDailyWork > 8;
+      const isOvertime = totalDailyWork > dailyThresholdHours;
 
       await tx
         .update(attendance)
@@ -256,11 +325,13 @@ export class AttendanceService {
 
     let cooldownRemaining = 0;
     if (status === "CHECKED_OUT" && todayLog?.checkOut) {
+      const policy = await this.policyService.getAttendanceRules(orgId, userId, today);
       const lastCheckOut = new Date(todayLog.checkOut);
       const diffMs = now.getTime() - lastCheckOut.getTime();
       const diffMinutes = diffMs / (1000 * 60);
-      if (diffMinutes < 2) {
-        cooldownRemaining = Math.ceil((2 * 60 * 1000 - diffMs) / 1000);
+      const cooldownMs = policy.minReclockInMinutes * 60 * 1000;
+      if (diffMinutes < policy.minReclockInMinutes) {
+        cooldownRemaining = Math.ceil((cooldownMs - diffMs) / 1000);
       }
     }
 

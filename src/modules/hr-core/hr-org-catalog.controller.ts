@@ -123,6 +123,16 @@ export class HrOrgCatalogController {
     return this.catalog.updateJobRole(u.orgId, id, body);
   }
 
+  @Delete("roles/:id")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  deleteJobRole(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.catalog.deleteJobRole(u.orgId, id);
+  }
+
   @Get("levels")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:read")
@@ -152,6 +162,16 @@ export class HrOrgCatalogController {
     return this.catalog.updateJobLevel(u.orgId, id, body);
   }
 
+  @Delete("levels/:id")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  deleteJobLevel(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.catalog.deleteJobLevel(u.orgId, id);
+  }
+
   @Get("teams")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:read")
@@ -168,5 +188,36 @@ export class HrOrgCatalogController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.createTeam(u.orgId, body);
+  }
+
+  @Patch("teams/:id")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  updateTeam(
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.catalog.updateTeam(u.orgId, id, body);
+  }
+
+  @Delete("teams/:id")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  deleteTeam(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.catalog.deleteTeam(u.orgId, id);
+  }
+
+  @Get("headcount")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:read")
+  getHeadcount(
+    @Query("groupBy") groupBy: string = "department",
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.catalog.getHeadcount(u.orgId, groupBy);
   }
 }

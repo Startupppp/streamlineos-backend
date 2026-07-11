@@ -1,11 +1,13 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   hrJobRoles,
   hrJobLevels,
   hrLocations,
   hrTeams,
 } from "../../db/schema/hr/core-org";
+import { hrEmployments } from "../../db/schema/hr/core-people";
+import { departments } from "../../db/schema/hr/employees";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 
@@ -176,5 +178,115 @@ export class HrOrgCatalogService {
       }
       throw err;
     }
+  }
+
+  async deleteJobRole(orgId: string, id: number) {
+    const [row] = await this.db
+      .update(hrJobRoles)
+      .set({ isActive: false })
+      .where(and(eq(hrJobRoles.id, id), eq(hrJobRoles.orgId, orgId)))
+      .returning({ id: hrJobRoles.id });
+    if (!row) throw new NotFoundException("Job role not found");
+    return { success: true };
+  }
+
+  async deleteJobLevel(orgId: string, id: number) {
+    const [row] = await this.db
+      .update(hrJobLevels)
+      .set({ isActive: false })
+      .where(and(eq(hrJobLevels.id, id), eq(hrJobLevels.orgId, orgId)))
+      .returning({ id: hrJobLevels.id });
+    if (!row) throw new NotFoundException("Job level not found");
+    return { success: true };
+  }
+
+  async updateTeam(orgId: string, id: number, input: Partial<CatalogInput>) {
+    const [row] = await this.db
+      .update(hrTeams)
+      .set({
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.code !== undefined && { code: input.code }),
+        ...(input.description !== undefined && { description: input.description }),
+      })
+      .where(and(eq(hrTeams.id, id), eq(hrTeams.orgId, orgId), isNull(hrTeams.deletedAt)))
+      .returning();
+    if (!row) throw new NotFoundException("Team not found");
+    return row;
+  }
+
+  async deleteTeam(orgId: string, id: number) {
+    const [row] = await this.db
+      .update(hrTeams)
+      .set({ deletedAt: sql`now()`, isActive: false })
+      .where(and(eq(hrTeams.id, id), eq(hrTeams.orgId, orgId)))
+      .returning({ id: hrTeams.id });
+    if (!row) throw new NotFoundException("Team not found");
+    return { success: true };
+  }
+
+  async getHeadcount(orgId: string, groupBy: string) {
+    const activeStatuses = ["ACTIVE", "PROBATION", "CONFIRMED", "NOTICE"] as const;
+
+    if (groupBy === "department") {
+      const rows = await this.db
+        .select({
+          groupId: hrEmployments.departmentId,
+          groupName: departments.name,
+          headcount: count(hrEmployments.id),
+        })
+        .from(hrEmployments)
+        .leftJoin(departments, eq(hrEmployments.departmentId, departments.id))
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .groupBy(hrEmployments.departmentId, departments.name);
+      return rows;
+    }
+
+    if (groupBy === "location") {
+      const rows = await this.db
+        .select({
+          groupId: hrEmployments.locationId,
+          groupName: hrLocations.name,
+          headcount: count(hrEmployments.id),
+        })
+        .from(hrEmployments)
+        .leftJoin(hrLocations, eq(hrEmployments.locationId, hrLocations.id))
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .groupBy(hrEmployments.locationId, hrLocations.name);
+      return rows;
+    }
+
+    if (groupBy === "role") {
+      const rows = await this.db
+        .select({
+          groupId: hrEmployments.jobRoleId,
+          groupName: hrJobRoles.name,
+          headcount: count(hrEmployments.id),
+        })
+        .from(hrEmployments)
+        .leftJoin(hrJobRoles, eq(hrEmployments.jobRoleId, hrJobRoles.id))
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .groupBy(hrEmployments.jobRoleId, hrJobRoles.name);
+      return rows;
+    }
+
+    throw new BadRequestException("groupBy must be one of: department, location, role");
   }
 }

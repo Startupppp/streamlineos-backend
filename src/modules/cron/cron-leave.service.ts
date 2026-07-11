@@ -1,18 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
-import { leaveBalances, leaveRequests, leaveTypes, organizationMembers } from "../../db/schema";
+import {
+  leaveBalances,
+  leaveRequests,
+  leaveTypes,
+  organizationMembers,
+  leavePolicies,
+  hrLeaveLedger,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { DEFAULT_LEAVE_TYPES, LEAVE_POLICY, resolveInitialBalance } from "./cron-leave-policy";
-
-interface LeaveType {
-  id: number;
-  name: string;
-  daysPerYear: number;
-}
 
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function buildPeriodLabel(year: number, month: number): string {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
 @Injectable()
@@ -23,56 +27,64 @@ export class CronLeaveService {
     monthlyExpiry: { expiredCount: number };
     yearlyReset: { resetCount: number } | null;
   }> {
-    const isJanuary = new Date().getMonth() === 0;
-    const monthlyExpiry = await this.expireUnusedMonthlyCasualLeaves();
-    const yearlyReset = isJanuary ? await this.resetYearlyLeaveBalances() : null;
-    return { monthlyExpiry, yearlyReset };
-  }
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
 
-  private async ensureLeaveTypes(orgId: string): Promise<LeaveType[]> {
-    const existing = await this.db.query.leaveTypes.findMany({
-      where: eq(leaveTypes.orgId, orgId),
-      columns: { id: true, name: true, daysPerYear: true },
-    });
+    const monthlyExpiry = await this.expireUnusedMonthlyLeaves();
 
-    const existingNames = new Set(existing.map((t) => t.name));
-    for (const t of DEFAULT_LEAVE_TYPES) {
-      if (!existingNames.has(t.name)) {
-        await this.db.insert(leaveTypes).values({
-          orgId,
-          name: t.name,
-          daysPerYear: t.daysPerYear,
-          carryForward: t.carryForward,
-        });
+    const orgIds = (
+      await this.db.selectDistinct({ orgId: leaveTypes.orgId }).from(leaveTypes)
+    ).map((r) => r.orgId);
+
+    let yearlyReset: { resetCount: number } | null = null;
+    let totalResetCount = 0;
+    for (const orgId of orgIds) {
+      const yearStartMonth = await this.resolveLeaveYearStartMonth(orgId);
+      if (yearStartMonth === currentMonth) {
+        const result = await this.resetYearlyLeaveBalances(orgId, now.getFullYear());
+        totalResetCount += result.resetCount;
+        yearlyReset = { resetCount: totalResetCount };
       }
     }
 
-    return this.db.query.leaveTypes.findMany({
-      where: eq(leaveTypes.orgId, orgId),
-      columns: { id: true, name: true, daysPerYear: true },
-    });
+    return { monthlyExpiry, yearlyReset };
   }
 
-  private async expireUnusedMonthlyCasualLeaves(): Promise<{ expiredCount: number }> {
+  private async resolveLeaveYearStartMonth(orgId: string): Promise<number> {
+    const orgPolicy = await this.db.query.leavePolicies.findFirst({
+      where: and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true)),
+      columns: { accrualType: true },
+    });
+    if (!orgPolicy) return 1;
+    return 1;
+  }
+
+  private async expireUnusedMonthlyLeaves(): Promise<{ expiredCount: number }> {
     const now = new Date();
     const currentYear = now.getFullYear();
-    const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+    const prevMonthIdx = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
     const prevMonthYear = now.getMonth() === 0 ? currentYear - 1 : currentYear;
-    const monthStartStr = toDateStr(new Date(prevMonthYear, prevMonth, 1));
-    const monthEndStr = toDateStr(new Date(prevMonthYear, prevMonth + 1, 0));
+    const monthStartStr = toDateStr(new Date(prevMonthYear, prevMonthIdx, 1));
+    const monthEndStr = toDateStr(new Date(prevMonthYear, prevMonthIdx + 1, 0));
+    const periodLabel = buildPeriodLabel(prevMonthYear, prevMonthIdx);
 
-    const casualTypes = await this.db.query.leaveTypes.findMany({
-      where: eq(leaveTypes.name, LEAVE_POLICY.CASUAL.name),
-      columns: { id: true, orgId: true },
-    });
-    if (casualTypes.length === 0) return { expiredCount: 0 };
+    const monthlyPolicies = await this.db
+      .select({
+        leaveTypeId: leavePolicies.leaveTypeId,
+        accrualRate: leavePolicies.accrualRate,
+        orgId: leavePolicies.orgId,
+      })
+      .from(leavePolicies)
+      .where(and(eq(leavePolicies.accrualType, "MONTHLY"), eq(leavePolicies.isActive, true)));
 
-    const orgCasualMap = new Map(casualTypes.map((ct) => [ct.orgId, ct]));
-    const casualTypeIds = casualTypes.map((ct) => ct.id);
+    if (monthlyPolicies.length === 0) return { expiredCount: 0 };
+
+    const monthlyLeaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
+    const policyByTypeId = new Map(monthlyPolicies.map((p) => [p.leaveTypeId, p]));
 
     const positiveBalances = await this.db.query.leaveBalances.findMany({
       where: and(
-        inArray(leaveBalances.leaveTypeId, casualTypeIds),
+        inArray(leaveBalances.leaveTypeId, monthlyLeaveTypeIds),
         eq(leaveBalances.year, prevMonthYear),
         gt(leaveBalances.balance, "0"),
       ),
@@ -81,14 +93,11 @@ export class CronLeaveService {
     if (positiveBalances.length === 0) return { expiredCount: 0 };
 
     const usedLeaveResults = await this.db
-      .select({
-        userId: leaveRequests.userId,
-        leaveTypeId: leaveRequests.leaveTypeId,
-      })
+      .select({ userId: leaveRequests.userId, leaveTypeId: leaveRequests.leaveTypeId })
       .from(leaveRequests)
       .where(
         and(
-          inArray(leaveRequests.leaveTypeId, casualTypeIds),
+          inArray(leaveRequests.leaveTypeId, monthlyLeaveTypeIds),
           eq(leaveRequests.status, "APPROVED"),
           gte(leaveRequests.startDate, monthStartStr),
           lte(leaveRequests.endDate, monthEndStr),
@@ -100,66 +109,149 @@ export class CronLeaveService {
 
     let expiredCount = 0;
     for (const bal of positiveBalances) {
-      const casualType = orgCasualMap.get(bal.orgId);
-      if (!casualType || bal.leaveTypeId !== casualType.id) continue;
+      if (usedSet.has(`${bal.userId}:${bal.leaveTypeId}`)) continue;
 
-      if (!usedSet.has(`${bal.userId}:${bal.leaveTypeId}`)) {
-        const newBalance = Math.max(0, Number(bal.balance) - LEAVE_POLICY.CASUAL.perMonth);
-        await this.db
+      const policy = policyByTypeId.get(bal.leaveTypeId);
+      if (!policy || policy.orgId !== bal.orgId) continue;
+
+      const expiryAmount = Number(policy.accrualRate ?? 1);
+      const newBalance = Math.max(0, Number(bal.balance) - expiryAmount);
+      const deducted = Number(bal.balance) - newBalance;
+      if (deducted <= 0) continue;
+
+      await this.db.transaction(async (tx) => {
+        await tx
           .update(leaveBalances)
           .set({ balance: newBalance.toString() })
           .where(eq(leaveBalances.id, bal.id));
-        expiredCount++;
-      }
+
+        await tx.insert(hrLeaveLedger).values({
+          orgId: bal.orgId,
+          userId: bal.userId,
+          leaveTypeId: bal.leaveTypeId,
+          txnType: "expiry",
+          days: String(deducted),
+          effectiveDate: monthEndStr,
+          period: periodLabel,
+          source: "cron",
+          note: "Monthly leave expiry",
+          payrollStatus: "pending",
+        });
+      });
+
+      expiredCount++;
     }
 
     return { expiredCount };
   }
 
-  private async resetYearlyLeaveBalances(): Promise<{ resetCount: number }> {
-    const newYear = new Date().getFullYear();
-    const orgs = await this.db.selectDistinct({ orgId: leaveTypes.orgId }).from(leaveTypes);
+  private async resetYearlyLeaveBalances(
+    orgId: string,
+    newYear: number,
+  ): Promise<{ resetCount: number }> {
+    const types = await this.db.query.leaveTypes.findMany({
+      where: eq(leaveTypes.orgId, orgId),
+      columns: { id: true, name: true, daysPerYear: true, carryForward: true },
+    });
 
-    let resetCount = 0;
-    for (const { orgId } of orgs) {
-      const types = await this.ensureLeaveTypes(orgId);
-      const members = await this.db.query.organizationMembers.findMany({
-        where: eq(organizationMembers.orgId, orgId),
-        columns: { userId: true },
-        with: { user: { columns: { id: true, joiningDate: true, isActive: true } } },
-      });
+    const members = await this.db.query.organizationMembers.findMany({
+      where: eq(organizationMembers.orgId, orgId),
+      columns: { userId: true },
+      with: { user: { columns: { id: true, joiningDate: true, isActive: true } } },
+    });
 
-      const activeMembers = members.filter((m) => m.user?.isActive);
-      if (activeMembers.length === 0 || types.length === 0) continue;
+    const activeMembers = members.filter((m) => m.user?.isActive);
+    if (activeMembers.length === 0 || types.length === 0) return { resetCount: 0 };
 
-      const existingBalances = await this.db.query.leaveBalances.findMany({
-        where: and(eq(leaveBalances.orgId, orgId), eq(leaveBalances.year, newYear)),
-        columns: { userId: true, leaveTypeId: true },
-      });
-      const existingSet = new Set(existingBalances.map((b) => `${b.userId}:${b.leaveTypeId}`));
+    const prevYear = newYear - 1;
+    const prevYearBalances = await this.db.query.leaveBalances.findMany({
+      where: and(eq(leaveBalances.orgId, orgId), eq(leaveBalances.year, prevYear)),
+      columns: { userId: true, leaveTypeId: true, balance: true },
+    });
+    const prevBalMap = new Map<string, number>();
+    for (const b of prevYearBalances) {
+      prevBalMap.set(`${b.userId}:${b.leaveTypeId}`, Number(b.balance));
+    }
 
-      const toInsert: (typeof leaveBalances.$inferInsert)[] = [];
-      for (const member of activeMembers) {
-        const joiningDate = member.user?.joiningDate ? new Date(member.user.joiningDate) : new Date();
-        for (const type of types) {
-          if (existingSet.has(`${member.userId}:${type.id}`)) continue;
-          const balance = resolveInitialBalance(type.name, type.daysPerYear, joiningDate, newYear);
-          toInsert.push({
+    const existingNewYear = await this.db.query.leaveBalances.findMany({
+      where: and(eq(leaveBalances.orgId, orgId), eq(leaveBalances.year, newYear)),
+      columns: { userId: true, leaveTypeId: true },
+    });
+    const existingSet = new Set(existingNewYear.map((b) => `${b.userId}:${b.leaveTypeId}`));
+
+    const toInsertBalances: (typeof leaveBalances.$inferInsert)[] = [];
+    const ledgerEntries: (typeof hrLeaveLedger.$inferInsert)[] = [];
+    const yearStartDate = `${newYear}-01-01`;
+
+    for (const member of activeMembers) {
+      const joiningDate = member.user?.joiningDate ? new Date(member.user.joiningDate) : new Date();
+      for (const type of types) {
+        if (existingSet.has(`${member.userId}:${type.id}`)) continue;
+
+        const proratedBalance = this.calculateInitialBalance(type.daysPerYear, joiningDate, newYear);
+        let carryForwardDays = 0;
+        if (type.carryForward) {
+          carryForwardDays = prevBalMap.get(`${member.userId}:${type.id}`) ?? 0;
+        }
+        const totalBalance = proratedBalance + carryForwardDays;
+
+        toInsertBalances.push({
+          orgId,
+          userId: member.userId,
+          leaveTypeId: type.id,
+          year: newYear,
+          balance: totalBalance.toString(),
+        });
+
+        ledgerEntries.push({
+          orgId,
+          userId: member.userId,
+          leaveTypeId: type.id,
+          txnType: "accrual",
+          days: String(proratedBalance),
+          effectiveDate: yearStartDate,
+          period: String(newYear),
+          source: "cron",
+          note: "Yearly leave reset accrual",
+          payrollStatus: "pending",
+        });
+
+        if (carryForwardDays > 0) {
+          ledgerEntries.push({
             orgId,
             userId: member.userId,
             leaveTypeId: type.id,
-            year: newYear,
-            balance: balance.toString(),
+            txnType: "carry_forward",
+            days: String(carryForwardDays),
+            effectiveDate: yearStartDate,
+            period: String(newYear),
+            source: "cron",
+            note: `Carry forward from ${prevYear}`,
+            payrollStatus: "pending",
           });
         }
       }
+    }
 
-      if (toInsert.length > 0) {
-        await this.db.insert(leaveBalances).values(toInsert).onConflictDoNothing();
-        resetCount += toInsert.length;
-      }
+    let resetCount = 0;
+    if (toInsertBalances.length > 0) {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(leaveBalances).values(toInsertBalances).onConflictDoNothing();
+        if (ledgerEntries.length > 0) {
+          await tx.insert(hrLeaveLedger).values(ledgerEntries);
+        }
+      });
+      resetCount = toInsertBalances.length;
     }
 
     return { resetCount };
+  }
+
+  private calculateInitialBalance(daysPerYear: number, joiningDate: Date, year: number): number {
+    const joinYear = joiningDate.getFullYear();
+    if (joinYear > year) return 0;
+    if (joinYear < year) return daysPerYear;
+    const monthsRemaining = 12 - joiningDate.getMonth();
+    return Math.round((daysPerYear / 12) * monthsRemaining * 10) / 10;
   }
 }

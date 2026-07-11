@@ -14,6 +14,7 @@ export interface PayslipPdfData {
   ifsc?: string;
   joiningDate?: string;
   monthLabel: string;
+  workingDays?: number;
   basicSalary: number;
   hra: number;
   allowances: number;
@@ -113,7 +114,7 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   drawRect(page, margin, y - 62, 52, 52, GOLD);
   drawText(page, "V", margin + 14, y - 42, bold, 28, WHITE);
 
-  const companyFullName = "StreamlineOS Advisors LLP";
+  const companyFullName = data.orgName;
   drawText(page, companyFullName, margin + 56, y - 20, bold, 14, WHITE);
   if (data.orgAddress) {
     drawText(page, data.orgAddress, margin + 56, y - 34, regular, 8, rgb(0.8, 0.85, 1));
@@ -178,7 +179,7 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   rowY2 = drawSectionHeader(col2X, rowY2, "PAYROLL INFORMATION");
   rowY2 = drawRow(col2X, rowY2, "Pay Period", data.monthLabel);
   rowY2 = drawRow(col2X, rowY2, "Payment Mode", "Bank Transfer");
-  rowY2 = drawRow(col2X, rowY2, "Working Days", "30");
+  rowY2 = drawRow(col2X, rowY2, "Working Days", String(data.workingDays ?? 30));
 
   y = Math.min(rowY, rowY2) - 10;
   drawLine(page, margin, y, pageW - margin, y);
@@ -279,7 +280,7 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   drawLine(page, col2X, authY, col2X + colW, authY);
   drawText(page, "Authorised Signatory", col2X + colW / 2 - 35, authY - 10, regular, 8, GRAY);
 
-  const footerText = `Generated ${formatGeneratedAt(new Date())}  ·  StreamlineOS Advisors LLP  ·  Confidential — For Employee Use Only`;
+  const footerText = `Generated ${formatGeneratedAt(new Date())}  ·  ${data.orgName}  ·  Confidential — For Employee Use Only`;
   const fw = regular.widthOfTextAtSize(footerText, 7.5);
   drawRect(page, 0, 0, pageW, 28, LIGHT_GRAY);
   drawText(page, footerText, pageW / 2 - fw / 2, 10, regular, 7.5, GRAY);
