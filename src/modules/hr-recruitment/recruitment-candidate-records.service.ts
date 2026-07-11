@@ -482,6 +482,32 @@ export class RecruitmentCandidateRecordsService {
     return doc;
   }
 
+  async deleteVaultDocument(orgId: string, candidateId: number, documentId: number) {
+    await this.ensureCandidate(orgId, candidateId);
+
+    const existing = await this.db.query.candidateDocumentsVault.findFirst({
+      where: and(
+        eq(candidateDocumentsVault.id, documentId),
+        eq(candidateDocumentsVault.candidateId, candidateId),
+        eq(candidateDocumentsVault.orgId, orgId),
+      ),
+      columns: { id: true },
+    });
+    if (!existing) throw new NotFoundException("Vault document not found");
+
+    await this.db
+      .delete(candidateDocumentsVault)
+      .where(
+        and(
+          eq(candidateDocumentsVault.id, documentId),
+          eq(candidateDocumentsVault.candidateId, candidateId),
+          eq(candidateDocumentsVault.orgId, orgId),
+        ),
+      );
+
+    return { success: true };
+  }
+
   async listVaultAccessLogs(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId, "Candidate not found");
 

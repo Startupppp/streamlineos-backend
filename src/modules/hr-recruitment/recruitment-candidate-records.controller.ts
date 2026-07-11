@@ -282,6 +282,20 @@ export class RecruitmentCandidateRecordsController {
     return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);
   }
 
+  @Delete("vault/:documentId")
+  @HttpCode(200)
+  async deleteVaultDocument(
+    @Param("candidateId", ParseIntPipe) candidateId: number,
+    @Param("documentId", ParseIntPipe) documentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
+    }
+    return this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
+  }
+
   @Get("vault/access-logs")
   async listVaultAccessLogs(
     @Param("candidateId", ParseIntPipe) candidateId: number,

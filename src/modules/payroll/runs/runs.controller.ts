@@ -26,10 +26,12 @@ import {
   listRunsQuerySchema,
   listRunEmployeesQuerySchema,
   setEmployeeHoldSchema,
+  addRunAdjustmentSchema,
   type CreateRunInput,
   type ListRunsQuery,
   type ListRunEmployeesQuery,
   type SetEmployeeHoldInput,
+  type AddRunAdjustmentInput,
 } from "./dto/runs.schemas";
 
 @Controller("payroll/runs")
@@ -139,6 +141,22 @@ export class RunsController {
     const result = await this.runsService.getRunEmployee(u.orgId, runId, runEmployeeId);
     if (!result) throw new NotFoundException("Employee record not found in this run");
     return result;
+  }
+
+  @Post(":runId/employees/:runEmployeeId/adjustments")
+  @RequirePermission("payroll:runs:manage")
+  async addAdjustment(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
+    @Body(new ZodValidationPipe(addRunAdjustmentSchema)) body: AddRunAdjustmentInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.runsService.addRunAdjustment(u.orgId, runId, runEmployeeId, body, u.userId);
+    if (!result.ok) {
+      if (result.reason === "locked") throw new BadRequestException("Cannot add an adjustment to a locked payroll run");
+      throw new NotFoundException("Employee record not found in this run");
+    }
+    return { ok: true };
   }
 
   @Post(":runId/employees/:runEmployeeId/hold")

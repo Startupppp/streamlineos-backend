@@ -54,6 +54,14 @@ export const setEmployeeHoldSchema = z.object({
 });
 export type SetEmployeeHoldInput = z.infer<typeof setEmployeeHoldSchema>;
 
+export const addRunAdjustmentSchema = z.object({
+  type: z.enum(["EARNING", "DEDUCTION"]),
+  name: z.string().min(1).max(100),
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, "Must be a positive decimal string"),
+  note: z.string().min(1).max(500),
+});
+export type AddRunAdjustmentInput = z.infer<typeof addRunAdjustmentSchema>;
+
 export const loanAdjustmentSchema = z.object({
   loanId: z.number().int().positive(),
   type: z.enum(["SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST"]),

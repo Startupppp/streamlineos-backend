@@ -14,7 +14,7 @@ import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import { buildRunChecklist } from "./lib/checklist";
-import type { ListRunsQuery, ListRunEmployeesQuery } from "./dto/runs.schemas";
+import type { ListRunsQuery, ListRunEmployeesQuery, AddRunAdjustmentInput } from "./dto/runs.schemas";
 import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, VarianceSummary } from "../payroll.types";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
@@ -59,6 +59,84 @@ export class RunsService {
       targetId: String(runEmployeeId),
       targetType: "payroll_run_employee",
       metadata: { runId, reason: reason ?? null },
+    });
+
+    return { ok: true };
+  }
+
+  async addRunAdjustment(
+    orgId: string,
+    runId: number,
+    runEmployeeId: number,
+    body: AddRunAdjustmentInput,
+    actorId: string,
+  ): Promise<{ ok: true } | { ok: false; reason: "not_found" | "locked" }> {
+    const runCheck = await this.db
+      .select({ id: payrollRuns.id, status: payrollRuns.status })
+      .from(payrollRuns)
+      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
+      .limit(1);
+
+    if (!runCheck[0]) return { ok: false, reason: "not_found" };
+    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) return { ok: false, reason: "locked" };
+
+    const empCheck = await this.db
+      .select({ id: payrollRunEmployees.id, gross: payrollRunEmployees.gross, totalDeductions: payrollRunEmployees.totalDeductions, net: payrollRunEmployees.net })
+      .from(payrollRunEmployees)
+      .where(and(
+        eq(payrollRunEmployees.id, runEmployeeId),
+        eq(payrollRunEmployees.runId, runId),
+        eq(payrollRunEmployees.orgId, orgId),
+      ))
+      .limit(1);
+
+    const emp = empCheck[0];
+    if (!emp) return { ok: false, reason: "not_found" };
+
+    const amountPaise = toPaise(body.amount);
+    const amountStr = fromPaise(amountPaise);
+    const isEarning = body.type === "EARNING";
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(payrollLineItems).values({
+        orgId,
+        runId,
+        runEmployeeId,
+        code: `ADJ-${body.type}`,
+        name: body.name,
+        category: body.type,
+        amount: amountStr,
+        calcMethod: "MANUAL",
+        calcExplain: { note: body.note },
+        taxable: false,
+        sortOrder: 999,
+      });
+
+      const currentGrossPaise = toPaise(emp.gross);
+      const currentDeductionsPaise = toPaise(emp.totalDeductions);
+      const currentNetPaise = toPaise(emp.net);
+
+      const newGrossPaise = isEarning ? currentGrossPaise + amountPaise : currentGrossPaise;
+      const newDeductionsPaise = isEarning ? currentDeductionsPaise : currentDeductionsPaise + amountPaise;
+      const newNetPaise = isEarning ? currentNetPaise + amountPaise : currentNetPaise - amountPaise;
+
+      await tx
+        .update(payrollRunEmployees)
+        .set({
+          gross: fromPaise(newGrossPaise),
+          totalDeductions: fromPaise(newDeductionsPaise),
+          net: fromPaise(newNetPaise),
+        })
+        .where(eq(payrollRunEmployees.id, runEmployeeId));
+    });
+
+    this.audit.log({
+      action: "payroll.adjustment_added",
+      userId: actorId,
+      orgId,
+      targetId: String(runEmployeeId),
+      targetType: "payroll_run_employee",
+      metadata: { runId, type: body.type, name: body.name, amount: amountStr, note: body.note },
     });
 
     return { ok: true };
