@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull, or, sql } from "drizzle-orm";
 import {
   hrJobRoles,
   hrJobLevels,
@@ -225,7 +225,12 @@ export class HrOrgCatalogService {
   }
 
   async getHeadcount(orgId: string, groupBy: string) {
-    const activeStatuses = ["ACTIVE", "PROBATION", "CONFIRMED", "NOTICE"] as const;
+    const activeStatusFilter = or(
+      eq(hrEmployments.lifecycleStatus, "ACTIVE"),
+      eq(hrEmployments.lifecycleStatus, "PROBATION"),
+      eq(hrEmployments.lifecycleStatus, "CONFIRMED"),
+      eq(hrEmployments.lifecycleStatus, "NOTICE"),
+    );
 
     if (groupBy === "department") {
       const rows = await this.db
@@ -239,7 +244,7 @@ export class HrOrgCatalogService {
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
-            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            activeStatusFilter,
             isNull(hrEmployments.deletedAt),
           ),
         )
@@ -259,7 +264,7 @@ export class HrOrgCatalogService {
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
-            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            activeStatusFilter,
             isNull(hrEmployments.deletedAt),
           ),
         )
@@ -279,7 +284,7 @@ export class HrOrgCatalogService {
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
-            inArray(hrEmployments.lifecycleStatus, activeStatuses),
+            activeStatusFilter,
             isNull(hrEmployments.deletedAt),
           ),
         )

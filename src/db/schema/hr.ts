@@ -8,6 +8,7 @@ export * from "./hr/workflow-engine";
 export * from "./hr/template-engine";
 export * from "./hr/attendance";
 export * from "./hr/leaves";
+export * from "./hr/leave-ledger";
 export * from "./hr/assets";
 export * from "./hr/payroll";
 export * from "./hr/recruitment";

@@ -6,9 +6,10 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, or } from "drizzle-orm";
 import {
   leaveBalances,
+  leaveBlackoutDates,
   leaveRequests,
   leaveTypes,
   organizationMembers,
@@ -25,14 +26,14 @@ import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { formatDateOnly } from "./date.helpers";
+import { LeaveLedgerService } from "./leave-ledger.service";
+import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 import type {
   ApproveLeaveInput,
   CreateLeaveInput,
   RejectLeaveInput,
   UpdateLeaveInput,
 } from "./dto/leaves.schemas";
-
-const UNPAID_LEAVE_NAME = "Unpaid Leave";
 
 interface LeaveRow {
   userId: string;
@@ -51,6 +52,8 @@ export class LeavesWriteService {
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly notifications: NotificationsService,
     private readonly access: AccessService,
+    private readonly ledger: LeaveLedgerService,
+    private readonly workflowEngine: HrWorkflowEngineService,
   ) {}
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {
@@ -72,28 +75,53 @@ export class LeavesWriteService {
       }),
       this.db.query.leaveTypes.findFirst({
         where: and(eq(leaveTypes.id, body.leaveTypeId), eq(leaveTypes.orgId, u.orgId)),
-        columns: { name: true },
+        columns: { name: true, daysPerYear: true },
       }),
     ]);
 
-    const isUnpaid = leaveType?.name === UNPAID_LEAVE_NAME;
+    const isUnpaid = (leaveType?.daysPerYear ?? 1) === 0;
     if (!isUnpaid && balance && Number(balance.balance) < requestedDays) {
       throw new BadRequestException(
         `Insufficient leave balance. Available: ${balance.balance}, Required: ${requestedDays}`,
       );
     }
 
-    const overlapping = await this.db.query.leaveRequests.findFirst({
-      where: and(
-        eq(leaveRequests.userId, u.userId),
-        eq(leaveRequests.orgId, u.orgId),
-        lte(leaveRequests.startDate, formatDateOnly(new Date(body.endDate))),
-        gte(leaveRequests.startDate, formatDateOnly(new Date(body.startDate))),
-      ),
-    });
+    const startStr = formatDateOnly(new Date(body.startDate));
+    const endStr = formatDateOnly(new Date(body.endDate));
+
+    const [overlapping, blackout] = await Promise.all([
+      this.db.query.leaveRequests.findFirst({
+        where: and(
+          eq(leaveRequests.userId, u.userId),
+          eq(leaveRequests.orgId, u.orgId),
+          lte(leaveRequests.startDate, endStr),
+          gte(leaveRequests.endDate, startStr),
+        ),
+      }),
+      this.db.query.leaveBlackoutDates.findFirst({
+        where: and(
+          eq(leaveBlackoutDates.orgId, u.orgId),
+          lte(leaveBlackoutDates.startDate, endStr),
+          gte(leaveBlackoutDates.endDate, startStr),
+          or(
+            eq(leaveBlackoutDates.appliesTo, "ALL"),
+            eq(leaveBlackoutDates.appliesTo, u.userId),
+          ),
+        ),
+      }),
+    ]);
+
     if (overlapping && overlapping.status !== "REJECTED") {
       throw new BadRequestException("You already have a leave request for overlapping dates.");
     }
+
+    if (blackout) {
+      throw new BadRequestException(
+        `Leave cannot be requested during blackout period: ${blackout.reason}`,
+      );
+    }
+
+    const teamConflicts = await this.detectTeamConflicts(u.orgId, u.userId, startStr, endStr);
 
     const [leaveRequest] = await this.db
       .insert(leaveRequests)
@@ -101,8 +129,8 @@ export class LeavesWriteService {
         orgId: u.orgId,
         userId: u.userId,
         leaveTypeId: body.leaveTypeId,
-        startDate: formatDateOnly(new Date(body.startDate)),
-        endDate: formatDateOnly(new Date(body.endDate)),
+        startDate: startStr,
+        endDate: endStr,
         reason: body.reason,
         priority: body.priority,
         approverId: body.approverId ?? null,
@@ -117,6 +145,7 @@ export class LeavesWriteService {
       throw new InternalServerErrorException("Failed to create leave request.");
     }
 
+    void this.startLeaveWorkflow(u, leaveRequest.id, body.approverId);
     void this.dispatchLeaveRequested(
       u,
       leaveRequest.id,
@@ -125,7 +154,13 @@ export class LeavesWriteService {
       requestedDays,
     );
 
-    return { success: true };
+    return {
+      success: true,
+      conflictWarning:
+        teamConflicts.length > 0
+          ? `${teamConflicts.length} team member(s) are also on leave during this period.`
+          : undefined,
+    };
   }
 
   async cancel(u: CurrentUserContext, leaveId: number) {
@@ -189,23 +224,13 @@ export class LeavesWriteService {
         .where(eq(leaveRequests.id, leaveId));
 
       if (body.status === "PENDING" && existing.status === "APPROVED" && existing.leaveTypeId) {
-        const leaveType = await tx.query.leaveTypes.findFirst({
+        const leaveTypeRow = await tx.query.leaveTypes.findFirst({
           where: eq(leaveTypes.id, existing.leaveTypeId),
-          columns: { name: true },
+          columns: { daysPerYear: true },
         });
 
-        if (leaveType?.name !== UNPAID_LEAVE_NAME) {
-          const start = new Date(existing.startDate);
-          const end = new Date(existing.endDate);
-          let diffDays = existing.isHalfDay ? 0.5 : 0;
-          if (!existing.isHalfDay) {
-            const cursor = new Date(start);
-            while (cursor <= end) {
-              const day = cursor.getDay();
-              if (day !== 0 && day !== 6) diffDays++;
-              cursor.setDate(cursor.getDate() + 1);
-            }
-          }
+        if ((leaveTypeRow?.daysPerYear ?? 1) !== 0) {
+          const diffDays = existing.isHalfDay ? 0.5 : this.countWorkdays(existing.startDate, existing.endDate);
 
           const balanceRecord = await tx.query.leaveBalances.findFirst({
             where: and(
@@ -228,6 +253,22 @@ export class LeavesWriteService {
               .update(leaveRequests)
               .set({ lopDays: "0" })
               .where(eq(leaveRequests.id, leaveId));
+
+            await this.ledger.write(
+              {
+                orgId: u.orgId,
+                userId: existing.userId,
+                leaveTypeId: existing.leaveTypeId,
+                txnType: "reversal",
+                days: paidDays,
+                effectiveDate: existing.startDate,
+                source: "request",
+                sourceId: String(leaveId),
+                note: "Status reverted to pending — balance restored",
+                createdBy: u.userId,
+              },
+              tx,
+            );
           }
         }
       }
@@ -274,11 +315,13 @@ export class LeavesWriteService {
 
       if (!existing.leaveTypeId) return;
 
-      const leaveType = await tx.query.leaveTypes.findFirst({
+      const leaveTypeRow = await tx.query.leaveTypes.findFirst({
         where: eq(leaveTypes.id, existing.leaveTypeId),
-        columns: { name: true },
+        columns: { daysPerYear: true },
       });
-      if (leaveType?.name === UNPAID_LEAVE_NAME) return;
+
+      const isUnpaid = (leaveTypeRow?.daysPerYear ?? 1) === 0;
+      if (isUnpaid) return;
 
       const diffDays = this.countLeaveDays(existing.startDate, existing.endDate, existing.isHalfDay);
 
@@ -306,6 +349,24 @@ export class LeavesWriteService {
         .update(leaveBalances)
         .set({ balance: newBal.toString() })
         .where(eq(leaveBalances.id, balanceRecord.id));
+
+      if (paidDays > 0) {
+        await this.ledger.write(
+          {
+            orgId: u.orgId,
+            userId: existing.userId,
+            leaveTypeId: existing.leaveTypeId,
+            txnType: "consumption",
+            days: paidDays,
+            effectiveDate: existing.startDate,
+            source: "request",
+            sourceId: String(leaveId),
+            note: comment ?? undefined,
+            createdBy: u.userId,
+          },
+          tx,
+        );
+      }
     });
 
     const lopNote =
@@ -393,17 +454,76 @@ export class LeavesWriteService {
     return { success: true };
   }
 
-  private countLeaveDays(startDate: string, endDate: string, isHalfDay: boolean): number {
-    if (isHalfDay) return 0.5;
-    let diffDays = 0;
+  private countWorkdays(startDate: string, endDate: string): number {
+    let count = 0;
     const cursor = new Date(startDate);
     const end = new Date(endDate);
     while (cursor <= end) {
       const day = cursor.getDay();
-      if (day !== 0 && day !== 6) diffDays++;
+      if (day !== 0 && day !== 6) count++;
       cursor.setDate(cursor.getDate() + 1);
     }
-    return diffDays;
+    return count;
+  }
+
+  private countLeaveDays(startDate: string, endDate: string, isHalfDay: boolean): number {
+    if (isHalfDay) return 0.5;
+    return this.countWorkdays(startDate, endDate);
+  }
+
+  private async detectTeamConflicts(
+    orgId: string,
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<string[]> {
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { reportingTo: true },
+    });
+
+    const sameMgrUsers = user?.reportingTo
+      ? await this.db.query.users.findMany({
+          where: eq(users.reportingTo, user.reportingTo),
+          columns: { id: true },
+        })
+      : [];
+
+    const peerIds = sameMgrUsers.map((u) => u.id).filter((id) => id !== userId);
+    if (peerIds.length === 0) return [];
+
+    const conflicts = await this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "APPROVED"),
+        inArray(leaveRequests.userId, peerIds),
+        lte(leaveRequests.startDate, endDate),
+        gte(leaveRequests.endDate, startDate),
+      ),
+      columns: { userId: true },
+      limit: 10,
+    });
+
+    return [...new Set(conflicts.map((c) => c.userId))];
+  }
+
+  private async startLeaveWorkflow(
+    u: CurrentUserContext,
+    leaveRequestId: number,
+    approverId?: string | null,
+  ): Promise<void> {
+    try {
+      await this.workflowEngine.startWorkflow({
+        orgId: u.orgId,
+        objectType: "leave_request",
+        objectId: String(leaveRequestId),
+        requestedByUserId: u.userId,
+        subjectEmployeeId: u.userId,
+        context: { leaveRequestId, approverId },
+      });
+    } catch {
+      return;
+    }
   }
 
   private async dispatchLeaveRequested(

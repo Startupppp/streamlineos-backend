@@ -65,9 +65,6 @@ function toWords(n: number): string {
   return helper(Math.floor(n)) + " Rupees Only";
 }
 
-function fmt(v: number): string {
-  return "Rs " + v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function drawRect(page: PDFPage, x: number, y: number, w: number, h: number, color: ReturnType<typeof rgb>): void {
   page.drawRectangle({ x, y, width: w, height: h, color });
@@ -101,6 +98,9 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const oblique = await doc.embedFont(StandardFonts.HelveticaOblique);
+
+  const fmt = (v: number) =>
+    "Rs " + v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const { height } = page.getSize();
   const margin = 40;

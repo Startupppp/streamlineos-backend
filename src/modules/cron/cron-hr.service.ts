@@ -5,16 +5,20 @@ import { certifications, documents, onboardingTasks, users } from "../../db/sche
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { EmailService } from "../email/email.service";
 import { getDocumentExpiryReminderEmailTemplate } from "../email/templates/hr";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
+
+const DEFAULT_LOCALE = "en-IN";
 
 @Injectable()
 export class CronHrService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
+    private readonly hrAutomation: HrAutomationEngineService,
     private readonly email: EmailService,
   ) {}
 
@@ -118,6 +122,14 @@ export class CronHrService {
         completedAt: now.toISOString(),
       });
 
+      await this.hrAutomation.emit(stats.orgId, "employee.onboarded", {
+        userId: employee.id,
+        employeeName: employee.name ?? "",
+        employeeEmail: employee.email ?? "",
+        totalTasks: stats.total,
+        completedAt: now.toISOString(),
+      });
+
       await this.db
         .update(users)
         .set({ onboardingCompletedAt: now })
@@ -169,10 +181,20 @@ export class CronHrService {
         (new Date(doc.expiryDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      const expiryLabel = new Date(`${doc.expiryDate}T12:00:00Z`).toLocaleDateString("en-IN", {
+      const expiryLabel = new Date(`${doc.expiryDate}T12:00:00Z`).toLocaleDateString(DEFAULT_LOCALE, {
         day: "numeric",
         month: "long",
         year: "numeric",
+      });
+
+      await this.hrAutomation.emit(doc.orgId, "document.expiring", {
+        documentId: doc.id,
+        userId: doc.userId,
+        employeeName: doc.userName ?? "",
+        documentName: doc.name,
+        documentType: doc.type ?? "Document",
+        expiryDate: doc.expiryDate,
+        daysUntilExpiry: daysRemaining,
       });
 
       const html = getDocumentExpiryReminderEmailTemplate(

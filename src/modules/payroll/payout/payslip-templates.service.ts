@@ -212,7 +212,7 @@ export class PayslipTemplatesService {
         ifsc: "HDFC0001234",
         pan: "ABCDE1234F",
       },
-      org: { name: "StreamlineOS Advisors LLP", address: "Bengaluru, Karnataka, India" },
+      org: { name: "Your Organization", address: "" },
       workerType: "EMPLOYEE",
       month: new Date().toISOString().slice(0, 7),
       layout: data.layout,

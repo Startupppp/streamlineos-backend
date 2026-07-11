@@ -2,8 +2,13 @@ import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
+import { HrPoliciesModule } from "../hr-policies/hr-policies.module";
+import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
 import { LeaveCalendarController, LeavesController } from "./leaves.controller";
 import { AttendanceController } from "./attendance.controller";
+import { AttendanceRegularizationController } from "./attendance-regularization.controller";
+import { AttendanceSummaryController } from "./attendance-summary.controller";
 import { WfhController } from "./wfh.controller";
 import { WorkLogsController } from "./work-logs.controller";
 import { ShiftsController } from "./shifts.controller";
@@ -17,6 +22,9 @@ import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesPageService } from "./leaves-page.service";
 import { AttendanceService } from "./attendance.service";
+import { AttendancePolicyService } from "./attendance-policy.service";
+import { AttendanceRegularizationService } from "./attendance-regularization.service";
+import { AttendanceSummaryService } from "./attendance-summary.service";
 import { WfhService } from "./wfh.service";
 import { WorkLogsService } from "./work-logs.service";
 import { ShiftsService } from "./shifts.service";
@@ -27,11 +35,13 @@ import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
 
 @Module({
-  imports: [AutomationModule, WebhooksModule, NotificationsModule],
+  imports: [AutomationModule, WebhooksModule, NotificationsModule, HrAutomationsModule, HrPoliciesModule, HrWorkflowsModule],
   controllers: [
     LeavesController,
     LeaveCalendarController,
     AttendanceController,
+    AttendanceRegularizationController,
+    AttendanceSummaryController,
     WfhController,
     WorkLogsController,
     ShiftsController,
@@ -47,6 +57,9 @@ import { LeavePoliciesService } from "./leave-policies.service";
     LeavesWriteService,
     LeavesPageService,
     AttendanceService,
+    AttendancePolicyService,
+    AttendanceRegularizationService,
+    AttendanceSummaryService,
     WfhService,
     WorkLogsService,
     ShiftsService,
@@ -56,5 +69,6 @@ import { LeavePoliciesService } from "./leave-policies.service";
     BiometricService,
     LeavePoliciesService,
   ],
+  exports: [AttendancePolicyService, AttendanceSummaryService],
 })
 export class HrTimeModule {}

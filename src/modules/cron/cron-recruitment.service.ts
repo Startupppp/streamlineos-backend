@@ -125,7 +125,7 @@ export class CronRecruitmentService {
     if (!offer.email) return false;
 
     const candidateName = `${offer.firstName} ${offer.lastName}`.trim();
-    const orgName = offer.orgName ?? "StreamlineOS";
+    const orgName = offer.orgName ?? "";
     const { subject, html } = getOfferDeadlineReminderEmail({
       candidateName,
       orgName,
@@ -209,7 +209,7 @@ export class CronRecruitmentService {
 
   private async sendNoShowEmail(interview: DueInterview, candidateName: string): Promise<void> {
     if (!interview.email) return;
-    const orgName = interview.orgName ?? "StreamlineOS";
+    const orgName = interview.orgName ?? "";
     const { subject, html } = getInterviewNoShowRescheduleEmail(candidateName, orgName);
     try {
       await this.email.sendEmail({ to: interview.email, subject, html });

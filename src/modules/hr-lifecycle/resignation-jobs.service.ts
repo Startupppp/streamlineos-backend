@@ -6,6 +6,15 @@ import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
+import { HR_NOTIFY_ROLES, CEO_ROLES } from "./hr-role-constants";
+import {
+  resignationSubmittedTitle,
+  resignationSubmittedMessage,
+  resignationHrApprovedTitle,
+  resignationHrApprovedMessage,
+  resignationCeoApprovedMessage,
+  resignationCeoRejectedMessage,
+} from "./hr-notification-texts";
 
 type ResignationNotificationType = "INFO" | "SUCCESS" | "WARNING" | "ERROR";
 
@@ -16,8 +25,6 @@ interface ResignationNotification {
 }
 
 const EXIT_LINK = "/hr/exit";
-const ADMIN_ROLES = ["CEO", "HR"];
-const CEO_ROLES = ["CEO"];
 
 @Injectable()
 export class ResignationJobsService {
@@ -30,11 +37,11 @@ export class ResignationJobsService {
   notifyResignationSubmitted(orgId: string, employeeId: string): void {
     this.run("resignation.submitted", async () => {
       const employeeName = await this.resolveEmployeeName(employeeId);
-      const recipientIds = await this.findOrgUserIdsByRoles(orgId, ADMIN_ROLES, employeeId);
+      const recipientIds = await this.findOrgUserIdsByRoles(orgId, [...HR_NOTIFY_ROLES], employeeId);
       await this.fanOut(orgId, recipientIds, {
         type: "INFO",
-        title: "New Resignation Submitted",
-        message: `${employeeName} has submitted a resignation request.`,
+        title: resignationSubmittedTitle(),
+        message: resignationSubmittedMessage(employeeName),
       });
       this.audit.log({
         action: "hr.resignation.submitted.notified",
@@ -49,11 +56,11 @@ export class ResignationJobsService {
   notifyHrApproved(orgId: string, employeeId: string): void {
     this.run("resignation.hr_approved", async () => {
       const employeeName = await this.resolveEmployeeName(employeeId);
-      const recipientIds = await this.findOrgUserIdsByRoles(orgId, CEO_ROLES, null);
+      const recipientIds = await this.findOrgUserIdsByRoles(orgId, [...CEO_ROLES], null);
       await this.fanOut(orgId, recipientIds, {
         type: "INFO",
-        title: "Resignation Awaiting Your Approval",
-        message: `${employeeName}'s resignation has been approved by HR and needs your final approval.`,
+        title: resignationHrApprovedTitle(),
+        message: resignationHrApprovedMessage(employeeName),
       });
     });
   }
@@ -63,9 +70,7 @@ export class ResignationJobsService {
       await this.fanOut(orgId, [employeeId], {
         type: approved ? "SUCCESS" : "WARNING",
         title: approved ? "Resignation Approved" : "Resignation Rejected",
-        message: approved
-          ? "Your resignation has been approved. Please ensure a smooth handover."
-          : "Your resignation request has been reviewed and rejected by the CEO.",
+        message: approved ? resignationCeoApprovedMessage() : resignationCeoRejectedMessage(),
       });
       this.audit.log({
         action: approved ? "hr.resignation.ceo_approved.notified" : "hr.resignation.ceo_rejected.notified",

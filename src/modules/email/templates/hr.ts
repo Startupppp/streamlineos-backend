@@ -137,17 +137,17 @@ export function getTerminationEmailTemplate(
   hrContactEmail: string
 ): string {
   const content = `<p class="email-text">Hi ${escapeHtml(employeeName)},</p>
-<p class="email-text">This notice confirms that your employment with StreamlineOS has been terminated, effective the date below.</p>
+<p class="email-text">This notice confirms that your employment has been terminated, effective the date below.</p>
 ${renderKeyValueRows([
   { label: "Designation", value: employeeDesignation },
   { label: "Effective date", value: terminationDate },
   { label: "Authorised by", value: terminatedBy },
   { label: "Reason", value: reason },
 ])}
-${renderCallout(`For questions regarding your final settlement or exit formalities, contact HR at <a href="mailto:${escapeHtml(hrContactEmail)}" style="color:inherit;text-decoration:underline;">${escapeHtml(hrContactEmail)}</a>.`, "info")}`;
+${hrContactEmail ? renderCallout(`For questions regarding your final settlement or exit formalities, contact HR at <a href="mailto:${escapeHtml(hrContactEmail)}" style="color:inherit;text-decoration:underline;">${escapeHtml(hrContactEmail)}</a>.`, "info") : renderCallout("For questions regarding your final settlement or exit formalities, please contact HR.", "info")}`;
   return getEmailTemplate({
     title: "Notice of employment termination",
-    preheader: `Your employment with StreamlineOS has been terminated, effective ${escapeHtml(terminationDate)}.`,
+    preheader: `Your employment has been terminated, effective ${escapeHtml(terminationDate)}.`,
     content,
   });
 }

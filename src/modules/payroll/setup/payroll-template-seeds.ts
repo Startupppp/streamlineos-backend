@@ -3,6 +3,8 @@ import { DEFAULT_PAYROLL_TOGGLES, PAYROLL_TEMPLATE_KEYS } from "../payroll.types
 
 type PayrollTemplateKey = (typeof PAYROLL_TEMPLATE_KEYS)[number];
 
+export const OT_MULTIPLIER_DEFAULT = "1.50";
+
 const COUNTRY_STANDARD_TOGGLES = {
   ...DEFAULT_PAYROLL_TOGGLES,
   pf: false,
@@ -641,7 +643,7 @@ export const PAYROLL_TEMPLATE_SEEDS: PayrollTemplateSeed[] = [
         name: "Overtime Pay",
         type: "EARNING",
         calcMethod: "FORMULA",
-        formula: "(basic / days_in_month / 8) * overtime_hours * 1.50",
+        formula: `(basic / days_in_month / 8) * overtime_hours * ${OT_MULTIPLIER_DEFAULT}`,
         taxable: true,
         showOnPayslip: true,
         includeInCtc: false,
@@ -767,7 +769,7 @@ export const PAYROLL_TEMPLATE_SEEDS: PayrollTemplateSeed[] = [
         name: "Overtime Pay",
         type: "EARNING",
         calcMethod: "FORMULA",
-        formula: "(basic / days_in_month / 8) * overtime_hours * 1.50",
+        formula: `(basic / days_in_month / 8) * overtime_hours * ${OT_MULTIPLIER_DEFAULT}`,
         taxable: true,
         showOnPayslip: true,
         includeInCtc: false,

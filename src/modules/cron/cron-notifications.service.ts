@@ -4,6 +4,7 @@ import { notifications, organizationMembers, organizations, users } from "../../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { birthdaySubject, birthdayMessage } from "../hr-lifecycle/hr-notification-texts";
 
 interface BroadcastInput {
   type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
@@ -64,14 +65,11 @@ export class CronNotificationsService {
         .where(eq(organizationMembers.userId, birthdayUser.id));
 
       for (const membership of memberships) {
-        const subject = `Happy Birthday, ${displayName}!`;
-        const message = `Today is ${displayName}'s birthday! Wish them a wonderful day!`;
-
         try {
           await this.notifyAllMembers(membership.orgId, {
             type: "INFO",
-            title: subject,
-            message,
+            title: birthdaySubject(displayName ?? ""),
+            message: birthdayMessage(displayName ?? ""),
             metadata: {
               category: "birthday",
               birthdayUserId: birthdayUser.id,

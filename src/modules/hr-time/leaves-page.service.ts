@@ -10,61 +10,15 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 
-const CASUAL_LEAVE_NAME = "Casual Leave";
-const SICK_LEAVE_NAME = "Sick Leave";
-const UNPAID_LEAVE_NAME = "Unpaid Leave";
-const CASUAL_DAYS_PER_YEAR = 12;
-const SICK_DAYS_PER_YEAR = 6;
 const ROLE_CEO = "CEO";
 const ROLE_HR = "HR";
-
-const ALLOWED_LEAVE_TYPE_NAMES: ReadonlySet<string> = new Set([
-  CASUAL_LEAVE_NAME,
-  SICK_LEAVE_NAME,
-  UNPAID_LEAVE_NAME,
-]);
-
-const DEFAULT_LEAVE_TYPES = [
-  { name: CASUAL_LEAVE_NAME, daysPerYear: CASUAL_DAYS_PER_YEAR, carryForward: false },
-  { name: SICK_LEAVE_NAME, daysPerYear: SICK_DAYS_PER_YEAR, carryForward: false },
-  { name: UNPAID_LEAVE_NAME, daysPerYear: 0, carryForward: false },
-] as const;
-
-function calculateProratedCasualLeaves(joiningDate: Date, year: number): number {
-  const joinYear = joiningDate.getFullYear();
-  if (joinYear > year) return 0;
-  if (joinYear < year) return CASUAL_DAYS_PER_YEAR;
-  return CASUAL_DAYS_PER_YEAR - joiningDate.getMonth();
-}
-
-function resolveInitialBalance(
-  typeName: string,
-  daysPerYear: number,
-  joiningDate: Date,
-  year: number,
-): number {
-  switch (typeName) {
-    case CASUAL_LEAVE_NAME:
-      return calculateProratedCasualLeaves(joiningDate, year);
-    case SICK_LEAVE_NAME:
-      return SICK_DAYS_PER_YEAR;
-    case UNPAID_LEAVE_NAME:
-      return 0;
-    default:
-      return daysPerYear;
-  }
-}
 
 @Injectable()
 export class LeavesPageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async pageData(orgId: string, userId: string) {
-    const seededTypes = await this.ensureLeaveTypes(orgId);
-    const allowedSeeded = seededTypes
-      .filter((t) => ALLOWED_LEAVE_TYPE_NAMES.has(t.name))
-      .map((t) => ({ id: t.id, name: t.name, daysPerYear: t.daysPerYear }));
-    await this.ensureUserBalances(orgId, userId, allowedSeeded);
+    await this.ensureUserBalances(orgId, userId);
 
     const year = new Date().getFullYear();
 
@@ -106,12 +60,10 @@ export class LeavesPageService {
       }),
     ]);
 
-    const seenNames = new Set<string>();
+    const seenTypeIds = new Set<number>();
     const balances = rawBalances.filter((b) => {
-      if (!b.typeName || !ALLOWED_LEAVE_TYPE_NAMES.has(b.typeName) || seenNames.has(b.typeName)) {
-        return false;
-      }
-      seenNames.add(b.typeName);
+      if (b.leaveTypeId === null || seenTypeIds.has(b.leaveTypeId)) return false;
+      seenTypeIds.add(b.leaveTypeId);
       return true;
     });
 
@@ -133,39 +85,13 @@ export class LeavesPageService {
     };
   }
 
-  private async ensureLeaveTypes(orgId: string) {
-    const existing = await this.db.query.leaveTypes.findMany({
-      where: eq(leaveTypes.orgId, orgId),
-    });
-    const existingNames = new Set(existing.map((t) => t.name));
-    const missing = DEFAULT_LEAVE_TYPES.filter((t) => !existingNames.has(t.name));
-
-    if (missing.length === 0) return existing;
-
-    await this.db
-      .insert(leaveTypes)
-      .values(
-        missing.map((t) => ({
-          orgId,
-          name: t.name,
-          daysPerYear: t.daysPerYear,
-          carryForward: t.carryForward,
-        })),
-      )
-      .onConflictDoNothing();
-
-    return this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) });
-  }
-
-  private async ensureUserBalances(
-    orgId: string,
-    userId: string,
-    types: { id: number; name: string; daysPerYear: number }[],
-  ) {
-    if (types.length === 0) return;
-
+  private async ensureUserBalances(orgId: string, userId: string) {
     const year = new Date().getFullYear();
-    const [existing, user] = await Promise.all([
+    const [orgTypes, existing, user] = await Promise.all([
+      this.db.query.leaveTypes.findMany({
+        where: eq(leaveTypes.orgId, orgId),
+        columns: { id: true, daysPerYear: true },
+      }),
       this.db.query.leaveBalances.findMany({
         where: and(
           eq(leaveBalances.userId, userId),
@@ -180,22 +106,32 @@ export class LeavesPageService {
       }),
     ]);
 
+    if (orgTypes.length === 0) return;
+
     const existingTypeIds = new Set(existing.map((b) => b.leaveTypeId));
     const joiningDate = user?.joiningDate ? new Date(user.joiningDate) : new Date();
 
-    const toInsert = types
+    const toInsert = orgTypes
       .filter((t) => !existingTypeIds.has(t.id))
       .map((t) => ({
         orgId,
         userId,
         leaveTypeId: t.id,
         year,
-        balance: resolveInitialBalance(t.name, t.daysPerYear, joiningDate, year).toString(),
+        balance: this.calculateInitialBalance(t.daysPerYear, joiningDate, year).toString(),
       }));
 
     if (toInsert.length === 0) return;
-
     await this.db.insert(leaveBalances).values(toInsert).onConflictDoNothing();
+  }
+
+  private calculateInitialBalance(daysPerYear: number, joiningDate: Date, year: number): number {
+    if (daysPerYear === 0) return 0;
+    const joinYear = joiningDate.getFullYear();
+    if (joinYear > year) return 0;
+    if (joinYear < year) return daysPerYear;
+    const monthsRemaining = 12 - joiningDate.getMonth();
+    return Math.round((daysPerYear / 12) * monthsRemaining * 10) / 10;
   }
 
   private async resolveApprovers(orgId: string, userId: string, role: string | null) {
@@ -231,6 +167,6 @@ export class LeavesPageService {
     return approverMembers
       .filter((m) => m.userId !== userId)
       .map((m) => m.user)
-      .filter((user): user is NonNullable<typeof user> => user !== null);
+      .filter((u): u is NonNullable<typeof u> => u !== null);
   }
 }

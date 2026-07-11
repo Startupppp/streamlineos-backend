@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Optional,
 } from "@nestjs/common";
 import { and, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
@@ -21,8 +22,11 @@ import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CompOffInput } from "./dto/leaves.schemas";
 import { resolveLeavesViewScope } from "./leaves-scope";
+import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
+import { LeaveLedgerService } from "./leave-ledger.service";
 
-const COMP_OFF_LEAVE_NAME = "Compensatory Off";
+const COMP_OFF_LEAVE_TYPE_NAME = "Compensatory Off";
+const DEFAULT_COMP_OFF_MAX_ACCRUAL = 30;
 const TEAM_LEAVES_CAP = 500;
 
 const TEAM_RELATIONS = {
@@ -54,6 +58,8 @@ export class LeavesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    @Optional() private readonly policyEval: HrPolicyEvaluationService,
+    @Optional() private readonly ledger: LeaveLedgerService,
   ) {}
 
   balance(orgId: string, userId: string) {
@@ -201,15 +207,9 @@ export class LeavesService {
         .select({
           department: departments.name,
           total: count(leaveRequests.id),
-          approved: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'APPROVED' THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-          pending: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'PENDING' THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-          rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
+          approved: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'APPROVED' THEN 1 ELSE 0 END)`.mapWith(Number),
+          pending: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'PENDING' THEN 1 ELSE 0 END)`.mapWith(Number),
+          rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(Number),
         })
         .from(leaveRequests)
         .innerJoin(departmentMembers, eq(departmentMembers.userId, leaveRequests.userId))
@@ -323,7 +323,9 @@ export class LeavesService {
       )
       .limit(500);
 
-    const leaveTypeIds = [...new Set(rows.map((r) => r.leaveTypeId).filter((id): id is number => id !== null))];
+    const leaveTypeIds = [
+      ...new Set(rows.map((r) => r.leaveTypeId).filter((id): id is number => id !== null)),
+    ];
     let leaveTypeMap = new Map<number, string>();
     if (leaveTypeIds.length > 0) {
       const types = await this.db
@@ -346,12 +348,57 @@ export class LeavesService {
     }));
   }
 
+  async teamAvailability(orgId: string, startDate: string, endDate: string) {
+    const rows = await this.db
+      .select({
+        userId: leaveRequests.userId,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        leaveTypeId: leaveRequests.leaveTypeId,
+        userName: users.name,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userImage: users.image,
+      })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(
+        and(
+          eq(leaveRequests.orgId, orgId),
+          eq(leaveRequests.status, "APPROVED"),
+          lte(leaveRequests.startDate, endDate),
+          gte(leaveRequests.endDate, startDate),
+        ),
+      )
+      .limit(200);
+
+    return rows.map((r) => ({
+      userId: r.userId,
+      displayName:
+        (r.userName ?? [r.userFirstName, r.userLastName].filter(Boolean).join(" ")) || "Unknown",
+      userImage: r.userImage,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      leaveTypeId: r.leaveTypeId,
+    }));
+  }
+
+  async leaveSummary(orgId: string, periodStart: string, periodEnd: string) {
+    if (!this.ledger) return [];
+    return this.ledger.buildLeaveSummary(orgId, periodStart, periodEnd);
+  }
+
   async compOff(u: CurrentUserContext, input: CompOffInput) {
     const scope = await resolveLeavesViewScope(this.access, u);
     if (scope === "none") throw new ForbiddenException("Not authorized to grant comp-off");
 
+    const maxAccrual = await this.resolveCompOffMaxAccrual(u.orgId, input.userId);
+
     let compOffType = await this.db.query.leaveTypes.findFirst({
-      where: and(eq(leaveTypes.orgId, u.orgId), eq(leaveTypes.name, COMP_OFF_LEAVE_NAME)),
+      where: and(
+        eq(leaveTypes.orgId, u.orgId),
+        eq(leaveTypes.name, COMP_OFF_LEAVE_TYPE_NAME),
+      ),
     });
 
     if (!compOffType) {
@@ -359,8 +406,8 @@ export class LeavesService {
         .insert(leaveTypes)
         .values({
           orgId: u.orgId,
-          name: COMP_OFF_LEAVE_NAME,
-          daysPerYear: 30,
+          name: COMP_OFF_LEAVE_TYPE_NAME,
+          daysPerYear: maxAccrual,
           carryForward: false,
         })
         .returning();
@@ -379,22 +426,60 @@ export class LeavesService {
       ),
     });
 
-    if (existing) {
-      const newBalance = Number(existing.balance ?? 0) + input.days;
-      await this.db
-        .update(leaveBalances)
-        .set({ balance: String(newBalance) })
-        .where(eq(leaveBalances.id, existing.id));
-    } else {
-      await this.db.insert(leaveBalances).values({
-        orgId: u.orgId,
-        userId: input.userId,
-        leaveTypeId: compOffType.id,
-        balance: String(input.days),
-        year: new Date().getFullYear(),
-      });
-    }
+    await this.db.transaction(async (tx) => {
+      if (existing) {
+        const newBalance = Number(existing.balance ?? 0) + input.days;
+        await tx
+          .update(leaveBalances)
+          .set({ balance: String(newBalance) })
+          .where(eq(leaveBalances.id, existing.id));
+      } else {
+        await tx.insert(leaveBalances).values({
+          orgId: u.orgId,
+          userId: input.userId,
+          leaveTypeId: compOffType!.id,
+          balance: String(input.days),
+          year: new Date().getFullYear(),
+        });
+      }
+
+      if (this.ledger) {
+        await this.ledger.write(
+          {
+            orgId: u.orgId,
+            userId: input.userId,
+            leaveTypeId: compOffType!.id,
+            txnType: "comp_off_earn",
+            days: input.days,
+            effectiveDate: new Date().toISOString().slice(0, 10),
+            source: "manual",
+            note: "Comp-off granted by manager",
+            createdBy: u.userId,
+          },
+          tx,
+        );
+      }
+    });
 
     return { success: true, credited: input.days, leaveTypeId: compOffType.id };
+  }
+
+  private async resolveCompOffMaxAccrual(orgId: string, userId: string): Promise<number> {
+    if (!this.policyEval) return DEFAULT_COMP_OFF_MAX_ACCRUAL;
+    try {
+      const result = await this.policyEval.evaluatePolicy(
+        orgId,
+        userId,
+        "comp_off",
+        new Date().toISOString().slice(0, 10),
+      );
+      if (!result) return DEFAULT_COMP_OFF_MAX_ACCRUAL;
+      const rules = result.rules as Record<string, unknown>;
+      const maxAccrual =
+        typeof rules["maxAccrual"] === "number" ? rules["maxAccrual"] : null;
+      return maxAccrual ?? DEFAULT_COMP_OFF_MAX_ACCRUAL;
+    } catch {
+      return DEFAULT_COMP_OFF_MAX_ACCRUAL;
+    }
   }
 }

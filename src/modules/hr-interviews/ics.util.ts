@@ -14,6 +14,7 @@ export interface InterviewIcsInput {
   interviewerName: string | null;
   interviewerEmail: string | null;
   orgName: string;
+  organizerEmail?: string | null;
 }
 
 function formatIcsDate(date: Date): string {
@@ -44,11 +45,13 @@ function foldLine(line: string): string {
   return chunks.join("\r\n");
 }
 
+const FALLBACK_ORGANIZER_EMAIL = process.env["NOREPLY_EMAIL"] ?? "noreply@mail.local";
+
 export function buildInterviewIcs(input: InterviewIcsInput): { ics: string; fileName: string } {
   const dtStart = formatIcsDate(input.scheduledAt);
   const dtEnd = formatIcsDate(addMinutes(input.scheduledAt, input.duration));
   const dtstamp = formatIcsDate(new Date());
-  const uid = `interview-${input.interviewId}-${input.orgId}@streamlineos.app`;
+  const uid = `interview-${input.interviewId}-${input.orgId}@streamlineos`;
 
   const summary = escapeIcsText(`Interview: ${input.candidateName} — ${input.type}`);
 
@@ -75,10 +78,12 @@ export function buildInterviewIcs(input: InterviewIcsInput): { ics: string; file
     );
   }
 
+  const organizerEmail = input.organizerEmail ?? FALLBACK_ORGANIZER_EMAIL;
+
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    `PRODID:-//${input.orgName}//StreamlineOS//EN`,
+    `PRODID:-//${input.orgName}//EN`,
     "CALSCALE:GREGORIAN",
     "METHOD:REQUEST",
     "BEGIN:VEVENT",
@@ -89,7 +94,7 @@ export function buildInterviewIcs(input: InterviewIcsInput): { ics: string; file
     `SUMMARY:${summary}`,
     `DESCRIPTION:${description}`,
     `LOCATION:${location}`,
-    `ORGANIZER;CN=${escapeIcsText(input.orgName)}:mailto:noreply@streamlineos.app`,
+    `ORGANIZER;CN=${escapeIcsText(input.orgName)}:mailto:${organizerEmail}`,
     ...attendeeLines,
     "STATUS:CONFIRMED",
     "TRANSP:OPAQUE",

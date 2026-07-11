@@ -1,37 +1,30 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
-import { attendance } from "../../db/schema";
+import { and, eq, isNull, ne } from "drizzle-orm";
+import { attendance, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
+import { AttendancePolicyService } from "../hr-time/attendance-policy.service";
 
-const AUTO_CHECKOUT_IST_HOUR = 19;
-const DEFAULT_AUTO_CHECKOUT_BREAK_HOURS = 1;
-const IST_OFFSET_MINUTES = 330;
-
-function istSevenPmUtcForDateStr(dateStr: string): Date {
-  const parts = dateStr.split("-");
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  const day = Number(parts[2]);
-  if (!year || !month || !day) {
-    throw new Error(`Invalid attendance date string: ${dateStr}`);
-  }
-  const istMinutesFromMidnight = AUTO_CHECKOUT_IST_HOUR * 60;
-  const utcMinutesFromMidnight = istMinutesFromMidnight - IST_OFFSET_MINUTES;
-  const utcHours = Math.floor(utcMinutesFromMidnight / 60);
-  const utcMinutes = utcMinutesFromMidnight % 60;
-  return new Date(Date.UTC(year, month - 1, day, utcHours, utcMinutes, 0, 0));
-}
+const DEFAULT_AUTO_CHECKOUT_TIME = "19:00";
+const DEFAULT_BREAK_HOURS_AUTO_CHECKOUT = 1;
+const FALLBACK_TZ_OFFSET_MINUTES = 0;
 
 @Injectable()
 export class CronAttendanceService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly automations: HrAutomationEngineService,
+    private readonly policyService: AttendancePolicyService,
+  ) {}
 
   async processAutoCheckout(): Promise<{ processed: number; message: string }> {
     const openRecords = await this.db.query.attendance.findMany({
       where: isNull(attendance.checkOut),
       columns: {
         id: true,
+        orgId: true,
+        userId: true,
         checkIn: true,
         autoCheckedOut: true,
         date: true,
@@ -50,10 +43,21 @@ export class CronAttendanceService {
     for (const record of openRecords) {
       if (!record.checkIn || record.autoCheckedOut || !record.date) continue;
 
-      const checkInTime = new Date(record.checkIn);
-      const checkOutTime = istSevenPmUtcForDateStr(record.date);
+      const policy = await this.policyService.getAttendanceRules(record.orgId, record.userId, record.date);
+      const autoCheckoutTime = policy.autoCheckoutTime ?? DEFAULT_AUTO_CHECKOUT_TIME;
+
+      const overtimeRules = await this.policyService.getOvertimeRules(record.orgId, record.userId, record.date);
+      const dailyThresholdHours = overtimeRules.dailyThresholdMinutes / 60;
+
+      const checkOutTime = this.policyService.parseAutoCheckoutTimeToUtc(
+        autoCheckoutTime,
+        record.date,
+        FALLBACK_TZ_OFFSET_MINUTES,
+      );
 
       if (checkOutTime.getTime() > now) continue;
+
+      const checkInTime = new Date(record.checkIn);
 
       if (checkInTime >= checkOutTime) {
         const result = await this.db
@@ -84,10 +88,10 @@ export class CronAttendanceService {
         }
       }
 
-      const effectiveBreakHours = Math.max(totalBreakHours, DEFAULT_AUTO_CHECKOUT_BREAK_HOURS);
+      const effectiveBreakHours = Math.max(totalBreakHours, DEFAULT_BREAK_HOURS_AUTO_CHECKOUT);
       const durationMs = checkOutTime.getTime() - checkInTime.getTime();
       const workHours = Math.max(0, durationMs / (1000 * 60 * 60) - effectiveBreakHours);
-      const isOvertime = workHours > 8;
+      const isOvertime = workHours > dailyThresholdHours;
 
       const result = await this.db
         .update(attendance)
@@ -103,7 +107,12 @@ export class CronAttendanceService {
         .where(and(eq(attendance.id, record.id), isNull(attendance.checkOut)))
         .returning({ id: attendance.id });
 
-      if (result.length > 0) processed++;
+      if (result.length > 0) {
+        processed++;
+        this.automations
+          .emit(record.orgId, "attendance.missed_punch", { employeeId: record.userId, date: record.date })
+          .catch(() => undefined);
+      }
     }
 
     return {

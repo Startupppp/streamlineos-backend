@@ -13,9 +13,12 @@ import {
   onboardingTasks,
   organizationMembers,
   passwordResetTokens,
+  payrollPolicies,
+  payrollPolicyVersions,
   salaryStructures,
   users,
 } from "../../db/schema";
+import { resolvePayrollDefaults } from "../hr-payroll/lib/payroll-defaults";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -308,6 +311,23 @@ export class EmployeeMutationsService {
     return { success: true };
   }
 
+  private async resolveOrgPayrollDefaults(orgId: string) {
+    try {
+      const policy = await this.db.query.payrollPolicies.findFirst({
+        where: eq(payrollPolicies.orgId, orgId),
+        columns: { activeVersionId: true },
+      });
+      if (!policy?.activeVersionId) return resolvePayrollDefaults(null);
+      const version = await this.db.query.payrollPolicyVersions.findFirst({
+        where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+        columns: { config: true },
+      });
+      return resolvePayrollDefaults(version?.config ?? null);
+    } catch {
+      return resolvePayrollDefaults(null);
+    }
+  }
+
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const existing = await this.db.query.users.findFirst({
       where: eq(users.email, body.email.toLowerCase()),
@@ -319,6 +339,7 @@ export class EmployeeMutationsService {
     const userId = randomUUID();
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
     const role = body.role || "ENGINEERING";
+    const payrollDefaults = await this.resolveOrgPayrollDefaults(actor.orgId);
 
     const newUser = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -355,13 +376,13 @@ export class EmployeeMutationsService {
       await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: created.id, role });
 
       if (body.monthlySalary && body.monthlySalary > 0) {
-        const basicSalary = body.monthlySalary * 0.5;
-        const specialAllowance = body.monthlySalary * 0.25;
+        const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
+        const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
         await tx.insert(salaryStructures).values({
           orgId: actor.orgId,
           userId: created.id,
           basicSalary: basicSalary.toString(),
-          hraPercentage: "50",
+          hraPercentage: String(payrollDefaults.defaultHraPercent),
           allowances: specialAllowance.toString(),
           deductions: "0",
           effectiveFrom: body.joiningDate

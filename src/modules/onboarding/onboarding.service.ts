@@ -16,6 +16,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import { getOnboardingReminderEmailTemplate } from "../email/templates/notifications-misc";
@@ -29,6 +30,7 @@ import type {
 } from "./dto/onboarding.schemas";
 import { encrypt, encryptBankDetails } from "./crypto.helpers";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
+import { HR_NOTIFY_ROLES } from "../hr-lifecycle/hr-role-constants";
 
 type DefaultTask = {
   title: string;
@@ -72,6 +74,7 @@ export class OnboardingService {
     private readonly email: EmailService,
     private readonly access: AccessService,
     private readonly automation: AutomationService,
+    private readonly hrAutomation: HrAutomationEngineService,
     private readonly sessions: OnboardingSessionService,
   ) {}
 
@@ -250,7 +253,8 @@ export class OnboardingService {
       );
     }
 
-    const assignableRoles = ownerRoles.filter((r) => r === "HR" || r === "MANAGER");
+    const ASSIGNABLE_TASK_ROLES = ["HR", "MANAGER"] as const;
+    const assignableRoles = ownerRoles.filter((r): r is (typeof ASSIGNABLE_TASK_ROLES)[number] => (ASSIGNABLE_TASK_ROLES as readonly string[]).includes(r));
     if (assignableRoles.length === 0) return;
 
     const tasksByRole = new Map<string, number>();

@@ -143,6 +143,34 @@ export class LeavesController {
     if (!result.ok) throw new NotFoundException("Leave request not found.");
     return { success: true };
   }
+
+  @Get("team-availability")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:leaves:read")
+  teamAvailability(
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException("startDate and endDate are required");
+    }
+    return this.leaves.teamAvailability(u.orgId, startDate, endDate);
+  }
+
+  @Get("summary")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:leaves:read")
+  summary(
+    @Query("periodStart") periodStart: string,
+    @Query("periodEnd") periodEnd: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!periodStart || !periodEnd) {
+      throw new BadRequestException("periodStart and periodEnd are required");
+    }
+    return this.leaves.leaveSummary(u.orgId, periodStart, periodEnd);
+  }
 }
 
 @Controller("hr/leave-calendar")

@@ -17,6 +17,7 @@ export const attendance = pgTable("attendance", {
   locationData: jsonb("location_data").$type<{ lat?: number; lng?: number; address?: string }>(),
   isOvertime: boolean("is_overtime").default(false).notNull(),
   autoCheckedOut: boolean("auto_checked_out").default(false).notNull(),
+  locationVerified: boolean("location_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_attendance_user_date").on(table.userId, table.date),

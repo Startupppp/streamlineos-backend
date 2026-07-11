@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
+  organizations,
   users,
   departments,
   departmentMembers,
@@ -14,8 +15,8 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 
-const LATE_CHECKIN_HOUR = 9;
-const LATE_CHECKIN_MINUTE = 30;
+const FALLBACK_LATE_CHECKIN_HOUR = 9;
+const FALLBACK_LATE_CHECKIN_MINUTE = 30;
 
 function getWorkingDaysSoFar(year: number, month: number): number {
   const today = new Date();
@@ -140,6 +141,8 @@ export class HrDashboardReportsService {
 
     const workingDaysSoFar = getWorkingDaysSoFar(year, month);
 
+    const lateThresholdMinutes = await this.resolveLateThresholdMinutes(orgId, monthStart);
+
     const [activeMembers, monthlyAttendance, lateArrivals, wfhApproved, overtimeRecords, deptAttendance] =
       await Promise.all([
         this.db
@@ -168,7 +171,7 @@ export class HrDashboardReportsService {
               eq(attendance.orgId, orgId),
               gte(attendance.date, monthStart),
               lte(attendance.date, monthEnd),
-              sql`EXTRACT(HOUR FROM ${attendance.checkIn}) * 60 + EXTRACT(MINUTE FROM ${attendance.checkIn}) > ${LATE_CHECKIN_HOUR * 60 + LATE_CHECKIN_MINUTE}`,
+              sql`EXTRACT(HOUR FROM ${attendance.checkIn}) * 60 + EXTRACT(MINUTE FROM ${attendance.checkIn}) > ${lateThresholdMinutes}`,
             ),
           ),
 
@@ -236,6 +239,43 @@ export class HrDashboardReportsService {
         expectedCount: workingDaysSoFar,
       })),
     };
+  }
+
+  private async resolveLateThresholdMinutes(orgId: string, referenceDate: string): Promise<number> {
+    const orgShiftRow = await this.db
+      .select({
+        startTime: sql<string>`
+          (SELECT st.start_time FROM shift_templates st
+           INNER JOIN employee_shift_assignments esa ON esa.shift_id = st.id
+           INNER JOIN organization_members om ON om.user_id = esa.user_id AND om.org_id = ${orgId}
+           WHERE esa.org_id = ${orgId} AND esa.is_active = true AND esa.effective_from <= ${referenceDate}
+           AND (esa.effective_to IS NULL OR esa.effective_to >= ${referenceDate})
+           AND st.is_active = true
+           LIMIT 1)
+        `,
+        graceMinutes: sql<number>`
+          (SELECT st.grace_period_minutes FROM shift_templates st
+           INNER JOIN employee_shift_assignments esa ON esa.shift_id = st.id
+           INNER JOIN organization_members om ON om.user_id = esa.user_id AND om.org_id = ${orgId}
+           WHERE esa.org_id = ${orgId} AND esa.is_active = true AND esa.effective_from <= ${referenceDate}
+           AND (esa.effective_to IS NULL OR esa.effective_to >= ${referenceDate})
+           AND st.is_active = true
+           LIMIT 1)
+        `,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const row = orgShiftRow[0];
+    if (row?.startTime) {
+      const [hStr, mStr] = row.startTime.split(":");
+      const startMinutes = Number(hStr) * 60 + Number(mStr);
+      const grace = Number(row.graceMinutes ?? 15);
+      return startMinutes + grace;
+    }
+
+    return FALLBACK_LATE_CHECKIN_HOUR * 60 + FALLBACK_LATE_CHECKIN_MINUTE;
   }
 
   exportRows(orgId: string) {

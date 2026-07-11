@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { leavePolicies, leaveTypes } from "../../db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { hrPolicies, leavePolicies, leaveTypes } from "../../db/schema";
+import { and, desc, eq, isNull, lte, gte, or } from "drizzle-orm";
 
 export interface LeavePolicySummary {
   wfhMonthlyQuota: number;
@@ -13,15 +13,6 @@ export interface LeavePolicySummary {
     expiresMonthly: boolean;
   }>;
 }
-
-const DEFAULT_SUMMARY: LeavePolicySummary = {
-  wfhMonthlyQuota: 4,
-  leaveTypes: [
-    { name: "Casual Leave", daysPerYear: 12, carryForward: false, expiresMonthly: true },
-    { name: "Sick Leave", daysPerYear: 6, carryForward: false, expiresMonthly: false },
-    { name: "Unpaid Leave", daysPerYear: 0, carryForward: false, expiresMonthly: false },
-  ],
-};
 
 export interface CreateLeavePolicyInput {
   leaveTypeId: number;
@@ -42,23 +33,39 @@ export interface CreateLeavePolicyInput {
 
 export type UpdateLeavePolicyInput = Partial<CreateLeavePolicyInput>;
 
+const DEFAULT_WFH_MONTHLY_QUOTA = 4;
+
 @Injectable()
 export class LeavePoliciesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async getOrgSummary(orgId: string): Promise<LeavePolicySummary> {
-    const [types, policies] = await Promise.all([
+    const [types, policies, wfhQuota] = await Promise.all([
       this.db
-        .select({ id: leaveTypes.id, name: leaveTypes.name, daysPerYear: leaveTypes.daysPerYear, carryForward: leaveTypes.carryForward })
+        .select({
+          id: leaveTypes.id,
+          name: leaveTypes.name,
+          daysPerYear: leaveTypes.daysPerYear,
+          carryForward: leaveTypes.carryForward,
+        })
         .from(leaveTypes)
         .where(eq(leaveTypes.orgId, orgId)),
       this.db
-        .select({ leaveTypeId: leavePolicies.leaveTypeId, accrualType: leavePolicies.accrualType })
+        .select({
+          leaveTypeId: leavePolicies.leaveTypeId,
+          accrualType: leavePolicies.accrualType,
+        })
         .from(leavePolicies)
         .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
+      this.resolveOrgWfhQuota(orgId),
     ]);
 
-    if (types.length === 0) return DEFAULT_SUMMARY;
+    if (types.length === 0) {
+      return {
+        wfhMonthlyQuota: wfhQuota,
+        leaveTypes: [],
+      };
+    }
 
     const policyMap = new Map<number, string>();
     for (const p of policies) {
@@ -66,7 +73,7 @@ export class LeavePoliciesService {
     }
 
     return {
-      wfhMonthlyQuota: DEFAULT_SUMMARY.wfhMonthlyQuota,
+      wfhMonthlyQuota: wfhQuota,
       leaveTypes: types.map((t) => ({
         name: t.name,
         daysPerYear: t.daysPerYear,
@@ -124,5 +131,28 @@ export class LeavePoliciesService {
       .update(leavePolicies)
       .set({ isActive: false })
       .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));
+  }
+
+  private async resolveOrgWfhQuota(orgId: string): Promise<number> {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const policyRow = await this.db.query.hrPolicies.findFirst({
+        where: and(
+          eq(hrPolicies.orgId, orgId),
+          eq(hrPolicies.policyType, "wfh"),
+          eq(hrPolicies.status, "active"),
+          isNull(hrPolicies.deletedAt),
+          lte(hrPolicies.effectiveFrom, today),
+          or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, today)),
+        ),
+        columns: { rules: true },
+      });
+      if (!policyRow) return DEFAULT_WFH_MONTHLY_QUOTA;
+      const rules = policyRow.rules as Record<string, unknown>;
+      const quota = typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
+      return quota ?? DEFAULT_WFH_MONTHLY_QUOTA;
+    } catch {
+      return DEFAULT_WFH_MONTHLY_QUOTA;
+    }
   }
 }
