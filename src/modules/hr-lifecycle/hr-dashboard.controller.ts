@@ -10,7 +10,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/dashboard")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrDashboardController {
   constructor(
     private readonly dashboard: HrDashboardService,
@@ -18,38 +18,32 @@ export class HrDashboardController {
   ) {}
 
   @Get("metrics")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   metrics(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.metrics(u.orgId);
   }
 
   @Get("diversity")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   diversity(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.diversity(u.orgId);
   }
 
   @Get("onboarding-status")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   onboardingStatus(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.onboardingStatus(u.orgId);
   }
 
   @Get("headcount-trends")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   headcountTrends(@CurrentUser() u: CurrentUserContext) {
     return this.reports.headcountTrends(u.orgId);
   }
 
   @Get("time-to-fill")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   timeToFill(@CurrentUser() u: CurrentUserContext) {
     return this.reports.timeToFill(u.orgId);
   }
-
 }

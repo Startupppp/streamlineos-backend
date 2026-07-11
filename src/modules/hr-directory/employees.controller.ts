@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -26,7 +25,6 @@ import { EmployeeMutationsService } from "./employee-mutations.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { AccessService } from "../access/access.service";
-import { userCan } from "./ability.helpers";
 import { resolveEmployeesScope } from "./employees-scope";
 import { buildEmployeeProfileHtml } from "./profile-pdf.html";
 import {
@@ -45,7 +43,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/employees")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class EmployeesController {
   constructor(
     private readonly employees: EmployeesService,
@@ -56,7 +54,6 @@ export class EmployeesController {
   ) {}
 
   @Post("onboard")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   onboard(
@@ -67,7 +64,6 @@ export class EmployeesController {
   }
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:read")
   async listEmployees(
     @Query(new ZodValidationPipe(listEmployeesSchema)) query: ListEmployeesInput,
@@ -88,20 +84,20 @@ export class EmployeesController {
   }
 
   @Get("stats")
+  @RequirePermission("hr:employees:view")
   stats(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     const targetId = userId ?? u.userId;
-    if (targetId !== u.userId && !userCan(u, "read", "hr:employees")) {
-      throw new ForbiddenException("Access denied.");
-    }
     return this.employees.getStats(u.orgId, targetId);
   }
 
   @Get("anniversary-feed")
+  @RequirePermission("hr:employees:view")
   anniversaryFeed(@CurrentUser() u: CurrentUserContext) {
     return this.celebrations.getAnniversaryFeed(u.orgId);
   }
 
   @Get("availability")
+  @RequirePermission("hr:employees:view")
   availability(
     @Query(new ZodValidationPipe(availabilitySchema)) query: AvailabilityInput,
     @CurrentUser() u: CurrentUserContext,
@@ -110,12 +106,14 @@ export class EmployeesController {
   }
 
   @Get("check-email")
+  @RequirePermission("hr:employees:view")
   checkEmail(@Query("email") email: string | undefined) {
     if (!email) throw new BadRequestException("Email is required");
     return this.employees.checkEmail(email);
   }
 
   @Get("find-expert")
+  @RequirePermission("hr:employees:view")
   findExpert(
     @Query(new ZodValidationPipe(findExpertSchema)) query: FindExpertInput,
     @CurrentUser() u: CurrentUserContext,
@@ -124,43 +122,42 @@ export class EmployeesController {
   }
 
   @Get("skills-matrix")
+  @RequirePermission("hr:employees:read")
   skillsMatrix(@CurrentUser() u: CurrentUserContext) {
     return this.skills.getSkillsMatrix(u.orgId);
   }
 
   @Get("projects")
+  @RequirePermission("hr:employees:view")
   projects(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     return this.employees.getProjects(u.orgId, userId || u.userId);
   }
 
   @Get("tickets")
+  @RequirePermission("hr:employees:view")
   tickets(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     return this.employees.getTickets(u.orgId, userId || u.userId);
   }
 
   @Get(":employeeId/reports-to-me")
+  @RequirePermission("hr:employees:view")
   reportsToMe(@Param("employeeId") employeeId: string, @CurrentUser() u: CurrentUserContext) {
     return this.employees.getReportsToMe(u.orgId, employeeId);
   }
 
   @Get(":employeeId/manager-scorecard")
+  @RequirePermission("hr:employees:view")
   managerScorecard(@Param("employeeId") employeeId: string, @CurrentUser() u: CurrentUserContext) {
-    const allowed = u.userId === employeeId || userCan(u, "manage", "hr:performance");
-    if (!allowed) throw new ForbiddenException("Access denied");
     return this.employees.getManagerScorecard(u.orgId, employeeId);
   }
 
   @Get(":employeeId/profile-pdf")
+  @RequirePermission("hr:employees:manage")
   async profilePdf(
     @Param("employeeId") employeeId: string,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
-
     const employee = await this.mutations.getEmployeeDetail(u.orgId, employeeId);
     if (!employee) throw new NotFoundException("Employee not found");
 
@@ -172,6 +169,7 @@ export class EmployeesController {
   }
 
   @Get(":employeeId")
+  @RequirePermission("hr:employees:view")
   async getEmployeeDetail(
     @Param("employeeId") employeeId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +180,7 @@ export class EmployeesController {
   }
 
   @Patch(":employeeId")
+  @RequirePermission("hr:employees:update")
   updateEmployee(
     @Param("employeeId") employeeId: string,
     @Body(new ZodValidationPipe(updateEmployeeSchema)) body: UpdateEmployeeInput,

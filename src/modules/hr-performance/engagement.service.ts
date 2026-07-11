@@ -32,10 +32,14 @@ import type {
   SubmitFeedbackInput,
   UpdateSurveyInput,
 } from "./dto/engagement.schemas";
+import { EngagementExtrasService } from "./engagement-extras.service";
 
 @Injectable()
 export class EngagementService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly engagementExtras: EngagementExtrasService,
+  ) {}
 
   listFeedback(orgId: string, userId: string) {
     return this.db
@@ -222,6 +226,10 @@ export class EngagementService {
       action: "kudos_given",
       after: { toUserId: input.toUserId, message: input.message, category: input.category },
     });
+
+    this.engagementExtras
+      .grantKudosPoints(orgId, input.toUserId, String(recognition.id))
+      .catch(() => undefined);
 
     return recognition;
   }

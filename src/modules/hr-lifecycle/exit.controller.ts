@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -39,13 +40,19 @@ export class ExitController {
   constructor(
     private readonly exit: ExitService,
     private readonly exitWrite: ExitWriteService,
+    private readonly access: AccessService,
   ) {}
+
+  private async isExitAdmin(u: CurrentUserContext): Promise<boolean> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return perms.has("hr:exit:manage");
+  }
 
   @Get()
   @RequirePermission("hr:exit:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
-    return this.exit.list(u.orgId, u.userId, isAdmin);
+  async list(@CurrentUser() u: CurrentUserContext) {
+    return this.exit.list(u.orgId, u.userId, await this.isExitAdmin(u));
   }
 
   @Post()
@@ -83,15 +90,14 @@ export class ExitController {
 
   @Patch(":resignationId")
   @RequirePermission("hr:exit:view")
-  update(
+  async update(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @Body(new ZodValidationPipe(resignationUpdateSchema)) body: ResignationUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isApprover = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
     return this.exitWrite.update(
       u.orgId,
-      { userId: u.userId, role: u.role, isApprover },
+      { userId: u.userId, role: u.role, isApprover: await this.isExitAdmin(u) },
       resignationId,
       body,
     );
@@ -115,41 +121,37 @@ export class ExitController {
 
   @Get(":resignationId/letter")
   @RequirePermission("hr:exit:view")
-  getLetter(
+  async getLetter(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
-    return this.exit.getLetter(u.orgId, u.userId, isAdmin, resignationId);
+    return this.exit.getLetter(u.orgId, u.userId, await this.isExitAdmin(u), resignationId);
   }
 
   @Get(":resignationId/progress")
   @RequirePermission("hr:exit:view")
-  getProgress(
+  async getProgress(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
-    return this.exit.getProgress(u.orgId, u.userId, isAdmin, resignationId);
+    return this.exit.getProgress(u.orgId, u.userId, await this.isExitAdmin(u), resignationId);
   }
 
   @Patch(":resignationId/withdraw")
   @RequirePermission("hr:exit:view")
-  withdraw(
+  async withdraw(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
-    return this.exit.withdraw(u.orgId, u.userId, isAdmin, resignationId);
+    return this.exit.withdraw(u.orgId, u.userId, await this.isExitAdmin(u), resignationId);
   }
 
   @Get(":resignationId")
   @RequirePermission("hr:exit:view")
-  getDetail(
+  async getDetail(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:exit:manage");
-    return this.exit.getDetail(u.orgId, u.userId, isAdmin, resignationId);
+    return this.exit.getDetail(u.orgId, u.userId, await this.isExitAdmin(u), resignationId);
   }
 }

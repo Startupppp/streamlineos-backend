@@ -17,7 +17,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OnboardingViewsService } from "./onboarding-views.service";
-import { userCan } from "./ability.helper";
 import {
   createOnboardingDocSchema,
   listOnboardingDocsQuerySchema,
@@ -30,42 +29,35 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/onboarding-docs")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class OnboardingViewsController {
   constructor(private readonly onboardingViews: OnboardingViewsService) {}
 
   @Get("summary")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   summary(@CurrentUser() u: CurrentUserContext) {
     return this.onboardingViews.summary(u.orgId);
   }
 
   @Get()
+  @RequirePermission("hr:onboarding:manage")
   list(
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboardingViews.list(
-      u.orgId,
-      u.userId,
-      userCan(u, "manage", "hr:documents"),
-      query,
-    );
+    const canManage = u.isOrgOwner || u.isPlatformAdmin || (u.permissions ?? []).includes("hr:onboarding:manage");
+    return this.onboardingViews.list(u.orgId, u.userId, canManage, query);
   }
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:onboarding:manage")
   create(
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboardingViews.create(
-      u.orgId,
-      u.userId,
-      userCan(u, "manage", "hr:onboarding"),
-      body,
-    );
+    const canManage = u.isOrgOwner || u.isPlatformAdmin || (u.permissions ?? []).includes("hr:onboarding:manage");
+    return this.onboardingViews.create(u.orgId, u.userId, canManage, body);
   }
 
   @Patch(":docId")

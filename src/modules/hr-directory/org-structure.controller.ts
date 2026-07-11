@@ -12,7 +12,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class OrgStructureController {
   constructor(
     private readonly orgStructure: OrgStructureService,
@@ -20,22 +20,24 @@ export class OrgStructureController {
   ) {}
 
   @Get("directory")
+  @RequirePermission("hr:employees:view")
   directory(@CurrentUser() u: CurrentUserContext) {
     return this.orgStructure.getDirectory(u.orgId);
   }
 
   @Get("celebrations")
+  @RequirePermission("hr:employees:view")
   celebrationsList(@CurrentUser() u: CurrentUserContext) {
     return this.celebrations.getCelebrations(u.orgId);
   }
 
   @Get("org-chart")
+  @RequirePermission("hr:employees:view")
   orgChart(@CurrentUser() u: CurrentUserContext) {
     return this.orgStructure.getOrgChart(u.orgId);
   }
 
   @Get("headcount")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:headcount:read")
   headcount(
     @Query(new ZodValidationPipe(headcountSchema)) query: HeadcountInput,
@@ -45,6 +47,7 @@ export class OrgStructureController {
   }
 
   @Get("teams/:teamId")
+  @RequirePermission("hr:employees:view")
   team(@Param("teamId", ParseIntPipe) teamId: number, @CurrentUser() u: CurrentUserContext) {
     return this.orgStructure.getTeam(u.orgId, teamId);
   }

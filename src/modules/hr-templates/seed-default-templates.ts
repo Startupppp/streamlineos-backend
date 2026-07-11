@@ -288,6 +288,24 @@ export function buildDefaultTemplates(): DefaultTemplate[] {
     },
     {
       kind: "letter",
+      letterType: "experience",
+      name: "Internship Certificate",
+      description: "Certificate issued to interns on completion of their internship.",
+      content: {
+        subject: "Internship Completion Certificate — {{employee.fullName}}",
+        bodyHtml: `<div style="font-family:'Times New Roman',serif;max-width:700px;margin:0 auto;padding:40px;line-height:1.8">
+<p style="text-align:right">Date: {{today}}</p>
+<p><strong>To Whom It May Concern</strong></p>
+<p>This is to certify that <strong>{{employee.fullName}}</strong> successfully completed an internship with <strong>{{company.name}}</strong> from <strong>{{employee.joiningDate}}</strong> to <strong>{{employee.lastWorkingDay}}</strong> in the <strong>{{department.name}}</strong> department.</p>
+<p>During the internship, {{employee.firstName}} worked diligently, showed a strong willingness to learn, and made valuable contributions to the team.</p>
+<p>We wish {{employee.firstName}} continued success in their academic and professional journey.</p>
+<p style="margin-top:40px">Sincerely,<br/><strong>HR Department</strong><br/>{{company.name}}</p>
+</div>`,
+      },
+      variablesUsed: ["employee.fullName", "employee.firstName", "employee.joiningDate", "employee.lastWorkingDay", "department.name", "company.name", "today"],
+    },
+    {
+      kind: "letter",
       letterType: "relieving",
       name: "Relieving Letter",
       description: "Relieving letter confirming employee has been relieved of all duties.",

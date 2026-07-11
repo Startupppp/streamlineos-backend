@@ -10,21 +10,24 @@ import type { careerPaths, employeeCareerPlans } from "../../db/schema";
 
 @RequireModule("hr")
 @Controller("hr/career-development")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CareerController {
   constructor(private readonly careerService: CareerService) {}
 
   @Get("my-plan")
+  @RequirePermission("hr:learning:view")
   getMyPlan(@CurrentUser() u: CurrentUserContext) {
     return this.careerService.getMyPlan(u.orgId, u.userId);
   }
 
   @Put("my-plan")
+  @RequirePermission("hr:learning:view")
   saveMyPlan(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
     return this.careerService.saveMyPlan(u.orgId, u.userId, body as Partial<typeof employeeCareerPlans.$inferInsert>);
   }
 
   @Patch("my-plan/milestones/:milestoneIdx")
+  @RequirePermission("hr:learning:view")
   updateMilestone(
     @CurrentUser() u: CurrentUserContext,
     @Param("milestoneIdx", ParseIntPipe) idx: number,
@@ -34,21 +37,18 @@ export class CareerController {
   }
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:view")
   listPaths(@CurrentUser() u: CurrentUserContext) {
     return this.careerService.listPaths(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   createPath(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
     return this.careerService.createPath(u.orgId, body as typeof careerPaths.$inferInsert);
   }
 
   @Patch(":pathId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   updatePath(
     @CurrentUser() u: CurrentUserContext,

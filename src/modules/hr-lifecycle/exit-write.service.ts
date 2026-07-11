@@ -24,6 +24,7 @@ import { ExitChecklistService } from "./exit-checklist.service";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 import { AssetsRecoveryService } from "../hr-directory/assets-recovery.service";
 import { HrAuditService } from "../hr-core/hr-audit.service";
+import { IdentityService } from "../hr-enterprise-ops/identity/identity.service";
 import { formatDdMmmYyyy } from "./date.helpers";
 import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
@@ -51,6 +52,7 @@ export class ExitWriteService {
     private readonly policyEval: HrPolicyEvaluationService,
     private readonly assetsRecovery: AssetsRecoveryService,
     private readonly hrAudit: HrAuditService,
+    private readonly identity: IdentityService,
   ) {}
 
   private async resolveNoticePeriod(orgId: string, userId: string, fallbackDays: number): Promise<number> {
@@ -203,6 +205,27 @@ export class ExitWriteService {
           entityType: "resignations",
           entityId: String(resignationId),
           action: "asset_gate_overridden",
+          after: { reason: input.overrideReason },
+        });
+      }
+      const hasUnverifiedRevokes = await this.identity
+        .hasUnverifiedRevokes(orgId, existing.userId)
+        .catch(() => false);
+      if (hasUnverifiedRevokes) {
+        if (!input.overrideAssetGate) {
+          throw new BadRequestException(
+            "Access removal is not verified for this employee. Verify all revocations or complete with an override reason.",
+          );
+        }
+        if (!input.overrideReason) {
+          throw new BadRequestException("An override reason is required to bypass unverified access removal.");
+        }
+        await this.hrAudit.log({
+          orgId,
+          actorId: actor.userId,
+          entityType: "resignations",
+          entityId: String(resignationId),
+          action: "access_gate_overridden",
           after: { reason: input.overrideReason },
         });
       }
@@ -436,6 +459,11 @@ export class ExitWriteService {
         employeeName: employee?.name ?? "Employee",
         exitType: "resignation",
         completedAt: new Date().toISOString(),
+      });
+      await this.hrAutomation.emit(orgId, "employee.exited", {
+        employeeId,
+        exitType: "resignation",
+        resignationId,
       });
     })().catch(() => undefined);
   }

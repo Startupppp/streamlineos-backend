@@ -21,11 +21,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/work-logs")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class WorkLogsController {
   constructor(private readonly workLogs: WorkLogsService) {}
 
   @Get()
+  @RequirePermission("hr:attendance:view")
   async list(
     @Query(new ZodValidationPipe(listWorkLogsQuerySchema)) query: ListWorkLogsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -35,6 +36,7 @@ export class WorkLogsController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:attendance:view")
   create(
     @Body(new ZodValidationPipe(postWorkLogSchema)) body: PostWorkLogInput,
     @CurrentUser() u: CurrentUserContext,
@@ -43,7 +45,6 @@ export class WorkLogsController {
   }
 
   @Patch("status")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   updateStatus(
     @Body(new ZodValidationPipe(patchWorkLogStatusSchema)) body: PatchWorkLogStatusInput,
@@ -53,6 +54,7 @@ export class WorkLogsController {
   }
 
   @Get("export")
+  @RequirePermission("hr:attendance:view")
   async exportCsv(
     @Query(new ZodValidationPipe(exportWorkLogsQuerySchema)) query: ExportWorkLogsQuery,
     @CurrentUser() u: CurrentUserContext,

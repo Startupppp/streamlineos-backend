@@ -34,11 +34,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/holidays")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHolidaysController {
   constructor(private readonly holidays: HrHolidaysService) {}
 
   @Get()
+  @RequirePermission("hr:attendance:view")
   list(
     @Query(new ZodValidationPipe(holidayListQuerySchema)) query: HolidayListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -48,6 +49,7 @@ export class HrHolidaysController {
   }
 
   @Get("calendar")
+  @RequirePermission("hr:attendance:view")
   calendar(
     @Query(new ZodValidationPipe(holidayCalendarQuerySchema)) query: HolidayCalendarQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -58,7 +60,6 @@ export class HrHolidaysController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @HttpCode(201)
   async create(
@@ -73,7 +74,6 @@ export class HrHolidaysController {
   }
 
   @Patch(":holidayId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   async update(
     @Param("holidayId", ParseIntPipe) holidayId: number,
@@ -86,7 +86,6 @@ export class HrHolidaysController {
   }
 
   @Delete(":holidayId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,

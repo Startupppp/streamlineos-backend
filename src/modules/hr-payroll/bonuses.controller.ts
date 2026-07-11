@@ -27,7 +27,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr/bonuses")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class BonusesController {
   constructor(
     private readonly bonuses: BonusesService,
@@ -35,6 +35,7 @@ export class BonusesController {
   ) {}
 
   @Get()
+  @RequirePermission("hr:payroll:view")
   async list(@CurrentUser() u: CurrentUserContext) {
     let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     if (!isAdmin) {
@@ -45,7 +46,6 @@ export class BonusesController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:bonuses:manage")
   @HttpCode(201)
   create(
@@ -56,7 +56,6 @@ export class BonusesController {
   }
 
   @Patch(":bonusId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:bonuses:manage")
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,

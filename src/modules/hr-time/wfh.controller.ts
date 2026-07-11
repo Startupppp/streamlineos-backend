@@ -26,17 +26,19 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/wfh")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class WfhController {
   constructor(private readonly wfh: WfhService) {}
 
   @Get()
+  @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.wfh.list(u.orgId, u.userId);
   }
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:attendance:view")
   create(
     @Body(new ZodValidationPipe(createWfhSchema)) body: CreateWfhInput,
     @CurrentUser() u: CurrentUserContext,
@@ -45,14 +47,12 @@ export class WfhController {
   }
 
   @Get("pending")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   pending(@CurrentUser() u: CurrentUserContext) {
     return this.wfh.pending(u.orgId);
   }
 
   @Patch(":requestId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   update(
     @Param("requestId", ParseIntPipe) requestId: number,

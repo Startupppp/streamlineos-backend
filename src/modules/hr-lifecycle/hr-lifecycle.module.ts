@@ -7,6 +7,7 @@ import { HrPoliciesModule } from "../hr-policies/hr-policies.module";
 import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr-core/hr-core.module";
 import { HrDirectoryModule } from "../hr-directory/hr-directory.module";
+import { HrEnterpriseOpsModule } from "../hr-enterprise-ops/hr-enterprise-ops.module";
 import { ExitController } from "./exit.controller";
 import { TerminationController } from "./termination.controller";
 import { AlumniController } from "./alumni.controller";
@@ -27,7 +28,7 @@ import { ProbationService } from "./probation.service";
 import { ExitChecklistService } from "./exit-checklist.service";
 
 @Module({
-  imports: [AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule],
+  imports: [AutomationModule, NotificationsModule, HrAutomationsModule, HrTemplatesModule, HrPoliciesModule, HrWorkflowsModule, HrCoreModule, HrDirectoryModule, HrEnterpriseOpsModule],
   controllers: [
     ExitController,
     TerminationController,

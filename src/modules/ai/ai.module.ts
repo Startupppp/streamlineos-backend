@@ -17,6 +17,7 @@ import { ChatHistoryService } from "./services/chat-history.service";
 import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
+import { HrCopilotTools } from "./hr-copilot-tools";
 import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
@@ -36,6 +37,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     AiUsageService,
     OrgFeaturesService,
     ProjectsAiService,
+    HrCopilotTools,
   ],
   exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService],
 })

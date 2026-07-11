@@ -1,0 +1,156 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
+import type { Request } from "express";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../../access/access.service";
+import { AccommodationsService } from "./accommodations.service";
+import {
+  createAccommodationSchema,
+  updateAccommodationSchema,
+  approveAccommodationSchema,
+  listAccommodationsSchema,
+  createAccommodationTaskSchema,
+  updateAccommodationTaskSchema,
+  type CreateAccommodationInput,
+  type UpdateAccommodationInput,
+  type ApproveAccommodationInput,
+  type ListAccommodationsInput,
+  type CreateAccommodationTaskInput,
+  type UpdateAccommodationTaskInput,
+} from "../dto/accommodations.schemas";
+
+@RequireModule("hr")
+@Controller("hr/enterprise/ops/accommodations")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class AccommodationsController {
+  constructor(
+    private readonly svc: AccommodationsService,
+    private readonly access: AccessService,
+  ) {}
+
+  private async hasSensitive(user: CurrentUserContext): Promise<boolean> {
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    return perms.has("hr:sensitive:view");
+  }
+
+  @Get()
+  @RequirePermission("hr:accommodations:view")
+  async list(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(listAccommodationsSchema)) query: ListAccommodationsInput,
+  ) {
+    const sensitive = await this.hasSensitive(user);
+    return this.svc.list(user.orgId, query, sensitive);
+  }
+
+  @Get(":id")
+  @RequirePermission("hr:accommodations:view")
+  async getById(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+  ) {
+    const sensitive = await this.hasSensitive(user);
+    return this.svc.getById(user.orgId, id, sensitive);
+  }
+
+  @Post()
+  @RequirePermission("hr:accommodations:manage")
+  async create(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(createAccommodationSchema)) body: CreateAccommodationInput,
+    @Req() req: Request,
+  ) {
+    return this.svc.create(user.orgId, user.userId, body, req.ip, req.headers["user-agent"]);
+  }
+
+  @Patch(":id")
+  @RequirePermission("hr:accommodations:manage")
+  async update(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateAccommodationSchema)) body: UpdateAccommodationInput,
+    @Req() req: Request,
+  ) {
+    return this.svc.update(user.orgId, id, user.userId, body, req.ip, req.headers["user-agent"]);
+  }
+
+  @Delete(":id")
+  @HttpCode(204)
+  @RequirePermission("hr:accommodations:manage")
+  async remove(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Req() req: Request,
+  ) {
+    await this.svc.softDelete(user.orgId, id, user.userId, req.ip, req.headers["user-agent"]);
+  }
+
+  @Post(":id/approve")
+  @RequirePermission("hr:accommodations:manage")
+  async approve(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(approveAccommodationSchema)) body: ApproveAccommodationInput,
+    @Req() req: Request,
+  ) {
+    return this.svc.approve(user.orgId, id, user.userId, body, req.ip, req.headers["user-agent"]);
+  }
+
+  @Get(":id/tasks")
+  @RequirePermission("hr:accommodations:view")
+  async listTasks(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+  ) {
+    return this.svc.listTasks(user.orgId, id);
+  }
+
+  @Post(":id/tasks")
+  @RequirePermission("hr:accommodations:manage")
+  async createTask(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(createAccommodationTaskSchema)) body: CreateAccommodationTaskInput,
+  ) {
+    return this.svc.createTask(user.orgId, id, body);
+  }
+
+  @Patch(":id/tasks/:taskId")
+  @RequirePermission("hr:accommodations:manage")
+  async updateTask(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string,
+    @Body(new ZodValidationPipe(updateAccommodationTaskSchema)) body: UpdateAccommodationTaskInput,
+  ) {
+    return this.svc.updateTask(user.orgId, id, taskId, body);
+  }
+
+  @Delete(":id/tasks/:taskId")
+  @HttpCode(204)
+  @RequirePermission("hr:accommodations:manage")
+  async deleteTask(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Param("taskId") taskId: string,
+  ) {
+    await this.svc.deleteTask(user.orgId, id, taskId);
+  }
+}

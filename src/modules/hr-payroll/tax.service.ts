@@ -73,6 +73,12 @@ export class TaxService {
   }
 
   async addProof(orgId: string, declarationId: number, data: Partial<ProofInsert>) {
+    const [declaration] = await this.db
+      .select({ id: taxDeclarations.id })
+      .from(taxDeclarations)
+      .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, orgId)))
+      .limit(1);
+    if (!declaration) throw new NotFoundException("Tax declaration not found");
     const [item] = await this.db
       .insert(investmentProofs)
       .values({ ...data, orgId, declarationId } as ProofInsert)
@@ -80,7 +86,13 @@ export class TaxService {
     return item;
   }
 
-  listProofs(declarationId: number) {
+  async listProofs(orgId: string, declarationId: number) {
+    const [declaration] = await this.db
+      .select({ id: taxDeclarations.id })
+      .from(taxDeclarations)
+      .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, orgId)))
+      .limit(1);
+    if (!declaration) throw new NotFoundException("Tax declaration not found");
     return this.db
       .select()
       .from(investmentProofs)

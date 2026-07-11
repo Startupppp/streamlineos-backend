@@ -8,67 +8,60 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ShiftsService } from "./shifts.service";
 
 @RequireModule("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/shifts")
 export class ShiftsController {
   constructor(private readonly service: ShiftsService) {}
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.listShifts(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   create(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; type: string; startTime: string; endTime: string; breakMinutes?: number; isNightShift?: boolean; gracePeriodMinutes?: number }) {
     return this.service.createShift(u.orgId, body);
   }
 
   @Patch(":id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   update(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Partial<Parameters<ShiftsService["updateShift"]>[2]>) {
     return this.service.updateShift(u.orgId, id, body);
   }
 
   @Delete(":id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   remove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.deleteShift(u.orgId, id);
   }
 
   @Get("assignments")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   getAssignments(@CurrentUser() u: CurrentUserContext) {
     return this.service.getEmployeeShifts(u.orgId);
   }
 
   @Post("assignments")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   assign(@CurrentUser() u: CurrentUserContext, @Body() body: { userId: string; shiftId: number; effectiveFrom: string; effectiveTo?: string }) {
     return this.service.assignShift(u.orgId, body);
   }
 
   @Get("swaps")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   listSwaps(@CurrentUser() u: CurrentUserContext) {
     return this.service.listSwapRequests(u.orgId);
   }
 
   @Post("swaps")
+  @RequirePermission("hr:attendance:view")
   createSwap(@CurrentUser() u: CurrentUserContext, @Body() body: { targetUserId: string; requestDate: string; targetDate: string; reason?: string }) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
   @Patch("swaps/:id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   updateSwap(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: { status: string }) {
     return this.service.updateSwapStatus(u.orgId, id, body.status, u.userId);

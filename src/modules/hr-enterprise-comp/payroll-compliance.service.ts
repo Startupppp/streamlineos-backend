@@ -1,0 +1,173 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import {
+  hrPayrollVarianceApprovals,
+  hrArrearsAdjustments,
+  hrPayrollComplianceTasks,
+} from "../../db/schema/hr/enterprise-comp";
+import { HrAuditService } from "../hr-core/hr-audit.service";
+import type {
+  CreateVarianceApprovalInput,
+  ResolveVarianceInput,
+  ListVarianceApprovalsInput,
+  CreateArrearsInput,
+  ListArrearsInput,
+  CreateComplianceTaskInput,
+  UpdateComplianceTaskInput,
+  ListComplianceTasksInput,
+} from "./dto/enterprise-comp.schemas";
+
+const COUNTRY_PRESET_TASKS: Record<string, { name: string; dueDayOfMonth: number }[]> = {
+  IN: [
+    { name: "PF Monthly Return (ECR)", dueDayOfMonth: 15 },
+    { name: "ESI Monthly Contribution", dueDayOfMonth: 15 },
+    { name: "TDS Deposition (Form 24Q)", dueDayOfMonth: 7 },
+    { name: "Professional Tax", dueDayOfMonth: 10 },
+  ],
+  US: [
+    { name: "Form 941 Quarterly Filing", dueDayOfMonth: 31 },
+    { name: "Federal Payroll Tax Deposit", dueDayOfMonth: 15 },
+    { name: "State Income Tax Withholding", dueDayOfMonth: 20 },
+  ],
+  GB: [
+    { name: "PAYE RTI Submission", dueDayOfMonth: 19 },
+    { name: "National Insurance Contributions", dueDayOfMonth: 19 },
+    { name: "Auto-enrolment Pension Contributions", dueDayOfMonth: 22 },
+  ],
+};
+
+@Injectable()
+export class PayrollComplianceService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: HrAuditService,
+  ) {}
+
+  async createVarianceApproval(orgId: string, actorId: string, input: CreateVarianceApprovalInput) {
+    const [created] = await this.db.insert(hrPayrollVarianceApprovals).values({
+      orgId,
+      payrollPeriodKey: input.payrollPeriodKey,
+      variancePct: String(input.variancePct),
+      thresholdPct: String(input.thresholdPct),
+    }).returning();
+    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_variance_approvals", entityId: String(created!.id), action: "created", after: created });
+    return created;
+  }
+
+  async listVarianceApprovals(orgId: string, input: ListVarianceApprovalsInput) {
+    const { page, limit, status, payrollPeriodKey } = input;
+    const offset = (page - 1) * limit;
+    const conditions = [eq(hrPayrollVarianceApprovals.orgId, orgId)];
+    if (status) conditions.push(eq(hrPayrollVarianceApprovals.status, status));
+    if (payrollPeriodKey) conditions.push(eq(hrPayrollVarianceApprovals.payrollPeriodKey, payrollPeriodKey));
+    const where = and(...conditions);
+
+    const [data, totalResult] = await Promise.all([
+      this.db.select().from(hrPayrollVarianceApprovals).where(where).orderBy(desc(hrPayrollVarianceApprovals.createdAt)).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(hrPayrollVarianceApprovals).where(where),
+    ]);
+    const total = totalResult[0]?.total ?? 0;
+    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async resolveVarianceApproval(orgId: string, id: number, actorId: string, input: ResolveVarianceInput) {
+    const [existing] = await this.db.select().from(hrPayrollVarianceApprovals).where(and(eq(hrPayrollVarianceApprovals.id, id), eq(hrPayrollVarianceApprovals.orgId, orgId))).limit(1);
+    if (!existing) throw new NotFoundException("Variance approval not found");
+
+    const [updated] = await this.db.update(hrPayrollVarianceApprovals).set({
+      status: input.action,
+      approverId: actorId,
+      note: input.note ?? null,
+      resolvedAt: new Date(),
+    }).where(and(eq(hrPayrollVarianceApprovals.id, id), eq(hrPayrollVarianceApprovals.orgId, orgId))).returning();
+
+    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_variance_approvals", entityId: String(id), action: input.action, before: { status: existing.status }, after: { status: input.action } });
+    return updated;
+  }
+
+  async createArrears(orgId: string, actorId: string, input: CreateArrearsInput) {
+    const [created] = await this.db.insert(hrArrearsAdjustments).values({ orgId, ...input, createdBy: actorId }).returning();
+    await this.audit.log({ orgId, actorId, entityType: "hr_arrears_adjustments", entityId: String(created!.id), action: "created", after: created });
+    return created;
+  }
+
+  async listArrears(orgId: string, input: ListArrearsInput) {
+    const { page, limit, userId, status } = input;
+    const offset = (page - 1) * limit;
+    const conditions = [eq(hrArrearsAdjustments.orgId, orgId)];
+    if (userId) conditions.push(eq(hrArrearsAdjustments.userId, userId));
+    if (status) conditions.push(eq(hrArrearsAdjustments.status, status));
+    const where = and(...conditions);
+
+    const [data, totalResult] = await Promise.all([
+      this.db.select().from(hrArrearsAdjustments).where(where).orderBy(desc(hrArrearsAdjustments.createdAt)).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(hrArrearsAdjustments).where(where),
+    ]);
+    const total = totalResult[0]?.total ?? 0;
+    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async applyArrears(orgId: string, id: number, actorId: string) {
+    const [existing] = await this.db.select().from(hrArrearsAdjustments).where(and(eq(hrArrearsAdjustments.id, id), eq(hrArrearsAdjustments.orgId, orgId))).limit(1);
+    if (!existing) throw new NotFoundException("Arrears adjustment not found");
+
+    const [updated] = await this.db.update(hrArrearsAdjustments).set({ status: "applied", appliedAt: new Date() }).where(and(eq(hrArrearsAdjustments.id, id), eq(hrArrearsAdjustments.orgId, orgId))).returning();
+    await this.audit.log({ orgId, actorId, entityType: "hr_arrears_adjustments", entityId: String(id), action: "applied", before: { status: "pending" }, after: { status: "applied" } });
+    return updated;
+  }
+
+  async createComplianceTask(orgId: string, actorId: string, input: CreateComplianceTaskInput) {
+    const [created] = await this.db.insert(hrPayrollComplianceTasks).values({ orgId, ...input }).returning();
+    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_compliance_tasks", entityId: String(created!.id), action: "created", after: created });
+    return created;
+  }
+
+  async listComplianceTasks(orgId: string, input: ListComplianceTasksInput) {
+    const { page, limit, countryCode, status } = input;
+    const offset = (page - 1) * limit;
+    const conditions = [eq(hrPayrollComplianceTasks.orgId, orgId)];
+    if (countryCode) conditions.push(eq(hrPayrollComplianceTasks.countryCode, countryCode));
+    if (status) conditions.push(eq(hrPayrollComplianceTasks.status, status));
+    const where = and(...conditions);
+
+    const [data, totalResult] = await Promise.all([
+      this.db.select().from(hrPayrollComplianceTasks).where(where).orderBy(hrPayrollComplianceTasks.dueDate).limit(limit).offset(offset),
+      this.db.select({ total: count() }).from(hrPayrollComplianceTasks).where(where),
+    ]);
+    const total = totalResult[0]?.total ?? 0;
+    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async updateComplianceTask(orgId: string, id: number, actorId: string, input: UpdateComplianceTaskInput) {
+    const [existing] = await this.db.select().from(hrPayrollComplianceTasks).where(and(eq(hrPayrollComplianceTasks.id, id), eq(hrPayrollComplianceTasks.orgId, orgId))).limit(1);
+    if (!existing) throw new NotFoundException("Compliance task not found");
+
+    const setData: Record<string, unknown> = { ...input };
+    if (input.status === "completed") {
+      setData["completedBy"] = actorId;
+      setData["completedAt"] = new Date();
+    }
+
+    const [updated] = await this.db.update(hrPayrollComplianceTasks).set(setData as never).where(and(eq(hrPayrollComplianceTasks.id, id), eq(hrPayrollComplianceTasks.orgId, orgId))).returning();
+    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_compliance_tasks", entityId: String(id), action: "updated", before: existing, after: updated });
+    return updated;
+  }
+
+  async seedCountryPresets(orgId: string, actorId: string, countryCode: string, periodKey: string) {
+    const presets = COUNTRY_PRESET_TASKS[countryCode.toUpperCase()];
+    if (!presets) return { seeded: 0, message: `No presets for country ${countryCode}` };
+
+    const [year, month] = periodKey.split("-");
+    const tasks = presets.map((p) => ({
+      orgId,
+      countryCode: countryCode.toUpperCase(),
+      name: p.name,
+      dueDate: `${year}-${month}-${String(p.dueDayOfMonth).padStart(2, "0")}`,
+    }));
+
+    const created = await this.db.insert(hrPayrollComplianceTasks).values(tasks).returning();
+    return { seeded: created.length };
+  }
+}

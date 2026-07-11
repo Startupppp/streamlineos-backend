@@ -26,6 +26,7 @@ import { CalendarService } from "../../calendar/calendar.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { KbAskService } from "../../kb/kb-ask.service";
 import { ChatHistoryService } from "./chat-history.service";
+import { HrCopilotTools } from "../hr-copilot-tools";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
 const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o";
@@ -68,6 +69,7 @@ export class ChatAssistantService {
     private readonly calendar: CalendarService,
     private readonly projectsAi: ProjectsAiService,
     private readonly history: ChatHistoryService,
+    private readonly hrCopilot: HrCopilotTools,
     private readonly moduleRef: ModuleRef,
   ) {}
 
@@ -262,6 +264,7 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
         }
       },
       tools: {
+        ...this.hrCopilot.buildTools({ orgId, userId }),
         updateLeadStatus: tool({
           description:
             "Update the status or priority of a lead by name or ID. Use when the user asks to move, update, or change a lead's status/priority.",

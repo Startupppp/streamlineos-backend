@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -19,7 +18,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AssetsService } from "./assets.service";
-import { userCan } from "./ability.helpers";
 import { resolveAssetsScope } from "./assets-scope";
 import {
   createAssetReturnSchema,
@@ -35,7 +33,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class AssetsController {
   constructor(
     private readonly assets: AssetsService,
@@ -43,13 +41,13 @@ export class AssetsController {
   ) {}
 
   @Get("asset-returns")
+  @RequirePermission("hr:assets:view")
   async listAssetReturns(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveAssetsScope(this.access, u);
     return this.assets.listAssetReturns(u.orgId, u.userId, scope);
   }
 
   @Post("asset-returns")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:assets:manage")
   @HttpCode(201)
   createAssetReturn(
@@ -60,7 +58,6 @@ export class AssetsController {
   }
 
   @Patch("asset-returns/:returnId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:assets:manage")
   updateAssetReturn(
     @Param("returnId", ParseIntPipe) returnId: number,
@@ -71,39 +68,34 @@ export class AssetsController {
   }
 
   @Get("devices")
+  @RequirePermission("hr:assets:view")
   listDevices(@CurrentUser() u: CurrentUserContext) {
     return this.assets.listDevices(u.orgId);
   }
 
   @Post("devices")
   @HttpCode(201)
+  @RequirePermission("hr:assets:manage")
   createDevice(
     @Body(new ZodValidationPipe(createDeviceSchema)) body: CreateDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!userCan(u, "manage", "hr:assets")) {
-      throw new ForbiddenException("Only admins can add devices.");
-    }
     return this.assets.createDevice(u.orgId, body);
   }
 
   @Patch("devices/:deviceId")
+  @RequirePermission("hr:assets:manage")
   updateDevice(
     @Param("deviceId", ParseIntPipe) deviceId: number,
     @Body(new ZodValidationPipe(patchDeviceSchema)) body: PatchDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!userCan(u, "manage", "hr:assets")) {
-      throw new ForbiddenException("Only admins can update devices.");
-    }
     return this.assets.updateDevice(u.orgId, deviceId, body);
   }
 
   @Delete("devices/:deviceId")
+  @RequirePermission("hr:assets:manage")
   deleteDevice(@Param("deviceId", ParseIntPipe) deviceId: number, @CurrentUser() u: CurrentUserContext) {
-    if (!userCan(u, "manage", "hr:assets")) {
-      throw new ForbiddenException("Only admins can delete devices.");
-    }
     return this.assets.deleteDevice(u.orgId, deviceId);
   }
 }

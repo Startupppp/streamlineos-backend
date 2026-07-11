@@ -26,7 +26,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr/fnf")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class FnfController {
   constructor(
     private readonly fnf: FnfService,
@@ -34,6 +34,7 @@ export class FnfController {
   ) {}
 
   @Get()
+  @RequirePermission("hr:payroll:view")
   async list(@CurrentUser() u: CurrentUserContext) {
     let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     if (!isAdmin) {
@@ -44,7 +45,6 @@ export class FnfController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:exit:manage")
   @HttpCode(201)
   async create(
@@ -57,7 +57,6 @@ export class FnfController {
   }
 
   @Patch(":fnfId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:exit:manage")
   async update(
     @Param("fnfId", ParseIntPipe) fnfId: number,

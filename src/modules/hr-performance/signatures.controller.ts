@@ -19,23 +19,24 @@ import { SignaturesService } from "./signatures.service";
 
 @RequireModule("hr")
 @Controller("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class SignaturesController {
   constructor(private readonly signatures: SignaturesService) {}
 
   @Get("signatures/sent")
+  @RequirePermission("hr:signatures:view")
   listSent(@CurrentUser() u: CurrentUserContext) {
     return this.signatures.listSent(u.orgId, u.userId);
   }
 
   @Get("signatures/received")
+  @RequirePermission("hr:signatures:view")
   listReceived(@CurrentUser() u: CurrentUserContext) {
     return this.signatures.listReceived(u.orgId, u.userId);
   }
 
   @Post("signatures")
   @HttpCode(201)
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:signatures:manage")
   create(
     @Body()
@@ -53,6 +54,7 @@ export class SignaturesController {
 
   @Post("signatures/:signatureId/sign")
   @HttpCode(200)
+  @RequirePermission("hr:signatures:view")
   signDocument(
     @Param("signatureId", ParseIntPipe) signatureId: number,
     @Body() body: { signatureUrl: string },
@@ -62,7 +64,6 @@ export class SignaturesController {
   }
 
   @Patch("signatures/:signatureId/void")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:signatures:manage")
   voidRequest(
     @Param("signatureId", ParseIntPipe) signatureId: number,

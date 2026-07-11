@@ -47,7 +47,7 @@ import {
 import { AccessService } from "../access/access.service";
 
 @Controller("hr/benefits")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrBenefitsController {
   constructor(
     private readonly plans: HrBenefitsPlansService,
@@ -63,6 +63,8 @@ export class HrBenefitsController {
   }
 
   @Get("plans/available")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   listActivePlans(@CurrentUser() u: CurrentUserContext) {
     return this.plans.listPlans(u.orgId, { status: "active", page: 1, limit: 100 });
   }
@@ -161,12 +163,16 @@ export class HrBenefitsController {
   }
 
   @Get("my")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   getMyBenefits(@CurrentUser() u: CurrentUserContext) {
     return this.enrollment.getMyBenefits(u.orgId, u.userId);
   }
 
   @Post("enroll")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   enroll(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(enrollSchema)) body: EnrollInput,
@@ -176,6 +182,8 @@ export class HrBenefitsController {
 
   @Post("waive")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   waive(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(waiveSchema)) body: WaiveInput,
@@ -184,12 +192,16 @@ export class HrBenefitsController {
   }
 
   @Get("dependents")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   listDependents(@CurrentUser() u: CurrentUserContext) {
     return this.enrollment.listDependents(u.orgId, u.userId);
   }
 
   @Post("dependents")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   addDependent(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createDependentSchema)) body: CreateDependentInput,
@@ -198,6 +210,8 @@ export class HrBenefitsController {
   }
 
   @Patch("dependents/:depId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   updateDependent(
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
@@ -207,6 +221,8 @@ export class HrBenefitsController {
   }
 
   @Delete("dependents/:depId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   deleteDependent(
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
@@ -215,6 +231,8 @@ export class HrBenefitsController {
   }
 
   @Get("claims")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   async listClaims(
     @CurrentUser() u: CurrentUserContext,
     @Query(new ZodValidationPipe(claimsQuerySchema)) query: ClaimsQuery,
@@ -225,6 +243,8 @@ export class HrBenefitsController {
 
   @Post("claims")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:benefits:view")
   submitClaim(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(submitClaimSchema)) body: SubmitClaimInput,

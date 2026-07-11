@@ -28,17 +28,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/handbook")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHandbookController {
   constructor(private readonly handbook: HrHandbookService) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.handbook.list(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:handbook:manage")
   @HttpCode(201)
   create(
@@ -49,7 +49,6 @@ export class HrHandbookController {
   }
 
   @Patch(":handbookId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:handbook:manage")
   async update(
     @Param("handbookId", ParseIntPipe) handbookId: number,
@@ -62,7 +61,6 @@ export class HrHandbookController {
   }
 
   @Delete(":handbookId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:handbook:manage")
   async remove(
     @Param("handbookId", ParseIntPipe) handbookId: number,

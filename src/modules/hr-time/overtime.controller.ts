@@ -8,38 +8,37 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { OvertimeService } from "./overtime.service";
 
 @RequireModule("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/overtime")
 export class OvertimeController {
   constructor(private readonly service: OvertimeService) {}
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.listRequests(u.orgId);
   }
 
   @Post()
+  @RequirePermission("hr:attendance:view")
   create(@CurrentUser() u: CurrentUserContext, @Body() body: { date: string; hours: string; reason?: string; convertToCompOff?: boolean }) {
     return this.service.createRequest(u.orgId, u.userId, body);
   }
 
   @Patch(":id/approve")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   approve(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.approveRequest(u.orgId, id, u.userId);
   }
 
   @Patch(":id/reject")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   reject(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.rejectRequest(u.orgId, id, u.userId);
   }
 
   @Get("comp-off")
+  @RequirePermission("hr:attendance:view")
   getCompOff(@CurrentUser() u: CurrentUserContext) {
     return this.service.getCompOffBalance(u.orgId, u.userId);
   }

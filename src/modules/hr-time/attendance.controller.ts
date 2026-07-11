@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -30,12 +32,13 @@ type HolidayUpdateBody = Partial<HolidayCreateBody>;
 
 @RequireModule("hr")
 @Controller("hr/attendance")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class AttendanceController {
   constructor(private readonly attendance: AttendanceService) {}
 
   @Post("check-in")
   @HttpCode(200)
+  @RequirePermission("hr:attendance:view")
   checkIn(
     @Body(new ZodValidationPipe(checkInSchema)) body: CheckInInput,
     @CurrentUser() u: CurrentUserContext,
@@ -45,6 +48,7 @@ export class AttendanceController {
 
   @Post("check-out")
   @HttpCode(200)
+  @RequirePermission("hr:attendance:view")
   checkOut(
     @Body(new ZodValidationPipe(checkOutSchema)) body: CheckOutInput,
     @CurrentUser() u: CurrentUserContext,
@@ -54,16 +58,19 @@ export class AttendanceController {
 
   @Post("break")
   @HttpCode(200)
+  @RequirePermission("hr:attendance:view")
   toggleBreak(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.toggleBreak(u.orgId, u.userId);
   }
 
   @Get("status")
+  @RequirePermission("hr:attendance:view")
   status(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.status(u.orgId, u.userId);
   }
 
   @Get("logs")
+  @RequirePermission("hr:attendance:view")
   async logs(
     @Query(new ZodValidationPipe(attendanceLogsQuerySchema)) query: AttendanceLogsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +79,7 @@ export class AttendanceController {
   }
 
   @Get("monthly")
+  @RequirePermission("hr:attendance:view")
   monthly(
     @Query(new ZodValidationPipe(monthlyQuerySchema)) query: MonthlyQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +88,7 @@ export class AttendanceController {
   }
 
   @Get("heatmap")
+  @RequirePermission("hr:attendance:view")
   heatmap(
     @Query(new ZodValidationPipe(heatmapQuerySchema)) query: HeatmapQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -88,11 +97,13 @@ export class AttendanceController {
   }
 
   @Get("team-status")
+  @RequirePermission("hr:attendance:view")
   teamStatus(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.teamStatus(u);
   }
 
   @Post("email-report")
+  @RequirePermission("hr:attendance:manage")
   emailReport(
     @Body(new ZodValidationPipe(attendanceEmailReportSchema)) body: AttendanceEmailReportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -101,16 +112,19 @@ export class AttendanceController {
   }
 
   @Get("holidays")
+  @RequirePermission("hr:attendance:view")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.listHolidays(u.orgId);
   }
 
   @Post("holidays")
+  @RequirePermission("hr:attendance:manage")
   createHoliday(@CurrentUser() u: CurrentUserContext, @Body() body: HolidayCreateBody) {
     return this.attendance.createHoliday(u.orgId, u.userId, body);
   }
 
   @Patch("holidays/:id")
+  @RequirePermission("hr:attendance:manage")
   updateHoliday(
     @CurrentUser() u: CurrentUserContext,
     @Param("id") id: string,
@@ -120,6 +134,7 @@ export class AttendanceController {
   }
 
   @Delete("holidays/:id")
+  @RequirePermission("hr:attendance:manage")
   deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("id") id: string) {
     return this.attendance.deleteHoliday(u.orgId, id);
   }

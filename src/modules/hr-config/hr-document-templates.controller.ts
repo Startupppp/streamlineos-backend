@@ -34,11 +34,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/documents/templates")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrDocumentTemplatesController {
   constructor(private readonly templates: HrDocumentTemplatesService) {}
 
   @Get()
+  @RequirePermission("hr:documents:view")
   list(
     @Query(new ZodValidationPipe(templateListQuerySchema)) query: TemplateListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -47,7 +48,6 @@ export class HrDocumentTemplatesController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   create(
@@ -58,6 +58,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId")
+  @RequirePermission("hr:documents:view")
   async getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +69,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId/preview")
+  @RequirePermission("hr:documents:view")
   async preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +80,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId/versions")
+  @RequirePermission("hr:documents:view")
   async versions(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,7 +91,6 @@ export class HrDocumentTemplatesController {
   }
 
   @Patch(":templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   async setDefault(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -101,7 +103,6 @@ export class HrDocumentTemplatesController {
   }
 
   @Put(":templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   async update(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -114,7 +115,6 @@ export class HrDocumentTemplatesController {
   }
 
   @Delete(":templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   async remove(
     @Param("templateId", ParseIntPipe) templateId: number,

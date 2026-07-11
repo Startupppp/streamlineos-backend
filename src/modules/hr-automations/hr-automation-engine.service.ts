@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -12,6 +12,7 @@ import type {
   ListRunsInput,
 } from "./dto/hr-automation.schemas";
 import type { HrAutomationEvent } from "./hr-automation-events";
+import type { HrWebhooksService } from "./hr-webhooks.service";
 
 const MAX_DEPTH = 3;
 const COOLDOWN_MS = 5_000;
@@ -83,6 +84,7 @@ export class HrAutomationEngineService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly actions: HrAutomationActionsService,
+    @Optional() private readonly hrWebhooks: HrWebhooksService | null = null,
   ) {}
 
   async emit(
@@ -97,6 +99,7 @@ export class HrAutomationEngineService {
     } catch (error) {
       logger.error("hr-automation emit failed", { orgId, event, error });
     }
+    this.hrWebhooks?.dispatch(orgId, event, payload);
   }
 
   private async runEvent(

@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHelpdeskService } from "./hr-helpdesk.service";
+import { AccessService } from "../access/access.service";
 import {
   addCommentSchema,
   createSchema,
@@ -34,23 +35,28 @@ import {
 } from "./dto/hr-helpdesk.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
-function isAdmin(u: CurrentUserContext): boolean {
-  return u.isOrgOwner || u.isPlatformAdmin || u.permissions.includes("hr:helpdesk:manage");
-}
-
 @RequireModule("hr")
 @Controller("hr/helpdesk")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHelpdeskController {
-  constructor(private readonly helpdesk: HrHelpdeskService) {}
+  constructor(
+    private readonly helpdesk: HrHelpdeskService,
+    private readonly access: AccessService,
+  ) {}
+
+  private async resolveIsAdmin(u: CurrentUserContext): Promise<boolean> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return perms.has("hr:helpdesk:manage");
+  }
 
   @Get()
   @RequirePermission("hr:helpdesk:view")
-  list(
+  async list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.list(u.orgId, u.userId, isAdmin(u), filters);
+    return this.helpdesk.list(u.orgId, u.userId, await this.resolveIsAdmin(u), filters);
   }
 
   @Get("suggest")
@@ -70,11 +76,11 @@ export class HrHelpdeskController {
 
   @Get(":ticketId")
   @RequirePermission("hr:helpdesk:view")
-  getById(
+  async getById(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.getById(u.orgId, u.userId, isAdmin(u), ticketId);
+    return this.helpdesk.getById(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId);
   }
 
   @Post()
@@ -89,23 +95,23 @@ export class HrHelpdeskController {
 
   @Patch(":ticketId")
   @RequirePermission("hr:helpdesk:manage")
-  update(
+  async update(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(updateTicketSchema)) body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.updateTicket(u.orgId, u.userId, isAdmin(u), ticketId, body);
+    return this.helpdesk.updateTicket(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
   }
 
   @Post(":ticketId/comments")
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:view")
-  addComment(
+  async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body(new ZodValidationPipe(addCommentSchema)) body: AddCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.addComment(u.orgId, u.userId, isAdmin(u), ticketId, body);
+    return this.helpdesk.addComment(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
   }
 
   @Post("routing")

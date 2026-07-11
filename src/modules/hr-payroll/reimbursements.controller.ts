@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -26,7 +28,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr/reimbursements")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ReimbursementsController {
   constructor(
     private readonly reimbursements: ReimbursementsService,
@@ -34,6 +36,7 @@ export class ReimbursementsController {
   ) {}
 
   @Get()
+  @RequirePermission("hr:payroll:view")
   async list(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveReimbursementsScope(this.access, u);
     return this.reimbursements.listReimbursements(u.orgId, u.userId, scope);
@@ -41,6 +44,7 @@ export class ReimbursementsController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:payroll:view")
   create(
     @Body(new ZodValidationPipe(createReimbursementSchema)) body: CreateReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
@@ -49,6 +53,7 @@ export class ReimbursementsController {
   }
 
   @Patch(":reimbursementId")
+  @RequirePermission("hr:payroll:view")
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
     @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,

@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -12,6 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -25,7 +26,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr/loans")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LoansController {
   constructor(
     private readonly loans: LoansService,
@@ -39,12 +40,14 @@ export class LoansController {
   }
 
   @Get()
+  @RequirePermission("hr:payroll:view")
   async list(@CurrentUser() u: CurrentUserContext) {
     return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u));
   }
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:payroll:view")
   async create(
     @Body(new ZodValidationPipe(createLoanSchema)) body: CreateLoanInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,13 +56,17 @@ export class LoansController {
   }
 
   @Patch(":loanId")
+  @RequirePermission("hr:payroll:view")
   async update(
     @Param("loanId", ParseIntPipe) loanId: number,
     @Body(new ZodValidationPipe(updateLoanSchema)) body: UpdateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(await this.isLoanAdmin(u))) throw new ForbiddenException("Only admins can manage loans.");
-
+    if (!(await this.isLoanAdmin(u))) {
+      const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
+      if (!result.ok) throw new NotFoundException("Loan not found.");
+      return { success: true };
+    }
     const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
     if (!result.ok) throw new NotFoundException("Loan not found.");
     return { success: true };

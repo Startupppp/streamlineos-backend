@@ -28,6 +28,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { AutomationService } from "../automation/automation.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
 import { differenceInDays, formatDateOnly, formatDayMonthYear } from "./date.helpers";
@@ -68,6 +69,7 @@ export class EmployeeMutationsService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly hrAutomation: HrAutomationEngineService,
     private readonly webhooks: WebhooksDispatchService,
   ) {}
 
@@ -307,6 +309,14 @@ export class EmployeeMutationsService {
       targetType: "employee",
       metadata: { changedFields: Object.keys(updateData), isTermination: body.isActive === false },
     });
+
+    void this.hrAutomation
+      .emit(actor.orgId, "employee.updated", {
+        employeeId: targetUserId,
+        changedFields: Object.keys(updateData),
+        updatedBy: actor.userId,
+      })
+      .catch(() => undefined);
 
     return { success: true };
   }

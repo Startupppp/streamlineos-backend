@@ -9,29 +9,29 @@ import { CoursesService } from "./courses.service";
 
 @RequireModule("hr")
 @Controller("hr/courses")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class CoursesController {
   constructor(private readonly courses: CoursesService) {}
 
   @Get("categories")
+  @RequirePermission("hr:learning:view")
   listCategories(@CurrentUser() u: CurrentUserContext) {
     return this.courses.listCategories(u.orgId);
   }
 
   @Get("my-enrollments")
+  @RequirePermission("hr:learning:view")
   myEnrollments(@CurrentUser() u: CurrentUserContext) {
     return this.courses.listEnrollments(u.userId);
   }
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:view")
   listCourses(@CurrentUser() u: CurrentUserContext) {
     return this.courses.listCourses(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   createCourse(
     @CurrentUser() u: CurrentUserContext,
@@ -41,7 +41,6 @@ export class CoursesController {
   }
 
   @Patch(":courseId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   updateCourse(
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +51,7 @@ export class CoursesController {
   }
 
   @Post(":courseId/enroll")
+  @RequirePermission("hr:learning:view")
   enroll(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
@@ -60,6 +60,7 @@ export class CoursesController {
   }
 
   @Patch(":courseId/progress")
+  @RequirePermission("hr:learning:view")
   updateProgress(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,

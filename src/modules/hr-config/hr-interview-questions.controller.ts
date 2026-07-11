@@ -31,11 +31,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/interview-questions")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrInterviewQuestionsController {
   constructor(private readonly interviewQuestions: HrInterviewQuestionsService) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(interviewQuestionListQuerySchema)) query: InterviewQuestionListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -44,7 +45,6 @@ export class HrInterviewQuestionsController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   create(
@@ -55,7 +55,6 @@ export class HrInterviewQuestionsController {
   }
 
   @Patch(":questionId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   async update(
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -68,7 +67,6 @@ export class HrInterviewQuestionsController {
   }
 
   @Delete(":questionId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   async remove(
     @Param("questionId", ParseIntPipe) questionId: number,

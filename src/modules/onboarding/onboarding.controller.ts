@@ -55,7 +55,7 @@ import {
 } from "../onboarding-flow/dto/onboarding-flow.schemas";
 
 @Controller("onboarding")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class OnboardingController {
   constructor(
     private readonly onboarding: OnboardingService,
@@ -69,11 +69,13 @@ export class OnboardingController {
   // near the bottom of this class) — it's a catch-all that would otherwise shadow these paths.
 
   @Get("session")
+  @RequirePermission("hr:onboarding:tasks:view")
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.getOrCreateSession(u.orgId, u.userId, "employee_onboarding");
   }
 
   @Patch("session")
+  @RequirePermission("hr:onboarding:tasks:complete")
   patchOnboardingSession(
     @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
     @CurrentUser() u: CurrentUserContext,
@@ -91,21 +93,18 @@ export class OnboardingController {
   }
 
   @Get("module-checklists")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
   listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
     return this.checklists.listChecklists(u.orgId, u.enabledModules);
   }
 
   @Get("module-checklists/:moduleKey")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
   getModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   completeChecklistItem(
     @Param("moduleKey") moduleKey: string,
@@ -116,7 +115,6 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   skipChecklistItem(
     @Param("moduleKey") moduleKey: string,
@@ -128,21 +126,18 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/dismiss")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   dismissModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.checklists.dismissChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
   }
 
   @Get("tours")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   listTours(@CurrentUser() u: CurrentUserContext) {
     return this.tours.listToursForUser(u.orgId, u.userId, u.role);
   }
 
   @Post("tours/:tourKey/progress")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   saveTourProgress(
     @Param("tourKey") tourKey: string,
@@ -153,28 +148,24 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/complete")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   completeTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.tours.completeTour(u.orgId, u.userId, tourKey);
   }
 
   @Post("tours/:tourKey/dismiss")
-  @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   dismissTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.tours.dismissTour(u.orgId, u.userId, tourKey);
   }
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("settings:onboarding:manage")
   getProgress(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getProgressSummary(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("settings:onboarding:manage")
   async initiate(
     @Body(new ZodValidationPipe(initiateSchema)) body: InitiateInput,
@@ -193,14 +184,12 @@ export class OnboardingController {
   }
 
   @Get("templates")
-  @UseGuards(PermissionGuard)
   @RequirePermission("settings:onboarding:manage")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplates(u.orgId);
   }
 
   @Post("templates")
-  @UseGuards(PermissionGuard)
   @RequirePermission("settings:onboarding:manage")
   @HttpCode(201)
   createTemplate(
@@ -211,7 +200,6 @@ export class OnboardingController {
   }
 
   @Post("reminders")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
@@ -222,6 +210,7 @@ export class OnboardingController {
   }
 
   @Patch("personal-details")
+  @RequirePermission("hr:onboarding:tasks:complete")
   savePersonalDetails(
     @Body(new ZodValidationPipe(personalDetailsSchema)) body: PersonalDetailsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -230,6 +219,7 @@ export class OnboardingController {
   }
 
   @Patch("bank-details")
+  @RequirePermission("hr:onboarding:tasks:complete")
   saveBankDetails(
     @Body(new ZodValidationPipe(bankDetailsSchema)) body: BankDetailsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -238,11 +228,13 @@ export class OnboardingController {
   }
 
   @Post("submit")
+  @RequirePermission("hr:onboarding:tasks:complete")
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);
   }
 
   @Patch("tasks/:taskId")
+  @RequirePermission("hr:onboarding:tasks:complete")
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateTaskSchema)) body: UpdateTaskInput,
@@ -252,11 +244,13 @@ export class OnboardingController {
   }
 
   @Get("status")
+  @RequirePermission("hr:onboarding:tasks:view")
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getStatus(u.userId, u.orgId);
   }
 
   @Get(":userId")
+  @RequirePermission("hr:onboarding:tasks:view")
   getUserTasks(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,

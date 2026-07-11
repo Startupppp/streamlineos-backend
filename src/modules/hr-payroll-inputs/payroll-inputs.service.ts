@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -15,8 +15,10 @@ import {
   hrPayrollAdjustments,
 } from "../../db/schema/hr/payroll-inputs";
 import { hrLeaveLedger } from "../../db/schema/hr/leave-ledger";
+import { hrLoanRepayments } from "../../db/schema/hr/benefits";
 import { users } from "../../db/schema/auth";
 import { HrAuditService } from "../hr-core/hr-audit.service";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
 import type {
   CreatePeriodInput,
@@ -39,6 +41,7 @@ export class PayrollInputsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: HrAuditService,
+    private readonly hrAutomation: HrAutomationEngineService,
     private readonly buildService: PayrollInputsBuildService,
   ) {}
 
@@ -176,6 +179,26 @@ export class PayrollInputsService {
         )
         .catch(() => undefined);
 
+      const dueRepaymentIds = await tx
+        .select({ id: hrLoanRepayments.id })
+        .from(hrLoanRepayments)
+        .where(
+          and(
+            eq(hrLoanRepayments.orgId, orgId),
+            eq(hrLoanRepayments.status, "pending"),
+            gte(hrLoanRepayments.dueDate, start),
+            lte(hrLoanRepayments.dueDate, end),
+          ),
+        );
+
+      if (dueRepaymentIds.length > 0) {
+        await tx
+          .update(hrLoanRepayments)
+          .set({ status: "deducted", payrollPeriodKey: period.periodKey, updatedAt: new Date() })
+          .where(inArray(hrLoanRepayments.id, dueRepaymentIds.map((r) => r.id)))
+          .catch(() => undefined);
+      }
+
       return result;
     });
 
@@ -186,6 +209,12 @@ export class PayrollInputsService {
       entityId: String(periodId),
       action: "period.locked",
       after: { status: "locked" },
+    });
+
+    void this.hrAutomation.emit(orgId, "payroll.inputs_locked", {
+      periodKey: period.periodKey,
+      periodId,
+      lockedBy: actorId,
     });
 
     return locked;

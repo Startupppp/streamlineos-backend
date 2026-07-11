@@ -19,6 +19,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { HrTemplatesService } from "./hr-templates.service";
 import {
   createTemplateSchema,
@@ -35,19 +36,20 @@ import {
 
 @RequireModule("hr")
 @Controller("hr/templates")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrTemplatesController {
-  constructor(private readonly service: HrTemplatesService) {}
+  constructor(
+    private readonly service: HrTemplatesService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("variables")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:view")
   listVariables() {
     return this.service.listVariables();
   }
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:view")
   list(
     @Query(new ZodValidationPipe(templateListQuerySchema)) query: TemplateListQuery,
@@ -57,7 +59,6 @@ export class HrTemplatesController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
   create(
@@ -68,7 +69,6 @@ export class HrTemplatesController {
   }
 
   @Post("seed-defaults")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
@@ -76,7 +76,6 @@ export class HrTemplatesController {
   }
 
   @Get(":templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:view")
   getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -86,7 +85,6 @@ export class HrTemplatesController {
   }
 
   @Patch(":templateId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:manage")
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -97,7 +95,6 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/transition")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
   transition(
@@ -109,7 +106,6 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/versions")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
   newVersion(
@@ -120,22 +116,23 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/render")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:view")
   @HttpCode(200)
-  render(
+  async render(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(renderTemplateSchema)) body: RenderTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (body.includeSensitive && !u.permissions.includes("hr:sensitive:view")) {
-      throw new ForbiddenException("hr:sensitive:view permission required to include sensitive fields");
+    if (body.includeSensitive) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!u.isOrgOwner && !u.isPlatformAdmin && !perms.has("hr:sensitive:view")) {
+        throw new ForbiddenException("hr:sensitive:view permission required to include sensitive fields");
+      }
     }
     return this.service.render(u.orgId, u.userId, templateId, body);
   }
 
   @Get(":templateId/renders")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:templates:view")
   listRenders(
     @Param("templateId", ParseIntPipe) templateId: number,

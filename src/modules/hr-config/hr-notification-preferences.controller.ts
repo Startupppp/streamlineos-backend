@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -12,16 +14,18 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/notification-preferences")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrNotificationPreferencesController {
   constructor(private readonly preferences: HrNotificationPreferencesService) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   get(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.get(u.userId);
   }
 
   @Patch()
+  @RequirePermission("hr:employees:view")
   update(
     @Body(new ZodValidationPipe(updateNotificationPreferencesSchema)) body: UpdateNotificationPreferencesInput,
     @CurrentUser() u: CurrentUserContext,

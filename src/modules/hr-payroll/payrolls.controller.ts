@@ -39,7 +39,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr/payrolls")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayrollsController {
   constructor(
     private readonly payrolls: PayrollsService,
@@ -48,6 +48,9 @@ export class PayrollsController {
   ) {}
 
   @Get()
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:payroll:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.payrolls.getPayrolls(u.orgId, u.userId);
   }
@@ -68,18 +71,14 @@ export class PayrollsController {
   }
 
   @Post()
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:payroll:generate")
   async generateBulk(
     @Body(new ZodValidationPipe(generatePayrollSchema)) body: GeneratePayrollInput,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:payroll:generate") && !perms.has("hr:payroll:manage")) {
-        throw new ForbiddenException("Only admins can generate payroll.");
-      }
-    }
-
     if (!body.month || !/^\d{4}-\d{2}$/.test(body.month)) {
       throw new BadRequestException("month is required in YYYY-MM format.");
     }
@@ -138,6 +137,9 @@ export class PayrollsController {
   }
 
   @Get(":payrollId/download")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:payroll:view")
   async download(
     @Param("payrollId", ParseIntPipe) payrollId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,7 +148,7 @@ export class PayrollsController {
     let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      isAdmin = perms.has("hr:payroll:approve") || perms.has("hr:payroll:generate") || (u.permissions ?? []).includes("hr:payroll:manage");
+      isAdmin = perms.has("hr:payroll:approve") || perms.has("hr:payroll:generate") || perms.has("hr:payroll:manage");
     }
 
     const result = await this.payrolls.getPayslipDownload(u.orgId, payrollId, u.userId, isAdmin);

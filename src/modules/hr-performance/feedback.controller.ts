@@ -6,20 +6,18 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { FeedbackService } from "./feedback.service";
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/feedback")
 export class FeedbackController {
   constructor(private readonly service: FeedbackService) {}
 
   @Get("cycles")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:view")
   listCycles(@CurrentUser() u: CurrentUserContext) {
     return this.service.listCycles(u.orgId);
   }
 
   @Post("cycles")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:manage")
   createCycle(
     @CurrentUser() u: CurrentUserContext,
@@ -29,14 +27,12 @@ export class FeedbackController {
   }
 
   @Get("cycles/:id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:view")
   getCycle(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.getCycle(u.orgId, id);
   }
 
   @Patch("cycles/:id")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:manage")
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
@@ -47,11 +43,13 @@ export class FeedbackController {
   }
 
   @Get("my-reviews")
+  @RequirePermission("hr:performance:view")
   getMyPendingReviews(@CurrentUser() u: CurrentUserContext) {
     return this.service.getMyPendingReviews(u.userId);
   }
 
   @Post("requests/:requestId/respond")
+  @RequirePermission("hr:performance:view")
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -61,7 +59,6 @@ export class FeedbackController {
   }
 
   @Get("results/:subjectId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:view")
   getResults(@CurrentUser() u: CurrentUserContext, @Param("subjectId") subjectId: string) {
     return this.service.getResults(u.orgId, subjectId);

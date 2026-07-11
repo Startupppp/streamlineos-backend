@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -19,7 +18,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
-import { canManageDocuments } from "./ability.helpers";
 import { resolveDocumentsScope } from "./performance-scope";
 import { DocumentsService } from "./documents.service";
 import { ComplianceService } from "./compliance.service";
@@ -49,7 +47,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class DocumentsController {
   constructor(
     private readonly documents: DocumentsService,
@@ -60,56 +58,62 @@ export class DocumentsController {
   ) {}
 
   @Get("documents")
+  @RequirePermission("hr:documents:view")
   async listDocuments(
     @Query(new ZodValidationPipe(listDocumentsSchema)) filters: ListDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsScope(this.access, u);
-    if (filters.userId && filters.userId !== u.userId && scope !== "all") {
-      throw new ForbiddenException("Not authorized to view other users' documents.");
-    }
     return this.documents.listDocuments(u.orgId, u.userId, scope, filters);
   }
 
   @Post("documents")
   @HttpCode(201)
+  @RequirePermission("hr:documents:view")
   createDocument(
     @Body(new ZodValidationPipe(createDocumentSchema)) body: CreateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.documents.createDocument(u.orgId, u.userId, canManageDocuments(u), body);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    return this.documents.createDocument(u.orgId, u.userId, isAdmin, body);
   }
 
   @Get("documents/stats")
+  @RequirePermission("hr:documents:view")
   async documentStats(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, u);
     return this.documents.stats(u.orgId, u.userId, scope);
   }
 
   @Patch("documents/:documentId")
+  @RequirePermission("hr:documents:view")
   updateDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateDocumentSchema)) body: UpdateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     return this.documents.updateDocument(
       u.orgId,
       u.userId,
-      canManageDocuments(u),
+      isAdmin,
       documentId,
       body,
     );
   }
 
   @Delete("documents/:documentId")
+  @RequirePermission("hr:documents:manage")
   deleteDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.documents.deleteDocument(u.orgId, u.userId, canManageDocuments(u), documentId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
+    return this.documents.deleteDocument(u.orgId, u.userId, isAdmin, documentId);
   }
 
   @Get("document-expiry")
+  @RequirePermission("hr:documents:view")
   documentExpiry(
     @Query("days") days: string | undefined,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +123,7 @@ export class DocumentsController {
   }
 
   @Get("compliance")
+  @RequirePermission("hr:documents:view")
   async listCompliance(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, u);
     return this.compliance.listAcknowledgments(u.orgId, u.userId, scope);
@@ -126,17 +131,16 @@ export class DocumentsController {
 
   @Post("compliance")
   @HttpCode(201)
+  @RequirePermission("hr:compliance:manage")
   sendCompliance(
     @Body(new ZodValidationPipe(sendAckSchema)) body: SendAckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManageDocuments(u)) {
-      throw new ForbiddenException("Only admins can send acknowledgment requests.");
-    }
     return this.compliance.sendAcknowledgments(u.orgId, body);
   }
 
   @Patch("compliance")
+  @RequirePermission("hr:documents:view")
   acknowledgeCompliance(
     @Body(new ZodValidationPipe(ackSchema)) body: AckInput,
     @CurrentUser() u: CurrentUserContext,
@@ -145,28 +149,29 @@ export class DocumentsController {
   }
 
   @Get("compliance/statutory")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   statutory(@CurrentUser() u: CurrentUserContext) {
     return this.compliance.statutory(u.orgId);
   }
 
   @Get("rich-documents")
+  @RequirePermission("hr:documents:view")
   listRichDocuments(@CurrentUser() u: CurrentUserContext) {
     return this.richDocuments.list(u.orgId);
   }
 
   @Post("rich-documents")
   @HttpCode(201)
+  @RequirePermission("hr:documents:manage")
   createRichDocument(
     @Body(new ZodValidationPipe(createRichDocumentSchema)) body: CreateRichDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can create rich documents.");
     return this.richDocuments.create(u.orgId, u.userId, body);
   }
 
   @Get("rich-documents/:documentId")
+  @RequirePermission("hr:documents:view")
   getRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -175,35 +180,34 @@ export class DocumentsController {
   }
 
   @Patch("rich-documents/:documentId/publish")
+  @RequirePermission("hr:documents:manage")
   publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can publish documents.");
     return this.richDocuments.togglePublish(u.orgId, documentId);
   }
 
   @Patch("rich-documents/:documentId")
+  @RequirePermission("hr:documents:manage")
   updateRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @Body(new ZodValidationPipe(updateRichDocumentSchema)) body: UpdateRichDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can update rich documents.");
     return this.richDocuments.update(u.orgId, u.userId, documentId, body);
   }
 
   @Delete("rich-documents/:documentId")
+  @RequirePermission("hr:documents:manage")
   deleteRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can delete rich documents.");
     return this.richDocuments.remove(u.orgId, documentId);
   }
 
   @Get("documents/letters")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:view")
   listLetters(
     @Query("employeeId") employeeId: string | undefined,
@@ -213,7 +217,6 @@ export class DocumentsController {
   }
 
   @Post("documents/letters/render")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   @HttpCode(200)
   renderLetter(
@@ -224,7 +227,6 @@ export class DocumentsController {
   }
 
   @Post("documents/letters")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   saveLetter(
@@ -235,7 +237,6 @@ export class DocumentsController {
   }
 
   @Post("documents/letters/:renderId/sign")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:signatures:manage")
   @HttpCode(201)
   sendLetterToSign(
@@ -247,7 +248,6 @@ export class DocumentsController {
   }
 
   @Get("compliance/calendar")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   complianceCalendar(
     @Query("year") year: string | undefined,

@@ -1,0 +1,124 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../../access/permission.guard";
+import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { IdentityService } from "./identity.service";
+import {
+  createProvisioningSchema,
+  updateProvisioningSchema,
+  listProvisioningSchema,
+  createTemplateSchema,
+  updateTemplateSchema,
+  generateProvisioningSchema,
+  exitVerificationSchema,
+  type CreateProvisioningInput,
+  type UpdateProvisioningInput,
+  type ListProvisioningInput,
+  type CreateTemplateInput,
+  type UpdateTemplateInput,
+  type GenerateProvisioningInput,
+} from "../dto/identity.schemas";
+import { z } from "zod";
+
+@RequireModule("hr")
+@Controller("hr/enterprise/ops/identity")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class IdentityController {
+  constructor(private readonly svc: IdentityService) {}
+
+  @Get("provisioning")
+  @RequirePermission("hr:identity:view")
+  listProvisioning(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(listProvisioningSchema)) query: ListProvisioningInput,
+  ) {
+    return this.svc.listProvisioning(user.orgId, query);
+  }
+
+  @Post("provisioning")
+  @RequirePermission("hr:identity:manage")
+  createProvisioning(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(createProvisioningSchema)) body: CreateProvisioningInput,
+  ) {
+    return this.svc.createProvisioning(user.orgId, body);
+  }
+
+  @Post("provisioning/generate")
+  @RequirePermission("hr:identity:manage")
+  generateProvisioning(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(generateProvisioningSchema)) body: GenerateProvisioningInput,
+  ) {
+    return this.svc.generateProvisioning(user.orgId, body);
+  }
+
+  @Patch("provisioning/:id")
+  @RequirePermission("hr:identity:manage")
+  updateProvisioning(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateProvisioningSchema)) body: UpdateProvisioningInput,
+  ) {
+    return this.svc.updateProvisioning(user.orgId, id, body);
+  }
+
+  @Get("templates")
+  @RequirePermission("hr:identity:view")
+  listTemplates(@CurrentUser() user: CurrentUserContext) {
+    return this.svc.listTemplates(user.orgId);
+  }
+
+  @Post("templates")
+  @RequirePermission("hr:identity:manage")
+  createTemplate(
+    @CurrentUser() user: CurrentUserContext,
+    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+  ) {
+    return this.svc.createTemplate(user.orgId, body);
+  }
+
+  @Patch("templates/:id")
+  @RequirePermission("hr:identity:manage")
+  updateTemplate(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+  ) {
+    return this.svc.updateTemplate(user.orgId, id, body);
+  }
+
+  @Delete("templates/:id")
+  @HttpCode(204)
+  @RequirePermission("hr:identity:manage")
+  async deleteTemplate(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("id") id: string,
+  ) {
+    await this.svc.deleteTemplate(user.orgId, id);
+  }
+
+  @Get("exit-verification")
+  @RequirePermission("hr:identity:view")
+  exitVerification(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(exitVerificationSchema)) query: z.infer<typeof exitVerificationSchema>,
+  ) {
+    return this.svc.getExitVerification(user.orgId, query.userId);
+  }
+}

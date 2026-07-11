@@ -7,6 +7,7 @@ import { HrEmployeeSubroutesController } from "./hr-employee-subroutes.controlle
 import { HrSensitiveController } from "./hr-sensitive.controller";
 import { HrAuditController } from "./hr-audit.controller";
 import { HrOrgCatalogController } from "./hr-org-catalog.controller";
+import { HrCustomFieldsController } from "./hr-custom-fields.controller";
 import { HrPeopleService } from "./hr-people.service";
 import { HrEmploymentsService } from "./hr-employments.service";
 import { HrEffectiveChangesService } from "./hr-effective-changes.service";
@@ -14,6 +15,7 @@ import { HrTimelineService } from "./hr-timeline.service";
 import { HrSensitiveService } from "./hr-sensitive.service";
 import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
+import { HrCustomFieldsService } from "./hr-custom-fields.service";
 
 @Module({
   imports: [HrWorkflowsModule],
@@ -25,6 +27,7 @@ import { HrOrgCatalogService } from "./hr-org-catalog.service";
     HrSensitiveController,
     HrAuditController,
     HrOrgCatalogController,
+    HrCustomFieldsController,
   ],
   providers: [
     HrPeopleService,
@@ -34,6 +37,7 @@ import { HrOrgCatalogService } from "./hr-org-catalog.service";
     HrSensitiveService,
     HrAuditService,
     HrOrgCatalogService,
+    HrCustomFieldsService,
   ],
   exports: [HrAuditService, HrEffectiveChangesService, HrPeopleService, HrEmploymentsService, HrSensitiveService],
 })

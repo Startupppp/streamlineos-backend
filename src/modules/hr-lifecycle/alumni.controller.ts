@@ -16,11 +16,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/alumni")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class AlumniController {
   constructor(private readonly alumni: AlumniService) {}
 
   @Get()
+  @RequirePermission("hr:alumni:read")
   list(
     @Query(new ZodValidationPipe(alumniListSchema)) query: AlumniListInput,
     @CurrentUser() u: CurrentUserContext,

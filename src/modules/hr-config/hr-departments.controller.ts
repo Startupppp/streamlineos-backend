@@ -11,17 +11,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/departments")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrDepartmentsController {
   constructor(private readonly departments: HrDepartmentsService) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.departments.list(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   create(

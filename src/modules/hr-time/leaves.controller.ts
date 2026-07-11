@@ -42,7 +42,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/leaves")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeavesController {
   constructor(
     private readonly leaves: LeavesService,
@@ -51,31 +51,37 @@ export class LeavesController {
   ) {}
 
   @Get()
+  @RequirePermission("hr:leaves:view")
   pageData(@CurrentUser() u: CurrentUserContext) {
     return this.leavesPage.pageData(u.orgId, u.userId);
   }
 
   @Get("balance")
+  @RequirePermission("hr:leaves:view")
   balance(@CurrentUser() u: CurrentUserContext) {
     return this.leaves.balance(u.orgId, u.userId);
   }
 
   @Get("my")
+  @RequirePermission("hr:leaves:view")
   my(@CurrentUser() u: CurrentUserContext) {
     return this.leaves.my(u.orgId, u.userId);
   }
 
   @Get("team")
+  @RequirePermission("hr:leaves:view")
   async team(@CurrentUser() u: CurrentUserContext) {
     return await this.leaves.team(u);
   }
 
   @Get("this-week")
+  @RequirePermission("hr:leaves:view")
   thisWeek(@CurrentUser() u: CurrentUserContext) {
     return this.leaves.thisWeek(u.orgId);
   }
 
   @Get("analytics")
+  @RequirePermission("hr:leaves:view")
   analytics(
     @Query(new ZodValidationPipe(leaveAnalyticsQuerySchema)) query: LeaveAnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +91,7 @@ export class LeavesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:leaves:view")
   create(
     @Body(new ZodValidationPipe(createLeaveSchema)) body: CreateLeaveInput,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +101,7 @@ export class LeavesController {
 
   @Post("comp-off")
   @HttpCode(201)
+  @RequirePermission("hr:leaves:view")
   compOff(
     @Body(new ZodValidationPipe(compOffSchema)) body: CompOffInput,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +110,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId/cancel")
+  @RequirePermission("hr:leaves:view")
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -134,6 +143,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId")
+  @RequirePermission("hr:leaves:view")
   async update(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,

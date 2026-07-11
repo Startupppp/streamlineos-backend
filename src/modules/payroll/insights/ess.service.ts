@@ -242,7 +242,7 @@ export class EssService {
 
     const declarations = await this.taxService.listMine(orgId, userId);
     const declaration = declarations.find((d) => d.financialYear === window.financialYear) ?? null;
-    const proofs = declaration ? await this.taxService.listProofs(declaration.id) : [];
+    const proofs = declaration ? await this.taxService.listProofs(orgId, declaration.id) : [];
 
     return { windowStatus: "OPEN" as const, financialYear: window.financialYear, closesAt: window.closesAt, declaration, proofs };
   }

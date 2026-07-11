@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -14,11 +13,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
-import { canManagePerformance } from "./ability.helpers";
 import { resolvePerformanceScope } from "./performance-scope";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformanceReviewsService } from "./performance-reviews.service";
@@ -54,7 +54,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/performance")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class PerformanceController {
   constructor(
     private readonly goalsService: PerformanceGoalsService,
@@ -63,34 +63,33 @@ export class PerformanceController {
   ) {}
 
   @Get("goals")
+  @RequirePermission("hr:performance:view")
   async listGoals(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolvePerformanceScope(this.access, u);
-    if (userId && userId !== u.userId && scope !== "all") {
-      throw new ForbiddenException("Not authorized.");
-    }
     return this.goalsService.listGoals(u.orgId, u.userId, scope, userId);
   }
 
   @Post("goals")
   @HttpCode(201)
+  @RequirePermission("hr:performance:manage")
   createGoal(
     @Body(new ZodValidationPipe(createGoalSchema)) body: CreateGoalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create goals.");
     return this.goalsService.createGoal(u.orgId, body);
   }
 
   @Patch("goals")
+  @RequirePermission("hr:performance:manage")
   updateGoalCollection(
     @Body(new ZodValidationPipe(updateGoalCollectionSchema)) body: UpdateGoalCollectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can update goals.");
     return this.goalsService.updateGoalFromCollection(u.orgId, body);
   }
 
   @Patch("goals/:goalId")
+  @RequirePermission("hr:performance:view")
   updateGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(updateGoalItemSchema)) body: UpdateGoalItemInput,
@@ -100,6 +99,7 @@ export class PerformanceController {
   }
 
   @Delete("goals/:goalId")
+  @RequirePermission("hr:performance:manage")
   deleteGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +108,7 @@ export class PerformanceController {
   }
 
   @Get("key-results")
+  @RequirePermission("hr:performance:view")
   listKeyResults(
     @Query("goalId") goalId: string | undefined,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +120,7 @@ export class PerformanceController {
 
   @Post("key-results")
   @HttpCode(201)
+  @RequirePermission("hr:performance:view")
   createKeyResult(
     @Body(new ZodValidationPipe(createKeyResultSchema)) body: CreateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
@@ -127,6 +129,7 @@ export class PerformanceController {
   }
 
   @Patch("key-results")
+  @RequirePermission("hr:performance:view")
   updateKeyResult(
     @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
   ) {
@@ -134,6 +137,7 @@ export class PerformanceController {
   }
 
   @Get("one-on-ones")
+  @RequirePermission("hr:performance:view")
   listOneOnOnes(
     @Query("upcoming") upcoming: string | undefined,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +147,7 @@ export class PerformanceController {
 
   @Post("one-on-ones")
   @HttpCode(201)
+  @RequirePermission("hr:performance:view")
   createOneOnOne(
     @Body(new ZodValidationPipe(createOneOnOneSchema)) body: CreateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
@@ -151,6 +156,7 @@ export class PerformanceController {
   }
 
   @Patch("one-on-ones/:meetingId")
+  @RequirePermission("hr:performance:view")
   updateOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @Body(new ZodValidationPipe(updateOneOnOneSchema)) body: UpdateOneOnOneInput,
@@ -160,6 +166,7 @@ export class PerformanceController {
   }
 
   @Delete("one-on-ones/:meetingId")
+  @RequirePermission("hr:performance:view")
   deleteOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -168,6 +175,7 @@ export class PerformanceController {
   }
 
   @Get("pip")
+  @RequirePermission("hr:performance:view")
   async listPips(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolvePerformanceScope(this.access, u);
     return this.reviewsService.listPips(u.orgId, u.userId, scope);
@@ -175,25 +183,26 @@ export class PerformanceController {
 
   @Post("pip")
   @HttpCode(201)
+  @RequirePermission("hr:performance:manage")
   createPip(
     @Body(new ZodValidationPipe(createPipSchema)) body: CreatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create PIPs.");
     return this.reviewsService.createPip(u.orgId, u.userId, body);
   }
 
   @Patch("pip/:pipId")
+  @RequirePermission("hr:performance:manage")
   updatePip(
     @Param("pipId", ParseIntPipe) pipId: number,
     @Body(new ZodValidationPipe(updatePipSchema)) body: UpdatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Forbidden.");
     return this.reviewsService.updatePip(u.orgId, pipId, body);
   }
 
   @Get("reviews")
+  @RequirePermission("hr:performance:view")
   async listReviews(
     @Query("userId") userId: string | undefined,
     @Query("cycleId") cycleId: string | undefined,
@@ -202,9 +211,6 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
-    if (userId && userId !== u.userId && scope !== "all") {
-      throw new ForbiddenException("Not authorized.");
-    }
     return this.reviewsService.listReviews(u.orgId, u.userId, scope, {
       userId,
       cycleId: cycleId ? Number(cycleId) : undefined,
@@ -215,15 +221,16 @@ export class PerformanceController {
 
   @Post("reviews")
   @HttpCode(201)
+  @RequirePermission("hr:performance:manage")
   createReview(
     @Body(new ZodValidationPipe(createPerformanceReviewSchema)) body: CreatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create reviews.");
     return this.reviewsService.createReview(u.orgId, u.userId, body);
   }
 
   @Get("reviews/:reviewId")
+  @RequirePermission("hr:performance:view")
   getReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -232,6 +239,7 @@ export class PerformanceController {
   }
 
   @Delete("reviews/:reviewId")
+  @RequirePermission("hr:performance:manage")
   deleteReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -240,6 +248,7 @@ export class PerformanceController {
   }
 
   @Patch("reviews/:reviewId")
+  @RequirePermission("hr:performance:view")
   updateReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(updatePerformanceReviewSchema)) body: UpdatePerformanceReviewInput,
@@ -249,21 +258,23 @@ export class PerformanceController {
   }
 
   @Get("cycles")
+  @RequirePermission("hr:performance:view")
   listCycles(@CurrentUser() u: CurrentUserContext) {
     return this.reviewsService.listCycles(u.orgId);
   }
 
   @Post("cycles")
   @HttpCode(201)
+  @RequirePermission("hr:performance:manage")
   createCycle(
     @Body(new ZodValidationPipe(createReviewCycleSchema)) body: CreateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Only admins can create review cycles.");
     return this.reviewsService.createCycle(u.orgId, u.userId, body);
   }
 
   @Get("cycles/:cycleId")
+  @RequirePermission("hr:performance:view")
   getCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -272,21 +283,21 @@ export class PerformanceController {
   }
 
   @Patch("cycles/:cycleId")
+  @RequirePermission("hr:performance:manage")
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body(new ZodValidationPipe(updateReviewCycleSchema)) body: UpdateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Forbidden.");
     return this.reviewsService.updateCycle(u.orgId, cycleId, body);
   }
 
   @Delete("cycles/:cycleId")
+  @RequirePermission("hr:performance:manage")
   deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!canManagePerformance(u)) throw new ForbiddenException("Forbidden.");
     return this.reviewsService.deleteCycle(u.orgId, cycleId);
   }
 }

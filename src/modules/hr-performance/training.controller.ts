@@ -58,19 +58,17 @@ interface MarkAttendanceBody {
 
 @RequireModule("hr")
 @Controller("hr/training")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TrainingController {
   constructor(private readonly trainingService: TrainingService) {}
 
   @Get()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:view")
   listPrograms(@CurrentUser() u: CurrentUserContext) {
     return this.trainingService.listPrograms(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   @HttpCode(201)
   createProgram(
@@ -81,7 +79,6 @@ export class TrainingController {
   }
 
   @Patch(":programId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
@@ -93,6 +90,7 @@ export class TrainingController {
 
   @Post(":programId/enroll")
   @HttpCode(201)
+  @RequirePermission("hr:learning:view")
   enrollUser(
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -101,14 +99,12 @@ export class TrainingController {
   }
 
   @Get(":programId/attendance")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   listAttendance(@Param("programId", ParseIntPipe) programId: number) {
     return this.trainingService.listAttendance(programId);
   }
 
   @Patch(":programId/attendance/:userId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:learning:manage")
   markAttendance(
     @Param("programId", ParseIntPipe) programId: number,

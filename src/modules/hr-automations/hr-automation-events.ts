@@ -16,10 +16,16 @@ export const HR_AUTOMATION_EVENTS = [
   "asset.assigned",
   "asset.return_due",
   "review.cycle_started",
+  "review.due",
   "goal.overdue",
   "course.assigned",
   "resignation.submitted",
   "exit.completed",
+  "employee.updated",
+  "employee.exited",
+  "contract.ended",
+  "attendance.finalized",
+  "payroll.inputs_locked",
 ] as const;
 
 export type HrAutomationEvent = (typeof HR_AUTOMATION_EVENTS)[number];
@@ -117,6 +123,11 @@ export const HR_EVENT_FIELD_DOCS: Record<HrAutomationEvent, EventFieldDoc[]> = {
     { field: "cycleName", label: "Cycle Name", type: "string" },
     { field: "departmentId", label: "Department ID", type: "number" },
   ],
+  "review.due": [
+    { field: "cycleId", label: "Cycle ID", type: "number" },
+    { field: "cycleName", label: "Cycle Name", type: "string" },
+    { field: "deadline", label: "Deadline", type: "string" },
+  ],
   "goal.overdue": [
     { field: "employeeId", label: "Employee ID", type: "string" },
     { field: "goalId", label: "Goal ID", type: "number" },
@@ -139,6 +150,33 @@ export const HR_EVENT_FIELD_DOCS: Record<HrAutomationEvent, EventFieldDoc[]> = {
     { field: "departmentId", label: "Department ID", type: "number" },
     { field: "tenure", label: "Tenure (months)", type: "number" },
   ],
+  "employee.updated": [
+    { field: "employeeId", label: "Employee ID", type: "string" },
+    { field: "changedFields", label: "Changed Fields", type: "string" },
+    { field: "departmentId", label: "Department ID", type: "number" },
+  ],
+  "employee.exited": [
+    { field: "employeeId", label: "Employee ID", type: "string" },
+    { field: "exitType", label: "Exit Type", type: "string" },
+    { field: "lastWorkingDate", label: "Last Working Date", type: "date" },
+    { field: "departmentId", label: "Department ID", type: "number" },
+  ],
+  "contract.ended": [
+    { field: "employeeId", label: "Employee ID", type: "string" },
+    { field: "contractId", label: "Contract ID", type: "number" },
+    { field: "contractType", label: "Contract Type", type: "string" },
+  ],
+  "attendance.finalized": [
+    { field: "employeeId", label: "Employee ID", type: "string" },
+    { field: "periodMonth", label: "Period Month (YYYY-MM)", type: "string" },
+    { field: "totalDays", label: "Total Days", type: "number" },
+    { field: "presentDays", label: "Present Days", type: "number" },
+  ],
+  "payroll.inputs_locked": [
+    { field: "periodMonth", label: "Period Month (YYYY-MM)", type: "string" },
+    { field: "lockedBy", label: "Locked By (userId)", type: "string" },
+    { field: "employeeCount", label: "Employee Count", type: "number" },
+  ],
 };
 
 export const HR_EVENT_SAMPLE_PAYLOADS: Record<HrAutomationEvent, Record<string, unknown>> = {
@@ -157,8 +195,14 @@ export const HR_EVENT_SAMPLE_PAYLOADS: Record<HrAutomationEvent, Record<string, 
   "asset.assigned": { employeeId: "user_abc123", assetType: "laptop", assetId: 42 },
   "asset.return_due": { employeeId: "user_abc123", assetType: "laptop", daysUntilDue: 7 },
   "review.cycle_started": { cycleId: 5, cycleName: "Q3 2026 Review", departmentId: 1 },
+  "review.due": { cycleId: 5, cycleName: "Q3 2026 Review", deadline: "2026-08-01" },
   "goal.overdue": { employeeId: "user_abc123", goalId: 12, daysPastDue: 3 },
   "course.assigned": { employeeId: "user_abc123", courseId: 7, courseName: "Security Awareness" },
   "resignation.submitted": { employeeId: "user_abc123", lastWorkingDate: "2026-08-11", departmentId: 1, noticePeriodDays: 30 },
   "exit.completed": { employeeId: "user_abc123", exitType: "resignation", departmentId: 1, tenure: 24 },
+  "employee.updated": { employeeId: "user_abc123", changedFields: "phone,address", departmentId: 1 },
+  "employee.exited": { employeeId: "user_abc123", exitType: "resignation", lastWorkingDate: "2026-08-11", departmentId: 1 },
+  "contract.ended": { employeeId: "user_abc123", contractId: 7, contractType: "contractor" },
+  "attendance.finalized": { employeeId: "user_abc123", periodMonth: "2026-07", totalDays: 31, presentDays: 22 },
+  "payroll.inputs_locked": { periodMonth: "2026-07", lockedBy: "user_abc123", employeeCount: 150 },
 };

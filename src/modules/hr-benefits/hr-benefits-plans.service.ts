@@ -106,7 +106,7 @@ export class HrBenefitsPlansService {
   async createWindow(orgId: string, data: CreateEnrollmentWindowInput) {
     const [window] = await this.db
       .insert(hrBenefitEnrollmentWindows)
-      .values({ ...data, orgId })
+      .values({ ...data, opensAt: new Date(data.opensAt), closesAt: new Date(data.closesAt), orgId })
       .returning();
     return window;
   }
@@ -120,9 +120,14 @@ export class HrBenefitsPlansService {
 
     if (!existing) throw new NotFoundException("Enrollment window not found");
 
+    const { opensAt, closesAt, ...rest } = data;
     const [updated] = await this.db
       .update(hrBenefitEnrollmentWindows)
-      .set(data)
+      .set({
+        ...rest,
+        ...(opensAt ? { opensAt: new Date(opensAt) } : {}),
+        ...(closesAt ? { closesAt: new Date(closesAt) } : {}),
+      })
       .where(and(eq(hrBenefitEnrollmentWindows.id, windowId), eq(hrBenefitEnrollmentWindows.orgId, orgId)))
       .returning();
     return updated;

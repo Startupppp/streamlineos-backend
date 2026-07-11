@@ -21,12 +21,11 @@ import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.
 
 @RequireModule("hr")
 @Controller("hr/employees")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrSensitiveController {
   constructor(private readonly sensitive: HrSensitiveService) {}
 
   @Get(":employeeId/sensitive")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:sensitive:view")
   get(
     @Param("employeeId", ParseIntPipe) employeeId: number,
@@ -38,7 +37,6 @@ export class HrSensitiveController {
   }
 
   @Patch(":employeeId/sensitive")
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:sensitive:manage")
   update(
     @Param("employeeId", ParseIntPipe) employeeId: number,

@@ -21,6 +21,7 @@ import { overtimeRequests } from "../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../db/schema/auth";
 import { AttendanceSummaryService } from "../hr-time/attendance-summary.service";
 import { LeaveLedgerService } from "../hr-time/leave-ledger.service";
+import { HrBenefitsClaimsService } from "../hr-benefits/hr-benefits-claims.service";
 
 function periodBounds(periodKey: string): { start: string; end: string } {
   const [year, month] = periodKey.split("-");
@@ -37,6 +38,7 @@ export class PayrollInputsBuildService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendanceSummary: AttendanceSummaryService,
     private readonly leaveLedger: LeaveLedgerService,
+    private readonly benefitsClaims: HrBenefitsClaimsService,
   ) {}
 
   async buildSnapshots(orgId: string, period: typeof hrPayrollInputPeriods.$inferSelect): Promise<void> {
@@ -59,6 +61,9 @@ export class PayrollInputsBuildService {
 
     const userIds = members.map((m) => m.userId);
 
+    const periodStart = new Date(start);
+    const periodEnd = new Date(end + "T23:59:59Z");
+
     const [
       attendanceResult,
       leaveResult,
@@ -68,6 +73,8 @@ export class PayrollInputsBuildService {
       salaryProfileRows,
       salaryStructureRows,
       employmentRows,
+      benefitsClaimsRows,
+      loanRepaymentRows,
     ] = await Promise.all([
       this.attendanceSummary.buildAttendanceSummary({
         orgId,
@@ -158,6 +165,8 @@ export class PayrollInputsBuildService {
           ),
         )
         .catch(() => [] as never[]),
+      this.benefitsClaims.getPayrollPayableClaims(orgId, periodStart, periodEnd),
+      this.benefitsClaims.getDueLoanRepayments(orgId, periodStart, periodEnd),
     ]);
 
     const attendanceByUser = new Map(attendanceResult.data.map((r) => [r.userId, r]));
@@ -182,6 +191,24 @@ export class PayrollInputsBuildService {
       const existing = loansByUser.get(row.userId) ?? [];
       existing.push(row);
       loansByUser.set(row.userId, existing);
+    }
+
+    const loanIdToUserId = new Map<number, string>(loanRows.map((l) => [l.id, l.userId]));
+
+    const benefitsClaimsByUser = new Map<string, (typeof benefitsClaimsRows)[number][]>();
+    for (const row of benefitsClaimsRows) {
+      const existing = benefitsClaimsByUser.get(row.userId) ?? [];
+      existing.push(row);
+      benefitsClaimsByUser.set(row.userId, existing);
+    }
+
+    const loanRepaymentsByUser = new Map<string, (typeof loanRepaymentRows)[number][]>();
+    for (const row of loanRepaymentRows) {
+      const userId = loanIdToUserId.get(row.loanId);
+      if (!userId) continue;
+      const existing = loanRepaymentsByUser.get(userId) ?? [];
+      existing.push(row);
+      loanRepaymentsByUser.set(userId, existing);
     }
 
     const salaryProfileByUser = new Map<string, typeof employeeSalaryProfiles.$inferSelect>();
@@ -236,6 +263,8 @@ export class PayrollInputsBuildService {
       const otRows = overtimeByUser.get(userId) ?? [];
       const reimbs = reimbByUser.get(userId) ?? [];
       const loans = loansByUser.get(userId) ?? [];
+      const benefitClaims = benefitsClaimsByUser.get(userId) ?? [];
+      const dueRepayments = loanRepaymentsByUser.get(userId) ?? [];
       const salaryProfile = salaryProfileByUser.get(userId);
       const salaryStructure = salaryStructureByUser.get(userId);
       const employment = employmentByUser.get(userId);
@@ -307,15 +336,29 @@ export class PayrollInputsBuildService {
 
       const reimbursementPayload = {
         userId,
-        items: reimbs.map((r) => ({
-          id: r.id,
-          category: r.category,
-          amount: r.amount,
-          description: r.description,
-          payrollMonth: r.payrollMonth,
-          approvedAt: r.approvedAt,
-        })),
-        totalAmount: reimbs.reduce((sum, r) => sum + parseFloat(r.amount ?? "0"), 0),
+        items: [
+          ...reimbs.map((r) => ({
+            id: r.id,
+            category: r.category,
+            amount: r.amount,
+            description: r.description,
+            payrollMonth: r.payrollMonth,
+            approvedAt: r.approvedAt,
+            source: "reimbursement" as const,
+          })),
+          ...benefitClaims.map((c) => ({
+            id: c.id,
+            category: "benefits_claim" as const,
+            amount: String(c.amountCents),
+            description: `Insurance claim #${c.claimNumber}`,
+            payrollMonth: null,
+            approvedAt: c.decidedAt,
+            source: "benefits_claim" as const,
+          })),
+        ],
+        totalAmount:
+          reimbs.reduce((sum, r) => sum + parseFloat(r.amount ?? "0"), 0) +
+          benefitClaims.reduce((sum, c) => sum + c.amountCents, 0),
       };
 
       const deductionPayload = {
@@ -329,6 +372,15 @@ export class PayrollInputsBuildService {
           reason: l.reason,
         })),
         totalMonthlyEmi: loans.reduce((sum, l) => sum + parseFloat(l.emiAmount ?? "0"), 0),
+        scheduledRepayments: dueRepayments.map((r) => ({
+          id: r.id,
+          loanId: r.loanId,
+          installmentNo: r.installmentNo,
+          dueDate: r.dueDate,
+          amountCents: r.amountCents,
+          source: "loan_repayment" as const,
+        })),
+        totalRepaymentCents: dueRepayments.reduce((sum, r) => sum + r.amountCents, 0),
       };
 
       const lifecyclePayload = {
@@ -361,8 +413,14 @@ export class PayrollInputsBuildService {
         buildSnapshot("attendance", attendancePayload),
         buildSnapshot("leave", leavePayload),
         buildSnapshot("overtime", overtimePayload, otRows.map((r) => ({ table: "overtime_requests", id: r.id }))),
-        buildSnapshot("reimbursement", reimbursementPayload, reimbs.map((r) => ({ table: "reimbursements", id: r.id }))),
-        buildSnapshot("deduction", deductionPayload, loans.map((l) => ({ table: "salary_loans", id: l.id }))),
+        buildSnapshot("reimbursement", reimbursementPayload, [
+          ...reimbs.map((r) => ({ table: "reimbursements", id: r.id })),
+          ...benefitClaims.map((c) => ({ table: "hr_insurance_claims", id: c.id })),
+        ]),
+        buildSnapshot("deduction", deductionPayload, [
+          ...loans.map((l) => ({ table: "salary_loans", id: l.id })),
+          ...dueRepayments.map((r) => ({ table: "hr_loan_repayments", id: r.id })),
+        ]),
         buildSnapshot("lifecycle", lifecyclePayload, employment ? [{ table: "hr_employments", id: employment.id }] : null),
       );
     }

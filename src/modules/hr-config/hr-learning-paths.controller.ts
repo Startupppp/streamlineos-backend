@@ -16,11 +16,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/learning-paths")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrLearningPathsController {
   constructor(private readonly growth: HrGrowthService) {}
 
   @Get()
+  @RequirePermission("hr:learning:view")
   list(
     @Query(new ZodValidationPipe(learningPathListQuerySchema)) query: LearningPathListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -29,7 +30,6 @@ export class HrLearningPathsController {
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:performance:manage")
   @HttpCode(201)
   create(

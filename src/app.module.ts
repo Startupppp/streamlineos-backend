@@ -67,6 +67,15 @@ import { HrPoliciesModule } from "./modules/hr-policies/hr-policies.module";
 import { HrWorkflowsModule } from "./modules/hr-workflows/hr-workflows.module";
 import { HrTemplatesModule } from "./modules/hr-templates/hr-templates.module";
 import { HrPayrollInputsModule } from "./modules/hr-payroll-inputs/hr-payroll-inputs.module";
+import { HrCasesModule } from "./modules/hr-cases/hr-cases.module";
+import { HrBenefitsModule } from "./modules/hr-benefits/hr-benefits.module";
+import { HrGlobalModule } from "./modules/hr-global/hr-global.module";
+import { HrFormsModule } from "./modules/hr-forms/hr-forms.module";
+import { HrAnalyticsPlusModule } from "./modules/hr-analytics-plus/hr-analytics-plus.module";
+import { HrSettingsHubModule } from "./modules/hr-settings-hub/hr-settings-hub.module";
+import { HrGovernanceModule } from "./modules/hr-governance/hr-governance.module";
+import { HrEnterpriseCompModule } from "./modules/hr-enterprise-comp/hr-enterprise-comp.module";
+import { HrEnterpriseOpsModule } from "./modules/hr-enterprise-ops/hr-enterprise-ops.module";
 import { SearchModule } from "./modules/search/search.module";
 import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -120,6 +129,7 @@ import { TimesheetsModule } from "./modules/timesheets/timesheets.module";
 import { TimesheetsCoreModule } from "./modules/timesheets-core/timesheets-core.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
+import { HrImportModule } from "./modules/hr-import/hr-import.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -187,6 +197,15 @@ import { MeService } from "./me/me.service";
     HrWorkflowsModule,
     HrTemplatesModule,
     HrPayrollInputsModule,
+    HrCasesModule,
+    HrBenefitsModule,
+    HrGlobalModule,
+    HrFormsModule,
+    HrAnalyticsPlusModule,
+    HrSettingsHubModule,
+    HrGovernanceModule,
+    HrEnterpriseCompModule,
+    HrEnterpriseOpsModule,
     HrDirectoryModule,
     HrPerformanceModule,
     HrPayrollModule,
@@ -244,6 +263,7 @@ import { MeService } from "./me/me.service";
     TimesheetsCoreModule,
     PaymentsModule,
     FeedbucketModule,
+    HrImportModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

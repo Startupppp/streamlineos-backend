@@ -306,4 +306,7 @@ export class HrSafetyService {
       .map((r) => ({
         userId: r.userId,
         avgScore: parseFloat(String(r.avgScore ?? "0")),
-        checkCount
+        checkCount: r.checkCount,
+      }));
+  }
+}

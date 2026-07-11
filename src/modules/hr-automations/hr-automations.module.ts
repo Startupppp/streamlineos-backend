@@ -7,19 +7,22 @@ import { AutomationEmailService } from "../automation/automation-email.service";
 import { HR_WORKFLOW_STARTER } from "./hr-workflow-starter.port";
 import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
 import { HrWorkflowStarterAdapter } from "../hr-workflows/hr-workflow-starter.adapter";
+import { HrWebhooksController } from "./hr-webhooks.controller";
+import { HrWebhooksService } from "./hr-webhooks.service";
 
 @Module({
   imports: [NotificationsModule, HrWorkflowsModule],
-  controllers: [HrAutomationsController],
+  controllers: [HrAutomationsController, HrWebhooksController],
   providers: [
     HrAutomationEngineService,
     HrAutomationActionsService,
     AutomationEmailService,
+    HrWebhooksService,
     {
       provide: HR_WORKFLOW_STARTER,
       useExisting: HrWorkflowStarterAdapter,
     },
   ],
-  exports: [HrAutomationEngineService],
+  exports: [HrAutomationEngineService, HrWebhooksService],
 })
 export class HrAutomationsModule {}

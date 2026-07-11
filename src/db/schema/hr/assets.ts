@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, date, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, date, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { assetStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -17,6 +17,7 @@ export const assets = pgTable("assets", {
   purchaseCost: decimal("purchase_cost", { precision: 15, scale: 2 }),
   location: text("location"),
   notes: text("notes"),
+  expectedReturnDate: date("expected_return_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

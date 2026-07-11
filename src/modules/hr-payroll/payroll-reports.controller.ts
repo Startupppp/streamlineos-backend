@@ -29,7 +29,7 @@ import {
 } from "./dto/payroll.schemas";
 
 @Controller("hr")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayrollReportsController {
   constructor(
     private readonly payrolls: PayrollsService,
@@ -50,6 +50,8 @@ export class PayrollReportsController {
   }
 
   @Get("payslips")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:payroll:view")
   async payslips(
     @Query(new ZodValidationPipe(payslipsQuerySchema)) query: PayslipsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -57,7 +59,7 @@ export class PayrollReportsController {
     let canViewAll = u.isOrgOwner || u.isPlatformAdmin;
     if (!canViewAll) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      canViewAll = perms.has("hr:payroll:read") || (u.permissions ?? []).includes("hr:payroll:view");
+      canViewAll = perms.has("hr:payroll:read") || perms.has("hr:payroll:view") || perms.has("hr:payroll:approve");
     }
     const requestedId = query.userId;
 
@@ -77,13 +79,9 @@ export class PayrollReportsController {
   }
 
   @Get("dashboard/salary-bands")
-  async salaryBands(@CurrentUser() u: CurrentUserContext) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:salary:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:salary:manage")
+  salaryBands(@CurrentUser() u: CurrentUserContext) {
     return this.compensation.getSalaryBands(u.orgId);
   }
 
@@ -96,7 +94,12 @@ export class PayrollReportsController {
 
   @Post("tax-calculator")
   @HttpCode(200)
-  taxCalculator(@Body(new ZodValidationPipe(taxCalcSchema)) body: TaxCalcInput) {
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:payroll:view")
+  taxCalculator(
+    @Body(new ZodValidationPipe(taxCalcSchema)) body: TaxCalcInput,
+    @CurrentUser() _u: CurrentUserContext,
+  ) {
     return this.compensation.calculateTax(body);
   }
 

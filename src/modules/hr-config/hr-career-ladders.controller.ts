@@ -11,17 +11,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/career-ladders")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrCareerLaddersController {
   constructor(private readonly growth: HrGrowthService) {}
 
   @Get()
+  @RequirePermission("hr:learning:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.growth.listCareerLadders(u.orgId);
   }
 
   @Post()
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:career-ladders:manage")
   @HttpCode(201)
   create(
