@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
-import { and, eq, isNull, lte, or, inArray, desc } from "drizzle-orm";
+import { and, eq, isNull, lte, inArray, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -146,9 +146,11 @@ export class HrWorkflowEngineService {
 
     if (!effectiveActor) throw new ForbiddenException("You are not an approver for this step");
 
-    const definition = await this.db.select().from(hrWorkflowDefinitions)
-      .where(eq(hrWorkflowDefinitions.id, instance.definitionId)).limit(1);
-    const settings = definition[0]?.settings as { rejectionCommentRequired?: boolean } | undefined;
+    const [definitionRow] = await this.db.select({ settings: hrWorkflowDefinitions.settings })
+      .from(hrWorkflowDefinitions)
+      .where(eq(hrWorkflowDefinitions.id, instance.definitionId))
+      .limit(1);
+    const settings = definitionRow?.settings as { rejectionCommentRequired?: boolean } | undefined;
 
     if (action === "rejected" && settings?.rejectionCommentRequired && !comment?.trim()) {
       throw new BadRequestException("Rejection comment is required");
@@ -289,7 +291,13 @@ export class HrWorkflowEngineService {
   }
 
   private async resolveDynamicExpression(expression: string, _subjectEmployeeId: string): Promise<string[]> {
-    const [employee] = await this.db.select().from(users).where(eq(users.id, _subjectEmployeeId)).limit(1);
+    const [employee] = await this.db.select({
+      id: users.id,
+      reportingTo: users.reportingTo,
+      departmentId: users.departmentId,
+      branchId: users.branchId,
+      role: users.role,
+    }).from(users).where(eq(users.id, _subjectEmployeeId)).limit(1);
     if (!employee) return [];
 
     const parts = expression.split(".");
@@ -352,30 +360,45 @@ export class HrWorkflowEngineService {
           lte(hrWorkflowInstances.dueAt, now),
         );
 
-    const overdueInstances = await this.db.select()
+    const overdueInstances = await this.db.select({
+      id: hrWorkflowInstances.id,
+      orgId: hrWorkflowInstances.orgId,
+      currentStepOrder: hrWorkflowInstances.currentStepOrder,
+      definitionSnapshot: hrWorkflowInstances.definitionSnapshot,
+    })
       .from(hrWorkflowInstances)
       .where(whereClause)
       .limit(100);
+
+    const actionValues: (typeof hrWorkflowStepActions.$inferInsert)[] = [];
+    const escalatedIds: number[] = [];
 
     for (const instance of overdueInstances) {
       const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] }).steps;
       const currentStep = steps.find((s) => s.stepOrder === instance.currentStepOrder);
       if (!currentStep?.escalationApproverType || !currentStep.escalationApproverValue) continue;
 
-      await this.recordAction(
-        instance.orgId,
-        instance.id,
-        instance.currentStepOrder,
-        currentStep.escalationApproverValue,
-        currentStep.escalationApproverValue,
-        "escalated",
-        "Auto-escalated due to SLA breach",
-        undefined,
-      );
+      actionValues.push({
+        orgId: instance.orgId,
+        instanceId: instance.id,
+        stepOrder: instance.currentStepOrder,
+        approverUserId: currentStep.escalationApproverValue,
+        actedByUserId: currentStep.escalationApproverValue,
+        action: "escalated",
+        comment: "Auto-escalated due to SLA breach",
+        attachments: null,
+      });
+      escalatedIds.push(instance.id);
+    }
 
-      await this.db.update(hrWorkflowInstances)
-        .set({ dueAt: undefined, updatedAt: new Date() })
-        .where(eq(hrWorkflowInstances.id, instance.id));
+    if (actionValues.length > 0) {
+      const updatedAt = new Date();
+      await this.db.transaction(async (tx) => {
+        await tx.insert(hrWorkflowStepActions).values(actionValues);
+        await tx.update(hrWorkflowInstances)
+          .set({ dueAt: undefined, updatedAt })
+          .where(inArray(hrWorkflowInstances.id, escalatedIds));
+      });
     }
 
     return { swept: overdueInstances.length };
@@ -410,34 +433,29 @@ export class HrWorkflowEngineService {
   }
 
   private async getOrCreateSyntheticDefinitionId(orgId: string, objectType: HrWorkflowObjectType, db: Db): Promise<number> {
-    const existing = await db.select().from(hrWorkflowDefinitions)
+    const [upserted] = await db.insert(hrWorkflowDefinitions).values({
+      orgId,
+      objectType,
+      name: "__auto_approve__",
+      status: "active",
+      version: 1,
+      isDefault: false,
+      settings: {},
+    })
+      .onConflictDoNothing()
+      .returning({ id: hrWorkflowDefinitions.id });
+
+    if (upserted) return upserted.id;
+
+    const [found] = await db.select({ id: hrWorkflowDefinitions.id })
+      .from(hrWorkflowDefinitions)
       .where(and(
         eq(hrWorkflowDefinitions.orgId, orgId),
         eq(hrWorkflowDefinitions.objectType, objectType),
         eq(hrWorkflowDefinitions.name, "__auto_approve__"),
-      )).limit(1);
-
-    if (existing[0]) return existing[0].id;
-
-    try {
-      const [created] = await db.insert(hrWorkflowDefinitions).values({
-        orgId,
-        objectType,
-        name: "__auto_approve__",
-        status: "active",
-        isDefault: false,
-        settings: {},
-      }).returning();
-      return created?.id ?? 0;
-    } catch {
-      const [found] = await db.select().from(hrWorkflowDefinitions)
-        .where(and(
-          eq(hrWorkflowDefinitions.orgId, orgId),
-          eq(hrWorkflowDefinitions.objectType, objectType),
-          eq(hrWorkflowDefinitions.name, "__auto_approve__"),
-        )).limit(1);
-      return found?.id ?? 0;
-    }
+      ))
+      .limit(1);
+    return found?.id ?? 0;
   }
 
   async getInstanceTimeline(orgId: string, instanceId: number) {
@@ -451,56 +469,6 @@ export class HrWorkflowEngineService {
       .orderBy(desc(hrWorkflowStepActions.actedAt));
 
     return { instance, actions };
-  }
-
-  async getInbox(orgId: string, userId: string, page: number, limit: number) {
-    const now = new Date();
-    const delegations = await this.db.select()
-      .from(hrWorkflowDelegations)
-      .where(and(
-        eq(hrWorkflowDelegations.orgId, orgId),
-        eq(hrWorkflowDelegations.delegateUserId, userId),
-        eq(hrWorkflowDelegations.active, true),
-        lte(hrWorkflowDelegations.startsAt, now),
-      ))
-      .limit(50);
-
-    const activeDelegations = delegations.filter((d) => d.endsAt >= now);
-    const delegatorIds = activeDelegations.map((d) => d.delegatorUserId);
-
-    const allUserIds = [userId, ...delegatorIds];
-
-    const instances = await this.db.select()
-      .from(hrWorkflowInstances)
-      .where(and(
-        eq(hrWorkflowInstances.orgId, orgId),
-        or(
-          eq(hrWorkflowInstances.status, "in_progress"),
-          eq(hrWorkflowInstances.status, "pending"),
-        ),
-      ))
-      .orderBy(desc(hrWorkflowInstances.createdAt))
-      .limit(limit * 5);
-
-    const myInstances: typeof instances = [];
-    for (const instance of instances) {
-      const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] }).steps;
-      const currentStep = steps.find((s) => s.stepOrder === instance.currentStepOrder);
-      if (!currentStep) continue;
-
-      const resolvedApprovers = await this.resolveApprovers(currentStep, instance.subjectEmployeeId, orgId);
-      const isMyStep = resolvedApprovers.some((id) => allUserIds.includes(id));
-      if (isMyStep) myInstances.push(instance);
-      if (myInstances.length >= limit * page) break;
-    }
-
-    const offset = (page - 1) * limit;
-    return {
-      data: myInstances.slice(offset, offset + limit),
-      total: myInstances.length,
-      page,
-      limit,
-    };
   }
 
   async getInstanceOrThrow(orgId: string, instanceId: number) {

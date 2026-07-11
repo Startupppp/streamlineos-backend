@@ -30,6 +30,8 @@ const headcountPlanSchema = z.object({
 
 const updatePlanSchema = headcountPlanSchema.partial().omit({ fiscalYear: true });
 
+const drilldownMetricSchema = z.enum(["attrition", "leave", "attendance", "cases"]);
+
 @RequireModule("hr")
 @Controller("hr/analytics-plus")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -107,7 +109,8 @@ export class HrAnalyticsPlusController {
     @Query("limit", new ParseIntPipe({ optional: true })) limit = 20,
     @Query("departmentId", new ParseIntPipe({ optional: true })) departmentId?: number,
   ) {
-    return this.svc.getDrilldown(u.orgId, metric, page, Math.min(limit, 100), departmentId);
+    const parsedMetric = drilldownMetricSchema.parse(metric);
+    return this.svc.getDrilldown(u.orgId, parsedMetric, page, Math.min(limit, 100), departmentId);
   }
 
   @Get("workforce/plans")
@@ -117,14 +120,14 @@ export class HrAnalyticsPlusController {
   }
 
   @Post("workforce/plans")
-  @RequirePermission("hr:headcount:read")
+  @RequirePermission("hr:workforce:manage")
   createPlan(@CurrentUser() u: CurrentUserContext, @Body() body: unknown) {
     const parsed = headcountPlanSchema.parse(body);
     return this.svc.createHeadcountPlan(u.orgId, parsed);
   }
 
   @Patch("workforce/plans/:id")
-  @RequirePermission("hr:headcount:read")
+  @RequirePermission("hr:workforce:manage")
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,

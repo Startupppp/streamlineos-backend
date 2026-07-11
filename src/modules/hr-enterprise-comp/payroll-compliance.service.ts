@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -160,12 +160,31 @@ export class PayrollComplianceService {
     if (!presets) return { seeded: 0, message: `No presets for country ${countryCode}` };
 
     const [year, month] = periodKey.split("-");
-    const tasks = presets.map((p) => ({
-      orgId,
-      countryCode: countryCode.toUpperCase(),
-      name: p.name,
-      dueDate: `${year}-${month}-${String(p.dueDayOfMonth).padStart(2, "0")}`,
-    }));
+    const upperCode = countryCode.toUpperCase();
+    const presetNames = presets.map((p) => p.name);
+
+    const existing = await this.db
+      .select({ name: hrPayrollComplianceTasks.name })
+      .from(hrPayrollComplianceTasks)
+      .where(
+        and(
+          eq(hrPayrollComplianceTasks.orgId, orgId),
+          eq(hrPayrollComplianceTasks.countryCode, upperCode),
+          inArray(hrPayrollComplianceTasks.name, presetNames),
+        ),
+      );
+
+    const existingNames = new Set(existing.map((r) => r.name));
+    const tasks = presets
+      .filter((p) => !existingNames.has(p.name))
+      .map((p) => ({
+        orgId,
+        countryCode: upperCode,
+        name: p.name,
+        dueDate: `${year}-${month}-${String(p.dueDayOfMonth).padStart(2, "0")}`,
+      }));
+
+    if (tasks.length === 0) return { seeded: 0 };
 
     const created = await this.db.insert(hrPayrollComplianceTasks).values(tasks).returning();
     return { seeded: created.length };

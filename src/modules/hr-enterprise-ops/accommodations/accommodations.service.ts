@@ -216,6 +216,7 @@ export class AccommodationsService {
   }
 
   async createTask(orgId: string, requestId: string, input: CreateAccommodationTaskInput) {
+    await this.getById(orgId, requestId, false);
     const [row] = await this.db
       .insert(hrAccommodationTasks)
       .values({ orgId, requestId, ...input, status: input.status ?? "pending" })

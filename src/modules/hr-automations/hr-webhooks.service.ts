@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHmac, randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { hrWebhookSubscriptions, hrWebhookDeliveries } from "../../db/schema/hr/webhooks";
@@ -20,7 +20,7 @@ import type {
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
-const PRIVATE_IP_PATTERN = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|::1|localhost)/i;
+const PRIVATE_IP_PATTERN = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|0\.0\.0\.0|::1|localhost)/i;
 
 function buildSignature(secret: string, body: string): string {
   return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
@@ -199,7 +199,11 @@ export class HrWebhooksService {
     if (!delivery) throw new NotFoundException("Delivery not found");
 
     const sub = await this.db.query.hrWebhookSubscriptions.findFirst({
-      where: eq(hrWebhookSubscriptions.id, subscriptionId),
+      where: and(
+        eq(hrWebhookSubscriptions.id, subscriptionId),
+        eq(hrWebhookSubscriptions.orgId, orgId),
+        isNull(hrWebhookSubscriptions.deletedAt),
+      ),
     });
     if (!sub) throw new NotFoundException("Webhook subscription not found");
 
@@ -231,15 +235,22 @@ export class HrWebhooksService {
     event: HrAutomationEvent,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const subs = await this.db.query.hrWebhookSubscriptions.findMany({
-      where: and(
-        eq(hrWebhookSubscriptions.orgId, orgId),
-        eq(hrWebhookSubscriptions.isActive, true),
-        isNull(hrWebhookSubscriptions.deletedAt),
-      ),
-    });
+    const active = await this.db
+      .select()
+      .from(hrWebhookSubscriptions)
+      .where(
+        and(
+          eq(hrWebhookSubscriptions.orgId, orgId),
+          eq(hrWebhookSubscriptions.isActive, true),
+          isNull(hrWebhookSubscriptions.deletedAt),
+          or(
+            sql`${hrWebhookSubscriptions.events} = '{}'`,
+            sql`${hrWebhookSubscriptions.events} @> ARRAY[${event}]::text[]`,
+          ),
+        ),
+      )
+      .limit(200);
 
-    const active = subs.filter((s) => s.events.length === 0 || s.events.includes(event));
     if (active.length === 0) return;
 
     const insertedDeliveries = await this.db

@@ -49,7 +49,7 @@ export class HrWorkflowInstancesController {
     @CurrentUser() u: CurrentUserContext,
     @Query(new ZodValidationPipe(PaginationSchema)) query: { page: number; limit: number },
   ) {
-    return this.engine.getInbox(u.orgId, u.userId, query.page, query.limit);
+    return this.instancesService.getInbox(u.orgId, u.userId, query.page, query.limit);
   }
 
   @Get("acted")

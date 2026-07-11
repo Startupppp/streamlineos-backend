@@ -70,15 +70,16 @@ export class HrBenefitsPlansService {
   }
 
   async updatePlan(orgId: string, planId: number, data: PatchBenefitPlanInput) {
-    await this.getPlan(orgId, planId);
     try {
       const [updated] = await this.db
         .update(hrBenefitPlans)
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
         .returning();
+      if (!updated) throw new NotFoundException("Benefit plan not found");
       return updated;
     } catch (err: unknown) {
+      if (err instanceof NotFoundException) throw err;
       if ((err as { code?: string }).code === "23505") {
         throw new ConflictException("A benefit plan with this name already exists");
       }
@@ -87,10 +88,11 @@ export class HrBenefitsPlansService {
   }
 
   async deletePlan(orgId: string, planId: number) {
-    await this.getPlan(orgId, planId);
-    await this.db
+    const [deleted] = await this.db
       .delete(hrBenefitPlans)
-      .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)));
+      .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
+      .returning();
+    if (!deleted) throw new NotFoundException("Benefit plan not found");
     return { ok: true };
   }
 

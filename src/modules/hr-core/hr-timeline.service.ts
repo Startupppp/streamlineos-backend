@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import {
   hrEffectiveDatedChanges,
   hrEmploymentHistory,
@@ -24,7 +24,10 @@ export class HrTimelineService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async getTimeline(orgId: string, employmentId: number, opts: { page: number; limit: number }) {
-    const { page, limit } = opts;
+    const cappedLimit = Math.min(opts.limit, 100);
+    const { page } = opts;
+    const offset = (page - 1) * cappedLimit;
+    const fetchBound = offset + cappedLimit;
 
     const [history, changes, auditEntries] = await Promise.all([
       this.db
@@ -37,7 +40,7 @@ export class HrTimelineService {
           ),
         )
         .orderBy(desc(hrEmploymentHistory.createdAt))
-        .limit(100),
+        .limit(fetchBound),
 
       this.db
         .select()
@@ -49,7 +52,7 @@ export class HrTimelineService {
           ),
         )
         .orderBy(desc(hrEffectiveDatedChanges.createdAt))
-        .limit(100),
+        .limit(fetchBound),
 
       this.db
         .select()
@@ -62,7 +65,7 @@ export class HrTimelineService {
           ),
         )
         .orderBy(desc(hrAuditLogs.createdAt))
-        .limit(100),
+        .limit(fetchBound),
     ]);
 
     const entries: TimelineEntry[] = [
@@ -113,26 +116,17 @@ export class HrTimelineService {
 
     entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-    const offset = (page - 1) * limit;
-    const paginated = entries.slice(offset, offset + limit);
     const total = entries.length;
+    const paginated = entries.slice(offset, offset + cappedLimit);
 
     return {
       data: paginated,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      pagination: { page, limit: cappedLimit, total, totalPages: Math.ceil(total / cappedLimit) },
     };
   }
 
   async getEmploymentByUserId(orgId: string, userId: string) {
-    const person = await this.db
-      .select({ id: hrPeople.id })
-      .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), eq(hrPeople.userId, userId), isNull(hrPeople.deletedAt)))
-      .limit(1);
-
-    if (!person[0]) throw new NotFoundException("Employee not found");
-
-    const employment = await this.db
+    const [row] = await this.db
       .select({
         id: hrEmployments.id,
         employeeNumber: hrEmployments.employeeNumber,
@@ -142,20 +136,28 @@ export class HrTimelineService {
         designation: hrEmployments.designation,
         joiningDate: hrEmployments.joiningDate,
       })
-      .from(hrEmployments)
-      .where(
+      .from(hrPeople)
+      .innerJoin(
+        hrEmployments,
         and(
+          eq(hrEmployments.personId, hrPeople.id),
           eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.personId, person[0].id),
           eq(hrEmployments.isPrimary, true),
           isNull(hrEmployments.deletedAt),
         ),
       )
+      .where(
+        and(
+          eq(hrPeople.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          isNull(hrPeople.deletedAt),
+        ),
+      )
       .limit(1);
 
-    if (!employment[0]) throw new NotFoundException("Employment record not found");
+    if (!row) throw new NotFoundException("Employee not found");
 
-    return employment[0];
+    return row;
   }
 
   async getHistory(
@@ -166,23 +168,25 @@ export class HrTimelineService {
   ) {
     const { page, limit } = opts;
     const offset = (page - 1) * limit;
-
     const changeType = type === "manager" ? "manager" : "department";
+    const where = and(
+      eq(hrEffectiveDatedChanges.orgId, orgId),
+      eq(hrEffectiveDatedChanges.employmentId, employmentId),
+      eq(hrEffectiveDatedChanges.changeType, changeType),
+    );
 
-    const allRows = await this.db
-      .select()
-      .from(hrEffectiveDatedChanges)
-      .where(
-        and(
-          eq(hrEffectiveDatedChanges.orgId, orgId),
-          eq(hrEffectiveDatedChanges.employmentId, employmentId),
-          eq(hrEffectiveDatedChanges.changeType, changeType),
-        ),
-      )
-      .orderBy(desc(hrEffectiveDatedChanges.effectiveFrom));
+    const [data, totalResult] = await Promise.all([
+      this.db
+        .select()
+        .from(hrEffectiveDatedChanges)
+        .where(where)
+        .orderBy(desc(hrEffectiveDatedChanges.effectiveFrom))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(hrEffectiveDatedChanges).where(where),
+    ]);
 
-    const total = allRows.length;
-    const data = allRows.slice(offset, offset + limit);
+    const total = totalResult[0]?.total ?? 0;
 
     return {
       data,

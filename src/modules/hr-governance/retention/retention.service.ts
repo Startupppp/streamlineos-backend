@@ -10,6 +10,7 @@ import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrRetentionPolicies, hrDataRequests } from "../../../db/schema/hr/governance";
+import { users, organizationMembers } from "../../../db/schema/auth";
 import { HrAuditService } from "../../hr-core/hr-audit.service";
 import { isUnderLegalHold } from "../legal-holds/legal-hold-check.helper";
 import type {
@@ -266,6 +267,7 @@ export class RetentionService {
     });
 
     let result: Record<string, unknown> = {};
+    let finalStatus: "completed" | "processing" = "completed";
 
     if (existing.type === "export") {
       result = await this.exportSubjectData(orgId, existing.subjectUserId);
@@ -273,12 +275,21 @@ export class RetentionService {
       await this.anonymizeSubject(orgId, existing.subjectUserId);
       result = { anonymized: true };
     } else if (existing.type === "delete") {
-      result = { note: "Soft deletion scheduled. Employment history retained per policy." };
+      finalStatus = "processing";
+      result = {
+        scheduled: true,
+        subjectUserId: existing.subjectUserId,
+        note: "Hard deletion is queued for an operator; employment history is retained per retention policy.",
+      };
     }
 
     await this.db
       .update(hrDataRequests)
-      .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+      .set({
+        status: finalStatus,
+        ...(finalStatus === "completed" ? { completedAt: new Date() } : {}),
+        updatedAt: new Date(),
+      })
       .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, requestId)));
 
     await this.audit.log({
@@ -305,17 +316,44 @@ export class RetentionService {
     return row;
   }
 
+  private async assertSubjectInOrg(orgId: string, subjectUserId: string): Promise<void> {
+    const [member] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, subjectUserId)))
+      .limit(1);
+    if (!member) throw new NotFoundException("Subject is not a member of this organization");
+  }
+
   private async exportSubjectData(orgId: string, subjectUserId: string): Promise<Record<string, unknown>> {
-    const rows = await this.db.execute(
-      sql`SELECT id, org_id, email, name, created_at FROM users WHERE id = ${subjectUserId} LIMIT 1`,
-    );
-    const profile = rows?.[0] ?? {};
-    return { exportedAt: new Date().toISOString(), subjectUserId, orgId, profile };
+    await this.assertSubjectInOrg(orgId, subjectUserId);
+    const [profile] = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, subjectUserId))
+      .limit(1);
+    return { exportedAt: new Date().toISOString(), subjectUserId, orgId, profile: profile ?? {} };
   }
 
   private async anonymizeSubject(orgId: string, subjectUserId: string): Promise<void> {
-    await this.db.execute(
-      sql`UPDATE users SET name = 'Anonymized User', email = ${`anonymized_${subjectUserId}@removed.invalid`} WHERE id = ${subjectUserId}`,
-    );
+    await this.assertSubjectInOrg(orgId, subjectUserId);
+    const [{ value: memberships }] = await this.db
+      .select({ value: count() })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.userId, subjectUserId));
+    if (Number(memberships) > 1) {
+      throw new BadRequestException(
+        "Subject belongs to multiple organizations; remove them from this organization before anonymizing the shared identity.",
+      );
+    }
+    await this.db
+      .update(users)
+      .set({ name: "Anonymized User", email: `anonymized_${subjectUserId}@removed.invalid` })
+      .where(eq(users.id, subjectUserId));
   }
 }

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq } from "drizzle-orm";
@@ -23,6 +24,8 @@ import type { HrFormField } from "../../db/schema/hr/forms";
 
 @Injectable()
 export class HrFormsSubmissionsService {
+  private readonly logger = new Logger(HrFormsSubmissionsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly formsService: HrFormsService,
@@ -36,11 +39,13 @@ export class HrFormsSubmissionsService {
       let schema: z.ZodTypeAny;
       switch (field.type) {
         case "number":
-        case "currency":
-          schema = z.number();
-          if (field.validation?.min !== undefined) schema = (schema as z.ZodNumber).min(field.validation.min);
-          if (field.validation?.max !== undefined) schema = (schema as z.ZodNumber).max(field.validation.max);
+        case "currency": {
+          let numSchema = z.number();
+          if (field.validation?.min !== undefined) numSchema = numSchema.min(field.validation.min);
+          if (field.validation?.max !== undefined) numSchema = numSchema.max(field.validation.max);
+          schema = numSchema;
           break;
+        }
         case "boolean":
           schema = z.boolean();
           break;
@@ -59,13 +64,15 @@ export class HrFormsSubmissionsService {
         case "department_ref":
           schema = z.number().int().positive();
           break;
-        default:
-          schema = z.string();
-          if (field.validation?.min !== undefined) schema = (schema as z.ZodString).min(field.validation.min);
-          if (field.validation?.max !== undefined) schema = (schema as z.ZodString).max(field.validation.max);
+        default: {
+          let strSchema = z.string();
+          if (field.validation?.min !== undefined) strSchema = strSchema.min(field.validation.min);
+          if (field.validation?.max !== undefined) strSchema = strSchema.max(field.validation.max);
           if (field.validation?.pattern !== undefined) {
-            schema = (schema as z.ZodString).regex(new RegExp(field.validation.pattern));
+            strSchema = strSchema.regex(new RegExp(field.validation.pattern));
           }
+          schema = strSchema;
+        }
       }
       if (!field.required) {
         shape[field.key] = schema.optional();
@@ -73,7 +80,7 @@ export class HrFormsSubmissionsService {
         shape[field.key] = schema;
       }
     }
-    return z.object(shape);
+    return z.object(shape).strict();
   }
 
   private evaluateConditional(field: HrFormField, data: Record<string, unknown>): boolean {
@@ -104,16 +111,15 @@ export class HrFormsSubmissionsService {
     }
 
     const visibleFields = form.schema.filter((f) => this.evaluateConditional(f, input.data));
-    const requiredFields = visibleFields.filter((f) => f.required);
 
-    const validator = this.buildZodValidator(requiredFields);
+    const validator = this.buildZodValidator(visibleFields);
     const parseResult = validator.safeParse(input.data);
     if (!parseResult.success) {
       throw new BadRequestException(parseResult.error.issues.map((issue) => issue.message).join("; "));
     }
 
     const hasSensitive = visibleFields.some((f) => f.sensitive);
-    if (hasSensitive && !canViewSensitive && form.audience !== "public") {
+    if (hasSensitive && !canViewSensitive) {
       throw new ForbiddenException("Sensitive fields require hr:sensitive:manage permission");
     }
 
@@ -134,25 +140,22 @@ export class HrFormsSubmissionsService {
 
       if (!sub) throw new BadRequestException("Failed to create submission");
 
-      const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
-      if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
-        try {
-          await this.workflowEngine.startWorkflow({
-            orgId,
-            objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
-            objectId: String(sub.id),
-            requestedByUserId: submittedByUserId,
-            subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,
-            context: { formId, submissionId: sub.id },
-            tx,
-          });
-        } catch {
-          // workflow start is best-effort; submission is still recorded
-        }
-      }
-
       return [sub];
     });
+
+    const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
+    if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
+      this.workflowEngine.startWorkflow({
+        orgId,
+        objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
+        objectId: String(submission.id),
+        requestedByUserId: submittedByUserId,
+        subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,
+        context: { formId, submissionId: submission.id },
+      }).catch((err: unknown) => {
+        this.logger.warn({ orgId, formId, submissionId: submission.id, err }, "startWorkflow failed after submission committed");
+      });
+    }
 
     await this.audit.log({
       orgId,

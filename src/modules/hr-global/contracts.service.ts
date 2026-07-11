@@ -257,28 +257,30 @@ export class ContractsService {
     expiringCutoff.setDate(expiringCutoff.getDate() + 30);
     const cutoffStr = expiringCutoff.toISOString().split("T")[0];
 
-    await this.db
-      .update(hrContracts)
-      .set({ status: "ended", updatedAt: new Date() })
-      .where(
-        and(
-          eq(hrContracts.orgId, orgId),
-          eq(hrContracts.status, "active"),
-          lte(hrContracts.endDate, today),
-          isNull(hrContracts.deletedAt),
-        ),
-      );
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(hrContracts)
+        .set({ status: "ended", updatedAt: new Date() })
+        .where(
+          and(
+            eq(hrContracts.orgId, orgId),
+            eq(hrContracts.status, "active"),
+            lte(hrContracts.endDate, today),
+            isNull(hrContracts.deletedAt),
+          ),
+        );
 
-    await this.db
-      .update(hrContracts)
-      .set({ status: "expiring", updatedAt: new Date() })
-      .where(
-        and(
-          eq(hrContracts.orgId, orgId),
-          eq(hrContracts.status, "active"),
-          lte(hrContracts.endDate, cutoffStr),
-          isNull(hrContracts.deletedAt),
-        ),
-      );
+      await tx
+        .update(hrContracts)
+        .set({ status: "expiring", updatedAt: new Date() })
+        .where(
+          and(
+            eq(hrContracts.orgId, orgId),
+            eq(hrContracts.status, "active"),
+            lte(hrContracts.endDate, cutoffStr),
+            isNull(hrContracts.deletedAt),
+          ),
+        );
+    });
   }
 }

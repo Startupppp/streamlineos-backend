@@ -156,28 +156,30 @@ export class WorkAuthorizationsService {
     expiringCutoff.setDate(expiringCutoff.getDate() + 30);
     const cutoffStr = expiringCutoff.toISOString().split("T")[0];
 
-    await this.db
-      .update(hrWorkAuthorizations)
-      .set({ status: "expired" })
-      .where(
-        and(
-          eq(hrWorkAuthorizations.orgId, orgId),
-          eq(hrWorkAuthorizations.status, "active"),
-          lte(hrWorkAuthorizations.validUntil, today),
-          isNull(hrWorkAuthorizations.deletedAt),
-        ),
-      );
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(hrWorkAuthorizations)
+        .set({ status: "expired" })
+        .where(
+          and(
+            eq(hrWorkAuthorizations.orgId, orgId),
+            eq(hrWorkAuthorizations.status, "active"),
+            lte(hrWorkAuthorizations.validUntil, today),
+            isNull(hrWorkAuthorizations.deletedAt),
+          ),
+        );
 
-    await this.db
-      .update(hrWorkAuthorizations)
-      .set({ status: "expiring" })
-      .where(
-        and(
-          eq(hrWorkAuthorizations.orgId, orgId),
-          eq(hrWorkAuthorizations.status, "active"),
-          lte(hrWorkAuthorizations.validUntil, cutoffStr),
-          isNull(hrWorkAuthorizations.deletedAt),
-        ),
-      );
+      await tx
+        .update(hrWorkAuthorizations)
+        .set({ status: "expiring" })
+        .where(
+          and(
+            eq(hrWorkAuthorizations.orgId, orgId),
+            eq(hrWorkAuthorizations.status, "active"),
+            lte(hrWorkAuthorizations.validUntil, cutoffStr),
+            isNull(hrWorkAuthorizations.deletedAt),
+          ),
+        );
+    });
   }
 }

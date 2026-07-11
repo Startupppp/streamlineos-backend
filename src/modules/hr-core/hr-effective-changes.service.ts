@@ -3,6 +3,8 @@ import { and, count, eq, isNull, lte, sql } from "drizzle-orm";
 import {
   hrEffectiveDatedChanges,
   hrEmployments,
+  hrEmployeeSensitiveFields,
+  hrReportingLines,
   hrPeople,
 } from "../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -127,7 +129,10 @@ export class HrEffectiveChangesService {
 
   async approve(orgId: string, changeId: number, actorId: string) {
     const [change] = await this.db
-      .select()
+      .select({
+        id: hrEffectiveDatedChanges.id,
+        status: hrEffectiveDatedChanges.status,
+      })
       .from(hrEffectiveDatedChanges)
       .where(
         and(
@@ -166,7 +171,13 @@ export class HrEffectiveChangesService {
     const cutoff = asOfDate ? new Date(asOfDate) : new Date();
 
     const dueChanges = await this.db
-      .select()
+      .select({
+        id: hrEffectiveDatedChanges.id,
+        employmentId: hrEffectiveDatedChanges.employmentId,
+        changeType: hrEffectiveDatedChanges.changeType,
+        newValue: hrEffectiveDatedChanges.newValue,
+        effectiveFrom: hrEffectiveDatedChanges.effectiveFrom,
+      })
       .from(hrEffectiveDatedChanges)
       .where(
         and(
@@ -181,71 +192,115 @@ export class HrEffectiveChangesService {
 
     let applied = 0;
 
-    for (const change of dueChanges) {
-      await this.db.transaction(async (tx) => {
+    await this.db.transaction(async (tx) => {
+      for (const change of dueChanges) {
         const newVal = change.newValue as Record<string, unknown> | null;
-        if (!newVal) return;
+        if (!newVal) continue;
+
+        let didApply = false;
 
         if (change.changeType === "department" && typeof newVal["departmentId"] === "number") {
           await tx
             .update(hrEmployments)
-            .set({ departmentId: newVal["departmentId"] as number })
+            .set({ departmentId: newVal["departmentId"] })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),
                 eq(hrEmployments.orgId, orgId),
               ),
             );
+          didApply = true;
         } else if (change.changeType === "designation" && typeof newVal["designation"] === "string") {
           await tx
             .update(hrEmployments)
-            .set({ designation: newVal["designation"] as string })
+            .set({ designation: newVal["designation"] })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),
                 eq(hrEmployments.orgId, orgId),
               ),
             );
+          didApply = true;
         } else if (change.changeType === "job_level" && typeof newVal["jobLevelId"] === "number") {
           await tx
             .update(hrEmployments)
-            .set({ jobLevelId: newVal["jobLevelId"] as number })
+            .set({ jobLevelId: newVal["jobLevelId"] })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),
                 eq(hrEmployments.orgId, orgId),
               ),
             );
+          didApply = true;
         } else if (change.changeType === "location" && typeof newVal["locationId"] === "number") {
           await tx
             .update(hrEmployments)
-            .set({ locationId: newVal["locationId"] as number })
+            .set({ locationId: newVal["locationId"] })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),
                 eq(hrEmployments.orgId, orgId),
               ),
             );
+          didApply = true;
         } else if (change.changeType === "employment_type" && typeof newVal["employmentTypeId"] === "number") {
           await tx
             .update(hrEmployments)
-            .set({ employmentTypeId: newVal["employmentTypeId"] as number })
+            .set({ employmentTypeId: newVal["employmentTypeId"] })
             .where(
               and(
                 eq(hrEmployments.id, change.employmentId),
                 eq(hrEmployments.orgId, orgId),
               ),
             );
+          didApply = true;
+        } else if (change.changeType === "compensation" && typeof newVal["salaryCents"] === "number") {
+          await tx
+            .update(hrEmployeeSensitiveFields)
+            .set({ salaryAmountCents: newVal["salaryCents"] })
+            .where(
+              and(
+                eq(hrEmployeeSensitiveFields.employmentId, change.employmentId),
+                eq(hrEmployeeSensitiveFields.orgId, orgId),
+              ),
+            );
+          didApply = true;
+        } else if (change.changeType === "manager" && typeof newVal["managerEmploymentId"] === "number") {
+          await tx
+            .update(hrReportingLines)
+            .set({ effectiveTo: change.effectiveFrom })
+            .where(
+              and(
+                eq(hrReportingLines.employmentId, change.employmentId),
+                eq(hrReportingLines.orgId, orgId),
+                eq(hrReportingLines.lineType, "primary"),
+                isNull(hrReportingLines.effectiveTo),
+              ),
+            );
+          await tx.insert(hrReportingLines).values({
+            orgId,
+            employmentId: change.employmentId,
+            managerEmploymentId: newVal["managerEmploymentId"],
+            lineType: "primary",
+            effectiveFrom: change.effectiveFrom,
+          });
+          didApply = true;
         }
 
-        await tx
-          .update(hrEffectiveDatedChanges)
-          .set({ status: "applied", appliedAt: sql`now()` })
-          .where(eq(hrEffectiveDatedChanges.id, change.id));
-      });
-
-      applied++;
-    }
+        if (didApply) {
+          await tx
+            .update(hrEffectiveDatedChanges)
+            .set({ status: "applied", appliedAt: sql`now()` })
+            .where(
+              and(
+                eq(hrEffectiveDatedChanges.id, change.id),
+                eq(hrEffectiveDatedChanges.orgId, orgId),
+              ),
+            );
+          applied++;
+        }
+      }
+    });
 
     return { applied };
   }

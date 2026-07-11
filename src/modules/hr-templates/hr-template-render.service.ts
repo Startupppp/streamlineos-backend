@@ -40,11 +40,18 @@ export class HrTemplateRenderService {
     const today = new Date();
     ctx["today"] = today.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
 
-    const [org] = await this.db
-      .select({ name: organizations.name, address: organizations.address, website: organizations.website, supportEmail: organizations.supportEmail })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
+    const [[org], [actorUser]] = await Promise.all([
+      this.db
+        .select({ name: organizations.name, address: organizations.address, website: organizations.website, supportEmail: organizations.supportEmail })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1),
+      this.db
+        .select({ firstName: users.firstName, lastName: users.lastName, name: users.name, designation: users.designation })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1),
+    ]);
 
     if (org) {
       ctx["company.name"] = org.name;
@@ -56,15 +63,8 @@ export class HrTemplateRenderService {
       }
     }
 
-    const actorUser = await this.db
-      .select({ firstName: users.firstName, lastName: users.lastName, name: users.name, designation: users.designation })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    if (actorUser[0]) {
-      const u = actorUser[0];
-      const full = u.name ?? [u.firstName, u.lastName].filter(Boolean).join(" ");
+    if (actorUser) {
+      const full = actorUser.name ?? [actorUser.firstName, actorUser.lastName].filter(Boolean).join(" ");
       ctx["workflow.approverName"] = full;
       ctx["workflow.submittedOn"] = today.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
     }
@@ -118,26 +118,31 @@ export class HrTemplateRenderService {
           }
         }
 
-        if (empRow.departmentId) {
-          const [dept] = await this.db
-            .select({ name: departments.name })
-            .from(departments)
-            .where(and(eq(departments.id, empRow.departmentId), eq(departments.orgId, orgId)))
-            .limit(1);
-          if (dept) ctx["department.name"] = dept.name;
-        }
+        const [deptResult, mgrResult] = await Promise.all([
+          empRow.departmentId
+            ? this.db
+                .select({ name: departments.name })
+                .from(departments)
+                .where(and(eq(departments.id, empRow.departmentId), eq(departments.orgId, orgId)))
+                .limit(1)
+            : Promise.resolve([]),
+          empRow.reportingTo
+            ? this.db
+                .select({ firstName: users.firstName, lastName: users.lastName, name: users.name, designation: users.designation, email: users.email })
+                .from(users)
+                .where(eq(users.id, empRow.reportingTo))
+                .limit(1)
+            : Promise.resolve([]),
+        ]);
 
-        if (empRow.reportingTo) {
-          const [mgr] = await this.db
-            .select({ firstName: users.firstName, lastName: users.lastName, name: users.name, designation: users.designation, email: users.email })
-            .from(users)
-            .where(eq(users.id, empRow.reportingTo))
-            .limit(1);
-          if (mgr) {
-            ctx["manager.fullName"] = mgr.name ?? [mgr.firstName, mgr.lastName].filter(Boolean).join(" ");
-            ctx["manager.designation"] = mgr.designation ?? "";
-            ctx["manager.workEmail"] = mgr.email;
-          }
+        const dept = deptResult[0];
+        if (dept) ctx["department.name"] = dept.name;
+
+        const mgr = mgrResult[0];
+        if (mgr) {
+          ctx["manager.fullName"] = mgr.name ?? [mgr.firstName, mgr.lastName].filter(Boolean).join(" ");
+          ctx["manager.designation"] = mgr.designation ?? "";
+          ctx["manager.workEmail"] = mgr.email;
         }
       }
     }

@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -27,6 +28,8 @@ import {
   type UpdateWorkAuthInput,
   type ListWorkAuthInput,
 } from "./dto/hr-global.schemas";
+
+const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 @RequireModule("hr")
 @Controller("hr/global/work-authorizations")
@@ -48,10 +51,10 @@ export class WorkAuthorizationsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   listExpiring(
-    @Query("days") days = "30",
+    @Query(new ZodValidationPipe(daysQuerySchema)) { days }: z.infer<typeof daysQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.list(u.orgId, { page: 1, limit: 100, days: Number(days) });
+    return this.service.list(u.orgId, { page: 1, limit: 100, days });
   }
 
   @Get(":authId")

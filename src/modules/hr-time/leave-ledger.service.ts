@@ -44,9 +44,17 @@ export interface LeaveSummaryRow {
 export class LeaveLedgerService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private static readonly DEBIT_TYPES: ReadonlySet<TxnType> = new Set<TxnType>([
+    "consumption",
+    "encashment",
+    "comp_off_use",
+  ]);
+
   async write(input: LedgerWriteInput, tx?: Db): Promise<void> {
     const db = tx ?? this.db;
-    const isLocked = await this.isPeriodLocked(input.orgId, input.userId, input.leaveTypeId, input.effectiveDate, db);
+    const isLocked = LeaveLedgerService.DEBIT_TYPES.has(input.txnType)
+      ? await this.isPeriodLocked(input.orgId, input.userId, input.leaveTypeId, input.effectiveDate, db)
+      : false;
     if (isLocked) {
       await db.insert(hrLeaveLedger).values({
         orgId: input.orgId,

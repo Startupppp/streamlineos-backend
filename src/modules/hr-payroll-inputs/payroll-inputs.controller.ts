@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PayrollInputsService } from "./payroll-inputs.service";
 import {
   createPeriodSchema,
@@ -24,6 +25,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 type RequestWithUser = { user: CurrentUserContext };
 
+@RequireModule("hr")
 @Controller("hr/payroll-inputs")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayrollInputsController {

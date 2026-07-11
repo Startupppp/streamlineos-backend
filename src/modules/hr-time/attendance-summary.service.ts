@@ -25,6 +25,7 @@ export interface BuildAttendanceSummaryParams {
   periodStart: string;
   periodEnd: string;
   employeeId?: string;
+  userIds?: string[];
   page?: number;
   limit?: number;
 }
@@ -37,22 +38,37 @@ export class AttendanceSummaryService {
   ) {}
 
   async buildAttendanceSummary(params: BuildAttendanceSummaryParams) {
-    const { orgId, periodStart, periodEnd, employeeId } = params;
-    const pageSize = Math.min(params.limit ?? 50, 100);
-    const offset = ((params.page ?? 1) - 1) * pageSize;
+    const { orgId, periodStart, periodEnd, employeeId, userIds: explicitUserIds } = params;
 
-    const memberConditions = [eq(organizationMembers.orgId, orgId), eq(users.isActive, true)];
-    if (employeeId) memberConditions.push(eq(organizationMembers.userId, employeeId));
+    let members: { userId: string; name: string | null; firstName: string | null; lastName: string | null; email: string }[];
+    let responseLimit: number;
 
-    const members = await this.db
-      .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(...memberConditions))
-      .limit(pageSize)
-      .offset(offset);
+    if (explicitUserIds !== undefined) {
+      if (explicitUserIds.length === 0) return { data: [], page: 1, limit: 0 };
+      members = await this.db
+        .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true), inArray(organizationMembers.userId, explicitUserIds)));
+      responseLimit = members.length;
+    } else {
+      const pageSize = Math.min(params.limit ?? 50, 100);
+      const offset = ((params.page ?? 1) - 1) * pageSize;
 
-    if (members.length === 0) return { data: [], page: params.page ?? 1, limit: pageSize };
+      const memberConditions = [eq(organizationMembers.orgId, orgId), eq(users.isActive, true)];
+      if (employeeId) memberConditions.push(eq(organizationMembers.userId, employeeId));
+
+      members = await this.db
+        .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(...memberConditions))
+        .limit(pageSize)
+        .offset(offset);
+
+      if (members.length === 0) return { data: [], page: params.page ?? 1, limit: pageSize };
+      responseLimit = pageSize;
+    }
 
     const userIds = members.map((m) => m.userId);
 
@@ -123,10 +139,12 @@ export class AttendanceSummaryService {
         const rows = attendanceByUser.get(userId) ?? [];
         const referenceDate = periodStart;
 
-        const shiftInfo = await this.policyService.getEffectiveShiftStartWithGrace(orgId, userId, referenceDate);
-        const policyRules = await this.policyService.getAttendanceRules(orgId, userId, referenceDate);
-        const overtimeRules = await this.policyService.getOvertimeRules(orgId, userId, referenceDate);
-        const shiftDef = await this.policyService.getEffectiveShift(orgId, userId, referenceDate);
+        const [shiftInfo, policyRules, overtimeRules, shiftDef] = await Promise.all([
+          this.policyService.getEffectiveShiftStartWithGrace(orgId, userId, referenceDate),
+          this.policyService.getAttendanceRules(orgId, userId, referenceDate),
+          this.policyService.getOvertimeRules(orgId, userId, referenceDate),
+          this.policyService.getEffectiveShift(orgId, userId, referenceDate),
+        ]);
 
         const shiftEndMinutes = shiftDef
           ? (() => {
@@ -198,7 +216,7 @@ export class AttendanceSummaryService {
       }),
     );
 
-    return { data: results, page: params.page ?? 1, limit: pageSize };
+    return { data: results, page: params.page ?? 1, limit: responseLimit };
   }
 
   private countWorkingDays(start: string, end: string, holidays: Set<string>): number {

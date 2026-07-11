@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { hrCompCycles, hrCompRecommendations } from "../../db/schema/hr/enterprise-comp";
+import { hrCompCycles } from "../../db/schema/hr/enterprise-comp";
 
 @Injectable()
 export class WorkforceCostingService {
@@ -23,7 +23,7 @@ export class WorkforceCostingService {
       GROUP BY d.id, d.name
       ORDER BY monthly_cost_cents DESC
     `);
-    return rows as Record<string, unknown>[];
+    return rows;
   }
 
   async costByLocation(orgId: string) {
@@ -33,32 +33,40 @@ export class WorkforceCostingService {
         COUNT(DISTINCT esp.user_id) AS headcount,
         SUM(CAST(esp.annual_ctc AS BIGINT) / 12) AS monthly_cost_cents
       FROM employee_salary_profiles esp
-      JOIN hr_employments he ON he.org_id = ${orgId} AND he.deleted_at IS NULL
+      JOIN hr_employments he ON he.user_id = esp.user_id AND he.org_id = ${orgId} AND he.deleted_at IS NULL
       WHERE esp.org_id = ${orgId}
         AND esp.status = 'ACTIVE'
       GROUP BY he.location_id
       ORDER BY monthly_cost_cents DESC
     `);
-    return rows as Record<string, unknown>[];
+    return rows;
   }
 
   async forecastedCost(orgId: string, cycleId: number) {
-    const [cycle] = await this.db.select({ budgetPoolCents: hrCompCycles.budgetPoolCents, fiscalYear: hrCompCycles.fiscalYear }).from(hrCompCycles).where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId))).limit(1);
+    const [cycle] = await this.db
+      .select({ budgetPoolCents: hrCompCycles.budgetPoolCents, fiscalYear: hrCompCycles.fiscalYear })
+      .from(hrCompCycles)
+      .where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)))
+      .limit(1);
 
-    const approvedRecs = await this.db.select({
-      userId: hrCompRecommendations.userId,
-      currentSalaryCents: hrCompRecommendations.currentSalaryCents,
-      finalIncrease: sql<number>`COALESCE(hr_calibrated_cents, recommended_increase_cents)`,
-    }).from(hrCompRecommendations).where(and(eq(hrCompRecommendations.orgId, orgId), eq(hrCompRecommendations.cycleId, cycleId)));
+    const [agg] = await this.db.execute(sql`
+      SELECT
+        COALESCE(SUM(current_salary_cents), 0) AS total_current,
+        COALESCE(SUM(current_salary_cents + COALESCE(hr_calibrated_cents, recommended_increase_cents)), 0) AS total_forecasted,
+        COUNT(*) AS headcount
+      FROM hr_comp_recommendations
+      WHERE org_id = ${orgId} AND cycle_id = ${cycleId}
+    `);
 
-    const totalCurrentCents = approvedRecs.reduce((s, r) => s + Number(r.currentSalaryCents), 0);
-    const totalForecastedCents = approvedRecs.reduce((s, r) => s + Number(r.currentSalaryCents) + Number(r.finalIncrease), 0);
+    const totalCurrentCents = Number(agg?.["total_current"] ?? 0);
+    const totalForecastedCents = Number(agg?.["total_forecasted"] ?? 0);
+    const headcount = Number(agg?.["headcount"] ?? 0);
 
     return {
       cycleId,
       fiscalYear: cycle?.fiscalYear,
       budgetPoolCents: cycle?.budgetPoolCents ?? 0,
-      headcount: approvedRecs.length,
+      headcount,
       totalCurrentAnnualCents: totalCurrentCents,
       totalForecastedAnnualCents: totalForecastedCents,
       totalIncreaseCents: totalForecastedCents - totalCurrentCents,
@@ -75,6 +83,6 @@ export class WorkforceCostingService {
       WHERE org_id = ${orgId}
         AND status = 'ACTIVE'
     `);
-    return rows[0] as Record<string, unknown>;
+    return rows[0];
   }
 }

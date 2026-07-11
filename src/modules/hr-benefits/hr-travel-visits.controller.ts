@@ -11,12 +11,14 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrTravelVisitsService } from "./hr-travel-visits.service";
 import { createVisitLogSchema, type CreateVisitLogInput } from "./dto/benefits.schemas";
 
+@RequireModule("hr")
 @Controller("hr/travel-visits")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrTravelVisitsController {

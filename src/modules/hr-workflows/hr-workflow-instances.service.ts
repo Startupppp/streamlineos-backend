@@ -1,11 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { hrWorkflowInstances, hrWorkflowStepActions } from "../../db/schema/hr/workflow-engine";
-import { users } from "../../db/schema/auth";
+import { hrWorkflowInstances, hrWorkflowStepActions, hrWorkflowDelegations } from "../../db/schema/hr/workflow-engine";
+import { users, organizationMembers } from "../../db/schema/auth";
+import { departments } from "../../db/schema/hr/employees";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+
+interface ResolvedStep {
+  stepOrder: number;
+  approverType: string;
+  approverValue?: string | null;
+}
 
 @Injectable()
 export class HrWorkflowInstancesService {
@@ -103,28 +110,172 @@ export class HrWorkflowInstancesService {
   }
 
   async getMyActed(orgId: string, userId: string, page: number, limit: number) {
-    const myActions = await this.db.select({ instanceId: hrWorkflowStepActions.instanceId })
+    const offset = (page - 1) * limit;
+
+    const distinctRows = await this.db
+      .selectDistinct({ instanceId: hrWorkflowStepActions.instanceId })
       .from(hrWorkflowStepActions)
       .where(and(
         eq(hrWorkflowStepActions.orgId, orgId),
         eq(hrWorkflowStepActions.actedByUserId, userId),
         inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
       ))
-      .orderBy(desc(hrWorkflowStepActions.actedAt))
-      .limit(200);
+      .orderBy(hrWorkflowStepActions.instanceId)
+      .limit(limit)
+      .offset(offset);
 
-    const instanceIds = [...new Set(myActions.map((a) => a.instanceId))];
-    if (instanceIds.length === 0) return { data: [], page, limit };
+    const instanceIds = distinctRows.map((r) => r.instanceId);
+    if (instanceIds.length === 0) return { data: [], page, limit, total: 0 };
 
-    const offset = (page - 1) * limit;
-    const rows = await this.db.select()
+    const [rows, [{ total }]] = await Promise.all([
+      this.db.select()
+        .from(hrWorkflowInstances)
+        .where(and(
+          eq(hrWorkflowInstances.orgId, orgId),
+          inArray(hrWorkflowInstances.id, instanceIds),
+        ))
+        .orderBy(desc(hrWorkflowInstances.updatedAt)),
+      this.db.select({ total: sql<number>`count(distinct ${hrWorkflowStepActions.instanceId})::int` })
+        .from(hrWorkflowStepActions)
+        .where(and(
+          eq(hrWorkflowStepActions.orgId, orgId),
+          eq(hrWorkflowStepActions.actedByUserId, userId),
+          inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
+        )),
+    ]);
+
+    return { data: rows, page, limit, total: total ?? 0 };
+  }
+
+  async getInbox(orgId: string, userId: string, page: number, limit: number) {
+    const now = new Date();
+    const delegations = await this.db.select({
+      delegatorUserId: hrWorkflowDelegations.delegatorUserId,
+      endsAt: hrWorkflowDelegations.endsAt,
+    })
+      .from(hrWorkflowDelegations)
+      .where(and(
+        eq(hrWorkflowDelegations.orgId, orgId),
+        eq(hrWorkflowDelegations.delegateUserId, userId),
+        eq(hrWorkflowDelegations.active, true),
+        lte(hrWorkflowDelegations.startsAt, now),
+      ))
+      .limit(50);
+
+    const allUserIds = [userId, ...delegations.filter((d) => d.endsAt >= now).map((d) => d.delegatorUserId)];
+
+    const candidates = await this.db.select({
+      id: hrWorkflowInstances.id,
+      orgId: hrWorkflowInstances.orgId,
+      definitionId: hrWorkflowInstances.definitionId,
+      objectType: hrWorkflowInstances.objectType,
+      objectId: hrWorkflowInstances.objectId,
+      requestedBy: hrWorkflowInstances.requestedBy,
+      subjectEmployeeId: hrWorkflowInstances.subjectEmployeeId,
+      context: hrWorkflowInstances.context,
+      status: hrWorkflowInstances.status,
+      currentStepOrder: hrWorkflowInstances.currentStepOrder,
+      dueAt: hrWorkflowInstances.dueAt,
+      createdAt: hrWorkflowInstances.createdAt,
+      updatedAt: hrWorkflowInstances.updatedAt,
+      definitionSnapshot: hrWorkflowInstances.definitionSnapshot,
+    })
       .from(hrWorkflowInstances)
       .where(and(
         eq(hrWorkflowInstances.orgId, orgId),
-        inArray(hrWorkflowInstances.id, instanceIds.slice(offset, offset + limit)),
+        or(eq(hrWorkflowInstances.status, "in_progress"), eq(hrWorkflowInstances.status, "pending")),
       ))
-      .orderBy(desc(hrWorkflowInstances.updatedAt));
+      .orderBy(desc(hrWorkflowInstances.createdAt))
+      .limit(limit * 5);
 
-    return { data: rows, page, limit, total: instanceIds.length };
+    const cache = await this.buildApproverCache(orgId, candidates.map((i) => i.subjectEmployeeId));
+
+    const myInstances: (typeof candidates)[number][] = [];
+    for (const instance of candidates) {
+      const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] }).steps;
+      const currentStep = steps.find((s) => s.stepOrder === instance.currentStepOrder);
+      if (!currentStep) continue;
+      const approvers = this.resolveApproversFromCache(currentStep, instance.subjectEmployeeId, cache);
+      if (approvers.some((id) => allUserIds.includes(id))) myInstances.push(instance);
+      if (myInstances.length >= limit * page) break;
+    }
+
+    const offset = (page - 1) * limit;
+    return { data: myInstances.slice(offset, offset + limit), total: myInstances.length, page, limit };
+  }
+
+  private async buildApproverCache(orgId: string, subjectIds: string[]) {
+    const uniqueSubjectIds = [...new Set(subjectIds)];
+    const [subjectRows, hrMembers, financeMembers] = await Promise.all([
+      uniqueSubjectIds.length > 0
+        ? this.db.select({ id: users.id, reportingTo: users.reportingTo, departmentId: users.departmentId, branchId: users.branchId, role: users.role })
+            .from(users).where(inArray(users.id, uniqueSubjectIds))
+        : Promise.resolve([]),
+      this.db.select({ userId: organizationMembers.userId }).from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "HR"))).limit(10),
+      this.db.select({ userId: organizationMembers.userId }).from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "FINANCE"))).limit(10),
+    ]);
+
+    const subjectMap = new Map(subjectRows.map((u) => [u.id, u]));
+    const managerIds = [...new Set(subjectRows.map((u) => u.reportingTo).filter((id): id is string => id !== null && id !== undefined))];
+    const deptIds = [...new Set(subjectRows.map((u) => u.departmentId).filter((id): id is number => id !== null && id !== undefined))];
+    const branchIds = [...new Set(subjectRows.map((u) => u.branchId).filter((id): id is number => id !== null && id !== undefined))];
+
+    const [managerRows, deptRows, locationHrRows] = await Promise.all([
+      managerIds.length > 0 ? this.db.select({ id: users.id, reportingTo: users.reportingTo }).from(users).where(inArray(users.id, managerIds)) : Promise.resolve([]),
+      deptIds.length > 0 ? this.db.select({ id: departments.id, managerId: departments.managerId }).from(departments).where(inArray(departments.id, deptIds)) : Promise.resolve([]),
+      branchIds.length > 0 ? this.db.select({ id: users.id, branchId: users.branchId }).from(users).where(and(inArray(users.branchId, branchIds), eq(users.role, "HR"))).limit(branchIds.length * 10) : Promise.resolve([]),
+    ]);
+
+    const locationHrMap = new Map<number, string[]>();
+    for (const row of locationHrRows) {
+      if (row.branchId === null || row.branchId === undefined) continue;
+      const existing = locationHrMap.get(row.branchId);
+      if (existing) {
+        existing.push(row.id);
+      } else {
+        locationHrMap.set(row.branchId, [row.id]);
+      }
+    }
+
+    return {
+      subjectMap,
+      managerMap: new Map(managerRows.map((u) => [u.id, u])),
+      deptMap: new Map(deptRows.map((d) => [d.id, d])),
+      locationHrMap,
+      hrUserIds: hrMembers.map((m) => m.userId),
+      financeUserIds: financeMembers.map((m) => m.userId),
+    };
+  }
+
+  private resolveApproversFromCache(step: ResolvedStep, subjectEmployeeId: string, cache: Awaited<ReturnType<typeof this.buildApproverCache>>): string[] {
+    switch (step.approverType) {
+      case "named_user": return step.approverValue ? [step.approverValue] : [];
+      case "direct_manager": {
+        const reportingTo = cache.subjectMap.get(subjectEmployeeId)?.reportingTo;
+        return reportingTo ? [reportingTo] : [];
+      }
+      case "managers_manager": {
+        const mgr = cache.subjectMap.get(subjectEmployeeId)?.reportingTo;
+        if (!mgr) return [];
+        const mm = cache.managerMap.get(mgr)?.reportingTo;
+        return mm ? [mm] : [];
+      }
+      case "department_head": {
+        const deptId = cache.subjectMap.get(subjectEmployeeId)?.departmentId;
+        if (!deptId) return [];
+        const managerId = cache.deptMap.get(deptId)?.managerId;
+        return managerId ? [managerId] : [];
+      }
+      case "hr_role": return cache.hrUserIds;
+      case "finance_role": return cache.financeUserIds;
+      case "location_hr": {
+        const branchId = cache.subjectMap.get(subjectEmployeeId)?.branchId;
+        if (!branchId) return [];
+        return cache.locationHrMap.get(branchId) ?? [];
+      }
+      default: return [];
+    }
   }
 }

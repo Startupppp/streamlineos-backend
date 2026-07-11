@@ -16,7 +16,7 @@ export class HrSensitiveService {
     private readonly audit: HrAuditService,
   ) {}
 
-  private async assertEmploymentExists(orgId: string, employmentId: number) {
+  async get(orgId: string, employmentId: number, actorId: string, ipAddress?: string) {
     const [emp] = await this.db
       .select({ id: hrEmployments.id })
       .from(hrEmployments)
@@ -28,11 +28,8 @@ export class HrSensitiveService {
         ),
       )
       .limit(1);
-    if (!emp) throw new NotFoundException("Employment not found");
-  }
 
-  async get(orgId: string, employmentId: number, actorId: string, ipAddress?: string) {
-    await this.assertEmploymentExists(orgId, employmentId);
+    if (!emp) throw new NotFoundException("Employment not found");
 
     const [row] = await this.db
       .select()
@@ -64,18 +61,31 @@ export class HrSensitiveService {
     input: UpdateSensitiveInput,
     ipAddress?: string,
   ) {
-    await this.assertEmploymentExists(orgId, employmentId);
-
-    const [existing] = await this.db
-      .select()
-      .from(hrEmployeeSensitiveFields)
-      .where(
+    const rows = await this.db
+      .select({
+        empId: hrEmployments.id,
+        sensitive: hrEmployeeSensitiveFields,
+      })
+      .from(hrEmployments)
+      .leftJoin(
+        hrEmployeeSensitiveFields,
         and(
-          eq(hrEmployeeSensitiveFields.employmentId, employmentId),
+          eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id),
           eq(hrEmployeeSensitiveFields.orgId, orgId),
         ),
       )
+      .where(
+        and(
+          eq(hrEmployments.id, employmentId),
+          eq(hrEmployments.orgId, orgId),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
       .limit(1);
+
+    if (!rows[0]) throw new NotFoundException("Employment not found");
+
+    const existing = rows[0].sensitive;
 
     let updated: typeof hrEmployeeSensitiveFields.$inferSelect;
 

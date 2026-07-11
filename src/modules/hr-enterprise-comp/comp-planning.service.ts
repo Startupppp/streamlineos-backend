@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -58,10 +58,13 @@ export class CompPlanningService {
   }
 
   async updateCycle(orgId: string, cycleId: number, actorId: string, input: UpdateCompCycleInput) {
-    const [existing] = await this.db.select().from(hrCompCycles).where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId))).limit(1);
-    if (!existing) throw new NotFoundException("Compensation cycle not found");
-    const [updated] = await this.db.update(hrCompCycles).set({ ...input, meritMatrix: input.meritMatrix as never ?? existing.meritMatrix, updatedAt: new Date() }).where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId))).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(cycleId), action: "updated", before: existing, after: updated });
+    const [updated] = await this.db
+      .update(hrCompCycles)
+      .set({ ...input, meritMatrix: (input.meritMatrix ?? undefined) as never, updatedAt: new Date() })
+      .where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Compensation cycle not found");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(cycleId), action: "updated", after: updated });
     return updated;
   }
 
@@ -105,31 +108,39 @@ export class CompPlanningService {
   }
 
   async updateRecommendation(orgId: string, recId: number, actorId: string, input: UpdateRecommendationInput) {
-    const [existing] = await this.db.select().from(hrCompRecommendations).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).limit(1);
-    if (!existing) throw new NotFoundException("Recommendation not found");
+    const setData: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.recommendedIncreaseCents !== undefined) setData["recommendedIncreaseCents"] = input.recommendedIncreaseCents;
+    if (input.recommendedPct !== undefined) setData["recommendedPct"] = String(input.recommendedPct);
+    if (input.rating !== undefined) setData["rating"] = input.rating;
+    if (input.managerNote !== undefined) setData["managerNote"] = input.managerNote;
 
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.recommendedIncreaseCents !== undefined) updateData["recommendedIncreaseCents"] = input.recommendedIncreaseCents;
-    if (input.recommendedPct !== undefined) updateData["recommendedPct"] = String(input.recommendedPct);
-    if (input.rating !== undefined) updateData["rating"] = input.rating;
-    if (input.managerNote !== undefined) updateData["managerNote"] = input.managerNote;
-
-    const [updated] = await this.db.update(hrCompRecommendations).set(updateData as never).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).returning();
+    const [updated] = await this.db
+      .update(hrCompRecommendations)
+      .set(setData as never)
+      .where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Recommendation not found");
     return updated;
   }
 
   async submitRecommendation(orgId: string, recId: number, actorId: string) {
-    const [existing] = await this.db.select().from(hrCompRecommendations).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).limit(1);
-    if (!existing) throw new NotFoundException("Recommendation not found");
-    const [updated] = await this.db.update(hrCompRecommendations).set({ status: "submitted", submittedBy: actorId, updatedAt: new Date() }).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).returning();
+    const [updated] = await this.db
+      .update(hrCompRecommendations)
+      .set({ status: "submitted", submittedBy: actorId, updatedAt: new Date() })
+      .where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Recommendation not found");
     await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(recId), action: "submitted" });
     return updated;
   }
 
   async calibrateRecommendation(orgId: string, recId: number, actorId: string, input: CalibrateRecommendationInput) {
-    const [existing] = await this.db.select().from(hrCompRecommendations).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).limit(1);
-    if (!existing) throw new NotFoundException("Recommendation not found");
-    const [updated] = await this.db.update(hrCompRecommendations).set({ status: "calibrated", hrCalibratedCents: input.hrCalibratedCents, calibratedBy: actorId, updatedAt: new Date() }).where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId))).returning();
+    const [updated] = await this.db
+      .update(hrCompRecommendations)
+      .set({ status: "calibrated", hrCalibratedCents: input.hrCalibratedCents, calibratedBy: actorId, updatedAt: new Date() })
+      .where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Recommendation not found");
     await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(recId), action: "calibrated", after: { hrCalibratedCents: input.hrCalibratedCents } });
     return updated;
   }
@@ -146,10 +157,9 @@ export class CompPlanningService {
       await tx.update(hrCompBudgetPools).set({ usedCents: sql`used_cents + ${finalCents}` }).where(and(
         eq(hrCompBudgetPools.orgId, orgId),
         eq(hrCompBudgetPools.cycleId, existing.cycleId),
+        isNull(hrCompBudgetPools.departmentId),
       ));
-    });
 
-    try {
       await this.effectiveChanges.create(orgId, actorId, {
         employmentId: input.employmentId,
         changeType: "compensation",
@@ -158,17 +168,18 @@ export class CompPlanningService {
         effectiveFrom: input.effectiveFrom,
         notes: `Comp cycle approval: +${finalCents} cents`,
       });
-    } catch {
-      await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(recId), action: "effective_change_failed" });
-    }
+    });
 
     await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(recId), action: "approved", after: { finalCents } });
     return { approved: true, finalCents };
   }
 
   async getBudgetPools(orgId: string, cycleId: number) {
-    const pools = await this.db.select().from(hrCompBudgetPools).where(and(eq(hrCompBudgetPools.orgId, orgId), eq(hrCompBudgetPools.cycleId, cycleId)));
-    return pools;
+    return this.db
+      .select()
+      .from(hrCompBudgetPools)
+      .where(and(eq(hrCompBudgetPools.orgId, orgId), eq(hrCompBudgetPools.cycleId, cycleId)))
+      .limit(200);
   }
 
   async createBudgetPool(orgId: string, actorId: string, input: CreateBudgetPoolInput) {

@@ -279,12 +279,11 @@ export class HrPoliciesService {
 
     const defaults = buildDefaultPolicies(orgId);
     const today = new Date().toISOString().split("T").at(0) ?? new Date().toISOString().substring(0, 10);
-    let seededCount = 0;
 
-    for (const spec of defaults) {
-      const [policy] = await this.db
-        .insert(hrPolicies)
-        .values({
+    const insertedPolicies = await this.db
+      .insert(hrPolicies)
+      .values(
+        defaults.map((spec) => ({
           orgId,
           policyType: spec.policyType,
           name: spec.name,
@@ -293,22 +292,25 @@ export class HrPoliciesService {
           rules: spec.rules,
           priority: spec.priority,
           createdBy: userId,
-          status: "active",
+          status: "active" as const,
           version: 1,
-        })
-        .returning();
+        })),
+      )
+      .returning({ id: hrPolicies.id });
 
-      await this.db.insert(hrPolicyScopes).values({
-        orgId,
-        policyId: policy.id,
-        scopeType: "organization",
-        scopeValue: orgId,
-      });
-      seededCount++;
+    if (insertedPolicies.length > 0) {
+      await this.db.insert(hrPolicyScopes).values(
+        insertedPolicies.map((p) => ({
+          orgId,
+          policyId: p.id,
+          scopeType: "organization" as const,
+          scopeValue: orgId,
+        })),
+      );
     }
 
     await this.cache.invalidate(POLICIES_CACHE(orgId));
-    return { seeded: true, count: seededCount };
+    return { seeded: true, count: insertedPolicies.length };
   }
 
   private parseRules(policyType: PolicyType, rules: Record<string, unknown>) {
@@ -324,19 +326,18 @@ export class HrPoliciesService {
     policyId: number,
     scopes: Array<{ scopeType: string; scopeValue: string }>,
   ) {
-    await this.db
-      .delete(hrPolicyScopes)
-      .where(eq(hrPolicyScopes.policyId, policyId));
-
-    if (scopes.length > 0) {
-      await this.db.insert(hrPolicyScopes).values(
-        scopes.map((s) => ({
-          orgId,
-          policyId,
-          scopeType: s.scopeType as typeof hrPolicyScopes.$inferInsert["scopeType"],
-          scopeValue: s.scopeValue,
-        })),
-      );
-    }
+    await this.db.transaction(async (tx) => {
+      await tx.delete(hrPolicyScopes).where(eq(hrPolicyScopes.policyId, policyId));
+      if (scopes.length > 0) {
+        await tx.insert(hrPolicyScopes).values(
+          scopes.map((s) => ({
+            orgId,
+            policyId,
+            scopeType: s.scopeType as typeof hrPolicyScopes.$inferInsert["scopeType"],
+            scopeValue: s.scopeValue,
+          })),
+        );
+      }
+    });
   }
 }

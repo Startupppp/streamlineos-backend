@@ -15,7 +15,7 @@ export const simulateLeaveBalanceSchema = z.object({
   employeeId: z.string().uuid(),
   leaveTypeId: z.number().int().positive(),
   hypotheticalAccrualRate: z.number().optional(),
-  projectionDate: z.string(),
+  projectionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "projectionDate must be YYYY-MM-DD"),
 });
 
 export const simulateApprovalRoutingSchema = z.object({
@@ -31,7 +31,7 @@ export const simulatePayrollImpactSchema = z.object({
     amount: z.number(),
     type: z.enum(["earning", "deduction"]),
   })),
-  effectiveDate: z.string(),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "effectiveDate must be YYYY-MM-DD"),
 });
 
 export const compareSchema = z.object({

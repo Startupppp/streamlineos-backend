@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
-import { and, eq, isNull, desc, SQL, count } from "drizzle-orm";
+import { and, eq, isNull, desc, SQL, count, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowDefinitions, hrWorkflowSteps } from "../../db/schema/hr/workflow-engine";
@@ -33,7 +33,18 @@ export class HrWorkflowDefinitionsService {
     const offset = (query.page - 1) * query.limit;
 
     const [rows, [{ total }]] = await Promise.all([
-      this.db.select().from(hrWorkflowDefinitions)
+      this.db.select({
+        id: hrWorkflowDefinitions.id,
+        orgId: hrWorkflowDefinitions.orgId,
+        objectType: hrWorkflowDefinitions.objectType,
+        name: hrWorkflowDefinitions.name,
+        status: hrWorkflowDefinitions.status,
+        version: hrWorkflowDefinitions.version,
+        isDefault: hrWorkflowDefinitions.isDefault,
+        createdAt: hrWorkflowDefinitions.createdAt,
+        updatedAt: hrWorkflowDefinitions.updatedAt,
+        deletedAt: hrWorkflowDefinitions.deletedAt,
+      }).from(hrWorkflowDefinitions)
         .where(and(...conditions))
         .orderBy(desc(hrWorkflowDefinitions.createdAt))
         .limit(query.limit)
@@ -41,11 +52,16 @@ export class HrWorkflowDefinitionsService {
       this.db.select({ total: count() }).from(hrWorkflowDefinitions).where(and(...conditions)),
     ]);
 
-    const withStepCounts = await Promise.all(rows.map(async (row) => {
-      const steps = await this.db.select().from(hrWorkflowSteps)
-        .where(eq(hrWorkflowSteps.definitionId, row.id));
-      return { ...row, stepCount: steps.length };
-    }));
+    const defIds = rows.map((r) => r.id);
+    const stepCountRows = defIds.length > 0
+      ? await this.db.select({ definitionId: hrWorkflowSteps.definitionId, cnt: count() })
+          .from(hrWorkflowSteps)
+          .where(inArray(hrWorkflowSteps.definitionId, defIds))
+          .groupBy(hrWorkflowSteps.definitionId)
+      : [];
+    const stepCountMap = Object.fromEntries(stepCountRows.map((r) => [r.definitionId, r.cnt]));
+
+    const withStepCounts = rows.map((row) => ({ ...row, stepCount: stepCountMap[row.id] ?? 0 }));
 
     return { data: withStepCounts, total, page: query.page, limit: query.limit };
   }
@@ -162,13 +178,13 @@ export class HrWorkflowDefinitionsService {
     await this.upsertSteps(newDef.id, source.steps.map((s): StepInput => ({
       stepOrder: s.stepOrder,
       name: s.name,
-      approverType: s.approverType as StepInput["approverType"],
+      approverType: s.approverType,
       approverValue: s.approverValue ?? null,
-      mode: s.mode as StepInput["mode"],
+      mode: s.mode,
       slaHours: s.slaHours ?? null,
-      escalationApproverType: s.escalationApproverType as StepInput["escalationApproverType"],
+      escalationApproverType: s.escalationApproverType,
       escalationApproverValue: s.escalationApproverValue ?? null,
-      condition: s.condition as StepInput["condition"] ?? null,
+      condition: s.condition ?? null,
     })));
 
     return this.get(orgId, newDef.id);

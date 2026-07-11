@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrCustomFieldDefinitions, hrCustomFieldValues } from "../../db/schema/hr/core-org";
@@ -95,7 +95,10 @@ export class HrCustomFieldsService {
   ) {
     const defs = await this.listDefinitions(orgId, entityType);
     const values = await this.db
-      .select()
+      .select({
+        fieldDefinitionId: hrCustomFieldValues.fieldDefinitionId,
+        value: hrCustomFieldValues.value,
+      })
       .from(hrCustomFieldValues)
       .where(
         and(
@@ -136,27 +139,28 @@ export class HrCustomFieldsService {
       this.validateFieldValue(def.fieldType, item.value, def.isRequired);
     }
 
-    await this.db.transaction(async (tx) => {
-      for (const item of input.values) {
-        await tx
-          .insert(hrCustomFieldValues)
-          .values({
-            orgId,
-            fieldDefinitionId: item.fieldDefinitionId,
-            entityType,
-            entityId,
-            value: item.value,
-          })
-          .onConflictDoUpdate({
-            target: [
-              hrCustomFieldValues.fieldDefinitionId,
-              hrCustomFieldValues.entityType,
-              hrCustomFieldValues.entityId,
-            ],
-            set: { value: item.value, updatedAt: new Date() },
-          });
-      }
-    });
+    const rows = input.values.map((item) => ({
+      orgId,
+      fieldDefinitionId: item.fieldDefinitionId,
+      entityType,
+      entityId,
+      value: item.value,
+    }));
+
+    await this.db
+      .insert(hrCustomFieldValues)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [
+          hrCustomFieldValues.fieldDefinitionId,
+          hrCustomFieldValues.entityType,
+          hrCustomFieldValues.entityId,
+        ],
+        set: {
+          value: sql`excluded.${sql.raw(hrCustomFieldValues.value.name)}`,
+          updatedAt: new Date(),
+        },
+      });
   }
 
   private validateFieldValue(

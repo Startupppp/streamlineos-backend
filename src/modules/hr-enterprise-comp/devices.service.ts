@@ -63,13 +63,25 @@ export class DevicesService {
   }
 
   async ingestSyncLog(orgId: string, input: CreateSyncLogInput) {
-    const [device] = await this.db.select({ id: hrTimeDevices.id }).from(hrTimeDevices).where(and(eq(hrTimeDevices.id, input.deviceId), eq(hrTimeDevices.orgId, orgId))).limit(1);
-    if (!device) throw new NotFoundException("Device not found");
-    const [log] = await this.db.insert(hrDeviceSyncLogs).values({ orgId, ...input }).returning();
-    if (input.status !== "failed") {
-      await this.db.update(hrTimeDevices).set({ lastSyncAt: new Date() }).where(eq(hrTimeDevices.id, input.deviceId));
-    }
-    return log;
+    return this.db.transaction(async (tx) => {
+      const [device] = await tx
+        .select({ id: hrTimeDevices.id })
+        .from(hrTimeDevices)
+        .where(and(eq(hrTimeDevices.id, input.deviceId), eq(hrTimeDevices.orgId, orgId)))
+        .limit(1);
+      if (!device) throw new NotFoundException("Device not found");
+
+      const [log] = await tx.insert(hrDeviceSyncLogs).values({ orgId, ...input }).returning();
+
+      if (input.status !== "failed") {
+        await tx
+          .update(hrTimeDevices)
+          .set({ lastSyncAt: new Date() })
+          .where(and(eq(hrTimeDevices.id, input.deviceId), eq(hrTimeDevices.orgId, orgId)));
+      }
+
+      return log;
+    });
   }
 
   async listSyncLogs(orgId: string, input: ListSyncLogsInput) {
@@ -102,7 +114,7 @@ export class DevicesService {
           ORDER BY punch_window DESC
           LIMIT 100`,
     );
-    return rows as Record<string, unknown>[];
+    return rows;
   }
 
   async createMapping(orgId: string, actorId: string, input: CreateDeviceMappingInput) {

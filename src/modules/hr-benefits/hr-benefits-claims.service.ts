@@ -104,7 +104,7 @@ export class HrBenefitsClaimsService {
           payoutRoute: data.payoutRoute ?? null,
           updatedAt: new Date(),
         })
-        .where(eq(hrInsuranceClaims.id, claimId));
+        .where(and(eq(hrInsuranceClaims.id, claimId), eq(hrInsuranceClaims.orgId, orgId)));
 
       await tx.insert(auditLogs).values({
         action: "insurance_claim.reviewed",
@@ -145,7 +145,7 @@ export class HrBenefitsClaimsService {
     const [updated] = await this.db
       .update(hrInsuranceClaims)
       .set({ payoutRoute, updatedAt: new Date() })
-      .where(eq(hrInsuranceClaims.id, claimId))
+      .where(and(eq(hrInsuranceClaims.id, claimId), eq(hrInsuranceClaims.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -163,7 +163,8 @@ export class HrBenefitsClaimsService {
           lte(hrInsuranceClaims.decidedAt, periodEnd),
         ),
       )
-      .orderBy(hrInsuranceClaims.decidedAt);
+      .orderBy(hrInsuranceClaims.decidedAt)
+      .limit(2000);
   }
 
   async getDueLoanRepayments(orgId: string, periodStart: Date, periodEnd: Date) {
@@ -181,6 +182,7 @@ export class HrBenefitsClaimsService {
           lte(hrLoanRepayments.dueDate, end),
         ),
       )
-      .orderBy(hrLoanRepayments.dueDate);
+      .orderBy(hrLoanRepayments.dueDate)
+      .limit(2000);
   }
 }

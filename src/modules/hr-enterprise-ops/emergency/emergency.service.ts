@@ -94,10 +94,11 @@ export class EmergencyService {
   async broadcast(orgId: string, eventId: string, input: BroadcastInput) {
     const event = await this.getEvent(orgId, eventId);
 
-    const employees = event.locationId
+    const memberRows = event.locationId
       ? await this.db.execute(
           sql`SELECT DISTINCT u.id FROM users u
               INNER JOIN organization_members om ON om.user_id = u.id AND om.org_id = ${orgId}
+              INNER JOIN hr_employments he ON he.user_id = u.id AND he.org_id = ${orgId} AND he.location_id = ${event.locationId} AND he.deleted_at IS NULL
               WHERE om.deleted_at IS NULL`,
         )
       : await this.db.execute(
@@ -106,32 +107,34 @@ export class EmergencyService {
               WHERE om.deleted_at IS NULL`,
         );
 
-    const userIds: string[] = [];
-    for (const row of employees) {
-      const r = row as Record<string, unknown>;
-      const uid = String(r["id"] ?? "");
-      if (uid) userIds.push(uid);
+    const allUserIds: string[] = [];
+    for (const row of memberRows) {
+      const uid = String(row["id"] ?? "");
+      if (uid) allUserIds.push(uid);
     }
 
-    for (const uid of userIds) {
-      const existing = await this.db.query.hrEmergencyResponses.findFirst({
-        where: and(
+    if (allUserIds.length === 0) return { broadcasted: 0, eventId };
+
+    const alreadyResponded = await this.db
+      .select({ userId: hrEmergencyResponses.userId })
+      .from(hrEmergencyResponses)
+      .where(
+        and(
           eq(hrEmergencyResponses.orgId, orgId),
           eq(hrEmergencyResponses.eventId, eventId),
-          eq(hrEmergencyResponses.userId, uid),
         ),
-      });
-      if (!existing) {
-        await this.db.insert(hrEmergencyResponses).values({
-          orgId,
-          eventId,
-          userId: uid,
-          status: "no_response",
-        });
-      }
+      );
+
+    const respondedSet = new Set(alreadyResponded.map((r) => r.userId));
+    const missingIds = allUserIds.filter((uid) => !respondedSet.has(uid));
+
+    if (missingIds.length > 0) {
+      await this.db.insert(hrEmergencyResponses).values(
+        missingIds.map((uid) => ({ orgId, eventId, userId: uid, status: "no_response" as const })),
+      );
     }
 
-    return { broadcasted: userIds.length, eventId };
+    return { broadcasted: allUserIds.length, eventId };
   }
 
   async respond(orgId: string, eventId: string, userId: string, input: RespondInput) {
@@ -173,18 +176,21 @@ export class EmergencyService {
   async getEventStatus(orgId: string, eventId: string) {
     await this.getEvent(orgId, eventId);
 
-    const responses = await this.db
-      .select()
+    const rows = await this.db
+      .select({ status: hrEmergencyResponses.status, cnt: count() })
       .from(hrEmergencyResponses)
-      .where(and(eq(hrEmergencyResponses.orgId, orgId), eq(hrEmergencyResponses.eventId, eventId)));
+      .where(and(eq(hrEmergencyResponses.orgId, orgId), eq(hrEmergencyResponses.eventId, eventId)))
+      .groupBy(hrEmergencyResponses.status);
 
     const aggregate = { safe: 0, need_help: 0, no_response: 0 };
-    const byLocation: Record<string, typeof aggregate> = {};
+    let total = 0;
 
-    for (const r of responses) {
-      aggregate[r.status]++;
+    for (const r of rows) {
+      const n = Number(r.cnt);
+      aggregate[r.status] = n;
+      total += n;
     }
 
-    return { eventId, aggregate, byLocation, total: responses.length };
+    return { eventId, aggregate, byLocation: {}, total };
   }
 }

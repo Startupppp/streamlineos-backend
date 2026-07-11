@@ -121,7 +121,7 @@ export class PayrollInputsService {
     await this.db
       .update(hrPayrollInputPeriods)
       .set({ status: "building", updatedAt: new Date() })
-      .where(eq(hrPayrollInputPeriods.id, periodId));
+      .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)));
 
     try {
       const updatedPeriod = { ...period, status: "building" as const };
@@ -130,7 +130,7 @@ export class PayrollInputsService {
       const [built] = await this.db
         .update(hrPayrollInputPeriods)
         .set({ status: "built", builtAt: new Date(), updatedAt: new Date() })
-        .where(eq(hrPayrollInputPeriods.id, periodId))
+        .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)))
         .returning();
 
       await this.audit.log({
@@ -147,7 +147,7 @@ export class PayrollInputsService {
       await this.db
         .update(hrPayrollInputPeriods)
         .set({ status: "open", updatedAt: new Date() })
-        .where(eq(hrPayrollInputPeriods.id, periodId));
+        .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)));
       throw err;
     }
   }
@@ -162,7 +162,7 @@ export class PayrollInputsService {
       const result = await tx
         .update(hrPayrollInputPeriods)
         .set({ status: "locked", lockedAt: new Date(), lockedBy: actorId, updatedAt: new Date() })
-        .where(eq(hrPayrollInputPeriods.id, periodId))
+        .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)))
         .returning();
 
       const { start, end } = periodBoundsFrom(period.periodKey);
@@ -229,7 +229,7 @@ export class PayrollInputsService {
     const [unlocked] = await this.db
       .update(hrPayrollInputPeriods)
       .set({ status: "built", lockedAt: null, lockedBy: null, updatedAt: new Date() })
-      .where(eq(hrPayrollInputPeriods.id, periodId))
+      .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)))
       .returning();
 
     await this.audit.log({

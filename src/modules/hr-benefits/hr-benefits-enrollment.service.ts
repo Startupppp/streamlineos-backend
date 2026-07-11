@@ -128,7 +128,8 @@ export class HrBenefitsEnrollmentService {
       .select()
       .from(hrDependents)
       .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
-      .orderBy(hrDependents.name);
+      .orderBy(hrDependents.name)
+      .limit(200);
   }
 
   async addDependent(orgId: string, userId: string, data: CreateDependentInput) {
@@ -157,7 +158,7 @@ export class HrBenefitsEnrollmentService {
     const [updated] = await this.db
       .update(hrDependents)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(hrDependents.id, depId))
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
       .returning();
     return updated;
   }
@@ -179,7 +180,7 @@ export class HrBenefitsEnrollmentService {
 
     await this.db
       .delete(hrDependents)
-      .where(eq(hrDependents.id, depId));
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)));
     return { ok: true };
   }
 }

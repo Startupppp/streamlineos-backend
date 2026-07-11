@@ -24,7 +24,10 @@ function makeDb(selectResults: unknown[][] = [], insertResult: unknown[] = [{ id
 
   const returningMock = jest.fn().mockResolvedValue(insertResult);
   const insertChain = {
-    values: jest.fn().mockReturnValue({ returning: returningMock }),
+    values: jest.fn().mockReturnValue({
+      returning: returningMock,
+      onConflictDoNothing: jest.fn().mockReturnValue({ returning: returningMock }),
+    }),
   };
   const updateChain = {
     set: jest.fn().mockReturnValue({

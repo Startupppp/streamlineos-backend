@@ -10,7 +10,7 @@ if (!url) {
 }
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
-const HRMS = /^02(0[1-9]|1[0-9]|2[0-5])_/;
+const HRMS = /^02(0[1-9]|1[0-9]|2[0-6])_/;
 const only = process.argv[2];
 
 const files = readdirSync(migrationsDir)

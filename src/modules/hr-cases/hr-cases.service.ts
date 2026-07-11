@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -261,17 +261,19 @@ export class HrCasesService {
   ) {
     await this.getById(orgId, caseId, userId, hasConfidential);
 
-    const rows = await this.db
-      .select()
-      .from(hrCaseNotes)
-      .where(and(eq(hrCaseNotes.caseId, caseId), eq(hrCaseNotes.orgId, orgId)))
-      .orderBy(desc(hrCaseNotes.createdAt));
+    const conditions: SQL[] = [eq(hrCaseNotes.caseId, caseId), eq(hrCaseNotes.orgId, orgId)];
 
     if (!hasConfidential) {
-      return rows.filter((n) => !n.isConfidential || n.authorId === userId);
+      const visibilityFilter = or(eq(hrCaseNotes.isConfidential, false), eq(hrCaseNotes.authorId, userId));
+      if (visibilityFilter) conditions.push(visibilityFilter);
     }
 
-    return rows;
+    return this.db
+      .select()
+      .from(hrCaseNotes)
+      .where(and(...conditions))
+      .orderBy(desc(hrCaseNotes.createdAt))
+      .limit(200);
   }
 
   async addNote(
@@ -315,17 +317,18 @@ export class HrCasesService {
   async listDocuments(orgId: string, caseId: number, userId: string, hasConfidential: boolean) {
     await this.getById(orgId, caseId, userId, hasConfidential);
 
-    const rows = await this.db
-      .select()
-      .from(hrCaseDocuments)
-      .where(and(eq(hrCaseDocuments.caseId, caseId), eq(hrCaseDocuments.orgId, orgId)))
-      .orderBy(desc(hrCaseDocuments.createdAt));
+    const conditions: SQL[] = [eq(hrCaseDocuments.caseId, caseId), eq(hrCaseDocuments.orgId, orgId)];
 
     if (!hasConfidential) {
-      return rows.filter((d) => !d.restricted);
+      conditions.push(eq(hrCaseDocuments.restricted, false));
     }
 
-    return rows;
+    return this.db
+      .select()
+      .from(hrCaseDocuments)
+      .where(and(...conditions))
+      .orderBy(desc(hrCaseDocuments.createdAt))
+      .limit(200);
   }
 
   async addDocument(

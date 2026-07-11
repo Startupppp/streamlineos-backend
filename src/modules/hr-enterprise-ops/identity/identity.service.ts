@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, notInArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -74,7 +74,8 @@ export class IdentityService {
       .select()
       .from(hrAccessProvisioningTemplates)
       .where(eq(hrAccessProvisioningTemplates.orgId, orgId))
-      .orderBy(hrAccessProvisioningTemplates.name);
+      .orderBy(hrAccessProvisioningTemplates.name)
+      .limit(200);
   }
 
   async createTemplate(orgId: string, input: CreateTemplateInput) {
@@ -143,27 +144,39 @@ export class IdentityService {
   }
 
   async getExitVerification(orgId: string, userId: string) {
-    const pendingRevokes = await this.db
-      .select()
-      .from(hrAccessProvisioning)
-      .where(
-        and(
-          eq(hrAccessProvisioning.orgId, orgId),
-          eq(hrAccessProvisioning.userId, userId),
-          eq(hrAccessProvisioning.action, "revoke"),
-          eq(hrAccessProvisioning.triggeredBy, "leaver"),
-        ),
-      );
-
-    const unverified = pendingRevokes.filter(
-      (r) => r.status !== "verified" && r.status !== "completed",
-    );
+    const [allRevokes, unverified] = await Promise.all([
+      this.db
+        .select({ id: hrAccessProvisioning.id })
+        .from(hrAccessProvisioning)
+        .where(
+          and(
+            eq(hrAccessProvisioning.orgId, orgId),
+            eq(hrAccessProvisioning.userId, userId),
+            eq(hrAccessProvisioning.action, "revoke"),
+            eq(hrAccessProvisioning.triggeredBy, "leaver"),
+          ),
+        )
+        .limit(200),
+      this.db
+        .select()
+        .from(hrAccessProvisioning)
+        .where(
+          and(
+            eq(hrAccessProvisioning.orgId, orgId),
+            eq(hrAccessProvisioning.userId, userId),
+            eq(hrAccessProvisioning.action, "revoke"),
+            eq(hrAccessProvisioning.triggeredBy, "leaver"),
+            notInArray(hrAccessProvisioning.status, ["verified", "completed"]),
+          ),
+        )
+        .limit(200),
+    ]);
 
     return {
       userId,
       hasUnverifiedRevokes: unverified.length > 0,
       unverified,
-      total: pendingRevokes.length,
+      total: allRevokes.length,
     };
   }
 

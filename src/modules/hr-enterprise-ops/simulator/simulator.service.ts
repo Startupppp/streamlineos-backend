@@ -170,20 +170,12 @@ export class SimulatorService {
   async compare(orgId: string, actorId: string, input: CompareInput) {
     const today = new Date().toISOString().slice(0, 10);
 
-    const [oldPolicy, newPolicy] = await Promise.all([
-      this.policyEval.evaluatePolicy(
-        orgId,
-        input.employeeId,
-        input.policyType as Parameters<typeof this.policyEval.evaluatePolicy>[2],
-        today,
-      ),
-      this.policyEval.evaluatePolicy(
-        orgId,
-        input.employeeId,
-        input.policyType as Parameters<typeof this.policyEval.evaluatePolicy>[2],
-        today,
-      ),
-    ]);
+    const resolvedPolicy = await this.policyEval.evaluatePolicy(
+      orgId,
+      input.employeeId,
+      input.policyType as Parameters<typeof this.policyEval.evaluatePolicy>[2],
+      today,
+    );
 
     const result = {
       simulation: SIM_LABEL,
@@ -191,8 +183,8 @@ export class SimulatorService {
       policyType: input.policyType,
       oldPolicyId: input.oldPolicyId,
       newPolicyId: input.newPolicyId,
-      resolvedOldPolicy: oldPolicy,
-      resolvedNewPolicy: newPolicy,
+      resolvedOldPolicy: resolvedPolicy,
+      resolvedNewPolicy: resolvedPolicy,
     };
 
     await this.persist(orgId, actorId, "policy", input, result);

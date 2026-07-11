@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { SQL, and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { hrTemplates, hrTemplateRenders } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -112,7 +112,7 @@ export class HrTemplatesService {
         ...(input.letterType !== undefined && { letterType: input.letterType }),
         updatedBy: userId,
       })
-      .where(eq(hrTemplates.id, templateId))
+      .where(and(eq(hrTemplates.id, templateId), eq(hrTemplates.orgId, orgId)))
       .returning();
 
     if (!updated) throw new InternalServerErrorException("Failed to update template");
@@ -129,7 +129,7 @@ export class HrTemplatesService {
     const [updated] = await this.db
       .update(hrTemplates)
       .set({ status: to as TemplateRow["status"], updatedBy: userId })
-      .where(eq(hrTemplates.id, templateId))
+      .where(and(eq(hrTemplates.id, templateId), eq(hrTemplates.orgId, orgId)))
       .returning();
 
     if (!updated) throw new InternalServerErrorException("Failed to update template status");
@@ -214,14 +214,17 @@ export class HrTemplatesService {
     return { outputHtml, renderedSubject, renderId: renderRow?.id, templateVersion: template.version };
   }
 
-  async listRenders(orgId: string, templateId: number) {
+  async listRenders(orgId: string, templateId: number, page = 1, limit = 50) {
     await this.getById(orgId, templateId);
+    const safeLimit = Math.min(limit, 100);
+    const offset = (page - 1) * safeLimit;
     return this.db
       .select()
       .from(hrTemplateRenders)
       .where(and(eq(hrTemplateRenders.orgId, orgId), eq(hrTemplateRenders.templateId, templateId)))
       .orderBy(desc(hrTemplateRenders.createdAt))
-      .limit(100);
+      .limit(safeLimit)
+      .offset(offset);
   }
 
   async seedDefaults(orgId: string, userId: string) {
@@ -263,18 +266,19 @@ export class HrTemplatesService {
     version: number,
     excludeId: number | null,
   ) {
-    const conditions = [
-      eq(hrTemplates.orgId, orgId),
-      eq(hrTemplates.kind, kind),
-      ilike(hrTemplates.name, name.trim()),
-      eq(hrTemplates.version, version),
-      isNull(hrTemplates.deletedAt),
-    ];
-
+    const normalizedName = name.trim().toLowerCase();
     const [existing] = await this.db
       .select({ id: hrTemplates.id })
       .from(hrTemplates)
-      .where(and(...conditions))
+      .where(
+        and(
+          eq(hrTemplates.orgId, orgId),
+          eq(hrTemplates.kind, kind),
+          eq(sql`lower(${hrTemplates.name})`, normalizedName),
+          eq(hrTemplates.version, version),
+          isNull(hrTemplates.deletedAt),
+        ),
+      )
       .limit(1);
 
     if (existing && existing.id !== excludeId) {

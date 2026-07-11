@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, lte } from "drizzle-orm";
+import { and, count, desc, eq, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -113,8 +113,8 @@ export class EquityService {
     const [grant] = await this.db.select().from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(eq(hrEquityVestingEvents.grantId, grantId)).orderBy(hrEquityVestingEvents.vestDate);
-    const exercises = await this.db.select().from(hrEquityExercises).where(eq(hrEquityExercises.grantId, grantId)).orderBy(hrEquityExercises.exerciseDate);
+    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
+    const exercises = await this.db.select().from(hrEquityExercises).where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))).orderBy(hrEquityExercises.exerciseDate);
 
     return { ...grant, vestingEvents, exercises };
   }
@@ -138,7 +138,7 @@ export class EquityService {
     const [grant] = await this.db.select({ id: hrEquityGrants.id }).from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    return this.db.select().from(hrEquityVestingEvents).where(eq(hrEquityVestingEvents.grantId, grantId)).orderBy(hrEquityVestingEvents.vestDate);
+    return this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
   }
 
   async recordExercise(orgId: string, actorId: string, input: CreateExerciseInput) {
@@ -146,11 +146,19 @@ export class EquityService {
     if (!grant) throw new NotFoundException("Equity grant not found");
     if (grant.status !== "active") throw new BadRequestException("Grant is not active");
 
-    const vestedEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, input.grantId), lte(hrEquityVestingEvents.vestDate, input.exerciseDate)));
-    const totalVested = vestedEvents.reduce((sum, e) => sum + e.unitsVested, 0);
+    const [[vestedRow], [exercisedRow]] = await Promise.all([
+      this.db
+        .select({ total: sql<number>`COALESCE(SUM(units_vested), 0)` })
+        .from(hrEquityVestingEvents)
+        .where(and(eq(hrEquityVestingEvents.grantId, input.grantId), eq(hrEquityVestingEvents.orgId, orgId), lte(hrEquityVestingEvents.vestDate, input.exerciseDate))),
+      this.db
+        .select({ total: sql<number>`COALESCE(SUM(units), 0)` })
+        .from(hrEquityExercises)
+        .where(and(eq(hrEquityExercises.grantId, input.grantId), eq(hrEquityExercises.orgId, orgId))),
+    ]);
 
-    const [exercises] = await this.db.select({ total: count() }).from(hrEquityExercises).where(eq(hrEquityExercises.grantId, input.grantId));
-    const exercised = exercises?.total ?? 0;
+    const totalVested = Number(vestedRow?.total ?? 0);
+    const exercised = Number(exercisedRow?.total ?? 0);
 
     if (input.units > totalVested - exercised) {
       throw new BadRequestException(`Only ${totalVested - exercised} vested units available`);
@@ -165,12 +173,20 @@ export class EquityService {
     const [grant] = await this.db.select().from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), lte(hrEquityVestingEvents.vestDate, exitDate)));
-    const vestedUnits = vestingEvents.reduce((sum, e) => sum + e.unitsVested, 0);
-    const unvestedUnits = grant.units - vestedUnits;
+    const [[vestedRow], [exercisedRow]] = await Promise.all([
+      this.db
+        .select({ total: sql<number>`COALESCE(SUM(units_vested), 0)` })
+        .from(hrEquityVestingEvents)
+        .where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId), lte(hrEquityVestingEvents.vestDate, exitDate))),
+      this.db
+        .select({ total: sql<number>`COALESCE(SUM(units), 0)` })
+        .from(hrEquityExercises)
+        .where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))),
+    ]);
 
-    const exercises = await this.db.select().from(hrEquityExercises).where(eq(hrEquityExercises.grantId, grantId));
-    const exercisedUnits = exercises.reduce((sum, e) => sum + e.units, 0);
+    const vestedUnits = Number(vestedRow?.total ?? 0);
+    const exercisedUnits = Number(exercisedRow?.total ?? 0);
+    const unvestedUnits = grant.units - vestedUnits;
     const exercisableUnits = vestedUnits - exercisedUnits;
 
     return {

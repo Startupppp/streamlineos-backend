@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Query,
@@ -13,6 +14,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../../access/access.service";
 import { SimulatorService } from "./simulator.service";
 import {
   simulatePolicySchema,
@@ -33,7 +35,16 @@ import {
 @Controller("hr/enterprise/ops/simulator")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SimulatorController {
-  constructor(private readonly svc: SimulatorService) {}
+  constructor(
+    private readonly svc: SimulatorService,
+    private readonly access: AccessService,
+  ) {}
+
+  private async canViewSalary(user: CurrentUserContext): Promise<boolean> {
+    if (user.isOrgOwner || user.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    return perms.has("hr:payroll:view") || perms.has("hr:salary:view");
+  }
 
   @Post("simulate/policy")
   @RequirePermission("hr:policies:manage")
@@ -64,10 +75,14 @@ export class SimulatorController {
 
   @Post("simulate/payroll-impact")
   @RequirePermission("hr:policies:manage")
-  simulatePayrollImpact(
+  async simulatePayrollImpact(
     @CurrentUser() user: CurrentUserContext,
     @Body(new ZodValidationPipe(simulatePayrollImpactSchema)) body: SimulatePayrollImpactInput,
   ) {
+    const hasSalary = await this.canViewSalary(user);
+    if (!hasSalary) {
+      throw new ForbiddenException("hr:payroll:view or hr:salary:view permission required");
+    }
     return this.svc.simulatePayrollImpact(user.orgId, user.userId, body);
   }
 

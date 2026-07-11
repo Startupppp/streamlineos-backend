@@ -80,8 +80,7 @@ export class PayrollInputsBuildService {
         orgId,
         periodStart: start,
         periodEnd: end,
-        page: 1,
-        limit: 100,
+        userIds,
       }),
       this.leaveLedger.buildLeaveSummary(orgId, start, end),
       this.db
@@ -164,7 +163,7 @@ export class PayrollInputsBuildService {
             inArray(hrPeople.userId, userIds),
           ),
         )
-        .catch(() => [] as never[]),
+        .catch(() => []),
       this.benefitsClaims.getPayrollPayableClaims(orgId, periodStart, periodEnd),
       this.benefitsClaims.getDueLoanRepayments(orgId, periodStart, periodEnd),
     ]);
@@ -224,25 +223,10 @@ export class PayrollInputsBuildService {
       salaryStructureByUser.set(row.userId, row);
     }
 
-    type EmploymentRow = {
-      id: number;
-      orgId: string;
-      personId: number;
-      employeeNumber: string;
-      lifecycleStatus: typeof hrEmployments.$inferSelect["lifecycleStatus"];
-      workerType: typeof hrEmployments.$inferSelect["workerType"];
-      designation: string | null;
-      joiningDate: string | null;
-      probationEndDate: string | null;
-      confirmationDate: string | null;
-      lastWorkingDay: string | null;
-      exitDate: string | null;
-      isPrimary: boolean;
-      resolvedUserId: string | null;
-    };
+    type EmploymentRow = (typeof employmentRows)[number];
 
     const employmentByUser = new Map<string, EmploymentRow>();
-    for (const row of employmentRows as EmploymentRow[]) {
+    for (const row of employmentRows) {
       if (!row.resolvedUserId) continue;
       if (!employmentByUser.has(row.resolvedUserId) || row.isPrimary) {
         employmentByUser.set(row.resolvedUserId, row);

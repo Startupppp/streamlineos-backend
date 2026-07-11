@@ -38,6 +38,7 @@ export class HrOrgCatalogService {
     return this.db.query.hrLocations.findMany({
       where: and(eq(hrLocations.orgId, orgId), isNull(hrLocations.deletedAt)),
       orderBy: hrLocations.name,
+      limit: 500,
     });
   }
 
@@ -90,6 +91,7 @@ export class HrOrgCatalogService {
     return this.db.query.hrJobRoles.findMany({
       where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
       orderBy: hrJobRoles.name,
+      limit: 500,
     });
   }
 
@@ -126,6 +128,7 @@ export class HrOrgCatalogService {
     return this.db.query.hrJobLevels.findMany({
       where: and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.isActive, true)),
       orderBy: hrJobLevels.rank,
+      limit: 500,
     });
   }
 
@@ -162,6 +165,7 @@ export class HrOrgCatalogService {
     return this.db.query.hrTeams.findMany({
       where: and(eq(hrTeams.orgId, orgId), isNull(hrTeams.deletedAt), eq(hrTeams.isActive, true)),
       orderBy: hrTeams.name,
+      limit: 500,
     });
   }
 

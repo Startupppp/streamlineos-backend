@@ -19,7 +19,8 @@ export class HrTravelVisitsService {
           eq(hrTravelVisitLogs.travelRequestId, travelRequestId),
         ),
       )
-      .orderBy(asc(hrTravelVisitLogs.visitedAt));
+      .orderBy(asc(hrTravelVisitLogs.visitedAt))
+      .limit(200);
   }
 
   async addVisit(orgId: string, userId: string, data: CreateVisitLogInput) {

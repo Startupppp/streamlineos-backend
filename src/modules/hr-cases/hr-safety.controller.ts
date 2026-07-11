@@ -64,7 +64,7 @@ export class HrSafetyController {
   }
 
   @Post("incidents")
-  @RequirePermission("hr:safety:view")
+  @RequirePermission("hr:safety:manage")
   createIncident(
     @CurrentUser() user: CurrentUserContext,
     @Body(new ZodValidationPipe(createIncidentSchema)) body: CreateIncidentInput,

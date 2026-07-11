@@ -129,27 +129,26 @@ export class HrPolicyEvaluationService {
 
     if (!member) throw new NotFoundException("Employee not found in organisation");
 
-    const deptMemberships = await this.db
-      .select({ departmentId: departmentMembers.departmentId })
-      .from(departmentMembers)
-      .innerJoin(departments, eq(departments.id, departmentMembers.departmentId))
-      .where(
-        and(
-          eq(departmentMembers.userId, employeeId),
-          eq(departments.orgId, orgId),
-        ),
-      )
-      .limit(10);
-
-    const deptIds = deptMemberships.map((d) => d.departmentId);
-
-    const u = await this.db.query.users.findFirst({
-      where: eq(users.id, employeeId),
-    });
+    const [deptMemberships, u] = await Promise.all([
+      this.db
+        .select({ departmentId: departmentMembers.departmentId })
+        .from(departmentMembers)
+        .innerJoin(departments, eq(departments.id, departmentMembers.departmentId))
+        .where(
+          and(
+            eq(departmentMembers.userId, employeeId),
+            eq(departments.orgId, orgId),
+          ),
+        )
+        .limit(10),
+      this.db.query.users.findFirst({
+        where: eq(users.id, employeeId),
+      }),
+    ]);
 
     return {
       userId: employeeId,
-      departmentId: deptIds[0] ?? null,
+      departmentId: deptMemberships[0]?.departmentId ?? null,
       teamIds: [],
       role: u?.role ?? "",
       designation: u?.designation ?? null,
