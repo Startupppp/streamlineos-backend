@@ -25,6 +25,8 @@ export const resignationUpdateSchema = z.object({
   exitInterviewDate: z.string().optional(),
   feedback: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   checklistItems: z.array(z.string().min(1)).optional(),
+  overrideAssetGate: z.boolean().optional(),
+  overrideReason: z.string().min(1).max(1000).optional(),
 });
 
 export const resignationCeoReviewSchema = z.object({

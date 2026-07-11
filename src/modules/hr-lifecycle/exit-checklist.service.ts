@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { hrTemplates, exitChecklists } from "../../db/schema";
-import type { ChecklistItem } from "../../db/schema";
+
+type ChecklistItem = { title: string; assigneeRole?: string; dueOffsetDays?: number; required?: boolean; order?: number };
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 

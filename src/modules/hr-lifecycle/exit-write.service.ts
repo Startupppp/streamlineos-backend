@@ -22,6 +22,8 @@ import { HrAutomationEngineService } from "../hr-automations/hr-automation-engin
 import { ResignationJobsService } from "./resignation-jobs.service";
 import { ExitChecklistService } from "./exit-checklist.service";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
+import { AssetsRecoveryService } from "../hr-directory/assets-recovery.service";
+import { HrAuditService } from "../hr-core/hr-audit.service";
 import { formatDdMmmYyyy } from "./date.helpers";
 import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
@@ -47,6 +49,8 @@ export class ExitWriteService {
     private readonly resignationJobs: ResignationJobsService,
     private readonly exitChecklist: ExitChecklistService,
     private readonly policyEval: HrPolicyEvaluationService,
+    private readonly assetsRecovery: AssetsRecoveryService,
+    private readonly hrAudit: HrAuditService,
   ) {}
 
   private async resolveNoticePeriod(orgId: string, userId: string, fallbackDays: number): Promise<number> {
@@ -181,6 +185,27 @@ export class ExitWriteService {
 
     if (input.status === "COMPLETED") {
       if (!actor.isApprover) throw new ForbiddenException("Only admins can complete.");
+      const hasPendingRecovery = await this.assetsRecovery
+        .hasPendingRecovery(orgId, existing.userId)
+        .catch(() => false);
+      if (hasPendingRecovery) {
+        if (!input.overrideAssetGate) {
+          throw new BadRequestException(
+            "Asset recovery is pending for this employee. Recover all assigned assets or complete with an override reason.",
+          );
+        }
+        if (!input.overrideReason) {
+          throw new BadRequestException("An override reason is required to bypass pending asset recovery.");
+        }
+        await this.hrAudit.log({
+          orgId,
+          actorId: actor.userId,
+          entityType: "resignations",
+          entityId: String(resignationId),
+          action: "asset_gate_overridden",
+          after: { reason: input.overrideReason },
+        });
+      }
       await this.db
         .update(resignations)
         .set({ status: "COMPLETED", updatedAt: new Date() })

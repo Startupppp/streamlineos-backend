@@ -66,7 +66,7 @@ export const updateRichDocumentSchema = z.object({
 export const renderLetterSchema = z.object({
   templateId: z.number().int().positive(),
   employeeId: z.number().int().positive().optional(),
-  extraContext: z.record(z.string()).optional(),
+  extraContext: z.record(z.string(), z.string()).optional(),
 });
 
 export const saveLetterSchema = z.object({
@@ -74,7 +74,7 @@ export const saveLetterSchema = z.object({
   templateVersion: z.number().int().positive(),
   employeeId: z.number().int().positive().optional(),
   outputHtml: z.string().min(1),
-  contextSnapshot: z.record(z.unknown()).optional(),
+  contextSnapshot: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];

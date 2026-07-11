@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { goals, keyResults } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -160,5 +160,20 @@ export class PerformanceGoalsService {
       .where(eq(keyResults.id, input.id));
 
     return { success: true };
+  }
+
+  async sweepOverdueGoals(orgId?: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    const conditions = [
+      eq(goals.status, "IN_PROGRESS"),
+      lt(goals.endDate, today),
+    ];
+    if (orgId) conditions.push(eq(goals.orgId, orgId));
+    const overdueGoals = await this.db
+      .select({ id: goals.id, orgId: goals.orgId, userId: goals.userId })
+      .from(goals)
+      .where(and(...conditions))
+      .limit(500);
+    return overdueGoals;
   }
 }

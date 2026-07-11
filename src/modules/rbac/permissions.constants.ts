@@ -398,6 +398,30 @@ const HR_PERMISSIONS: Permission[] = [
     description: "Submit attendance regularization requests",
   },
   {
+    name: "hr:probation:view",
+    resource: "hr:probation",
+    action: "view",
+    description: "View probation reviews and due confirmations",
+  },
+  {
+    name: "hr:probation:manage",
+    resource: "hr:probation",
+    action: "manage",
+    description: "Manage probation reviews, extensions, and confirmations",
+  },
+  {
+    name: "hr:succession:view",
+    resource: "hr:succession",
+    action: "view",
+    description: "View succession plans (sensitive)",
+  },
+  {
+    name: "hr:succession:manage",
+    resource: "hr:succession",
+    action: "manage",
+    description: "Manage succession plans (sensitive)",
+  },
+  {
     name: "hr:feedback:manage",
     resource: "hr:feedback",
     action: "manage",

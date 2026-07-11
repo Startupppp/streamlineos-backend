@@ -17,6 +17,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
+import { OnboardingProbationService } from "./onboarding-probation.service";
+import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import { getOnboardingReminderEmailTemplate } from "../email/templates/notifications-misc";
@@ -76,6 +78,7 @@ export class OnboardingService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly sessions: OnboardingSessionService,
+    private readonly probation: OnboardingProbationService,
   ) {}
 
   async getProgressSummary(orgId: string) {
@@ -509,6 +512,12 @@ export class OnboardingService {
           ),
         );
       if (pending.length > 0) return;
+
+      try {
+        await this.probation.setupProbationForUser(orgId, employeeUserId);
+      } catch {
+        logger.warn("onboarding probation setup failed", { orgId, employeeUserId });
+      }
 
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeUserId),

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { hrEmployments } from "../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { hrEmployments, hrPeople } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
@@ -11,6 +11,28 @@ export class OnboardingProbationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policyEval: HrPolicyEvaluationService,
   ) {}
+
+  async setupProbationForUser(orgId: string, userId: string): Promise<{ probationEndDate: Date | null }> {
+    const [employment] = await this.db
+      .select({
+        id: hrEmployments.id,
+        personId: hrEmployments.personId,
+        joiningDate: hrEmployments.joiningDate,
+      })
+      .from(hrEmployments)
+      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!employment) return { probationEndDate: null };
+    const joining = employment.joiningDate ? new Date(employment.joiningDate) : null;
+    return this.setupProbationFromPolicy(orgId, employment.id, employment.personId, userId, joining);
+  }
 
   async setupProbationFromPolicy(
     orgId: string,

@@ -37,7 +37,7 @@ export const createAdjustmentSchema = z.object({
   amountCents: z.number().int().optional(),
   days: z.number().optional(),
   reason: z.string().min(1).max(1000),
-  sourceChangeRef: z.record(z.unknown()).optional(),
+  sourceChangeRef: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type CreatePeriodInput = z.infer<typeof createPeriodSchema>;

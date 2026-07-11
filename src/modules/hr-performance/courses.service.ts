@@ -3,10 +3,14 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { courses, courseCategories, courseEnrollments } from "../../db/schema/hr/learning";
 import { eq, and, desc } from "drizzle-orm";
+import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 
 @Injectable()
 export class CoursesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly hrAutomation: HrAutomationEngineService,
+  ) {}
 
   async listCourses(orgId: string) {
     return this.db.select().from(courses)
@@ -34,6 +38,19 @@ export class CoursesService {
   async enrollUser(courseId: number, userId: string) {
     const [enrollment] = await this.db.insert(courseEnrollments)
       .values({ courseId, userId }).onConflictDoNothing().returning();
+    return enrollment;
+  }
+
+  async assignCourse(orgId: string, userId: string, courseId: number, source: string) {
+    const enrollment = await this.enrollUser(courseId, userId);
+    if (enrollment) {
+      void this.hrAutomation.emit(orgId, "course.assigned", {
+        userId,
+        courseId,
+        source,
+        enrollmentId: enrollment.id,
+      });
+    }
     return enrollment;
   }
 

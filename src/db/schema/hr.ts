@@ -6,6 +6,7 @@ export * from "./hr/automation-engine";
 export * from "./hr/policy-engine";
 export * from "./hr/workflow-engine";
 export * from "./hr/template-engine";
+export * from "./hr/payroll-inputs";
 export * from "./hr/attendance";
 export * from "./hr/attendance-regularizations";
 export * from "./hr/leaves";

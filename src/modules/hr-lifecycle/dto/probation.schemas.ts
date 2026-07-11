@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const startReviewSchema = z.object({
-  reviewNotes: z.record(z.unknown()).optional(),
+  reviewNotes: z.record(z.string(), z.unknown()).optional(),
   templateId: z.number().int().positive().optional(),
 });
 
