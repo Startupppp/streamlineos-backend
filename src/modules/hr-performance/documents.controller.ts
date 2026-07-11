@@ -24,11 +24,14 @@ import { resolveDocumentsScope } from "./performance-scope";
 import { DocumentsService } from "./documents.service";
 import { ComplianceService } from "./compliance.service";
 import { RichDocumentsService } from "./rich-documents.service";
+import { LettersService } from "./letters.service";
 import {
   ackSchema,
   createDocumentSchema,
   createRichDocumentSchema,
   listDocumentsSchema,
+  renderLetterSchema,
+  saveLetterSchema,
   sendAckSchema,
   updateDocumentSchema,
   updateRichDocumentSchema,
@@ -36,6 +39,8 @@ import {
   type CreateDocumentInput,
   type CreateRichDocumentInput,
   type ListDocumentsInput,
+  type RenderLetterInput,
+  type SaveLetterInput,
   type SendAckInput,
   type UpdateDocumentInput,
   type UpdateRichDocumentInput,
@@ -50,6 +55,7 @@ export class DocumentsController {
     private readonly documents: DocumentsService,
     private readonly compliance: ComplianceService,
     private readonly richDocuments: RichDocumentsService,
+    private readonly letters: LettersService,
     private readonly access: AccessService,
   ) {}
 
@@ -194,5 +200,62 @@ export class DocumentsController {
   ) {
     if (!canManageDocuments(u)) throw new ForbiddenException("Only admins can delete rich documents.");
     return this.richDocuments.remove(u.orgId, documentId);
+  }
+
+  @Get("documents/letters")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:view")
+  listLetters(
+    @Query("employeeId") employeeId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.letters.listLetters(u.orgId, employeeId);
+  }
+
+  @Post("documents/letters/render")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:manage")
+  @HttpCode(200)
+  renderLetter(
+    @Body(new ZodValidationPipe(renderLetterSchema)) body: RenderLetterInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.letters.renderLetter(u.orgId, u.userId, body);
+  }
+
+  @Post("documents/letters")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:documents:manage")
+  @HttpCode(201)
+  saveLetter(
+    @Body(new ZodValidationPipe(saveLetterSchema)) body: SaveLetterInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.letters.saveLetter(u.orgId, u.userId, body);
+  }
+
+  @Post("documents/letters/:renderId/sign")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:signatures:manage")
+  @HttpCode(201)
+  sendLetterToSign(
+    @Param("renderId", ParseIntPipe) renderId: number,
+    @Body() body: { signerUserIds: string[] },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.letters.sendLetterToSign(u.orgId, u.userId, renderId, body.signerUserIds ?? []);
+  }
+
+  @Get("compliance/calendar")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:compliance:manage")
+  complianceCalendar(
+    @Query("year") year: string | undefined,
+    @Query("month") month: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const y = parseInt(year ?? String(new Date().getFullYear()), 10);
+    const m = parseInt(month ?? String(new Date().getMonth() + 1), 10);
+    return this.compliance.calendar(u.orgId, y, m);
   }
 }

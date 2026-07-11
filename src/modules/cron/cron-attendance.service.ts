@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, ne } from "drizzle-orm";
-import { attendance, organizations } from "../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { attendance } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";

@@ -1,16 +1,18 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import {
   resignations,
   users,
   organizations,
   organizationMembers,
   richDocuments,
+  hrTemplates,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
 import { formatDdMmmYyyy, formatDdMmmYyyyTime, formatLongInIN, subMonths } from "./date.helpers";
-import { generateResignationLetter, buildExperienceLetterContent } from "./letters";
+import { generateResignationLetter } from "./letters";
 import type { ExperienceLetterInput } from "./dto/hr-lifecycle.schemas";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
@@ -44,7 +46,10 @@ export interface TimelineStep {
 
 @Injectable()
 export class ExitService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly templateRender: HrTemplateRenderService,
+  ) {}
 
   list(orgId: string, userId: string, isAdmin: boolean) {
     const conditions = [eq(resignations.orgId, orgId)];
@@ -261,20 +266,56 @@ export class ExitService {
     const joiningDate = employee.joiningDate ? formatLongInIN(employee.joiningDate) : "N/A";
     const relievingDate = formatLongInIN(input.relievingDate);
 
-    const content = buildExperienceLetterContent({
-      name,
-      joiningDate,
-      relievingDate,
-      designation: employee.designation ?? "a team member",
-      role: employee.role,
-    });
+    const [experienceTemplate] = await this.db
+      .select()
+      .from(hrTemplates)
+      .where(
+        and(
+          eq(hrTemplates.orgId, orgId),
+          eq(hrTemplates.kind, "letter"),
+          eq(hrTemplates.letterType, "experience"),
+          eq(hrTemplates.status, "active"),
+          isNull(hrTemplates.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    let contentJson: Record<string, unknown>;
+
+    if (experienceTemplate) {
+      const templateContent = experienceTemplate.content as { bodyHtml?: string };
+      const bodyHtml = templateContent.bodyHtml ?? "";
+      const ctx = await this.templateRender.buildContext(orgId, actorUserId, undefined, {
+        "employee.fullName": name,
+        "employee.joiningDate": joiningDate,
+        "employee.designation": employee.designation ?? "a team member",
+        "employee.relievingDate": relievingDate,
+      }, false);
+      const renderedHtml = this.templateRender.renderHtml(bodyHtml, ctx);
+      contentJson = { html: renderedHtml };
+    } else {
+      contentJson = {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Experience Certificate" }] },
+          { type: "paragraph", content: [{ type: "text", text: `Date: ${new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}` }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "To Whom It May Concern," }] },
+          { type: "paragraph", content: [{ type: "text", text: `This is to certify that ${name} was employed with our organization from ${joiningDate} to ${relievingDate} as ${employee.designation ?? "a team member"}.` }] },
+          { type: "paragraph", content: [{ type: "text", text: `We wish ${name} all the best in their future endeavors.` }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "Sincerely," }] },
+          { type: "paragraph", content: [{ type: "text", marks: [{ type: "bold" }], text: "HR Department" }] },
+        ],
+      };
+    }
 
     const [doc] = await this.db
       .insert(richDocuments)
       .values({
         orgId,
         title: `Experience Certificate - ${name}`,
-        contentJson: content,
+        contentJson,
         templateType: "experience_letter",
         isPublished: false,
         version: 1,

@@ -7,6 +7,7 @@ import { TeamEventsController } from "./team-events.controller";
 import { AssetsController } from "./assets.controller";
 import { AssetInventoryController } from "./asset-inventory.controller";
 import { BackgroundVerificationController } from "./background-verification.controller";
+import { AccessRequestsController } from "./access-requests.controller";
 import { EmployeesService } from "./employees.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { OrgStructureService } from "./org-structure.service";
@@ -15,7 +16,9 @@ import { EmployeeSkillsService } from "./employee-skills.service";
 import { TeamEventsService } from "./team-events.service";
 import { AssetsService } from "./assets.service";
 import { AssetInventoryService } from "./asset-inventory.service";
+import { AssetsRecoveryService } from "./assets-recovery.service";
 import { BackgroundVerificationService } from "./background-verification.service";
+import { AccessRequestsService } from "./access-requests.service";
 
 @Module({
   imports: [AutomationModule, WebhooksModule],
@@ -26,6 +29,7 @@ import { BackgroundVerificationService } from "./background-verification.service
     AssetsController,
     AssetInventoryController,
     BackgroundVerificationController,
+    AccessRequestsController,
   ],
   providers: [
     EmployeesService,
@@ -36,7 +40,10 @@ import { BackgroundVerificationService } from "./background-verification.service
     TeamEventsService,
     AssetsService,
     AssetInventoryService,
+    AssetsRecoveryService,
     BackgroundVerificationService,
+    AccessRequestsService,
   ],
+  exports: [AssetsRecoveryService],
 })
 export class HrDirectoryModule {}

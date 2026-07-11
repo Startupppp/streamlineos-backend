@@ -1,11 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations, orgHolidays, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AttendancePolicyService } from "./attendance-policy.service";
-
-const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 export interface EmployeeAttendanceSummary {
   userId: string;

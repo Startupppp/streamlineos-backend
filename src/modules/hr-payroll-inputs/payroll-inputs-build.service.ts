@@ -1,0 +1,380 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import {
+  hrPayrollInputSnapshots,
+  hrPayrollInputPeriods,
+} from "../../db/schema/hr/payroll-inputs";
+import {
+  reimbursements,
+  salaryLoans,
+  salaryStructures,
+} from "../../db/schema";
+import {
+  hrEmployments,
+  hrPeople,
+} from "../../db/schema/hr/core-people";
+
+import { employeeSalaryProfiles } from "../../db/schema/hr/payroll-workforce";
+import { overtimeRequests } from "../../db/schema/hr/overtime";
+import { organizationMembers, users } from "../../db/schema/auth";
+import { AttendanceSummaryService } from "../hr-time/attendance-summary.service";
+import { LeaveLedgerService } from "../hr-time/leave-ledger.service";
+
+function periodBounds(periodKey: string): { start: string; end: string } {
+  const [year, month] = periodKey.split("-");
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  return {
+    start: `${periodKey}-01`,
+    end: `${periodKey}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+@Injectable()
+export class PayrollInputsBuildService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly attendanceSummary: AttendanceSummaryService,
+    private readonly leaveLedger: LeaveLedgerService,
+  ) {}
+
+  async buildSnapshots(orgId: string, period: typeof hrPayrollInputPeriods.$inferSelect): Promise<void> {
+    const { start, end } = periodBounds(period.periodKey);
+
+    const members = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        monthlySalary: users.monthlySalary,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+
+    if (members.length === 0) return;
+
+    const userIds = members.map((m) => m.userId);
+
+    const [
+      attendanceResult,
+      leaveResult,
+      overtimeRows,
+      reimbursementRows,
+      loanRows,
+      salaryProfileRows,
+      salaryStructureRows,
+      employmentRows,
+    ] = await Promise.all([
+      this.attendanceSummary.buildAttendanceSummary({
+        orgId,
+        periodStart: start,
+        periodEnd: end,
+        page: 1,
+        limit: 100,
+      }),
+      this.leaveLedger.buildLeaveSummary(orgId, start, end),
+      this.db
+        .select()
+        .from(overtimeRequests)
+        .where(
+          and(
+            eq(overtimeRequests.orgId, orgId),
+            eq(overtimeRequests.status, "APPROVED"),
+            inArray(overtimeRequests.userId, userIds),
+            gte(overtimeRequests.date, start),
+            lte(overtimeRequests.date, end),
+          ),
+        ),
+      this.db
+        .select()
+        .from(reimbursements)
+        .where(
+          and(
+            eq(reimbursements.orgId, orgId),
+            eq(reimbursements.status, "APPROVED"),
+            inArray(reimbursements.userId, userIds),
+            gte(reimbursements.createdAt, new Date(start)),
+            lte(reimbursements.createdAt, new Date(end + "T23:59:59Z")),
+          ),
+        ),
+      this.db
+        .select()
+        .from(salaryLoans)
+        .where(
+          and(
+            eq(salaryLoans.orgId, orgId),
+            eq(salaryLoans.status, "ACTIVE"),
+            inArray(salaryLoans.userId, userIds),
+          ),
+        ),
+      this.db
+        .select()
+        .from(employeeSalaryProfiles)
+        .where(
+          and(
+            eq(employeeSalaryProfiles.orgId, orgId),
+            eq(employeeSalaryProfiles.status, "ACTIVE"),
+            inArray(employeeSalaryProfiles.userId, userIds),
+            lte(employeeSalaryProfiles.effectiveFrom, end),
+          ),
+        ),
+      this.db
+        .select()
+        .from(salaryStructures)
+        .where(
+          and(
+            eq(salaryStructures.orgId, orgId),
+            eq(salaryStructures.isActive, true),
+            inArray(salaryStructures.userId, userIds),
+          ),
+        ),
+      this.db
+        .select({
+          id: hrEmployments.id,
+          orgId: hrEmployments.orgId,
+          personId: hrEmployments.personId,
+          employeeNumber: hrEmployments.employeeNumber,
+          lifecycleStatus: hrEmployments.lifecycleStatus,
+          workerType: hrEmployments.workerType,
+          designation: hrEmployments.designation,
+          joiningDate: hrEmployments.joiningDate,
+          probationEndDate: hrEmployments.probationEndDate,
+          confirmationDate: hrEmployments.confirmationDate,
+          lastWorkingDay: hrEmployments.lastWorkingDay,
+          exitDate: hrEmployments.exitDate,
+          isPrimary: hrEmployments.isPrimary,
+          resolvedUserId: hrPeople.userId,
+        })
+        .from(hrEmployments)
+        .innerJoin(hrPeople, eq(hrPeople.id, hrEmployments.personId))
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            inArray(hrPeople.userId, userIds),
+          ),
+        )
+        .catch(() => [] as never[]),
+    ]);
+
+    const attendanceByUser = new Map(attendanceResult.data.map((r) => [r.userId, r]));
+    const leaveByUser = new Map(leaveResult.map((r) => [r.userId, r]));
+
+    const overtimeByUser = new Map<string, (typeof overtimeRequests.$inferSelect)[]>();
+    for (const row of overtimeRows) {
+      const existing = overtimeByUser.get(row.userId) ?? [];
+      existing.push(row);
+      overtimeByUser.set(row.userId, existing);
+    }
+
+    const reimbByUser = new Map<string, (typeof reimbursements.$inferSelect)[]>();
+    for (const row of reimbursementRows) {
+      const existing = reimbByUser.get(row.userId) ?? [];
+      existing.push(row);
+      reimbByUser.set(row.userId, existing);
+    }
+
+    const loansByUser = new Map<string, (typeof salaryLoans.$inferSelect)[]>();
+    for (const row of loanRows) {
+      const existing = loansByUser.get(row.userId) ?? [];
+      existing.push(row);
+      loansByUser.set(row.userId, existing);
+    }
+
+    const salaryProfileByUser = new Map<string, typeof employeeSalaryProfiles.$inferSelect>();
+    for (const row of salaryProfileRows) {
+      const existing = salaryProfileByUser.get(row.userId);
+      if (!existing || row.effectiveFrom > existing.effectiveFrom) {
+        salaryProfileByUser.set(row.userId, row);
+      }
+    }
+
+    const salaryStructureByUser = new Map<string, typeof salaryStructures.$inferSelect>();
+    for (const row of salaryStructureRows) {
+      salaryStructureByUser.set(row.userId, row);
+    }
+
+    type EmploymentRow = {
+      id: number;
+      orgId: string;
+      personId: number;
+      employeeNumber: string;
+      lifecycleStatus: typeof hrEmployments.$inferSelect["lifecycleStatus"];
+      workerType: typeof hrEmployments.$inferSelect["workerType"];
+      designation: string | null;
+      joiningDate: string | null;
+      probationEndDate: string | null;
+      confirmationDate: string | null;
+      lastWorkingDay: string | null;
+      exitDate: string | null;
+      isPrimary: boolean;
+      resolvedUserId: string | null;
+    };
+
+    const employmentByUser = new Map<string, EmploymentRow>();
+    for (const row of employmentRows as EmploymentRow[]) {
+      if (!row.resolvedUserId) continue;
+      if (!employmentByUser.has(row.resolvedUserId) || row.isPrimary) {
+        employmentByUser.set(row.resolvedUserId, row);
+      }
+    }
+
+    const snapshotValues: (typeof hrPayrollInputSnapshots.$inferInsert)[] = [];
+
+    for (const member of members) {
+      const { userId } = member;
+      const displayName =
+        member.name ||
+        [member.firstName, member.lastName].filter(Boolean).join(" ") ||
+        member.email;
+
+      const attendance = attendanceByUser.get(userId);
+      const leave = leaveByUser.get(userId);
+      const otRows = overtimeByUser.get(userId) ?? [];
+      const reimbs = reimbByUser.get(userId) ?? [];
+      const loans = loansByUser.get(userId) ?? [];
+      const salaryProfile = salaryProfileByUser.get(userId);
+      const salaryStructure = salaryStructureByUser.get(userId);
+      const employment = employmentByUser.get(userId);
+
+      const employeeMasterPayload = {
+        userId,
+        displayName,
+        email: member.email,
+        workerType: employment?.workerType ?? null,
+        designation: employment?.designation ?? null,
+        joiningDate: employment?.joiningDate ?? null,
+        lifecycleStatus: employment?.lifecycleStatus ?? "ACTIVE",
+      };
+
+      const compensationPayload = salaryProfile
+        ? {
+            profileId: salaryProfile.id,
+            annualCtc: salaryProfile.annualCtc,
+            currency: salaryProfile.currency,
+            payFrequency: salaryProfile.payFrequency,
+            effectiveFrom: salaryProfile.effectiveFrom,
+            basicSalary: salaryStructure?.basicSalary ?? null,
+            allowances: salaryStructure?.allowances ?? null,
+          }
+        : {
+            profileId: null,
+            annualCtc: null,
+            currency: "INR",
+            payFrequency: "MONTHLY",
+            effectiveFrom: null,
+            basicSalary: salaryStructure?.basicSalary ?? null,
+            allowances: salaryStructure?.allowances ?? null,
+          };
+
+      const attendancePayload = attendance ?? {
+        userId,
+        payableDays: 0,
+        presentDays: 0,
+        absentDays: 0,
+        lateCount: 0,
+        latePenaltyDays: 0,
+        earlyExitCount: 0,
+        approvedRegularizations: 0,
+        overtimeMinutes: 0,
+        weekendWorkDays: 0,
+        holidayWorkDays: 0,
+      };
+
+      const leavePayload = leave ?? {
+        userId,
+        paidLeaveDays: 0,
+        unpaidLeaveDays: 0,
+        halfDayCount: 0,
+        hourlyLeaveHours: 0,
+        compOffUsed: 0,
+        encashmentDays: 0,
+      };
+
+      const overtimePayload = {
+        userId,
+        approvedRequests: otRows.map((r) => ({
+          id: r.id,
+          date: r.date,
+          hours: r.hours,
+          convertToCompOff: r.convertToCompOff,
+        })),
+        totalHours: otRows.reduce((sum, r) => sum + parseFloat(r.hours ?? "0"), 0),
+      };
+
+      const reimbursementPayload = {
+        userId,
+        items: reimbs.map((r) => ({
+          id: r.id,
+          category: r.category,
+          amount: r.amount,
+          description: r.description,
+          payrollMonth: r.payrollMonth,
+          approvedAt: r.approvedAt,
+        })),
+        totalAmount: reimbs.reduce((sum, r) => sum + parseFloat(r.amount ?? "0"), 0),
+      };
+
+      const deductionPayload = {
+        userId,
+        activeLoans: loans.map((l) => ({
+          id: l.id,
+          amount: l.amount,
+          emiAmount: l.emiAmount,
+          totalEmis: l.totalEmis,
+          paidEmis: l.paidEmis,
+          reason: l.reason,
+        })),
+        totalMonthlyEmi: loans.reduce((sum, l) => sum + parseFloat(l.emiAmount ?? "0"), 0),
+      };
+
+      const lifecyclePayload = {
+        userId,
+        joiningDate: employment?.joiningDate ?? null,
+        probationEndDate: employment?.probationEndDate ?? null,
+        confirmationDate: employment?.confirmationDate ?? null,
+        lastWorkingDay: employment?.lastWorkingDay ?? null,
+        exitDate: employment?.exitDate ?? null,
+        lifecycleStatus: employment?.lifecycleStatus ?? "ACTIVE",
+        workerType: employment?.workerType ?? null,
+      };
+
+      const buildSnapshot = (
+        section: typeof hrPayrollInputSnapshots.$inferInsert["section"],
+        payload: unknown,
+        sourceRefs?: unknown,
+      ): typeof hrPayrollInputSnapshots.$inferInsert => ({
+        orgId,
+        periodId: period.id,
+        userId,
+        section,
+        payload: payload as Record<string, unknown>,
+        sourceRefs: (sourceRefs ?? null) as Record<string, unknown> | null,
+      });
+
+      snapshotValues.push(
+        buildSnapshot("employee_master", employeeMasterPayload),
+        buildSnapshot("compensation", compensationPayload, salaryProfile ? [{ table: "employee_salary_profiles", id: salaryProfile.id }] : null),
+        buildSnapshot("attendance", attendancePayload),
+        buildSnapshot("leave", leavePayload),
+        buildSnapshot("overtime", overtimePayload, otRows.map((r) => ({ table: "overtime_requests", id: r.id }))),
+        buildSnapshot("reimbursement", reimbursementPayload, reimbs.map((r) => ({ table: "reimbursements", id: r.id }))),
+        buildSnapshot("deduction", deductionPayload, loans.map((l) => ({ table: "salary_loans", id: l.id }))),
+        buildSnapshot("lifecycle", lifecyclePayload, employment ? [{ table: "hr_employments", id: employment.id }] : null),
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(hrPayrollInputSnapshots)
+        .where(and(eq(hrPayrollInputSnapshots.orgId, orgId), eq(hrPayrollInputSnapshots.periodId, period.id)));
+
+      if (snapshotValues.length > 0) {
+        await tx.insert(hrPayrollInputSnapshots).values(snapshotValues);
+      }
+    });
+  }
+}

@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { RecruitmentHandoffService } from "./recruitment-handoff.service";
 import type {
   CreateOfferInput,
   CreateOfferNegotiationInput,
@@ -29,6 +30,7 @@ export class RecruitmentOffersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
     private readonly audit: AuditService,
+    private readonly handoff: RecruitmentHandoffService,
   ) {}
 
   async listOffers(orgId: string, candidateId: number) {
@@ -410,6 +412,7 @@ export class RecruitmentOffersService {
         decision: "ACCEPTED",
         respondedAt,
       });
+      void this.handoff.handleOfferAccepted(orgId, candidateId, offerId).catch(() => undefined);
       return;
     }
 

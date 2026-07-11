@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { employeeShiftAssignments, rosterEntries, shiftTemplates } from "../../db/schema";
@@ -101,7 +101,7 @@ export class AttendancePolicyService {
           eq(employeeShiftAssignments.orgId, orgId),
           eq(employeeShiftAssignments.isActive, true),
           lte(employeeShiftAssignments.effectiveFrom, date),
-          or(isNull(employeeShiftAssignments.effectiveTo), lte(employeeShiftAssignments.effectiveTo, date)),
+          or(isNull(employeeShiftAssignments.effectiveTo), gte(employeeShiftAssignments.effectiveTo, date)),
         ),
       )
       .limit(1);

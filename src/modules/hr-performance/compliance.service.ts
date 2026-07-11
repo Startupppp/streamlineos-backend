@@ -15,6 +15,14 @@ import { type Db } from "../../db/drizzle.module";
 import type { AckInput, SendAckInput } from "./dto/documents.schemas";
 import { formatDateOnly } from "./date.helpers";
 
+interface CalendarEvent {
+  date: string;
+  type: "document_expiry" | "certification_expiry";
+  title: string;
+  entityId: number;
+  entityName: string;
+}
+
 @Injectable()
 export class ComplianceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -163,5 +171,65 @@ export class ComplianceService {
       overallComplianceScore: overallScore,
       checks,
     };
+  }
+
+  async calendar(orgId: string, year: number, month: number): Promise<{ events: CalendarEvent[]; year: number; month: number }> {
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    const fromStr = formatDateOnly(firstDay);
+    const toStr = formatDateOnly(lastDay);
+
+    const [expiringDocs, expiringCerts] = await Promise.all([
+      this.db
+        .select({ id: documents.id, name: documents.name, expiryDate: documents.expiryDate })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.orgId, orgId),
+            eq(documents.isActive, true),
+            sql`${documents.expiryDate} IS NOT NULL`,
+            gte(documents.expiryDate, fromStr),
+            lte(documents.expiryDate, toStr),
+          ),
+        )
+        .limit(200),
+
+      this.db
+        .select({ id: certifications.id, name: certifications.name, expiryDate: certifications.expiryDate })
+        .from(certifications)
+        .where(
+          and(
+            eq(certifications.orgId, orgId),
+            sql`${certifications.expiryDate} IS NOT NULL`,
+            gte(certifications.expiryDate, fromStr),
+            lte(certifications.expiryDate, toStr),
+          ),
+        )
+        .limit(200),
+    ]);
+
+    const events: CalendarEvent[] = [
+      ...expiringDocs
+        .filter((d) => d.expiryDate !== null)
+        .map((d) => ({
+          date: d.expiryDate as string,
+          type: "document_expiry" as const,
+          title: `Document expiring: ${d.name}`,
+          entityId: d.id,
+          entityName: d.name,
+        })),
+      ...expiringCerts
+        .filter((c) => c.expiryDate !== null)
+        .map((c) => ({
+          date: c.expiryDate as string,
+          type: "certification_expiry" as const,
+          title: `Certification expiring: ${c.name}`,
+          entityId: c.id,
+          entityName: c.name,
+        })),
+    ];
+
+    events.sort((a, b) => a.date.localeCompare(b.date));
+    return { events, year, month };
   }
 }

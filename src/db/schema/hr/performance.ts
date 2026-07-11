@@ -1,10 +1,13 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, numeric } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   reviewStatusEnum, reviewCycleStatusEnum, meetingStatusEnum,
   pipStatusEnum, surveyStatusEnum, feedbackTypeEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
+import { hrTemplates } from "./template-engine";
+
+export const successionReadinessEnum = pgEnum("succession_readiness", ["ready_now", "1_2_years", "3_plus"]);
 
 export const reviewCycles = pgTable("review_cycles", {
   id: serial("id").primaryKey(),
@@ -16,6 +19,9 @@ export const reviewCycles = pgTable("review_cycles", {
   deadline: date("deadline"),
   status: reviewCycleStatusEnum("status").default("DRAFT").notNull(),
   description: text("description"),
+  templateId: integer("template_id").references(() => hrTemplates.id, { onDelete: "set null" }),
+  templateVersion: integer("template_version"),
+  ratingScale: jsonb("rating_scale").$type<{ points: number; labels: Record<string, string> }>(),
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -298,4 +304,28 @@ export const skillAssessmentsRelations = relations(skillAssessments, ({ one, man
 export const assessmentAttemptsRelations = relations(assessmentAttempts, ({ one }) => ({
   assessment: one(skillAssessments, { fields: [assessmentAttempts.assessmentId], references: [skillAssessments.id] }),
   user: one(users, { fields: [assessmentAttempts.userId], references: [users.id] }),
+}));
+
+export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  cycleId: integer("cycle_id").references(() => reviewCycles.id, { onDelete: "cascade" }).notNull(),
+  employeeId: text("employee_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  preRating: numeric("pre_rating", { precision: 3, scale: 1 }),
+  postRating: numeric("post_rating", { precision: 3, scale: 1 }),
+  calibratedBy: text("calibrated_by").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_calibration_entries_org").on(table.orgId),
+  index("idx_calibration_entries_cycle").on(table.cycleId),
+  uniqueIndex("uniq_calibration_cycle_employee").on(table.cycleId, table.employeeId),
+]);
+
+export const hrCalibrationEntriesRelations = relations(hrCalibrationEntries, ({ one }) => ({
+  organization: one(organizations, { fields: [hrCalibrationEntries.orgId], references: [organizations.id] }),
+  cycle: one(reviewCycles, { fields: [hrCalibrationEntries.cycleId], references: [reviewCycles.id] }),
+  employee: one(users, { fields: [hrCalibrationEntries.employeeId], references: [users.id], relationName: "calibrationEmployee" }),
+  calibratedByUser: one(users, { fields: [hrCalibrationEntries.calibratedBy], references: [users.id], relationName: "calibrationCalibrator" }),
 }));

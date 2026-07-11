@@ -18,6 +18,8 @@ const attendanceRulesSchema = z.object({
   absentThresholdMinutes: z.number().int().min(0).default(0),
   autoCheckoutTime: z.string().optional(),
   lateArrivalPenalty: z.enum(["none", "half_day", "full_day"]).default("none"),
+  enforceGeofence: z.boolean().default(false),
+  minReclockInMinutes: z.number().int().min(0).max(60).default(2),
 });
 
 const shiftRosterRulesSchema = z.object({

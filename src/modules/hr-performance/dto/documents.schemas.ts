@@ -63,6 +63,20 @@ export const updateRichDocumentSchema = z.object({
   contentJson: z.unknown().optional(),
 });
 
+export const renderLetterSchema = z.object({
+  templateId: z.number().int().positive(),
+  employeeId: z.number().int().positive().optional(),
+  extraContext: z.record(z.string()).optional(),
+});
+
+export const saveLetterSchema = z.object({
+  templateId: z.number().int().positive(),
+  templateVersion: z.number().int().positive(),
+  employeeId: z.number().int().positive().optional(),
+  outputHtml: z.string().min(1),
+  contextSnapshot: z.record(z.unknown()).optional(),
+});
+
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
@@ -71,3 +85,5 @@ export type SendAckInput = z.infer<typeof sendAckSchema>;
 export type AckInput = z.infer<typeof ackSchema>;
 export type CreateRichDocumentInput = z.infer<typeof createRichDocumentSchema>;
 export type UpdateRichDocumentInput = z.infer<typeof updateRichDocumentSchema>;
+export type RenderLetterInput = z.infer<typeof renderLetterSchema>;
+export type SaveLetterInput = z.infer<typeof saveLetterSchema>;

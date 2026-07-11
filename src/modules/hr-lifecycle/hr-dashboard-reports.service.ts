@@ -1,14 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import {
   organizationMembers,
-  organizations,
   users,
   departments,
   departmentMembers,
   attendance,
   wfhRequests,
   jobPostings,
+  shiftTemplates,
+  employeeShiftAssignments,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -242,32 +243,28 @@ export class HrDashboardReportsService {
   }
 
   private async resolveLateThresholdMinutes(orgId: string, referenceDate: string): Promise<number> {
-    const orgShiftRow = await this.db
+    const rows = await this.db
       .select({
-        startTime: sql<string>`
-          (SELECT st.start_time FROM shift_templates st
-           INNER JOIN employee_shift_assignments esa ON esa.shift_id = st.id
-           INNER JOIN organization_members om ON om.user_id = esa.user_id AND om.org_id = ${orgId}
-           WHERE esa.org_id = ${orgId} AND esa.is_active = true AND esa.effective_from <= ${referenceDate}
-           AND (esa.effective_to IS NULL OR esa.effective_to >= ${referenceDate})
-           AND st.is_active = true
-           LIMIT 1)
-        `,
-        graceMinutes: sql<number>`
-          (SELECT st.grace_period_minutes FROM shift_templates st
-           INNER JOIN employee_shift_assignments esa ON esa.shift_id = st.id
-           INNER JOIN organization_members om ON om.user_id = esa.user_id AND om.org_id = ${orgId}
-           WHERE esa.org_id = ${orgId} AND esa.is_active = true AND esa.effective_from <= ${referenceDate}
-           AND (esa.effective_to IS NULL OR esa.effective_to >= ${referenceDate})
-           AND st.is_active = true
-           LIMIT 1)
-        `,
+        startTime: shiftTemplates.startTime,
+        graceMinutes: shiftTemplates.gracePeriodMinutes,
       })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
+      .from(employeeShiftAssignments)
+      .innerJoin(shiftTemplates, eq(shiftTemplates.id, employeeShiftAssignments.shiftId))
+      .where(
+        and(
+          eq(employeeShiftAssignments.orgId, orgId),
+          eq(employeeShiftAssignments.isActive, true),
+          lte(employeeShiftAssignments.effectiveFrom, referenceDate),
+          eq(shiftTemplates.isActive, true),
+          or(
+            isNull(employeeShiftAssignments.effectiveTo),
+            gte(employeeShiftAssignments.effectiveTo, referenceDate),
+          ),
+        ),
+      )
       .limit(1);
 
-    const row = orgShiftRow[0];
+    const row = rows[0];
     if (row?.startTime) {
       const [hStr, mStr] = row.startTime.split(":");
       const startMinutes = Number(hStr) * 60 + Number(mStr);

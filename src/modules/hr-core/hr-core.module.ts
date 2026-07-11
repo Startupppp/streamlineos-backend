@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
 import { HrPeopleController } from "./hr-people.controller";
 import { HrEmploymentsController } from "./hr-employments.controller";
 import { HrEffectiveChangesController } from "./hr-effective-changes.controller";
@@ -15,6 +16,7 @@ import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 
 @Module({
+  imports: [HrWorkflowsModule],
   controllers: [
     HrPeopleController,
     HrEmploymentsController,
@@ -33,6 +35,6 @@ import { HrOrgCatalogService } from "./hr-org-catalog.service";
     HrAuditService,
     HrOrgCatalogService,
   ],
-  exports: [HrAuditService, HrEffectiveChangesService],
+  exports: [HrAuditService, HrEffectiveChangesService, HrPeopleService, HrEmploymentsService, HrSensitiveService],
 })
 export class HrCoreModule {}

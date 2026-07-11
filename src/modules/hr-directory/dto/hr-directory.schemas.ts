@@ -229,6 +229,17 @@ export const onboardEmployeeSchema = z.object({
     .optional(),
 });
 
+export const createAccessRequestSchema = z.object({
+  employeeId: z.string().min(1, "Employee is required"),
+  systemName: z.string().min(1, "System name is required").max(200),
+  accessLevel: z.string().min(1, "Access level is required").max(100),
+});
+
+export const patchAccessRequestSchema = z.object({
+  status: z.enum(["requested", "granted", "revoked"]),
+  grantedBy: z.string().optional(),
+});
+
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
@@ -245,3 +256,5 @@ export type UpdateBgvInput = z.infer<typeof updateBgvSchema>;
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
 export type PatchAssetInput = z.infer<typeof patchAssetSchema>;
+export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
+export type PatchAccessRequestInput = z.infer<typeof patchAccessRequestSchema>;

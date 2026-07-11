@@ -3,6 +3,7 @@ import { and, count, eq, isNull, lte, sql } from "drizzle-orm";
 import {
   hrEffectiveDatedChanges,
   hrEmployments,
+  hrPeople,
 } from "../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -11,18 +12,21 @@ import type {
   ListEffectiveDateChangesInput,
 } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
+import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 
 @Injectable()
 export class HrEffectiveChangesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: HrAuditService,
+    private readonly workflowEngine: HrWorkflowEngineService,
   ) {}
 
   async create(orgId: string, actorId: string, input: CreateEffectiveDateChangeInput) {
     const [employment] = await this.db
-      .select({ id: hrEmployments.id })
+      .select({ id: hrEmployments.id, subjectUserId: hrPeople.userId })
       .from(hrEmployments)
+      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
       .where(
         and(
           eq(hrEmployments.id, input.employmentId),
@@ -39,8 +43,8 @@ export class HrEffectiveChangesService {
         orgId,
         employmentId: input.employmentId,
         changeType: input.changeType,
-        oldValue: (input.oldValue as never) ?? null,
-        newValue: input.newValue as never,
+        oldValue: input.oldValue ?? null,
+        newValue: input.newValue,
         effectiveFrom: input.effectiveFrom,
         effectiveTo: input.effectiveTo ?? null,
         notes: input.notes ?? null,
@@ -59,6 +63,34 @@ export class HrEffectiveChangesService {
       action: "created",
       after: created,
     });
+
+    if (employment.subjectUserId) {
+      try {
+        const instance = await this.workflowEngine.startWorkflow({
+          orgId,
+          objectType: "employee_data_change",
+          objectId: String(created.id),
+          requestedByUserId: actorId,
+          subjectEmployeeId: employment.subjectUserId,
+          context: {
+            changeType: created.changeType,
+            effectiveFrom: created.effectiveFrom,
+            employmentId: created.employmentId,
+          },
+        });
+        if (instance.status === "approved") {
+          return this.approve(orgId, created.id, actorId);
+        }
+      } catch {
+        await this.audit.log({
+          orgId,
+          actorId,
+          entityType: "hr_effective_dated_changes",
+          entityId: String(created.id),
+          action: "workflow_start_failed",
+        });
+      }
+    }
 
     return created;
   }

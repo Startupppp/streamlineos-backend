@@ -6,6 +6,6 @@ import { HrTemplateRenderService } from "./hr-template-render.service";
 @Module({
   controllers: [HrTemplatesController],
   providers: [HrTemplatesService, HrTemplateRenderService],
-  exports: [HrTemplateRenderService],
+  exports: [HrTemplateRenderService, HrTemplatesService],
 })
 export class HrTemplatesModule {}

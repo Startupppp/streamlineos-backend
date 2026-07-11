@@ -39,28 +39,3 @@ export function generateResignationLetter(data: ResignationLetterData): string {
 </div>`.trim();
 }
 
-export interface ExperienceLetterData {
-  name: string;
-  joiningDate: string;
-  relievingDate: string;
-  designation: string;
-  role: string;
-}
-
-export function buildExperienceLetterContent(data: ExperienceLetterData) {
-  return {
-    type: "doc",
-    content: [
-      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Experience Certificate" }] },
-      { type: "paragraph", content: [{ type: "text", text: `Date: ${new Date().toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}` }] },
-      { type: "paragraph" },
-      { type: "paragraph", content: [{ type: "text", text: "To Whom It May Concern," }] },
-      { type: "paragraph", content: [{ type: "text", text: `This is to certify that ${data.name} was employed with our organization from ${data.joiningDate} to ${data.relievingDate} as ${data.designation}.` }] },
-      { type: "paragraph", content: [{ type: "text", text: `During their tenure, ${data.name} demonstrated professionalism, dedication, and a strong work ethic. They were responsible for their duties in the ${data.role} department and consistently delivered quality work.` }] },
-      { type: "paragraph", content: [{ type: "text", text: `We wish ${data.name} all the best in their future endeavors.` }] },
-      { type: "paragraph" },
-      { type: "paragraph", content: [{ type: "text", text: "Sincerely," }] },
-      { type: "paragraph", content: [{ type: "text", marks: [{ type: "bold" }], text: "HR Department" }] },
-    ],
-  };
-}

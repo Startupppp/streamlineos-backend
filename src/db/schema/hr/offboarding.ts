@@ -233,6 +233,7 @@ export const alumniProfiles = pgTable("alumni_profiles", {
   email: text("email"),
   leftDate: date("left_date"),
   isOptedIn: boolean("is_opted_in").default(true).notNull(),
+  rehireEligibility: boolean("rehire_eligibility").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_alumni_org").on(table.orgId),

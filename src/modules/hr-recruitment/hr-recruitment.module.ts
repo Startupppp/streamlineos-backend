@@ -27,6 +27,7 @@ import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.servic
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
 import { RecruitmentJobBoardsService } from "./recruitment-job-boards.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
+import { RecruitmentHandoffService } from "./recruitment-handoff.service";
 
 @Module({
   imports: [NotificationsModule, AutomationModule, AiModule],
@@ -58,6 +59,7 @@ import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.servic
     RecruitmentRequisitionsService,
     RecruitmentJobBoardsService,
     RecruitmentTalentPoolsService,
+    RecruitmentHandoffService,
   ],
 })
 export class HrRecruitmentModule {}

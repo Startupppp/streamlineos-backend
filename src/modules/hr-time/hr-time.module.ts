@@ -33,6 +33,7 @@ import { OvertimeService } from "./overtime.service";
 import { GeofencingService } from "./geofencing.service";
 import { BiometricService } from "./biometric.service";
 import { LeavePoliciesService } from "./leave-policies.service";
+import { LeaveLedgerService } from "./leave-ledger.service";
 
 @Module({
   imports: [AutomationModule, WebhooksModule, NotificationsModule, HrAutomationsModule, HrPoliciesModule, HrWorkflowsModule],
@@ -55,6 +56,7 @@ import { LeavePoliciesService } from "./leave-policies.service";
   providers: [
     LeavesService,
     LeavesWriteService,
+    LeaveLedgerService,
     LeavesPageService,
     AttendanceService,
     AttendancePolicyService,
@@ -69,6 +71,6 @@ import { LeavePoliciesService } from "./leave-policies.service";
     BiometricService,
     LeavePoliciesService,
   ],
-  exports: [AttendancePolicyService, AttendanceSummaryService],
+  exports: [AttendancePolicyService, AttendanceSummaryService, LeaveLedgerService],
 })
 export class HrTimeModule {}

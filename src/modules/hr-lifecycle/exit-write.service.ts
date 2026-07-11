@@ -20,6 +20,8 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { ResignationJobsService } from "./resignation-jobs.service";
+import { ExitChecklistService } from "./exit-checklist.service";
+import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 import { formatDdMmmYyyy } from "./date.helpers";
 import { HR_NOTIFY_ROLES } from "./hr-role-constants";
 import type {
@@ -43,7 +45,17 @@ export class ExitWriteService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly resignationJobs: ResignationJobsService,
+    private readonly exitChecklist: ExitChecklistService,
+    private readonly policyEval: HrPolicyEvaluationService,
   ) {}
+
+  private async resolveNoticePeriod(orgId: string, userId: string, fallbackDays: number): Promise<number> {
+    const result = await this.policyEval.evaluatePolicy(orgId, userId, "notice_period", new Date().toISOString().slice(0, 10)).catch(() => null);
+    if (!result) return fallbackDays;
+    const rules = result.rules as Record<string, unknown>;
+    const permanentDays = typeof rules["permanentDays"] === "number" ? rules["permanentDays"] : null;
+    return permanentDays ?? fallbackDays;
+  }
 
   async create(orgId: string, actorUserId: string, input: ResignationCreateInput) {
     const existing = await this.db.query.resignations.findFirst({
@@ -58,6 +70,8 @@ export class ExitWriteService {
       throw new ConflictException("You already have an active resignation request pending approval.");
     }
 
+    const noticePeriodDays = await this.resolveNoticePeriod(orgId, actorUserId, input.noticePeriodDays ?? 30);
+
     const [resignation] = await this.db
       .insert(resignations)
       .values({
@@ -66,7 +80,7 @@ export class ExitWriteService {
         reason: input.reason,
         reasonCategory: input.reasonCategory,
         lastWorkingDate: input.lastWorkingDate,
-        noticePeriodDays: input.noticePeriodDays,
+        noticePeriodDays,
         willingForExitInterview: input.willingForExitInterview,
         companyFeedback: input.companyFeedback || null,
         resignationLetterUrl: input.resignationLetterUrl ?? null,
@@ -74,7 +88,7 @@ export class ExitWriteService {
       })
       .returning();
 
-    this.dispatchResignationSubmitted(orgId, actorUserId, resignation.id, input);
+    this.dispatchResignationSubmitted(orgId, actorUserId, resignation.id, input, noticePeriodDays);
     this.resignationJobs.notifyResignationSubmitted(orgId, actorUserId);
 
     return resignation;
@@ -127,6 +141,8 @@ export class ExitWriteService {
         .insert(fnfSettlements)
         .values({ orgId, userId: existing.userId, resignationId, status: "DRAFT" })
         .onConflictDoNothing();
+
+      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId, actor.userId).catch(() => undefined);
 
       this.dispatchResignationApproved(
         actor.userId,
@@ -269,6 +285,7 @@ export class ExitWriteService {
     actorUserId: string,
     resignationId: number,
     input: ResignationCreateInput,
+    noticePeriodDays: number,
   ): void {
     void (async () => {
       const adminMembers = await this.db
@@ -302,7 +319,7 @@ export class ExitWriteService {
               submittingUser?.designation ?? "N/A",
               submissionDate,
               lastWorkingDate,
-              input.noticePeriodDays,
+              noticePeriodDays,
               input.reason,
             );
           } catch {}
@@ -315,7 +332,7 @@ export class ExitWriteService {
         employeeName: submittingUser?.name ?? "Employee",
         employeeEmail: submittingUser?.email ?? "",
         lastWorkingDate: input.lastWorkingDate,
-        noticePeriodDays: input.noticePeriodDays,
+        noticePeriodDays,
         reasonCategory: input.reasonCategory ?? null,
         submittedAt: new Date().toISOString(),
       });
@@ -326,7 +343,7 @@ export class ExitWriteService {
         employeeName: submittingUser?.name ?? "Employee",
         employeeEmail: submittingUser?.email ?? "",
         lastWorkingDate: input.lastWorkingDate,
-        noticePeriodDays: input.noticePeriodDays,
+        noticePeriodDays,
         reasonCategory: input.reasonCategory ?? null,
         submittedAt: new Date().toISOString(),
       });
