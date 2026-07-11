@@ -61,6 +61,11 @@ import { HrDirectoryModule } from "./modules/hr-directory/hr-directory.module";
 import { HrPerformanceModule } from "./modules/hr-performance/hr-performance.module";
 import { HrPayrollModule } from "./modules/hr-payroll/hr-payroll.module";
 import { HrLifecycleModule } from "./modules/hr-lifecycle/hr-lifecycle.module";
+import { HrCoreModule } from "./modules/hr-core/hr-core.module";
+import { HrAutomationsModule } from "./modules/hr-automations/hr-automations.module";
+import { HrPoliciesModule } from "./modules/hr-policies/hr-policies.module";
+import { HrWorkflowsModule } from "./modules/hr-workflows/hr-workflows.module";
+import { HrTemplatesModule } from "./modules/hr-templates/hr-templates.module";
 import { SearchModule } from "./modules/search/search.module";
 import { IntegrationsGitModule } from "./modules/integrations-git/integrations-git.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
@@ -175,6 +180,11 @@ import { MeService } from "./me/me.service";
     ChatModule,
     HrConfigModule,
     HrTimeModule,
+    HrCoreModule,
+    HrAutomationsModule,
+    HrPoliciesModule,
+    HrWorkflowsModule,
+    HrTemplatesModule,
     HrDirectoryModule,
     HrPerformanceModule,
     HrPayrollModule,

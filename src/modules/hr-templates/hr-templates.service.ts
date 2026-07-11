@@ -1,0 +1,284 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
+import { SQL, and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { hrTemplates, hrTemplateRenders } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { HrTemplateRenderService } from "./hr-template-render.service";
+import { buildDefaultTemplates } from "./seed-default-templates";
+import {
+  VALID_TRANSITIONS,
+  type CreateTemplateInput,
+  type RenderTemplateInput,
+  type TemplateListQuery,
+  type UpdateTemplateInput,
+} from "./dto/hr-templates.schemas";
+import { TEMPLATE_VARIABLES } from "./hr-template-variables";
+
+type TemplateRow = typeof hrTemplates.$inferSelect;
+
+@Injectable()
+export class HrTemplatesService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly renderService: HrTemplateRenderService,
+  ) {}
+
+  async list(orgId: string, query: TemplateListQuery) {
+    const conditions = [eq(hrTemplates.orgId, orgId), isNull(hrTemplates.deletedAt)];
+    if (query.kind) conditions.push(eq(hrTemplates.kind, query.kind));
+    if (query.status) conditions.push(eq(hrTemplates.status, query.status));
+    if (query.search) {
+      const searchClause: SQL | undefined = or(
+        ilike(hrTemplates.name, `%${query.search}%`),
+        ilike(hrTemplates.description, `%${query.search}%`),
+      );
+      if (searchClause) conditions.push(searchClause);
+    }
+
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, [{ total }]] = await Promise.all([
+      this.db
+        .select()
+        .from(hrTemplates)
+        .where(and(...conditions))
+        .orderBy(desc(hrTemplates.updatedAt))
+        .limit(query.limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(hrTemplates)
+        .where(and(...conditions)),
+    ]);
+
+    return { data: rows, total, page: query.page, limit: query.limit };
+  }
+
+  async getById(orgId: string, templateId: number): Promise<TemplateRow> {
+    const [row] = await this.db
+      .select()
+      .from(hrTemplates)
+      .where(and(eq(hrTemplates.id, templateId), eq(hrTemplates.orgId, orgId), isNull(hrTemplates.deletedAt)))
+      .limit(1);
+    if (!row) throw new NotFoundException("Template not found");
+    return row;
+  }
+
+  async create(orgId: string, userId: string, input: CreateTemplateInput): Promise<TemplateRow> {
+    await this.assertNameUnique(orgId, input.kind, input.name, 1, null);
+
+    const [row] = await this.db
+      .insert(hrTemplates)
+      .values({
+        orgId,
+        kind: input.kind,
+        name: input.name,
+        description: input.description,
+        content: input.content,
+        variablesUsed: input.variablesUsed ?? [],
+        letterType: input.letterType,
+        createdBy: userId,
+      })
+      .returning();
+
+    if (!row) throw new InternalServerErrorException("Failed to create template");
+    return row;
+  }
+
+  async update(orgId: string, userId: string, templateId: number, input: UpdateTemplateInput): Promise<TemplateRow> {
+    const existing = await this.getById(orgId, templateId);
+    if (existing.status !== "draft" && existing.status !== "review") {
+      throw new BadRequestException("Only draft or review templates can be edited");
+    }
+
+    if (input.name && input.name !== existing.name) {
+      await this.assertNameUnique(orgId, existing.kind, input.name, existing.version, templateId);
+    }
+
+    const [updated] = await this.db
+      .update(hrTemplates)
+      .set({
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.description !== undefined && { description: input.description }),
+        ...(input.content !== undefined && { content: input.content }),
+        ...(input.variablesUsed !== undefined && { variablesUsed: input.variablesUsed }),
+        ...(input.letterType !== undefined && { letterType: input.letterType }),
+        updatedBy: userId,
+      })
+      .where(eq(hrTemplates.id, templateId))
+      .returning();
+
+    if (!updated) throw new InternalServerErrorException("Failed to update template");
+    return updated;
+  }
+
+  async transition(orgId: string, userId: string, templateId: number, to: string): Promise<TemplateRow> {
+    const existing = await this.getById(orgId, templateId);
+    const allowed = VALID_TRANSITIONS[existing.status] ?? [];
+    if (!allowed.includes(to)) {
+      throw new BadRequestException(`Cannot transition from ${existing.status} to ${to}`);
+    }
+
+    const [updated] = await this.db
+      .update(hrTemplates)
+      .set({ status: to as TemplateRow["status"], updatedBy: userId })
+      .where(eq(hrTemplates.id, templateId))
+      .returning();
+
+    if (!updated) throw new InternalServerErrorException("Failed to update template status");
+    return updated;
+  }
+
+  async createNewVersion(orgId: string, userId: string, templateId: number): Promise<TemplateRow> {
+    const existing = await this.getById(orgId, templateId);
+    if (existing.status !== "active") {
+      throw new BadRequestException("Only active templates can be versioned");
+    }
+
+    const newVersion = existing.version + 1;
+    await this.assertNameUnique(orgId, existing.kind, existing.name, newVersion, null);
+
+    const [row] = await this.db
+      .insert(hrTemplates)
+      .values({
+        orgId,
+        kind: existing.kind,
+        name: existing.name,
+        description: existing.description,
+        status: "draft",
+        version: newVersion,
+        parentTemplateId: existing.id,
+        content: existing.content,
+        variablesUsed: existing.variablesUsed,
+        letterType: existing.letterType,
+        createdBy: userId,
+      })
+      .returning();
+
+    if (!row) throw new InternalServerErrorException("Failed to create new version");
+    return row;
+  }
+
+  async render(
+    orgId: string,
+    userId: string,
+    templateId: number,
+    input: RenderTemplateInput,
+  ) {
+    const template = await this.getById(orgId, templateId);
+
+    if (input.includeSensitive) {
+      // caller must hold hr:sensitive:view — enforced in controller before reaching here
+    }
+
+    const body = (template.content as Record<string, unknown>)["bodyHtml"] as string | undefined;
+    const subject = (template.content as Record<string, unknown>)["subject"] as string | undefined;
+
+    const ctx = await this.renderService.buildContext(
+      orgId,
+      userId,
+      input.employeeId,
+      input.extraContext,
+      input.includeSensitive,
+    );
+
+    const outputHtml = body ? this.renderService.renderHtml(body, ctx) : "";
+    const renderedSubject = subject ? this.renderService.renderHtml(subject, ctx) : undefined;
+
+    const contextSnapshot: Record<string, unknown> = {
+      employeeId: input.employeeId,
+      extraContext: input.extraContext,
+      includeSensitive: input.includeSensitive,
+    };
+
+    const [renderRow] = await this.db
+      .insert(hrTemplateRenders)
+      .values({
+        orgId,
+        templateId,
+        templateVersion: template.version,
+        renderedForEmployeeId: input.employeeId,
+        renderedBy: userId,
+        contextSnapshot,
+        outputHtml,
+      })
+      .returning();
+
+    return { outputHtml, renderedSubject, renderId: renderRow?.id, templateVersion: template.version };
+  }
+
+  async listRenders(orgId: string, templateId: number) {
+    await this.getById(orgId, templateId);
+    return this.db
+      .select()
+      .from(hrTemplateRenders)
+      .where(and(eq(hrTemplateRenders.orgId, orgId), eq(hrTemplateRenders.templateId, templateId)))
+      .orderBy(desc(hrTemplateRenders.createdAt))
+      .limit(100);
+  }
+
+  async seedDefaults(orgId: string, userId: string) {
+    const existing = await this.db
+      .select({ id: hrTemplates.id })
+      .from(hrTemplates)
+      .where(and(eq(hrTemplates.orgId, orgId), isNull(hrTemplates.deletedAt)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return { seeded: false, message: "Templates already exist for this org" };
+    }
+
+    const defaults = buildDefaultTemplates();
+    const values = defaults.map((t) => ({
+      orgId,
+      kind: t.kind,
+      name: t.name,
+      description: t.description,
+      status: "active" as const,
+      content: t.content as Record<string, unknown>,
+      variablesUsed: t.variablesUsed,
+      letterType: t.letterType,
+      createdBy: userId,
+    }));
+
+    await this.db.insert(hrTemplates).values(values);
+    return { seeded: true, count: values.length };
+  }
+
+  listVariables() {
+    return TEMPLATE_VARIABLES;
+  }
+
+  private async assertNameUnique(
+    orgId: string,
+    kind: TemplateRow["kind"],
+    name: string,
+    version: number,
+    excludeId: number | null,
+  ) {
+    const conditions = [
+      eq(hrTemplates.orgId, orgId),
+      eq(hrTemplates.kind, kind),
+      ilike(hrTemplates.name, name.trim()),
+      eq(hrTemplates.version, version),
+      isNull(hrTemplates.deletedAt),
+    ];
+
+    const [existing] = await this.db
+      .select({ id: hrTemplates.id })
+      .from(hrTemplates)
+      .where(and(...conditions))
+      .limit(1);
+
+    if (existing && existing.id !== excludeId) {
+      throw new ConflictException("A template with this name, kind, and version already exists");
+    }
+  }
+}
