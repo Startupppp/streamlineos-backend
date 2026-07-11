@@ -169,7 +169,8 @@ export class ProjectsController {
   updateCustomState(
     @Param("projectId", ParseIntPipe) _projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
-    @Body(new ZodValidationPipe(updateCustomStateSchema)) body: UpdateCustomStateInput,
+    @Body(new ZodValidationPipe(updateCustomStateSchema))
+    body: UpdateCustomStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateCustomState(u.orgId, stateId, body);
