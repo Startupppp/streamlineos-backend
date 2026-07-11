@@ -25,6 +25,10 @@ export async function authorize(
   const scope = resolved.get(permissionKey);
   if (!scope || scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
-  return { allow: true, scope };
+  const granted: string[] = [];
+  for (const [key, grantedScope] of resolved) {
+    if (grantedScope !== "none") granted.push(key);
+  }
+  return { allow: true, scope, permissions: granted };
 }
 

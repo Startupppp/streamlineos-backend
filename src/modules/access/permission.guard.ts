@@ -41,6 +41,11 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException("Permission denied");
     }
 
+    // Services read u.permissions for ad-hoc checks — hydrate from the DB-resolved set since the JWT no longer carries permission claims.
+    if (req.user && result.permissions) {
+      req.user.permissions = result.permissions;
+    }
+
     req.rbacScope = result.scope;
     return true;
   }

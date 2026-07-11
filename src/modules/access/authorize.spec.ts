@@ -43,7 +43,21 @@ describe("authorize", () => {
   it("allows when the resolved map grants the permission and returns its scope", async () => {
     const resolver = makeResolver(new Map([["hr:employees:view", "team"]]), ["hr"]);
     const result = await authorize(resolver, makeCtx(), "hr:employees:view");
-    expect(result).toEqual({ allow: true, scope: "team" });
+    expect(result).toEqual({ allow: true, scope: "team", permissions: ["hr:employees:view"] });
+  });
+
+  it("returns the granted keys excluding none-scoped grants for downstream hydration", async () => {
+    const resolver = makeResolver(
+      new Map<string, DataScope>([
+        ["hr:employees:view", "team"],
+        ["hr:analytics:read", "all"],
+        ["hr:payroll:view", "none"],
+      ]),
+      ["hr"],
+    );
+    const result = await authorize(resolver, makeCtx(), "hr:employees:view");
+    expect(result.allow).toBe(true);
+    expect(result.permissions).toEqual(["hr:employees:view", "hr:analytics:read"]);
   });
 
   it("denies with FORBIDDEN when the permission is not in the resolved map", async () => {
@@ -67,7 +81,7 @@ describe("authorize", () => {
   it("skips the module gate for internal settings and self keys", async () => {
     const resolver = makeResolver(new Map([["settings:rbac:manage", "all"]]), []);
     const result = await authorize(resolver, makeCtx(), "settings:rbac:manage");
-    expect(result).toEqual({ allow: true, scope: "all" });
+    expect(result).toEqual({ allow: true, scope: "all", permissions: ["settings:rbac:manage"] });
   });
 
   it("BOLA: passes ctx.orgId to resolveUserPermissions (not from request params)", async () => {
