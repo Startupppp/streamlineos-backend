@@ -240,7 +240,13 @@ export const createTicketSchema = z.object({
 });
 
 export const updateTicketSchema = z.object({
-  title: z.string().min(1).max(500).trim().optional(),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Title must be at least 3 characters")
+    .max(500)
+    .refine((v) => /[a-zA-Z0-9]/.test(v), { message: "Title must contain at least one letter or number" })
+    .optional(),
   description: z.string().nullable().optional(),
   type: z.string().optional(),
   status: z.string().optional(),
@@ -479,3 +485,16 @@ export const importTicketsSchema = z.object({
 
 export type ImportTicketRow = z.infer<typeof importTicketRowSchema>;
 export type ImportTicketsInput = z.infer<typeof importTicketsSchema>;
+
+export const addRelatedLinkSchema = z.object({
+  url: z.string().url("Must be a valid URL").max(2000),
+  label: z.string().trim().max(200).optional(),
+});
+
+export const updateRelatedLinkSchema = z.object({
+  url: z.string().url("Must be a valid URL").max(2000).optional(),
+  label: z.string().trim().max(200).nullable().optional(),
+});
+
+export type AddRelatedLinkInput = z.infer<typeof addRelatedLinkSchema>;
+export type UpdateRelatedLinkInput = z.infer<typeof updateRelatedLinkSchema>;

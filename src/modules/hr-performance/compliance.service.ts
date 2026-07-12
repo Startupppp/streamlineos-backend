@@ -35,7 +35,7 @@ export class ComplianceService {
 
     return this.db.query.policyAcknowledgments.findMany({
       where: and(...conditions),
-      with: { document: true, user: true },
+      with: { document: true, user: { columns: { id: true, name: true } } },
       orderBy: [desc(policyAcknowledgments.createdAt)],
       limit: 100,
     });

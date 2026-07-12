@@ -314,6 +314,17 @@ export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
   index("idx_comment_reactions_comment_id").on(t.commentId),
 ]);
 
+export const ticketRelatedLinks = pgTable("ticket_related_links", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
+  url: text("url").notNull(),
+  label: text("label"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ticket_related_links_ticket").on(table.ticketId),
+]);
+
 export const projectAutomations = pgTable("project_automations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull(),

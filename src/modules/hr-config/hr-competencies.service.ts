@@ -26,7 +26,7 @@ export class HrCompetenciesService {
 
     return this.db.query.employeeSkills.findMany({
       where: and(...conditions),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true } } },
       orderBy: [desc(employeeSkills.createdAt)],
       limit: query.limit,
     });
@@ -68,7 +68,7 @@ export class HrCompetenciesService {
 
     return this.db.query.certifications.findMany({
       where: and(...conditions),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true } } },
       orderBy: [desc(certifications.createdAt)],
       limit: query.limit,
     });

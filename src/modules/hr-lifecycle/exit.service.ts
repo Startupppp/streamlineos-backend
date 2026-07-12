@@ -56,7 +56,12 @@ export class ExitService {
     if (!isAdmin) conditions.push(eq(resignations.userId, userId));
     return this.db.query.resignations.findMany({
       where: and(...conditions),
-      with: { user: true, checklists: true, hrReviewer: true, ceoReviewer: true },
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+        checklists: true,
+        hrReviewer: { columns: { id: true, name: true } },
+        ceoReviewer: { columns: { id: true, name: true } },
+      },
       orderBy: [desc(resignations.createdAt)],
       limit: 500,
     });
@@ -65,7 +70,12 @@ export class ExitService {
   async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
     const data = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
-      with: { user: true, checklists: true, hrReviewer: true, ceoReviewer: true },
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+        checklists: true,
+        hrReviewer: { columns: { id: true, name: true } },
+        ceoReviewer: { columns: { id: true, name: true } },
+      },
     });
     if (!data) throw new NotFoundException("Resignation not found.");
 
@@ -130,7 +140,7 @@ export class ExitService {
   async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
     const resignation = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true, designation: true, joiningDate: true } } },
     });
     if (!resignation) throw new NotFoundException("Resignation not found.");
 

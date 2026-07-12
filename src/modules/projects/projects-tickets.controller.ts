@@ -27,6 +27,7 @@ import {
   attachmentSchema,
   bulkUpdateSchema,
   commentSchema,
+  addRelatedLinkSchema,
   createTicketSchema,
   importTicketsSchema,
   reorderSchema,
@@ -34,8 +35,10 @@ import {
   ticketActivityQuerySchema,
   ticketsListQuerySchema,
   updateCommentSchema,
+  updateRelatedLinkSchema,
   updateTicketSchema,
   type AddLabelInput,
+  type AddRelatedLinkInput,
   type AddRelationInput,
   type AddWatcherInput,
   type AllWorkQuery,
@@ -49,6 +52,7 @@ import {
   type TicketActivityQuery,
   type TicketsListQuery,
   type UpdateCommentInput,
+  type UpdateRelatedLinkInput,
   type UpdateTicketInput,
 } from "./dto/projects.schemas";
 import {
@@ -453,5 +457,50 @@ export class ProjectsTicketsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.removeReaction(commentId, u.userId, emoji);
+  }
+
+  @Get(":projectId/tickets/:ticketId/related-links")
+  @RequirePermission("projects:tickets:view")
+  listRelatedLinks(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.listRelatedLinks(u, projectId, ticketId);
+  }
+
+  @Post(":projectId/tickets/:ticketId/related-links")
+  @RequirePermission("projects:tickets:update")
+  addRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Body(new ZodValidationPipe(addRelatedLinkSchema)) body: AddRelatedLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.addRelatedLink(u, projectId, ticketId, body);
+  }
+
+  @Patch(":projectId/tickets/:ticketId/related-links/:linkId")
+  @RequirePermission("projects:tickets:update")
+  updateRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @Body(new ZodValidationPipe(updateRelatedLinkSchema)) body: UpdateRelatedLinkInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.updateRelatedLink(u, projectId, ticketId, linkId, body);
+  }
+
+  @Delete(":projectId/tickets/:ticketId/related-links/:linkId")
+  @RequirePermission("projects:tickets:update")
+  @HttpCode(204)
+  deleteRelatedLink(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("linkId", ParseIntPipe) linkId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.subresources.deleteRelatedLink(u, projectId, ticketId, linkId);
   }
 }

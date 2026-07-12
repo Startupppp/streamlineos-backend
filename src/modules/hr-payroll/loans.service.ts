@@ -15,7 +15,11 @@ export class LoansService {
 
     return this.db.query.salaryLoans.findMany({
       where: and(...conditions),
-      with: { user: true },
+      with: {
+        user: {
+          columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+        },
+      },
       orderBy: [desc(salaryLoans.createdAt)],
       limit: 100,
     });

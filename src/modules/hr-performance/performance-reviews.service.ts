@@ -174,7 +174,10 @@ export class PerformanceReviewsService {
 
     const data = await this.db.query.oneOnOneMeetings.findMany({
       where: and(...conditions),
-      with: { manager: true, employee: true },
+      with: {
+        manager: { columns: { id: true, name: true, image: true } },
+        employee: { columns: { id: true, name: true, image: true } },
+      },
       orderBy: [desc(oneOnOneMeetings.scheduledAt)],
       limit: 100,
     });
@@ -257,7 +260,11 @@ export class PerformanceReviewsService {
 
     return this.db.query.performanceImprovementPlans.findMany({
       where: and(...conditions),
-      with: { user: true, manager: true, hrRep: true },
+      with: {
+        user: { columns: { id: true, name: true, image: true } },
+        manager: { columns: { id: true, name: true } },
+        hrRep: { columns: { id: true, name: true } },
+      },
       orderBy: [desc(performanceImprovementPlans.createdAt)],
       limit: 100,
     });
@@ -324,7 +331,11 @@ export class PerformanceReviewsService {
 
     return this.db.query.performanceReviews.findMany({
       where: and(...conditions),
-      with: { user: true, reviewer: true, cycle: true },
+      with: {
+        user: { columns: { id: true, name: true, image: true } },
+        reviewer: { columns: { id: true, name: true } },
+        cycle: true,
+      },
       orderBy: [desc(performanceReviews.createdAt)],
       limit,
       offset,
@@ -334,7 +345,11 @@ export class PerformanceReviewsService {
   async getReview(orgId: string, reviewId: number) {
     const review = await this.db.query.performanceReviews.findFirst({
       where: and(eq(performanceReviews.id, reviewId), eq(performanceReviews.orgId, orgId)),
-      with: { user: true, reviewer: true, cycle: true },
+      with: {
+        user: { columns: { id: true, name: true, image: true } },
+        reviewer: { columns: { id: true, name: true } },
+        cycle: true,
+      },
     });
     if (!review) throw new NotFoundException("Review not found.");
     return review;

@@ -24,7 +24,11 @@ export class ReimbursementsService {
 
     return this.db.query.reimbursements.findMany({
       where: and(...conditions),
-      with: { user: true },
+      with: {
+        user: {
+          columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+        },
+      },
       orderBy: [desc(reimbursements.createdAt)],
       limit: 100,
     });

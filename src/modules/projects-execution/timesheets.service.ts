@@ -206,7 +206,10 @@ export class TimesheetsService {
     return this.db.query.timesheets.findMany({
       where: and(...conditions),
       orderBy: [desc(timesheets.date)],
-      with: { user: true, ticket: { with: { project: true } } },
+      with: {
+        user: { columns: { id: true, firstName: true, lastName: true, email: true, image: true } },
+        ticket: { with: { project: true } },
+      },
     });
   }
 

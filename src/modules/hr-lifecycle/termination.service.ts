@@ -156,7 +156,11 @@ export class TerminationService {
   async getOne(orgId: string, terminationId: number) {
     const data = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: true, initiator: true, ceoReviewer: true },
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+        initiator: { columns: { id: true, name: true } },
+        ceoReviewer: { columns: { id: true, name: true } },
+      },
     });
     if (!data) throw new NotFoundException("Termination not found.");
     return data;
@@ -235,7 +239,7 @@ export class TerminationService {
   async getLetter(orgId: string, terminationId: number) {
     const termination = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true, designation: true } } },
     });
     if (!termination) throw new NotFoundException("Termination not found.");
 
@@ -280,7 +284,7 @@ export class TerminationService {
   async sendEmail(orgId: string, actorUserId: string, terminationId: number) {
     const existing = await this.db.query.terminations.findFirst({
       where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true, email: true, designation: true } } },
     });
     if (!existing) throw new NotFoundException("Termination not found.");
     if (existing.status !== "APPROVED") {

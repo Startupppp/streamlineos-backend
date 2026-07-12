@@ -228,7 +228,7 @@ export class DocumentsService {
           gte(certifications.expiryDate, todayStr),
           lte(certifications.expiryDate, futureStr),
         ),
-        with: { user: true },
+        with: { user: { columns: { id: true, name: true } } },
       }),
     ]);
 
