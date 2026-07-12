@@ -4,6 +4,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Public } from "../../common/auth/public.decorator";
 import { AgentTokenGuard } from "./agent-token.guard";
 import { AgentAccessService } from "./agent-access.service";
 import { ProjectsService } from "../projects/projects.service";
@@ -14,6 +15,7 @@ import { listProjectsSchema, type ListProjectsInput } from "../projects/dto/proj
 import { allWorkQuerySchema, ticketsListQuerySchema, type AllWorkQuery, type TicketsListQuery } from "../projects/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 
+@Public()
 @Controller("agent/v1")
 @UseGuards(AgentTokenGuard, PermissionGuard)
 export class AgentController {

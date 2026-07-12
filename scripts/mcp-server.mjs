@@ -69,12 +69,29 @@ function toolError(message) {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-async function fetchImageAsBase64(url) {
+function guessMimeFromUrl(url) {
+  const clean = url.split("?")[0].toLowerCase();
+  if (clean.endsWith(".png")) return "image/png";
+  if (clean.endsWith(".jpg") || clean.endsWith(".jpeg")) return "image/jpeg";
+  if (clean.endsWith(".gif")) return "image/gif";
+  if (clean.endsWith(".webp")) return "image/webp";
+  if (clean.endsWith(".svg")) return "image/svg+xml";
+  return "image/png";
+}
+
+async function fetchImageAsBase64(url, fallbackMime) {
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   const res = await fetch(url, { signal });
   if (!res.ok) return null;
   const buf = await res.arrayBuffer();
-  return Buffer.from(buf).toString("base64");
+  const headerMime = res.headers.get("content-type");
+  const mimeType =
+    headerMime && headerMime.startsWith("image/")
+      ? headerMime.split(";")[0].trim()
+      : fallbackMime && fallbackMime.startsWith("image/")
+        ? fallbackMime
+        : guessMimeFromUrl(url);
+  return { data: Buffer.from(buf).toString("base64"), mimeType };
 }
 
 const server = new McpServer(
@@ -230,6 +247,23 @@ server.registerTool(
               .join("\n")
           : "";
 
+      const inlineImages = Array.isArray(ticket.inlineImages) ? ticket.inlineImages : [];
+
+      const imageSources = [
+        ...imageAttachments.map((a) => ({
+          url: a.fileUrl,
+          label: a.fileName,
+          mimeType: a.mimeType,
+          fileSize: a.fileSize,
+        })),
+        ...inlineImages.map((i) => ({
+          url: i.url,
+          label: `inline image from ${i.source}`,
+          mimeType: null,
+          fileSize: null,
+        })),
+      ];
+
       const summary =
         `${key}\n` +
         `Title:       ${ticket.title ?? ""}\n` +
@@ -244,45 +278,49 @@ server.registerTool(
           ? `\n\nAttachments (${attachments.length} total):\n` +
             attachments.map((a) => `  • ${a.fileName} (${a.mimeType})`).join("\n")
           : "") +
-        attachmentText;
+        attachmentText +
+        (imageSources.length > 0
+          ? `\n\nImages (${imageSources.length} total — embedded below where possible):\n` +
+            imageSources.map((s) => `  • ${s.label} — ${s.url}`).join("\n")
+          : "");
 
       const contentBlocks = [{ type: "text", text: summary }];
 
       const shouldEmbedImages = includeImages !== false;
-      if (shouldEmbedImages && imageAttachments.length > 0) {
-        const toEmbed = imageAttachments.slice(0, 4);
+      if (shouldEmbedImages && imageSources.length > 0) {
+        const toEmbed = imageSources.slice(0, 4);
         const MAX_BYTES = 4 * 1024 * 1024;
 
         for (const img of toEmbed) {
           if (typeof img.fileSize === "number" && img.fileSize > MAX_BYTES) {
             contentBlocks.push({
               type: "text",
-              text: `[Image too large to embed: ${img.fileName} (${(img.fileSize / 1024 / 1024).toFixed(1)} MB) — ${img.fileUrl}]`,
+              text: `[Image too large to embed: ${img.label} (${(img.fileSize / 1024 / 1024).toFixed(1)} MB) — ${img.url}]`,
             });
             continue;
           }
           try {
-            const b64 = await fetchImageAsBase64(img.fileUrl);
-            if (b64) {
-              contentBlocks.push({ type: "image", data: b64, mimeType: img.mimeType });
+            const fetched = await fetchImageAsBase64(img.url, img.mimeType);
+            if (fetched) {
+              contentBlocks.push({ type: "image", data: fetched.data, mimeType: fetched.mimeType });
             } else {
               contentBlocks.push({
                 type: "text",
-                text: `[Could not fetch image: ${img.fileName} — ${img.fileUrl}]`,
+                text: `[Could not fetch image: ${img.label} — ${img.url}]`,
               });
             }
           } catch {
             contentBlocks.push({
               type: "text",
-              text: `[Image fetch error: ${img.fileName} — ${img.fileUrl}]`,
+              text: `[Image fetch error: ${img.label} — ${img.url}]`,
             });
           }
         }
 
-        if (imageAttachments.length > 4) {
+        if (imageSources.length > 4) {
           contentBlocks.push({
             type: "text",
-            text: `(${imageAttachments.length - 4} more image(s) not shown — see attachment list above for URLs)`,
+            text: `(${imageSources.length - 4} more image(s) not shown — see the image list above for URLs)`,
           });
         }
       }

@@ -172,17 +172,41 @@ export class ProjectsMembersService {
   }
 
   async updateCustomState(orgId: string, stateId: number, data: UpdateCustomStateInput) {
+    const [existing] = await this.db
+      .select()
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
+      .limit(1);
+    if (!existing) throw new NotFoundException("Status not found");
+
     const updateData: Partial<typeof projectStatuses.$inferInsert> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.color !== undefined) updateData.color = data.color;
     if (data.order !== undefined) updateData.order = data.order;
     if (data.type !== undefined) updateData.type = data.type;
 
-    const [updated] = await this.db
-      .update(projectStatuses)
-      .set(updateData)
-      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      if (data.name !== undefined && data.name !== existing.name) {
+        await tx
+          .update(tickets)
+          .set({ status: data.name })
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.projectId, existing.projectId),
+              eq(tickets.status, existing.name),
+            ),
+          );
+      }
+
+      const [row] = await tx
+        .update(projectStatuses)
+        .set(updateData)
+        .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
+        .returning();
+      return row;
+    });
+
     if (!updated) throw new NotFoundException("Status not found");
     return updated;
   }

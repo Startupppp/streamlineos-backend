@@ -538,7 +538,7 @@ export class EngagementExtrasService {
       .where(
         and(
           eq(hrRewardPointsLedger.orgId, orgId),
-          sql`${hrRewardPointsLedger.createdAt} >= ${periodStart}`,
+          sql`${hrRewardPointsLedger.createdAt} >= ${periodStart.toISOString()}`,
         ),
       )
       .groupBy(hrRewardPointsLedger.userId);

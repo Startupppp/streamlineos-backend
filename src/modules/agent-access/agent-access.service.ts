@@ -4,6 +4,19 @@ import { projects, ticketAttachments, ticketComments, tickets, users } from "../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 
+function extractImageUrls(html: string | null): string[] {
+  if (!html) return [];
+  const urls: string[] = [];
+  const pattern = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let match = pattern.exec(html);
+  while (match) {
+    const url = match[1];
+    if (url && /^https?:\/\//i.test(url)) urls.push(url);
+    match = pattern.exec(html);
+  }
+  return urls;
+}
+
 @Injectable()
 export class AgentAccessService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -78,6 +91,26 @@ export class AgentAccessService {
       };
     });
 
-    return { ...ticket, project: proj, comments: shapedComments, attachments };
+    const seen = new Set<string>();
+    const inlineImages: { url: string; source: "description" | "comment" }[] = [];
+    for (const url of extractImageUrls(ticket.description)) {
+      if (!seen.has(url)) {
+        seen.add(url);
+        inlineImages.push({ url, source: "description" });
+      }
+    }
+    for (const comment of shapedComments) {
+      for (const url of extractImageUrls(comment.body)) {
+        if (!seen.has(url)) {
+          seen.add(url);
+          inlineImages.push({ url, source: "comment" });
+        }
+      }
+    }
+    for (const attachment of attachments) {
+      if (attachment.fileUrl) seen.add(attachment.fileUrl);
+    }
+
+    return { ...ticket, project: proj, comments: shapedComments, attachments, inlineImages };
   }
 }
