@@ -22,8 +22,8 @@ jest.mock("../crm-automation-bus.service", () => ({
       const depth = opts?.depth ?? 0;
       if (depth >= (this as { MAX_CHAIN_DEPTH: number }).MAX_CHAIN_DEPTH) return;
 
-      const rules: Array<{ id: number; cooldownMinutes?: number }> =
-        await (this as { db: { getRules: () => Promise<unknown[]> } }).db.getRules();
+      const rawRules = await (this as { db: { getRules: () => Promise<Array<{ id: number; cooldownMinutes?: number }>> } }).db.getRules();
+      const rules: Array<{ id: number; cooldownMinutes?: number }> = rawRules;
 
       for (const rule of rules) {
         if (rule.cooldownMinutes != null && rule.cooldownMinutes > 0) {
@@ -46,7 +46,7 @@ jest.mock("../crm-automation-bus.service", () => ({
           if (recentRuns.length > 0) continue;
         }
 
-        await (this as { runner: { executeRule: () => void } }).runner.executeRule(orgId, rule, payload, depth);
+        await (this as { runner: { executeRule: (orgId: string, rule: unknown, payload: unknown, depth: number) => void } }).runner.executeRule(orgId, rule, payload, depth);
       }
     };
   }),

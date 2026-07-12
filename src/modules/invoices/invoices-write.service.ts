@@ -206,6 +206,15 @@ export class InvoicesWriteService {
       return inserted;
     });
 
+    this.audit.log({
+      action: "accounting.invoice.created",
+      userId,
+      orgId,
+      resourceType: "invoice",
+      resourceId: String(invoice.id),
+      result: "SUCCESS",
+    });
+
     return { invoice, posted: status === "ISSUED" };
   }
 
@@ -265,6 +274,16 @@ export class InvoicesWriteService {
         }
       });
 
+      this.audit.log({
+        action: "accounting.invoice.updated",
+        userId,
+        orgId,
+        resourceType: "invoice",
+        resourceId: String(invoiceId),
+        metadata: { status: input.status },
+        result: "SUCCESS",
+      });
+
       return { success: true, posted: willPost };
     }
 
@@ -298,6 +317,15 @@ export class InvoicesWriteService {
       .update(invoices)
       .set(updateData)
       .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+
+    this.audit.log({
+      action: "accounting.invoice.updated",
+      userId,
+      orgId,
+      resourceType: "invoice",
+      resourceId: String(invoiceId),
+      result: "SUCCESS",
+    });
 
     return { success: true, posted: false };
   }
@@ -420,6 +448,15 @@ export class InvoicesWriteService {
       title: "Payment received",
       message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
     }).catch(() => undefined);
+
+    this.audit.log({
+      action: "accounting.invoice.payment_recorded",
+      userId,
+      orgId,
+      resourceType: "invoice_payment",
+      resourceId: String(created.id),
+      result: "SUCCESS",
+    });
 
     return created;
   }

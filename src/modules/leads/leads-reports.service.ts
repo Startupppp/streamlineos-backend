@@ -503,11 +503,16 @@ export class LeadsReportsService {
     return { items: results, total: results.length };
   }
 
-  getUnverifiedLeads(orgId: string) {
+  async getUnverifiedLeads(orgId: string) {
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+    const activeKeys = semantics.activeKeys.length > 0 ? semantics.activeKeys : ["NEW"];
+
     return this.db.query.leads.findMany({
       where: and(
         eq(leads.orgId, orgId),
-        eq(leads.status, "NEW"),
+        inArray(leads.status, activeKeys),
         sql`${leads.verifiedById} IS NULL`,
       ),
       with: { assignedTo: { columns: { id: true, name: true, image: true } } },

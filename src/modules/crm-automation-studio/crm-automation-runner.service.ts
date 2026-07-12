@@ -120,7 +120,7 @@ export class CrmAutomationRunnerService {
           await this.db.insert(tasks).values({
             orgId,
             title: String(config["title"] ?? "Task from automation"),
-            entityType: payload.entityType as "lead" | "deal" | "contact",
+            entityType: payload.entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
             entityId: parseInt(payload.entityId, 10),
             assigneeId: typeof config["assigneeId"] === "string" ? config["assigneeId"] : null,
             dueDate,

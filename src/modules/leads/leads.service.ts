@@ -18,6 +18,9 @@ import {
   notifications,
   organizationMembers,
   users,
+  crmOptions,
+  crmPipelines,
+  crmPipelineStages,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -29,7 +32,9 @@ import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
+import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { CrmAttributionReportService } from "../crm/crm-attribution-report.service";
+import { TerritoryMatchService } from "../crm/territory-match.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -38,6 +43,7 @@ import {
   recalculateLeadScore,
   applySlaPolicy,
 } from "./lead-triggers";
+import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
   ListInput,
   CreateInput,
@@ -84,8 +90,10 @@ export class LeadsService {
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly crmValidation: CrmValidationService,
+    private readonly blueprints: CrmBlueprintsService,
     private readonly bus: CrmAutomationBusService,
     private readonly attribution: CrmAttributionReportService,
+    private readonly territoryMatch: TerritoryMatchService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -183,6 +191,37 @@ export class LeadsService {
     };
   }
 
+  private async resolveLeadStatusKeys(orgId: string): Promise<string[]> {
+    const defaultLeadPipeline = await this.db
+      .select({ id: crmPipelines.id })
+      .from(crmPipelines)
+      .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (defaultLeadPipeline) {
+      const stages = await this.db
+        .select({ key: crmPipelineStages.key })
+        .from(crmPipelineStages)
+        .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, defaultLeadPipeline.id), eq(crmPipelineStages.isActive, true)))
+        .orderBy(asc(crmPipelineStages.sortOrder));
+      if (stages.length > 0) return stages.map((s) => s.key);
+    }
+
+    const options = await this.db
+      .select({ key: crmOptions.key })
+      .from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"), eq(crmOptions.isActive, true)))
+      .orderBy(asc(crmOptions.sortOrder));
+    if (options.length > 0) return options.map((o) => o.key);
+
+    const existing = await this.db
+      .selectDistinct({ status: leads.status })
+      .from(leads)
+      .where(eq(leads.orgId, orgId));
+    return existing.map((r) => r.status);
+  }
+
   async getBoard(orgId: string, opts?: BoardOpts) {
     const baseFilters = [eq(leads.orgId, orgId)];
 
@@ -192,9 +231,7 @@ export class LeadsService {
 
     pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
 
-    const STATUSES = ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"] as const;
-    type StatusKey = (typeof STATUSES)[number];
-
+    const statusKeys = await this.resolveLeadStatusKeys(orgId);
     const limitPerStatus = opts?.limitPerStatus ?? 50;
 
     const columns = {
@@ -214,7 +251,7 @@ export class LeadsService {
     } as const;
 
     const columnResults = await Promise.all(
-      STATUSES.map(async (status) => {
+      statusKeys.map(async (status) => {
         const statusFilter = [...baseFilters, eq(leads.status, status)];
         const [rows, countResult] = await Promise.all([
           this.db
@@ -247,7 +284,7 @@ export class LeadsService {
       }),
     );
 
-    const board: Record<StatusKey, { leads: (typeof columnResults)[0]["leads"]; total: number }> = {} as never;
+    const board: Record<string, { leads: (typeof columnResults)[0]["leads"]; total: number }> = {};
     for (const col of columnResults) {
       board[col.status] = { leads: col.leads, total: col.total };
     }
@@ -274,7 +311,7 @@ export class LeadsService {
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [statusCounts, totals] = await Promise.all([
+    const [statusCounts, totals, statusOptions] = await Promise.all([
       this.db
         .select({ status: leads.status, cnt: count() })
         .from(leads)
@@ -289,21 +326,18 @@ export class LeadsService {
         })
         .from(leads)
         .where(and(...statsFilters)),
+      this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
     ]);
 
+    const semantics = resolveLeadStatusSemantics(statusOptions);
     const byStatusMap = new Map(statusCounts.map((r) => [r.status, Number(r.cnt)]));
-    const byStatus = {
-      NEW: byStatusMap.get("NEW") ?? 0,
-      CONTACTED: byStatusMap.get("CONTACTED") ?? 0,
-      INTERESTED: byStatusMap.get("INTERESTED") ?? 0,
-      QUALIFIED: byStatusMap.get("QUALIFIED") ?? 0,
-      CONVERTED: byStatusMap.get("CONVERTED") ?? 0,
-      LOST: byStatusMap.get("LOST") ?? 0,
-    };
+    const byStatus: Record<string, number> = {};
+    for (const [status, cnt] of byStatusMap) byStatus[status] = cnt;
 
+    const convertedCount = semantics.convertedKeys.reduce((s, k) => s + (byStatusMap.get(k) ?? 0), 0);
     const aggRow = totals[0];
     const total = Number(aggRow?.total ?? 0);
-    const conversionRate = total > 0 ? (byStatus.CONVERTED / total) * 100 : 0;
+    const conversionRate = total > 0 ? (convertedCount / total) * 100 : 0;
 
     return {
       total,
@@ -392,14 +426,17 @@ export class LeadsService {
 
     if (!input.assignedToId) {
       try {
-        await evaluateAssignmentRules(this.db, orgId, newLead.id);
+        await evaluateAssignmentRules(this.db, orgId, newLead.id, this.territoryMatch);
       } catch (error) {
         logger.error("Auto-trigger: assignment rules failed", { leadId: newLead.id, error });
       }
     }
 
     try {
-      await recalculateLeadScore(this.db, orgId, newLead.id);
+      const scoreResult = await recalculateLeadScore(this.db, orgId, newLead.id);
+      if (scoreResult?.changed) {
+        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(newLead.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(() => undefined);
+      }
     } catch (error) {
       logger.error("Auto-trigger: lead scoring failed", { leadId: newLead.id, error });
     }
@@ -468,6 +505,31 @@ export class LeadsService {
     });
     if (!existing) return null;
 
+    if (input.status && input.status !== existing.status) {
+      const defaultPipeline = await this.db
+        .select({ id: crmPipelines.id })
+        .from(crmPipelines)
+        .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (defaultPipeline) {
+        const transitionCheck = await this.blueprints.assertTransitionAllowed(
+          orgId,
+          defaultPipeline.id,
+          existing.status,
+          input.status,
+          { ...input, name: existing.name } as Record<string, unknown>,
+        );
+        if (!transitionCheck.allowed) {
+          throw new BadRequestException({
+            message: "Status transition blocked: missing required fields",
+            missingFields: transitionCheck.missingFields,
+          });
+        }
+      }
+    }
+
     const record: Record<string, unknown> = {
       name: input.name ?? existing.name,
       email: input.email ?? existing.email,
@@ -501,7 +563,10 @@ export class LeadsService {
     });
 
     try {
-      await recalculateLeadScore(this.db, orgId, updated.id);
+      const scoreResult = await recalculateLeadScore(this.db, orgId, updated.id);
+      if (scoreResult?.changed) {
+        void this.bus.emit(orgId, "lead.score_changed", { entityType: "lead", entityId: String(updated.id), data: { score: scoreResult.score, dimensionBreakdown: scoreResult.dimensionBreakdown }, actorId: userId }).catch(() => undefined);
+      }
     } catch (error) {
       logger.error("Auto-trigger: lead scoring on update failed", { leadId: updated.id, error });
     }
@@ -595,7 +660,7 @@ export class LeadsService {
       .returning({ id: leads.id });
 
     void Promise.allSettled([
-      evaluateAssignmentRules(this.db, orgId, lead.id).catch((e: unknown) =>
+      evaluateAssignmentRules(this.db, orgId, lead.id, this.territoryMatch).catch((e: unknown) =>
         logger.error("Ingest: assignment rules failed", { leadId: lead.id, error: e }),
       ),
       recalculateLeadScore(this.db, orgId, lead.id).catch((e: unknown) =>

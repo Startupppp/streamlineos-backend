@@ -108,10 +108,8 @@ export const AttritionRiskSchema = z.object({
 export type AttritionRiskResult = z.infer<typeof AttritionRiskSchema>;
 
 export const NlSearchFilterSchema = z.object({
-  status: z
-    .array(z.enum(["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"]))
-    .optional(),
-  priority: z.array(z.enum(["HOT", "WARM", "COLD"])).optional(),
+  status: z.array(z.string()).optional(),
+  priority: z.array(z.string()).optional(),
   source: z.string().optional(),
   city: z.string().optional(),
   minValue: z.number().optional(),

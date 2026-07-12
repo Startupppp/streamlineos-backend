@@ -19,18 +19,18 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type {
   CreateCategoryInput,
-  ExpenseStatus,
+  AllExpenseStatus,
   ListInput,
   PageDataInput,
   ReportInput,
   ExportInput,
 } from "./dto/expense.schemas";
 
-const ALL_EXPENSE_STATUSES_SET = new Set([
+const ALL_EXPENSE_STATUSES_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
 ]);
 
-function isExpenseStatus(value: string): boolean {
+function isExpenseStatus(value: string): value is AllExpenseStatus {
   return ALL_EXPENSE_STATUSES_SET.has(value);
 }
 

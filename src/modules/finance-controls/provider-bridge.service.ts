@@ -4,33 +4,6 @@ import { type Db } from "../../db/drizzle.module";
 import { FinancePostingService } from "../accounting/finance-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
-/**
- * INTEGRATION POINT — CALLER LOCATION:
- *
- * To wire this into the payments module, call `ProviderBridgeService.recordProviderPayment`
- * from the following location:
- *
- *   File:   backend/src/modules/payments/payment-webhook-health.service.ts
- *   Method: PaymentWebhookHealthService.processIncomingWebhook
- *
- * After the successful `inserted` check (line ~248) and before the `return { status: 200 }`,
- * extract the payment fields from `envelope.payload` and call:
- *
- *   await this.providerBridge.recordProviderPayment(params.orgId, systemUserId, {
- *     provider:          params.providerKey,
- *     providerEventId:   providerEventId,
- *     clientId:          resolvedClientId,   // optional
- *     invoiceId:         resolvedInvoiceId,  // optional
- *     grossAmount:       String(entity.amount / 100),
- *     feeAmount:         String(entity.fee / 100),
- *     currency:          entity.currency.toUpperCase(),
- *     occurredAt:        new Date(entity.created_at * 1000),
- *   });
- *
- * ProviderBridgeService must be injected into PaymentWebhookHealthService and
- * FinanceControlsModule must be imported by PaymentsModule.
- */
-
 export interface RecordProviderPaymentInput {
   provider: string;
   providerEventId: string;
@@ -54,7 +27,18 @@ export class ProviderBridgeService {
     actorUserId: string,
     input: RecordProviderPaymentInput,
   ): Promise<void> {
-    const user: CurrentUserContext = { orgId, userId: actorUserId };
+    const user: CurrentUserContext = {
+      userId: actorUserId,
+      orgId,
+      branchId: null,
+      role: "SYSTEM",
+      permissions: [],
+      enabledModules: [],
+      plan: null,
+      isPlatformAdmin: false,
+      isOrgOwner: false,
+      sessionId: "provider-webhook",
+    };
     const gross = Number(input.grossAmount);
     const fee = Number(input.feeAmount);
     const net = gross - fee;

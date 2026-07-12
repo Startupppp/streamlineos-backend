@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   contacts,
   crmOrganizations,
@@ -8,6 +8,7 @@ import {
   leads,
   invoices,
   payments,
+  projects,
   quotes,
   supportTickets,
   csatSurveys,
@@ -45,6 +46,8 @@ export interface Customer360Response {
   supportTickets?: Customer360Section<unknown>;
   surveys?: Customer360Section<unknown>;
   activities?: Customer360Section<unknown>;
+  projects?: Customer360Section<unknown>;
+  signedDocuments?: Customer360Section<unknown>;
 }
 
 @Injectable()
@@ -86,6 +89,12 @@ export class CrmCustomer360Service {
       fetchMap.push(["supportTickets", () => this.fetchSupportTicketsForOrg(orgId, orgRow.name)]);
       fetchMap.push(["surveys", () => this.fetchSurveysForOrg(orgId, orgRow.name)]);
     }
+    if (permSet.has("projects:view")) {
+      fetchMap.push(["projects", () => this.fetchProjectsForOrg(orgId, orgRow.name)]);
+    }
+    if (permSet.has("crm:quotes:read")) {
+      fetchMap.push(["signedDocuments", () => this.fetchSignedDocumentsForOrg(orgId, orgRow.name)]);
+    }
 
     const results = await Promise.all(fetchMap.map(([, fn]) => fn()));
     const response: Customer360Response = {};
@@ -122,6 +131,12 @@ export class CrmCustomer360Service {
       fetchMap.push(["payments", () => this.fetchPaymentsForClient(orgId, clientId)]);
       fetchMap.push(["supportTickets", () => this.fetchSupportTicketsForClient(orgId, clientId)]);
       fetchMap.push(["surveys", () => this.fetchSurveysForClient(orgId, clientId)]);
+    }
+    if (permSet.has("projects:view")) {
+      fetchMap.push(["projects", () => this.fetchProjectsForClient(orgId, clientId)]);
+    }
+    if (permSet.has("crm:quotes:read")) {
+      fetchMap.push(["signedDocuments", () => this.fetchSignedDocumentsForClient(orgId, clientId)]);
     }
 
     const results = await Promise.all(fetchMap.map(([, fn]) => fn()));
@@ -435,5 +450,79 @@ export class CrmCustomer360Service {
       .orderBy(desc(quotes.createdAt))
       .limit(SECTION_LIMIT);
     return { items, total: items.length };
+  }
+
+  private async fetchProjectsForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
+    const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
+        .from(projects)
+        .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(projects.orgId, orgId)))
+        .orderBy(desc(projects.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .innerJoin(deals, and(eq(deals.id, projects.dealId), sql`${deals.name} ILIKE ${"%" + safe + "%"}`))
+        .where(and(eq(projects.orgId, orgId)))
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
+  }
+
+  private async fetchProjectsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: projects.id, name: projects.name, status: projects.status, startDate: projects.startDate, endDate: projects.endDate, createdAt: projects.createdAt })
+        .from(projects)
+        .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
+        .where(and(eq(projects.orgId, orgId)))
+        .orderBy(desc(projects.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .innerJoin(deals, and(eq(deals.id, projects.dealId), eq(deals.clientId, clientId)))
+        .where(and(eq(projects.orgId, orgId)))
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
+  }
+
+  private async fetchSignedDocumentsForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
+    const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, signedAt: quotes.signedAt, signedDocumentRef: quotes.signedDocumentRef, createdAt: quotes.createdAt })
+        .from(quotes)
+        .where(and(eq(quotes.orgId, orgId), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
+        .orderBy(desc(quotes.signedAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(quotes)
+        .where(and(eq(quotes.orgId, orgId), isNotNull(quotes.signedAt), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
+  }
+
+  private async fetchSignedDocumentsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, signedAt: quotes.signedAt, signedDocumentRef: quotes.signedDocumentRef, createdAt: quotes.createdAt })
+        .from(quotes)
+        .where(and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
+        .orderBy(desc(quotes.signedAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(quotes)
+        .where(and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId), isNotNull(quotes.signedAt)))
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 }

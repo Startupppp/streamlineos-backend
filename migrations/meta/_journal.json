@@ -218,6 +218,13 @@
       "when": 1752364800000,
       "tag": "0252_crm_automation_studio",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1752368400000,
+      "tag": "0253_inv_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

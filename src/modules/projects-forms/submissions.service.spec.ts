@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { SubmissionsService } from "./submissions.service";
-import type { AuditService } from "../../common/audit/audit.service";
+import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 

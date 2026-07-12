@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { PublicController } from "./public.controller";
 import { RecruitmentService } from "./recruitment.service";
 import { RoadmapService } from "./roadmap.service";
@@ -9,6 +10,7 @@ import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
 
 @Module({
+  imports: [CrmAutomationStudioModule],
   controllers: [PublicController],
   providers: [
     RecruitmentService,

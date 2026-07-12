@@ -62,7 +62,19 @@ export class CoaService {
 
         const nodeMap = new Map<number, AccountTreeNode>();
         for (const row of rows) {
-          nodeMap.set(row.id, { ...row, children: [] });
+          nodeMap.set(row.id, {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            accountType: row.accountType,
+            normalBalance: row.normalBalance,
+            isSystem: row.isSystem,
+            isActive: row.isActive,
+            description: row.description,
+            parentAccountId: row.parentAccountId,
+            hasActivity: Boolean(row.hasActivity),
+            children: [],
+          });
         }
 
         const roots: AccountTreeNode[] = [];

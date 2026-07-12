@@ -35,6 +35,7 @@ import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronFinanceService } from "./cron-finance.service";
+import { CronCrmTasksService } from "./cron-crm-tasks.service";
 
 @Module({
   imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule],
@@ -55,6 +56,7 @@ import { CronFinanceService } from "./cron-finance.service";
     CronSupportService,
     CronNotificationDeliveryService,
     CronFinanceService,
+    CronCrmTasksService,
   ],
 })
 export class CronModule {}

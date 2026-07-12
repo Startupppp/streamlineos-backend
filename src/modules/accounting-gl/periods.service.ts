@@ -89,6 +89,7 @@ export class PeriodsService {
     }
 
     await this.cache.invalidate(periodsKey(orgId));
+    this.audit.log({ action: "accounting.periods.generated", userId, orgId, resourceType: "accounting_period", resourceId: String(input.year), result: "SUCCESS" });
     return { created, total: toInsert.length };
   }
 

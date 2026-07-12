@@ -27,6 +27,7 @@ import { CronKbService } from "./cron-kb.service";
 import { CronSupportService } from "./cron-support.service";
 import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
+import { CronCrmTasksService } from "./cron-crm-tasks.service";
 
 @Public()
 @Controller("cron")
@@ -49,6 +50,7 @@ export class CronController {
     private readonly chatReplyReminders: ChatReplyRemindersService,
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly cronFinance: CronFinanceService,
+    private readonly crmTasks: CronCrmTasksService,
   ) {}
 
   @Get("trial-expiry")
@@ -652,6 +654,28 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Finance depreciation cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("crm-tasks-overdue-flush")
+  getCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
+    return this.runCrmTasksOverdueFlush(authorization);
+  }
+
+  @Post("crm-tasks-overdue-flush")
+  @HttpCode(200)
+  postCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
+    return this.runCrmTasksOverdueFlush(authorization);
+  }
+
+  private async runCrmTasksOverdueFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.crmTasks.flushOverdueTasks();
+      return { success: true, message: `Emitted ${result.emitted} task.overdue events`, ...result };
+    } catch (error) {
+      logger.error("CRM tasks overdue flush failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

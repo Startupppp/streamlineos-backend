@@ -128,7 +128,8 @@ export class LeadsDetailService {
       .where(eq(leadScoringRules.orgId, orgId));
 
     const leadRecord: Record<string, unknown> = { ...lead };
-    const firedRules: { name: string; field: string; operator: string; value: string; points: number }[] = [];
+    const firedRules: { name: string; field: string; operator: string; value: string; points: number; dimension: string }[] = [];
+    const dimensionBreakdown: Record<string, number> = {};
     let total = 0;
 
     for (const rule of rules) {
@@ -157,19 +158,22 @@ export class LeadsDetailService {
       }
 
       if (match) {
+        const dim = rule.dimension ?? "fit";
         firedRules.push({
           name: `${rule.field} ${rule.operator} ${rule.value}`,
           field: rule.field,
           operator: rule.operator,
           value: rule.value,
           points: rule.points,
+          dimension: dim,
         });
+        dimensionBreakdown[dim] = (dimensionBreakdown[dim] ?? 0) + rule.points;
         total += rule.points;
       }
     }
 
     total = Math.max(0, Math.min(100, total));
-    return { score: total, firedRules, totalRules: rules.length };
+    return { score: total, firedRules, totalRules: rules.length, dimensionBreakdown };
   }
 
   async addActivity(orgId: string, userId: string, leadId: number, input: LogActivityInput) {

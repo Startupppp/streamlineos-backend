@@ -22,16 +22,16 @@ import {
   type CreateExpenseInput,
   type EmailReportFilters,
   type EmailReportInput,
-  type ExpenseStatus,
+  type AllExpenseStatus,
 } from "./dto/expense.schemas";
 
 const statusProbeSchema = z.object({ status: z.string().min(1) });
 
-const ALL_EXPENSE_STATUS_SET = new Set([
+const ALL_EXPENSE_STATUS_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
 ]);
 
-function isExpenseStatus(value: string): boolean {
+function isExpenseStatus(value: string): value is AllExpenseStatus {
   return ALL_EXPENSE_STATUS_SET.has(value);
 }
 

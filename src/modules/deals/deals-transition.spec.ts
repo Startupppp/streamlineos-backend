@@ -1,3 +1,5 @@
+jest.mock("../email/app-url", () => ({ appUrl: "https://test.example.com" }));
+
 import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { DealsService } from "./deals.service";
@@ -70,6 +72,7 @@ describe("DealsService – blueprint transition enforcement", () => {
       { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
       mockBlueprints as unknown as CrmBlueprintsService,
       mockCrmMetadata as unknown as CrmMetadataService,
+      { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm-automation-studio/crm-automation-bus.service").CrmAutomationBusService,
     );
   });
 

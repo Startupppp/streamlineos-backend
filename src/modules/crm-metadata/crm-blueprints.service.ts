@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs } from "../../db/schema";
+import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs, dealActivities, leadActivities, quotes } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreateBlueprintInput, UpdateBlueprintInput, CreateTransitionInput, UpdateTransitionInput } from "./dto/blueprints.schemas";
 
@@ -78,6 +78,7 @@ export class CrmBlueprintsService {
     toStageKey: string,
     record: Record<string, unknown>,
     blueprintIdOverride?: string,
+    entityType: "lead" | "deal" = "deal",
   ): Promise<{ allowed: boolean; requiresApproval: boolean; missingFields: string[] }> {
     const stage = await this.db.select({ allowedNextStageKeys: crmPipelineStages.allowedNextStageKeys }).from(crmPipelineStages).where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, pipelineId), eq(crmPipelineStages.key, fromStageKey), eq(crmPipelineStages.isActive, true))).limit(1).then((r) => r[0]);
 
@@ -99,6 +100,46 @@ export class CrmBlueprintsService {
     const transition = await this.db.select().from(crmBlueprintTransitions).where(and(eq(crmBlueprintTransitions.blueprintId, blueprint.id), eq(crmBlueprintTransitions.orgId, orgId), eq(crmBlueprintTransitions.fromStageKey, fromStageKey), eq(crmBlueprintTransitions.toStageKey, toStageKey))).limit(1).then((r) => r[0]);
 
     if (!transition) return { allowed: true, requiresApproval: false, missingFields: [] };
+
+    if (transition.requiresQuote) {
+      const dealId = typeof record["id"] === "number" ? record["id"] : undefined;
+      if (dealId !== undefined) {
+        const [quoteCount] = await this.db
+          .select({ n: count() })
+          .from(quotes)
+          .where(and(eq(quotes.orgId, orgId), eq(quotes.dealId, dealId)));
+        if (Number(quoteCount?.n ?? 0) === 0) {
+          return {
+            allowed: false,
+            requiresApproval: Boolean(transition.requiresApproval),
+            missingFields: ["__requires_quote__"],
+          };
+        }
+      }
+    }
+
+    const requiredActivityKeys = (transition.requiredActivityTypeKeys as string[]) ?? [];
+    if (requiredActivityKeys.length > 0) {
+      const entityId = typeof record["id"] === "number" ? record["id"] : undefined;
+      if (entityId !== undefined) {
+        const activitiesTable = entityType === "lead" ? leadActivities : dealActivities;
+        const idCol = entityType === "lead" ? leadActivities.leadId : dealActivities.dealId;
+        const typeCol = entityType === "lead" ? leadActivities.type : dealActivities.type;
+        const found = await this.db
+          .select({ type: typeCol })
+          .from(activitiesTable)
+          .where(and(eq(idCol, entityId), inArray(typeCol, requiredActivityKeys)));
+        const foundKeys = new Set(found.map((r) => r.type));
+        const missingActivityKeys = requiredActivityKeys.filter((k) => !foundKeys.has(k));
+        if (missingActivityKeys.length > 0) {
+          return {
+            allowed: false,
+            requiresApproval: Boolean(transition.requiresApproval),
+            missingFields: missingActivityKeys.map((k) => `__requires_activity_${k}__`),
+          };
+        }
+      }
+    }
 
     const requiredFields = (transition.requiredFields as string[]) ?? [];
     const missingFields = requiredFields.filter((f) => {

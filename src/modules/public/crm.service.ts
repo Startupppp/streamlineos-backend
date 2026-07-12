@@ -10,10 +10,14 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { categoryForScore } from "./public.helpers";
 import type { LeadFormBody, NpsSubmitInput } from "./dto/public.schemas";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 
 @Injectable()
 export class CrmService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly bus: CrmAutomationBusService,
+  ) {}
 
   async getSurvey(token: string) {
     const [survey] = await this.db
@@ -112,7 +116,7 @@ export class CrmService {
 
     const leadNotes = strField("message") ?? strField("notes");
 
-    await this.db.insert(leads).values({
+    const [insertedLead] = await this.db.insert(leads).values({
       orgId: form.orgId,
       name: leadName,
       email: strField("email"),
@@ -121,7 +125,7 @@ export class CrmService {
       notes: leadNotes,
       source: "website",
       customData: body,
-    });
+    }).returning({ id: leads.id });
 
     await this.db
       .update(webLeadForms)
@@ -130,6 +134,14 @@ export class CrmService {
         updatedAt: new Date(),
       })
       .where(eq(webLeadForms.id, form.id));
+
+    if (insertedLead !== undefined) {
+      void this.bus.emit(form.orgId, "form.submitted", {
+        entityType: "lead",
+        entityId: String(insertedLead.id),
+        data: { formId: form.id, formName: form.name },
+      }).catch(() => undefined);
+    }
 
     return {
       success: true,

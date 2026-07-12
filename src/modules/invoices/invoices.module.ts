@@ -6,9 +6,10 @@ import { InvoicesWriteService } from "./invoices-write.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { AccountingModule } from "../accounting/accounting.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 
 @Module({
-  imports: [AccountingModule, NotificationsModule],
+  imports: [AccountingModule, NotificationsModule, CrmAutomationStudioModule],
   controllers: [InvoicesController, InvoicesWriteController],
   providers: [InvoicesService, InvoicesWriteService, InvoicesLifecycleService],
   exports: [InvoicesWriteService],
