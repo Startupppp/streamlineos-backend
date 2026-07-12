@@ -15,6 +15,7 @@ type SectionKey = "operating" | "investing" | "financing";
 
 const NORMAL_DEBIT: ReadonlyArray<string> = ["ASSET", "EXPENSE"];
 const CASH_CODES: ReadonlyArray<string> = [ACCOUNT_CODES.cash, ACCOUNT_CODES.bank];
+const SECTION_KEYS: ReadonlyArray<SectionKey> = ["operating", "investing", "financing"];
 const SECTION_LABELS: Record<SectionKey, string> = {
   operating: "Operating Activities",
   investing: "Investing Activities",
@@ -252,7 +253,7 @@ export class AccountingStatementsService {
         closingCash: "0.00",
         netChange: "0.00",
         reconciled: true,
-        sections: (Object.keys(SECTION_LABELS) as SectionKey[]).map((key) => ({
+        sections: SECTION_KEYS.map((key) => ({
           key,
           label: SECTION_LABELS[key],
           items: [],
@@ -351,7 +352,7 @@ export class AccountingStatementsService {
       }
     }
 
-    const sections = (Object.keys(SECTION_LABELS) as SectionKey[]).map((key) => {
+    const sections = SECTION_KEYS.map((key) => {
       const items = Array.from(buckets[key].entries())
         .map(([compound, amount]) => {
           const [code, name] = compound.split("::");

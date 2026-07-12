@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -42,18 +42,17 @@ export class BankAccountsService {
     const { orgId } = u;
     const { limit, offset } = paginateOffset(query);
 
-    const conditions = [eq(finBankAccounts.orgId, orgId)];
+    const conditions: SQL[] = [eq(finBankAccounts.orgId, orgId)];
     if (query.isActive !== undefined) {
       conditions.push(eq(finBankAccounts.isActive, query.isActive));
     }
     if (query.q) {
       const pattern = `%${query.q}%`;
-      conditions.push(
-        or(
-          ilike(finBankAccounts.name, pattern),
-          ilike(finBankAccounts.bankName, pattern),
-        ) as ReturnType<typeof eq>,
+      const search = or(
+        ilike(finBankAccounts.name, pattern),
+        ilike(finBankAccounts.bankName, pattern),
       );
+      if (search) conditions.push(search);
     }
 
     const where = and(...conditions);
@@ -222,26 +221,25 @@ export class BankAccountsService {
     if (!account) throw new NotFoundException("Bank account not found");
 
     const { limit, offset } = paginateOffset(query);
-    const conditions = [
+    const conditions: SQL[] = [
       eq(finBankTransactions.orgId, orgId),
       eq(finBankTransactions.bankAccountId, bankAccountId),
     ];
 
     if (query.status) conditions.push(eq(finBankTransactions.status, query.status));
     if (query.from) {
-      conditions.push(sql`${finBankTransactions.txnDate} >= ${query.from}` as ReturnType<typeof eq>);
+      conditions.push(sql`${finBankTransactions.txnDate} >= ${query.from}`);
     }
     if (query.to) {
-      conditions.push(sql`${finBankTransactions.txnDate} <= ${query.to}` as ReturnType<typeof eq>);
+      conditions.push(sql`${finBankTransactions.txnDate} <= ${query.to}`);
     }
     if (query.q) {
       const pattern = `%${query.q}%`;
-      conditions.push(
-        or(
-          ilike(finBankTransactions.description, pattern),
-          ilike(finBankTransactions.counterparty, pattern),
-        ) as ReturnType<typeof eq>,
+      const search = or(
+        ilike(finBankTransactions.description, pattern),
+        ilike(finBankTransactions.counterparty, pattern),
       );
+      if (search) conditions.push(search);
     }
 
     const where = and(...conditions);
@@ -295,7 +293,7 @@ export class BankAccountsService {
       .where(
         and(
           eq(ledgerAccounts.orgId, orgId),
-          sql`${ledgerAccounts.code} ~ '^11[0-9]{2}$'` as ReturnType<typeof eq>,
+          sql`${ledgerAccounts.code} ~ '^11[0-9]{2}$'`,
         ),
       )
       .orderBy(desc(ledgerAccounts.code));

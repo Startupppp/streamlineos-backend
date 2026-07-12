@@ -90,7 +90,7 @@ export class DimensionsService {
         orgId: u.orgId,
         resourceType: "accounting_dimension",
         resourceId: String(dim.id),
-        after: { name: input.name, key: input.key } as Record<string, unknown>,
+        after: { name: input.name, key: input.key },
       });
 
       return dim;
@@ -134,7 +134,7 @@ export class DimensionsService {
       orgId: u.orgId,
       resourceType: "accounting_dimension",
       resourceId: String(dimensionId),
-      after: { ...input } as Record<string, unknown>,
+      after: { ...input },
     });
 
     return updated;
@@ -197,7 +197,7 @@ export class DimensionsService {
         orgId: u.orgId,
         resourceType: "accounting_dimension_value",
         resourceId: String(val.id),
-        after: { dimensionId, name: input.name, code: input.code } as Record<string, unknown>,
+        after: { dimensionId, name: input.name, code: input.code },
       });
 
       return val;
@@ -256,7 +256,7 @@ export class DimensionsService {
       orgId: u.orgId,
       resourceType: "accounting_dimension_value",
       resourceId: String(valueId),
-      after: { ...input } as Record<string, unknown>,
+      after: { ...input },
     });
 
     return updated;

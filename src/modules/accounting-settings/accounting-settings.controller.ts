@@ -75,9 +75,15 @@ export class AccountingSettingsController {
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(SEQUENCE_ENTITY_TYPES as readonly string[]).includes(entityType)) {
+    if (!isSequenceEntityType(entityType)) {
       throw new BadRequestException(`Invalid entityType. Allowed: ${SEQUENCE_ENTITY_TYPES.join(", ")}`);
     }
-    return this.svc.updateSequence(u, entityType as SequenceEntityType, body);
+    return this.svc.updateSequence(u, entityType, body);
   }
+}
+
+const SEQUENCE_ENTITY_TYPE_VALUES: ReadonlyArray<string> = SEQUENCE_ENTITY_TYPES;
+
+function isSequenceEntityType(value: string): value is SequenceEntityType {
+  return SEQUENCE_ENTITY_TYPE_VALUES.includes(value);
 }

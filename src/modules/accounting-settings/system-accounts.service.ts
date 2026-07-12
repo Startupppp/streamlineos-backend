@@ -123,7 +123,7 @@ export class SystemAccountsService {
       orgId: u.orgId,
       resourceType: "acc_system_account_map",
       resourceId: purpose,
-      after: { purpose, accountId: input.accountId } as Record<string, unknown>,
+      after: { purpose, accountId: input.accountId },
     });
 
     return { purpose, accountId: input.accountId };

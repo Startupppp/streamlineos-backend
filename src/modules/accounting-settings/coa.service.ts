@@ -244,7 +244,7 @@ export class CoaService {
       orgId: u.orgId,
       resourceType: "ledger_account",
       resourceId: templateKey,
-      after: { inserted: toInsert.length, skipped: existingCodes.size } as Record<string, unknown>,
+      after: { inserted: toInsert.length, skipped: existingCodes.size },
     });
 
     return {
