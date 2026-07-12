@@ -68,6 +68,8 @@ export const invProducts = pgTable("inv_products", {
   index("idx_inv_products_org_status").on(table.orgId, table.status),
   index("idx_inv_products_category").on(table.categoryId),
   index("idx_inv_products_barcode").on(table.barcode),
+  index("idx_inv_products_name_trgm").on(table.name),
+  index("idx_inv_products_sku_trgm").on(table.sku),
 ]);
 
 export const invProductVariants = pgTable("inv_product_variants", {
@@ -87,6 +89,7 @@ export const invProductVariants = pgTable("inv_product_variants", {
   uniqueIndex("uniq_inv_variants_org_sku").on(table.orgId, table.sku),
   index("idx_inv_variants_product").on(table.productId),
   index("idx_inv_variants_barcode").on(table.barcode),
+  index("idx_inv_variants_sku_trgm").on(table.sku),
 ]);
 
 export const invUomRelations = relations(invUom, ({ one }) => ({

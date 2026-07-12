@@ -6,12 +6,13 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { CarriersService } from "./carriers.service";
 import { createCarrierSchema, updateCarrierSchema, type CreateCarrierInput, type UpdateCarrierInput } from "./dto/shipments.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/carriers")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class CarriersController {
   constructor(private readonly svc: CarriersService) {}
 

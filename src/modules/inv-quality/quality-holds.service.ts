@@ -44,6 +44,20 @@ export class HoldsService {
     );
   }
 
+  async findOne(orgId: string, holdId: number) {
+    return this.cache.cached(
+      CACHE_KEYS.invQualityHoldDetail(orgId, holdId),
+      async () => {
+        const row = await this.db.query.invQualityHolds.findFirst({
+          where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
+        });
+        if (!row) throw new NotFoundException("Not found");
+        return row;
+      },
+      CACHE_TTL.SHORT,
+    );
+  }
+
   async create(orgId: string, userId: string, idempotencyKey: string, input: CreateHoldInput) {
     await this.engine.execute(orgId, userId, {
       idempotencyKey,

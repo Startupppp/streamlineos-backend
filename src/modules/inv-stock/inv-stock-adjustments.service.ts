@@ -161,7 +161,10 @@ export class InvStockAdjustmentsService {
       .set({ status: "CANCELLED" })
       .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)));
 
-    await this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
+      this.cache.invalidatePattern(CACHE_KEYS.invAdjustmentsListPattern(orgId)),
+    ]);
   }
 
   private async _postAdjustment(

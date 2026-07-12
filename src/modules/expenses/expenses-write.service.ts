@@ -27,10 +27,12 @@ import {
 
 const statusProbeSchema = z.object({ status: z.string().min(1) });
 
-const EXPENSE_STATUS_VALUES: readonly ExpenseStatus[] = ["PENDING", "APPROVED", "REJECTED", "PAID"];
+const ALL_EXPENSE_STATUS_SET = new Set([
+  "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
+]);
 
-function isExpenseStatus(value: string): value is ExpenseStatus {
-  return (EXPENSE_STATUS_VALUES as readonly string[]).includes(value);
+function isExpenseStatus(value: string): boolean {
+  return ALL_EXPENSE_STATUS_SET.has(value);
 }
 
 function formatReportAmount(value: number | string): string {
@@ -162,7 +164,8 @@ export class ExpensesWriteService {
         .for("update");
 
       if (!expense) throw new NotFoundException("Expense not found.");
-      if (expense.status !== "PENDING") {
+      const approvableStatuses: string[] = ["PENDING", "SUBMITTED"];
+      if (!approvableStatuses.includes(expense.status ?? "")) {
         throw new BadRequestException("Expense has already been processed.");
       }
 

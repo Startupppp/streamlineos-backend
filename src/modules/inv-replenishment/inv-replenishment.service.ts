@@ -12,9 +12,9 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
-import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput } from "./dto/replenishment.schemas";
+import type { ListRulesInput, CreateRuleInput, UpdateRuleInput, GeneratePoInput, ForecastingInput, SuggestionsQueryInput } from "./dto/replenishment.schemas";
 
 @Injectable()
 export class InvReplenishmentService {
@@ -78,7 +78,10 @@ export class InvReplenishmentService {
       })
       .returning();
 
-    await this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*"));
+    await Promise.all([
+      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
+      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
+    ]);
     return rule;
   }
 
@@ -103,7 +106,10 @@ export class InvReplenishmentService {
       .where(and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*"));
+    await Promise.all([
+      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
+      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
+    ]);
     return updated;
   }
 
@@ -119,78 +125,95 @@ export class InvReplenishmentService {
       .where(and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*"));
+    await Promise.all([
+      this.cache.invalidatePattern(CACHE_KEYS.invReorderRulesList(orgId, "*")),
+      this.cache.invalidatePattern(CACHE_KEYS.invReplenishmentSuggestions(orgId, "*")),
+    ]);
     return updated;
   }
 
-  async getSuggestions(orgId: string) {
-    const rules = await this.db.query.invReorderRules.findMany({
-      where: and(eq(invReorderRules.orgId, orgId), eq(invReorderRules.isActive, true)),
-      with: {
-        productVariant: { with: { product: { columns: { id: true, name: true, sku: true, defaultVendorId: true } } } },
-        warehouse: { columns: { id: true, name: true } },
+  async getSuggestions(orgId: string, filters: SuggestionsQueryInput) {
+    const { page, limit } = filters;
+    const cacheKey = CACHE_KEYS.invReplenishmentSuggestions(orgId, `${page}:${limit}`);
+
+    return this.cache.cached(
+      cacheKey,
+      async () => {
+        const [rules, stockRows] = await Promise.all([
+          this.db.query.invReorderRules.findMany({
+            where: and(eq(invReorderRules.orgId, orgId), eq(invReorderRules.isActive, true)),
+            with: {
+              productVariant: { with: { product: { columns: { id: true, name: true, sku: true, defaultVendorId: true } } } },
+              warehouse: { columns: { id: true, name: true } },
+            },
+          }),
+          this.db
+            .select({
+              variantId: invStockLevels.productVariantId,
+              onHand: sql<string>`SUM(${invStockLevels.onHand}::numeric)::text`,
+              onOrder: sql<string>`SUM(${invStockLevels.onOrder}::numeric)::text`,
+              outgoing: sql<string>`SUM(${invStockLevels.outgoingQty}::numeric)::text`,
+            })
+            .from(invStockLevels)
+            .where(eq(invStockLevels.orgId, orgId))
+            .groupBy(invStockLevels.productVariantId),
+        ]);
+
+        const stockMap = new Map<string, { onHand: number; onOrder: number; outgoing: number }>();
+        for (const s of stockRows) {
+          stockMap.set(String(s.variantId), {
+            onHand: parseFloat(s.onHand),
+            onOrder: parseFloat(s.onOrder),
+            outgoing: parseFloat(s.outgoing),
+          });
+        }
+
+        const today = new Date();
+        const allSuggestions = rules
+          .map((rule) => {
+            const stock = stockMap.get(String(rule.productVariantId));
+            const onHand = stock?.onHand ?? 0;
+            const incoming = stock?.onOrder ?? 0;
+            const outgoing = stock?.outgoing ?? 0;
+            const forecasted = onHand + incoming - outgoing;
+            const minQty = parseFloat(rule.minQty);
+            if (forecasted >= minQty) return null;
+
+            const maxQty = rule.maxQty ? parseFloat(rule.maxQty) : null;
+            const reorderQty = rule.reorderQty ? parseFloat(rule.reorderQty) : null;
+            const qty = maxQty != null ? Math.max(0, maxQty - forecasted) : (reorderQty ?? minQty - forecasted);
+            const vendorId = rule.vendorId ?? rule.productVariant.product.defaultVendorId ?? null;
+
+            const expectedDate = new Date(today);
+            expectedDate.setDate(expectedDate.getDate() + (rule.leadTimeDays ?? 7));
+
+            return {
+              productVariantId: rule.productVariantId,
+              variantSku: rule.productVariant.sku,
+              variantName: rule.productVariant.name,
+              productName: rule.productVariant.product.name,
+              ruleId: rule.id,
+              warehouseId: rule.warehouseId ?? null,
+              warehouseName: rule.warehouse?.name ?? null,
+              currentOnHand: onHand,
+              forecasted: Math.round(forecasted * 10000) / 10000,
+              suggestedQty: Math.round(qty * 10000) / 10000,
+              vendorId,
+              leadTimeDays: rule.leadTimeDays ?? 7,
+              expectedDate: expectedDate.toISOString().slice(0, 10),
+              reason: `Forecasted qty (${Math.round(forecasted * 100) / 100}) below min (${minQty})`,
+            };
+          })
+          .filter((s): s is NonNullable<typeof s> => s !== null);
+
+        const total = allSuggestions.length;
+        const offset = (page - 1) * limit;
+        const items = allSuggestions.slice(offset, offset + limit);
+
+        return { items, total, page, totalPages: Math.ceil(total / limit) };
       },
-    });
-
-    const stockMap = new Map<string, { onHand: number; onOrder: number; outgoing: number }>();
-    const stockRows = await this.db
-      .select({
-        variantId: invStockLevels.productVariantId,
-        onHand: sql<string>`SUM(${invStockLevels.onHand}::numeric)::text`,
-        onOrder: sql<string>`SUM(${invStockLevels.onOrder}::numeric)::text`,
-        outgoing: sql<string>`SUM(${invStockLevels.outgoingQty}::numeric)::text`,
-      })
-      .from(invStockLevels)
-      .where(eq(invStockLevels.orgId, orgId))
-      .groupBy(invStockLevels.productVariantId);
-
-    for (const s of stockRows) {
-      stockMap.set(String(s.variantId), {
-        onHand: parseFloat(s.onHand),
-        onOrder: parseFloat(s.onOrder),
-        outgoing: parseFloat(s.outgoing),
-      });
-    }
-
-    const today = new Date();
-    const suggestions = rules
-      .map((rule) => {
-        const stock = stockMap.get(String(rule.productVariantId));
-        const onHand = stock?.onHand ?? 0;
-        const incoming = stock?.onOrder ?? 0;
-        const outgoing = stock?.outgoing ?? 0;
-        const forecasted = onHand + incoming - outgoing;
-        const minQty = parseFloat(rule.minQty);
-        if (forecasted >= minQty) return null;
-
-        const maxQty = rule.maxQty ? parseFloat(rule.maxQty) : null;
-        const reorderQty = rule.reorderQty ? parseFloat(rule.reorderQty) : null;
-        const qty = maxQty != null ? Math.max(0, maxQty - forecasted) : (reorderQty ?? minQty - forecasted);
-        const vendorId = rule.vendorId ?? rule.productVariant.product.defaultVendorId ?? null;
-
-        const expectedDate = new Date(today);
-        expectedDate.setDate(expectedDate.getDate() + (rule.leadTimeDays ?? 7));
-
-        return {
-          productVariantId: rule.productVariantId,
-          variantSku: rule.productVariant.sku,
-          variantName: rule.productVariant.name,
-          productName: rule.productVariant.product.name,
-          ruleId: rule.id,
-          warehouseId: rule.warehouseId ?? null,
-          warehouseName: rule.warehouse?.name ?? null,
-          currentOnHand: onHand,
-          forecasted: Math.round(forecasted * 10000) / 10000,
-          suggestedQty: Math.round(qty * 10000) / 10000,
-          vendorId,
-          leadTimeDays: rule.leadTimeDays ?? 7,
-          expectedDate: expectedDate.toISOString().slice(0, 10),
-          reason: `Forecasted qty (${Math.round(forecasted * 100) / 100}) below min (${minQty})`,
-        };
-      })
-      .filter((s): s is NonNullable<typeof s> => s !== null);
-
-    return suggestions;
+      CACHE_TTL.SHORT,
+    );
   }
 
   async generatePo(orgId: string, userId: string, body: GeneratePoInput) {

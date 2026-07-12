@@ -144,31 +144,40 @@ export class GrnService {
         }
 
         if (trackingMethod === "SERIAL" && line.serialNumbers?.length) {
-          for (const sn of line.serialNumbers) {
-            const exists = await tx.query.invSerialNumbers.findFirst({
-              where: and(
-                eq(invSerialNumbers.orgId, orgId),
-                eq(invSerialNumbers.productVariantId, poLine.productVariantId),
-                eq(invSerialNumbers.serialNumber, sn),
-              ),
-              columns: { id: true },
-            });
-            if (exists) {
-              await tx.update(invSerialNumbers)
-                .set({ status: "IN_STOCK", currentLocationId: locationId })
-                .where(eq(invSerialNumbers.id, exists.id));
-              resolvedSerialIds.push(exists.id);
-            } else {
-              const [newSerial] = await tx.insert(invSerialNumbers).values({
+          const serials = line.serialNumbers;
+          const existing = await tx.query.invSerialNumbers.findMany({
+            where: and(
+              eq(invSerialNumbers.orgId, orgId),
+              eq(invSerialNumbers.productVariantId, poLine.productVariantId),
+              inArray(invSerialNumbers.serialNumber, serials),
+            ),
+            columns: { id: true, serialNumber: true },
+          });
+          const existingMap = new Map(existing.map((s) => [s.serialNumber, s.id]));
+          const toInsert = serials.filter((sn) => !existingMap.has(sn));
+          const toUpdateIds = existing.map((s) => s.id);
+
+          if (toUpdateIds.length > 0) {
+            await tx.update(invSerialNumbers)
+              .set({ status: "IN_STOCK", currentLocationId: locationId })
+              .where(inArray(invSerialNumbers.id, toUpdateIds));
+            for (const s of existing) resolvedSerialIds.push(s.id);
+          }
+
+          if (toInsert.length > 0) {
+            const inserted = await tx.insert(invSerialNumbers).values(
+              toInsert.map((sn) => ({
                 orgId,
                 productVariantId: poLine.productVariantId,
                 serialNumber: sn,
                 lotId: resolvedLotId,
-                status: "IN_STOCK",
+                status: "IN_STOCK" as const,
                 currentLocationId: locationId,
-              }).returning({ id: invSerialNumbers.id });
-              resolvedSerialIds.push(newSerial.id);
-              serialMap.set(sn, newSerial.id);
+              }))
+            ).returning({ id: invSerialNumbers.id, serialNumber: invSerialNumbers.serialNumber });
+            for (const row of inserted) {
+              resolvedSerialIds.push(row.id);
+              serialMap.set(row.serialNumber, row.id);
             }
           }
         }

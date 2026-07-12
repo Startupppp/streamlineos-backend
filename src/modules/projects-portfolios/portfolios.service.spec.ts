@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PortfoliosService } from "./portfolios.service";
-import type { AuditService } from "../../common/audit/audit.service";
+import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const ORG_ID = "org-1";
@@ -69,8 +69,8 @@ describe("PortfoliosService", () => {
       let selectCount = 0;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
         selectCount++;
-        if (selectCount === 1) return portChain.selectChain;
-        return projChain.selectChain;
+        if (selectCount === 1) return portChain;
+        return projChain;
       });
 
       await expect(
@@ -88,8 +88,8 @@ describe("PortfoliosService", () => {
       let selectCount = 0;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
         selectCount++;
-        if (selectCount === 1) return portChain.selectChain;
-        return projChain.selectChain;
+        if (selectCount === 1) return portChain;
+        return projChain;
       });
 
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
@@ -111,7 +111,7 @@ describe("PortfoliosService", () => {
       const programs = [{ id: 7, name: "Prog1", status: "active" }];
 
       const { selectChain: portChain } = makeSelectChain([portfolio]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(portChain.selectChain);
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(portChain);
 
       const projectsWhereChain = jest.fn().mockResolvedValue(linkedProjects);
       const programsWhereChain = jest.fn().mockResolvedValue(programs);
@@ -120,7 +120,7 @@ describe("PortfoliosService", () => {
       const originalSelect = (mockDb as { select: jest.Mock }).select;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
         selectCount++;
-        if (selectCount === 1) return portChain.selectChain;
+        if (selectCount === 1) return portChain;
         if (selectCount === 2) {
           return {
             from: jest.fn().mockReturnValue({
@@ -153,14 +153,14 @@ describe("PortfoliosService", () => {
   describe("loadPortfolio — BOLA cross-tenant isolation", () => {
     it("throws 404 when portfolioId belongs to a different tenant", async () => {
       const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain.selectChain);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(svc.getPortfolio(OTHER_ORG, 1)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("throws 404 when portfolio is soft-deleted (deletedAt set)", async () => {
       const { selectChain } = makeSelectChain([]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain.selectChain);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(svc.getPortfolio(ORG_ID, 999)).rejects.toBeInstanceOf(NotFoundException);
     });

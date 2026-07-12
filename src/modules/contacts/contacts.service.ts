@@ -28,9 +28,6 @@ export class ContactsService {
     if (filters.organizationId) {
       conditions.push(eq(contacts.organizationId, filters.organizationId));
     }
-    if (filters.source) {
-      conditions.push(eq(contacts.source, filters.source));
-    }
     if (filters.search) {
       const s = `%${filters.search}%`;
       conditions.push(

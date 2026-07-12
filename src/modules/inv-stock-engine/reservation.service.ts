@@ -153,6 +153,58 @@ export class ReservationService {
     });
   }
 
+  async consumeReservationsBatch(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    reservations: ReadonlyArray<{
+      id: number;
+      locationId: number | null;
+      productVariantId: number;
+      reservedQty: string;
+    }>,
+  ): Promise<void> {
+    if (reservations.length === 0) return;
+
+    const activeIds = reservations.map((r) => r.id);
+
+    await (tx as Db).execute(sql`
+      UPDATE inv_stock_reservations
+      SET status = 'CONSUMED', updated_at = NOW()
+      WHERE id = ANY(ARRAY[${sql.join(activeIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+        AND org_id = ${orgId}
+        AND status = 'ACTIVE'
+    `);
+
+    const withLocation = reservations.filter((r) => r.locationId !== null);
+    for (const r of withLocation) {
+      await (tx as Db).update(invStockLevels)
+        .set({ committed: sql`GREATEST(0, committed - ${r.reservedQty}::numeric)` })
+        .where(and(
+          eq(invStockLevels.orgId, orgId),
+          eq(invStockLevels.productVariantId, r.productVariantId),
+          eq(invStockLevels.locationId, r.locationId!),
+        ));
+    }
+
+    if (withLocation.length > 0) {
+      await (tx as Db).insert(invStockTransactions).values(
+        withLocation.map((r) => ({
+          orgId,
+          productVariantId: r.productVariantId,
+          locationId: r.locationId,
+          transactionType: "RESERVATION_CONSUME" as const,
+          quantityChange: "0",
+          quantityBefore: "0",
+          quantityAfter: "0",
+          reason: "reservation_consume",
+          createdBy: userId,
+          metadata: { reservationId: r.id } as Record<string, unknown>,
+        })),
+      );
+    }
+  }
+
   async expireStale(orgId: string): Promise<number> {
     const now = new Date();
     const result = await this.db.update(invStockReservations)

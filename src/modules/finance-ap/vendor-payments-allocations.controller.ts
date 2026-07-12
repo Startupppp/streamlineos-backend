@@ -1,0 +1,31 @@
+import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { VendorPaymentsAllocationsService } from "./vendor-payments-allocations.service";
+import {
+  manualAllocationSchema,
+  type ManualAllocationInput,
+} from "./dto/finance-ap.schemas";
+
+@RequireModule("accounting")
+@Controller("accounting/vendor-payments")
+@UseGuards(JwtAuthGuard)
+export class VendorPaymentsAllocationsController {
+  constructor(private readonly service: VendorPaymentsAllocationsService) {}
+
+  @Post("allocations")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:payables:manage")
+  @HttpCode(200)
+  allocate(
+    @Body(new ZodValidationPipe(manualAllocationSchema)) body: ManualAllocationInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.allocate(u.orgId, u.userId, body);
+  }
+}

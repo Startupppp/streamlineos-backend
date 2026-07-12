@@ -81,7 +81,7 @@ export class CollectionsService {
     const topRisk: CustomerRisk[] = Array.from(clientMap.entries())
       .map(([clientId, data]) => {
         const ratio = data.totalInvoiced > 0 ? data.overdueAmount / data.totalInvoiced : 0;
-        const riskScore = Math.round(ratio * 50 + Math.min(data.maxDaysOverdue, 180) / 180 * 50);
+        const riskScore = Math.min(100, Math.round(Math.min(ratio, 1) * 50 + Math.min(data.maxDaysOverdue, 180) / 180 * 50));
         return { clientId: clientId || null, overdueAmount: data.overdueAmount, totalInvoiced: data.totalInvoiced, maxDaysOverdue: data.maxDaysOverdue, riskScore };
       })
       .filter((r) => r.overdueAmount > 0)

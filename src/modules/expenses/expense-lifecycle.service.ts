@@ -19,6 +19,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";
+import type { PostJournalLine } from "../accounting/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 function normalizeMerchant(merchant: string | null | undefined): string {
@@ -125,10 +126,9 @@ export class ExpenseLifecycleService {
     return { policyFlag, blocked: false, blockReason: null };
   }
 
-  async checkApprovalRequired(
+  async findApplicableApprovalPolicy(
     orgId: string,
     amount: number,
-    requestedBy: string,
   ): Promise<ApprovalCheckResult> {
     const policies = await this.db
       .select()
@@ -149,14 +149,6 @@ export class ExpenseLifecycleService {
     if (!applicable) {
       return { needsApproval: false, approverUserId: null, policyId: null };
     }
-
-    await this.db.insert(finApprovalRequests).values({
-      orgId,
-      recordType: "EXPENSE",
-      recordId: 0,
-      status: "PENDING",
-      requestedBy,
-    });
 
     return {
       needsApproval: true,
@@ -197,7 +189,7 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(policyResult.blockReason ?? "Expense blocked by policy");
     }
 
-    const approvalResult = await this.checkApprovalRequired(u.orgId, amount, u.userId);
+    const approvalResult = await this.findApplicableApprovalPolicy(u.orgId, amount);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -211,18 +203,13 @@ export class ExpenseLifecycleService {
         .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
 
       if (approvalResult.needsApproval) {
-        await tx
-          .update(finApprovalRequests)
-          .set({ recordId: expenseId })
-          .where(
-            and(
-              eq(finApprovalRequests.orgId, u.orgId),
-              eq(finApprovalRequests.recordType, "EXPENSE"),
-              eq(finApprovalRequests.recordId, 0),
-              eq(finApprovalRequests.requestedBy, u.userId),
-              eq(finApprovalRequests.status, "PENDING"),
-            ),
-          );
+        await tx.insert(finApprovalRequests).values({
+          orgId: u.orgId,
+          recordType: "EXPENSE",
+          recordId: expenseId,
+          status: "PENDING",
+          requestedBy: u.userId,
+        });
       }
     });
 
@@ -302,22 +289,13 @@ export class ExpenseLifecycleService {
     const taxAmount = expense.taxAmount ? parseFloat(expense.taxAmount) : 0;
     const expenseAmount = amount - taxAmount;
 
-    type JournalLine = {
-      systemPurpose?: "EXPENSE_CLEARING" | "TAX_RECEIVABLE" | "REIMBURSEMENT_PAYABLE";
-      debit?: string;
-      credit?: string;
-      employeeId?: number;
-      description?: string;
-    };
-
-    const lines: JournalLine[] = [];
-
-    lines.push({
-      systemPurpose: "EXPENSE_CLEARING",
-      debit: expenseAmount.toFixed(2),
-      description: `Expense: ${expense.category}${categoryWithLedger ? "" : " [no ledger mapping — using EXPENSE_CLEARING]"}`,
-      employeeId: undefined,
-    });
+    const lines: PostJournalLine[] = [
+      {
+        systemPurpose: "EXPENSE_CLEARING",
+        debit: expenseAmount.toFixed(2),
+        description: `Expense: ${expense.category}${categoryWithLedger ? "" : " [no category ledger mapping — using EXPENSE_CLEARING]"}`,
+      },
+    ];
 
     if (taxAmount > 0) {
       lines.push({
@@ -330,7 +308,7 @@ export class ExpenseLifecycleService {
     lines.push({
       systemPurpose: "REIMBURSEMENT_PAYABLE",
       credit: amountStr,
-      description: `Reimbursement payable to employee`,
+      description: "Reimbursement payable to employee",
     });
 
     const postResult = await this.posting.postJournal(u, {
@@ -339,7 +317,7 @@ export class ExpenseLifecycleService {
       sourceType: "EXPENSE",
       sourceId: String(expenseId),
       sourceEvent: "approved",
-      lines: lines as Parameters<typeof this.posting.postJournal>[1]["lines"],
+      lines,
     });
 
     await this.db

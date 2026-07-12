@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -8,10 +9,14 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvReportsService } from "./inv-reports.service";
 import { InvReportsExtendedService } from "./inv-reports-extended.service";
 import {
+  stockSummaryQuerySchema,
+  reorderQuerySchema,
   movementsQuerySchema,
   valuationReportSchema,
   slowMovingQuerySchema,
   expiryReportSchema,
+  type StockSummaryQueryInput,
+  type ReorderQueryInput,
   type MovementsQueryInput,
   type ValuationReportInput,
   type SlowMovingQueryInput,
@@ -21,7 +26,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/reports")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvReportsController {
   constructor(
     private readonly reports: InvReportsService,
@@ -38,15 +43,21 @@ export class InvReportsController {
   @Get("stock-summary")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
-  getStockSummary(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getStockSummary(u.orgId);
+  getStockSummary(
+    @Query(new ZodValidationPipe(stockSummaryQuerySchema)) query: StockSummaryQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getStockSummary(u.orgId, query);
   }
 
   @Get("reorder")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
-  getReorderReport(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getReorderReport(u.orgId);
+  getReorderReport(
+    @Query(new ZodValidationPipe(reorderQuerySchema)) query: ReorderQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reports.getReorderReport(u.orgId, query);
   }
 
   @Get("movements")

@@ -49,11 +49,15 @@ export class InvoicesWriteController {
 
   @Post("recurring/run")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:manage")
   runRecurring(@CurrentUser() u: CurrentUserContext) {
     return this.invoicesWrite.generateDueRecurringInvoices(u.orgId, u.userId, todayIso());
   }
 
   @Patch(":invoiceId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:update")
   async updateInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(updateInvoiceSchema)) body: UpdateInvoiceInput,
@@ -65,11 +69,24 @@ export class InvoicesWriteController {
 
   @Post(":invoiceId/payments")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:create")
   recordPayment(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(recordPaymentSchema)) body: RecordPaymentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invoicesWrite.recordPayment(u.orgId, u.userId, invoiceId, body);
+  }
+
+  @Post(":invoiceId/void")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:manage")
+  voidInvoice(
+    @Param("invoiceId", ParseIntPipe) invoiceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.invoicesWrite.voidInvoice(u.orgId, u.userId, invoiceId);
   }
 }

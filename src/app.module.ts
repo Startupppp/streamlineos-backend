@@ -133,6 +133,18 @@ import { HrImportModule } from "./modules/hr-import/hr-import.module";
 import { CrmMetadataModule } from "./modules/crm-metadata/crm-metadata.module";
 import { CrmPricebooksModule } from "./modules/crm-pricebooks/crm-pricebooks.module";
 import { CrmInboxModule } from "./modules/crm-inbox/crm-inbox.module";
+import { CrmAutomationStudioModule } from "./modules/crm-automation-studio/crm-automation-studio.module";
+import { FinanceReportsModule } from "./modules/finance-reports/finance-reports.module";
+import { FinanceExpensesModule } from "./modules/finance-expenses/finance-expenses.module";
+import { AccountingSettingsModule } from "./modules/accounting-settings/accounting-settings.module";
+import { AccountingGlModule } from "./modules/accounting-gl/accounting-gl.module";
+import { FinanceArModule } from "./modules/finance-ar/finance-ar.module";
+import { FinanceApModule } from "./modules/finance-ap/finance-ap.module";
+import { FinanceBankingModule } from "./modules/finance-banking/finance-banking.module";
+import { FinanceTaxModule } from "./modules/finance-tax/finance-tax.module";
+import { FinancePlanningModule } from "./modules/finance-planning/finance-planning.module";
+import { FinanceAssetsModule } from "./modules/finance-assets/finance-assets.module";
+import { FinanceControlsModule } from "./modules/finance-controls/finance-controls.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -172,6 +184,8 @@ import { MeService } from "./me/me.service";
     CrmMetadataModule,
     CrmPricebooksModule,
     CrmInboxModule,
+    CrmAutomationStudioModule,
+    FinanceReportsModule,
     DashboardModule,
     PublicModule,
     RbacModule,
@@ -270,6 +284,16 @@ import { MeService } from "./me/me.service";
     PaymentsModule,
     FeedbucketModule,
     HrImportModule,
+    FinanceExpensesModule,
+    AccountingSettingsModule,
+    AccountingGlModule,
+    FinanceArModule,
+    FinanceApModule,
+    FinanceBankingModule,
+    FinanceTaxModule,
+    FinancePlanningModule,
+    FinanceAssetsModule,
+    FinanceControlsModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

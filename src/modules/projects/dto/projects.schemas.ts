@@ -182,7 +182,7 @@ export const allWorkQuerySchema = z.object({
   orderBy: z.enum(["created", "updated", "priority", "dueDate", "order"]).default("order"),
   orderDir: z.enum(["asc", "desc"]).optional(),
   projectIds: csvToIntArray,
-  scope: z.enum(["all", "mine"]).default("all"),
+  scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
 });
 
 export const searchTicketsQuerySchema = z.object({

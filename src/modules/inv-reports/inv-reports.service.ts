@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
-import type { MovementsQueryInput } from "./dto/inv-reports.schemas";
+import type { MovementsQueryInput, StockSummaryQueryInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
 import {
   invStockLevels,
   invStockTransactions,
@@ -87,32 +87,49 @@ export class InvReportsService {
     );
   }
 
-  getStockSummary(orgId: string) {
+  async getStockSummary(orgId: string, filters: StockSummaryQueryInput) {
+    const { page, limit } = filters;
+    const offset = (page - 1) * limit;
+    const cacheKey = CACHE_KEYS.invStockSummaryReport(orgId, `${page}:${limit}`);
+
     return this.cache.cached(
-      CACHE_KEYS.invStockSummary(orgId),
-      () =>
-        this.db.query.invStockLevels.findMany({
-          where: eq(invStockLevels.orgId, orgId),
-          with: {
-            productVariant: {
-              with: {
-                product: {
-                  columns: { id: true, name: true, sku: true, costPrice: true, reorderPoint: true },
+      cacheKey,
+      async () => {
+        const [items, countResult] = await Promise.all([
+          this.db.query.invStockLevels.findMany({
+            where: eq(invStockLevels.orgId, orgId),
+            with: {
+              productVariant: {
+                with: {
+                  product: {
+                    columns: { id: true, name: true, sku: true, costPrice: true, reorderPoint: true },
+                  },
                 },
               },
+              location: { with: { warehouse: { columns: { id: true, name: true } } } },
             },
-            location: { with: { warehouse: { columns: { id: true, name: true } } } },
-          },
-          orderBy: [desc(invStockLevels.updatedAt)],
-        }),
+            orderBy: [desc(invStockLevels.updatedAt)],
+            limit,
+            offset,
+          }),
+          this.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invStockLevels)
+            .where(eq(invStockLevels.orgId, orgId)),
+        ]);
+
+        const total = countResult[0]?.count ?? 0;
+        return { items, total, page, totalPages: Math.ceil(total / limit) };
+      },
       CACHE_TTL.MEDIUM,
     );
   }
 
-  getReorderReport(orgId: string) {
+  getReorderReport(orgId: string, filters: ReorderQueryInput) {
+    const cacheKey = CACHE_KEYS.invReorderReportPaged(orgId, `${filters.page}:${filters.limit}`);
     return this.cache.cached(
-      CACHE_KEYS.invReorderReport(orgId),
-      () => this.extended.getReorderReportUpgraded(orgId),
+      cacheKey,
+      () => this.extended.getReorderReportUpgraded(orgId, filters),
       CACHE_TTL.MEDIUM,
     );
   }

@@ -1,5 +1,5 @@
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invCustomerReturns, invCustomerReturnLines, invSerialNumbers,
   invLocations,
@@ -7,7 +7,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { StockEngineService } from "../inv-stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
 import type { ListReturnsInput, CreateCustomerReturnInput, PostCustomerReturnInput } from "./dto/inv-returns.schemas";
@@ -109,6 +109,7 @@ export class CustomerReturnsService {
       with: { lines: true },
     });
     if (!ret) throw new NotFoundException("Customer return not found");
+    if (ret.status === "POSTED") return this.get(orgId, returnId);
     if (ret.status !== "DRAFT") throw new BadRequestException("Only DRAFT customer returns can be posted");
 
     const engineMovements: Array<{
@@ -121,15 +122,9 @@ export class CustomerReturnsService {
       qualityBucket?: "ON_HAND" | "BLOCKED" | "QUALITY_HOLD";
     }> = [];
 
-    const auditOnlyLines: number[] = [];
-
     for (const line of ret.lines) {
       const disposition = line.disposition;
-
-      if (disposition === "SCRAP") {
-        auditOnlyLines.push(line.id);
-        continue;
-      }
+      if (disposition === "SCRAP") continue;
 
       const targetLocationId = await this.resolveTargetLocation(orgId, line);
 
@@ -157,29 +152,53 @@ export class CustomerReturnsService {
     }
 
     if (engineMovements.length > 0) {
-      await this.engine.execute(orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_customer_return",
-        sourceId: String(returnId),
-        reason: data.reason,
-        movements: engineMovements,
-      });
+      try {
+        await this.engine.execute(orgId, userId, {
+          idempotencyKey,
+          sourceType: "inv_customer_return",
+          sourceId: String(returnId),
+          reason: data.reason,
+          movements: engineMovements,
+        });
+      } catch (err) {
+        const isCompletedReplay =
+          err instanceof ConflictException &&
+          typeof (err as ConflictException & { idempotentResult?: unknown }).idempotentResult !== "undefined";
+        if (!isCompletedReplay) throw err;
+      }
     }
 
-    for (const line of ret.lines.filter((l): l is typeof l & { serialId: number } => l.serialId !== null)) {
-      const serialStatus =
+    const serialLines = ret.lines.filter(
+      (l): l is typeof l & { serialId: number } => l.serialId !== null
+    );
+
+    type SerialStatus = "IN_STOCK" | "SCRAPPED" | "QUARANTINE";
+    const byStatus = new Map<SerialStatus, number[]>();
+    for (const line of serialLines) {
+      const serialStatus: SerialStatus =
         line.disposition === "RESTOCK" ? "IN_STOCK" :
         line.disposition === "SCRAP" ? "SCRAPPED" : "QUARANTINE";
-      await this.db.update(invSerialNumbers)
-        .set({ status: serialStatus })
-        .where(eq(invSerialNumbers.id, line.serialId));
+      const ids = byStatus.get(serialStatus) ?? [];
+      ids.push(line.serialId);
+      byStatus.set(serialStatus, ids);
     }
 
-    await this.db.update(invCustomerReturns)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-      .where(eq(invCustomerReturns.id, returnId));
+    await this.db.transaction(async (tx) => {
+      for (const [serialStatus, ids] of byStatus) {
+        await tx.update(invSerialNumbers)
+          .set({ status: serialStatus })
+          .where(inArray(invSerialNumbers.id, ids));
+      }
 
-    await this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`);
+      await tx.update(invCustomerReturns)
+        .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
+        .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.status, "DRAFT")));
+    });
+
+    await Promise.all([
+      this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`),
+      this.cache.del(CACHE_KEYS.invCustomerReturnDetail(orgId, returnId)),
+    ]);
     return this.get(orgId, returnId);
   }
 

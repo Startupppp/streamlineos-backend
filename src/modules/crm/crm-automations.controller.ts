@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -25,6 +26,10 @@ import {
   type CreateAutomationRuleInput,
   type UpdateAutomationRuleInput,
 } from "./dto/automation-rules.schemas";
+import {
+  testAutomationRuleSchema,
+  type TestAutomationRuleInput,
+} from "../crm-automation-studio/dto/automation-studio.schemas";
 
 @RequireModule("crm")
 @Controller("crm")
@@ -67,5 +72,57 @@ export class CrmAutomationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.remove(u.orgId, ruleId);
+  }
+
+  @Get("automation/events")
+  @RequirePermission("crm:automations:manage")
+  listEvents(@CurrentUser() u: CurrentUserContext) {
+    return this.automations.listEvents(u.orgId);
+  }
+
+  @Get("automation/actions")
+  @RequirePermission("crm:automations:manage")
+  listActions(@CurrentUser() u: CurrentUserContext) {
+    return this.automations.listActions(u.orgId);
+  }
+
+  @Patch("automations/:ruleId/enable")
+  @RequirePermission("crm:automations:manage")
+  enable(
+    @Param("ruleId", ParseIntPipe) ruleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.enable(u.orgId, ruleId);
+  }
+
+  @Patch("automations/:ruleId/disable")
+  @RequirePermission("crm:automations:manage")
+  disable(
+    @Param("ruleId", ParseIntPipe) ruleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.disable(u.orgId, ruleId);
+  }
+
+  @Post("automations/:ruleId/test")
+  @RequirePermission("crm:automations:manage")
+  @HttpCode(200)
+  testRule(
+    @Param("ruleId", ParseIntPipe) ruleId: number,
+    @Body(new ZodValidationPipe(testAutomationRuleSchema)) body: TestAutomationRuleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.testRule(u.orgId, ruleId, body);
+  }
+
+  @Get("automations/:ruleId/runs")
+  @RequirePermission("crm:automations:manage")
+  getRuns(
+    @Param("ruleId", ParseIntPipe) ruleId: number,
+    @Query("page") page = "1",
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const pageNum = Math.max(1, Math.min(100, parseInt(page, 10) || 1));
+    return this.automations.getRuns(u.orgId, ruleId, pageNum);
   }
 }

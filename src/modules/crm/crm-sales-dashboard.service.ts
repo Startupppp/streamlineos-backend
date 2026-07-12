@@ -4,6 +4,7 @@ import {
   crmDeals,
   crmActivities,
   crmMonthlyMetrics,
+  crmOptions,
   leads,
   leadActivities,
 } from "../../db/schema";
@@ -12,6 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { subDays } from "./date.helpers";
+import { resolveLeadStatusSemantics } from "../leads/lead-status-semantics";
 
 function computeTrend(current: number, previous: number) {
   if (previous === 0) return { value: 0, isPositive: true };
@@ -40,7 +42,7 @@ export class CrmSalesDashboardService {
   }
 
   private async build(orgId: string) {
-    const [stageAggs, topDealsRaw, leaderboardRaw, metrics, recentActivities, leadMetrics] =
+    const [stageAggs, topDealsRaw, leaderboardRaw, metrics, recentActivities, leadMetrics, statusOptions] =
       await Promise.all([
         this.db
           .select({
@@ -88,6 +90,9 @@ export class CrmSalesDashboardService {
           .from(leads)
           .where(eq(leads.orgId, orgId))
           .groupBy(leads.status),
+
+        this.db.select().from(crmOptions)
+          .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
       ]);
 
     const stageMap = new Map(stageAggs.map((r) => [r.stage, r]));
@@ -172,10 +177,11 @@ export class CrmSalesDashboardService {
     const activityMap: Record<string, number> = Object.fromEntries(
       recentActivities.map((a) => [a.type, a.actCount]),
     );
+    const semantics = resolveLeadStatusSemantics(statusOptions);
 
     const enhancedMetrics = {
-      activeClients: statusMap.get("CONVERTED") ?? 0,
-      inactiveClients: statusMap.get("LOST") ?? 0,
+      activeClients: semantics.convertedKeys.reduce((s, k) => s + (statusMap.get(k) ?? 0), 0),
+      inactiveClients: semantics.lostKeys.reduce((s, k) => s + (statusMap.get(k) ?? 0), 0),
       totalCalls: activityMap["call"] ?? 0,
       totalMeetings: activityMap["meeting"] ?? 0,
       totalEmails: activityMap["email"] ?? 0,

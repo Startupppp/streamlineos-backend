@@ -38,16 +38,22 @@ export class InvoicesController {
   }
 
   @Get("stats")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:read")
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.invoices.getStats(u.orgId);
   }
 
   @Get("recurring")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:read")
   listRecurring(@CurrentUser() u: CurrentUserContext) {
     return this.invoices.listRecurring(u.orgId, todayIso());
   }
 
   @Get(":invoiceId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:read")
   async get(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +64,8 @@ export class InvoicesController {
   }
 
   @Get(":invoiceId/payments")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:read")
   listPayments(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -118,7 +118,7 @@ export class MatchingService {
       eq(finBankTransactions.bankAccountId, bankAccountId),
       eq(finBankTransactions.status, "UNMATCHED"),
       ...(transactionIds && transactionIds.length > 0
-        ? [sql`${finBankTransactions.id} = ANY(ARRAY[${sql.join(transactionIds.map((id) => sql`${id}`), sql`, `)}]::int[])`]
+        ? [inArray(finBankTransactions.id, transactionIds)]
         : []),
     );
 

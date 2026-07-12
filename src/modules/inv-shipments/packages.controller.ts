@@ -6,6 +6,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PackagesService } from "./packages.service";
 import {
   listPackagesQuerySchema,
@@ -18,7 +19,7 @@ import {
 
 @RequireModule("inventory")
 @Controller("inventory/packages")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class PackagesController {
   constructor(private readonly svc: PackagesService) {}
 

@@ -12,6 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { JournalPostingService, type DraftLine } from "../accounting/journal-posting.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import type { CreateCreditNoteInput, ListCreditNotesQuery, ApplyCreditNoteInput } from "./dto/finance-ar.schemas";
 
@@ -23,6 +24,7 @@ export class CreditNotesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
     private readonly audit: AuditService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async list(orgId: string, query: ListCreditNotesQuery) {
@@ -129,6 +131,18 @@ export class CreditNotesService {
         requestedBy: userId,
         note: `Credit note ${cn.creditNoteNumber} requires approval`,
       });
+      if (activePolicy.approverUserId) {
+        void this.dispatch.emit({
+          eventKey: "accounting.approval.requested",
+          orgId,
+          actorUserId: userId,
+          targetUserIds: [activePolicy.approverUserId],
+          entityType: "credit_note",
+          entityId: String(id),
+          title: "Credit note approval required",
+          message: `Credit note ${cn.creditNoteNumber} requires approval (total: ${total.toFixed(2)})`,
+        }).catch(() => undefined);
+      }
       return { needsApproval: true, creditNoteId: id };
     }
 

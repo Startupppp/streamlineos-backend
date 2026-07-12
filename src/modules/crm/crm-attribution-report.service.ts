@@ -109,6 +109,28 @@ export class CrmAttributionReportService {
     return wonStages.length ? wonStages.map((s) => s.key) : ["WON", "Closed Won"];
   }
 
+  async recordTouch(params: {
+    orgId: string;
+    leadId: number;
+    campaignId?: number | null;
+    sourceKey: string;
+    medium?: string | null;
+    utmData?: Record<string, string> | null;
+    touchType: 'first_touch' | 'interaction' | 'conversion';
+    occurredAt?: Date;
+  }): Promise<void> {
+    await this.db.insert(crmLeadTouchpoints).values({
+      orgId: params.orgId,
+      leadId: params.leadId,
+      campaignId: params.campaignId ?? null,
+      sourceKey: params.sourceKey,
+      medium: params.medium ?? null,
+      utmData: params.utmData ?? null,
+      touchType: params.touchType,
+      occurredAt: params.occurredAt ?? new Date(),
+    });
+  }
+
   private toAttribution(r: {
     campaignId: number | null;
     campaignName: string;

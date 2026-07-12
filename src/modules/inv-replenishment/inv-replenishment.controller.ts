@@ -13,12 +13,12 @@ import {
   createRuleSchema,
   updateRuleSchema,
   generatePoSchema,
-  forecastingSchema,
+  suggestionsQuerySchema,
   type ListRulesInput,
   type CreateRuleInput,
   type UpdateRuleInput,
   type GeneratePoInput,
-  type ForecastingInput,
+  type SuggestionsQueryInput,
 } from "./dto/replenishment.schemas";
 
 @RequireModule("inventory")
@@ -72,8 +72,11 @@ export class InvReplenishmentController {
   @Get("suggestions")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
-  getSuggestions(@CurrentUser() u: CurrentUserContext) {
-    return this.replenishment.getSuggestions(u.orgId);
+  getSuggestions(
+    @Query(new ZodValidationPipe(suggestionsQuerySchema)) filters: SuggestionsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.replenishment.getSuggestions(u.orgId, filters);
   }
 
   @Post("suggestions/generate-po")

@@ -77,10 +77,19 @@ export const CACHE_KEYS = {
   invVendorsList: (orgId: string, hash: string) => `inv:vendors:list:${orgId}:${hash}`,
   invPoList: (orgId: string, hash: string) => `inv:po:list:${orgId}:${hash}`,
   invPoDetail: (orgId: string, id: number) => `inv:po:detail:${orgId}:${id}`,
+  invVendorReturnDetail: (orgId: string, id: number) => `inv:vret:detail:${orgId}:${id}`,
+  invCustomerReturnDetail: (orgId: string, id: number) => `inv:cret:detail:${orgId}:${id}`,
   invSoList: (orgId: string, hash: string) => `inv:so:list:${orgId}:${hash}`,
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
   invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
+  invReorderReportPaged: (orgId: string, hash: string) => `inv:reorder:paged:${orgId}:${hash}`,
+  invStockSummaryReport: (orgId: string, hash: string) => `inv:stock:summary-report:${orgId}:${hash}`,
+  invLotsList: (orgId: string, hash: string) => `inv:lots:list:${orgId}:${hash}`,
+  invLotsListPattern: (orgId: string) => `inv:lots:list:${orgId}:*`,
+  invAdjustmentsList: (orgId: string, hash: string) => `inv:adjustments:list:${orgId}:${hash}`,
+  invAdjustmentsListPattern: (orgId: string) => `inv:adjustments:list:${orgId}:*`,
+  invReplenishmentSuggestions: (orgId: string, hash: string) => `inv:replenishment:suggestions:${orgId}:${hash}`,
 
   invReservationsList: (orgId: string, hash: string) => `inv:reservations:list:${orgId}:${hash}`,
   invLotDetail: (orgId: string, id: number) => `inv:lots:detail:${orgId}:${id}`,
@@ -92,6 +101,7 @@ export const CACHE_KEYS = {
   invCycleCountDetail: (orgId: string, id: number) => `inv:cycle-counts:detail:${orgId}:${id}`,
   invQualityInspectionsList: (orgId: string, hash: string) => `inv:quality:inspections:${orgId}:${hash}`,
   invQualityHoldsList: (orgId: string, hash: string) => `inv:quality:holds:${orgId}:${hash}`,
+  invQualityHoldDetail: (orgId: string, id: number) => `inv:quality:holds:detail:${orgId}:${id}`,
   invQualityRecallsList: (orgId: string, hash: string) => `inv:quality:recalls:${orgId}:${hash}`,
   invPackagesList: (orgId: string, hash: string) => `inv:packages:list:${orgId}:${hash}`,
   invPackageDetail: (orgId: string, id: number) => `inv:packages:detail:${orgId}:${id}`,
@@ -128,6 +138,27 @@ export const CACHE_KEYS = {
   payrollExportsList: (orgId: string, page: number | "*", pageSize: number | "*") =>
     `timesheets:payroll:exports:${orgId}:${page}:${pageSize}`,
   payrollSettings: (orgId: string) => `timesheets:payroll:settings:${orgId}`,
+
+  finOverview: (orgId: string) => `fin:overview:${orgId}`,
+  finOverviewWithDates: (orgId: string, from: string, to: string) => `fin:overview:${orgId}:${from}:${to}`,
+  finVendorStatement: (orgId: string, vendorId: number, from: string, to: string) =>
+    `fin:vendor-stmt:${orgId}:${vendorId}:${from}:${to}`,
+  finCustomerStatement: (orgId: string, clientId: number, from: string, to: string) =>
+    `fin:customer-stmt:${orgId}:${clientId}:${from}:${to}`,
+  finSalesByCustomer: (orgId: string, from: string, to: string) => `fin:sales-by-customer:${orgId}:${from}:${to}`,
+  finSalesByItem: (orgId: string, from: string, to: string) => `fin:sales-by-item:${orgId}:${from}:${to}`,
+  finExpenseByCategory: (orgId: string, from: string, to: string) => `fin:expense-by-cat:${orgId}:${from}:${to}`,
+  finTaxSummary: (orgId: string, from: string, to: string) => `fin:tax-summary:${orgId}:${from}:${to}`,
+  finProjectProfitability: (orgId: string, from: string, to: string) => `fin:proj-profit:${orgId}:${from}:${to}`,
+  finDeptProfitability: (orgId: string, from: string, to: string) => `fin:dept-profit:${orgId}:${from}:${to}`,
+  finBudgetVsActual: (orgId: string, budgetId: number, from: string, to: string) =>
+    `fin:bva:${orgId}:${budgetId}:${from}:${to}`,
+  finWorkingCapital: (orgId: string, asOf: string) => `fin:working-capital:${orgId}:${asOf}`,
+  finBurnRate: (orgId: string) => `fin:burn-rate:${orgId}`,
+  finCashRunway: (orgId: string, months: number) => `fin:cash-runway:${orgId}:${months}`,
+  finInsightsAnomalies: (orgId: string, from: string, to: string) => `fin:insights:anomalies:${orgId}:${from}:${to}`,
+  finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,
+  finCategorizeSuggest: (orgId: string, merchant: string) => `fin:cat-suggest:${orgId}:${merchant}`,
 } as const;
 
 export const CACHE_TTL = {

@@ -50,7 +50,6 @@ export class LeadsController {
     return this.leads.listLeads(u.orgId, {
       ...filters,
       scope,
-      role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
@@ -75,7 +74,6 @@ export class LeadsController {
     const scope = await resolveLeadsViewScope(this.access, u);
     return this.leads.getBoard(u.orgId, {
       scope,
-      role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });
@@ -93,7 +91,6 @@ export class LeadsController {
       dateFrom,
       dateTo,
       scope,
-      role: u.role || undefined,
       userId: u.userId,
       branch: { role: u.role, branchId: u.branchId, userId: u.userId },
     });

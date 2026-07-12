@@ -21,31 +21,46 @@ const ALL_FLAGS_ON: OrgFeatureFlags = {
 const AI_SCORING_OFF: OrgFeatureFlags = { ...ALL_FLAGS_ON, aiLeadScoring: false };
 const AI_EMAIL_OFF: OrgFeatureFlags = { ...ALL_FLAGS_ON, aiEmailDraft: false };
 
-function makeMockDb() {
-  const chainMock: Record<string, jest.Mock> & { then?: unknown } = {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue([]),
-    insert: jest.fn().mockReturnThis(),
-    values: jest.fn().mockResolvedValue(undefined),
-    then: jest.fn((resolve: (v: unknown[]) => void) => resolve([])),
+function buildThenableChain(resolved: unknown[]) {
+  const promise = Promise.resolve(resolved);
+  const chain: Record<string, unknown> = {
+    from: jest.fn().mockImplementation(() => chain),
+    where: jest.fn().mockImplementation(() => chain),
+    orderBy: jest.fn().mockImplementation(() => chain),
+    limit: jest.fn().mockImplementation(() => promise),
+    then: (resolve: (v: unknown[]) => void, reject: (e: unknown) => void) =>
+      promise.then(resolve, reject),
+    catch: (reject: (e: unknown) => void) => promise.catch(reject),
+    finally: (cb: () => void) => promise.finally(cb),
   };
-  return chainMock;
+  return chain;
+}
+
+function makeMockDb(queryResults: unknown[][] = []) {
+  let callIdx = 0;
+  return {
+    select: jest.fn().mockImplementation(() => {
+      const resolved = queryResults[callIdx] ?? [];
+      callIdx++;
+      return buildThenableChain(resolved);
+    }),
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockResolvedValue(undefined),
+    }),
+  };
 }
 
 describe("CrmCopilotService", () => {
   let service: CrmCopilotService;
-  let mockDb: ReturnType<typeof makeMockDb>;
   let mockOrgFeatures: jest.Mocked<Pick<OrgFeaturesService, "getFlags">>;
-  let mockLlm: jest.Mocked<Pick<LlmService, "isConfigured" | "invokeJson" | "invokeText" | "invokeStructured">>;
+  let mockLlm: jest.Mocked<
+    Pick<LlmService, "isConfigured" | "invokeJson" | "invokeText" | "invokeStructured">
+  >;
   let mockUsage: jest.Mocked<Pick<AiUsageService, "track">>;
   let mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction">>;
   let mockContent: jest.Mocked<Pick<CrmContentService, "generateEmail" | "handleObjection">>;
 
-  beforeEach(async () => {
-    mockDb = makeMockDb();
+  async function buildService(queryResults: unknown[][] = []) {
     mockOrgFeatures = { getFlags: jest.fn() };
     mockLlm = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -55,15 +70,12 @@ describe("CrmCopilotService", () => {
     };
     mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
     mockScoring = { nextBestAction: jest.fn() };
-    mockContent = {
-      generateEmail: jest.fn(),
-      handleObjection: jest.fn(),
-    };
+    mockContent = { generateEmail: jest.fn(), handleObjection: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CrmCopilotService,
-        { provide: DRIZZLE, useValue: mockDb },
+        { provide: DRIZZLE, useValue: makeMockDb(queryResults) },
         { provide: LlmService, useValue: mockLlm },
         { provide: AiUsageService, useValue: mockUsage },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
@@ -72,27 +84,36 @@ describe("CrmCopilotService", () => {
       ],
     }).compile();
 
-    service = module.get<CrmCopilotService>(CrmCopilotService);
-  });
+    return module.get<CrmCopilotService>(CrmCopilotService);
+  }
 
   describe("leadSummary", () => {
     it("throws ForbiddenException when aiLeadScoring is disabled", async () => {
+      service = await buildService();
       mockOrgFeatures.getFlags.mockResolvedValue(AI_SCORING_OFF);
       await expect(service.leadSummary("org1", 1, "user1")).rejects.toThrow(ForbiddenException);
     });
 
     it("throws NotFoundException when lead is not found in org", async () => {
+      service = await buildService([[], []]);
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
-      mockDb.limit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       await expect(service.leadSummary("org1", 999, "user1")).rejects.toThrow(NotFoundException);
     });
 
     it("returns summary and nextBestActions on success", async () => {
+      const fakeLead = {
+        id: 1,
+        name: "John Doe",
+        email: "j@a.com",
+        company: "ACME",
+        status: "NEW",
+        priority: "HOT",
+        score: 80,
+        potentialValue: "500000",
+        notes: null,
+      };
+      service = await buildService([[fakeLead], []]);
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
-      const fakeLead = { id: 1, name: "John Doe", email: "j@a.com", company: "ACME", status: "NEW", priority: "HOT", score: 80, potentialValue: "500000", notes: null };
-      mockDb.limit
-        .mockResolvedValueOnce([fakeLead])
-        .mockResolvedValueOnce([]);
       mockLlm.invokeJson.mockResolvedValue({ summary: "Strong lead", nextBestActions: ["Call John"] });
 
       const result = await service.leadSummary("org1", 1, "user1");
@@ -100,19 +121,24 @@ describe("CrmCopilotService", () => {
       expect(result.summary).toBe("Strong lead");
       expect(result.nextBestActions).toEqual(["Call John"]);
       expect(result.generatedAt).toBeDefined();
-      expect(mockUsage.track).toHaveBeenCalledWith(expect.objectContaining({ feature: "crm.lead-summary" }));
+      expect(mockUsage.track).toHaveBeenCalledWith(
+        expect.objectContaining({ feature: "crm.lead-summary" }),
+      );
     });
   });
 
   describe("nextBestActionsAcrossPipeline", () => {
     it("throws ForbiddenException when aiLeadScoring is disabled", async () => {
+      service = await buildService();
       mockOrgFeatures.getFlags.mockResolvedValue(AI_SCORING_OFF);
-      await expect(service.nextBestActionsAcrossPipeline("org1", "user1", 5)).rejects.toThrow(ForbiddenException);
+      await expect(service.nextBestActionsAcrossPipeline("org1", "user1", 5)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it("returns empty actions when no leads exist", async () => {
+      service = await buildService([[]]);
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
-      mockDb.limit.mockResolvedValue([]);
 
       const result = await service.nextBestActionsAcrossPipeline("org1", "user1", 5);
       expect(result.actions).toEqual([]);
@@ -121,9 +147,37 @@ describe("CrmCopilotService", () => {
 
   describe("emailDraftForEntity", () => {
     it("throws ForbiddenException when aiEmailDraft is disabled", async () => {
+      service = await buildService();
       mockOrgFeatures.getFlags.mockResolvedValue(AI_EMAIL_OFF);
       await expect(
-        service.emailDraftForEntity("org1", "user1", { entityType: "lead", entityId: 1, intent: "follow up", tone: "friendly" }),
+        service.emailDraftForEntity("org1", "user1", {
+          entityType: "lead",
+          entityId: 1,
+          intent: "follow up",
+          tone: "friendly",
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("summarizeNotes", () => {
+    it("throws ForbiddenException when aiChat is disabled", async () => {
+      service = await buildService();
+      const flagsOff = { ...ALL_FLAGS_ON, aiChat: false };
+      mockOrgFeatures.getFlags.mockResolvedValue(flagsOff);
+      await expect(
+        service.summarizeNotes("org1", "user1", "some meeting notes here"),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe("objectionHelp", () => {
+    it("throws ForbiddenException when aiChat is disabled", async () => {
+      service = await buildService();
+      const flagsOff = { ...ALL_FLAGS_ON, aiChat: false };
+      mockOrgFeatures.getFlags.mockResolvedValue(flagsOff);
+      await expect(
+        service.objectionHelp("org1", "user1", { objection: "price is too high" }),
       ).rejects.toThrow(ForbiddenException);
     });
   });

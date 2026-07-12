@@ -133,4 +133,13 @@ export type ListRecurringBillsQuery = z.infer<typeof listRecurringBillsQuerySche
 export type CreatePaymentRunInput = z.infer<typeof createPaymentRunSchema>;
 export type UpdatePaymentRunItemInput = z.infer<typeof updatePaymentRunItemSchema>;
 export type ListPaymentRunsQuery = z.infer<typeof listPaymentRunsQuerySchema>;
+export const listVendorPaymentsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  vendorId: z.coerce.number().int().positive().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 export type ManualAllocationInput = z.infer<typeof manualAllocationSchema>;
+export type ListVendorPaymentsQuery = z.infer<typeof listVendorPaymentsQuerySchema>;

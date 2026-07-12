@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNotNull, or } from "drizzle-orm";
+import { and, count, eq, isNotNull } from "drizzle-orm";
 import { expenses, expenseCategories } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
 import type { ReceiptListInput, PatchReceiptInput } from "./dto/finance-expenses.schemas";
 
 @Injectable()
@@ -16,40 +17,26 @@ export class ReceiptsService {
   ) {}
 
   async listReceiptInbox(orgId: string, filters: ReceiptListInput) {
-    const page = filters.page;
-    const pageSize = filters.pageSize;
-    const offset = (page - 1) * pageSize;
+    const { limit, offset } = paginateOffset(filters);
 
     const where = and(
       eq(expenses.orgId, orgId),
       eq(expenses.status, "SUBMITTED"),
-      or(
-        isNotNull(expenses.receiptUrl),
-        isNotNull(expenses.policyFlag),
-      ),
+      isNotNull(expenses.policyFlag),
     );
 
-    const [rows, countRows] = await Promise.all([
+    const [rows, [countResult]] = await Promise.all([
       this.db.query.expenses.findMany({
         where,
         with: { user: true, expenseCategory: true },
         orderBy: (exp, { desc }) => [desc(exp.createdAt)],
-        limit: pageSize,
+        limit,
         offset,
       }),
-      this.db
-        .select({ count: expenses.id })
-        .from(expenses)
-        .where(where),
+      this.db.select({ total: count() }).from(expenses).where(where),
     ]);
 
-    return {
-      data: rows,
-      page,
-      pageSize,
-      total: countRows.length,
-      totalPages: Math.ceil(countRows.length / pageSize),
-    };
+    return buildListResponse(rows, Number(countResult?.total ?? 0), filters);
   }
 
   async patchReceiptMetadata(

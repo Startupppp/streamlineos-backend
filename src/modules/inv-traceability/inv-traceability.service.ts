@@ -134,7 +134,10 @@ export class InvTraceabilityService {
       .where(and(eq(invLots.id, lotId), eq(invLots.orgId, orgId)))
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.invLotDetail(orgId, lotId));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.invLotDetail(orgId, lotId)),
+      this.cache.invalidatePattern(CACHE_KEYS.invLotsListPattern(orgId)),
+    ]);
     return updated;
   }
 

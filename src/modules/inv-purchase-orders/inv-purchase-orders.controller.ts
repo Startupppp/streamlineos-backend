@@ -9,6 +9,7 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { resolveInvPoScope } from "../inventory/inventory-scope";
 import { PoService } from "./po.service";
@@ -25,7 +26,7 @@ function requireIdempotencyKey(key: string | undefined): string {
 
 @RequireModule("inventory")
 @Controller("inventory/purchase-orders")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvPurchaseOrdersController {
   constructor(
     private readonly pos: PoService,

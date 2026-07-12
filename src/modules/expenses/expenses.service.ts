@@ -26,10 +26,12 @@ import type {
   ExportInput,
 } from "./dto/expense.schemas";
 
-const EXPENSE_STATUSES: readonly ExpenseStatus[] = ["PENDING", "APPROVED", "REJECTED", "PAID"];
+const ALL_EXPENSE_STATUSES_SET = new Set([
+  "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
+]);
 
-function isExpenseStatus(value: string): value is ExpenseStatus {
-  return (EXPENSE_STATUSES as readonly string[]).includes(value);
+function isExpenseStatus(value: string): boolean {
+  return ALL_EXPENSE_STATUSES_SET.has(value);
 }
 
 interface DeleteContext {

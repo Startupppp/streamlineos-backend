@@ -250,8 +250,10 @@ export class LeadsReportsService {
         const statusOptions = await this.db.select().from(crmOptions)
           .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
         const semantics = resolveLeadStatusSemantics(statusOptions);
-        const convertedList = semantics.convertedKeys.map((k) => sql.raw(`'${k}'`));
-        const convertedExpr = sql.join(convertedList, sql`, `);
+        const convertedExpr = sql.join(
+          semantics.convertedKeys.map((k) => sql`${k}`),
+          sql`, `,
+        );
 
         const rows = await this.db
           .select({
@@ -283,7 +285,7 @@ export class LeadsReportsService {
   }
 
   async getSalesLeaderboard(orgId: string) {
-    const [allLeads, allActivities] = await Promise.all([
+    const [allLeads, allActivities, statusOptions] = await Promise.all([
       this.db.query.leads.findMany({
         where: eq(leads.orgId, orgId),
         columns: {
@@ -297,7 +299,10 @@ export class LeadsReportsService {
         where: eq(leadActivities.orgId, orgId),
         columns: { id: true, type: true, userId: true },
       }),
+      this.db.select().from(crmOptions)
+        .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
     ]);
+    const semantics = resolveLeadStatusSemantics(statusOptions);
 
     type Stats = {
       totalCalls: number;
@@ -323,7 +328,7 @@ export class LeadsReportsService {
       if (!lead.assignedToId) continue;
       const entry = userMap.get(lead.assignedToId) || emptyStats();
       entry.leadsAssigned++;
-      if (lead.status === "CONVERTED") {
+      if (semantics.convertedKeys.includes(lead.status)) {
         entry.leadsConverted++;
         entry.totalRevenue += Number(lead.potentialValue ?? 0);
       }
@@ -415,9 +420,13 @@ export class LeadsReportsService {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+
     const slaFilters = [
       eq(leads.orgId, orgId),
-      sql`${leads.status} IN ('NEW', 'CONTACTED', 'INTERESTED', 'QUALIFIED')`,
+      inArray(leads.status, semantics.slaOpenKeys),
     ];
     if (opts.role === "SALES" && opts.userId) {
       slaFilters.push(eq(leads.assignedToId, opts.userId));

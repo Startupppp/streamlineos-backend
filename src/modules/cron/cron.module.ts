@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AiModule } from "../ai/ai.module";
+import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { AutomationModule } from "../automation/automation.module";
 import { ChatModule } from "../chat/chat.module";
 import { EmailModule } from "../email/email.module";
@@ -12,6 +13,12 @@ import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr-core/hr-core.module";
 import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
 import { HrGlobalModule } from "../hr-global/hr-global.module";
+import { AccountingGlModule } from "../accounting-gl/accounting-gl.module";
+import { InvoicesModule } from "../invoices/invoices.module";
+import { FinanceArModule } from "../finance-ar/finance-ar.module";
+import { FinanceApModule } from "../finance-ap/finance-ap.module";
+import { FinanceTaxModule } from "../finance-tax/finance-tax.module";
+import { FinanceAssetsModule } from "../finance-assets/finance-assets.module";
 import { CronController } from "./cron.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
@@ -27,9 +34,10 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
+import { CronFinanceService } from "./cron-finance.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule],
+  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,
@@ -46,6 +54,7 @@ import { CronSupportService } from "./cron-support.service";
     CronEmailOutboxService,
     CronSupportService,
     CronNotificationDeliveryService,
+    CronFinanceService,
   ],
 })
 export class CronModule {}

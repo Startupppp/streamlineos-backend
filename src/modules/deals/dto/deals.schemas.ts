@@ -119,8 +119,7 @@ export const createForecastSnapshotSchema = z.object({
 });
 
 export const compareForecastSnapshotsSchema = z.object({
-  snapshotAId: z.string().min(1),
-  snapshotBId: z.string().min(1),
+  period: z.string().min(1),
 });
 
 export const forecastSnapshotsQuerySchema = z.object({

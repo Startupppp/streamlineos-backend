@@ -17,7 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ValuationReportInput, SlowMovingQueryInput, ExpiryReportInput } from "./dto/inv-reports.schemas";
+import type { ValuationReportInput, SlowMovingQueryInput, ExpiryReportInput, ReorderQueryInput } from "./dto/inv-reports.schemas";
 
 @Injectable()
 export class InvReportsExtendedService {
@@ -206,51 +206,57 @@ export class InvReportsExtendedService {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - days);
 
-        const rows = await this.db
-          .select({
-            productVariantId: invStockLevels.productVariantId,
-            variantSku: invProductVariants.sku,
-            variantName: invProductVariants.name,
-            productName: invProducts.name,
-            onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
-            averageCost: sql<string>`COALESCE(AVG(NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text`,
-            lastMovement: sql<string | null>`(
-              SELECT MAX(t.created_at)::text
-              FROM inv_stock_transactions t
-              WHERE t.org_id = ${orgId}
-                AND t.product_variant_id = ${invStockLevels.productVariantId}
-                AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-            )`,
-            daysSinceLastMovement: sql<number | null>`
-              EXTRACT(DAY FROM (NOW() - (
-                SELECT MAX(t.created_at)
+        const slowMovingWhere = and(
+          eq(invStockLevels.orgId, orgId),
+          sql`${invStockLevels.onHand}::numeric > 0`,
+          sql`NOT EXISTS (
+            SELECT 1 FROM inv_stock_transactions t
+            WHERE t.org_id = ${orgId}
+              AND t.product_variant_id = ${invStockLevels.productVariantId}
+              AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
+              AND t.created_at >= ${cutoff.toISOString()}
+          )`,
+        );
+
+        const [rows, countRows] = await Promise.all([
+          this.db
+            .select({
+              productVariantId: invStockLevels.productVariantId,
+              variantSku: invProductVariants.sku,
+              variantName: invProductVariants.name,
+              productName: invProducts.name,
+              onHand: sql<string>`COALESCE(SUM(${invStockLevels.onHand}::numeric), 0)::text`,
+              averageCost: sql<string>`COALESCE(AVG(NULLIF(${invStockLevels.averageCost}::numeric, 0)), 0)::text`,
+              lastMovement: sql<string | null>`(
+                SELECT MAX(t.created_at)::text
                 FROM inv_stock_transactions t
                 WHERE t.org_id = ${orgId}
                   AND t.product_variant_id = ${invStockLevels.productVariantId}
                   AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-              )))::int
-            `,
-          })
-          .from(invStockLevels)
-          .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-          .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-          .where(
-            and(
-              eq(invStockLevels.orgId, orgId),
-              sql`${invStockLevels.onHand}::numeric > 0`,
-              sql`NOT EXISTS (
-                SELECT 1 FROM inv_stock_transactions t
-                WHERE t.org_id = ${orgId}
-                  AND t.product_variant_id = ${invStockLevels.productVariantId}
-                  AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
-                  AND t.created_at >= ${cutoff.toISOString()}
               )`,
-            ),
-          )
-          .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
-          .orderBy(sql`days_since_last_movement DESC NULLS FIRST`)
-          .limit(limit)
-          .offset(offset);
+              daysSinceLastMovement: sql<number | null>`
+                EXTRACT(DAY FROM (NOW() - (
+                  SELECT MAX(t.created_at)
+                  FROM inv_stock_transactions t
+                  WHERE t.org_id = ${orgId}
+                    AND t.product_variant_id = ${invStockLevels.productVariantId}
+                    AND t.transaction_type IN ('SALE', 'TRANSFER_OUT')
+                )))::int
+              `,
+            })
+            .from(invStockLevels)
+            .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
+            .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+            .where(slowMovingWhere)
+            .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
+            .orderBy(sql`days_since_last_movement DESC NULLS FIRST`)
+            .limit(limit)
+            .offset(offset),
+          this.db
+            .select({ total: sql<number>`count(distinct ${invStockLevels.productVariantId})::int` })
+            .from(invStockLevels)
+            .where(slowMovingWhere),
+        ]);
 
         const items = rows.map((r) => ({
           ...r,
@@ -259,7 +265,8 @@ export class InvReportsExtendedService {
           averageCost: parseFloat(r.averageCost),
         }));
 
-        return { items, page };
+        const total = countRows[0]?.total ?? 0;
+        return { items, total, page, totalPages: Math.ceil(total / limit) };
       },
       CACHE_TTL.MEDIUM,
     );
@@ -314,45 +321,57 @@ export class InvReportsExtendedService {
     );
   }
 
-  async getReorderReportUpgraded(orgId: string) {
-    const stockRows = await this.db
-      .select({
-        productVariantId: invStockLevels.productVariantId,
-        locationId: invStockLevels.locationId,
-        onHand: invStockLevels.onHand,
-        onOrder: invStockLevels.onOrder,
-        committed: invStockLevels.committed,
-        averageCost: invStockLevels.averageCost,
-        variantSku: invProductVariants.sku,
-        variantName: invProductVariants.name,
-        productId: invProducts.id,
-        productName: invProducts.name,
-        productSku: invProducts.sku,
-        reorderPoint: invProducts.reorderPoint,
-        minStockLevel: invProducts.minStockLevel,
-        defaultVendorId: invProducts.defaultVendorId,
-      })
-      .from(invStockLevels)
-      .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-      .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-      .where(
-        and(
-          eq(invStockLevels.orgId, orgId),
-          sql`${invStockLevels.onHand}::numeric <= ${invProducts.reorderPoint}::numeric`,
-        ),
-      );
+  async getReorderReportUpgraded(orgId: string, filters: ReorderQueryInput) {
+    const { page, limit } = filters;
+    const offset = (page - 1) * limit;
 
-    const rules = await this.db
-      .select()
-      .from(invReorderRules)
-      .where(and(eq(invReorderRules.orgId, orgId), eq(invReorderRules.isActive, true)));
+    const reorderWhere = and(
+      eq(invStockLevels.orgId, orgId),
+      sql`${invStockLevels.onHand}::numeric <= ${invProducts.reorderPoint}::numeric`,
+    );
+
+    const [stockRows, rules, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          productVariantId: invStockLevels.productVariantId,
+          locationId: invStockLevels.locationId,
+          onHand: invStockLevels.onHand,
+          onOrder: invStockLevels.onOrder,
+          committed: invStockLevels.committed,
+          averageCost: invStockLevels.averageCost,
+          variantSku: invProductVariants.sku,
+          variantName: invProductVariants.name,
+          productId: invProducts.id,
+          productName: invProducts.name,
+          productSku: invProducts.sku,
+          reorderPoint: invProducts.reorderPoint,
+          minStockLevel: invProducts.minStockLevel,
+          defaultVendorId: invProducts.defaultVendorId,
+        })
+        .from(invStockLevels)
+        .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
+        .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+        .where(reorderWhere)
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select()
+        .from(invReorderRules)
+        .where(and(eq(invReorderRules.orgId, orgId), eq(invReorderRules.isActive, true))),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(invStockLevels)
+        .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
+        .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+        .where(reorderWhere),
+    ]);
 
     const ruleMap = new Map<string, typeof rules[number]>();
     for (const r of rules) {
       ruleMap.set(`${r.productVariantId}:${r.warehouseId ?? "null"}`, r);
     }
 
-    return stockRows.map((row) => {
+    const items = stockRows.map((row) => {
       const rule = ruleMap.get(`${row.productVariantId}:null`) ?? ruleMap.get(`${row.productVariantId}:${row.locationId}`);
       const onHand = parseFloat(row.onHand);
       const suggestedQty = rule
@@ -382,5 +401,8 @@ export class InvReportsExtendedService {
         leadTimeDays: rule?.leadTimeDays ?? null,
       };
     });
+
+    const total = countRow?.total ?? 0;
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 }

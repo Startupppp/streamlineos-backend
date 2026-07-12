@@ -1,0 +1,152 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, eq, isNull, lte } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { crmSequenceEnrollments, crmSequenceSteps, tasks } from "../../db/schema";
+import { logger } from "../../common/logger/logger.service";
+import { AutomationEmailService } from "../automation/automation-email.service";
+
+interface FlushResult {
+  processed: number;
+  advanced: number;
+  stopped: number;
+}
+
+@Injectable()
+export class CrmSequencesRunnerService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly email: AutomationEmailService,
+  ) {}
+
+  async flushDueEnrollments(now = new Date()): Promise<FlushResult> {
+    const enrollments = await this.db
+      .select({
+        id: crmSequenceEnrollments.id,
+        orgId: crmSequenceEnrollments.orgId,
+        sequenceId: crmSequenceEnrollments.sequenceId,
+        entityType: crmSequenceEnrollments.entityType,
+        entityId: crmSequenceEnrollments.entityId,
+        currentStep: crmSequenceEnrollments.currentStep,
+        status: crmSequenceEnrollments.status,
+        stopReason: crmSequenceEnrollments.stopReason,
+      })
+      .from(crmSequenceEnrollments)
+      .where(
+        and(
+          eq(crmSequenceEnrollments.status, "active"),
+          lte(crmSequenceEnrollments.nextRunAt, now),
+          isNull(crmSequenceEnrollments.stopReason),
+        ),
+      )
+      .limit(200);
+
+    if (enrollments.length === 0) return { processed: 0, advanced: 0, stopped: 0 };
+
+    let advanced = 0;
+    let stopped = 0;
+
+    for (const enrollment of enrollments) {
+      try {
+        const steps = await this.db
+          .select()
+          .from(crmSequenceSteps)
+          .where(eq(crmSequenceSteps.sequenceId, enrollment.sequenceId))
+          .orderBy(crmSequenceSteps.sortOrder);
+
+        const step = steps[enrollment.currentStep];
+
+        if (!step) {
+          await this.db
+            .update(crmSequenceEnrollments)
+            .set({ status: "completed", updatedAt: new Date() })
+            .where(eq(crmSequenceEnrollments.id, enrollment.id));
+          stopped++;
+          continue;
+        }
+
+        await this.executeStep(enrollment.orgId, step, enrollment.entityType, enrollment.entityId);
+
+        const isLastStep = enrollment.currentStep >= steps.length - 1;
+
+        if (isLastStep) {
+          await this.db
+            .update(crmSequenceEnrollments)
+            .set({ status: "completed", updatedAt: new Date() })
+            .where(eq(crmSequenceEnrollments.id, enrollment.id));
+          stopped++;
+        } else {
+          const nextStep = steps[enrollment.currentStep + 1];
+          const waitMs = (nextStep?.waitHours ?? 0) * 60 * 60 * 1000;
+          const nextRunAt = new Date(now.getTime() + waitMs);
+          await this.db
+            .update(crmSequenceEnrollments)
+            .set({ currentStep: enrollment.currentStep + 1, nextRunAt, updatedAt: new Date() })
+            .where(eq(crmSequenceEnrollments.id, enrollment.id));
+          advanced++;
+        }
+      } catch (err) {
+        logger.error("crm-sequences-runner: enrollment step failed", {
+          enrollmentId: enrollment.id,
+          error: err,
+        });
+        await this.db
+          .update(crmSequenceEnrollments)
+          .set({ status: "failed", stopReason: err instanceof Error ? err.message : "step_error", updatedAt: new Date() })
+          .where(eq(crmSequenceEnrollments.id, enrollment.id))
+          .catch(() => {});
+        stopped++;
+      }
+    }
+
+    return { processed: enrollments.length, advanced, stopped };
+  }
+
+  private async executeStep(
+    orgId: string,
+    step: typeof crmSequenceSteps.$inferSelect,
+    entityType: string,
+    entityId: string,
+  ): Promise<void> {
+    const cfg = step.config ?? {};
+    switch (step.stepType) {
+      case "email": {
+        await this.email.send({
+          to: String(cfg["to"] ?? ""),
+          subject: String(cfg["subject"] ?? ""),
+          html: String(cfg["body"] ?? ""),
+        });
+        return;
+      }
+      case "call_task": {
+        const dueInDays = typeof cfg["dueInDays"] === "number" ? cfg["dueInDays"] : 1;
+        await this.db.insert(tasks).values({
+          orgId,
+          title: String(cfg["taskTitle"] ?? "Follow-up call"),
+          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityId: parseInt(entityId, 10),
+          type: "CALL",
+          assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,
+          dueDate: new Date(Date.now() + dueInDays * 86400000),
+        });
+        return;
+      }
+      case "whatsapp_task": {
+        await this.db.insert(tasks).values({
+          orgId,
+          title: String(cfg["taskTitle"] ?? "WhatsApp follow-up"),
+          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityId: parseInt(entityId, 10),
+          type: "WHATSAPP",
+          assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,
+          dueDate: new Date(Date.now() + 86400000),
+        });
+        return;
+      }
+      case "wait":
+        return;
+      default:
+        return;
+    }
+  }
+}

@@ -12,9 +12,10 @@ import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { OnboardingFlowModule } from "../onboarding-flow/onboarding-flow.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { FinanceControlsModule } from "../finance-controls/finance-controls.module";
 
 @Module({
-  imports: [OnboardingFlowModule, NotificationsModule],
+  imports: [OnboardingFlowModule, NotificationsModule, FinanceControlsModule],
   controllers: [PaymentsController, PaymentWebhooksPublicController],
   providers: [
     PaymentProviderSetupService,

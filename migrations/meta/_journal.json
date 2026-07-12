@@ -201,8 +201,22 @@
     {
       "idx": 28,
       "version": "7",
-      "when": 1752451200000,
+      "when": 1783800000008,
       "tag": "0250_crm_deals_process",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1752278400000,
+      "tag": "0251_crm_campaigns_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1752364800000,
+      "tag": "0252_crm_automation_studio",
       "breakpoints": true
     }
   ]

@@ -108,16 +108,22 @@ export const updateInvoiceCollectionSchema = z
   });
 
 export type ListCreditNotesInput = z.infer<typeof listCreditNotesSchema>;
+export type ListCreditNotesQuery = ListCreditNotesInput;
 export type CreateCreditNoteInput = z.infer<typeof createCreditNoteSchema>;
 export type ApplyCreditNoteInput = z.infer<typeof applyCreditNoteSchema>;
 export type ListRecurringTemplatesInput = z.infer<typeof listRecurringTemplatesSchema>;
+export type ListRecurringTemplatesQuery = ListRecurringTemplatesInput;
 export type CreateRecurringTemplateInput = z.infer<typeof createRecurringTemplateSchema>;
 export type UpdateRecurringTemplateInput = z.infer<typeof updateRecurringTemplateSchema>;
 export type ListReminderPoliciesInput = z.infer<typeof listReminderPoliciesSchema>;
+export type ListReminderPoliciesQuery = ListReminderPoliciesInput;
 export type CreateReminderPolicyInput = z.infer<typeof createReminderPolicySchema>;
 export type UpdateReminderPolicyInput = z.infer<typeof updateReminderPolicySchema>;
 export type ListReminderLogInput = z.infer<typeof listReminderLogSchema>;
+export type ListReminderLogQuery = ListReminderLogInput;
 export type CustomerStatementInput = z.infer<typeof customerStatementSchema>;
+export type CustomerStatementQuery = CustomerStatementInput;
 export type ListCollectionActivitiesInput = z.infer<typeof listCollectionActivitiesSchema>;
+export type ListCollectionActivitiesQuery = ListCollectionActivitiesInput;
 export type CreateCollectionActivityInput = z.infer<typeof createCollectionActivitySchema>;
 export type UpdateInvoiceCollectionInput = z.infer<typeof updateInvoiceCollectionSchema>;

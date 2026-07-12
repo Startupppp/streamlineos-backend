@@ -1,12 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { dealApprovalRules, dealApprovals, deals, users } from "../../db/schema";
+import { dealActivities, dealApprovalRules, dealApprovals, deals, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { NotificationsService } from "../notifications/notifications.service";
-import { dealStageSchema } from "./dto/deals.schemas";
 import type {
   ApprovalsListInput,
   CreateApprovalRuleInput,
@@ -43,25 +42,39 @@ export class DealsApprovalsService {
   }
 
   async resolveApproval(orgId: string, actorUserId: string, input: ResolveApprovalInput) {
-    const [updated] = await this.db
-      .update(dealApprovals)
-      .set({
-        status: input.action === "approve" ? "approved" : "rejected",
-        approvedBy: actorUserId,
-        rejectionReason: input.action === "reject" ? input.rejectionReason ?? null : null,
-        resolvedAt: new Date(),
-      })
-      .where(and(eq(dealApprovals.id, input.approvalId), eq(dealApprovals.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(dealApprovals)
+        .set({
+          status: input.action === "approve" ? "approved" : "rejected",
+          approvedBy: actorUserId,
+          rejectionReason: input.action === "reject" ? input.rejectionReason ?? null : null,
+          resolvedAt: new Date(),
+        })
+        .where(and(eq(dealApprovals.id, input.approvalId), eq(dealApprovals.orgId, orgId)))
+        .returning();
 
-    if (!updated) throw new NotFoundException("Approval not found");
+      const row = rows[0];
+      if (!row) throw new NotFoundException("Approval not found");
 
-    if (input.action === "approve") {
-      await this.db
-        .update(deals)
-        .set({ stage: dealStageSchema.parse(updated.requestedStage), updatedAt: new Date() })
-        .where(eq(deals.id, updated.dealId));
-    }
+      if (input.action === "approve") {
+        await tx
+          .update(deals)
+          .set({ stage: row.requestedStage, updatedAt: new Date() })
+          .where(and(eq(deals.id, row.dealId), eq(deals.orgId, orgId)));
+
+        await tx.insert(dealActivities).values({
+          orgId,
+          dealId: row.dealId,
+          type: "stage_change",
+          previousValue: null,
+          newValue: row.requestedStage,
+          subject: `Stage approved to ${row.requestedStage}`,
+          userId: actorUserId,
+        });
+      }
+      return row;
+    });
 
     await this.notifications.create({
       orgId,

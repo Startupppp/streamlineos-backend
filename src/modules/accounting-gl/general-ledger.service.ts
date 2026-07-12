@@ -65,7 +65,7 @@ export class GeneralLedgerService {
 
     let priorPageBalance = openingBalance;
     if (offset > 0) {
-      const priorPageRows = await this.db.execute<{ total_debit: string; total_credit: string }>(
+      const priorPageRows = await this.db.execute(
         sql`
           SELECT
             coalesce(sum(d), 0) AS total_debit,
@@ -89,7 +89,7 @@ export class GeneralLedgerService {
           ) sub
         `,
       );
-      const prRow = priorPageRows.rows[0];
+      const prRow = priorPageRows[0] as Record<string, unknown> | undefined;
       priorPageBalance =
         openingBalance +
         Number(prRow?.total_debit ?? 0) -

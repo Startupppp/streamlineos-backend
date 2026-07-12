@@ -9,14 +9,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   finApprovalRequests,
-  finApprovalPolicies,
   users,
-  invoices,
   purchaseBills,
   expenses,
   creditNotes,
   journalEntries,
   journalLines,
+  vendorPayments,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -51,7 +50,7 @@ export class ApprovalsService {
     if (query.status) conditions.push(eq(finApprovalRequests.status, query.status));
     if (query.recordType) conditions.push(eq(finApprovalRequests.recordType, query.recordType));
 
-    const [rows, [{ count }], requesterRows] = await Promise.all([
+    const [rows, [{ count }]] = await Promise.all([
       this.db
         .select()
         .from(finApprovalRequests)
@@ -62,16 +61,22 @@ export class ApprovalsService {
         .select({ count: sql<number>`count(*)::int` })
         .from(finApprovalRequests)
         .where(and(...conditions)),
-      this.db
-        .select({
-          id: users.id,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-        })
-        .from(users),
     ]);
+
+    const requesterIds = [...new Set(rows.map((r) => r.requestedBy))];
+    const requesterRows =
+      requesterIds.length > 0
+        ? await this.db
+            .select({
+              id: users.id,
+              name: users.name,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              email: users.email,
+            })
+            .from(users)
+            .where(inArray(users.id, requesterIds))
+        : [];
 
     const userMap = new Map(
       requesterRows.map((u) => [u.id, { name: u.name, firstName: u.firstName, lastName: u.lastName, email: u.email }]),
@@ -281,6 +286,19 @@ export class ApprovalsService {
             .from(creditNotes)
             .where(and(eq(creditNotes.orgId, orgId), inArray(creditNotes.id, ids))),
         (r) => ({ label: r.creditNoteNumber, amount: r.total }),
+      ),
+
+      enrichBatch(
+        "VENDOR_PAYMENT",
+        (ids) =>
+          this.db
+            .select({
+              id: vendorPayments.id,
+              amount: vendorPayments.amount,
+            })
+            .from(vendorPayments)
+            .where(and(eq(vendorPayments.orgId, orgId), inArray(vendorPayments.id, ids))),
+        (r) => ({ label: `Vendor Payment #${r.id}`, amount: r.amount }),
       ),
     ]);
 

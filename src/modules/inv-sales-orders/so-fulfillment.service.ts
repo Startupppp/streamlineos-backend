@@ -3,7 +3,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invSalesOrders, invSoLines, invStockReservations, invPickLists, invPickListLines,
   invPackages, invPackageLines, invShipments, invShipmentLines, invSerialNumbers,
-  invProductVariants, invProducts,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -17,6 +16,8 @@ import { INV_ERRORS } from "../inv-stock-engine/stock-engine.types";
 import { JournalPostingService } from "../accounting/journal-posting.service";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 @Injectable()
 export class SoFulfillmentService {
@@ -44,65 +45,69 @@ export class SoFulfillmentService {
     const settings = await this.settingsService.get(orgId);
     let allReserved = true;
 
-    for (const line of so.lines) {
-      const existingReservation = await this.db.query.invStockReservations.findFirst({
-        where: and(
-          eq(invStockReservations.orgId, orgId),
-          eq(invStockReservations.sourceType, "inv_sales_order"),
-          eq(invStockReservations.sourceId, String(soId)),
-          eq(invStockReservations.sourceLineId, String(line.id)),
-          eq(invStockReservations.status, "ACTIVE"),
-        ),
-      });
-      if (existingReservation) continue;
+    await this.db.transaction(async (tx) => {
+      for (const line of so.lines) {
+        const existingReservation = await (tx as Db).query.invStockReservations.findFirst({
+          where: and(
+            eq(invStockReservations.orgId, orgId),
+            eq(invStockReservations.sourceType, "inv_sales_order"),
+            eq(invStockReservations.sourceId, String(soId)),
+            eq(invStockReservations.sourceLineId, String(line.id)),
+            eq(invStockReservations.status, "ACTIVE"),
+          ),
+        });
+        if (existingReservation) continue;
 
-      if (settings.reservationStrategy === "MANUAL") {
-        const allocation = data.allocations?.find((a) => a.soLineId === line.id);
-        if (!allocation) { allReserved = false; continue; }
+        if (settings.reservationStrategy === "MANUAL") {
+          const allocation = data.allocations?.find((a) => a.soLineId === line.id);
+          if (!allocation) { allReserved = false; continue; }
 
-        try {
-          await this.reservationService.createReservation(orgId, userId, {
-            sourceType: "inv_sales_order",
-            sourceId: String(soId),
-            sourceLineId: String(line.id),
-            productVariantId: line.productVariantId,
-            locationId: allocation.locationId,
-            lotId: allocation.lotId,
-            serialId: allocation.serialId,
-            qty: allocation.qty.toFixed(4),
-          });
-        } catch {
-          allReserved = false;
-        }
-      } else {
-        const available = await this.soCore.findAvailableLotForLine(
-          orgId, line.productVariantId, data.warehouseId ?? so.warehouseId ?? undefined,
-          parseFloat(line.quantity), settings.reservationStrategy, settings.expiryReservationPolicy,
-        );
+          try {
+            await this.reservationService.createReservationInTx(tx, orgId, userId, {
+              sourceType: "inv_sales_order",
+              sourceId: String(soId),
+              sourceLineId: String(line.id),
+              productVariantId: line.productVariantId,
+              locationId: allocation.locationId,
+              lotId: allocation.lotId,
+              serialId: allocation.serialId,
+              qty: allocation.qty.toFixed(4),
+            });
+          } catch {
+            allReserved = false;
+          }
+        } else {
+          const available = await this.soCore.findAvailableLotForLine(
+            orgId, line.productVariantId, data.warehouseId ?? so.warehouseId ?? undefined,
+            parseFloat(line.quantity), settings.reservationStrategy, settings.expiryReservationPolicy,
+          );
 
-        if (!available) { allReserved = false; continue; }
+          if (!available) { allReserved = false; continue; }
 
-        try {
-          await this.reservationService.createReservation(orgId, userId, {
-            sourceType: "inv_sales_order",
-            sourceId: String(soId),
-            sourceLineId: String(line.id),
-            productVariantId: line.productVariantId,
-            warehouseId: data.warehouseId ?? so.warehouseId ?? undefined,
-            locationId: available.locationId,
-            lotId: available.lotId,
-            qty: line.quantity,
-          });
-        } catch {
-          allReserved = false;
+          try {
+            await this.reservationService.createReservationInTx(tx, orgId, userId, {
+              sourceType: "inv_sales_order",
+              sourceId: String(soId),
+              sourceLineId: String(line.id),
+              productVariantId: line.productVariantId,
+              warehouseId: data.warehouseId ?? so.warehouseId ?? undefined,
+              locationId: available.locationId,
+              lotId: available.lotId,
+              qty: line.quantity,
+            });
+          } catch {
+            allReserved = false;
+          }
         }
       }
-    }
+
+      const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
+      await (tx as Db).update(invSalesOrders)
+        .set({ status: newStatus, updatedAt: new Date() })
+        .where(eq(invSalesOrders.id, soId));
+    });
 
     const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
-    await this.db.update(invSalesOrders)
-      .set({ status: newStatus, updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -335,61 +340,79 @@ export class SoFulfillmentService {
       movements,
     });
 
-    for (const reservation of reservations) {
-      await this.reservationService.consumeReservation(orgId, userId, reservation.id);
-    }
+    const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT");
 
-    for (const movement of movements) {
-      if (movement.serialId) {
-        await this.db.update(invSerialNumbers)
-          .set({ status: "SHIPPED" })
-          .where(eq(invSerialNumbers.id, movement.serialId));
-      }
-    }
+    const newStatus = isPartial ? "PARTIALLY_SHIPPED" : "SHIPPED";
 
+    const serialIds = movements.flatMap((m) => m.serialId !== undefined ? [m.serialId] : []);
+
+    const lineShippedQtyMap = new Map<number, number>();
     for (const line of so.lines) {
-      const shippedQty = movements
+      const shipped = movements
         .filter((m) => {
           const soLine = so.lines.find((sl) => sl.productVariantId === m.productVariantId);
           return soLine?.id === line.id;
         })
         .reduce((sum, m) => sum + Math.abs(parseFloat(m.quantityDelta)), 0);
-
-      if (shippedQty > 0) {
-        await this.db.update(invSoLines)
-          .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}` })
-          .where(eq(invSoLines.id, line.id));
-      }
+      if (shipped > 0) lineShippedQtyMap.set(line.id, shipped);
     }
 
-    const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT");
-    const [shipment] = await this.db.insert(invShipments).values({
-      orgId,
-      shipmentNumber,
-      soId,
-      warehouseId: so.warehouseId,
-      carrierId: data.carrierId,
-      trackingNumber: data.trackingNumber,
-      status: "SHIPPED",
-      shippedAt: new Date(),
-      createdBy: userId,
-    }).returning();
+    const shipment = await this.db.transaction(async (tx) => {
+      await this.reservationService.consumeReservationsBatch(
+        tx,
+        orgId,
+        userId,
+        reservations.map((r) => ({
+          id: r.id,
+          locationId: r.locationId,
+          productVariantId: r.productVariantId,
+          reservedQty: r.reservedQty,
+        })),
+      );
 
-    await this.db.insert(invShipmentLines).values(
-      movements.map((m) => ({
-        shipmentId: shipment.id,
-        soLineId: so.lines.find((l) => l.productVariantId === m.productVariantId)?.id,
-        productVariantId: m.productVariantId,
-        quantity: Math.abs(parseFloat(m.quantityDelta)).toFixed(4),
-        lotId: m.lotId,
-        serialId: m.serialId,
-      }))
-    );
+      if (serialIds.length > 0) {
+        await (tx as Db).update(invSerialNumbers)
+          .set({ status: "SHIPPED" })
+          .where(inArray(invSerialNumbers.id, serialIds));
+      }
 
-    const newStatus = isPartial ? "PARTIALLY_SHIPPED" : "SHIPPED";
-    await this.db.update(invSalesOrders)
-      .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      if (lineShippedQtyMap.size > 0) {
+        for (const [lineId, shippedQty] of lineShippedQtyMap) {
+          await (tx as Db).update(invSoLines)
+            .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}` })
+            .where(eq(invSoLines.id, lineId));
+        }
+      }
+
+      const [ship] = await (tx as Db).insert(invShipments).values({
+        orgId,
+        shipmentNumber,
+        soId,
+        warehouseId: so.warehouseId,
+        carrierId: data.carrierId,
+        trackingNumber: data.trackingNumber,
+        status: "SHIPPED",
+        shippedAt: new Date(),
+        createdBy: userId,
+      }).returning();
+
+      await (tx as Db).insert(invShipmentLines).values(
+        movements.map((m) => ({
+          shipmentId: ship.id,
+          soLineId: so.lines.find((l) => l.productVariantId === m.productVariantId)?.id,
+          productVariantId: m.productVariantId,
+          quantity: Math.abs(parseFloat(m.quantityDelta)).toFixed(4),
+          lotId: m.lotId,
+          serialId: m.serialId,
+        }))
+      );
+
+      await (tx as Db).update(invSalesOrders)
+        .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
+        .where(eq(invSalesOrders.id, soId));
+
+      return ship;
+    });
 
     const cogsTotal = so.lines.reduce((sum, l) => {
       const shipped = movements

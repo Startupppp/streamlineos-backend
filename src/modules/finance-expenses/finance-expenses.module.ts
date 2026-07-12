@@ -5,13 +5,15 @@ import { ExpensesModule } from "../expenses/expenses.module";
 import { ReceiptsController } from "./receipts.controller";
 import { ReimbursementsController } from "./reimbursements.controller";
 import { ExpensePoliciesController } from "./expense-policies.controller";
+import { CategorizeSuggestController } from "./categorize-suggest.controller";
 import { ReceiptsService } from "./receipts.service";
 import { ReimbursementsService } from "./reimbursements.service";
 import { ExpensePoliciesService } from "./expense-policies.service";
+import { CategorizeSuggestService } from "./categorize-suggest.service";
 
 @Module({
   imports: [AccountingModule, NotificationsModule, ExpensesModule],
-  controllers: [ReceiptsController, ReimbursementsController, ExpensePoliciesController],
-  providers: [ReceiptsService, ReimbursementsService, ExpensePoliciesService],
+  controllers: [ReceiptsController, ReimbursementsController, ExpensePoliciesController, CategorizeSuggestController],
+  providers: [ReceiptsService, ReimbursementsService, ExpensePoliciesService, CategorizeSuggestService],
 })
 export class FinanceExpensesModule {}

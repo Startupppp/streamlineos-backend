@@ -5,6 +5,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 
 const ORG_ID = "org-1";
 const PROJECT_ID = 42;
+const TEST_CONTEXT = {
+  userId: "user-1",
+  userProjectRole: null,
+  isOrgOwner: false,
+  isPlatformAdmin: false,
+  ticketId: 1,
+};
 
 describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enforcement", () => {
   let svc: ProjectsTicketsQueryService;
@@ -58,7 +65,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -83,7 +90,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "UNKNOWN_STATUS", "IN_PROGRESS"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "UNKNOWN_STATUS", "IN_PROGRESS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -108,7 +115,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "NONEXISTENT_STATUS"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "NONEXISTENT_STATUS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -136,7 +143,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -164,7 +171,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -193,7 +200,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -222,7 +229,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Backlog", "Review"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Backlog", "Review", TEST_CONTEXT),
     ).rejects.toThrow(/Backlog.*Review|Review.*Backlog/i);
   });
 
@@ -236,7 +243,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 
@@ -265,7 +272,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     const err = await svc
-      .assertTransitionAllowed(ORG_ID, PROJECT_ID, "Open", "Blocked")
+      .assertTransitionAllowed(ORG_ID, PROJECT_ID, "Open", "Blocked", TEST_CONTEXT)
       .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(BadRequestException);
@@ -297,7 +304,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     });
 
     await expect(
-      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Start", "Middle"),
+      svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "Start", "Middle", TEST_CONTEXT),
     ).resolves.toBeUndefined();
   });
 });

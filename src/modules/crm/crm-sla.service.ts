@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
-import { crmSla, leads } from "../../db/schema";
+import { and, count, desc, eq, isNotNull, lt, notInArray, sql } from "drizzle-orm";
+import { crmOptions, crmSla, leads } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { SlaPolicyCreateInput, SlaPolicyUpdateInput } from "./dto/sla.schemas";
+import { resolveLeadStatusSemantics } from "../leads/lead-status-semantics";
 
 @Injectable()
 export class CrmSlaService {
@@ -85,8 +86,13 @@ export class CrmSlaService {
     return { success: true };
   }
 
-  breached(orgId: string) {
+  async breached(orgId: string) {
     const now = new Date();
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+    const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
+
     return this.db
       .select({
         id: leads.id,
@@ -103,7 +109,7 @@ export class CrmSlaService {
           eq(leads.orgId, orgId),
           isNotNull(leads.slaDeadline),
           lt(leads.slaDeadline, now),
-          sql`${leads.status} NOT IN ('CONVERTED', 'LOST')`,
+          notInArray(leads.status, terminalKeys),
         ),
       )
       .limit(100);
@@ -111,6 +117,10 @@ export class CrmSlaService {
 
   async report(orgId: string) {
     const now = new Date();
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+    const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
 
     const [totals] = await this.db
       .select({ total: count() })
@@ -125,7 +135,7 @@ export class CrmSlaService {
           eq(leads.orgId, orgId),
           isNotNull(leads.slaDeadline),
           sql`${leads.slaDeadline} < ${now.toISOString()}`,
-          sql`${leads.status} NOT IN ('CONVERTED', 'LOST')`,
+          notInArray(leads.status, terminalKeys),
         ),
       );
 

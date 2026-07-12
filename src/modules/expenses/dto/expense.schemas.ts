@@ -1,11 +1,21 @@
 import { z } from "zod";
 
 const EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID"] as const;
+const ALL_EXPENSE_STATUSES = [
+  "DRAFT",
+  "SUBMITTED",
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "REIMBURSEMENT_PENDING",
+  "REIMBURSED",
+  "PAID",
+] as const;
 const SORTABLE = ["date", "amount", "category", "status", "created"] as const;
 
 export const listSchema = z.object({
   userId: z.string().min(1).optional(),
-  status: z.enum(EXPENSE_STATUSES).optional(),
+  status: z.enum(ALL_EXPENSE_STATUSES).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   startDate: z.string().optional(),
@@ -36,7 +46,7 @@ export const reportSchema = z.object({
 });
 
 export const exportSchema = z.object({
-  status: z.enum(EXPENSE_STATUSES).optional(),
+  status: z.enum(ALL_EXPENSE_STATUSES).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
@@ -102,6 +112,7 @@ export const updateExpenseDetailsSchema = z.object({
 });
 
 export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
+export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
 export type PageDataInput = z.infer<typeof pageDataSchema>;
 export type ReportInput = z.infer<typeof reportSchema>;

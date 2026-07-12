@@ -3,11 +3,14 @@ import { InvoicesController } from "./invoices.controller";
 import { InvoicesService } from "./invoices.service";
 import { InvoicesWriteController } from "./invoices-write.controller";
 import { InvoicesWriteService } from "./invoices-write.service";
+import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { AccountingModule } from "../accounting/accounting.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  imports: [AccountingModule],
+  imports: [AccountingModule, NotificationsModule],
   controllers: [InvoicesController, InvoicesWriteController],
-  providers: [InvoicesService, InvoicesWriteService],
+  providers: [InvoicesService, InvoicesWriteService, InvoicesLifecycleService],
+  exports: [InvoicesWriteService],
 })
 export class InvoicesModule {}

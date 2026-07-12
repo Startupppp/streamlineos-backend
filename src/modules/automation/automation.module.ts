@@ -8,6 +8,6 @@ import { AutomationEmailService } from "./automation-email.service";
   imports: [NotificationsModule],
   controllers: [AutomationController],
   providers: [AutomationService, AutomationEmailService],
-  exports: [AutomationService],
+  exports: [AutomationService, AutomationEmailService],
 })
 export class AutomationModule {}

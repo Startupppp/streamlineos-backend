@@ -1,4 +1,8 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
+import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
+import { CrmCampaignsController } from "./crm-campaigns.controller";
+import { CrmCampaignsService } from "./crm-campaigns.service";
+import { CrmAttributionReportService } from "./crm-attribution-report.service";
 import { CrmOrganizationsController } from "./crm-organizations.controller";
 import { CrmPeopleController } from "./crm-people.controller";
 import { CrmSlaController } from "./crm-sla.controller";
@@ -25,7 +29,9 @@ import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 
 @Module({
+  imports: [forwardRef(() => CrmAutomationStudioModule)],
   controllers: [
+    CrmCampaignsController,
     CrmOrganizationsController,
     CrmPeopleController,
     CrmSlaController,
@@ -38,6 +44,8 @@ import { SlaResolverService } from "./sla-resolver.service";
     CrmCustomer360Controller,
   ],
   providers: [
+    CrmCampaignsService,
+    CrmAttributionReportService,
     CrmOrganizationsService,
     CrmPeopleService,
     CrmSlaService,

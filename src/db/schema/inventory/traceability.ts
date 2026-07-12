@@ -24,6 +24,7 @@ export const invLots = pgTable("inv_lots", {
   index("idx_inv_lots_variant").on(table.productVariantId),
   index("idx_inv_lots_expiry").on(table.expiryDate),
   index("idx_inv_lots_status").on(table.orgId, table.status),
+  index("idx_inv_lots_lot_number_trgm").on(table.lotNumber),
 ]);
 
 export const invSerialNumbers = pgTable("inv_serial_numbers", {
@@ -43,6 +44,7 @@ export const invSerialNumbers = pgTable("inv_serial_numbers", {
   index("idx_inv_serials_variant").on(table.productVariantId),
   index("idx_inv_serials_status").on(table.orgId, table.status),
   index("idx_inv_serials_location").on(table.currentLocationId),
+  index("idx_inv_serials_serial_number_trgm").on(table.serialNumber),
 ]);
 
 export const invLotsRelations = relations(invLots, ({ one }) => ({

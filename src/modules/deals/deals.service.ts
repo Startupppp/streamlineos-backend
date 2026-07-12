@@ -299,13 +299,14 @@ export class DealsService {
       metadata: { changedFields: Object.keys(input), newStage: input.stage },
     });
 
-    if (input.stage === "WON") {
-      this.webhooksDispatch.dispatch(orgId, "deal.won", {
-        id: updated.id,
-        name: updated.name,
-        value: updated.value,
-        assignedToId: updated.assignedToId,
-      });
+    if (stageChanged && input.stage) {
+      const stageMap2 = await this.resolvePipelineStageMap(orgId, null);
+      const newStageInfo2 = stageMap2.get(input.stage);
+      if (newStageInfo2?.stageType === "won") {
+        this.webhooksDispatch.dispatch(orgId, "deal.won", { id: updated.id, name: updated.name, value: updated.value, assignedToId: updated.assignedToId });
+      } else if (newStageInfo2?.stageType === "lost") {
+        this.webhooksDispatch.dispatch(orgId, "deal.lost", { id: updated.id, name: updated.name, value: updated.value, lostReason: updated.lostReason });
+      }
     }
 
     if (stageChanged && previousStage && input.stage) {

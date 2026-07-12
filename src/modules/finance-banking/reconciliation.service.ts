@@ -19,7 +19,6 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";
-import { MatchingService } from "./matching.service";
 import { paginateOffset, buildListResponse } from "../../common/pagination/pagination";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
@@ -42,7 +41,6 @@ export class ReconciliationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: FinancePostingService,
-    private readonly matching: MatchingService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
     private readonly audit: AuditService,
@@ -227,17 +225,14 @@ export class ReconciliationService {
 
     await this.cache.invalidate(CACHE_RECON(orgId, bankAccountId));
 
-    const ledgerBalance = await this.computeLedgerBalance(orgId, (await this.db.query.finBankAccounts.findFirst({
+    const refreshedAccount = await this.db.query.finBankAccounts.findFirst({
       where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
       columns: { ledgerAccountId: true, currentBalance: true },
-    }))?.ledgerAccountId ?? null);
-
-    const account = await this.db.query.finBankAccounts.findFirst({
-      where: and(eq(finBankAccounts.id, bankAccountId), eq(finBankAccounts.orgId, orgId)),
-      columns: { currentBalance: true },
     });
 
-    if (ledgerBalance !== null && account && Math.abs(parseFloat(ledgerBalance) - parseFloat(account.currentBalance)) > 0.01) {
+    const ledgerBalance = await this.computeLedgerBalance(orgId, refreshedAccount?.ledgerAccountId ?? null);
+
+    if (ledgerBalance !== null && refreshedAccount && Math.abs(parseFloat(ledgerBalance) - parseFloat(refreshedAccount.currentBalance)) > 0.01) {
       void this.dispatch.emit({
         eventKey: "accounting.reconciliation.mismatch",
         orgId,
@@ -245,7 +240,7 @@ export class ReconciliationService {
         targetUserIds: [userId],
         entityType: "bank_account",
         entityId: String(bankAccountId),
-        variables: { ledgerBalance, bankBalance: account.currentBalance },
+        variables: { ledgerBalance, bankBalance: refreshedAccount.currentBalance },
       });
     }
 

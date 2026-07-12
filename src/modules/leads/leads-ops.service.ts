@@ -4,6 +4,8 @@ import {
   leads,
   leadActivities,
   leadNotes,
+  leadTasks,
+  leadEmails,
   users,
   organizationMembers,
   leaveRequests,
@@ -16,6 +18,7 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { getLeadDistributionEmailTemplate } from "../email/templates/crm";
+import { CrmValidationService } from "../crm-metadata/crm-validation.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,
@@ -42,6 +45,7 @@ export class LeadsOpsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly email: EmailService,
+    private readonly crmValidation: CrmValidationService,
   ) {}
 
   private async sendDistributionEmails(
@@ -160,9 +164,11 @@ export class LeadsOpsService {
         .update(leads)
         .set({ deletedAt: new Date(), mergedIntoId: winnerId, updatedAt: new Date() })
         .where(eq(leads.id, loserId));
+      await tx.update(leadActivities).set({ leadId: winnerId }).where(eq(leadActivities.leadId, loserId));
+      await tx.update(leadNotes).set({ leadId: winnerId }).where(eq(leadNotes.leadId, loserId));
+      await tx.update(leadTasks).set({ leadId: winnerId }).where(eq(leadTasks.leadId, loserId));
+      await tx.update(leadEmails).set({ leadId: winnerId }).where(eq(leadEmails.leadId, loserId));
     });
-
-    void this.reParent(winnerId, loserId);
 
     this.audit.log({
       action: "LEAD_MERGED",
@@ -184,20 +190,6 @@ export class LeadsOpsService {
     });
 
     return { ok: true, winner: updatedWinner };
-  }
-
-  private async reParent(winnerId: number, loserId: number): Promise<void> {
-    await this.db
-      .update(leadActivities)
-      .set({ leadId: winnerId })
-      .where(eq(leadActivities.leadId, loserId))
-      .catch(() => undefined);
-
-    await this.db
-      .update(leadNotes)
-      .set({ leadId: winnerId })
-      .where(eq(leadNotes.leadId, loserId))
-      .catch(() => undefined);
   }
 
   async importLeads(orgId: string, userId: string, input: ImportInput) {
@@ -275,6 +267,22 @@ export class LeadsOpsService {
             continue;
           }
         }
+        const rowRecord: Record<string, unknown> = {
+          name: lead.name,
+          email: lead.email ?? null,
+          phone: lead.phone ?? null,
+          source: lead.source ?? "other",
+          priority: lead.priority ?? "WARM",
+        };
+        const rowValidation = await this.crmValidation.evaluate(orgId, "lead", rowRecord, {
+          sourceKey: lead.source ?? "other",
+        });
+        if (!rowValidation.valid) {
+          errors.push({ row: rowNum, message: rowValidation.errors.map((e) => e.message).join("; ") });
+          skipped++;
+          continue;
+        }
+
         toInsert.push(lead);
       }
 

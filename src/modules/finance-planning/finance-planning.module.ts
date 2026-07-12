@@ -6,10 +6,9 @@ import { BvaService } from "./bva.service";
 import { ForecastService } from "./forecast.service";
 import { ScenariosService } from "./scenarios.service";
 import { NotificationsModule } from "../notifications/notifications.module";
-import { CacheModule } from "../../common/cache/cache.module";
 
 @Module({
-  imports: [NotificationsModule, CacheModule],
+  imports: [NotificationsModule],
   controllers: [BudgetsController, ScenariosController],
   providers: [BudgetsService, BvaService, ForecastService, ScenariosService],
 })

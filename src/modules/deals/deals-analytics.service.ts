@@ -1,21 +1,13 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, ne, notInArray, sql, sum } from "drizzle-orm";
-import { deals, users } from "../../db/schema";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, inArray, notInArray, sql, sum } from "drizzle-orm";
+import { deals, dealActivities, crmForecastSnapshots, users } from "../../db/schema";
+import type { ForecastSnapshotData } from "../../db/schema/crm/deals";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-
-const STAGE_PROBABILITIES: Record<string, number> = {
-  LEAD: 10,
-  PROSPECT: 20,
-  QUALIFICATION: 30,
-  PROPOSAL: 50,
-  NEGOTIATION: 70,
-  CLOSING: 85,
-  WON: 100,
-  LOST: 0,
-};
+import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import type { CreateForecastSnapshotInput, CompareForecastSnapshotsInput, ForecastSnapshotsQueryInput } from "./dto/deals.schemas";
 
 export interface ForecastMonth {
   month: string;
@@ -44,18 +36,31 @@ export class DealsAnalyticsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly crmMetadata: CrmMetadataService,
   ) {}
 
+  private async getTerminalStageKeys(orgId: string): Promise<{ wonKeys: string[]; lostKeys: string[] }> {
+    const metadata = await this.crmMetadata.getAggregate(orgId);
+    const wonKeys = metadata.stages
+      .filter((s) => s.stageType === "won" && s.isActive)
+      .map((s) => s.key);
+    const lostKeys = metadata.stages
+      .filter((s) => s.stageType === "lost" && s.isActive)
+      .map((s) => s.key);
+    return { wonKeys: wonKeys.length ? wonKeys : ["WON"], lostKeys: lostKeys.length ? lostKeys : ["LOST"] };
+  }
+
   async getStats(orgId: string) {
+    const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
     const [activeRow, wonRow] = await Promise.all([
       this.db
         .select({ cnt: count(), total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), ne(deals.stage, "WON"), ne(deals.stage, "LOST"))),
+        .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
       this.db
         .select({ total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), eq(deals.stage, "WON"))),
+        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonKeys))),
     ]);
     return {
       active: activeRow[0]?.cnt ?? 0,
@@ -64,10 +69,11 @@ export class DealsAnalyticsService {
     };
   }
 
-  getAging(orgId: string) {
+  async getAging(orgId: string) {
     return this.cache.cached(
       `deals:aging:${orgId}`,
       async () => {
+        const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
         const allDeals = await this.db
           .select({
             id: deals.id,
@@ -81,7 +87,7 @@ export class DealsAnalyticsService {
           })
           .from(deals)
           .leftJoin(users, eq(deals.assignedToId, users.id))
-          .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, ["WON", "LOST"])))
+          .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
           .orderBy(sql`${deals.updatedAt} asc`)
           .limit(100);
 
@@ -118,6 +124,14 @@ export class DealsAnalyticsService {
   }
 
   private async buildForecast(orgId: string): Promise<ForecastSummary> {
+    const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
+    const metaRaw = await this.crmMetadata.getAggregate(orgId);
+    const stageProbMap = new Map<string, number>(
+      metaRaw.stages
+        .filter((s) => s.isActive)
+        .map((s) => [s.key, s.probability]),
+    );
+
     const allDeals = await this.db
       .select({
         value: deals.value,
@@ -127,14 +141,14 @@ export class DealsAnalyticsService {
         createdAt: deals.createdAt,
       })
       .from(deals)
-      .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, ["WON", "LOST"])));
+      .where(and(eq(deals.orgId, orgId), notInArray(deals.stage, [...wonKeys, ...lostKeys])));
 
     const monthMap = new Map<string, ForecastMonth>();
     const stageMap = new Map<string, { count: number; totalValue: number; weightedValue: number; probSum: number }>();
 
     for (const deal of allDeals) {
       const value = Number(deal.value ?? 0);
-      const probability = deal.probability || STAGE_PROBABILITIES[deal.stage] || 20;
+      const probability = deal.probability || stageProbMap.get(deal.stage) || 20;
       const weighted = Math.round((value * probability) / 100);
 
       const closeDate = deal.expectedCloseDate
@@ -178,17 +192,19 @@ export class DealsAnalyticsService {
     };
   }
 
-  getWinLoss(orgId: string) {
+  async getWinLoss(orgId: string) {
     return this.cache.cached(
       `deals:win-loss:${orgId}`,
       async () => {
+        const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
+
         const wonDeals = await this.db
           .select({
             count: sql<number>`count(*)::int`,
             totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
           })
           .from(deals)
-          .where(and(eq(deals.orgId, orgId), eq(deals.stage, "WON")));
+          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonKeys)));
 
         const lostDeals = await this.db
           .select({
@@ -196,7 +212,7 @@ export class DealsAnalyticsService {
             totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
           })
           .from(deals)
-          .where(and(eq(deals.orgId, orgId), eq(deals.stage, "LOST")));
+          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)));
 
         const lostByReason = await this.db
           .select({
@@ -205,7 +221,7 @@ export class DealsAnalyticsService {
             totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
           })
           .from(deals)
-          .where(and(eq(deals.orgId, orgId), eq(deals.stage, "LOST")))
+          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)))
           .groupBy(sql`COALESCE(${deals.lostReason}, 'Not specified')`)
           .orderBy(sql`count(*) desc`);
 
@@ -232,5 +248,104 @@ export class DealsAnalyticsService {
       },
       CACHE_TTL.MEDIUM,
     );
+  }
+
+  async getDealHealth(orgId: string, dealId: number) {
+    const deal = await this.db.query.deals.findFirst({
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+      columns: { stage: true, updatedAt: true, expectedCloseDate: true, value: true, lastContactDate: true, probability: true },
+      with: { activities: { columns: { createdAt: true }, orderBy: [desc(dealActivities.createdAt)], limit: 1 } },
+    });
+    if (!deal) throw new NotFoundException("Deal not found");
+
+    const factors: Array<{ key: string; label: string; impact: "positive" | "negative" | "neutral"; weight: number }> = [];
+    let score = 100;
+    const now = Date.now();
+    const daysSinceUpdate = Math.floor((now - new Date(deal.updatedAt).getTime()) / 86400000);
+    const lastActivity = deal.activities[0];
+    const daysSinceActivity = lastActivity
+      ? Math.floor((now - new Date(lastActivity.createdAt).getTime()) / 86400000)
+      : 999;
+
+    if (daysSinceUpdate > 30) { score -= 30; factors.push({ key: "stale_30d", label: "No updates in 30+ days", impact: "negative", weight: 30 }); }
+    else if (daysSinceUpdate > 14) { score -= 15; factors.push({ key: "stale_14d", label: "No updates in 14+ days", impact: "negative", weight: 15 }); }
+
+    if (daysSinceActivity > 14) { score -= 20; factors.push({ key: "no_activity", label: "No recent activity", impact: "negative", weight: 20 }); }
+
+    if (deal.expectedCloseDate) {
+      const daysToClose = Math.floor((new Date(deal.expectedCloseDate).getTime() - now) / 86400000);
+      if (daysToClose < 0) { score -= 25; factors.push({ key: "overdue", label: "Past expected close date", impact: "negative", weight: 25 }); }
+      else if (daysToClose < 7) { score -= 10; factors.push({ key: "closing_soon", label: "Close date within 7 days", impact: "neutral", weight: 10 }); }
+    }
+
+    if (!deal.value || Number(deal.value) === 0) { score -= 10; factors.push({ key: "no_value", label: "No deal value set", impact: "negative", weight: 10 }); }
+
+    const finalScore = Math.max(0, score);
+    const level = finalScore >= 70 ? "healthy" : finalScore >= 40 ? "at_risk" : "critical";
+
+    return {
+      dealId,
+      score: finalScore,
+      level,
+      factors,
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  async createForecastSnapshot(orgId: string, userId: string, input: CreateForecastSnapshotInput) {
+    const forecast = await this.getForecast(orgId);
+    const data: ForecastSnapshotData = {
+      byCategory: [],
+      byRep: [],
+      totalWeighted: forecast.totalWeighted,
+      totalBestCase: forecast.totalBestCase,
+      totalDeals: forecast.totalDeals,
+      period: input.period,
+    };
+    const [row] = await this.db.insert(crmForecastSnapshots).values({
+      orgId, period: input.period, createdById: userId, data,
+    }).returning();
+    return row;
+  }
+
+  async getForecastSnapshots(orgId: string, query: ForecastSnapshotsQueryInput) {
+    const conditions = [eq(crmForecastSnapshots.orgId, orgId)];
+    if (query.period) conditions.push(eq(crmForecastSnapshots.period, query.period));
+    return this.db
+      .select()
+      .from(crmForecastSnapshots)
+      .where(and(...conditions))
+      .orderBy(desc(crmForecastSnapshots.capturedAt))
+      .limit(query.limit ?? 20)
+      .offset(query.offset ?? 0);
+  }
+
+  async compareForecastSnapshots(orgId: string, input: CompareForecastSnapshotsInput) {
+    const snapshot = await this.db.query.crmForecastSnapshots.findFirst({
+      where: and(eq(crmForecastSnapshots.orgId, orgId), eq(crmForecastSnapshots.period, input.period)),
+      orderBy: [desc(crmForecastSnapshots.capturedAt)],
+    });
+    if (!snapshot) throw new NotFoundException(`No snapshot found for period ${input.period}`);
+    const baseline = snapshot.data;
+    const current = await this.buildForecast(orgId);
+    const currentData: ForecastSnapshotData = {
+      byCategory: [],
+      byRep: [],
+      totalWeighted: current.totalWeighted,
+      totalBestCase: current.totalBestCase,
+      totalDeals: current.totalDeals,
+      period: input.period,
+    };
+    return {
+      period: input.period,
+      baseline,
+      current: currentData,
+      delta: {
+        totalWeighted: currentData.totalWeighted - baseline.totalWeighted,
+        totalBestCase: currentData.totalBestCase - baseline.totalBestCase,
+        totalDeals: currentData.totalDeals - baseline.totalDeals,
+        byCategory: [],
+      },
+    };
   }
 }

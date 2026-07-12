@@ -23,6 +23,7 @@ export class TplService {
         this.db.query.inv3plConnections.findMany({
           where: eq(inv3plConnections.orgId, orgId),
           orderBy: (t, { asc }) => [asc(t.name)],
+          limit: 200,
         }),
       CACHE_TTL.MEDIUM,
     );

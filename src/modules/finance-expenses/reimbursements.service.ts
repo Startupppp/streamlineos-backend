@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { expenses, finReimbursementBatches, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -30,29 +30,24 @@ export class ReimbursementsService {
     const pageSize = filters.pageSize;
     const offset = (page - 1) * pageSize;
 
-    const rows = await this.db.query.finReimbursementBatches.findMany({
-      where: (batch, { and: a, eq: e }) => {
-        const conds = [e(batch.orgId, orgId)];
-        if (filters.status) conds.push(e(batch.status, filters.status));
-        return a(...conds);
-      },
-      with: { creator: true, approver: true },
-      orderBy: (batch, { desc }) => [desc(batch.createdAt)],
-      limit: pageSize,
-      offset,
-    });
+    const conditions = [eq(finReimbursementBatches.orgId, orgId)];
+    if (filters.status) {
+      conditions.push(eq(finReimbursementBatches.status, filters.status));
+    }
+    const where = and(...conditions);
 
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(finReimbursementBatches)
-      .where(
-        and(
-          eq(finReimbursementBatches.orgId, orgId),
-          ...(filters.status ? [eq(finReimbursementBatches.status, filters.status)] : []),
-        ),
-      );
+    const [rows, [countResult]] = await Promise.all([
+      this.db.query.finReimbursementBatches.findMany({
+        where,
+        with: { creator: true, approver: true },
+        orderBy: (batch, { desc }) => [desc(batch.createdAt)],
+        limit: pageSize,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(finReimbursementBatches).where(where),
+    ]);
 
-    const total = Number(countResult?.count ?? 0);
+    const total = Number(countResult?.total ?? 0);
 
     return {
       data: rows,

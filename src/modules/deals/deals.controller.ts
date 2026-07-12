@@ -126,6 +126,9 @@ export class DealsController {
       }
       throw new NotFoundException("Deal not found");
     }
+    if (result.approvalPending) {
+      return { approvalPending: true, approvalId: result.approvalId, deal: result.deal };
+    }
     return result.deal;
   }
 

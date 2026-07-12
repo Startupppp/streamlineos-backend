@@ -1,8 +1,4 @@
-import { Test } from "@nestjs/testing";
 import { InvReplenishmentService } from "./inv-replenishment.service";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { CacheService } from "../../common/cache/cache.service";
-import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
 
 const mockDb = {
   query: {
@@ -38,6 +34,8 @@ function buildService() {
   return new InvReplenishmentService(mockDb as never, mockCache as never, mockNumSeq as never);
 }
 
+const DEFAULT_FILTERS = { page: 1, limit: 50 };
+
 describe("InvReplenishmentService - suggestion math", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -65,10 +63,10 @@ describe("InvReplenishmentService - suggestion math", () => {
     });
 
     const service = buildService();
-    const results = await service.getSuggestions("org1");
+    const result = await service.getSuggestions("org1", DEFAULT_FILTERS);
 
-    expect(results).toHaveLength(1);
-    expect(results[0].suggestedQty).toBe(40);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].suggestedQty).toBe(40);
   });
 
   it("suggests reorderQty when no maxQty is set", async () => {
@@ -95,11 +93,11 @@ describe("InvReplenishmentService - suggestion math", () => {
     });
 
     const service = buildService();
-    const results = await service.getSuggestions("org1");
+    const result = await service.getSuggestions("org1", DEFAULT_FILTERS);
 
-    expect(results).toHaveLength(1);
-    expect(results[0].suggestedQty).toBe(25);
-    expect(results[0].vendorId).toBe(5);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].suggestedQty).toBe(25);
+    expect(result.items[0].vendorId).toBe(5);
   });
 
   it("falls back to minQty - forecasted when no maxQty or reorderQty", async () => {
@@ -126,11 +124,11 @@ describe("InvReplenishmentService - suggestion math", () => {
     });
 
     const service = buildService();
-    const results = await service.getSuggestions("org1");
+    const result = await service.getSuggestions("org1", DEFAULT_FILTERS);
 
-    expect(results).toHaveLength(1);
-    expect(results[0].suggestedQty).toBe(7);
-    expect(results[0].vendorId).toBe(99);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].suggestedQty).toBe(7);
+    expect(result.items[0].vendorId).toBe(99);
   });
 
   it("does not suggest when forecasted >= minQty", async () => {
@@ -157,8 +155,8 @@ describe("InvReplenishmentService - suggestion math", () => {
     });
 
     const service = buildService();
-    const results = await service.getSuggestions("org1");
+    const result = await service.getSuggestions("org1", DEFAULT_FILTERS);
 
-    expect(results).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
   });
 });

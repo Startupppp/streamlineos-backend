@@ -405,6 +405,7 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
   assignedTo: one(users, { fields: [deals.assignedToId], references: [users.id] }),
   activities: many(dealActivities),
   meetings: many(dealMeetings),
+  competitors: many(crmDealCompetitors),
 }));
 
 export const dealMeetingsRelations = relations(dealMeetings, ({ one, many }) => ({
@@ -465,4 +466,14 @@ export const territoriesRelations = relations(territories, ({ one }) => ({
 export const customFieldDefinitionsRelations = relations(customFieldDefinitions, ({ one }) => ({
   organization: one(organizations, { fields: [customFieldDefinitions.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [customFieldDefinitions.createdBy], references: [users.id] }),
+}));
+
+export const crmDealCompetitorsRelations = relations(crmDealCompetitors, ({ one }) => ({
+  deal: one(deals, { fields: [crmDealCompetitors.dealId], references: [deals.id] }),
+  organization: one(organizations, { fields: [crmDealCompetitors.orgId], references: [organizations.id] }),
+}));
+
+export const crmForecastSnapshotsRelations = relations(crmForecastSnapshots, ({ one }) => ({
+  organization: one(organizations, { fields: [crmForecastSnapshots.orgId], references: [organizations.id] }),
+  createdBy: one(users, { fields: [crmForecastSnapshots.createdById], references: [users.id] }),
 }));

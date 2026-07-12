@@ -94,7 +94,13 @@ export class AccountingPayablesService {
   async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
     const { page, pageSize, q, status, vendorId } = query;
     const conds = [eq(purchaseBills.orgId, orgId)];
-    if (status) conds.push(eq(purchaseBills.status, status));
+    if (status) {
+      if (Array.isArray(status)) {
+        conds.push(inArray(purchaseBills.status, status));
+      } else {
+        conds.push(eq(purchaseBills.status, status));
+      }
+    }
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
     conds.push(applyScope(scope, userId, { ownerColumn: purchaseBills.createdBy }));

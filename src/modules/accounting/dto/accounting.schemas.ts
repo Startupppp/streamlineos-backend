@@ -97,6 +97,7 @@ export const gstr3BQuerySchema = z.object({ from: isoDate, to: isoDate });
 
 export const purchaseBillStatusSchema = z.enum([
   "DRAFT",
+  "PENDING_APPROVAL",
   "POSTED",
   "PARTIALLY_PAID",
   "PAID",
@@ -107,7 +108,15 @@ export const listPurchaseBillsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(200).optional(),
-  status: purchaseBillStatusSchema.optional(),
+  status: z.preprocess(
+    (val) => {
+      if (typeof val === "string" && val.includes(",")) {
+        return val.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      return val;
+    },
+    z.union([purchaseBillStatusSchema, z.array(purchaseBillStatusSchema)]).optional(),
+  ),
   vendorId: z.coerce.number().int().positive().optional(),
 });
 

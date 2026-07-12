@@ -28,7 +28,6 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
-import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -83,7 +82,6 @@ export class LeadsService {
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly crmValidation: CrmValidationService,
-    private readonly crmMetadata: CrmMetadataService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -182,46 +180,75 @@ export class LeadsService {
   }
 
   async getBoard(orgId: string, opts?: BoardOpts) {
-    const filters = [eq(leads.orgId, orgId)];
+    const baseFilters = [eq(leads.orgId, orgId)];
 
     if (opts?.branch) {
-      await pushBranchAssigneeFilter(this.db, filters, leads.assignedToId, opts.branch);
+      await pushBranchAssigneeFilter(this.db, baseFilters, leads.assignedToId, opts.branch);
     }
 
-    pushLeadsViewScope(filters, opts?.scope, opts?.userId);
+    pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
 
-    const statusCount = 6;
-    const cap = (opts?.limitPerStatus ?? 50) * statusCount;
-    const allLeads = await this.db.query.leads.findMany({
-      where: and(...filters),
-      with: { assignedTo: { columns: { id: true, name: true, image: true } } },
-      orderBy: [desc(leads.createdAt)],
-      limit: cap,
-    });
+    const STATUSES = ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"] as const;
+    type StatusKey = (typeof STATUSES)[number];
 
-    const board: Record<string, typeof allLeads> = {
-      NEW: [],
-      CONTACTED: [],
-      INTERESTED: [],
-      QUALIFIED: [],
-      CONVERTED: [],
-      LOST: [],
-    };
+    const limitPerStatus = opts?.limitPerStatus ?? 50;
 
-    for (const lead of allLeads) {
-      if (board[lead.status]) {
-        board[lead.status].push(lead);
-      }
+    const columns = {
+      id: leads.id,
+      name: leads.name,
+      email: leads.email,
+      phone: leads.phone,
+      company: leads.company,
+      source: leads.source,
+      priority: leads.priority,
+      status: leads.status,
+      score: leads.score,
+      potentialValue: leads.potentialValue,
+      slaDeadline: leads.slaDeadline,
+      assignedToId: leads.assignedToId,
+      createdAt: leads.createdAt,
+    } as const;
+
+    const columnResults = await Promise.all(
+      STATUSES.map(async (status) => {
+        const statusFilter = [...baseFilters, eq(leads.status, status)];
+        const [rows, countResult] = await Promise.all([
+          this.db
+            .select(columns)
+            .from(leads)
+            .where(and(...statusFilter))
+            .orderBy(desc(leads.createdAt))
+            .limit(limitPerStatus),
+          this.db.select({ total: count() }).from(leads).where(and(...statusFilter)),
+        ]);
+
+        const assigneeIds = [...new Set(rows.map((r) => r.assignedToId).filter((id): id is string => !!id))];
+        const assigneeMap = new Map<string, { id: string; name: string | null; image: string | null }>();
+        if (assigneeIds.length > 0) {
+          const assignees = await this.db
+            .select({ id: users.id, name: users.name, image: users.image })
+            .from(users)
+            .where(inArray(users.id, assigneeIds));
+          for (const a of assignees) assigneeMap.set(a.id, a);
+        }
+
+        return {
+          status,
+          total: countResult[0]?.total ?? 0,
+          leads: rows.map((r) => ({
+            ...r,
+            assignedTo: r.assignedToId ? (assigneeMap.get(r.assignedToId) ?? null) : null,
+          })),
+        };
+      }),
+    );
+
+    const board: Record<StatusKey, { leads: (typeof columnResults)[0]["leads"]; total: number }> = {} as never;
+    for (const col of columnResults) {
+      board[col.status] = { leads: col.leads, total: col.total };
     }
 
-    return board as {
-      NEW: typeof allLeads;
-      CONTACTED: typeof allLeads;
-      INTERESTED: typeof allLeads;
-      QUALIFIED: typeof allLeads;
-      CONVERTED: typeof allLeads;
-      LOST: typeof allLeads;
-    };
+    return board;
   }
 
   async getStats(orgId: string, filters?: StatsFilters) {
@@ -240,36 +267,47 @@ export class LeadsService {
       statsFilters.push(lte(leads.createdAt, to));
     }
 
-    const allLeads = await this.db.query.leads.findMany({ where: and(...statsFilters) });
-
-    const total = allLeads.length;
-    const byStatus = {
-      NEW: allLeads.filter((l) => l.status === "NEW").length,
-      CONTACTED: allLeads.filter((l) => l.status === "CONTACTED").length,
-      INTERESTED: allLeads.filter((l) => l.status === "INTERESTED").length,
-      QUALIFIED: allLeads.filter((l) => l.status === "QUALIFIED").length,
-      CONVERTED: allLeads.filter((l) => l.status === "CONVERTED").length,
-      LOST: allLeads.filter((l) => l.status === "LOST").length,
-    };
-
-    const conversionRate = total > 0 ? (byStatus.CONVERTED / total) * 100 : 0;
-    const totalPotentialValue = allLeads.reduce(
-      (s, l) => s + Number(l.potentialValue ?? 0),
-      0,
-    );
-    const unassigned = allLeads.filter((l) => !l.assignedToId).length;
-
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonth = allLeads.filter((l) => new Date(l.createdAt!) >= thisMonthStart).length;
+
+    const [statusCounts, totals] = await Promise.all([
+      this.db
+        .select({ status: leads.status, cnt: count() })
+        .from(leads)
+        .where(and(...statsFilters))
+        .groupBy(leads.status),
+      this.db
+        .select({
+          total: count(),
+          totalPotentialValue: sql<string>`COALESCE(SUM(CAST(${leads.potentialValue} AS NUMERIC)), 0)`,
+          unassigned: sql<string>`COUNT(*) FILTER (WHERE ${leads.assignedToId} IS NULL)`,
+          thisMonth: sql<string>`COUNT(*) FILTER (WHERE ${leads.createdAt} >= ${thisMonthStart})`,
+        })
+        .from(leads)
+        .where(and(...statsFilters)),
+    ]);
+
+    const byStatusMap = new Map(statusCounts.map((r) => [r.status, Number(r.cnt)]));
+    const byStatus = {
+      NEW: byStatusMap.get("NEW") ?? 0,
+      CONTACTED: byStatusMap.get("CONTACTED") ?? 0,
+      INTERESTED: byStatusMap.get("INTERESTED") ?? 0,
+      QUALIFIED: byStatusMap.get("QUALIFIED") ?? 0,
+      CONVERTED: byStatusMap.get("CONVERTED") ?? 0,
+      LOST: byStatusMap.get("LOST") ?? 0,
+    };
+
+    const aggRow = totals[0];
+    const total = Number(aggRow?.total ?? 0);
+    const conversionRate = total > 0 ? (byStatus.CONVERTED / total) * 100 : 0;
 
     return {
       total,
       byStatus,
       conversionRate: Math.round(conversionRate * 10) / 10,
-      totalPotentialValue,
-      unassigned,
-      thisMonth,
+      totalPotentialValue: Number(aggRow?.totalPotentialValue ?? 0),
+      unassigned: Number(aggRow?.unassigned ?? 0),
+      thisMonth: Number(aggRow?.thisMonth ?? 0),
     };
   }
 
@@ -452,6 +490,47 @@ export class LeadsService {
     } catch (error) {
       logger.error("Auto-trigger: lead scoring on update failed", { leadId: updated.id, error });
     }
+
+    const changedFields = Object.keys(input);
+
+    if (changedFields.includes("status")) {
+      void this.automation
+        .runAutomationsForEvent(orgId, "lead.status_changed", {
+          id: updated.id,
+          name: updated.name,
+          status: updated.status,
+          previousStatus: existing.status,
+        })
+        .catch(() => undefined);
+    }
+
+    if (changedFields.includes("assignedToId") && updated.assignedToId) {
+      void this.automation
+        .runAutomationsForEvent(orgId, "lead.assigned", {
+          id: updated.id,
+          name: updated.name,
+          assignedToId: updated.assignedToId,
+          previousAssignedToId: existing.assignedToId,
+        })
+        .catch(() => undefined);
+
+      void this.sendLeadAssignedNotification(userId, {
+        assignedToId: updated.assignedToId,
+        name: updated.name,
+        source: updated.source,
+        priority: updated.priority,
+      }).catch(() => undefined);
+    }
+
+    this.webhooksDispatch.dispatch(orgId, "lead.updated", {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      source: updated.source,
+      status: updated.status,
+      assignedToId: updated.assignedToId,
+      changedFields,
+    });
 
     return updated;
   }

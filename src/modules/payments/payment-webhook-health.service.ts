@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -10,6 +10,7 @@ import { PaymentProviderSetupService, type ActorContext } from "./payment-provid
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { webhookEnvelopeSchema } from "./dto/webhook.schemas";
+import { ProviderBridgeService } from "../finance-controls/provider-bridge.service";
 
 // Only an allow-listed summary is ever persisted in payload_redacted — never the full webhook
 // body, which can carry card/bank/contact details depending on event type.
@@ -30,12 +31,15 @@ function redactPayload(payload: Record<string, unknown>): Record<string, unknown
 
 @Injectable()
 export class PaymentWebhookHealthService {
+  private readonly logger = new Logger(PaymentWebhookHealthService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: PaymentProviderAdapterRegistry,
     private readonly providers: PaymentProviderSetupService,
     private readonly audit: PaymentAuditService,
     private readonly paymentAnalytics: PaymentAnalyticsService,
+    private readonly providerBridge: ProviderBridgeService,
   ) {}
 
   private async findProvider(orgId: string, providerKey: string) {
@@ -246,8 +250,23 @@ export class PaymentWebhookHealthService {
     }
 
     if (!inserted) {
-      // Duplicate delivery — signature was valid but we've already processed this event.
       return { status: 200, body: { ok: true, duplicate: true } };
+    }
+
+    try {
+      const paymentEntity = this.extractPaymentEntity(envelope.payload);
+      if (paymentEntity && envelope.event.includes("payment") && typeof paymentEntity.amount === "number") {
+        await this.providerBridge.recordProviderPayment(params.orgId, "system", {
+          provider: params.providerKey,
+          providerEventId: providerEventId,
+          grossAmount: String(paymentEntity.amount / 100),
+          feeAmount: String(typeof paymentEntity.fee === "number" ? paymentEntity.fee / 100 : 0),
+          currency: typeof paymentEntity.currency === "string" ? paymentEntity.currency.toUpperCase() : "INR",
+          occurredAt: typeof paymentEntity.created_at === "number" ? new Date(paymentEntity.created_at * 1000) : new Date(),
+        });
+      }
+    } catch (bridgeError) {
+      this.logger.warn(`Provider bridge posting failed for event ${providerEventId}: ${bridgeError instanceof Error ? bridgeError.message : String(bridgeError)}`);
     }
 
     return { status: 200, body: { ok: true } };
@@ -281,5 +300,18 @@ export class PaymentWebhookHealthService {
     });
 
     return updated;
+  }
+
+  private extractPaymentEntity(payload: Record<string, unknown>): Record<string, unknown> | null {
+    for (const key of Object.keys(payload)) {
+      const wrapper = payload[key];
+      if (wrapper && typeof wrapper === "object" && "entity" in wrapper) {
+        const entity = (wrapper as { entity?: unknown }).entity;
+        if (entity && typeof entity === "object") {
+          return entity as Record<string, unknown>;
+        }
+      }
+    }
+    return null;
   }
 }

@@ -60,6 +60,7 @@ export class ExpensesController {
   constructor(
     private readonly expenses: ExpensesService,
     private readonly expensesWrite: ExpensesWriteService,
+    private readonly lifecycle: ExpenseLifecycleService,
     private readonly access: AccessService,
   ) {}
 
@@ -170,6 +171,39 @@ export class ExpensesController {
       `attachment; filename="expenses-${new Date().toISOString().split("T")[0]}.csv"`,
     );
     res.send(csv);
+  }
+
+  @Post(":expenseId/submit")
+  @HttpCode(200)
+  async submit(
+    @Param("expenseId", ParseIntPipe) expenseId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.lifecycle.submitExpense(u, expenseId);
+  }
+
+  @Post(":expenseId/approve")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:expenses:approve")
+  async approve(
+    @Param("expenseId", ParseIntPipe) expenseId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.lifecycle.approveExpense(u, expenseId);
+  }
+
+  @Post(":expenseId/reject")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:expenses:approve")
+  async reject(
+    @Param("expenseId", ParseIntPipe) expenseId: number,
+    @Body() body: { rejectionReason?: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const reason = body.rejectionReason?.trim() || "No reason provided";
+    return this.lifecycle.rejectExpense(u, expenseId, reason);
   }
 
   @Delete(":expenseId")

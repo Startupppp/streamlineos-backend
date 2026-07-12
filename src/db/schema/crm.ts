@@ -13,3 +13,4 @@ export * from "./crm/products";
 export * from "./crm/pricebooks";
 export * from "./crm/metadata";
 export * from "./crm/automation-studio";
+export * from "./crm/attribution";

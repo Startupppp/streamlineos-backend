@@ -31,13 +31,10 @@ import type {
   ScenarioAssumptions,
 } from "./finance-planning.types";
 
-const FORECAST_CACHE_KEY = (
-  orgId: string,
-  scenarioId?: number,
-  weeks?: number,
-) => `fin:forecast:${orgId}:${scenarioId ?? "default"}:${weeks ?? 13}`;
+const FORECAST_CACHE_KEY = (orgId: string, sid?: number, weeks?: number) =>
+  `fin:forecast:${orgId}:${sid ?? "default"}:${weeks ?? 13}`;
 
-const FORECAST_CACHE_TTL = 120;
+const FORECAST_TTL = 120;
 
 const DEFAULT_ASSUMPTIONS: ScenarioAssumptions = {
   collectionRatePct: 90,
@@ -50,49 +47,37 @@ function isoDateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function addWeeks(d: Date, n: number): Date {
-  const result = new Date(d.getTime());
-  result.setDate(result.getDate() + n * 7);
-  return result;
-}
-
 function addDays(d: Date, n: number): Date {
-  const result = new Date(d.getTime());
-  result.setDate(result.getDate() + n);
-  return result;
+  const r = new Date(d.getTime());
+  r.setDate(r.getDate() + n);
+  return r;
 }
 
-function weekRange(
-  startDate: Date,
-  weekIndex: number,
-): {
-  weekStart: string;
-  weekEnd: string;
-  dueDateStart: Date;
-  dueDateEnd: Date;
-} {
-  const dueDateStart = addWeeks(startDate, weekIndex);
-  const dueDateEnd = addDays(addWeeks(startDate, weekIndex + 1), -1);
-  return {
-    weekStart: isoDateStr(dueDateStart),
-    weekEnd: isoDateStr(dueDateEnd),
-    dueDateStart,
-    dueDateEnd,
-  };
+function addWeeks(d: Date, n: number): Date {
+  return addDays(d, n * 7);
+}
+
+function weekBounds(start: Date, i: number) {
+  const s = addWeeks(start, i);
+  const e = addDays(addWeeks(start, i + 1), -1);
+  return { weekStart: isoDateStr(s), weekEnd: isoDateStr(e), s, e };
+}
+
+function findWeekIdx(date: Date, windowStart: Date, total: number): number | null {
+  for (let i = 0; i < total; i++) {
+    const { s, e } = weekBounds(windowStart, i);
+    if (date >= s && date <= e) return i;
+  }
+  return null;
 }
 
 function parseAssumptions(raw: unknown): ScenarioAssumptions {
-  if (!raw || typeof raw !== "object") {
-    return { ...DEFAULT_ASSUMPTIONS };
-  }
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_ASSUMPTIONS };
   const r = raw as Record<string, unknown>;
   return {
-    collectionRatePct:
-      typeof r.collectionRatePct === "number" ? r.collectionRatePct : 90,
-    payDelayDays:
-      typeof r.payDelayDays === "number" ? r.payDelayDays : 0,
-    revenueGrowthPct:
-      typeof r.revenueGrowthPct === "number" ? r.revenueGrowthPct : 0,
+    collectionRatePct: typeof r.collectionRatePct === "number" ? r.collectionRatePct : 90,
+    payDelayDays: typeof r.payDelayDays === "number" ? r.payDelayDays : 0,
+    revenueGrowthPct: typeof r.revenueGrowthPct === "number" ? r.revenueGrowthPct : 0,
     plannedSpend: Array.isArray(r.plannedSpend)
       ? r.plannedSpend.map((item) => {
           const i = item as Record<string, unknown>;
@@ -100,45 +85,48 @@ function parseAssumptions(raw: unknown): ScenarioAssumptions {
             label: typeof i.label === "string" ? i.label : "",
             amount: typeof i.amount === "number" ? i.amount : 0,
             startWeek: typeof i.startWeek === "number" ? i.startWeek : 0,
-            recurringWeekly:
-              typeof i.recurringWeekly === "boolean"
-                ? i.recurringWeekly
-                : false,
+            recurringWeekly: typeof i.recurringWeekly === "boolean" ? i.recurringWeekly : false,
           };
         })
       : [],
   };
 }
 
-function frequencyDays(frequency: string): number {
-  if (frequency === "WEEKLY") return 7;
-  if (frequency === "MONTHLY") return 30;
-  if (frequency === "QUARTERLY") return 91;
-  if (frequency === "YEARLY") return 365;
+function frequencyDays(f: string): number {
+  if (f === "WEEKLY") return 7;
+  if (f === "MONTHLY") return 30;
+  if (f === "QUARTERLY") return 91;
+  if (f === "YEARLY") return 365;
   return 30;
 }
 
-function getOccurrencesInWindow(
+function occurrencesInWindow(
   nextRunDateStr: string | null,
   endDateStr: string | null,
   frequency: string,
   windowEnd: Date,
 ): Date[] {
   if (!nextRunDateStr) return [];
-  const occurrences: Date[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  let current = new Date(nextRunDateStr);
   const endDate = endDateStr ? new Date(endDateStr) : null;
-  const stepDays = frequencyDays(frequency);
-  while (current <= windowEnd) {
-    if (endDate && current > endDate) break;
-    if (current >= today) {
-      occurrences.push(new Date(current));
-    }
-    current = addDays(current, stepDays);
+  const step = frequencyDays(frequency);
+  const result: Date[] = [];
+  let cur = new Date(nextRunDateStr);
+  while (cur <= windowEnd) {
+    if (endDate && cur > endDate) break;
+    if (cur >= today) result.push(new Date(cur));
+    cur = addDays(cur, step);
   }
-  return occurrences;
+  return result;
+}
+
+function accumulateAmounts(
+  buckets: string[],
+  amount: string,
+  weekIdx: number,
+): void {
+  buckets[weekIdx] = addDecimals(buckets[weekIdx] ?? "0.0000", amount);
 }
 
 @Injectable()
@@ -154,12 +142,10 @@ export class ForecastService {
     _requesterId: string,
   ): Promise<ForecastResponse> {
     const weeks = query.weeks ?? 13;
-    const cacheKey = FORECAST_CACHE_KEY(orgId, query.scenarioId, weeks);
-
     return this.cache.cached<ForecastResponse>(
-      cacheKey,
+      FORECAST_CACHE_KEY(orgId, query.scenarioId, weeks),
       () => this.buildForecast(orgId, query.scenarioId, weeks),
-      FORECAST_CACHE_TTL,
+      FORECAST_TTL,
     );
   }
 
@@ -168,148 +154,117 @@ export class ForecastService {
     scenarioId: number | undefined,
     weeks: number,
   ): Promise<ForecastResponse> {
-    const assumptions = await this.resolveAssumptions(orgId, scenarioId);
-    const resolvedScenarioId = await this.resolveScenarioId(
-      orgId,
-      scenarioId,
-    );
+    const [assumptions, resolvedScenarioId] = await Promise.all([
+      this.resolveAssumptions(orgId, scenarioId),
+      this.resolveScenarioId(orgId, scenarioId),
+    ]);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const windowEnd = addWeeks(today, weeks);
+    const todayStr = isoDateStr(today);
 
-    const [
-      openingCash,
-      openInvoiceRows,
-      recurringInvoiceTemplates,
-      openBillRows,
-      recurringBillTemplates,
-      monthlyPayrollEstimate,
-    ] = await Promise.all([
-      this.getOpeningCash(orgId),
-      this.getOpenInvoices(orgId),
-      this.getRecurringInvoiceTemplates(orgId, today),
-      this.getOpenBills(orgId),
-      this.getRecurringBillTemplates(orgId, today),
-      this.getMonthlyPayrollEstimate(orgId),
-    ]);
+    const [balanceRows, openInvRows, recurInvTmpls, openBillRows, recurBillTmpls, payrollEst] =
+      await Promise.all([
+        this.db
+          .select({ balance: finBankAccounts.currentBalance })
+          .from(finBankAccounts)
+          .where(and(eq(finBankAccounts.orgId, orgId), eq(finBankAccounts.isActive, true))),
+        this.db
+          .select({ total: invoices.total, amountPaid: invoices.amountPaid, dueDate: invoices.dueDate })
+          .from(invoices)
+          .where(and(eq(invoices.orgId, orgId), inArray(invoices.status, ["SENT", "OVERDUE", "PARTIALLY_PAID"]))),
+        this.db
+          .select({
+            nextRunDate: finRecurringInvoiceTemplates.nextRunDate,
+            endDate: finRecurringInvoiceTemplates.endDate,
+            frequency: finRecurringInvoiceTemplates.frequency,
+            payload: finRecurringInvoiceTemplates.payload,
+          })
+          .from(finRecurringInvoiceTemplates)
+          .where(
+            and(
+              eq(finRecurringInvoiceTemplates.orgId, orgId),
+              eq(finRecurringInvoiceTemplates.isActive, true),
+              or(isNull(finRecurringInvoiceTemplates.endDate), sql`${finRecurringInvoiceTemplates.endDate} >= ${todayStr}`),
+            ),
+          ),
+        this.db
+          .select({ total: purchaseBills.total, amountPaid: purchaseBills.amountPaid, dueDate: purchaseBills.dueDate })
+          .from(purchaseBills)
+          .where(and(eq(purchaseBills.orgId, orgId), inArray(purchaseBills.status, ["POSTED", "PARTIALLY_PAID"]))),
+        this.db
+          .select({
+            nextRunDate: finRecurringBillTemplates.nextRunDate,
+            endDate: finRecurringBillTemplates.endDate,
+            frequency: finRecurringBillTemplates.frequency,
+            payload: finRecurringBillTemplates.payload,
+          })
+          .from(finRecurringBillTemplates)
+          .where(
+            and(
+              eq(finRecurringBillTemplates.orgId, orgId),
+              eq(finRecurringBillTemplates.isActive, true),
+              or(isNull(finRecurringBillTemplates.endDate), sql`${finRecurringBillTemplates.endDate} >= ${todayStr}`),
+            ),
+          ),
+        this.getMonthlyPayrollEstimate(orgId),
+      ]);
 
-    const weeklyPayrollEstimate = String(
-      Number(monthlyPayrollEstimate) / 4.33,
+    const openingCash = balanceRows.reduce(
+      (acc, r) => addDecimals(acc, r.balance ?? "0"),
+      "0.0000",
     );
+    const weeklyPayroll = String(Number(payrollEst) / 4.33);
 
-    const inflowsByWeek: string[] = Array.from({ length: weeks }, () => "0.0000");
-    const outflowsByWeek: string[] = Array.from(
-      { length: weeks },
-      () => "0.0000",
-    );
-
+    const inflows = Array.from<string>({ length: weeks }).fill("0.0000");
+    const outflows = Array.from<string>({ length: weeks }).fill("0.0000");
     const collectionRate = String(assumptions.collectionRatePct / 100);
     const payDelay = assumptions.payDelayDays;
 
-    for (const inv of openInvoiceRows) {
-      const outstanding = subtractDecimals(
-        inv.total ?? "0",
-        inv.amountPaid ?? "0",
-      );
-      const effectiveInflow = multiplyDecimals(outstanding, collectionRate);
+    for (const inv of openInvRows) {
       if (!inv.dueDate) continue;
-      const rawDue = new Date(inv.dueDate);
-      const effectiveDue = addDays(rawDue, payDelay);
-      const weekIdx = this.findWeekIndex(effectiveDue, today, weeks);
-      if (weekIdx !== null) {
-        inflowsByWeek[weekIdx] = addDecimals(
-          inflowsByWeek[weekIdx] ?? "0.0000",
-          effectiveInflow,
-        );
-      }
+      const outstanding = subtractDecimals(inv.total ?? "0", inv.amountPaid ?? "0");
+      const effectiveInflow = multiplyDecimals(outstanding, collectionRate);
+      const effectiveDue = addDays(new Date(inv.dueDate), payDelay);
+      const idx = findWeekIdx(effectiveDue, today, weeks);
+      if (idx !== null) accumulateAmounts(inflows, effectiveInflow, idx);
     }
 
-    for (const tmpl of recurringInvoiceTemplates) {
-      const tmplTotal = Number(
-        (tmpl.payload as Record<string, unknown>).total ?? 0,
-      );
-      const tmplTotalStr = String(tmplTotal);
-      const effectiveInflow = multiplyDecimals(tmplTotalStr, collectionRate);
-      const occurrences = getOccurrencesInWindow(
-        tmpl.nextRunDate,
-        tmpl.endDate,
-        tmpl.frequency,
-        windowEnd,
-      );
-      for (const occ of occurrences) {
-        const effectiveDue = addDays(occ, payDelay);
-        const weekIdx = this.findWeekIndex(effectiveDue, today, weeks);
-        if (weekIdx !== null) {
-          inflowsByWeek[weekIdx] = addDecimals(
-            inflowsByWeek[weekIdx] ?? "0.0000",
-            effectiveInflow,
-          );
-        }
+    for (const tmpl of recurInvTmpls) {
+      const tmplTotal = String(Number((tmpl.payload as Record<string, unknown>).total ?? 0));
+      const effectiveInflow = multiplyDecimals(tmplTotal, collectionRate);
+      for (const occ of occurrencesInWindow(tmpl.nextRunDate, tmpl.endDate, tmpl.frequency, windowEnd)) {
+        const idx = findWeekIdx(addDays(occ, payDelay), today, weeks);
+        if (idx !== null) accumulateAmounts(inflows, effectiveInflow, idx);
       }
     }
 
     for (const bill of openBillRows) {
-      const outstanding = subtractDecimals(
-        bill.total ?? "0",
-        bill.amountPaid ?? "0",
-      );
       if (!bill.dueDate) continue;
-      const due = new Date(bill.dueDate);
-      const weekIdx = this.findWeekIndex(due, today, weeks);
-      if (weekIdx !== null) {
-        outflowsByWeek[weekIdx] = addDecimals(
-          outflowsByWeek[weekIdx] ?? "0.0000",
-          outstanding,
-        );
-      }
+      const outstanding = subtractDecimals(bill.total ?? "0", bill.amountPaid ?? "0");
+      const idx = findWeekIdx(new Date(bill.dueDate), today, weeks);
+      if (idx !== null) accumulateAmounts(outflows, outstanding, idx);
     }
 
-    for (const tmpl of recurringBillTemplates) {
-      const tmplTotal = Number(
-        (tmpl.payload as Record<string, unknown>).total ?? 0,
-      );
-      const tmplTotalStr = String(tmplTotal);
-      const occurrences = getOccurrencesInWindow(
-        tmpl.nextRunDate,
-        tmpl.endDate,
-        tmpl.frequency,
-        windowEnd,
-      );
-      for (const occ of occurrences) {
-        const weekIdx = this.findWeekIndex(occ, today, weeks);
-        if (weekIdx !== null) {
-          outflowsByWeek[weekIdx] = addDecimals(
-            outflowsByWeek[weekIdx] ?? "0.0000",
-            tmplTotalStr,
-          );
-        }
+    for (const tmpl of recurBillTmpls) {
+      const tmplTotal = String(Number((tmpl.payload as Record<string, unknown>).total ?? 0));
+      for (const occ of occurrencesInWindow(tmpl.nextRunDate, tmpl.endDate, tmpl.frequency, windowEnd)) {
+        const idx = findWeekIdx(occ, today, weeks);
+        if (idx !== null) accumulateAmounts(outflows, tmplTotal, idx);
       }
     }
 
     for (let i = 0; i < weeks; i++) {
-      if ((i + 1) % 4 === 0) {
-        outflowsByWeek[i] = addDecimals(
-          outflowsByWeek[i] ?? "0.0000",
-          weeklyPayrollEstimate,
-        );
-      }
+      if ((i + 1) % 4 === 0) accumulateAmounts(outflows, weeklyPayroll, i);
     }
 
     for (const spend of assumptions.plannedSpend) {
-      const amountStr = String(spend.amount);
+      const amtStr = String(spend.amount);
       if (spend.recurringWeekly) {
-        for (let i = spend.startWeek; i < weeks; i++) {
-          outflowsByWeek[i] = addDecimals(
-            outflowsByWeek[i] ?? "0.0000",
-            amountStr,
-          );
-        }
+        for (let i = spend.startWeek; i < weeks; i++) accumulateAmounts(outflows, amtStr, i);
       } else if (spend.startWeek < weeks) {
-        outflowsByWeek[spend.startWeek] = addDecimals(
-          outflowsByWeek[spend.startWeek] ?? "0.0000",
-          amountStr,
-        );
+        accumulateAmounts(outflows, amtStr, spend.startWeek);
       }
     }
 
@@ -319,25 +274,25 @@ export class ForecastService {
     let totalOutflows = "0.0000";
 
     for (let i = 0; i < weeks; i++) {
-      const { weekStart, weekEnd } = weekRange(today, i);
-      const inflows = inflowsByWeek[i] ?? "0.0000";
-      const outflows = outflowsByWeek[i] ?? "0.0000";
-      const net = subtractDecimals(inflows, outflows);
+      const { weekStart, weekEnd } = weekBounds(today, i);
+      const weekInflows = inflows[i] ?? "0.0000";
+      const weekOutflows = outflows[i] ?? "0.0000";
+      const net = subtractDecimals(weekInflows, weekOutflows);
       const closingCash = addDecimals(runningCash, net);
       forecastWeeks.push({
         weekIndex: i,
         weekStart,
         weekEnd,
         openingCash: runningCash,
-        inflows,
-        outflows,
+        inflows: weekInflows,
+        outflows: weekOutflows,
         net,
         closingCash,
         minimumBalanceWarning: compareDecimals(closingCash, "0") < 0,
       });
       runningCash = closingCash;
-      totalInflows = addDecimals(totalInflows, inflows);
-      totalOutflows = addDecimals(totalOutflows, outflows);
+      totalInflows = addDecimals(totalInflows, weekInflows);
+      totalOutflows = addDecimals(totalOutflows, weekOutflows);
     }
 
     return {
@@ -349,224 +304,52 @@ export class ForecastService {
     };
   }
 
-  private findWeekIndex(
-    date: Date,
-    windowStart: Date,
-    totalWeeks: number,
-  ): number | null {
-    for (let i = 0; i < totalWeeks; i++) {
-      const { dueDateStart, dueDateEnd } = weekRange(windowStart, i);
-      if (date >= dueDateStart && date <= dueDateEnd) return i;
-    }
-    return null;
-  }
-
   private async resolveAssumptions(
     orgId: string,
     scenarioId: number | undefined,
   ): Promise<ScenarioAssumptions> {
-    if (scenarioId !== undefined) {
-      const rows = await this.db
-        .select({ assumptions: finCashFlowScenarios.assumptions })
-        .from(finCashFlowScenarios)
-        .where(
-          and(
-            eq(finCashFlowScenarios.id, scenarioId),
-            eq(finCashFlowScenarios.orgId, orgId),
-          ),
-        )
-        .limit(1);
-      if (rows.length > 0) {
-        return parseAssumptions(rows[0]?.assumptions);
-      }
-      return { ...DEFAULT_ASSUMPTIONS };
-    }
+    const where = scenarioId !== undefined
+      ? and(eq(finCashFlowScenarios.id, scenarioId), eq(finCashFlowScenarios.orgId, orgId))
+      : and(eq(finCashFlowScenarios.orgId, orgId), eq(finCashFlowScenarios.isDefault, true));
 
-    const defaultRows = await this.db
+    const rows = await this.db
       .select({ assumptions: finCashFlowScenarios.assumptions })
       .from(finCashFlowScenarios)
-      .where(
-        and(
-          eq(finCashFlowScenarios.orgId, orgId),
-          eq(finCashFlowScenarios.isDefault, true),
-        ),
-      )
+      .where(where)
       .limit(1);
 
-    if (defaultRows.length > 0) {
-      return parseAssumptions(defaultRows[0]?.assumptions);
-    }
-    return { ...DEFAULT_ASSUMPTIONS };
+    return rows.length > 0 ? parseAssumptions(rows[0]?.assumptions) : { ...DEFAULT_ASSUMPTIONS };
   }
 
   private async resolveScenarioId(
     orgId: string,
     scenarioId: number | undefined,
   ): Promise<number | null> {
-    if (scenarioId !== undefined) {
-      const rows = await this.db
-        .select({ id: finCashFlowScenarios.id })
-        .from(finCashFlowScenarios)
-        .where(
-          and(
-            eq(finCashFlowScenarios.id, scenarioId),
-            eq(finCashFlowScenarios.orgId, orgId),
-          ),
-        )
-        .limit(1);
-      return rows[0]?.id ?? null;
-    }
+    const where = scenarioId !== undefined
+      ? and(eq(finCashFlowScenarios.id, scenarioId), eq(finCashFlowScenarios.orgId, orgId))
+      : and(eq(finCashFlowScenarios.orgId, orgId), eq(finCashFlowScenarios.isDefault, true));
 
-    const defaultRows = await this.db
+    const rows = await this.db
       .select({ id: finCashFlowScenarios.id })
       .from(finCashFlowScenarios)
-      .where(
-        and(
-          eq(finCashFlowScenarios.orgId, orgId),
-          eq(finCashFlowScenarios.isDefault, true),
-        ),
-      )
+      .where(where)
       .limit(1);
-    return defaultRows[0]?.id ?? null;
-  }
 
-  private async getOpeningCash(orgId: string): Promise<string> {
-    const rows = await this.db
-      .select({ balance: finBankAccounts.currentBalance })
-      .from(finBankAccounts)
-      .where(
-        and(
-          eq(finBankAccounts.orgId, orgId),
-          eq(finBankAccounts.isActive, true),
-        ),
-      );
-    return rows.reduce(
-      (acc, r) => addDecimals(acc, r.balance ?? "0"),
-      "0.0000",
-    );
-  }
-
-  private async getOpenInvoices(
-    orgId: string,
-  ): Promise<
-    Array<{ total: string; amountPaid: string; dueDate: string | null }>
-  > {
-    return this.db
-      .select({
-        total: invoices.total,
-        amountPaid: invoices.amountPaid,
-        dueDate: invoices.dueDate,
-      })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.orgId, orgId),
-          inArray(invoices.status, ["SENT", "OVERDUE", "PARTIAL"]),
-        ),
-      );
-  }
-
-  private async getRecurringInvoiceTemplates(
-    orgId: string,
-    today: Date,
-  ): Promise<
-    Array<{
-      nextRunDate: string | null;
-      endDate: string | null;
-      frequency: string;
-      payload: unknown;
-    }>
-  > {
-    const todayStr = isoDateStr(today);
-    return this.db
-      .select({
-        nextRunDate: finRecurringInvoiceTemplates.nextRunDate,
-        endDate: finRecurringInvoiceTemplates.endDate,
-        frequency: finRecurringInvoiceTemplates.frequency,
-        payload: finRecurringInvoiceTemplates.payload,
-      })
-      .from(finRecurringInvoiceTemplates)
-      .where(
-        and(
-          eq(finRecurringInvoiceTemplates.orgId, orgId),
-          eq(finRecurringInvoiceTemplates.isActive, true),
-          or(
-            isNull(finRecurringInvoiceTemplates.endDate),
-            sql`${finRecurringInvoiceTemplates.endDate} >= ${todayStr}`,
-          ),
-        ),
-      );
-  }
-
-  private async getOpenBills(
-    orgId: string,
-  ): Promise<
-    Array<{ total: string; amountPaid: string; dueDate: string | null }>
-  > {
-    return this.db
-      .select({
-        total: purchaseBills.total,
-        amountPaid: purchaseBills.amountPaid,
-        dueDate: purchaseBills.dueDate,
-      })
-      .from(purchaseBills)
-      .where(
-        and(
-          eq(purchaseBills.orgId, orgId),
-          inArray(purchaseBills.status, ["APPROVED", "PARTIAL"]),
-        ),
-      );
-  }
-
-  private async getRecurringBillTemplates(
-    orgId: string,
-    today: Date,
-  ): Promise<
-    Array<{
-      nextRunDate: string | null;
-      endDate: string | null;
-      frequency: string;
-      payload: unknown;
-    }>
-  > {
-    const todayStr = isoDateStr(today);
-    return this.db
-      .select({
-        nextRunDate: finRecurringBillTemplates.nextRunDate,
-        endDate: finRecurringBillTemplates.endDate,
-        frequency: finRecurringBillTemplates.frequency,
-        payload: finRecurringBillTemplates.payload,
-      })
-      .from(finRecurringBillTemplates)
-      .where(
-        and(
-          eq(finRecurringBillTemplates.orgId, orgId),
-          eq(finRecurringBillTemplates.isActive, true),
-          or(
-            isNull(finRecurringBillTemplates.endDate),
-            sql`${finRecurringBillTemplates.endDate} >= ${todayStr}`,
-          ),
-        ),
-      );
+    return rows[0]?.id ?? null;
   }
 
   private async getMonthlyPayrollEstimate(orgId: string): Promise<string> {
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-    const payrollAccountRows = await this.db
+    const accountRows = await this.db
       .select({ accountId: accSystemAccountMap.accountId })
       .from(accSystemAccountMap)
-      .where(
-        and(
-          eq(accSystemAccountMap.orgId, orgId),
-          eq(accSystemAccountMap.purpose, "PAYROLL_PAYABLE"),
-        ),
-      );
+      .where(and(eq(accSystemAccountMap.orgId, orgId), eq(accSystemAccountMap.purpose, "PAYROLL_PAYABLE")));
 
-    if (payrollAccountRows.length === 0) return "0.0000";
+    if (accountRows.length === 0) return "0.0000";
 
-    const accountIds = payrollAccountRows.map((r) => r.accountId);
+    const accountIds = accountRows.map((r) => r.accountId);
     const rows = await this.db
       .select({ total: sql<string>`SUM(${journalLines.credit})` })
       .from(journalLines)
@@ -581,8 +364,7 @@ export class ForecastService {
       );
 
     const totalCredit = String(rows[0]?.total ?? "0");
-    const monthly = Number(totalCredit) / 3;
-    return String(monthly);
+    return String(Number(totalCredit) / 3);
   }
 
   async compareForecast(
@@ -592,51 +374,32 @@ export class ForecastService {
   ): Promise<ScenarioCompareResponse> {
     const { scenarioIds } = query;
 
-    const scenarioRows = await this.db
-      .select({
-        id: finCashFlowScenarios.id,
-        name: finCashFlowScenarios.name,
-        kind: finCashFlowScenarios.kind,
-      })
-      .from(finCashFlowScenarios)
-      .where(
-        and(
-          eq(finCashFlowScenarios.orgId, orgId),
-          inArray(finCashFlowScenarios.id, scenarioIds),
+    const [scenarioRows, forecasts] = await Promise.all([
+      this.db
+        .select({ id: finCashFlowScenarios.id, name: finCashFlowScenarios.name, kind: finCashFlowScenarios.kind })
+        .from(finCashFlowScenarios)
+        .where(and(eq(finCashFlowScenarios.orgId, orgId), inArray(finCashFlowScenarios.id, scenarioIds))),
+      Promise.all(
+        scenarioIds.map((sid) =>
+          this.getForecast(orgId, { weeks: 13, scenarioId: sid }, requesterId),
         ),
-      );
-
-    const forecasts = await Promise.all(
-      scenarioIds.map((sid) =>
-        this.getForecast(orgId, { weeks: 13, scenarioId: sid }, requesterId),
       ),
-    );
+    ]);
 
     const weekCount = forecasts[0]?.weeks.length ?? 13;
     const comparedWeeks = Array.from({ length: weekCount }, (_, i) => {
-      const first = forecasts[0]?.weeks[i];
       const closingCash: Record<number, string> = {};
       for (let j = 0; j < scenarioIds.length; j++) {
         const sid = scenarioIds[j];
         const week = forecasts[j]?.weeks[i];
-        if (sid !== undefined && week !== undefined) {
-          closingCash[sid] = week.closingCash;
-        }
+        if (sid !== undefined && week !== undefined) closingCash[sid] = week.closingCash;
       }
-      return {
-        weekIndex: i,
-        weekStart: first?.weekStart ?? "",
-        closingCash,
-      };
+      return { weekIndex: i, weekStart: forecasts[0]?.weeks[i]?.weekStart ?? "", closingCash };
     });
 
     return {
       scenarioIds,
-      scenarios: scenarioRows.map((s) => ({
-        id: s.id,
-        name: s.name,
-        kind: s.kind,
-      })),
+      scenarios: scenarioRows.map((s) => ({ id: s.id, name: s.name, kind: s.kind })),
       weeks: comparedWeeks,
     };
   }

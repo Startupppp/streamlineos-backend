@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe,
+  Body, Controller, Get, HttpCode, Param, ParseIntPipe,
   Patch, Post, Put, Query, UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";

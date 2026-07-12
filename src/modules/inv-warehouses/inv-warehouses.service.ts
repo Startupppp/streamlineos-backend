@@ -20,6 +20,7 @@ export class InvWarehousesService {
         where: eq(invWarehouses.orgId, orgId),
         with: { locations: true },
         orderBy: (t, { asc: a }) => [a(t.name)],
+        limit: 200,
       }),
       CACHE_TTL.MEDIUM
     );
@@ -104,6 +105,7 @@ export class InvWarehousesService {
     return this.db.query.invLocations.findMany({
       where: and(eq(invLocations.warehouseId, warehouseId), eq(invLocations.orgId, orgId)),
       orderBy: (t, { asc: a }) => [a(t.code)],
+      limit: 200,
     });
   }
 

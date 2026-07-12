@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, max } from "drizzle-orm";
 import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";

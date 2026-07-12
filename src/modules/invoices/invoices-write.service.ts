@@ -1,11 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
-import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, journalEntries, journalLines, ledgerAccounts } from "../../db/schema";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import type { CreateInvoiceInput, RecordPaymentInput, UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
 const GST_RATES = [0, 5, 12, 18, 28] as const;
@@ -62,6 +63,7 @@ export class InvoicesWriteService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly lifecycle: InvoicesLifecycleService,
   ) {}
 
   private async resolveSupplierStateCode(orgId: string): Promise<string> {
@@ -318,24 +320,13 @@ export class InvoicesWriteService {
       })
       .returning();
 
-    const [{ totalPaid }] = await tx
-      .select({ totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float` })
-      .from(payments)
-      .where(eq(payments.invoiceId, invoiceId));
-
-    const invoice = await tx.query.invoices.findFirst({
-      where: eq(invoices.id, invoiceId),
-      columns: { total: true, status: true },
-    });
-
-    if (invoice && Number(invoice.total) <= totalPaid && invoice.status !== "PAID") {
-      await tx
-        .update(invoices)
-        .set({ status: "PAID", paidAt: new Date(), updatedAt: new Date() })
-        .where(eq(invoices.id, invoiceId));
-    }
+    await this.recomputeInvoiceBalance(invoiceId, tx);
 
     return payment;
+  }
+
+  private recomputeInvoiceBalance(invoiceId: number, tx: DbOrTx): Promise<void> {
+    return this.lifecycle.recomputeInvoiceBalance(invoiceId, tx);
   }
 
   async recordPayment(orgId: string, userId: string, invoiceId: number, input: RecordPaymentInput) {
@@ -358,14 +349,47 @@ export class InvoicesWriteService {
       );
     }
 
+    const allocations = input.allocations ?? [];
+    const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
+    if (allocations.length > 0 && Math.abs(allocatedTotal - input.amount) > 0.01) {
+      throw new BadRequestException("Allocations total must equal payment amount");
+    }
+
+    const allocInvoiceIds = allocations.map((a) => a.invoiceId);
+    if (allocInvoiceIds.length > 0) {
+      const validInvoices = await this.db
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(and(eq(invoices.orgId, orgId), inArray(invoices.id, allocInvoiceIds)));
+      if (validInvoices.length !== allocInvoiceIds.length) {
+        throw new BadRequestException("One or more allocation invoices not found in this organisation");
+      }
+    }
+
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
-    return this.db.transaction(async (tx) => {
-      const created = await this.createPayment(orgId, invoiceId, { ...input, createdBy: userId }, tx);
+    const created = await this.db.transaction(async (tx) => {
+      const payment = await this.createPayment(orgId, invoiceId, { ...input, createdBy: userId }, tx);
+
+      if (allocations.length > 0) {
+        await tx.insert(finPaymentAllocations).values(
+          allocations.map((a) => ({
+            orgId,
+            paymentId: payment.id,
+            invoiceId: a.invoiceId,
+            amount: a.amount.toFixed(4),
+          })),
+        );
+        const touchedIds = new Set([invoiceId, ...allocations.map((a) => a.invoiceId)]);
+        for (const id of touchedIds) {
+          await this.recomputeInvoiceBalance(id, tx);
+        }
+      }
+
       await this.posting.postPaymentReceipt(
         {
           orgId,
-          paymentId: created.id,
+          paymentId: payment.id,
           invoiceNumber: invoice.invoiceNumber,
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
@@ -374,8 +398,36 @@ export class InvoicesWriteService {
         },
         tx,
       );
-      return created;
+
+      return payment;
     });
+
+    const members = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(5);
+
+    void this.dispatch.emit({
+      eventKey: "accounting.invoice.payment_received",
+      orgId,
+      actorUserId: userId,
+      targetUserIds: members.map((m) => m.userId),
+      entityType: "invoice",
+      entityId: String(invoiceId),
+      title: "Payment received",
+      message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
+    }).catch(() => undefined);
+
+    return created;
+  }
+
+  voidInvoice(orgId: string, userId: string, invoiceId: number): Promise<{ success: true }> {
+    return this.lifecycle.voidInvoice(orgId, userId, invoiceId);
+  }
+
+  markOverdueInvoices(orgId?: string): Promise<{ updated: number }> {
+    return this.lifecycle.markOverdueInvoices(orgId);
   }
 
   private async buildCloneInput(sourceId: number): Promise<CreateInvoiceInput> {

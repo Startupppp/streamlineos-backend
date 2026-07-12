@@ -1,12 +1,12 @@
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invVendorReturns, invVendorReturnLines, invSerialNumbers, invStockLevels,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { StockEngineService } from "../inv-stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
 import type { ListReturnsInput, CreateVendorReturnInput, PostVendorReturnInput } from "./dto/inv-returns.schemas";
@@ -108,6 +108,7 @@ export class VendorReturnsService {
       with: { lines: true },
     });
     if (!ret) throw new NotFoundException("Vendor return not found");
+    if (ret.status === "POSTED") return this.get(orgId, returnId);
     if (ret.status !== "DRAFT") throw new BadRequestException("Only DRAFT vendor returns can be posted");
 
     const resolvedMovements = await Promise.all(
@@ -125,27 +126,41 @@ export class VendorReturnsService {
       })
     );
 
-    const movements = resolvedMovements;
-
-    await this.engine.execute(orgId, userId, {
-      idempotencyKey,
-      sourceType: "inv_vendor_return",
-      sourceId: String(returnId),
-      reason: data.reason,
-      movements,
-    });
-
-    for (const line of ret.lines.filter((l): l is typeof l & { serialId: number } => l.serialId !== null)) {
-      await this.db.update(invSerialNumbers)
-        .set({ status: "RETURNED" })
-        .where(eq(invSerialNumbers.id, line.serialId));
+    try {
+      await this.engine.execute(orgId, userId, {
+        idempotencyKey,
+        sourceType: "inv_vendor_return",
+        sourceId: String(returnId),
+        reason: data.reason,
+        movements: resolvedMovements,
+      });
+    } catch (err) {
+      const isCompletedReplay =
+        err instanceof ConflictException &&
+        typeof (err as ConflictException & { idempotentResult?: unknown }).idempotentResult !== "undefined";
+      if (!isCompletedReplay) throw err;
     }
 
-    await this.db.update(invVendorReturns)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-      .where(eq(invVendorReturns.id, returnId));
+    const serialLines = ret.lines.filter(
+      (l): l is typeof l & { serialId: number } => l.serialId !== null
+    );
 
-    await this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`);
+    await this.db.transaction(async (tx) => {
+      if (serialLines.length > 0) {
+        await tx.update(invSerialNumbers)
+          .set({ status: "RETURNED" })
+          .where(inArray(invSerialNumbers.id, serialLines.map((l) => l.serialId)));
+      }
+
+      await tx.update(invVendorReturns)
+        .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
+        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.status, "DRAFT")));
+    });
+
+    await Promise.all([
+      this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`),
+      this.cache.del(CACHE_KEYS.invVendorReturnDetail(orgId, returnId)),
+    ]);
     return this.get(orgId, returnId);
   }
 

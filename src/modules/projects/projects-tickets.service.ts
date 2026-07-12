@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -126,7 +126,7 @@ export class ProjectsTicketsService {
     } = query;
     const offset = (page - 1) * limit;
 
-    const conditions: ReturnType<typeof eq>[] = [
+    const conditions: SQL<unknown>[] = [
       eq(tickets.orgId, u.orgId),
       eq(tickets.projectId, projectId),
     ];
@@ -137,28 +137,29 @@ export class ProjectsTicketsService {
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
-        conditions.push(
-          or(
-            sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
-            isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
-          ) as ReturnType<typeof eq>,
+        const searchCondition = or(
+          sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
+          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
         );
+        if (searchCondition) {
+          conditions.push(searchCondition);
+        }
       } else {
-        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}` as ReturnType<typeof eq>);
+        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
       }
     }
 
     if (status && status.length > 0) {
-      conditions.push(inArray(tickets.status, status) as ReturnType<typeof eq>);
+      conditions.push(inArray(tickets.status, status));
     }
 
     if (priority && priority.length > 0) {
-      conditions.push(inArray(tickets.priority, priority) as ReturnType<typeof eq>);
+      conditions.push(inArray(tickets.priority, priority));
     }
 
     if (type && type.length > 0) {
       conditions.push(
-        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])` as ReturnType<typeof eq>,
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
       );
     }
 
@@ -166,13 +167,14 @@ export class ProjectsTicketsService {
       const unassigned = assigneeId.includes("__unassigned__");
       const realIds = assigneeId.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        conditions.push(
-          or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds)) as ReturnType<typeof eq>,
-        );
+        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        if (assigneeCondition) {
+          conditions.push(assigneeCondition);
+        }
       } else if (unassigned) {
-        conditions.push(isNull(tickets.assigneeId) as ReturnType<typeof eq>);
+        conditions.push(isNull(tickets.assigneeId));
       } else {
-        conditions.push(inArray(tickets.assigneeId, realIds) as ReturnType<typeof eq>);
+        conditions.push(inArray(tickets.assigneeId, realIds));
       }
     }
 
@@ -182,28 +184,28 @@ export class ProjectsTicketsService {
           SELECT 1 FROM ticket_label_mappings tlm
           WHERE tlm.ticket_id = ${tickets.id}
           AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
-        )` as ReturnType<typeof eq>,
+        )`,
       );
     }
 
     if (sprintId !== undefined) {
-      conditions.push(eq(tickets.sprintId, sprintId) as ReturnType<typeof eq>);
+      conditions.push(eq(tickets.sprintId, sprintId));
     }
 
     if (cycleId && cycleId.length > 0) {
-      conditions.push(inArray(tickets.cycleId, cycleId) as ReturnType<typeof eq>);
+      conditions.push(inArray(tickets.cycleId, cycleId));
     }
 
     if (epicId !== undefined) {
-      conditions.push(eq(tickets.epicId, epicId) as ReturnType<typeof eq>);
+      conditions.push(eq(tickets.epicId, epicId));
     }
 
     if (dueDateFrom) {
-      conditions.push(gte(tickets.dueDate, dueDateFrom) as ReturnType<typeof eq>);
+      conditions.push(gte(tickets.dueDate, dueDateFrom));
     }
 
     if (dueDateTo) {
-      conditions.push(lte(tickets.dueDate, dueDateTo) as ReturnType<typeof eq>);
+      conditions.push(lte(tickets.dueDate, dueDateTo));
     }
 
     const where = and(...conditions);
@@ -703,17 +705,6 @@ export class ProjectsTicketsService {
       isOrgOwner: u.isOrgOwner,
       isPlatformAdmin: u.isPlatformAdmin,
     });
-  }
-
-  private async resolveProjectRole(orgId: string, userId: string, projectId: number): Promise<string | null> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
-    if (perms.has("projects:manage")) return "OWNER";
-    const memberRows = await this.db
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-      .limit(1);
-    return memberRows[0]?.role ?? null;
   }
 
   async exportTickets(u: CurrentUserContext, projectId: number) {

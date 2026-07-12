@@ -1058,6 +1058,12 @@ const CRM_PERMISSIONS: Permission[] = [
     description: "Manage CRM automation rules",
   },
   {
+    name: "crm:sequences:manage",
+    resource: "crm:sequences",
+    action: "manage",
+    description: "Manage CRM email/call sequences",
+  },
+  {
     name: "crm:products:manage",
     resource: "crm:products",
     action: "manage",
@@ -1124,6 +1130,18 @@ const CRM_PERMISSIONS: Permission[] = [
     action: "update",
     description: "Update, complete, and snooze CRM tasks",
     scopable: true,
+  },
+  {
+    name: "crm:campaigns:view",
+    resource: "crm:campaigns",
+    action: "view",
+    description: "View CRM campaigns, attribution reports, and ROI metrics",
+  },
+  {
+    name: "crm:campaigns:manage",
+    resource: "crm:campaigns",
+    action: "manage",
+    description: "Create, update, and delete CRM campaigns",
   },
 ];
 
@@ -3582,6 +3600,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "crm:targets:view",
     "crm:incentives:read",
     "crm:reports:view",
+    "crm:campaigns:view",
     "crm:customer360:view",
     "crm:settings:view",
     "crm:ai:use",
@@ -3919,6 +3938,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "crm:scoring-rules:manage",
     "crm:sla:manage",
     "crm:automations:manage",
+    "crm:sequences:manage",
     "crm:products:manage",
     "crm:pricebooks:manage",
     "crm:quotes:approve",
@@ -3928,6 +3948,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "crm:targets:manage",
     "crm:reports:view",
     "crm:reports:export",
+    "crm:campaigns:view",
+    "crm:campaigns:manage",
     "crm:incentives:read",
     "crm:incentives:approve",
     "reports:generate",

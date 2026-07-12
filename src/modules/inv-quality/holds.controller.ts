@@ -6,13 +6,14 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { HoldsService } from "./quality-holds.service";
 import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/quality/holds")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class HoldsController {
   constructor(private readonly svc: HoldsService) {}
 
@@ -24,6 +25,16 @@ export class HoldsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);
+  }
+
+  @Get(":holdId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:quality:read")
+  findOne(
+    @Param("holdId", ParseIntPipe) holdId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.findOne(u.orgId, holdId);
   }
 
   @Post()

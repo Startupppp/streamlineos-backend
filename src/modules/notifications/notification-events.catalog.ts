@@ -69,6 +69,7 @@ const CRM = [
   e("crm.automation.failed", "crm", "CRM", "Automation failed", { defaultPriority: "HIGH", defaultType: "ERROR", defaultChannels: IA_EMAIL }),
   e("crm.lead.converted", "crm", "CRM", "Lead converted to client", { defaultType: "SUCCESS", defaultChannels: IA_PUSH }),
   e("crm.client.assigned", "crm", "CRM", "New client assigned to you", { defaultPriority: "HIGH", defaultChannels: IA_PUSH }),
+  e("crm.ai.score_ready", "crm", "AI", "AI lead score generated", { defaultChannels: IA }),
 ];
 
 const HR = [
@@ -194,6 +195,7 @@ const ACCOUNTING = [
   e("accounting.reconciliation.mismatch", "accounting", "ACCOUNTING", "Bank reconciliation mismatch", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
   e("accounting.bank.import_completed", "accounting", "ACCOUNTING", "Bank import completed", { defaultType: "SUCCESS", defaultChannels: IA }),
   e("accounting.tax.due", "accounting", "ACCOUNTING", "Tax payment due", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL }),
+  e("accounting.tax.payment_posted", "accounting", "ACCOUNTING", "Tax payment posted", { defaultType: "SUCCESS", defaultChannels: IA }),
   e("accounting.budget.exceeded", "accounting", "ACCOUNTING", "Budget threshold exceeded", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
   e("accounting.depreciation.run_posted", "accounting", "ACCOUNTING", "Depreciation run posted", { defaultChannels: IA }),
 ];

@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import type { OverviewQuery } from "./dto/finance-reports.schemas";
 
 function todayIso(): string {
@@ -84,6 +84,8 @@ export class OverviewService {
       openApprovalRows,
       trendRows,
       burnRows,
+      outputTaxRows,
+      inputTaxRows,
     ] = await Promise.all([
       this.db
         .select({
@@ -204,6 +206,38 @@ export class OverviewService {
             ),
           ),
       ]),
+
+      this.db
+        .select({
+          outputCgst: sql<string>`coalesce(sum(${invoices.cgstAmount}), 0)`,
+          outputSgst: sql<string>`coalesce(sum(${invoices.sgstAmount}), 0)`,
+          outputIgst: sql<string>`coalesce(sum(${invoices.igstAmount}), 0)`,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.orgId, orgId),
+            inArray(invoices.status, ["ISSUED", "PAID", "OVERDUE"]),
+            gte(invoices.createdAt, new Date(`${from}T00:00:00.000Z`)),
+            lte(invoices.createdAt, new Date(`${to}T23:59:59.000Z`)),
+          ),
+        ),
+
+      this.db
+        .select({
+          inputCgst: sql<string>`coalesce(sum(${purchaseBills.cgstAmount}), 0)`,
+          inputSgst: sql<string>`coalesce(sum(${purchaseBills.sgstAmount}), 0)`,
+          inputIgst: sql<string>`coalesce(sum(${purchaseBills.igstAmount}), 0)`,
+        })
+        .from(purchaseBills)
+        .where(
+          and(
+            eq(purchaseBills.orgId, orgId),
+            inArray(purchaseBills.status, ["POSTED", "PARTIALLY_PAID", "PAID"]),
+            gte(purchaseBills.billDate, from),
+            lte(purchaseBills.billDate, to),
+          ),
+        ),
     ]);
 
     const cashBalance = bankAccounts.reduce((acc, a) => acc + Number(a.balance ?? 0), 0);
@@ -237,6 +271,16 @@ export class OverviewService {
       expenses: data.expenses.toFixed(2),
     }));
 
+    const outTax = outputTaxRows[0];
+    const inTax = inputTaxRows[0];
+    const taxPayable =
+      Number(outTax?.outputCgst ?? 0) +
+      Number(outTax?.outputSgst ?? 0) +
+      Number(outTax?.outputIgst ?? 0) -
+      Number(inTax?.inputCgst ?? 0) -
+      Number(inTax?.inputSgst ?? 0) -
+      Number(inTax?.inputIgst ?? 0);
+
     const burnRows3m = burnRows[0];
     const burnRaw = burnRows3m[0];
     const totalExpense3m = Number(burnRaw?.totalDebit ?? 0) - Number(burnRaw?.totalCredit ?? 0);
@@ -269,6 +313,7 @@ export class OverviewService {
         count: Number(apRow?.cnt ?? 0),
         amount: Number(apRow?.total ?? 0).toFixed(2),
       },
+      taxPayable: taxPayable.toFixed(2),
       burnRate: averageBurnRate.toFixed(2),
       runwayMonths,
       reconciliationGaps: reconGaps,

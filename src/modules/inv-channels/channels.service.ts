@@ -33,6 +33,7 @@ export class ChannelsService {
         this.db.query.invChannels.findMany({
           where: eq(invChannels.orgId, orgId),
           orderBy: (t, { asc }) => [asc(t.name)],
+          limit: 200,
         }),
       CACHE_TTL.MEDIUM,
     );
@@ -168,10 +169,15 @@ export class ChannelsService {
     const safetyBuffer = parseFloat(channel.safetyBuffer ?? "0");
     const publishThreshold = parseFloat(channel.publishThreshold ?? "0");
     const isInternal = channel.channelType === "INTERNAL";
+    const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
+    const pubError = isInternal ? null : "Provider not connected";
+    const pubAt = isInternal ? new Date() : null;
+    const now = new Date();
 
     let synced = 0;
     let skipped = 0;
 
+    const rows: Array<typeof invChannelStockPublications.$inferInsert> = [];
     for (const [productVariantId, totals] of variantMap.entries()) {
       const available =
         totals.onHand - totals.committed - totals.blocked - totals.qualityHold;
@@ -182,22 +188,25 @@ export class ChannelsService {
         continue;
       }
 
-      const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
-      const pubError = isInternal ? null : "Provider not connected";
-      const pubAt = isInternal ? new Date() : null;
+      rows.push({
+        orgId,
+        channelId,
+        productVariantId,
+        publishedQty: publishable.toFixed(4),
+        availableQty: available.toFixed(4),
+        status: pubStatus,
+        error: pubError,
+        publishedAt: pubAt,
+      });
+      synced++;
+    }
 
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
       await this.db
         .insert(invChannelStockPublications)
-        .values({
-          orgId,
-          channelId,
-          productVariantId,
-          publishedQty: publishable.toFixed(4),
-          availableQty: available.toFixed(4),
-          status: pubStatus,
-          error: pubError,
-          publishedAt: pubAt,
-        })
+        .values(chunk)
         .onConflictDoUpdate({
           target: [
             invChannelStockPublications.orgId,
@@ -205,16 +214,14 @@ export class ChannelsService {
             invChannelStockPublications.productVariantId,
           ],
           set: {
-            publishedQty: publishable.toFixed(4),
-            availableQty: available.toFixed(4),
-            status: pubStatus,
-            error: pubError,
-            publishedAt: pubAt,
-            updatedAt: new Date(),
+            publishedQty: sql`excluded.published_qty`,
+            availableQty: sql`excluded.available_qty`,
+            status: sql`excluded.status`,
+            error: sql`excluded.error`,
+            publishedAt: sql`excluded.published_at`,
+            updatedAt: now,
           },
         });
-
-      synced++;
     }
 
     await this.audit.insert(this.db, {
@@ -356,8 +363,12 @@ export class ChannelsService {
 
     const safetyBuffer = parseFloat(channel.safetyBuffer ?? "0");
     const isInternal = channel.channelType === "INTERNAL";
-    let retried = 0;
+    const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
+    const pubError = isInternal ? null : "Provider not connected";
+    const pubAt = isInternal ? new Date() : null;
+    const now = new Date();
 
+    const retryRows: Array<typeof invChannelStockPublications.$inferInsert> = [];
     for (const productVariantId of variantIds) {
       const totals = variantMap.get(productVariantId) ?? {
         onHand: 0,
@@ -369,22 +380,24 @@ export class ChannelsService {
         totals.onHand - totals.committed - totals.blocked - totals.qualityHold;
       const publishable = Math.max(0, available - safetyBuffer);
 
-      const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
-      const pubError = isInternal ? null : "Provider not connected";
-      const pubAt = isInternal ? new Date() : null;
+      retryRows.push({
+        orgId,
+        channelId,
+        productVariantId,
+        publishedQty: publishable.toFixed(4),
+        availableQty: available.toFixed(4),
+        status: pubStatus,
+        error: pubError,
+        publishedAt: pubAt,
+      });
+    }
 
+    const CHUNK = 500;
+    for (let i = 0; i < retryRows.length; i += CHUNK) {
+      const chunk = retryRows.slice(i, i + CHUNK);
       await this.db
         .insert(invChannelStockPublications)
-        .values({
-          orgId,
-          channelId,
-          productVariantId,
-          publishedQty: publishable.toFixed(4),
-          availableQty: available.toFixed(4),
-          status: pubStatus,
-          error: pubError,
-          publishedAt: pubAt,
-        })
+        .values(chunk)
         .onConflictDoUpdate({
           target: [
             invChannelStockPublications.orgId,
@@ -392,17 +405,17 @@ export class ChannelsService {
             invChannelStockPublications.productVariantId,
           ],
           set: {
-            publishedQty: publishable.toFixed(4),
-            availableQty: available.toFixed(4),
-            status: pubStatus,
-            error: pubError,
-            publishedAt: pubAt,
-            updatedAt: new Date(),
+            publishedQty: sql`excluded.published_qty`,
+            availableQty: sql`excluded.available_qty`,
+            status: sql`excluded.status`,
+            error: sql`excluded.error`,
+            publishedAt: sql`excluded.published_at`,
+            updatedAt: now,
           },
         });
-
-      retried++;
     }
+
+    const retried = retryRows.length;
 
     await this.audit.insert(this.db, {
       orgId,

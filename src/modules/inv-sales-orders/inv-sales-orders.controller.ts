@@ -3,6 +3,7 @@ import {
   Query, UseGuards, HttpCode, HttpStatus, Headers, BadRequestException,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
@@ -23,7 +24,7 @@ import {
 
 @RequireModule("inventory")
 @Controller("inventory/sales-orders")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvSalesOrdersController {
   constructor(
     private readonly soCore: SoCoreService,

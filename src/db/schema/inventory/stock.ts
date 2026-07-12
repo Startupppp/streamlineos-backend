@@ -26,6 +26,7 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   index("idx_inv_stock_location").on(table.locationId),
   index("idx_inv_stock_lot").on(table.lotId),
   index("idx_inv_stock_serial").on(table.serialId),
+  index("idx_inv_stock_levels_org_variant_loc").on(table.orgId, table.productVariantId, table.locationId),
 ]);
 
 export const invStockTransactions = pgTable("inv_stock_transactions", {
@@ -55,6 +56,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_reference").on(table.referenceType, table.referenceId),
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
   index("idx_inv_txn_created").on(table.createdAt),
+  index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
 ]);
 
 export const invStockAdjustments = pgTable("inv_stock_adjustments", {

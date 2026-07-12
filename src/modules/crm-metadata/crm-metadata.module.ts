@@ -16,6 +16,7 @@ import { CrmBlueprintsService } from "./crm-blueprints.service";
     CrmBlueprintsService,
   ],
   exports: [
+    CrmMetadataService,
     CrmMetadataSeedService,
     CrmValidationService,
     CrmBlueprintsService,
