@@ -116,6 +116,21 @@ export class ProjectsMembersService {
   }
 
   async createCustomState(orgId: string, projectId: number, body: CreateStateInput) {
+    const existing = await this.db
+      .select({ id: projectStatuses.id })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, orgId),
+          eq(projectStatuses.name, body.name),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      throw new ConflictException(`A column named "${body.name}" already exists in this project`);
+    }
+
     const [maxResult] = await this.db
       .select({ maxOrder: sql<number>`COALESCE(MAX(${projectStatuses.order}), -1)` })
       .from(projectStatuses)
@@ -178,6 +193,24 @@ export class ProjectsMembersService {
       .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
+
+    if (data.name !== undefined && data.name !== existing.name) {
+      const [duplicate] = await this.db
+        .select({ id: projectStatuses.id })
+        .from(projectStatuses)
+        .where(
+          and(
+            eq(projectStatuses.projectId, existing.projectId),
+            eq(projectStatuses.orgId, orgId),
+            eq(projectStatuses.name, data.name),
+            ne(projectStatuses.id, stateId),
+          ),
+        )
+        .limit(1);
+      if (duplicate) {
+        throw new ConflictException(`A column named "${data.name}" already exists in this project`);
+      }
+    }
 
     const updateData: Partial<typeof projectStatuses.$inferInsert> = {};
     if (data.name !== undefined) updateData.name = data.name;

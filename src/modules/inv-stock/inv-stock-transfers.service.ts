@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { invStockTransfers, invStockTransferLines } from "../../db/schema";
@@ -25,11 +25,37 @@ export class InvStockTransfersService {
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
     if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
-    const { status, warehouseId, page, limit } = filters;
+    const { status, warehouseId, fromWarehouseId, toWarehouseId, fromDate, toDate, search, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions = [eq(invStockTransfers.orgId, orgId)];
     if (status) conditions.push(eq(invStockTransfers.status, status));
     if (warehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, warehouseId) as ReturnType<typeof eq>);
+    if (fromWarehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, fromWarehouseId) as ReturnType<typeof eq>);
+    if (toWarehouseId) conditions.push(eq(invStockTransfers.toWarehouseId, toWarehouseId) as ReturnType<typeof eq>);
+    if (fromDate) conditions.push(gte(invStockTransfers.createdAt, new Date(fromDate)));
+    if (toDate) conditions.push(lte(invStockTransfers.createdAt, new Date(toDate)));
+    if (search) {
+      const term = `%${search}%`;
+      conditions.push(
+        sql`(
+          ${invStockTransfers.referenceNumber} ILIKE ${term}
+          OR ${invStockTransfers.notes} ILIKE ${term}
+          OR EXISTS (
+            SELECT 1 FROM inv_locations fl WHERE fl.id = ${invStockTransfers.fromLocationId} AND (fl.name ILIKE ${term} OR fl.code ILIKE ${term})
+          )
+          OR EXISTS (
+            SELECT 1 FROM inv_locations tl WHERE tl.id = ${invStockTransfers.toLocationId} AND (tl.name ILIKE ${term} OR tl.code ILIKE ${term})
+          )
+          OR EXISTS (
+            SELECT 1 FROM inv_stock_transfer_lines stl
+            JOIN inv_product_variants pv ON pv.id = stl.product_variant_id
+            JOIN inv_products p ON p.id = pv.product_id
+            WHERE stl.transfer_id = ${invStockTransfers.id}
+            AND (p.name ILIKE ${term} OR pv.sku ILIKE ${term} OR p.sku ILIKE ${term})
+          )
+        )`,
+      );
+    }
     if (scope !== "all" && userId) {
       conditions.push(applyScope(scope, userId, { ownerColumn: invStockTransfers.createdBy }));
     }

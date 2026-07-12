@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, ilike, or } from "drizzle-orm";
-import { leads, deals, contacts, clients, tickets } from "../../db/schema";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { leads, deals, contacts, clients, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -41,6 +41,17 @@ export class SearchService {
   private async executeSearch(orgId: string, q: string, limit: number | undefined): Promise<SearchResponse> {
     const maxPer = Math.min(limit ?? 5, 10);
     const pattern = `%${q}%`;
+    const trimmed = q.trim();
+    const numericTicket = /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+
+    const ticketConditions = [
+      ilike(tickets.title, pattern),
+      ilike(sql`${projects.key} || '-' || ${tickets.ticketNumber}::text`, pattern),
+    ];
+    if (numericTicket !== null) {
+      ticketConditions.push(eq(tickets.ticketNumber, numericTicket));
+    }
+    const ticketWhere = or(...ticketConditions);
 
     const [leadResults, dealResults, contactResults, clientResults, ticketResults] = await Promise.all([
       this.db
@@ -93,9 +104,17 @@ export class SearchService {
         .limit(maxPer),
 
       this.db
-        .select({ id: tickets.id, title: tickets.title, status: tickets.status, projectId: tickets.projectId })
+        .select({
+          id: tickets.id,
+          title: tickets.title,
+          status: tickets.status,
+          projectId: tickets.projectId,
+          ticketNumber: tickets.ticketNumber,
+          projectKey: projects.key,
+        })
         .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), ilike(tickets.title, pattern)))
+        .innerJoin(projects, eq(projects.id, tickets.projectId))
+        .where(and(eq(tickets.orgId, orgId), ticketWhere))
         .limit(maxPer),
     ]);
 
@@ -135,8 +154,8 @@ export class SearchService {
         id: t.id,
         type: "ticket",
         title: t.title,
-        subtitle: `Ticket #${t.id}`,
-        href: `/projects`,
+        subtitle: `${t.projectKey}-${t.ticketNumber}`,
+        href: `/projects/${t.projectId}?ticket=${t.id}`,
         status: t.status,
       })),
     ];

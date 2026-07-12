@@ -96,7 +96,7 @@ export class InvStockService {
   }
 
   async listTransactions(orgId: string, filters: ListTransactionsInput) {
-    const { productVariantId, locationId, transactionType, fromDate, toDate, page, limit } = filters;
+    const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions = [eq(invStockTransactions.orgId, orgId)];
     if (productVariantId) conditions.push(eq(invStockTransactions.productVariantId, productVariantId));
@@ -104,6 +104,14 @@ export class InvStockService {
     if (transactionType) conditions.push(eq(invStockTransactions.transactionType, transactionType));
     if (fromDate) conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
+    if (direction === "in") conditions.push(sql`${invStockTransactions.quantityChange}::numeric > 0` as unknown as ReturnType<typeof eq>);
+    if (direction === "out") conditions.push(sql`${invStockTransactions.quantityChange}::numeric < 0` as unknown as ReturnType<typeof eq>);
+    if (warehouseId) conditions.push(
+      sql`${invStockTransactions.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` as unknown as ReturnType<typeof eq>,
+    );
+    if (search) conditions.push(
+      sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))` as unknown as ReturnType<typeof eq>,
+    );
 
     const where = and(...conditions);
     const [items, countResult] = await Promise.all([
@@ -114,7 +122,10 @@ export class InvStockService {
         offset,
         with: {
           productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
-          location: { columns: { id: true, name: true, code: true } },
+          location: {
+            columns: { id: true, name: true, code: true },
+            with: { warehouse: { columns: { id: true, name: true } } },
+          },
           creator: { columns: { id: true, name: true } },
         },
       }),

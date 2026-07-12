@@ -65,15 +65,23 @@ export const removeMemberSchema = z.object({
   userId: z.string().min(1),
 });
 
+const columnNameSchema = z
+  .string()
+  .min(1, "Name is required")
+  .max(50, "Name must be 50 characters or fewer")
+  .refine((v) => /[a-zA-Z0-9]/.test(v), {
+    message: "Name must contain at least one letter or number",
+  });
+
 export const createStateSchema = z.object({
-  name: z.string().min(1).max(50),
+  name: columnNameSchema,
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   order: z.number().int().min(0).optional(),
   type: z.string().optional(),
 });
 
 export const updateCustomStateSchema = z.object({
-  name: z.string().min(1).max(50).optional(),
+  name: columnNameSchema.optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   order: z.number().int().min(0).optional(),
   type: z.string().optional(),

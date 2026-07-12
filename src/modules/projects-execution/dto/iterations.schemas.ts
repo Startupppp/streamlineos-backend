@@ -15,16 +15,44 @@ export const updateSprintSchema = z.object({
   status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
 });
 
-export const createCycleSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().optional(),
-  startDate: z.string(),
-  endDate: z.string(),
-});
+const cycleNameSchema = z
+  .string()
+  .transform((v) => v.trim())
+  .pipe(
+    z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must be 100 characters or fewer")
+      .regex(/[A-Za-z0-9]/, "Name must contain at least one letter or number"),
+  );
+
+export const createCycleSchema = z
+  .object({
+    name: cycleNameSchema,
+    description: z.string().max(500, "Description must be 500 characters or fewer").optional(),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be on or after start date.",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
 
 export const updateCycleSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().optional(),
+  name: cycleNameSchema.optional(),
+  description: z
+    .string()
+    .max(500, "Description must be 500 characters or fewer")
+    .optional(),
   status: z.enum(["draft", "active", "completed"]).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),

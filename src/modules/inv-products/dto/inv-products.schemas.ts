@@ -66,16 +66,32 @@ export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 export const updateVariantSchema = createVariantSchema.partial();
 export type UpdateVariantInput = z.infer<typeof updateVariantSchema>;
 
+const VALID_NAME_RE = /[a-zA-Z0-9]/;
+
 export const createCategorySchema = z.object({
-  name: z.string().trim().min(1).max(255),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Category name is required.")
+    .min(2, "Name must be at least 2 characters.")
+    .max(100, "Name must be 100 characters or fewer.")
+    .refine((v) => VALID_NAME_RE.test(v), "Name must contain at least one letter or number."),
   parentCategoryId: z.number().int().positive().optional(),
-  description: z.string().trim().max(1000).optional(),
+  description: z.string().trim().max(500, "Description must be 500 characters or fewer.").optional(),
 });
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
 export const createUomSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  abbreviation: z.string().trim().min(1).max(20),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Unit name is required.")
+    .max(100, "Name must be 100 characters or fewer."),
+  abbreviation: z
+    .string()
+    .trim()
+    .min(1, "Abbreviation is required.")
+    .max(20, "Abbreviation must be 20 characters or fewer."),
   category: z.string().trim().max(100).optional(),
   ratioToBase: z
     .string()
@@ -98,16 +114,33 @@ export const listVariantsSchema = z.object({
 export type ListVariantsInput = z.infer<typeof listVariantsSchema>;
 
 export const updateCategorySchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Category name is required.")
+    .min(2, "Name must be at least 2 characters.")
+    .max(100, "Name must be 100 characters or fewer.")
+    .refine((v) => VALID_NAME_RE.test(v), "Name must contain at least one letter or number.")
+    .optional(),
   parentCategoryId: z.number().int().positive().nullable().optional(),
-  description: z.string().max(500).nullable().optional(),
+  description: z.string().trim().max(500, "Description must be 500 characters or fewer.").nullable().optional(),
   isActive: z.boolean().optional(),
 });
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 
 export const updateUomSchema = z.object({
-  name: z.string().min(1).max(50).optional(),
-  abbreviation: z.string().min(1).max(20).optional(),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Unit name is required.")
+    .max(100, "Name must be 100 characters or fewer.")
+    .optional(),
+  abbreviation: z
+    .string()
+    .trim()
+    .min(1, "Abbreviation is required.")
+    .max(20, "Abbreviation must be 20 characters or fewer.")
+    .optional(),
   category: z.string().trim().max(100).optional(),
   ratioToBase: z
     .string()

@@ -17,6 +17,7 @@ export type ListStockLevelsInput = z.infer<typeof listStockLevelsSchema>;
 
 export const listTransactionsSchema = z.object({
   productVariantId: z.coerce.number().int().positive().optional(),
+  warehouseId: z.coerce.number().int().positive().optional(),
   locationId: z.coerce.number().int().positive().optional(),
   transactionType: z.enum([
     "PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT",
@@ -24,6 +25,8 @@ export const listTransactionsSchema = z.object({
     "CYCLE_COUNT_GAIN", "CYCLE_COUNT_LOSS", "SCRAP", "QUARANTINE_IN", "QUARANTINE_OUT",
     "RESERVATION_CREATE", "RESERVATION_RELEASE", "RESERVATION_CONSUME",
   ]).optional(),
+  direction: z.enum(["in", "out"]).optional(),
+  search: z.string().max(200).optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -103,6 +106,11 @@ export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>;
 export const listTransfersSchema = z.object({
   status: z.enum(["PENDING", "RESERVED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]).optional(),
   warehouseId: z.coerce.number().int().positive().optional(),
+  fromWarehouseId: z.coerce.number().int().positive().optional(),
+  toWarehouseId: z.coerce.number().int().positive().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  search: z.string().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

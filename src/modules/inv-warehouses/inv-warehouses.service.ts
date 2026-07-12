@@ -1,11 +1,15 @@
 import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { invWarehouses, invLocations, invStockLevels, invProductVariants, invProducts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput } from "./dto/inv-warehouses.schemas";
+import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
+
+function escapeLike(value: string): string {
+  return value.replace(/[%_\\]/g, (c) => `\\${c}`);
+}
 
 @Injectable()
 export class InvWarehousesService {
@@ -14,16 +18,68 @@ export class InvWarehousesService {
     private readonly cache: CacheService,
   ) {}
 
-  listWarehouses(orgId: string) {
-    return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId), () =>
-      this.db.query.invWarehouses.findMany({
-        where: eq(invWarehouses.orgId, orgId),
-        with: { locations: true },
-        orderBy: (t, { asc: a }) => [a(t.name)],
-        limit: 200,
-      }),
-      CACHE_TTL.MEDIUM
-    );
+  async listWarehouses(orgId: string, filters?: ListWarehousesInput) {
+    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
+    if (!hasFilters) {
+      return this.cache.cached(CACHE_KEYS.invWarehousesList(orgId), () =>
+        this._queryWarehouses(orgId, {}),
+        CACHE_TTL.MEDIUM
+      );
+    }
+    return this._queryWarehouses(orgId, filters ?? {});
+  }
+
+  private async _queryWarehouses(orgId: string, filters: ListWarehousesInput) {
+    const conds = [eq(invWarehouses.orgId, orgId)];
+
+    if (filters.q) {
+      const term = `%${escapeLike(filters.q)}%`;
+      conds.push(
+        or(
+          ilike(invWarehouses.name, term),
+          ilike(invWarehouses.code, term),
+          ilike(invWarehouses.city, term),
+          ilike(invWarehouses.state, term),
+          ilike(invWarehouses.country, term),
+          ilike(invWarehouses.address, term),
+        )!,
+      );
+    }
+    if (filters.status === "active") conds.push(eq(invWarehouses.isActive, true));
+    if (filters.status === "inactive") conds.push(eq(invWarehouses.isActive, false));
+    if (filters.isDefault !== undefined) conds.push(eq(invWarehouses.isDefault, filters.isDefault));
+    if (filters.country) conds.push(ilike(invWarehouses.country, filters.country));
+    if (filters.city) conds.push(ilike(invWarehouses.city, filters.city));
+
+    const warehouses = await this.db
+      .select({
+        id: invWarehouses.id,
+        orgId: invWarehouses.orgId,
+        name: invWarehouses.name,
+        code: invWarehouses.code,
+        address: invWarehouses.address,
+        city: invWarehouses.city,
+        state: invWarehouses.state,
+        country: invWarehouses.country,
+        isDefault: invWarehouses.isDefault,
+        isActive: invWarehouses.isActive,
+        branchId: invWarehouses.branchId,
+        managerUserId: invWarehouses.managerUserId,
+        createdBy: invWarehouses.createdBy,
+        createdAt: invWarehouses.createdAt,
+        updatedAt: invWarehouses.updatedAt,
+        locationCount: sql<number>`(SELECT COUNT(*) FROM inv_locations l WHERE l.warehouse_id = ${invWarehouses.id} AND l.org_id = ${invWarehouses.orgId})`,
+      })
+      .from(invWarehouses)
+      .where(and(...conds))
+      .orderBy(asc(invWarehouses.name))
+      .limit(200);
+
+    return warehouses.map((wh) => ({
+      ...wh,
+      _count: { locations: Number(wh.locationCount) },
+      locationCount: undefined,
+    }));
   }
 
   async getWarehouse(orgId: string, warehouseId: number) {
@@ -36,11 +92,18 @@ export class InvWarehousesService {
   }
 
   async createWarehouse(orgId: string, userId: string, data: CreateWarehouseInput) {
-    const existing = await this.db.query.invWarehouses.findFirst({
-      where: and(eq(invWarehouses.orgId, orgId), eq(invWarehouses.code, data.code)),
-      columns: { id: true },
-    });
-    if (existing) throw new ConflictException("A warehouse with this code already exists");
+    const [existingCode, existingName] = await Promise.all([
+      this.db.query.invWarehouses.findFirst({
+        where: and(eq(invWarehouses.orgId, orgId), eq(invWarehouses.code, data.code)),
+        columns: { id: true },
+      }),
+      this.db.query.invWarehouses.findFirst({
+        where: and(eq(invWarehouses.orgId, orgId), ilike(invWarehouses.name, data.name)),
+        columns: { id: true },
+      }),
+    ]);
+    if (existingCode) throw new ConflictException("A warehouse with this code already exists");
+    if (existingName) throw new ConflictException("A warehouse with this name already exists");
 
     if (data.isDefault) {
       await this.db.update(invWarehouses)

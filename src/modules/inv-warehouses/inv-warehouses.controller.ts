@@ -8,8 +8,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvWarehousesService } from "./inv-warehouses.service";
 import {
-  createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema, listWarehouseStockSchema,
-  type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput, type ListWarehouseStockInput,
+  createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema, listWarehouseStockSchema, listWarehousesSchema,
+  type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput, type ListWarehouseStockInput, type ListWarehousesInput,
 } from "./dto/inv-warehouses.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -22,8 +22,11 @@ export class InvWarehousesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.warehouses.listWarehouses(u.orgId);
+  list(
+    @Query(new ZodValidationPipe(listWarehousesSchema)) filters: ListWarehousesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.warehouses.listWarehouses(u.orgId, filters);
   }
 
   @Get(":warehouseId")
