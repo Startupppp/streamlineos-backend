@@ -36,3 +36,4 @@ export * from "./surveys";
 export * from "./ai-chat";
 export * from "./feedbucket";
 export * from "./notifications-delivery";
+export * from "./signos";

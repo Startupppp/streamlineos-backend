@@ -115,3 +115,12 @@ export {
 } from "./notifications-misc";
 
 export { generateMonthlyExpenseReportXlsx } from "./xlsx";
+
+export {
+  getSignEnvelopeInvitationEmailTemplate,
+  getSignReminderEmailTemplate,
+  getSignEnvelopeCompletedEmailTemplate,
+  getSignEnvelopeDeclinedEmailTemplate,
+  getSignEnvelopeVoidedEmailTemplate,
+  getSignBulkJobCompletedEmailTemplate,
+} from "./signos";

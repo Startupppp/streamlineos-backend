@@ -51,6 +51,13 @@ export const automationTriggerEnum = pgEnum("automation_trigger", [
   "expense.approved",
   "reimbursement.approved",
   "reimbursement.rejected",
+  "sign.envelope.sent",
+  "sign.envelope.completed",
+  "sign.envelope.declined",
+  "sign.envelope.voided",
+  "sign.envelope.expired",
+  "sign.recipient.completed",
+  "sign.bulk_send.completed",
 ]);
 
 export const automationRunStatusEnum = pgEnum("automation_run_status", [

@@ -52,6 +52,7 @@ import { ProjectsWorkflowModule } from "./modules/projects-workflow/projects-wor
 import { ProjectsFormsModule } from "./modules/projects-forms/projects-forms.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { SupportModule } from "./modules/support/support.module";
+import { SignosModule } from "./modules/signos/signos.module";
 import { KbModule } from "./modules/kb/kb.module";
 import { AccountingModule } from "./modules/accounting/accounting.module";
 import { ChatModule } from "./modules/chat/chat.module";
@@ -206,6 +207,7 @@ import { MeService } from "./me/me.service";
     ProjectsFormsModule,
     ProjectsModule,
     SupportModule,
+    SignosModule,
     KbModule,
     AccountingModule,
     ChatModule,

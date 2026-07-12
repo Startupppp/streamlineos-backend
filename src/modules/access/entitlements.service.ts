@@ -19,6 +19,7 @@ const MODULE_CATALOG = [
   "surveys",
   "payroll",
   "feedbucket",
+  "sign",
 ] as const;
 
 const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
@@ -30,6 +31,7 @@ const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
   support: "HELPDESK",
   surveys: "SURVEYS",
   payroll: "PAYROLL",
+  sign: "SIGN",
 };
 
 const CORE_MODULE_KEYS: ReadonlySet<string> = new Set(

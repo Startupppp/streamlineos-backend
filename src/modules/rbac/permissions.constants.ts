@@ -722,18 +722,6 @@ const HR_PERMISSIONS: Permission[] = [
     description: "Create and manage announcements",
   },
   {
-    name: "hr:signatures:view",
-    resource: "hr:signatures",
-    action: "view",
-    description: "View signature requests",
-  },
-  {
-    name: "hr:signatures:manage",
-    resource: "hr:signatures",
-    action: "manage",
-    description: "Send and manage signature requests",
-  },
-  {
     name: "hr:tax:view",
     resource: "hr:tax",
     action: "view",
@@ -3381,7 +3369,24 @@ const NOTIFICATIONS_PERMISSIONS: Permission[] = [
   { name: "notifications:broadcasts:manage", resource: "notifications:broadcasts", action: "manage", description: "Create, schedule, send, and cancel broadcasts" },
 ];
 
+const SIGN_PERMISSIONS: Permission[] = [
+  { name: "sign:documents:upload", resource: "sign:documents", action: "upload", description: "Upload documents to a SignOS envelope" },
+  { name: "sign:documents:view", resource: "sign:documents", action: "view", description: "View SignOS documents" },
+  { name: "sign:envelope:create", resource: "sign:envelope", action: "create", description: "Create and edit SignOS envelopes" },
+  { name: "sign:envelope:view", resource: "sign:envelope", action: "view", description: "View SignOS envelopes you sent or were assigned" },
+  { name: "sign:envelope:view_all", resource: "sign:envelope", action: "view_all", description: "View all SignOS envelopes in the organization" },
+  { name: "sign:envelope:send", resource: "sign:envelope", action: "send", description: "Send and resend SignOS envelopes" },
+  { name: "sign:envelope:void", resource: "sign:envelope", action: "void", description: "Void a sent SignOS envelope" },
+  { name: "sign:envelope:correct", resource: "sign:envelope", action: "correct", description: "Correct recipients or extend expiration on a sent envelope" },
+  { name: "sign:template:manage", resource: "sign:template", action: "manage", description: "Create, publish, and manage SignOS templates" },
+  { name: "sign:bulk_send:run", resource: "sign:bulk_send", action: "run", description: "Run SignOS bulk send jobs" },
+  { name: "sign:admin:manage", resource: "sign:admin", action: "manage", description: "Manage SignOS admin settings, branding, and watermark policy" },
+  { name: "sign:audit:view", resource: "sign:audit", action: "view", description: "View the SignOS audit trail" },
+  { name: "sign:certificate:download", resource: "sign:certificate", action: "download", description: "Download SignOS certificates and final signed PDFs" },
+];
+
 export const PERMISSIONS: Permission[] = [
+  ...SIGN_PERMISSIONS,
   ...NOTIFICATIONS_PERMISSIONS,
   ...HR_PERMISSIONS,
   ...CRM_PERMISSIONS,
@@ -3542,8 +3547,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:learning:manage",
     "hr:announcements:view",
     "hr:announcements:manage",
-    "hr:signatures:view",
-    "hr:signatures:manage",
     "hr:tax:view",
     "hr:tax:manage",
     "hr:travel:view",
@@ -3600,6 +3603,15 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "timesheets:budgets:view",
     "timesheets:budgets:manage",
+    "sign:documents:upload",
+    "sign:documents:view",
+    "sign:envelope:create",
+    "sign:envelope:view",
+    "sign:envelope:send",
+    "sign:envelope:correct",
+    "sign:template:manage",
+    "sign:audit:view",
+    "sign:certificate:download",
   ],
 
   SALES: [
@@ -3660,6 +3672,15 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:bugs:create",
     "projects:bugs:update",
     "projects:ai:use",
+    "sign:documents:upload",
+    "sign:documents:view",
+    "sign:envelope:create",
+    "sign:envelope:view",
+    "sign:envelope:send",
+    "sign:envelope:correct",
+    "sign:template:manage",
+    "sign:audit:view",
+    "sign:certificate:download",
   ],
 
   CUSTOMER_SUPPORT: [
@@ -4143,8 +4164,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "hr:learning:manage",
     "hr:announcements:view",
     "hr:announcements:manage",
-    "hr:signatures:view",
-    "hr:signatures:manage",
     "hr:tax:view",
     "hr:tax:manage",
     "hr:travel:view",
