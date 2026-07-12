@@ -15,9 +15,19 @@ const projectModulesSchema = z.object({
 });
 
 export const createProjectSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  key: z.string().optional(),
+  name: z
+    .string()
+    .min(2, "Project name must be at least 2 characters")
+    .max(100, "Project name must be 100 characters or fewer")
+    .trim()
+    .refine((v) => v.trim().length > 0, { message: "Project name cannot be blank" }),
+  description: z.string().max(2000, "Description must be 2000 characters or fewer").optional(),
+  key: z
+    .string()
+    .min(2, "Project key must be at least 2 characters")
+    .max(10, "Project key must be 10 characters or fewer")
+    .regex(/^[A-Z][A-Z0-9]*$/, "Key must start with a letter and contain only uppercase letters/numbers")
+    .optional(),
   managerId: z.string().optional(),
   clientId: z.string().optional(),
   startDate: z.string().optional(),

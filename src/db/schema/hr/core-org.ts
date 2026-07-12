@@ -106,6 +106,28 @@ export const hrCustomFieldDefinitions = pgTable("hr_custom_field_definitions", {
   key: text("key").notNull(),
   fieldType: hrCustomFieldTypeEnum("field_type").notNull(),
   options: jsonb("options").$type<Array<{ label: string; value: string }>>(),
+  settings: jsonb("settings").$type<{
+    helpText?: string;
+    placeholder?: string;
+    defaultValue?: unknown;
+    validationRules?: {
+      minLength?: number;
+      maxLength?: number;
+      minValue?: number;
+      maxValue?: number;
+      allowedOptions?: string[];
+      dateMin?: string;
+      dateMax?: string;
+    };
+    visibility?: {
+      hrOnly?: boolean;
+      managerVisible?: boolean;
+      selfServiceVisible?: boolean;
+      hiddenFromExports?: boolean;
+    };
+    searchable?: boolean;
+    reportable?: boolean;
+  }>(),
   isSensitive: boolean("is_sensitive").default(false).notNull(),
   isRequired: boolean("is_required").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),

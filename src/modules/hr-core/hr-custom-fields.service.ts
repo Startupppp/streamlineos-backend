@@ -51,6 +51,7 @@ export class HrCustomFieldsService {
         key: input.key,
         fieldType: input.fieldType,
         options: input.options ?? null,
+        settings: input.settings ?? null,
         isSensitive: input.isSensitive ?? false,
         isRequired: input.isRequired ?? false,
         isActive: true,
@@ -68,6 +69,7 @@ export class HrCustomFieldsService {
       .set({
         name: input.name,
         options: input.options,
+        settings: input.settings,
         isSensitive: input.isSensitive,
         isRequired: input.isRequired,
         isActive: input.isActive,

@@ -103,18 +103,26 @@ export const templateContentSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+const hrTemplateNameSchema = z
+  .string()
+  .min(1, "Name is required")
+  .max(100, "Name must be at most 100 characters")
+  .transform((v) => v.trim())
+  .refine((v) => v.length >= 3, "Name must be at least 3 characters")
+  .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter");
+
 export const createTemplateSchema = z.object({
   kind: z.enum(HR_TEMPLATE_KINDS),
-  name: z.string().min(2).max(120),
-  description: z.string().max(500).optional(),
+  name: hrTemplateNameSchema,
+  description: z.string().max(500).transform((v) => v.trim()).optional(),
   content: z.record(z.string(), z.unknown()).default({}),
   variablesUsed: z.array(z.string()).optional(),
   letterType: z.enum(HR_LETTER_TYPES).optional(),
 });
 
 export const updateTemplateSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  description: z.string().max(500).optional(),
+  name: hrTemplateNameSchema.optional(),
+  description: z.string().max(500).transform((v) => v.trim()).optional(),
   content: z.record(z.string(), z.unknown()).optional(),
   variablesUsed: z.array(z.string()).optional(),
   letterType: z.enum(HR_LETTER_TYPES).optional(),

@@ -3615,6 +3615,14 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "sign:template:manage",
     "sign:audit:view",
     "sign:certificate:download",
+    "hr:policies:view",
+    "hr:policies:manage",
+    "hr:automations:view",
+    "hr:automations:manage",
+    "hr:templates:view",
+    "hr:templates:manage",
+    "hr:forms:view",
+    "hr:forms:manage",
   ],
 
   SALES: [

@@ -43,8 +43,16 @@ export const hrFormFieldSchema = z.object({
     .optional(),
 });
 
+const hrFormNameSchema = z
+  .string()
+  .min(1, "Name is required")
+  .max(300, "Name must be at most 300 characters")
+  .transform((v) => v.trim())
+  .refine((v) => v.length >= 3, "Name must be at least 3 characters")
+  .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter");
+
 export const createHrFormSchema = z.object({
-  name: z.string().min(1).max(300),
+  name: hrFormNameSchema,
   slug: z
     .string()
     .min(1)
@@ -57,7 +65,7 @@ export const createHrFormSchema = z.object({
 });
 
 export const updateHrFormSchema = z.object({
-  name: z.string().min(1).max(300).optional(),
+  name: hrFormNameSchema.optional(),
   slug: z
     .string()
     .min(1)
