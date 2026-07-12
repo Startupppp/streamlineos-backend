@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/@types/**/*",
+    "src/modules/projects/**/*",
+    "src/modules/projects-execution/**/*",
+    "src/modules/projects-portfolios/**/*"
+  ]
+}

@@ -3,7 +3,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const url = process.env.DATABASE_URL ?? process.env.DB;
+const rawUrl = process.env.DATABASE_URL ?? process.env.DB;
+const url = rawUrl?.replace(/^['"]|['"]$/g, "");
 if (!url) {
   console.error("DATABASE_URL not set");
   process.exit(1);

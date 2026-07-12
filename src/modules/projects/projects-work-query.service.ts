@@ -1,0 +1,612 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import {
+  projectMembers,
+  projects,
+  ticketAssignees,
+  ticketAttachments,
+  ticketComments,
+  ticketLabelMappings,
+  ticketLabels,
+  ticketWatchers,
+  tickets,
+  users,
+} from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { AccessService } from "../access/access.service";
+import { AuditService } from "../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { resolveTicketsScope } from "./tickets-scope";
+import {
+  ProjectsForbiddenTicketException,
+  ProjectsTicketNotFoundException,
+} from "../../common/http/api-exceptions";
+import type { AllWorkQuery, TicketsListQuery } from "./dto/projects.schemas";
+
+const TICKET_ORDERBY_COLUMNS = {
+  created: tickets.createdAt,
+  updated: tickets.updatedAt,
+  priority: tickets.priority,
+  dueDate: tickets.dueDate,
+  order: tickets.order,
+} as const;
+
+const ALL_WORK_ORDERBY_COLUMNS = {
+  created: tickets.createdAt,
+  updated: tickets.updatedAt,
+  priority: tickets.priority,
+  dueDate: tickets.dueDate,
+  order: tickets.order,
+} as const;
+
+@Injectable()
+export class ProjectsWorkQueryService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+    private readonly audit: AuditService,
+  ) {}
+
+  async checkProjectAccess(
+    orgId: string,
+    userId: string,
+    projectId: number,
+  ): Promise<{ hasAccess: boolean; role: string | null }> {
+    const perms = await this.access.resolveUserPermissions(orgId, userId);
+    if (perms.has("projects:manage")) return { hasAccess: true, role: "OWNER" };
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      columns: { managerId: true },
+    });
+    if (!project) return { hasAccess: false, role: null };
+    if (project.managerId === userId) return { hasAccess: true, role: "MANAGER" };
+    const membership = await this.db
+      .select({ id: projectMembers.id, role: projectMembers.role })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+      .limit(1);
+    if (membership.length === 0) return { hasAccess: false, role: null };
+    return { hasAccess: true, role: membership[0]?.role ?? null };
+  }
+
+  async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
+    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    if (!hasAccess) throw new NotFoundException("Not found");
+
+    const {
+      page,
+      limit,
+      search,
+      status,
+      priority,
+      type,
+      assigneeId,
+      labelIds,
+      sprintId,
+      cycleId,
+      epicId,
+      dueDateFrom,
+      dueDateTo,
+      orderBy,
+      orderDir,
+    } = query;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      eq(tickets.projectId, projectId),
+    ];
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      if (isTicketRef) {
+        const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
+        const num = parseInt(numStr, 10);
+        const searchCondition = or(
+          sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
+          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+        );
+        if (searchCondition) {
+          conditions.push(searchCondition);
+        }
+      } else {
+        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
+      }
+    }
+
+    if (status && status.length > 0) {
+      conditions.push(inArray(tickets.status, status));
+    }
+
+    if (priority && priority.length > 0) {
+      conditions.push(inArray(tickets.priority, priority));
+    }
+
+    if (type && type.length > 0) {
+      conditions.push(
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
+      );
+    }
+
+    if (assigneeId && assigneeId.length > 0) {
+      const unassigned = assigneeId.includes("__unassigned__");
+      const realIds = assigneeId.filter((id) => id !== "__unassigned__");
+      if (unassigned && realIds.length > 0) {
+        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        if (assigneeCondition) {
+          conditions.push(assigneeCondition);
+        }
+      } else if (unassigned) {
+        conditions.push(isNull(tickets.assigneeId));
+      } else {
+        conditions.push(inArray(tickets.assigneeId, realIds));
+      }
+    }
+
+    if (labelIds && labelIds.length > 0) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ticket_label_mappings tlm
+          WHERE tlm.ticket_id = ${tickets.id}
+          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+        )`,
+      );
+    }
+
+    if (sprintId !== undefined) {
+      conditions.push(eq(tickets.sprintId, sprintId));
+    }
+
+    if (cycleId && cycleId.length > 0) {
+      conditions.push(inArray(tickets.cycleId, cycleId));
+    }
+
+    if (epicId !== undefined) {
+      conditions.push(eq(tickets.epicId, epicId));
+    }
+
+    if (dueDateFrom) {
+      conditions.push(gte(tickets.dueDate, dueDateFrom));
+    }
+
+    if (dueDateTo) {
+      conditions.push(lte(tickets.dueDate, dueDateTo));
+    }
+
+    const where = and(...conditions);
+
+    const col = TICKET_ORDERBY_COLUMNS[orderBy];
+    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
+    const dir = orderDir ?? defaultDir;
+
+    const sortExpr =
+      orderBy === "order"
+        ? [asc(tickets.order), desc(tickets.createdAt)]
+        : dir === "asc"
+        ? [asc(col), desc(tickets.createdAt)]
+        : [desc(col), desc(tickets.createdAt)];
+
+    const [dataResult, countResult] = await Promise.all([
+      this.db.query.tickets.findMany({
+        where,
+        with: {
+          assignee: true,
+          reporter: true,
+          assignees: { with: { user: true } },
+          labels: { with: { label: true } },
+        },
+        orderBy: sortExpr,
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(tickets).where(where),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return {
+      data: dataResult,
+      total: Number(total),
+      page,
+      limit,
+      totalPages: Math.ceil(Number(total) / limit),
+    };
+  }
+
+  async getTicket(u: CurrentUserContext, ticketId: number) {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
+      with: {
+        project: true,
+        sprint: true,
+        assignee: true,
+        reporter: true,
+        assignees: { with: { user: true } },
+        comments: { with: { user: true }, orderBy: [desc(ticketComments.createdAt)] },
+        attachments: { with: { uploader: true } },
+        labels: { with: { label: true } },
+      },
+    });
+    if (!ticket) throw new ProjectsTicketNotFoundException();
+
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope !== "all") {
+      const isAssignee =
+        ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
+      const isReporter = ticket.reporterId === u.userId;
+      if (!isAssignee && !isReporter) {
+        this.audit.log({
+          action: "ticket.access_denied",
+          userId: u.userId,
+          orgId: u.orgId,
+          targetId: String(ticketId),
+          targetType: "ticket",
+          metadata: { ticketId, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
+          result: "FAILURE",
+        });
+        throw new ProjectsForbiddenTicketException();
+      }
+    }
+
+    return ticket;
+  }
+
+  async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {
+    const memberProjectIds = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, userId));
+
+    const ids = memberProjectIds.map((r) => r.projectId);
+    if (ids.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        priority: tickets.priority,
+        ticketNumber: tickets.ticketNumber,
+        projectId: tickets.projectId,
+        projectKey: projects.key,
+        projectName: projects.name,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          inArray(tickets.projectId, ids),
+          q.length > 0
+            ? or(
+                sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
+                sql`CAST(${tickets.ticketNumber} AS TEXT) ILIKE ${"%" + q + "%"}`,
+                sql`CONCAT(${projects.key}, '-', CAST(${tickets.ticketNumber} AS TEXT)) ILIKE ${"%" + q + "%"}`,
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(tickets.updatedAt))
+      .limit(limit);
+
+    return rows;
+  }
+
+  async getMyWork(orgId: string, userId: string) {
+    const assigneeRows = await this.db
+      .select({ ticketId: ticketAssignees.ticketId })
+      .from(ticketAssignees)
+      .where(eq(ticketAssignees.userId, userId))
+      .limit(500);
+
+    const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
+
+    const assigneeCondition =
+      assigneeTicketIds.length > 0
+        ? or(eq(tickets.assigneeId, userId), inArray(tickets.id, assigneeTicketIds))
+        : eq(tickets.assigneeId, userId);
+
+    return this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        priority: tickets.priority,
+        type: tickets.type,
+        dueDate: tickets.dueDate,
+        ticketNumber: tickets.ticketNumber,
+        projectId: projects.id,
+        projectName: projects.name,
+        projectKey: projects.key,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          ne(projects.status, "ARCHIVED"),
+          assigneeCondition,
+        ),
+      )
+      .orderBy(
+        sql`${tickets.dueDate} ASC NULLS LAST`,
+        sql`CASE ${tickets.priority} WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC`,
+      )
+      .limit(200);
+  }
+
+  async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
+    const {
+      page,
+      limit,
+      search,
+      status,
+      priority,
+      type,
+      assigneeId,
+      labelIds,
+      sprintId,
+      cycleId,
+      epicId,
+      dueDateFrom,
+      dueDateTo,
+      orderBy,
+      orderDir,
+      projectIds: filterProjectIds,
+      scope,
+    } = query;
+    const offset = (page - 1) * limit;
+
+    const memberRows = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, u.userId));
+
+    const memberProjectIds = memberRows.map((r) => r.projectId);
+    if (memberProjectIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const allowedProjectIds =
+      filterProjectIds && filterProjectIds.length > 0
+        ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
+        : memberProjectIds;
+
+    if (allowedProjectIds.length === 0) {
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    }
+
+    const conditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      inArray(tickets.projectId, allowedProjectIds),
+      ne(projects.status, "ARCHIVED"),
+    ];
+
+    if (scope === "mine") {
+      const assigneeRows = await this.db
+        .select({ ticketId: ticketAssignees.ticketId })
+        .from(ticketAssignees)
+        .where(eq(ticketAssignees.userId, u.userId))
+        .limit(1000);
+      const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
+      const mineCondition =
+        assigneeTicketIds.length > 0
+          ? or(eq(tickets.assigneeId, u.userId), inArray(tickets.id, assigneeTicketIds))
+          : eq(tickets.assigneeId, u.userId);
+      if (mineCondition) {
+        conditions.push(mineCondition);
+      }
+    }
+
+    if (scope === "created") {
+      conditions.push(eq(tickets.reporterId, u.userId));
+    }
+
+    if (scope === "subscribed") {
+      const watcherRows = await this.db
+        .select({ ticketId: ticketWatchers.ticketId })
+        .from(ticketWatchers)
+        .where(eq(ticketWatchers.userId, u.userId))
+        .limit(1000);
+      const watchedTicketIds = watcherRows.map((r) => r.ticketId);
+      if (watchedTicketIds.length > 0) {
+        conditions.push(inArray(tickets.id, watchedTicketIds));
+      } else {
+        return { data: [], total: 0, page, limit, totalPages: 0 };
+      }
+    }
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      if (isTicketRef) {
+        const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
+        const num = parseInt(numStr, 10);
+        const searchCondition = or(
+          sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
+          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+        );
+        if (searchCondition) {
+          conditions.push(searchCondition);
+        }
+      } else {
+        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
+      }
+    }
+
+    if (status && status.length > 0) {
+      conditions.push(inArray(tickets.status, status));
+    }
+
+    if (priority && priority.length > 0) {
+      conditions.push(inArray(tickets.priority, priority));
+    }
+
+    if (type && type.length > 0) {
+      conditions.push(
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
+      );
+    }
+
+    if (assigneeId && assigneeId.length > 0) {
+      const unassigned = assigneeId.includes("__unassigned__");
+      const realIds = assigneeId.filter((id) => id !== "__unassigned__");
+      if (unassigned && realIds.length > 0) {
+        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        if (assigneeCondition) {
+          conditions.push(assigneeCondition);
+        }
+      } else if (unassigned) {
+        conditions.push(isNull(tickets.assigneeId));
+      } else {
+        conditions.push(inArray(tickets.assigneeId, realIds));
+      }
+    }
+
+    if (labelIds && labelIds.length > 0) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ticket_label_mappings tlm
+          WHERE tlm.ticket_id = ${tickets.id}
+          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+        )`,
+      );
+    }
+
+    if (sprintId !== undefined) {
+      conditions.push(eq(tickets.sprintId, sprintId));
+    }
+
+    if (cycleId && cycleId.length > 0) {
+      conditions.push(inArray(tickets.cycleId, cycleId));
+    }
+
+    if (epicId !== undefined) {
+      conditions.push(eq(tickets.epicId, epicId));
+    }
+
+    if (dueDateFrom) {
+      conditions.push(gte(tickets.dueDate, dueDateFrom));
+    }
+
+    if (dueDateTo) {
+      conditions.push(lte(tickets.dueDate, dueDateTo));
+    }
+
+    const where = and(...conditions);
+
+    const col = ALL_WORK_ORDERBY_COLUMNS[orderBy];
+    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
+    const dir = orderDir ?? defaultDir;
+    const sortExpr =
+      orderBy === "order"
+        ? [asc(tickets.order), desc(tickets.createdAt)]
+        : dir === "asc"
+        ? [asc(col), desc(tickets.createdAt)]
+        : [desc(col), desc(tickets.createdAt)];
+
+    const [rows, countRows] = await Promise.all([
+      this.db
+        .select({
+          id: tickets.id,
+          title: tickets.title,
+          status: tickets.status,
+          priority: tickets.priority,
+          type: tickets.type,
+          dueDate: tickets.dueDate,
+          startDate: tickets.startDate,
+          ticketNumber: tickets.ticketNumber,
+          points: tickets.points,
+          estimate: tickets.estimate,
+          order: tickets.order,
+          createdAt: tickets.createdAt,
+          updatedAt: tickets.updatedAt,
+          assigneeId: tickets.assigneeId,
+          sprintId: tickets.sprintId,
+          cycleId: tickets.cycleId,
+          epicId: tickets.epicId,
+          projectId: projects.id,
+          projectKey: projects.key,
+          projectName: projects.name,
+          assigneeName: users.name,
+          assigneeFirstName: users.firstName,
+          assigneeLastName: users.lastName,
+          assigneeEmail: users.email,
+          assigneeImage: users.image,
+        })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .leftJoin(users, eq(tickets.assigneeId, users.id))
+        .where(where)
+        .orderBy(...sortExpr)
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .where(where),
+    ]);
+
+    const ticketIds = rows.map((r) => r.id);
+
+    const labelRows =
+      ticketIds.length > 0
+        ? await this.db
+            .select({
+              ticketId: ticketLabelMappings.ticketId,
+              labelId: ticketLabels.id,
+              labelName: ticketLabels.name,
+              labelColor: ticketLabels.color,
+            })
+            .from(ticketLabelMappings)
+            .innerJoin(ticketLabels, eq(ticketLabelMappings.labelId, ticketLabels.id))
+            .where(inArray(ticketLabelMappings.ticketId, ticketIds))
+        : [];
+
+    const labelsByTicket = new Map<number, { id: number; name: string; color: string }[]>();
+    for (const row of labelRows) {
+      const existing = labelsByTicket.get(row.ticketId) ?? [];
+      existing.push({ id: row.labelId, name: row.labelName, color: row.labelColor });
+      labelsByTicket.set(row.ticketId, existing);
+    }
+
+    const data = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      priority: r.priority,
+      type: r.type,
+      dueDate: r.dueDate,
+      startDate: r.startDate,
+      ticketNumber: r.ticketNumber,
+      points: r.points,
+      estimate: r.estimate,
+      order: r.order,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      assigneeId: r.assigneeId,
+      sprintId: r.sprintId,
+      cycleId: r.cycleId,
+      epicId: r.epicId,
+      projectId: r.projectId,
+      projectKey: r.projectKey,
+      projectName: r.projectName,
+      assignee: r.assigneeId
+        ? {
+            id: r.assigneeId,
+            name: r.assigneeName,
+            firstName: r.assigneeFirstName,
+            lastName: r.assigneeLastName,
+            email: r.assigneeEmail,
+            image: r.assigneeImage,
+          }
+        : null,
+      labels: labelsByTicket.get(r.id) ?? [],
+    }));
+
+    const total = Number(countRows[0]?.total ?? 0);
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+}
