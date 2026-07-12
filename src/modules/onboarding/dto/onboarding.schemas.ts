@@ -61,9 +61,7 @@ export const personalDetailsSchema = z
       .string()
       .min(2, "Emergency contact name is required")
       .regex(PERSON_NAME_REGEX, "Enter a valid full name"),
-    emergencyRelation: z.enum(EMERGENCY_RELATIONSHIPS, {
-      errorMap: () => ({ message: "Select a valid relationship" }),
-    }),
+    emergencyRelation: z.enum(EMERGENCY_RELATIONSHIPS, { error: "Select a valid relationship" }),
     emergencyPhone: z.string().regex(PHONE_REGEX, "Enter a valid phone number"),
     addressLine1: z
       .string()
