@@ -170,6 +170,14 @@ export class SignBulkSendService {
     }
   }
 
+  async listJobs(orgId: string) {
+    return this.db.query.signBulkSendJobs.findMany({
+      where: eq(signBulkSendJobs.orgId, orgId),
+      orderBy: (j, { desc }) => [desc(j.createdAt)],
+      limit: 50,
+    });
+  }
+
   async getJob(orgId: string, jobId: number) {
     const job = await this.db.query.signBulkSendJobs.findFirst({ where: and(eq(signBulkSendJobs.id, jobId), eq(signBulkSendJobs.orgId, orgId)) });
     if (!job) throw new NotFoundException("Bulk send job not found");

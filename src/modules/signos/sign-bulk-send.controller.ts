@@ -22,6 +22,12 @@ export class SignBulkSendController {
     return this.bulkSend.createJob(u.orgId, u.userId, body);
   }
 
+  @Get("jobs")
+  @RequirePermission("sign:bulk_send:run")
+  list(@CurrentUser() u: CurrentUserContext) {
+    return this.bulkSend.listJobs(u.orgId);
+  }
+
   @Get("jobs/:id")
   @RequirePermission("sign:bulk_send:run")
   get(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
