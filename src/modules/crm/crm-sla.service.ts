@@ -65,7 +65,7 @@ export class CrmSlaService {
   }
 
   async updatePolicy(orgId: string, id: number, input: SlaPolicyUpdateInput) {
-    const updates: Record<string, unknown> = { ...input };
+    const updates: Partial<typeof crmSla.$inferInsert> = { ...input };
 
     if (input.firstResponseHours && !input.targetMinutes) {
       updates.targetMinutes = input.firstResponseHours * 60;

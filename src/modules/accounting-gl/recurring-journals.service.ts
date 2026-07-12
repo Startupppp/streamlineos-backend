@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -134,7 +134,7 @@ export class RecurringJournalsService {
     const conds = [
       eq(finRecurringJournalTemplates.isActive, true),
       lte(finRecurringJournalTemplates.nextRunDate, today),
-      or(isNull(finRecurringJournalTemplates.endDate), lte(finRecurringJournalTemplates.endDate, today)),
+      or(isNull(finRecurringJournalTemplates.endDate), gte(finRecurringJournalTemplates.endDate, today)),
     ];
     if (orgId !== undefined) conds.push(eq(finRecurringJournalTemplates.orgId, orgId));
 

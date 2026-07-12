@@ -1,30 +1,36 @@
-import { Test } from "@nestjs/testing";
-import { DRIZZLE } from "../../db/drizzle.constants";
+import { NotFoundException } from "@nestjs/common";
 import { CrmInboxService } from "./crm-inbox.service";
 
-const mockDb = {
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  where: jest.fn().mockReturnThis(),
-  orderBy: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockResolvedValue([]),
-  update: jest.fn().mockReturnThis(),
-  set: jest.fn().mockReturnThis(),
-  then: jest.fn(),
-};
+function makeQueryChain(resolvedValue: unknown) {
+  const chain = {
+    select: jest.fn(),
+    from: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn(),
+    update: jest.fn(),
+    set: jest.fn(),
+    then: jest.fn((resolve: (v: unknown) => unknown) =>
+      Promise.resolve(resolve(resolvedValue)),
+    ),
+  };
+  chain.select.mockReturnValue(chain);
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  chain.limit.mockResolvedValue(resolvedValue);
+  chain.update.mockReturnValue(chain);
+  chain.set.mockReturnValue(chain);
+  return chain;
+}
 
 describe("CrmInboxService", () => {
   let service: CrmInboxService;
+  let mockDb: ReturnType<typeof makeQueryChain>;
 
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      providers: [
-        CrmInboxService,
-        { provide: DRIZZLE, useValue: mockDb },
-      ],
-    }).compile();
-
-    service = module.get(CrmInboxService);
+  beforeEach(() => {
+    mockDb = makeQueryChain([]);
+    service = new CrmInboxService(mockDb as never);
   });
 
   it("should be defined", () => {
@@ -42,22 +48,22 @@ describe("CrmInboxService", () => {
   });
 
   it("getCounts returns all 8 keys as numbers", async () => {
-    mockDb.then = jest.fn().mockResolvedValue(0);
+    const countChain = makeQueryChain([{ n: "5" }]);
+    mockDb.select = jest.fn().mockReturnValue(countChain);
     const result = await service.getCounts("org1", "user1", "own");
-    const keys = Object.keys(result);
-    expect(keys).toHaveLength(8);
-    keys.forEach((k) => expect(typeof result[k as keyof typeof result]).toBe("number"));
+    expect(Object.keys(result)).toHaveLength(8);
+    Object.values(result).forEach((v) => expect(typeof v).toBe("number"));
   });
 
   it("snoozeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
     await expect(
       service.snoozeTask("org1", 9999, "user1", { until: new Date().toISOString() }),
-    ).rejects.toThrow("Task not found");
+    ).rejects.toThrow(NotFoundException);
   });
 
   it("completeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
-    await expect(service.completeTask("org1", 9999, "user1")).rejects.toThrow("Task not found");
+    await expect(service.completeTask("org1", 9999, "user1")).rejects.toThrow(NotFoundException);
   });
 });

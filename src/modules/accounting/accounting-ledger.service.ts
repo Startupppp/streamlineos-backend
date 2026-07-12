@@ -6,15 +6,17 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, count, desc, eq, gte, ilike, isNull, lte } from "drizzle-orm";
-import { ledgerAccounts, journalEntries, journalLines } from "../../db/schema";
+import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests } from "../../db/schema";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import { AuditService } from "../../common/audit/audit.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { JournalPostingService, type DraftLine } from "./journal-posting.service";
 import { FinancePostingService } from "./finance-posting.service";
+import { addDecimals, compareDecimals } from "./money.util";
 import {
   type CreateAccountInput,
   type CreateJournalEntryInput,
@@ -47,6 +49,7 @@ export class AccountingLedgerService {
     private readonly posting: JournalPostingService,
     private readonly finPosting: FinancePostingService,
     private readonly audit: AuditService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async listAccounts(orgId: string, query: ListAccountsQuery) {
@@ -138,8 +141,31 @@ export class AccountingLedgerService {
     await this.finPosting.assertPeriodOpen(orgId, input.entryDate);
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
-    const result = await this.db.transaction((tx) =>
-      this.posting.persistJournalEntry(
+    const entryTotalStr = input.lines.reduce((acc, l) => addDecimals(acc, l.debit.toFixed(4)), "0");
+
+    const allPolicies = await this.db
+      .select({
+        id: finApprovalPolicies.id,
+        approverUserId: finApprovalPolicies.approverUserId,
+        minAmount: finApprovalPolicies.minAmount,
+      })
+      .from(finApprovalPolicies)
+      .where(
+        and(
+          eq(finApprovalPolicies.orgId, orgId),
+          eq(finApprovalPolicies.recordType, "MANUAL_JOURNAL"),
+          eq(finApprovalPolicies.isActive, true),
+        ),
+      );
+
+    const applicablePolicy = allPolicies.find((p) => {
+      if (p.minAmount === null) return true;
+      return compareDecimals(entryTotalStr, p.minAmount) >= 0;
+    });
+
+    const needsApproval = applicablePolicy !== undefined;
+    const result = await this.db.transaction(async (tx) => {
+      const persisted = await this.posting.persistJournalEntry(
         {
           orgId,
           entryDate: input.entryDate,
@@ -147,7 +173,7 @@ export class AccountingLedgerService {
           sourceType: "manual",
           sourceId: null,
           sourceEvent: null,
-          status: input.status,
+          status: needsApproval ? "DRAFT" : input.status,
           createdBy: userId,
           lines: input.lines.map((line) => ({
             accountCode: line.accountCode,
@@ -157,8 +183,37 @@ export class AccountingLedgerService {
           })),
         },
         tx,
-      ),
-    );
+      );
+
+      if (needsApproval && applicablePolicy) {
+        await tx
+          .update(journalEntries)
+          .set({ status: "PENDING_APPROVAL" })
+          .where(eq(journalEntries.id, persisted.id));
+
+        await tx.insert(finApprovalRequests).values({
+          orgId,
+          recordType: "MANUAL_JOURNAL",
+          recordId: persisted.id,
+          status: "PENDING",
+          requestedBy: userId,
+        });
+
+        if (applicablePolicy.approverUserId) {
+          void this.dispatch.emit({
+            eventKey: "accounting.approval.requested",
+            orgId,
+            actorUserId: userId,
+            targetUserIds: [applicablePolicy.approverUserId],
+            entityType: "journal_entry",
+            entityId: String(persisted.id),
+            variables: { entryNumber: persisted.entryNumber, amount: entryTotalStr, description: input.description },
+          });
+        }
+      }
+
+      return persisted;
+    });
 
     this.audit.log({
       action: "accounting.journal.create",
@@ -166,7 +221,7 @@ export class AccountingLedgerService {
       orgId,
       resourceType: "journal_entry",
       resourceId: String(result.id),
-      metadata: { entryNumber: result.entryNumber },
+      metadata: { entryNumber: result.entryNumber, needsApproval },
       result: "SUCCESS",
     });
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, sql, count, or, ilike } from "drizzle-orm";
+import { eq, and, sql, count, or, ilike, isNull } from "drizzle-orm";
 import { contacts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -24,9 +24,12 @@ export class ContactsService {
   }
 
   private async queryContacts(orgId: string, filters: ListInput) {
-    const conditions = [eq(contacts.orgId, orgId)];
+    const conditions = [eq(contacts.orgId, orgId), isNull(contacts.deletedAt)];
     if (filters.organizationId) {
       conditions.push(eq(contacts.organizationId, filters.organizationId));
+    }
+    if (filters.source) {
+      conditions.push(eq(contacts.source, filters.source));
     }
     if (filters.search) {
       const s = `%${filters.search}%`;
@@ -73,6 +76,7 @@ export class ContactsService {
       .where(
         and(
           eq(contacts.orgId, orgId),
+          isNull(contacts.deletedAt),
           or(
             ilike(contacts.name, q),
             ilike(contacts.email, q),
@@ -85,7 +89,7 @@ export class ContactsService {
 
   getContact(orgId: string, id: number) {
     return this.db.query.contacts.findFirst({
-      where: and(eq(contacts.id, id), eq(contacts.orgId, orgId)),
+      where: and(eq(contacts.id, id), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)),
       with: { crmOrganization: true, lead: true, deal: true },
     });
   }
@@ -129,7 +133,8 @@ export class ContactsService {
 
   async remove(orgId: string, id: number) {
     await this.db
-      .delete(contacts)
+      .update(contacts)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(contacts.id, id), eq(contacts.orgId, orgId)));
     await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
     return { success: true };

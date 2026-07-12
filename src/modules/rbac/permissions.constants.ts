@@ -948,6 +948,18 @@ const CRM_PERMISSIONS: Permission[] = [
     description: "Delete CRM deals",
   },
   {
+    name: "crm:deals:approve",
+    resource: "crm:deals",
+    action: "approve",
+    description: "Approve or reject deal stage transitions",
+  },
+  {
+    name: "crm:deals:forecast",
+    resource: "crm:deals",
+    action: "forecast",
+    description: "Capture and view forecast snapshots",
+  },
+  {
     name: "crm:contacts:view",
     resource: "crm:contacts",
     action: "view",
@@ -3889,6 +3901,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "crm:deals:read",
     "crm:deals:create",
     "crm:deals:delete",
+    "crm:deals:approve",
+    "crm:deals:forecast",
     "crm:contacts:view",
     "crm:contacts:manage",
     "crm:contacts:merge",

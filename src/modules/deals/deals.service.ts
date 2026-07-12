@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import { deals, dealActivities, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
+import { deals, dealActivities, dealApprovals, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -11,12 +11,15 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
+import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
 type DealRow = typeof deals.$inferSelect;
 
 export type UpdateDealOutcome =
-  | { ok: true; deal: DealRow; stageChanged: boolean; previousStage: string | null }
+  | { ok: true; deal: DealRow; stageChanged: boolean; previousStage: string | null; approvalPending?: false; approvalId?: undefined }
+  | { ok: true; deal: DealRow; stageChanged: false; previousStage: null; approvalPending: true; approvalId: number }
   | { ok: false; reason: "version_conflict" | "not_found" };
 
 @Injectable()
@@ -28,7 +31,24 @@ export class DealsService {
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
+    private readonly blueprints: CrmBlueprintsService,
+    private readonly crmMetadata: CrmMetadataService,
   ) {}
+
+  private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {
+    const metadata = await this.crmMetadata.getAggregate(orgId);
+    const stages = metadata.stages.filter((s: { pipelineId: string; isActive: boolean }) => {
+      if (pipelineId) return s.pipelineId === pipelineId && s.isActive;
+      const defaultPipeline = metadata.pipelines.find((p: { type: string | null; isDefault: boolean }) => p.type === "deal" && p.isDefault);
+      return defaultPipeline ? s.pipelineId === defaultPipeline.id && s.isActive : false;
+    });
+    return new Map(stages.map((s: { key: string; stageType: string; isTerminal: boolean; probability: number }) => [s.key, { stageType: s.stageType, isTerminal: s.isTerminal, probability: s.probability }]));
+  }
+
+  private async resolveDefaultDealPipelineId(orgId: string): Promise<string | null> {
+    const metadata = await this.crmMetadata.getAggregate(orgId);
+    return metadata.pipelines.find((p: { type: string | null; isDefault: boolean }) => p.type === "deal" && p.isDefault)?.id ?? null;
+  }
 
   private async maybeCreateNegotiationChannel(orgId: string, userId: string, dealId: number): Promise<void> {
     const alreadyLinked = await this.db.query.chatChannels.findFirst({
@@ -183,39 +203,58 @@ export class DealsService {
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
         where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
-        columns: { stage: true, updatedAt: true },
+        columns: { stage: true, updatedAt: true, pipelineId: true, value: true, lostReason: true, expectedCloseDate: true, notes: true, assignedToId: true },
       });
+      if (!existing) return { ok: false, reason: "not_found" };
 
-      if (input.version && existing?.updatedAt) {
+      if (input.version && existing.updatedAt) {
         const clientVersion = new Date(input.version).getTime();
         const serverVersion = new Date(existing.updatedAt).getTime();
-        if (clientVersion < serverVersion) {
-          return { ok: false, reason: "version_conflict" };
+        if (clientVersion < serverVersion) return { ok: false, reason: "version_conflict" };
+      }
+
+      const pipelineId = existing.pipelineId ?? await this.resolveDefaultDealPipelineId(orgId);
+
+      if (pipelineId && existing.stage !== input.stage) {
+        const transitionCheck = await this.blueprints.assertTransitionAllowed(
+          orgId, pipelineId, existing.stage, input.stage,
+          { ...input, value: existing.value, lostReason: existing.lostReason, expectedCloseDate: existing.expectedCloseDate },
+        );
+        if (!transitionCheck.allowed) {
+          throw new BadRequestException({
+            message: "Stage transition blocked: missing required fields",
+            missingFields: transitionCheck.missingFields,
+          });
+        }
+        if (transitionCheck.requiresApproval) {
+          const [approval] = await this.db.insert(dealApprovals).values({
+            orgId, dealId, requestedBy: userId, requestedStage: input.stage, status: "pending",
+          }).returning();
+          this.audit.log({ action: "deal.approval_requested", userId, orgId, targetId: String(dealId), targetType: "deal", metadata: { requestedStage: input.stage } });
+          return { ok: true as const, deal: existing as unknown as DealRow, stageChanged: false, previousStage: null, approvalPending: true, approvalId: approval!.id };
         }
       }
 
-      if (input.stage === "WON") {
+      const stageMap = pipelineId ? await this.resolvePipelineStageMap(orgId, pipelineId) : new Map<string, { stageType: string; isTerminal: boolean; probability: number }>();
+      const stageInfo = stageMap.get(input.stage);
+
+      if (stageInfo?.stageType === "won") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 100;
-      } else if (input.stage === "LOST") {
+      } else if (stageInfo?.stageType === "lost") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 0;
       }
 
-      if (existing && existing.stage !== input.stage) {
+      if (existing.stage !== input.stage) {
         stageChanged = true;
         previousStage = existing.stage ?? null;
         await this.db.insert(dealActivities).values({
-          orgId,
-          dealId,
-          type: "stage_change",
-          previousValue: existing.stage,
-          newValue: input.stage,
-          subject: `Stage changed from ${existing.stage} to ${input.stage}`,
-          userId,
+          orgId, dealId, type: "stage_change", previousValue: existing.stage, newValue: input.stage,
+          subject: `Stage changed from ${existing.stage} to ${input.stage}`, userId,
         });
-
-        if (input.stage === "NEGOTIATION") {
+        const stageLower = input.stage.toLowerCase();
+        if (stageLower === "negotiation") {
           await this.maybeCreateNegotiationChannel(orgId, userId, dealId);
         }
       }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import {
   eq,
   and,
@@ -14,7 +14,6 @@ import {
 } from "drizzle-orm";
 import {
   leads,
-  departmentMembers,
   leadActivities,
   notifications,
   organizationMembers,
@@ -28,6 +27,8 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { CrmValidationService } from "../crm-metadata/crm-validation.service";
+import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -43,9 +44,9 @@ import type {
   IngestInput,
 } from "./dto/lead.schemas";
 
-type ListFilters = ListInput & { role?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
-type BoardOpts = { role?: string; userId?: string; branch?: BranchContext; limitPerStatus?: number; scope?: DataScope };
-type StatsFilters = { dateFrom?: string; dateTo?: string; role?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
+type ListFilters = ListInput & { userId?: string; branch?: BranchContext; scope?: DataScope };
+type BoardOpts = { userId?: string; branch?: BranchContext; limitPerStatus?: number; scope?: DataScope };
+type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
 
 function pushLeadsViewScope(
   where: SQL[],
@@ -81,6 +82,8 @@ export class LeadsService {
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
+    private readonly crmValidation: CrmValidationService,
+    private readonly crmMetadata: CrmMetadataService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -114,9 +117,6 @@ export class LeadsService {
       await pushBranchAssigneeFilter(this.db, where, leads.assignedToId, filters.branch);
     }
 
-    if (filters?.role === "SALES" && filters.userId) {
-      where.push(eq(leads.assignedToId, filters.userId));
-    }
     pushLeadsViewScope(where, filters?.scope, filters?.userId);
     if (filters?.status) where.push(eq(leads.status, filters.status));
     if (filters?.priority) where.push(eq(leads.priority, filters.priority));
@@ -183,32 +183,9 @@ export class LeadsService {
 
   async getBoard(orgId: string, opts?: BoardOpts) {
     const filters = [eq(leads.orgId, orgId)];
-    const role = opts?.role;
-    const userId = opts?.userId;
 
     if (opts?.branch) {
       await pushBranchAssigneeFilter(this.db, filters, leads.assignedToId, opts.branch);
-    }
-
-    if (role === "SALES" && userId) {
-      filters.push(eq(leads.assignedToId, userId));
-    } else if (userId && role && !["CEO", "HR"].includes(role)) {
-      const teamLeadDepts = await this.db.query.departmentMembers.findMany({
-        where: and(
-          eq(departmentMembers.userId, userId),
-          eq(departmentMembers.role, "lead"),
-        ),
-      });
-      if (teamLeadDepts.length > 0) {
-        const deptIds = teamLeadDepts.map((d) => d.departmentId);
-        const teamMembers = await this.db.query.departmentMembers.findMany({
-          where: inArray(departmentMembers.departmentId, deptIds),
-        });
-        const teamUserIds = [...new Set(teamMembers.map((m) => m.userId))];
-        filters.push(inArray(leads.assignedToId, teamUserIds));
-      } else {
-        filters.push(eq(leads.assignedToId, userId));
-      }
     }
 
     pushLeadsViewScope(filters, opts?.scope, opts?.userId);
@@ -251,9 +228,6 @@ export class LeadsService {
     const statsFilters = [eq(leads.orgId, orgId)];
     if (filters?.branch) {
       await pushBranchAssigneeFilter(this.db, statsFilters, leads.assignedToId, filters.branch);
-    }
-    if (filters?.role === "SALES" && filters.userId) {
-      statsFilters.push(eq(leads.assignedToId, filters.userId));
     }
     pushLeadsViewScope(statsFilters, filters?.scope, filters?.userId);
 
@@ -324,6 +298,21 @@ export class LeadsService {
         const notMember: AssigneeNotMember = { error: "assignee_not_member" };
         return notMember;
       }
+    }
+
+    const record: Record<string, unknown> = {
+      name: input.name,
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      source: input.source,
+      priority: input.priority,
+      potentialValue: input.potentialValue ?? null,
+    };
+    const validation = await this.crmValidation.evaluate(orgId, "lead", record, {
+      sourceKey: input.source,
+    });
+    if (!validation.valid) {
+      throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
     }
 
     const [newLead] = await this.db.insert(leads).values({
@@ -421,6 +410,27 @@ export class LeadsService {
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
+    const existing = await this.db.query.leads.findFirst({
+      where: and(eq(leads.id, id), eq(leads.orgId, orgId)),
+    });
+    if (!existing) return null;
+
+    const record: Record<string, unknown> = {
+      name: input.name ?? existing.name,
+      email: input.email ?? existing.email,
+      phone: input.phone ?? existing.phone,
+      source: input.source ?? existing.source,
+      priority: input.priority ?? existing.priority,
+      potentialValue: input.potentialValue ?? existing.potentialValue,
+    };
+    const validation = await this.crmValidation.evaluate(orgId, "lead", record, {
+      sourceKey: (input.source ?? existing.source) ?? undefined,
+      existingRecordId: String(id),
+    });
+    if (!validation.valid) {
+      throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
+    }
+
     const [updated] = await this.db.update(leads)
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(leads.id, id), eq(leads.orgId, orgId)))

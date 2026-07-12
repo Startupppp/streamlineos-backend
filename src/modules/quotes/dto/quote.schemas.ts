@@ -25,9 +25,12 @@ export const createSchema = z.object({
   subject: z.string().min(1),
   description: z.string().optional(),
   currency: z.string().optional(),
-  validUntil: z.string(),
+  validUntil: z.string().optional(),
   termsAndConditions: z.string().optional(),
   notes: z.string().optional(),
+  pricebookId: z.string().optional(),
+  templateId: z.string().optional(),
+  discountPercent: z.number().min(0).max(100).optional(),
   lineItems: z.array(lineItemSchema).min(1),
 });
 
@@ -39,6 +42,9 @@ export const updateSchema = z.object({
   termsAndConditions: z.string().optional(),
   notes: z.string().optional(),
   rejectionReason: z.string().optional(),
+  pricebookId: z.string().optional(),
+  templateId: z.string().optional(),
+  discountPercent: z.number().min(0).max(100).optional(),
   lineItems: z.array(lineItemSchema).optional(),
 });
 

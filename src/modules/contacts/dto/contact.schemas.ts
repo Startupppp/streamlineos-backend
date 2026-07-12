@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const listSchema = z.object({
   search: z.string().optional(),
+  source: z.string().optional(),
   organizationId: z.coerce.number().optional(),
   limit: z.coerce.number().min(1).max(100).optional(),
   offset: z.coerce.number().min(0).optional(),

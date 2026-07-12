@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
@@ -7,6 +8,7 @@ import { organizations, users } from "../auth";
 import { payrolls } from "../hr";
 import { leads } from "./leads";
 import { clients, branches, clientAccounts, contacts, crmOrganizations } from "./contacts";
+import { crmPipelines } from "./metadata";
 
 export const deals = pgTable("deals", {
   id: serial("id").primaryKey(),
@@ -29,6 +31,10 @@ export const deals = pgTable("deals", {
   slaDeadline: timestamp("sla_deadline"),
   followUpDate: timestamp("follow_up_date"),
   followUpNotes: text("follow_up_notes"),
+  pipelineId: text("pipeline_id").references(() => crmPipelines.id, { onDelete: "set null" }),
+  forecastCategory: text("forecast_category"),
+  nextStep: text("next_step"),
+  healthScore: integer("health_score"),
   customData: jsonb("custom_data").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -37,6 +43,7 @@ export const deals = pgTable("deals", {
   index("idx_deals_client").on(table.clientId),
   index("idx_deals_lead").on(table.leadId),
   index("idx_deals_close_date").on(table.expectedCloseDate),
+  index("idx_deals_org_pipeline_stage").on(table.orgId, table.pipelineId, table.stage),
 ]);
 
 export const dealActivities = pgTable("deal_activities", {
@@ -90,7 +97,9 @@ export const dealApprovalRules = pgTable("deal_approval_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   minValue: decimal("min_value", { precision: 15, scale: 2 }).default("0").notNull(),
-  approverRole: text("approver_role").default("CEO").notNull(),
+  approverRole: text("approver_role"),
+  approverType: text("approver_type").default("role").notNull(),
+  approverUserId: text("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -109,6 +118,42 @@ export const dealApprovals = pgTable("deal_approvals", {
 }, (table) => [
   index("idx_deal_approvals_org").on(table.orgId, table.status),
   index("idx_deal_approvals_deal").on(table.dealId),
+]);
+
+export const crmDealCompetitors = pgTable("crm_deal_competitors", {
+  id: text("id").primaryKey().$defaultFn(() => randomUUID()),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  competitorKey: text("competitor_key").notNull(),
+  status: text("status").default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uq_crm_deal_competitors_deal_key").on(table.orgId, table.dealId, table.competitorKey),
+  index("idx_crm_deal_competitors_deal").on(table.dealId),
+  index("idx_crm_deal_competitors_org").on(table.orgId),
+]);
+
+export interface ForecastSnapshotData {
+  byCategory: Array<{ category: string; totalValue: number; weightedValue: number; dealCount: number }>;
+  byRep: Array<{ repId: string; repName: string; totalValue: number; weightedValue: number; dealCount: number }>;
+  totalWeighted: number;
+  totalBestCase: number;
+  totalDeals: number;
+  period: string;
+}
+
+export const crmForecastSnapshots = pgTable("crm_forecast_snapshots", {
+  id: text("id").primaryKey().$defaultFn(() => randomUUID()),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  period: text("period").notNull(),
+  capturedAt: timestamp("captured_at").defaultNow().notNull(),
+  createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  data: jsonb("data").$type<ForecastSnapshotData>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_crm_forecast_snapshots_org_period").on(table.orgId, table.period, table.capturedAt),
 ]);
 
 export const salesQuotas = pgTable("sales_quotas", {

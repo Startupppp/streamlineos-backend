@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
 import {
   clientAccounts,
+  crmQuoteSettings,
   deals,
   invoices,
   invoiceItems,
@@ -31,6 +32,12 @@ export function isSendNotDraft(value: unknown): value is SendNotDraft {
     "error" in value &&
     value.error === "not_draft"
   );
+}
+
+function addDays(date: Date, days: number): string {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
 }
 
 @Injectable()
@@ -112,6 +119,10 @@ export class QuotesService {
     const today = new Date();
     const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
 
+    const settings = await this.db.query.crmQuoteSettings.findFirst({
+      where: eq(crmQuoteSettings.orgId, orgId),
+    });
+
     const quote = await this.db.transaction(async (tx) => {
       const existingCount = await tx
         .select({ count: count() })
@@ -124,11 +135,25 @@ export class QuotesService {
       let totalTax = 0;
       for (const item of input.lineItems) {
         const lineAmount = item.quantity * item.unitPrice;
-        const lineTax = lineAmount * ((item.taxRate ?? 0) / 100);
         totalAmount += lineAmount;
-        totalTax += lineTax;
+        totalTax += lineAmount * ((item.taxRate ?? 0) / 100);
       }
-      const netAmount = totalAmount + totalTax;
+
+      const discountPercent = input.discountPercent ?? 0;
+      const discountAmount = totalAmount * (discountPercent / 100);
+      const netAmount = totalAmount - discountAmount + totalTax;
+
+      const expiryDays = settings?.defaultExpiryDays ?? 30;
+      const validUntil = input.validUntil ?? addDays(today, expiryDays);
+
+      const maxDiscount = settings?.maxDiscountPercent;
+      const needsApproval =
+        discountPercent > 0 &&
+        maxDiscount !== null &&
+        maxDiscount !== undefined &&
+        discountPercent > maxDiscount;
+
+      const approvalStatus: "pending" | undefined = needsApproval ? "pending" : undefined;
 
       const [created] = await tx
         .insert(quotes)
@@ -143,12 +168,15 @@ export class QuotesService {
           currency: input.currency ?? "INR",
           totalAmount: totalAmount.toFixed(2),
           taxAmount: totalTax.toFixed(2),
-          discountAmount: "0",
+          discountAmount: discountAmount.toFixed(2),
           netAmount: netAmount.toFixed(2),
-          validUntil: input.validUntil,
+          validUntil,
           termsAndConditions: input.termsAndConditions ?? null,
           createdById: userId,
           notes: input.notes ?? null,
+          pricebookId: input.pricebookId ?? null,
+          templateId: input.templateId ?? null,
+          approvalStatus,
         })
         .returning();
 
@@ -208,12 +236,28 @@ export class QuotesService {
     if (input.termsAndConditions !== undefined) updateData.termsAndConditions = input.termsAndConditions;
     if (input.notes !== undefined) updateData.notes = input.notes;
     if (input.rejectionReason !== undefined) updateData.rejectionReason = input.rejectionReason;
+    if (input.pricebookId !== undefined) updateData.pricebookId = input.pricebookId;
+    if (input.templateId !== undefined) updateData.templateId = input.templateId;
 
     if (input.status !== undefined) {
       updateData.status = input.status;
       if (input.status === "SENT") updateData.sentAt = new Date();
       if (input.status === "ACCEPTED") updateData.acceptedAt = new Date();
       if (input.status === "REJECTED") updateData.rejectedAt = new Date();
+    }
+
+    if (input.discountPercent !== undefined) {
+      const settings = await this.db.query.crmQuoteSettings.findFirst({
+        where: eq(crmQuoteSettings.orgId, orgId),
+      });
+      const maxDiscount = settings?.maxDiscountPercent;
+      if (
+        maxDiscount !== null &&
+        maxDiscount !== undefined &&
+        input.discountPercent > maxDiscount
+      ) {
+        updateData.approvalStatus = "pending";
+      }
     }
 
     const updated = await this.db.transaction(async (tx) => {
@@ -225,9 +269,12 @@ export class QuotesService {
           totalAmount += lineAmount;
           totalTax += lineAmount * ((item.taxRate ?? 0) / 100);
         }
+        const discountPercent = input.discountPercent ?? 0;
+        const discountAmount = totalAmount * (discountPercent / 100);
         updateData.totalAmount = totalAmount.toFixed(2);
         updateData.taxAmount = totalTax.toFixed(2);
-        updateData.netAmount = (totalAmount + totalTax).toFixed(2);
+        updateData.discountAmount = discountAmount.toFixed(2);
+        updateData.netAmount = (totalAmount - discountAmount + totalTax).toFixed(2);
 
         await tx.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
         await tx.insert(quoteLineItems).values(
@@ -299,10 +346,7 @@ export class QuotesService {
       where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
     });
     if (!existing) return null;
-    if (existing.status !== "DRAFT") {
-      const notDraft: SendNotDraft = { error: "not_draft" };
-      return notDraft;
-    }
+    if (existing.status !== "DRAFT") return { error: "not_draft" } satisfies SendNotDraft;
     if (existing.clientId === null) {
       throw new BadRequestException("Quote must have a linked contact or account before sending");
     }
@@ -477,9 +521,7 @@ export class QuotesService {
       where: and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Quote not found");
-    if (existing.signedAt !== null) {
-      return existing;
-    }
+    if (existing.signedAt !== null) return existing;
     const [updated] = await this.db
       .update(quotes)
       .set({ signedAt: new Date(), signedDocumentRef: documentRef ?? null, updatedAt: new Date() })
@@ -525,33 +567,13 @@ export class QuotesService {
       .where(and(...conditions));
 
     const headers = [
-      "Quote #",
-      "Subject",
-      "Status",
-      "Currency",
-      "Total",
-      "Tax",
-      "Net",
-      "Valid Until",
-      "Deal",
-      "Client",
-      "Created By",
-      "Created At",
-      "Sent At",
-      "Accepted At",
+      "Quote #", "Subject", "Status", "Currency", "Total", "Tax", "Net",
+      "Valid Until", "Deal", "Client", "Created By", "Created At", "Sent At", "Accepted At",
     ];
     const rows = data.map((q) => [
-      q.quoteNumber,
-      q.subject,
-      q.status,
-      q.currency,
-      q.totalAmount,
-      q.taxAmount,
-      q.netAmount,
-      q.validUntil,
-      q.dealName || "",
-      q.clientName || "",
-      q.createdBy || "",
+      q.quoteNumber, q.subject, q.status, q.currency,
+      q.totalAmount, q.taxAmount, q.netAmount, q.validUntil,
+      q.dealName || "", q.clientName || "", q.createdBy || "",
       q.createdAt ? new Date(q.createdAt).toISOString() : "",
       q.sentAt ? new Date(q.sentAt).toISOString() : "",
       q.acceptedAt ? new Date(q.acceptedAt).toISOString() : "",

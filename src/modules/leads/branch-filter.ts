@@ -5,8 +5,6 @@ import type { Db } from "../../db/drizzle.module";
 
 const BRANCH_SCOPED_ROLES = new Set(["BRANCH_MANAGER", "BRANCH_HR"]);
 
-const ORG_WIDE_ROLES = new Set(["CEO", "HR", "ADMIN"]);
-
 export interface BranchContext {
   role: string;
   branchId: number | null;
@@ -15,10 +13,6 @@ export interface BranchContext {
 
 export function isBranchScoped(ctx: BranchContext): boolean {
   return BRANCH_SCOPED_ROLES.has(ctx.role) && ctx.branchId !== null;
-}
-
-export function isOrgWide(ctx: BranchContext): boolean {
-  return ORG_WIDE_ROLES.has(ctx.role);
 }
 
 export function branchIdFilter(

@@ -206,9 +206,6 @@ export class CrmRulesService {
       const candidates = (rule.roundRobinUserIds ?? []) as string[];
       if (candidates.length === 0) return null;
 
-      const windowDays = config.leastLoadedWindowDays ?? 30;
-      const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60_000);
-
       const rows = await this.db
         .select({ assignedToId: leads.assignedToId, cnt: count() })
         .from(leads)
@@ -217,7 +214,7 @@ export class CrmRulesService {
             eq(leads.orgId, orgId),
             inArray(leads.assignedToId, candidates),
             notInArray(leads.status, ["CONVERTED", "LOST"]),
-            eq(leads.deletedAt, null),
+            isNull(leads.deletedAt),
           ),
         )
         .groupBy(leads.assignedToId);

@@ -63,6 +63,39 @@ export class GeneralLedgerService {
     const total = Number(totalRows[0]?.c ?? 0);
     const { offset, limit } = paginateOffset({ page, pageSize });
 
+    let priorPageBalance = openingBalance;
+    if (offset > 0) {
+      const priorPageRows = await this.db.execute<{ total_debit: string; total_credit: string }>(
+        sql`
+          SELECT
+            coalesce(sum(d), 0) AS total_debit,
+            coalesce(sum(c), 0) AS total_credit
+          FROM (
+            SELECT jl.debit AS d, jl.credit AS c
+            FROM journal_lines jl
+            INNER JOIN journal_entries je ON jl.entry_id = je.id
+            WHERE
+              jl.org_id = ${orgId}
+              AND je.entry_date >= ${from}
+              AND je.entry_date <= ${to}
+              AND je.status = 'POSTED'
+              ${accountId !== undefined ? sql`AND jl.account_id = ${accountId}` : sql``}
+              ${clientId !== undefined ? sql`AND jl.client_id = ${clientId}` : sql``}
+              ${vendorId !== undefined ? sql`AND jl.vendor_id = ${vendorId}` : sql``}
+              ${projectId !== undefined ? sql`AND jl.project_id = ${projectId}` : sql``}
+              ${departmentId !== undefined ? sql`AND jl.department_id = ${departmentId}` : sql``}
+            ORDER BY je.entry_date, je.id, jl.line_order
+            LIMIT ${offset}
+          ) sub
+        `,
+      );
+      const prRow = priorPageRows.rows[0];
+      priorPageBalance =
+        openingBalance +
+        Number(prRow?.total_debit ?? 0) -
+        Number(prRow?.total_credit ?? 0);
+    }
+
     const rows = await this.db
       .select({
         lineId: journalLines.id,
@@ -91,7 +124,7 @@ export class GeneralLedgerService {
       .offset(offset)
       .limit(limit);
 
-    let runningBalance = openingBalance;
+    let runningBalance = priorPageBalance;
     const items = rows.map((row) => {
       const debit = parseDecimal(row.debit);
       const credit = parseDecimal(row.credit);
@@ -99,9 +132,19 @@ export class GeneralLedgerService {
       return { ...row, debit, credit, runningBalance };
     });
 
-    const closingDebit = items.reduce((s, r) => s + r.debit, 0);
-    const closingCredit = items.reduce((s, r) => s + r.credit, 0);
-    const closingBalance = openingBalance + closingDebit - closingCredit;
+    const allRangeRows = await this.db
+      .select({
+        totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+        totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+      .where(and(...rangeConds));
+
+    const closingBalance =
+      openingBalance +
+      parseDecimal(allRangeRows[0]?.totalDebit) -
+      parseDecimal(allRangeRows[0]?.totalCredit);
 
     return {
       openingBalance,

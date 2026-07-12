@@ -25,6 +25,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
+import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import {
   createExpenseSchema,
   emailReportSchema,

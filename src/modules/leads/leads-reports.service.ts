@@ -247,11 +247,17 @@ export class LeadsReportsService {
     return this.cache.cached(
       `leads:source-report:${orgId}`,
       async () => {
+        const statusOptions = await this.db.select().from(crmOptions)
+          .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+        const semantics = resolveLeadStatusSemantics(statusOptions);
+        const convertedList = semantics.convertedKeys.map((k) => sql.raw(`'${k}'`));
+        const convertedExpr = sql.join(convertedList, sql`, `);
+
         const rows = await this.db
           .select({
             source: sql<string>`COALESCE(${leads.source}::text, 'other')`,
             count: sql<number>`count(*)::int`,
-            converted: sql<number>`count(*) FILTER (WHERE ${leads.status} = 'CONVERTED')::int`,
+            converted: sql<number>`count(*) FILTER (WHERE ${leads.status} IN (${convertedExpr}))::int`,
             totalValue: sql<number>`COALESCE(SUM(${leads.potentialValue}::numeric), 0)::float`,
           })
           .from(leads)
@@ -374,10 +380,15 @@ export class LeadsReportsService {
       .filter((m) => m.user.role === "SALES")
       .map((m) => m.user);
 
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+    const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
+
     const activeLeadsList = await this.db.query.leads.findMany({
       where: and(
         eq(leads.orgId, orgId),
-        sql`${leads.status} NOT IN ('CONVERTED', 'LOST')`,
+        notInArray(leads.status, terminalKeys),
         sql`${leads.assignedToId} IS NOT NULL`,
       ),
       columns: { assignedToId: true },

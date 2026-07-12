@@ -98,7 +98,7 @@ export class JournalApprovalsService {
       .limit(1);
     if (!approvalRows[0]) throw new NotFoundException("No pending approval request found for this entry");
 
-    const newEntryStatus = decision === "APPROVED" ? "POSTED" : "DRAFT";
+    const newEntryStatus = "DRAFT";
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -110,9 +110,7 @@ export class JournalApprovalsService {
         .update(journalEntries)
         .set({
           status: newEntryStatus,
-          ...(decision === "APPROVED"
-            ? { approvedBy: userId, approvedAt: new Date(), postedBy: userId, postedAt: new Date() }
-            : {}),
+          ...(decision === "APPROVED" ? { approvedBy: userId, approvedAt: new Date() } : {}),
         })
         .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)));
     });

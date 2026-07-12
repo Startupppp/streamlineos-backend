@@ -50,7 +50,10 @@ export class CoaService {
               this.db
                 .select({ one: sql`1` })
                 .from(journalLines)
-                .where(eq(journalLines.accountId, ledgerAccounts.id)),
+                .where(and(
+                  eq(journalLines.accountId, ledgerAccounts.id),
+                  eq(journalLines.orgId, ledgerAccounts.orgId),
+                )),
             ),
           })
           .from(ledgerAccounts)

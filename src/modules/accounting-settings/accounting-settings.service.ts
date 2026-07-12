@@ -73,8 +73,12 @@ export class AccountingSettingsService {
       orgId: u.orgId,
       resourceType: "accounting_settings",
       resourceId: u.orgId,
-      before: current as unknown as Record<string, unknown>,
-      after: input as unknown as Record<string, unknown>,
+      before: {
+        baseCurrency: current.baseCurrency,
+        fiscalYearStartMonth: current.fiscalYearStartMonth,
+        accountingBasis: current.accountingBasis,
+      },
+      after: { ...input },
     });
 
     return updated[0]!;
@@ -204,7 +208,7 @@ export class AccountingSettingsService {
       orgId: u.orgId,
       resourceType: "acc_number_sequence",
       resourceId: entityType,
-      after: input as unknown as Record<string, unknown>,
+      after: { ...input },
     });
 
     return result;

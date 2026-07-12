@@ -197,6 +197,13 @@
       "when": 1783800000007,
       "tag": "0247_fin_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1752451200000,
+      "tag": "0250_crm_deals_process",
+      "breakpoints": true
     }
   ]
 }

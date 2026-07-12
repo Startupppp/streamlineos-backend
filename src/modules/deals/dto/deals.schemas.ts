@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const dealStageSchema = z.enum(["LEAD", "CONTACTED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"]);
+export const dealStageSchema = z.string().min(1);
 
 export const listDealsSchema = z.object({
   stage: dealStageSchema.optional(),
@@ -12,7 +12,7 @@ export const listDealsSchema = z.object({
 export const createDealSchema = z.object({
   name: z.string().min(1),
   value: z.coerce.number().min(0).optional(),
-  stage: dealStageSchema.default("LEAD"),
+  stage: dealStageSchema.optional(),
   probability: z.number().min(0).max(100).optional(),
   contactPerson: z.string().optional(),
   contactEmail: z.string().email().optional().or(z.literal("")),
@@ -48,7 +48,7 @@ export const resolveApprovalSchema = z.object({
 
 export const requestApprovalSchema = z.object({
   dealId: z.number().int().positive(),
-  requestedStage: dealStageSchema,
+  requestedStage: z.string().min(1),
 });
 
 export const submitApprovalSchema = z.union([resolveApprovalSchema, requestApprovalSchema]);
@@ -68,7 +68,9 @@ export const patchCustomDataSchema = z.object({
 
 export const createApprovalRuleSchema = z.object({
   minValue: z.string().min(1, "Minimum value is required"),
-  approverRole: z.string().default("CEO"),
+  approverType: z.enum(["role", "user", "manager"]).default("role"),
+  approverRole: z.string().optional(),
+  approverUserId: z.string().optional(),
 });
 
 export const approvalsListSchema = z.object({
@@ -100,6 +102,33 @@ export const updateMeetingSchema = z.object({
   status: z.enum(["scheduled", "completed", "cancelled"]).optional(),
 });
 
+export const createCompetitorSchema = z.object({
+  competitorKey: z.string().min(1),
+  status: z.enum(["active", "won_against", "lost_to"]).default("active"),
+  notes: z.string().max(1000).optional(),
+});
+
+export const updateCompetitorSchema = createCompetitorSchema.omit({ competitorKey: true }).partial();
+
+export const patchNextStepSchema = z.object({
+  nextStep: z.string().max(500).nullable(),
+});
+
+export const createForecastSnapshotSchema = z.object({
+  period: z.string().min(1),
+});
+
+export const compareForecastSnapshotsSchema = z.object({
+  snapshotAId: z.string().min(1),
+  snapshotBId: z.string().min(1),
+});
+
+export const forecastSnapshotsQuerySchema = z.object({
+  period: z.string().optional(),
+  limit: z.coerce.number().min(1).max(50).optional(),
+  offset: z.coerce.number().min(0).optional(),
+});
+
 export type ListDealsInput = z.infer<typeof listDealsSchema>;
 export type CreateDealInput = z.infer<typeof createDealSchema>;
 export type UpdateDealInput = z.infer<typeof updateDealSchema>;
@@ -113,3 +142,9 @@ export type CreateApprovalRuleInput = z.infer<typeof createApprovalRuleSchema>;
 export type ApprovalsListInput = z.infer<typeof approvalsListSchema>;
 export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
+export type CreateCompetitorInput = z.infer<typeof createCompetitorSchema>;
+export type UpdateCompetitorInput = z.infer<typeof updateCompetitorSchema>;
+export type PatchNextStepInput = z.infer<typeof patchNextStepSchema>;
+export type CreateForecastSnapshotInput = z.infer<typeof createForecastSnapshotSchema>;
+export type CompareForecastSnapshotsInput = z.infer<typeof compareForecastSnapshotsSchema>;
+export type ForecastSnapshotsQueryInput = z.infer<typeof forecastSnapshotsQuerySchema>;
