@@ -30,6 +30,7 @@ export const projectApprovals = pgTable("project_approvals", {
   entityType: approvalEntityTypeEnum("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   title: text("title").notNull(),
+  reason: text("reason"),
   requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
   approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
   status: approvalStatusEnum("status").notNull().default("pending"),

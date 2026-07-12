@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { cycles, modules, sprints, tickets, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -362,6 +362,24 @@ export class ModulesService {
   }
 
   async createModule(orgId: string, userId: string, projectId: number, input: CreateModuleInput) {
+    const [existing] = await this.db
+      .select({ id: modules.id, name: modules.name })
+      .from(modules)
+      .where(
+        and(
+          eq(modules.orgId, orgId),
+          eq(modules.projectId, projectId),
+          ilike(modules.name, input.name.trim()),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      throw new ConflictException(
+        `A module named "${existing.name}" already exists in this project.`,
+      );
+    }
+
     const [mod] = await this.db
       .insert(modules)
       .values({

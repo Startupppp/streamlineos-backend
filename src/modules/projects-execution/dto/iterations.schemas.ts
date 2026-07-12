@@ -1,19 +1,58 @@
 import { z } from "zod";
 
-export const createSprintSchema = z.object({
-  name: z.string().min(1),
-  startDate: z.string(),
-  endDate: z.string(),
-  goal: z.string().optional(),
-});
+const sprintNameSchema = z
+  .string()
+  .transform((v) => v.trim())
+  .pipe(
+    z
+      .string()
+      .min(2, "Sprint name must be at least 2 characters")
+      .max(100, "Sprint name must be 100 characters or fewer")
+      .regex(/[A-Za-z0-9]/, "Sprint name must contain at least one letter or number"),
+  );
 
-export const updateSprintSchema = z.object({
-  name: z.string().min(1).optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  goal: z.string().optional(),
-  status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
-});
+export const createSprintSchema = z
+  .object({
+    name: sprintNameSchema,
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+    goal: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be on or after start date.",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
+
+export const updateSprintSchema = z
+  .object({
+    name: sprintNameSchema.optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    goal: z.string().optional(),
+    status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be on or after start date.",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
 
 const cycleNameSchema = z
   .string()
@@ -62,27 +101,72 @@ export const cycleListQuerySchema = z.object({
   status: z.enum(["draft", "active", "completed"]).optional(),
 });
 
-export const createModuleSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().optional(),
-  status: z
-    .enum(["backlog", "planned", "in-progress", "completed", "paused", "cancelled"])
-    .default("backlog"),
-  leadId: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-});
+const moduleNameSchema = z
+  .string()
+  .transform((v) => v.trim())
+  .pipe(
+    z
+      .string()
+      .min(2, "Module name must be at least 2 characters")
+      .max(80, "Module name must be 80 characters or fewer")
+      .regex(/[A-Za-z0-9]/, "Module name must contain at least one letter or number"),
+  );
 
-export const updateModuleSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().optional(),
-  status: z
-    .enum(["backlog", "planned", "in-progress", "completed", "paused", "cancelled"])
-    .optional(),
-  leadId: z.string().nullable().optional(),
-  startDate: z.string().nullable().optional(),
-  endDate: z.string().nullable().optional(),
-});
+export const createModuleSchema = z
+  .object({
+    name: moduleNameSchema,
+    description: z
+      .string()
+      .max(500, "Description must be 500 characters or fewer")
+      .optional(),
+    status: z
+      .enum(["backlog", "planned", "in-progress", "completed", "paused", "cancelled"])
+      .default("backlog"),
+    leadId: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be on or after start date.",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
+
+export const updateModuleSchema = z
+  .object({
+    name: moduleNameSchema.optional(),
+    description: z
+      .string()
+      .max(500, "Description must be 500 characters or fewer")
+      .optional(),
+    status: z
+      .enum(["backlog", "planned", "in-progress", "completed", "paused", "cancelled"])
+      .optional(),
+    leadId: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
+    endDate: z.string().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be on or after start date.",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
 
 export const createEpicSchema = z.object({
   title: z.string().min(1),

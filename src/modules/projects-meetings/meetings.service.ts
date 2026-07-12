@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lt, not, notInArray, sql, exists } from "drizzle-orm";
 import {
   projectMeetings,
   meetingAttendees,
@@ -22,7 +22,17 @@ import type {
 type MeetingPatch = Partial<
   Pick<
     typeof projectMeetings.$inferInsert,
-    "title" | "type" | "status" | "agenda" | "notes" | "scheduledAt" | "durationMinutes" | "sprintId"
+    | "title"
+    | "type"
+    | "status"
+    | "agenda"
+    | "notes"
+    | "scheduledAt"
+    | "endAt"
+    | "durationMinutes"
+    | "timezone"
+    | "recurrenceRule"
+    | "sprintId"
   >
 >;
 
@@ -56,6 +66,38 @@ export class MeetingsService {
 
   async listMeetings(orgId: string, projectId: number, query: ListMeetingsQuery) {
     await this.assertProject(orgId, projectId);
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 86400000);
+    const weekEnd = new Date(todayStart.getTime() + 7 * 86400000);
+
+    const dateClause = (() => {
+      if (query.dateFilter === "today") return and(gte(projectMeetings.scheduledAt, todayStart), lt(projectMeetings.scheduledAt, todayEnd));
+      if (query.dateFilter === "this_week") return and(gte(projectMeetings.scheduledAt, todayStart), lt(projectMeetings.scheduledAt, weekEnd));
+      if (query.dateFilter === "upcoming") return gte(projectMeetings.scheduledAt, now);
+      if (query.dateFilter === "past") return lt(projectMeetings.scheduledAt, now);
+      return undefined;
+    })();
+
+    let hostMeetingIds: number[] | undefined;
+    if (query.hostId) {
+      const rows = await this.db
+        .select({ id: projectMeetings.id })
+        .from(projectMeetings)
+        .where(and(eq(projectMeetings.orgId, orgId), eq(projectMeetings.projectId, projectId), eq(projectMeetings.createdBy, query.hostId), isNull(projectMeetings.deletedAt)));
+      hostMeetingIds = rows.map((r) => r.id);
+    }
+
+    let attendeeMeetingIds: number[] | undefined;
+    if (query.attendeeId) {
+      const rows = await this.db
+        .select({ meetingId: meetingAttendees.meetingId })
+        .from(meetingAttendees)
+        .where(and(eq(meetingAttendees.orgId, orgId), eq(meetingAttendees.userId, query.attendeeId)));
+      attendeeMeetingIds = rows.map((r) => r.meetingId);
+    }
+
     const meetings = await this.db
       .select()
       .from(projectMeetings)
@@ -66,12 +108,16 @@ export class MeetingsService {
           isNull(projectMeetings.deletedAt),
           query.status ? eq(projectMeetings.status, query.status) : undefined,
           query.type ? eq(projectMeetings.type, query.type) : undefined,
+          dateClause,
+          hostMeetingIds !== undefined ? (hostMeetingIds.length > 0 ? inArray(projectMeetings.id, hostMeetingIds) : sql`false`) : undefined,
+          attendeeMeetingIds !== undefined ? (attendeeMeetingIds.length > 0 ? inArray(projectMeetings.id, attendeeMeetingIds) : sql`false`) : undefined,
         ),
       )
       .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`);
+
     if (meetings.length === 0) return meetings;
     const ids = meetings.map((m) => m.id);
-    const [attCounts, aiCounts] = await Promise.all([
+    const [attCounts, aiCounts, unresolvedAiCounts] = await Promise.all([
       this.db
         .select({ meetingId: meetingAttendees.meetingId, count: sql<number>`count(*)::int` })
         .from(meetingAttendees)
@@ -88,14 +134,33 @@ export class MeetingsService {
           ),
         )
         .groupBy(meetingActionItems.meetingId),
+      this.db
+        .select({ meetingId: meetingActionItems.meetingId, count: sql<number>`count(*)::int` })
+        .from(meetingActionItems)
+        .where(
+          and(
+            eq(meetingActionItems.orgId, orgId),
+            inArray(meetingActionItems.meetingId, ids),
+            isNull(meetingActionItems.deletedAt),
+            notInArray(meetingActionItems.status, ["done", "converted", "cancelled"]),
+          ),
+        )
+        .groupBy(meetingActionItems.meetingId),
     ]);
     const attMap = new Map(attCounts.map((r) => [r.meetingId, r.count]));
     const aiMap = new Map(aiCounts.map((r) => [r.meetingId, r.count]));
-    return meetings.map((m) => ({
+    const unresolvedAiMap = new Map(unresolvedAiCounts.map((r) => [r.meetingId, r.count]));
+
+    const result = meetings.map((m) => ({
       ...m,
       attendeeCount: attMap.get(m.id) ?? 0,
       actionItemCount: aiMap.get(m.id) ?? 0,
+      unresolvedActionItemCount: unresolvedAiMap.get(m.id) ?? 0,
     }));
+
+    if (query.hasActionItems === true) return result.filter((m) => m.actionItemCount > 0);
+    if (query.hasUnresolvedActionItems === true) return result.filter((m) => m.unresolvedActionItemCount > 0);
+    return result;
   }
 
   async getMeeting(orgId: string, projectId: number, meetingId: number) {
@@ -125,14 +190,30 @@ export class MeetingsService {
 
   async createMeeting(orgId: string, userId: string, projectId: number, input: CreateMeetingInput) {
     await this.assertProject(orgId, projectId);
-    const [meeting] = await this.db.transaction(async (tx) => {
+
+    if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
+      const members = await this.db
+        .select({ userId: projectMembers.userId })
+        .from(projectMembers)
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            inArray(projectMembers.userId, input.attendeeUserIds),
+          ),
+        );
+      const memberSet = new Set(members.map((m) => m.userId));
+      const invalid = input.attendeeUserIds.filter((id) => !memberSet.has(id));
+      if (invalid.length > 0) throw new BadRequestException(`Users are not project members: ${invalid.join(", ")}`);
+    }
+
+    const meeting = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${projectMeetings.meetingNumber}), 0)` })
         .from(projectMeetings)
         .where(and(eq(projectMeetings.projectId, projectId), eq(projectMeetings.orgId, orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
-      return tx
+      const [created] = await tx
         .insert(projectMeetings)
         .values({
           orgId,
@@ -144,13 +225,25 @@ export class MeetingsService {
           agenda: input.agenda ?? null,
           notes: input.notes ?? null,
           scheduledAt: input.scheduledAt ?? null,
+          endAt: input.endAt ?? null,
           durationMinutes: input.durationMinutes ?? null,
+          timezone: input.timezone ?? null,
+          recurrenceRule: input.recurrenceRule ?? null,
           sprintId: input.sprintId ?? null,
           createdBy: userId,
         })
         .returning();
+      if (!created) throw new NotFoundException("Failed to create meeting");
+
+      if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
+        await tx.insert(meetingAttendees).values(
+          input.attendeeUserIds.map((uid) => ({ orgId, meetingId: created.id, userId: uid })),
+        ).onConflictDoNothing();
+      }
+
+      return created;
     });
-    if (!meeting) throw new NotFoundException("Failed to create meeting");
+
     this.audit.log({
       action: "meeting.created",
       userId,
@@ -177,7 +270,10 @@ export class MeetingsService {
     if (input.agenda !== undefined) patch.agenda = input.agenda ?? null;
     if (input.notes !== undefined) patch.notes = input.notes ?? null;
     if (input.scheduledAt !== undefined) patch.scheduledAt = input.scheduledAt ?? null;
+    if (input.endAt !== undefined) patch.endAt = input.endAt ?? null;
     if (input.durationMinutes !== undefined) patch.durationMinutes = input.durationMinutes ?? null;
+    if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
+    if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule ?? null;
     if (input.sprintId !== undefined) patch.sprintId = input.sprintId ?? null;
     const [updated] = await this.db
       .update(projectMeetings)

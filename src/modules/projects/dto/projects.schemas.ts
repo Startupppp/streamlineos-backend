@@ -215,7 +215,7 @@ export const recurrenceRuleSchema = z.object({
 export type RecurrenceRuleInput = z.infer<typeof recurrenceRuleSchema>;
 
 export const createTicketSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1).max(500).trim(),
   description: z.string().optional(),
   type: z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]).default("TASK"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
@@ -235,7 +235,7 @@ export const createTicketSchema = z.object({
 });
 
 export const updateTicketSchema = z.object({
-  title: z.string().min(1).optional(),
+  title: z.string().min(1).max(500).trim().optional(),
   description: z.string().nullable().optional(),
   type: z.string().optional(),
   status: z.string().optional(),

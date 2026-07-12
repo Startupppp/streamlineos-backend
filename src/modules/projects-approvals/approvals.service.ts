@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { projectApprovals, projects } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -141,6 +141,25 @@ export class ApprovalsService {
       throw new BadRequestException("Approver cannot be the requester");
     }
     await this.assertProject(orgId, projectId);
+
+    const existing = await this.db.query.projectApprovals.findFirst({
+      where: and(
+        eq(projectApprovals.orgId, orgId),
+        eq(projectApprovals.projectId, projectId),
+        eq(projectApprovals.entityType, input.entityType),
+        eq(projectApprovals.entityId, input.entityId),
+        eq(projectApprovals.approverId, input.approverId),
+        inArray(projectApprovals.status, ["pending", "requested", "escalated"]),
+        isNull(projectApprovals.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        "A pending approval for this item and approver already exists",
+      );
+    }
+
     const [approval] = await this.db
       .insert(projectApprovals)
       .values({
@@ -149,6 +168,7 @@ export class ApprovalsService {
         entityType: input.entityType,
         entityId: input.entityId,
         title: input.title,
+        reason: input.reason ?? null,
         approverId: input.approverId,
         dueAt: input.dueAt ?? null,
         level: input.level ?? 1,

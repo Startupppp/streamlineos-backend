@@ -4,8 +4,9 @@ import { approvalEntityTypeEnum, approvalStatusEnum } from "../../../db/schema";
 export const createApprovalSchema = z.object({
   entityType: z.enum(approvalEntityTypeEnum.enumValues),
   entityId: z.number().int().positive(),
-  title: z.string().min(1).max(500),
+  title: z.string().trim().min(1).max(500),
   approverId: z.string().min(1),
+  reason: z.string().max(2000).optional(),
   dueAt: z.coerce.date().optional(),
   level: z.number().int().min(1).optional(),
 });

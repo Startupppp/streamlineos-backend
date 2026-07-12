@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects, sprints } from "./core";
 import { tickets } from "./tasks";
@@ -18,7 +18,10 @@ export const projectMeetings = pgTable("project_meetings", {
   agenda: text("agenda"),
   notes: text("notes"),
   scheduledAt: timestamp("scheduled_at"),
+  endAt: timestamp("end_at"),
   durationMinutes: integer("duration_minutes"),
+  timezone: text("timezone"),
+  recurrenceRule: jsonb("recurrence_rule"),
   sprintId: integer("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
