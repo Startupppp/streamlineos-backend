@@ -39,6 +39,7 @@ export const accTaxPayments = pgTable("acc_tax_payments", {
 }, (table) => [
   index("idx_acc_tax_payments_org_type").on(table.orgId, table.taxType),
   index("idx_acc_tax_payments_org_period").on(table.orgId, table.periodStart, table.periodEnd),
+  index("uniq_acc_tax_payments_org_type_ref").on(table.orgId, table.taxType, table.reference),
 ]);
 
 export const accTaxCodesRelations = relations(accTaxCodes, ({ one }) => ({

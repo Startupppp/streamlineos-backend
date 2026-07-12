@@ -1,21 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, lt, lte, gte, sql, desc, isNull, not, inArray, isNotNull } from "drizzle-orm";
-import { tasks, leads, leadEmails, deals, dealMeetings, users, crmOptions, crmPipelineStages, quotes } from "../../db/schema";
+import { and, eq, lt, lte, gte, sql, desc, isNull, not, inArray } from "drizzle-orm";
+import { tasks, leads, leadEmails, deals, dealMeetings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
 import { applyScope } from "../access/apply-scope";
 import type { SnoozeTaskInput } from "./crm-inbox.dto";
-import { resolveLeadStatusSemantics } from "../leads/lead-status-semantics";
-
-interface AiAction {
-  type: string;
-  entityType: "lead" | "deal" | "quote";
-  entityId: number;
-  title: string;
-  reason: string;
-  href: string;
-}
+import { CrmInboxAiActionsService, type AiAction } from "./crm-inbox-ai-actions.service";
 
 interface InboxItem {
   id: number;
@@ -61,128 +52,10 @@ function endOfDay(d: Date): Date {
 
 @Injectable()
 export class CrmInboxService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private async resolveMetadata(orgId: string): Promise<{ terminalLeadKeys: string[]; openStageKeys: string[] }> {
-    const [leadStatusOptions, pipelineStageRows] = await Promise.all([
-      this.db
-        .select({ key: crmOptions.key, isTerminal: crmOptions.isTerminal, metadata: crmOptions.metadata })
-        .from(crmOptions)
-        .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"), eq(crmOptions.isActive, true))),
-      this.db
-        .select({ key: crmPipelineStages.key })
-        .from(crmPipelineStages)
-        .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.isActive, true), eq(crmPipelineStages.isTerminal, false))),
-    ]);
-
-    const semantics = resolveLeadStatusSemantics(
-      leadStatusOptions.map((o) => ({
-        key: o.key,
-        isTerminal: o.isTerminal ?? false,
-        metadata: (o.metadata as Record<string, unknown> | null) ?? null,
-      })),
-    );
-
-    const terminalLeadKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
-    const openStageKeys = pipelineStageRows.map((r) => r.key);
-
-    return { terminalLeadKeys, openStageKeys };
-  }
-
-  private async computeAiActions(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
-    terminalLeadKeys: string[],
-    openStageKeys: string[],
-  ): Promise<AiAction[]> {
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const todayString = now.toISOString().slice(0, 10);
-    const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-    const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
-
-    const [hotLeads, slaDeals, expiringQuotes] = await Promise.all([
-      this.db
-        .select({ id: leads.id, name: leads.name })
-        .from(leads)
-        .where(
-          and(
-            eq(leads.orgId, orgId),
-            not(inArray(leads.status, terminalLeadKeys)),
-            isNull(leads.deletedAt),
-            lte(leads.updatedAt, sevenDaysAgo),
-            leadScopeFilter,
-          ),
-        )
-        .orderBy(leads.followUpDate)
-        .limit(3),
-
-      openStageKeys.length > 0
-        ? this.db
-            .select({ id: deals.id, name: deals.name })
-            .from(deals)
-            .where(
-              and(
-                eq(deals.orgId, orgId),
-                inArray(deals.stage, openStageKeys),
-                isNotNull(deals.slaDeadline),
-                lt(deals.slaDeadline, now),
-              ),
-            )
-            .limit(3)
-        : Promise.resolve([] as { id: number; name: string }[]),
-
-      this.db
-        .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, dealId: quotes.dealId })
-        .from(quotes)
-        .where(
-          and(
-            eq(quotes.orgId, orgId),
-            inArray(quotes.status, ["SENT", "DRAFT"]),
-            lte(quotes.validUntil, threeDaysFromNow),
-            gte(quotes.validUntil, todayString),
-          ),
-        )
-        .limit(4),
-    ]);
-
-    const actions: AiAction[] = [
-      ...hotLeads.map(
-        (l): AiAction => ({
-          type: "call_lead",
-          entityType: "lead",
-          entityId: l.id,
-          title: "Follow up with " + l.name,
-          reason: "No contact in 7+ days",
-          href: "/crm/leads/" + String(l.id),
-        }),
-      ),
-      ...slaDeals.map(
-        (d): AiAction => ({
-          type: "advance_deal",
-          entityType: "deal",
-          entityId: d.id,
-          title: "Advance or update " + d.name,
-          reason: "Past SLA deadline",
-          href: "/crm/deals/" + String(d.id),
-        }),
-      ),
-      ...expiringQuotes.map(
-        (q): AiAction => ({
-          type: "follow_up_quote",
-          entityType: "quote",
-          entityId: q.id,
-          title: "Follow up on quote " + q.quoteNumber,
-          reason: "Quote expiring in ≤3 days",
-          href: q.dealId != null ? "/crm/deals/" + String(q.dealId) : "/crm/quotes/" + String(q.id),
-        }),
-      ),
-    ];
-
-    return actions.slice(0, 10);
-  }
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly aiActions: CrmInboxAiActionsService,
+  ) {}
 
   async getInbox(orgId: string, userId: string, scope: DataScope): Promise<InboxResponse> {
     const now = new Date();
@@ -195,7 +68,7 @@ export class CrmInboxService {
     const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
     const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
 
-    const { terminalLeadKeys, openStageKeys } = await this.resolveMetadata(orgId);
+    const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
     const [
       dueTasks,
@@ -206,7 +79,7 @@ export class CrmInboxService {
       slaRisk,
       stuckDeals,
       newlyAssigned,
-      aiActions,
+      aiActionsResult,
     ] = await Promise.all([
       this.db
         .select({
@@ -381,7 +254,7 @@ export class CrmInboxService {
         .orderBy(desc(leads.assignedAt))
         .limit(10),
 
-      this.computeAiActions(orgId, userId, scope, terminalLeadKeys, openStageKeys),
+      this.aiActions.computeAiActions(orgId, userId, scope, terminalLeadKeys, openStageKeys),
     ]);
 
     return {
@@ -507,7 +380,7 @@ export class CrmInboxService {
           total: newlyAssigned.length,
         },
       ],
-      aiActions,
+      aiActions: aiActionsResult,
     };
   }
 
@@ -522,7 +395,7 @@ export class CrmInboxService {
     const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
     const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
 
-    const { terminalLeadKeys, openStageKeys } = await this.resolveMetadata(orgId);
+    const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
     const [
       dueTasksCount,

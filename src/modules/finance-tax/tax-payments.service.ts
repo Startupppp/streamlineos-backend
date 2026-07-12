@@ -46,22 +46,6 @@ export class TaxPaymentsService {
   async create(u: CurrentUserContext, input: CreateTaxPaymentInput) {
     const { orgId, userId } = u;
 
-    const existing = await this.db
-      .select({ id: accTaxPayments.id })
-      .from(accTaxPayments)
-      .where(
-        and(
-          eq(accTaxPayments.orgId, orgId),
-          eq(accTaxPayments.reference, input.reference),
-          eq(accTaxPayments.taxType, input.taxType),
-        ),
-      )
-      .limit(1);
-
-    if (existing[0]) {
-      throw new ConflictException(`Tax payment with reference '${input.reference}' already exists`);
-    }
-
     const taxPayableAccountId = await this.posting.resolveSystemAccount(orgId, "TAX_PAYABLE");
     const bankClearingAccountId = await this.posting.resolveSystemAccount(orgId, "BANK_CLEARING");
 
@@ -77,21 +61,30 @@ export class TaxPaymentsService {
       ],
     });
 
-    const [payment] = await this.db
-      .insert(accTaxPayments)
-      .values({
-        orgId,
-        taxType: input.taxType,
-        periodStart: input.periodStart,
-        periodEnd: input.periodEnd,
-        amount: input.amount,
-        paidDate: input.paidDate,
-        reference: input.reference,
-        journalEntryId: postResult.entryId,
-        notes: input.notes ?? null,
-        createdBy: userId,
-      })
-      .returning();
+    let payment: typeof accTaxPayments.$inferSelect | undefined;
+    try {
+      const [inserted] = await this.db
+        .insert(accTaxPayments)
+        .values({
+          orgId,
+          taxType: input.taxType,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+          amount: input.amount,
+          paidDate: input.paidDate,
+          reference: input.reference,
+          journalEntryId: postResult.entryId,
+          notes: input.notes ?? null,
+          createdBy: userId,
+        })
+        .returning();
+      payment = inserted;
+    } catch (err: unknown) {
+      if (err instanceof Error && "code" in err && (err as Record<string, unknown>).code === "23505") {
+        throw new ConflictException(`Tax payment with reference '${input.reference}' already exists`);
+      }
+      throw err;
+    }
 
     await this.cache.invalidatePattern(`fin:tax-payments:${orgId}:*`);
     await this.cache.invalidatePattern(`fin:tax-dashboard:${orgId}:*`);

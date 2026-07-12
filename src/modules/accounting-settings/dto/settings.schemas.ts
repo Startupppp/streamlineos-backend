@@ -70,6 +70,8 @@ export const systemAccountPurposeSchema = z.enum([
   "FX_GAIN_LOSS",
   "DEPRECIATION_EXPENSE",
   "ACCUM_DEPRECIATION",
+  "SALARY_EXPENSE",
+  "ASSET_DISPOSAL_GAIN_LOSS",
 ]);
 
 export type SystemAccountPurpose = z.infer<typeof systemAccountPurposeSchema>;

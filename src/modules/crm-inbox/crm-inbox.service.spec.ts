@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { CrmInboxService } from "./crm-inbox.service";
+import type { CrmInboxAiActionsService } from "./crm-inbox-ai-actions.service";
 
 function makeQueryChain(resolvedValue: unknown) {
   const chain = {
@@ -30,7 +31,11 @@ describe("CrmInboxService", () => {
 
   beforeEach(() => {
     mockDb = makeQueryChain([]);
-    service = new CrmInboxService(mockDb as never);
+    const mockAiActions = {
+      resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }),
+      computeAiActions: jest.fn().mockResolvedValue([]),
+    } as unknown as CrmInboxAiActionsService;
+    service = new CrmInboxService(mockDb as never, mockAiActions);
   });
 
   it("should be defined", () => {

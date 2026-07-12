@@ -25,6 +25,7 @@ import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmProductsService } from "./crm-products.service";
 import { CrmOrgMergeService } from "./crm-org-merge.service";
 import { CrmCustomer360Service } from "./crm-customer360.service";
+import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 
@@ -58,6 +59,7 @@ import { SlaResolverService } from "./sla-resolver.service";
     CrmProductsService,
     CrmOrgMergeService,
     CrmCustomer360Service,
+    CrmCustomer360SectionsService,
     TerritoryMatchService,
     SlaResolverService,
   ],

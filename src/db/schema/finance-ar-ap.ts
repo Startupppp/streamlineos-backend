@@ -177,6 +177,7 @@ export const finReminderLog = pgTable("fin_reminder_log", {
   offsetDays: integer("offset_days").notNull(),
   status: text("status").notNull(),
 }, (table) => [
+  uniqueIndex("uniq_fin_reminder_log_org_inv_offset").on(table.orgId, table.invoiceId, table.offsetDays),
   index("idx_fin_reminder_log_org_invoice").on(table.orgId, table.invoiceId),
 ]);
 

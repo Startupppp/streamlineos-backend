@@ -237,7 +237,7 @@ export class AssetsService {
     const assetAccountCode = await this.resolveAccountCode(u.orgId, asset.categoryId, "asset", this.db);
     const accumDepCode = await this.resolveAccountCode(u.orgId, asset.categoryId, "accumDep", this.db);
     const bankClearingCode = await this.resolveSystemPurposeCode(u.orgId, "BANK_CLEARING", this.db);
-    const gainLossCode = await this.resolveSystemPurposeCode(u.orgId, "FX_GAIN_LOSS", this.db);
+    const gainLossCode = await this.resolveSystemPurposeCode(u.orgId, "ASSET_DISPOSAL_GAIN_LOSS", this.db);
 
     const cost = Number(asset.acquisitionCost);
     const accumulated = Number(asset.accumulatedDepreciation);

@@ -5,7 +5,7 @@ import {
   reimbursementStatusEnum, loanStatusEnum, bonusTypeEnum, fnfStatusEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
-import { journalEntries } from "../accounting";
+import { journalEntries, ledgerAccounts } from "../accounting";
 import { projects } from "../projects";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";
@@ -60,6 +60,7 @@ export const expenseCategories = pgTable("expense_categories", {
   budgetLimit: decimal("budget_limit", { precision: 15, scale: 2 }),
   budgetPeriod: text("budget_period").default("MONTHLY").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  ledgerAccountId: integer("ledger_account_id").references(() => ledgerAccounts.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_expense_categories_org_name").on(table.orgId, table.name),

@@ -281,7 +281,7 @@ export class ExpenseLifecycleService {
     const categoryWithLedger = expense.categoryId
       ? await this.db.query.expenseCategories.findFirst({
           where: eq(expenseCategories.id, expense.categoryId),
-          columns: { id: true, name: true },
+          columns: { id: true, name: true, ledgerAccountId: true },
         })
       : null;
 
@@ -291,11 +291,17 @@ export class ExpenseLifecycleService {
     const expenseAmount = amount - taxAmount;
 
     const lines: PostJournalLine[] = [
-      {
-        systemPurpose: "EXPENSE_CLEARING",
-        debit: expenseAmount.toFixed(2),
-        description: `Expense: ${expense.category}${categoryWithLedger ? "" : " [no category ledger mapping — using EXPENSE_CLEARING]"}`,
-      },
+      categoryWithLedger?.ledgerAccountId
+        ? {
+            accountId: categoryWithLedger.ledgerAccountId,
+            debit: expenseAmount.toFixed(2),
+            description: `Expense: ${expense.category}`,
+          }
+        : {
+            systemPurpose: "EXPENSE_CLEARING" as const,
+            debit: expenseAmount.toFixed(2),
+            description: `Expense: ${expense.category}`,
+          },
     ];
 
     if (taxAmount > 0) {

@@ -20,6 +20,8 @@ export const PURPOSE_ALLOWED_TYPES: Record<SystemAccountPurpose, string[]> = {
   FX_GAIN_LOSS: ["INCOME", "EXPENSE"],
   DEPRECIATION_EXPENSE: ["EXPENSE"],
   ACCUM_DEPRECIATION: ["ASSET"],
+  SALARY_EXPENSE: ["EXPENSE"],
+  ASSET_DISPOSAL_GAIN_LOSS: ["INCOME", "EXPENSE"],
 };
 
 export const PURPOSE_SUGGESTED_CODE: Record<SystemAccountPurpose, string> = {
@@ -39,6 +41,8 @@ export const PURPOSE_SUGGESTED_CODE: Record<SystemAccountPurpose, string> = {
   FX_GAIN_LOSS: "4900",
   DEPRECIATION_EXPENSE: "5900",
   ACCUM_DEPRECIATION: "1590",
+  SALARY_EXPENSE: "5100",
+  ASSET_DISPOSAL_GAIN_LOSS: "4900",
 };
 
 export const SEQUENCE_DEFAULTS: Record<string, { prefix: string; padding: number }> = {

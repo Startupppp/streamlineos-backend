@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import {
   eq,
   and,
@@ -11,7 +11,7 @@ import {
   sql,
   count,
 } from "drizzle-orm";
-import { expenses, expenseCategories, users } from "../../db/schema";
+import { expenses, expenseCategories, users, ledgerAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -156,6 +156,16 @@ export class ExpensesService {
   }
 
   async createCategory(orgId: string, input: CreateCategoryInput) {
+    if (input.ledgerAccountId !== undefined) {
+      const [acct] = await this.db
+        .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
+        .from(ledgerAccounts)
+        .where(and(eq(ledgerAccounts.id, input.ledgerAccountId), eq(ledgerAccounts.orgId, orgId)))
+        .limit(1);
+      if (!acct) throw new BadRequestException("Ledger account not found");
+      if (acct.accountType !== "EXPENSE") throw new BadRequestException("Ledger account must be of type EXPENSE");
+    }
+
     const [category] = await this.db
       .insert(expenseCategories)
       .values({
@@ -164,6 +174,7 @@ export class ExpensesService {
         description: input.description,
         budgetLimit: input.budgetLimit?.toString(),
         budgetPeriod: input.budgetPeriod,
+        ledgerAccountId: input.ledgerAccountId ?? null,
       })
       .returning();
 

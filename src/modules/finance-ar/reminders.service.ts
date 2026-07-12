@@ -110,20 +110,18 @@ export class RemindersService {
           const targetMs = dueMs + offsetDays * 86400000;
           if (Math.abs(targetMs - todayMs) >= 43200000) continue;
 
-          const existing = await this.db
-            .select({ id: finReminderLog.id })
-            .from(finReminderLog)
-            .where(and(eq(finReminderLog.orgId, inv.orgId), eq(finReminderLog.invoiceId, inv.id), eq(finReminderLog.offsetDays, offsetDays)))
-            .limit(1);
-          if (existing.length > 0) continue;
-
-          await this.db.insert(finReminderLog).values({
-            orgId: inv.orgId,
-            invoiceId: inv.id,
-            channel: policy.channel,
-            offsetDays,
-            status: "sent",
-          });
+          const insertResult = await this.db
+            .insert(finReminderLog)
+            .values({
+              orgId: inv.orgId,
+              invoiceId: inv.id,
+              channel: policy.channel,
+              offsetDays,
+              status: "sent",
+            })
+            .onConflictDoNothing()
+            .returning({ id: finReminderLog.id });
+          if (insertResult.length === 0) continue;
 
           let targetUserIds: string[] = [];
           if (inv.collectionOwnerId) {

@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { expenses, finReimbursementBatches, users } from "../../db/schema";
+import { finBankAccounts } from "../../db/schema/finance-banking";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -192,6 +193,18 @@ export class ReimbursementsService {
 
     const totalStr = formatDecimal(batch.totalAmount, 2);
 
+    let bankLedgerAccountId: number | undefined;
+    if (input.bankAccountId !== undefined) {
+      const [bankAcct] = await this.db
+        .select({ id: finBankAccounts.id, ledgerAccountId: finBankAccounts.ledgerAccountId })
+        .from(finBankAccounts)
+        .where(and(eq(finBankAccounts.id, input.bankAccountId), eq(finBankAccounts.orgId, u.orgId)))
+        .limit(1);
+      if (!bankAcct) throw new BadRequestException("Bank account not found");
+      if (!bankAcct.ledgerAccountId) throw new BadRequestException("Bank account has no linked ledger account");
+      bankLedgerAccountId = bankAcct.ledgerAccountId;
+    }
+
     const postResult = await this.posting.postJournal(u, {
       entryDate: input.paidDate,
       description: `Reimbursement batch paid: ${batch.name}`,
@@ -204,11 +217,17 @@ export class ReimbursementsService {
           debit: totalStr,
           description: "Clear reimbursement payable",
         },
-        {
-          systemPurpose: "BANK_CLEARING",
-          credit: totalStr,
-          description: `Batch payment: ${batch.name}`,
-        },
+        bankLedgerAccountId !== undefined
+          ? {
+              accountId: bankLedgerAccountId,
+              credit: totalStr,
+              description: `Batch payment: ${batch.name}`,
+            }
+          : {
+              systemPurpose: "BANK_CLEARING" as const,
+              credit: totalStr,
+              description: `Batch payment: ${batch.name}`,
+            },
       ],
     });
 
@@ -219,6 +238,7 @@ export class ReimbursementsService {
           status: "PAID",
           paidDate: input.paidDate,
           journalEntryId: postResult.entryId,
+          bankAccountId: input.bankAccountId ?? null,
           updatedAt: new Date(),
         })
         .where(eq(finReimbursementBatches.id, batchId));

@@ -10,6 +10,7 @@ export const accSystemPurposeEnum = pgEnum("acc_system_purpose", [
   "TAX_PAYABLE", "TAX_RECEIVABLE", "PAYROLL_PAYABLE", "EXPENSE_CLEARING",
   "RETAINED_EARNINGS", "OWNER_EQUITY", "PAYMENT_FEES", "REIMBURSEMENT_PAYABLE",
   "FX_GAIN_LOSS", "DEPRECIATION_EXPENSE", "ACCUM_DEPRECIATION",
+  "SALARY_EXPENSE", "ASSET_DISPOSAL_GAIN_LOSS",
 ]);
 export const finRecurFrequencyEnum = pgEnum("fin_recur_frequency", ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export const finApprovalRecordTypeEnum = pgEnum("fin_approval_record_type", [

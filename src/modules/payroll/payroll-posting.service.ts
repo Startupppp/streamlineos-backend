@@ -39,7 +39,7 @@ export class PayrollPostingService {
           sourceId: String(runId),
           sourceEvent: "finalized",
           lines: [
-            { systemPurpose: "EXPENSE_CLEARING", debit: totalExpense, credit: "0" },
+            { systemPurpose: "SALARY_EXPENSE", debit: totalExpense, credit: "0" },
             { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
             { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
             { systemPurpose: "EXPENSE_CLEARING", debit: "0", credit: employerStr },
@@ -53,7 +53,7 @@ export class PayrollPostingService {
           sourceId: String(runId),
           sourceEvent: "finalized",
           lines: [
-            { systemPurpose: "EXPENSE_CLEARING", debit: (grossNum).toFixed(4), credit: "0" },
+            { systemPurpose: "SALARY_EXPENSE", debit: (grossNum).toFixed(4), credit: "0" },
             { systemPurpose: "PAYROLL_PAYABLE", debit: "0", credit: netStr },
             { systemPurpose: "TAX_PAYABLE", debit: "0", credit: taxStr },
           ],

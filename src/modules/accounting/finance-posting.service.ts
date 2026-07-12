@@ -49,6 +49,8 @@ const PURPOSE_DEFAULT_CODE: Record<SystemAccountPurpose, string> = {
   FX_GAIN_LOSS: "4900",
   DEPRECIATION_EXPENSE: "5900",
   ACCUM_DEPRECIATION: "1590",
+  SALARY_EXPENSE: "5100",
+  ASSET_DISPOSAL_GAIN_LOSS: "4900",
 };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];

@@ -239,6 +239,34 @@
       "when": 1752372000000,
       "tag": "0257_inv_transfer_line_lot_serial",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1752537600000,
+      "tag": "0258_acc_purpose_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1752537600001,
+      "tag": "0259_expense_category_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1752537600002,
+      "tag": "0260_reimb_batch_bank",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1752537600003,
+      "tag": "0261_acc_idempotency_uniques",
+      "breakpoints": true
     }
   ]
 }

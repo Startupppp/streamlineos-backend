@@ -1,5 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { CrmCustomer360Service } from "./crm-customer360.service";
+import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AccessService } from "../access/access.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -28,6 +29,7 @@ describe("CrmCustomer360Service – permission filtering", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CrmCustomer360Service,
+        CrmCustomer360SectionsService,
         { provide: DRIZZLE, useValue: makeDb() },
         { provide: AccessService, useValue: accessSvc },
         { provide: CacheService, useValue: { cached: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) } },
@@ -75,6 +77,7 @@ describe("CrmCustomer360Service – permission filtering", () => {
     const mod2 = await Test.createTestingModule({
       providers: [
         CrmCustomer360Service,
+        CrmCustomer360SectionsService,
         { provide: DRIZZLE, useValue: smartDb },
         {
           provide: AccessService,

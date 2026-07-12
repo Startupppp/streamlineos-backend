@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { journalEntries } from "./accounting";
 import { expenseCategories } from "./hr/payroll";
+import { finBankAccounts } from "./finance-banking";
 
 export const finReimbursementBatchStatusEnum = pgEnum("fin_reimbursement_batch_status", ["DRAFT", "APPROVED", "PAID"]);
 
@@ -14,6 +15,7 @@ export const finReimbursementBatches = pgTable("fin_reimbursement_batches", {
   totalAmount: decimal("total_amount", { precision: 18, scale: 4 }).default("0").notNull(),
   paidDate: date("paid_date"),
   journalEntryId: integer("journal_entry_id").references(() => journalEntries.id),
+  bankAccountId: integer("bank_account_id").references(() => finBankAccounts.id),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),

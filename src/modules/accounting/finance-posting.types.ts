@@ -14,7 +14,9 @@ export type SystemAccountPurpose =
   | "REIMBURSEMENT_PAYABLE"
   | "FX_GAIN_LOSS"
   | "DEPRECIATION_EXPENSE"
-  | "ACCUM_DEPRECIATION";
+  | "ACCUM_DEPRECIATION"
+  | "SALARY_EXPENSE"
+  | "ASSET_DISPOSAL_GAIN_LOSS";
 
 export interface PostJournalLine {
   accountId?: number;

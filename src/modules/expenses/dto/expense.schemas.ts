@@ -75,6 +75,7 @@ export const createCategorySchema = z.object({
   description: z.string().optional(),
   budgetLimit: z.number().positive().optional(),
   budgetPeriod: z.enum(["MONTHLY", "YEARLY"]).optional().default("MONTHLY"),
+  ledgerAccountId: z.number().int().positive().optional(),
 });
 
 const AMOUNT = z

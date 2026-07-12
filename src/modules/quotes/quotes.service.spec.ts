@@ -5,6 +5,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import { QuotesService } from "./quotes.service";
+import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 
 const mockBus = { emit: jest.fn().mockResolvedValue(undefined) };
 
@@ -86,6 +87,7 @@ describe("QuotesService.convertToInvoice", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuotesService,
+        QuotesLifecycleService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
@@ -165,6 +167,7 @@ describe("QuotesService.approve", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuotesService,
+        QuotesLifecycleService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
@@ -213,6 +216,7 @@ describe("QuotesService.reject", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuotesService,
+        QuotesLifecycleService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
@@ -261,6 +265,7 @@ describe("QuotesService.send", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QuotesService,
+        QuotesLifecycleService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
