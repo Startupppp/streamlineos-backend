@@ -263,7 +263,7 @@ export class ExpensesWriteService {
     const [expenseList, statsRow] = await Promise.all([
       this.db.query.expenses.findMany({
         where: and(...conditions),
-        with: { user: true },
+        with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
         orderBy: [desc(expenses.expenseDate)],
       }),
       this.db
@@ -281,7 +281,7 @@ export class ExpensesWriteService {
 
     const members = await this.db.query.organizationMembers.findMany({
       where: eq(organizationMembers.orgId, orgId),
-      with: { user: true },
+      with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
     });
 
     const recipientEmails = members

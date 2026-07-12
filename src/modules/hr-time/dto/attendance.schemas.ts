@@ -52,9 +52,36 @@ export const attendanceEmailReportSchema = z.object({
     .optional(),
 });
 
+const holidayNameSchema = z
+  .string()
+  .transform((v) => v.trim())
+  .pipe(
+    z
+      .string()
+      .min(3, "Holiday name must be at least 3 characters")
+      .max(100, "Holiday name must be at most 100 characters")
+      .refine((v) => /[a-zA-Z]/.test(v), "Holiday name must contain at least one letter")
+      .refine((v) => /[a-zA-Z]{3}/.test(v), "Holiday name must contain at least 3 letters")
+      .refine((v) => !/\s{2,}/.test(v), "Holiday name cannot have consecutive spaces"),
+  );
+
+export const createOrgHolidaySchema = z.object({
+  name: holidayNameSchema,
+  date: z.string().min(1, "Date is required").regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
+  recurring: z.boolean().optional().default(false),
+});
+
+export const updateOrgHolidaySchema = z.object({
+  name: holidayNameSchema.optional(),
+  date: z.string().min(1).regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  recurring: z.boolean().optional(),
+});
+
 export type CheckInInput = z.infer<typeof checkInSchema>;
 export type CheckOutInput = z.infer<typeof checkOutSchema>;
 export type MonthlyQuery = z.infer<typeof monthlyQuerySchema>;
 export type HeatmapQuery = z.infer<typeof heatmapQuerySchema>;
 export type AttendanceLogsQuery = z.infer<typeof attendanceLogsQuerySchema>;
 export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;
+export type CreateOrgHolidayInput = z.infer<typeof createOrgHolidaySchema>;
+export type UpdateOrgHolidayInput = z.infer<typeof updateOrgHolidaySchema>;

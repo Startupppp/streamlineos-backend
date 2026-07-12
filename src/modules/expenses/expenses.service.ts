@@ -259,7 +259,12 @@ export class ExpensesService {
     const [expenseList, countResult, statsResult, pendingList, categoryList] = await Promise.all([
       this.db.query.expenses.findMany({
         where: and(...conditions),
-        with: { user: true, approver: true, expenseCategory: true, project: true },
+        with: {
+          user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
+          approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
+          expenseCategory: true,
+          project: true,
+        },
         orderBy: [
           asc(sql`CASE ${expenses.status} WHEN 'PENDING' THEN 0 WHEN 'APPROVED' THEN 1 WHEN 'REJECTED' THEN 2 WHEN 'PAID' THEN 3 ELSE 4 END`),
           orderFn(sortColumn),
@@ -287,7 +292,12 @@ export class ExpensesService {
       isAdmin
         ? this.db.query.expenses.findMany({
             where: and(eq(expenses.orgId, orgId), eq(expenses.status, "PENDING")),
-            with: { user: true, approver: true, expenseCategory: true, project: true },
+            with: {
+          user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
+          approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
+          expenseCategory: true,
+          project: true,
+        },
             orderBy: [desc(expenses.createdAt)],
           })
         : Promise.resolve([]),
@@ -378,7 +388,7 @@ export class ExpensesService {
         .groupBy(expenses.status),
       this.db.query.expenses.findMany({
         where: and(...conditions, or(eq(expenses.status, "APPROVED"), eq(expenses.status, "PAID"))),
-        with: { user: true },
+        with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
         orderBy: [desc(sql`CAST(${expenses.amount} AS DECIMAL)`)],
         limit: 10,
       }),

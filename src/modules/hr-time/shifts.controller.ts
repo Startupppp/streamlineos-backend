@@ -5,7 +5,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ShiftsService } from "./shifts.service";
+import {
+  createShiftSchema,
+  updateShiftSchema,
+  type CreateShiftInput,
+  type UpdateShiftInput,
+} from "./dto/shifts.schemas";
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -21,13 +28,20 @@ export class ShiftsController {
 
   @Post()
   @RequirePermission("hr:attendance:manage")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; type: string; startTime: string; endTime: string; breakMinutes?: number; isNightShift?: boolean; gracePeriodMinutes?: number }) {
+  create(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createShiftSchema)) body: CreateShiftInput,
+  ) {
     return this.service.createShift(u.orgId, body);
   }
 
   @Patch(":id")
   @RequirePermission("hr:attendance:manage")
-  update(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Partial<Parameters<ShiftsService["updateShift"]>[2]>) {
+  update(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("id", ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateShiftSchema)) body: UpdateShiftInput,
+  ) {
     return this.service.updateShift(u.orgId, id, body);
   }
 

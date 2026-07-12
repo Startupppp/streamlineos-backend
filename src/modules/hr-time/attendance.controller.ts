@@ -11,24 +11,20 @@ import {
   attendanceLogsQuerySchema,
   checkInSchema,
   checkOutSchema,
+  createOrgHolidaySchema,
   heatmapQuerySchema,
   monthlyQuerySchema,
+  updateOrgHolidaySchema,
   type AttendanceEmailReportInput,
   type AttendanceLogsQuery,
   type CheckInInput,
   type CheckOutInput,
+  type CreateOrgHolidayInput,
   type HeatmapQuery,
   type MonthlyQuery,
+  type UpdateOrgHolidayInput,
 } from "./dto/attendance.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
-
-interface HolidayCreateBody {
-  name: string;
-  date: string;
-  recurring?: boolean;
-}
-
-type HolidayUpdateBody = Partial<HolidayCreateBody>;
 
 @RequireModule("hr")
 @Controller("hr/attendance")
@@ -119,7 +115,10 @@ export class AttendanceController {
 
   @Post("holidays")
   @RequirePermission("hr:attendance:manage")
-  createHoliday(@CurrentUser() u: CurrentUserContext, @Body() body: HolidayCreateBody) {
+  createHoliday(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createOrgHolidaySchema)) body: CreateOrgHolidayInput,
+  ) {
     return this.attendance.createHoliday(u.orgId, u.userId, body);
   }
 
@@ -128,7 +127,7 @@ export class AttendanceController {
   updateHoliday(
     @CurrentUser() u: CurrentUserContext,
     @Param("id") id: string,
-    @Body() body: HolidayUpdateBody,
+    @Body(new ZodValidationPipe(updateOrgHolidaySchema)) body: UpdateOrgHolidayInput,
   ) {
     return this.attendance.updateHoliday(u.orgId, id, body);
   }

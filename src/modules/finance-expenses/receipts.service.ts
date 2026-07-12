@@ -28,7 +28,10 @@ export class ReceiptsService {
     const [rows, [countResult]] = await Promise.all([
       this.db.query.expenses.findMany({
         where,
-        with: { user: true, expenseCategory: true },
+        with: {
+          user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
+          expenseCategory: true,
+        },
         orderBy: (exp, { desc }) => [desc(exp.createdAt)],
         limit,
         offset,

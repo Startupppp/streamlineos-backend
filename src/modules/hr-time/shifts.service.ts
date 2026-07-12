@@ -1,8 +1,9 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { shiftTemplates, employeeShiftAssignments, shiftSwapRequests } from "../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import type { CreateShiftInput, UpdateShiftInput } from "./dto/shifts.schemas";
 
 @Injectable()
 export class ShiftsService {
@@ -15,14 +16,22 @@ export class ShiftsService {
       .limit(100);
   }
 
-  async createShift(orgId: string, data: { name: string; type: string; startTime: string; endTime: string; breakMinutes?: number; isNightShift?: boolean; gracePeriodMinutes?: number }) {
-    const [shift] = await this.db.insert(shiftTemplates).values({ orgId, ...data }).returning();
-    return shift;
+  async createShift(orgId: string, data: CreateShiftInput) {
+    try {
+      const [shift] = await this.db.insert(shiftTemplates).values({ orgId, ...data }).returning();
+      return shift;
+    } catch (err: unknown) {
+      const pg = err as { code?: string };
+      if (pg.code === "23505") {
+        throw new ConflictException("A shift template with this name already exists.");
+      }
+      throw err;
+    }
   }
 
-  async updateShift(orgId: string, id: number, data: Partial<typeof shiftTemplates.$inferInsert>) {
+  async updateShift(orgId: string, id: number, data: UpdateShiftInput) {
     const [shift] = await this.db.update(shiftTemplates)
-      .set({ ...data, updatedAt: new Date() })
+      .set(data)
       .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)))
       .returning();
     if (!shift) throw new NotFoundException("Shift not found");

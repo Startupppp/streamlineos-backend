@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { attendance, departments, geofences, organizationMembers, organizations, orgHolidays, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -580,17 +580,33 @@ export class AttendanceService {
   }
 
   async createHoliday(orgId: string, createdBy: string, data: { name: string; date: string; recurring?: boolean }) {
+    const trimmedName = data.name.trim();
+    const duplicate = await this.db.query.orgHolidays.findFirst({
+      where: and(
+        eq(orgHolidays.orgId, orgId),
+        eq(orgHolidays.date, data.date),
+        sql`lower(trim(${orgHolidays.name})) = ${trimmedName.toLowerCase()}`,
+      ),
+      columns: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException("A holiday with this name already exists on this date.");
+    }
     const [holiday] = await this.db
       .insert(orgHolidays)
-      .values({ id: randomUUID(), orgId, createdBy, name: data.name, date: data.date, recurring: data.recurring ?? false })
+      .values({ id: randomUUID(), orgId, createdBy, name: trimmedName, date: data.date, recurring: data.recurring ?? false })
       .returning();
     return holiday;
   }
 
   async updateHoliday(orgId: string, id: string, data: { name?: string; date?: string; recurring?: boolean }) {
+    const updateData: { name?: string; date?: string; recurring?: boolean } = { ...data };
+    if (updateData.name !== undefined) {
+      updateData.name = updateData.name.trim();
+    }
     const [holiday] = await this.db
       .update(orgHolidays)
-      .set(data)
+      .set(updateData)
       .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)))
       .returning();
     if (!holiday) throw new NotFoundException("Holiday not found");

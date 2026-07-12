@@ -27,6 +27,8 @@ import { ProjectsAiService } from "./projects-ai.service";
 import { KbAskService } from "../../kb/kb-ask.service";
 import { ChatHistoryService } from "./chat-history.service";
 import { HrCopilotTools } from "../hr-copilot-tools";
+import { ChatChannelsService } from "../../chat/chat-channels.service";
+import { ChatMessagesService } from "../../chat/chat-messages.service";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
 const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o";
@@ -71,6 +73,8 @@ export class ChatAssistantService {
     private readonly history: ChatHistoryService,
     private readonly hrCopilot: HrCopilotTools,
     private readonly moduleRef: ModuleRef,
+    private readonly chatChannels: ChatChannelsService,
+    private readonly chatMessages: ChatMessagesService,
   ) {}
 
   getChatModelId(): string {
@@ -178,6 +182,7 @@ ${context.topLeads.map((l) => `  - ${l.name} — ${l.status}${l.priority ? ` [${
 4. **Calendar**: Schedule meetings and events, invite team members
 5. **Analytics**: Team performance, conversion rates, pipeline health
 6. **Knowledge Base**: Search wiki pages, uploaded documents, company policies, and notes to answer questions with grounded information
+7. **Messaging**: Send direct messages to team members on your behalf
 
 ## Available Actions
 You can take the following actions on behalf of the user when asked:
@@ -189,6 +194,7 @@ You can take the following actions on behalf of the user when asked:
 - **askProjectAI**: Ask an AI question about a specific project (e.g. "what's blocked?", "why is it late?", "what are the risks?"). Requires a projectId — use searchProjects first if you only have a name.
 - **getProjectSummary**: Get an AI-generated health summary (progress, highlights, risks) for a specific project.
 - **searchKnowledgeBase**: Search the organization's knowledge base (wiki pages, uploaded documents, policies, notes) to answer questions grounded in company content.
+- **sendDirectMessage**: Send a direct message to a team member by name on the user's behalf. Always confirm the recipient name and message content with the user BEFORE calling this tool.
 
 Tone: Professional, concise, actionable. Always confirm details before scheduling events or taking destructive actions.`;
   }
@@ -456,6 +462,46 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
               return { answer: result.answer, hasContext: result.hasContext };
             } catch (_e) {
               return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
+            }
+          },
+        }),
+
+        sendDirectMessage: tool({
+          description:
+            "Send a direct message to a team member by name on the user's behalf. Only call this after confirming the recipient name and message content with the user.",
+          inputSchema: z.object({
+            recipientName: z.string().describe("The name (or partial name) of the team member to message"),
+            message: z.string().min(1).max(5000).describe("The message content to send"),
+          }),
+          execute: async ({ recipientName, message }) => {
+            const { resolved, unresolved } = await this.resolveAttendeeIds(orgId, [recipientName]);
+
+            if (unresolved.length > 0) {
+              return {
+                success: false,
+                message: `Could not find a team member matching "${recipientName}". Please check the name and try again.`,
+              };
+            }
+
+            const targetUserId = resolved[0];
+
+            try {
+              const { channel } = await this.chatChannels.createChannel(orgId, userId, {
+                type: "DIRECT",
+                targetUserId,
+              });
+
+              await this.chatMessages.send(channel.id, userId, orgId, { content: message });
+
+              return {
+                success: true,
+                message: `Message sent to ${recipientName} successfully.`,
+              };
+            } catch (_e) {
+              return {
+                success: false,
+                message: `Failed to send the message. Please try again later.`,
+              };
             }
           },
         }),

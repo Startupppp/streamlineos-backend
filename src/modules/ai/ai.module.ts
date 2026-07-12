@@ -21,9 +21,10 @@ import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { CalendarModule } from "../calendar/calendar.module";
+import { ChatModule } from "../chat/chat.module";
 
 @Module({
-  imports: [CalendarModule],
+  imports: [CalendarModule, ChatModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController],
   providers: [
     LlmService,
