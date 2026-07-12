@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
+import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTemplatesService, type TemplateSnapshot } from "./sign-templates.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import type { CreateBulkSendJobInput } from "./dto/signos.schemas";
@@ -31,6 +32,7 @@ export class SignBulkSendService {
     private readonly notifications: SignNotificationsService,
     private readonly templates: SignTemplatesService,
     private readonly envelopes: SignEnvelopesService,
+    private readonly integrations: SignIntegrationsService,
   ) {}
 
   private mapRows(rows: Record<string, unknown>[], columnMapping: Record<string, string>): MappedRow[] {
@@ -168,6 +170,8 @@ export class SignBulkSendService {
     if (sender?.email) {
       await this.notifications.sendBulkJobCompleted(sender.email, sender.name ?? "there", jobId, rows.length, successCount, failedCount);
     }
+
+    this.integrations.emitBulkSendCompleted(orgId, userId, jobId, { totalCount: rows.length, successCount, failedCount });
   }
 
   async listJobs(orgId: string) {

@@ -18,6 +18,7 @@ import { StorageService } from "../storage/storage.service";
 import { SignPdfService, type StampField, type CertificateData } from "./sign-pdf.service";
 import { SignAuditService } from "./sign-audit.service";
 import { SignNotificationsService } from "./sign-notifications.service";
+import { SignIntegrationsService } from "./sign-integrations.service";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -32,6 +33,7 @@ export class SignFinalizationService {
     private readonly pdf: SignPdfService,
     private readonly audit: SignAuditService,
     private readonly notifications: SignNotificationsService,
+    private readonly integrations: SignIntegrationsService,
   ) {}
 
   private async latestCertificate(orgId: string, envelopeId: number): Promise<SignCertificateRow | undefined> {
@@ -255,6 +257,12 @@ export class SignFinalizationService {
         await this.notifications.sendCompletedToRecipient(r.email, r.name, envelopeId, envelope.title);
       }
     }
+
+    this.integrations.emitEnvelopeEvent(
+      { ...envelope, status: "completed" },
+      "completed",
+      { certificateNumber, finalPdfHash, watermarked },
+    );
 
     return certificate;
   }

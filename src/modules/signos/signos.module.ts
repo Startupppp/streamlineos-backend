@@ -2,7 +2,11 @@ import { Module } from "@nestjs/common";
 import { StorageModule } from "../storage/storage.module";
 import { EmailModule } from "../email/email.module";
 import { AccessModule } from "../access/access.module";
+import { AutomationModule } from "../automation/automation.module";
+import { WebhooksModule } from "../webhooks/webhooks.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SignAuditService } from "./sign-audit.service";
+import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
@@ -29,7 +33,7 @@ import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule],
+  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,
@@ -44,6 +48,7 @@ import { SignReportsController } from "./sign-reports.controller";
   ],
   providers: [
     SignAuditService,
+    SignIntegrationsService,
     SignTokensService,
     SignPdfService,
     SignSettingsService,

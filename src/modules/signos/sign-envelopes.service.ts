@@ -10,6 +10,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
+import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignRecipientsService, type SignActorContext } from "./sign-recipients.service";
 import {
   canTransitionEnvelope,
@@ -51,6 +52,7 @@ export class SignEnvelopesService {
     private readonly settings: SignSettingsService,
     private readonly notifications: SignNotificationsService,
     private readonly recipients: SignRecipientsService,
+    private readonly integrations: SignIntegrationsService,
   ) {}
 
   async create(orgId: string, userId: string, input: CreateEnvelopeInput) {
@@ -288,6 +290,8 @@ export class SignEnvelopesService {
       userAgent: actor.userAgent,
     });
 
+    this.integrations.emitEnvelopeEvent(updated, "sent", { invitedCount });
+
     return updated;
   }
 
@@ -325,6 +329,8 @@ export class SignEnvelopesService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
+
+    this.integrations.emitEnvelopeEvent(updated, "voided", { reason: input.reason });
 
     return updated;
   }
@@ -454,6 +460,10 @@ export class SignEnvelopesService {
         eventType: newStatus === "completed" ? "envelope_completed" : newStatus === "declined" ? "recipient_declined" : "envelope_updated",
         eventMessage: `Envelope status changed to ${newStatus}`,
       });
+
+      if (newStatus === "declined") {
+        this.integrations.emitEnvelopeEvent({ ...envelope, ...patch } as typeof signEnvelopes.$inferSelect, "declined");
+      }
     }
 
     if (newStatus !== "completed" && newStatus !== "declined" && envelope.routingMode !== "parallel") {
@@ -502,6 +512,7 @@ export class SignEnvelopesService {
         eventType: "envelope_expired",
         eventMessage: "Envelope expired automatically",
       });
+      this.integrations.emitEnvelopeEvent({ ...envelope, status: "expired" }, "expired");
     }
     return expiring.length;
   }

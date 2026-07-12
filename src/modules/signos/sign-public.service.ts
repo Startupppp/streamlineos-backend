@@ -9,6 +9,7 @@ import { SignTokensService } from "./sign-tokens.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
+import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTemplatesService, type TemplateSnapshot } from "./sign-templates.service";
 import { SignSettingsService } from "./sign-settings.service";
 import type {
@@ -54,6 +55,7 @@ export class SignPublicService {
     private readonly notifications: SignNotificationsService,
     private readonly templates: SignTemplatesService,
     private readonly settings: SignSettingsService,
+    private readonly integrations: SignIntegrationsService,
   ) {}
 
   async getPublicForm(slug: string) {
@@ -468,6 +470,8 @@ export class SignPublicService {
       ipAddress: ctx.ipAddress,
       userAgent: ctx.userAgent,
     });
+
+    this.integrations.emitRecipientCompleted(envelope, { id: recipient.id, name: recipient.name, email: recipient.email });
 
     const outcome = await this.envelopes.applyRecipientOutcome(envelope.orgId, envelope.id);
     if (outcome.becameCompleted) {
