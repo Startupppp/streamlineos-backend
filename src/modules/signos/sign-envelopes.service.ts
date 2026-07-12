@@ -250,7 +250,7 @@ export class SignEnvelopesService {
         .where(eq(signRecipients.id, recipient.id));
 
       if (shouldInviteNow && recipient.email) {
-        const signingUrl = this.tokens.buildSigningUrl(recipient.id, rawToken);
+        const signingUrl = this.tokens.buildSigningUrl(rawToken);
         await this.notifications.sendInvitation(
           recipient.email,
           recipient.name,
@@ -373,7 +373,7 @@ export class SignEnvelopesService {
         .where(eq(signRecipients.id, r.id));
 
       if (r.email) {
-        const signingUrl = this.tokens.buildSigningUrl(r.id, rawToken);
+        const signingUrl = this.tokens.buildSigningUrl(rawToken);
         await this.notifications.sendInvitation(r.email, r.name, senderName, envelope.title, envelope.message ?? undefined, signingUrl);
         count++;
       }
@@ -469,7 +469,7 @@ export class SignEnvelopesService {
           .set({ status: "invited", signingTokenHash: this.tokens.hash(rawToken), tokenExpiresAt: envelope.expiresAt })
           .where(eq(signRecipients.id, r.id));
         if (r.email) {
-          const signingUrl = this.tokens.buildSigningUrl(r.id, rawToken);
+          const signingUrl = this.tokens.buildSigningUrl(rawToken);
           await this.notifications.sendInvitation(r.email, r.name, senderName, envelope.title, envelope.message ?? undefined, signingUrl);
         }
       }
@@ -519,7 +519,7 @@ export class SignEnvelopesService {
 
       const rawToken = this.tokens.generateSigningToken();
       await this.db.update(signRecipients).set({ signingTokenHash: this.tokens.hash(rawToken) }).where(eq(signRecipients.id, r.id));
-      const signingUrl = this.tokens.buildSigningUrl(r.id, rawToken);
+      const signingUrl = this.tokens.buildSigningUrl(rawToken);
       const daysRemaining = envelope.expiresAt
         ? Math.max(0, Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000))
         : null;

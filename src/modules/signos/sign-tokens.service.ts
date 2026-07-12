@@ -27,8 +27,8 @@ export class SignTokensService {
     return String(randomInt(0, 1_000_000)).padStart(6, "0");
   }
 
-  buildSigningUrl(recipientId: number, token: string): string {
-    return `${appUrl}/sign/session/${recipientId}?token=${token}`;
+  buildSigningUrl(token: string): string {
+    return `${appUrl}/sign/${token}`;
   }
 
   buildPublicFormUrl(slug: string): string {
