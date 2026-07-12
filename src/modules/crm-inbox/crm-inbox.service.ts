@@ -225,7 +225,7 @@ export class CrmInboxService {
                   sql`EXISTS (
                     SELECT 1 FROM deal_activities da
                     WHERE da.deal_id = ${deals.id}
-                    AND da.created_at >= ${fourteenDaysAgo}
+                    AND da.created_at >= ${fourteenDaysAgo.toISOString()}
                   )`,
                 ),
               ),
@@ -441,7 +441,7 @@ export class CrmInboxService {
         ? this.db
             .select({ n: sql<number>`count(*)` })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo})`)))
+            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
             .then((r) => Number(r[0]?.n ?? 0))
         : Promise.resolve(0),
       this.db

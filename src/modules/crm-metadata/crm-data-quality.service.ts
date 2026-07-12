@@ -206,7 +206,7 @@ export class CrmDataQualityService {
     const recentActivityDealIds = await this.db
       .selectDistinct({ dealId: dealActivities.dealId })
       .from(dealActivities)
-      .where(and(eq(dealActivities.orgId, orgId), sql`${dealActivities.createdAt} >= ${cutoff}`));
+      .where(and(eq(dealActivities.orgId, orgId), sql`${dealActivities.createdAt} >= ${cutoff.toISOString()}`));
     const activeIds = new Set(recentActivityDealIds.map((r) => r.dealId));
     const openDeals = await this.db
       .select({ id: deals.id, name: deals.name, stage: deals.stage })

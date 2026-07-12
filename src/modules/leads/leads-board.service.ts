@@ -160,7 +160,7 @@ export class LeadsBoardService {
           total: count(),
           totalPotentialValue: sql<string>`COALESCE(SUM(CAST(${leads.potentialValue} AS NUMERIC)), 0)`,
           unassigned: sql<string>`COUNT(*) FILTER (WHERE ${leads.assignedToId} IS NULL)`,
-          thisMonth: sql<string>`COUNT(*) FILTER (WHERE ${leads.createdAt} >= ${thisMonthStart})`,
+          thisMonth: sql<string>`COUNT(*) FILTER (WHERE ${leads.createdAt} >= ${thisMonthStart.toISOString()})`,
         })
         .from(leads)
         .where(and(...statsFilters)),

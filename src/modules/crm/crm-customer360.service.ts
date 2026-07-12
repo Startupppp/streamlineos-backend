@@ -140,19 +140,19 @@ export class CrmCustomer360Service {
           createdAt: contacts.createdAt,
         })
         .from(contacts)
-        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), sql`${contacts.createdAt} < ${cursorDate}`))
+        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, companyId), sql`${contacts.createdAt} < ${cursorDate.toISOString()}`))
         .orderBy(desc(contacts.createdAt))
         .limit(limit),
       this.db
         .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), sql`${deals.name} ILIKE ${"%" + safeName + "%"}`, sql`${deals.createdAt} < ${cursorDate}`))
+        .where(and(eq(deals.orgId, orgId), sql`${deals.name} ILIKE ${"%" + safeName + "%"}`, sql`${deals.createdAt} < ${cursorDate.toISOString()}`))
         .orderBy(desc(deals.createdAt))
         .limit(limit),
       this.db
         .select({ id: leads.id, name: leads.name, status: leads.status, createdAt: leads.createdAt })
         .from(leads)
-        .where(and(eq(leads.orgId, orgId), sql`${leads.company} ILIKE ${"%" + safeName + "%"}`, isNull(leads.deletedAt), sql`${leads.createdAt} < ${cursorDate}`))
+        .where(and(eq(leads.orgId, orgId), sql`${leads.company} ILIKE ${"%" + safeName + "%"}`, isNull(leads.deletedAt), sql`${leads.createdAt} < ${cursorDate.toISOString()}`))
         .orderBy(desc(leads.createdAt))
         .limit(limit),
     ]);

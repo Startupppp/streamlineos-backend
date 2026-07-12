@@ -71,6 +71,6 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsWebhooksDispatchService,
     ProjectsAutomationsService,
   ],
-  exports: [ProjectsTicketsService, ProjectsWebhooksDispatchService],
+  exports: [ProjectsTicketsService, ProjectsWebhooksDispatchService, ProjectsService, ProjectsWorkQueryService, ProjectsTicketSubresourcesService],
 })
 export class ProjectsModule {}
