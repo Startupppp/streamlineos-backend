@@ -11,7 +11,7 @@ jest.mock("../crm-sequences-runner.service", () => ({
     this.email = email;
 
     this.flushDueEnrollments = async function (): Promise<{ processed: number; advanced: number; stopped: number }> {
-      const enrollments: Array<{
+      type EnrollmentRow = {
         id: string;
         orgId: string;
         sequenceId: string;
@@ -20,7 +20,8 @@ jest.mock("../crm-sequences-runner.service", () => ({
         currentStep: number;
         status: string;
         steps: Array<{ stepType: string; config: Record<string, unknown>; waitHours: number }>;
-      }> = await (this as { db: { getDueEnrollments: () => Promise<unknown[]> } }).db.getDueEnrollments();
+      };
+      const enrollments: EnrollmentRow[] = await (this as { db: { getDueEnrollments: () => Promise<EnrollmentRow[]> } }).db.getDueEnrollments();
 
       if (enrollments.length === 0) return { processed: 0, advanced: 0, stopped: 0 };
 

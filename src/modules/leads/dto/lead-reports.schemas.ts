@@ -1,8 +1,5 @@
 import { z } from "zod";
 
-const LEAD_STATUSES = ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"] as const;
-const LEAD_PRIORITIES = ["HOT", "WARM", "COLD"] as const;
-
 export const analyticsQuerySchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
@@ -19,8 +16,8 @@ export const checkDuplicatesQuerySchema = z.object({
 });
 
 export const exportQuerySchema = z.object({
-  status: z.enum(LEAD_STATUSES).optional(),
-  priority: z.enum(LEAD_PRIORITIES).optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
   assigneeId: z.string().optional(),
 });
 

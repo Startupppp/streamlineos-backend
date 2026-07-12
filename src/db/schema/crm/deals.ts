@@ -151,9 +151,29 @@ export const crmForecastSnapshots = pgTable("crm_forecast_snapshots", {
   capturedAt: timestamp("captured_at").defaultNow().notNull(),
   createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
   data: jsonb("data").$type<ForecastSnapshotData>().notNull(),
+  overrideAmount: decimal("override_amount", { precision: 15, scale: 4 }),
+  overrideNote: text("override_note"),
+  overriddenBy: text("overridden_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_forecast_snapshots_org_period").on(table.orgId, table.period, table.capturedAt),
+]);
+
+export const crmDealStakeholders = pgTable("crm_deal_stakeholders", {
+  id: text("id").primaryKey().$defaultFn(() => randomUUID()),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }).notNull(),
+  roleKey: text("role_key"),
+  influence: text("influence"),
+  isPrimary: boolean("is_primary").default(false).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uq_crm_deal_stakeholders_deal_contact").on(table.orgId, table.dealId, table.contactId),
+  index("idx_crm_deal_stakeholders_deal").on(table.orgId, table.dealId),
+  index("idx_crm_deal_stakeholders_contact").on(table.orgId, table.contactId),
 ]);
 
 export const salesQuotas = pgTable("sales_quotas", {
@@ -406,6 +426,7 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
   activities: many(dealActivities),
   meetings: many(dealMeetings),
   competitors: many(crmDealCompetitors),
+  stakeholders: many(crmDealStakeholders),
 }));
 
 export const dealMeetingsRelations = relations(dealMeetings, ({ one, many }) => ({
@@ -471,6 +492,12 @@ export const customFieldDefinitionsRelations = relations(customFieldDefinitions,
 export const crmDealCompetitorsRelations = relations(crmDealCompetitors, ({ one }) => ({
   deal: one(deals, { fields: [crmDealCompetitors.dealId], references: [deals.id] }),
   organization: one(organizations, { fields: [crmDealCompetitors.orgId], references: [organizations.id] }),
+}));
+
+export const crmDealStakeholdersRelations = relations(crmDealStakeholders, ({ one }) => ({
+  deal: one(deals, { fields: [crmDealStakeholders.dealId], references: [deals.id] }),
+  contact: one(contacts, { fields: [crmDealStakeholders.contactId], references: [contacts.id] }),
+  organization: one(organizations, { fields: [crmDealStakeholders.orgId], references: [organizations.id] }),
 }));
 
 export const crmForecastSnapshotsRelations = relations(crmForecastSnapshots, ({ one }) => ({

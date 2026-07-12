@@ -149,7 +149,7 @@ describe("ActionItemsService.convertToTask", () => {
   it("throws ConflictException when the action item is already converted (convertedTicketId set)", async () => {
     const tx = makeTx({ convertedTicketId: 42 });
     const mockDb = {
-      transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
     const svc = new ActionItemsService(mockDb, mockAudit);
@@ -159,7 +159,7 @@ describe("ActionItemsService.convertToTask", () => {
   it("creates a ticket and returns { actionItem, ticketId } when the item is not yet converted", async () => {
     const tx = makeTx({ convertedTicketId: null });
     const mockDb = {
-      transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
     const svc = new ActionItemsService(mockDb, mockAudit);
@@ -179,7 +179,7 @@ describe("ActionItemsService.convertToTask", () => {
       execute: jest.fn(),
     };
     const mockDb = {
-      transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
     const svc = new ActionItemsService(mockDb, mockAudit);
@@ -195,7 +195,7 @@ describe("ActionItemsService.convertToTask", () => {
       execute: jest.fn(),
     };
     const mockDb = {
-      transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+      transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
     const svc = new ActionItemsService(mockDb, mockAudit);

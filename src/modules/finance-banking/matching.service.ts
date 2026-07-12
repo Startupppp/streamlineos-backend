@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { z } from "zod";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -37,6 +38,18 @@ interface RuleAction {
   accountPurposeOrId?: string | number;
   memo?: string;
 }
+
+const ruleConditionSchema = z.object({
+  field: z.enum(["description", "counterparty", "amount"]),
+  op: z.enum(["contains", "equals", "gt", "lt"]),
+  value: z.string(),
+});
+
+const ruleActionSchema = z.object({
+  type: z.enum(["categorize", "transfer", "fee"]),
+  accountPurposeOrId: z.union([z.string(), z.number()]).optional(),
+  memo: z.string().optional(),
+});
 
 function normalizeName(s: string | null | undefined): string {
   return (s ?? "").toLowerCase().trim().replace(/\s+/g, " ");
@@ -210,8 +223,11 @@ export class MatchingService {
 
       let ruleMatched = false;
       for (const rule of activeRules) {
-        const conditions = rule.conditions as RuleCondition[];
-        const action = rule.action as RuleAction;
+        const conditionsResult = z.array(ruleConditionSchema).safeParse(rule.conditions);
+        const actionResult = ruleActionSchema.safeParse(rule.action);
+        if (!conditionsResult.success || !actionResult.success) continue;
+        const conditions: RuleCondition[] = conditionsResult.data;
+        const action: RuleAction = actionResult.data;
         const allMatch = conditions.every((c) => evaluateRule(txn, c));
         if (!allMatch) continue;
 

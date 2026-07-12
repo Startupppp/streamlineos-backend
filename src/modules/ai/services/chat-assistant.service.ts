@@ -270,8 +270,8 @@ Tone: Professional, concise, actionable. Always confirm details before schedulin
             "Update the status or priority of a lead by name or ID. Use when the user asks to move, update, or change a lead's status/priority.",
           inputSchema: z.object({
             leadIdentifier: z.string().describe("Lead name (partial) or numeric ID"),
-            status: z.enum(["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"]).optional(),
-            priority: z.enum(["HOT", "WARM", "COLD"]).optional(),
+            status: z.string().optional(),
+            priority: z.string().optional(),
           }),
           execute: async ({ leadIdentifier, status, priority }) => {
             const isNumeric = /^\d+$/.test(leadIdentifier.trim());

@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { addDecimals, formatDecimal } from "../accounting/money.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -78,9 +79,10 @@ export class ReimbursementsService {
       );
     }
 
-    const totalAmount = pendingExpenses
-      .reduce((sum, e) => sum + parseFloat(e.amount), 0)
-      .toFixed(4);
+    const totalAmount = formatDecimal(
+      pendingExpenses.reduce((sum, e) => addDecimals(sum, e.amount), "0"),
+      4,
+    );
 
     const [batch] = await this.db
       .insert(finReimbursementBatches)
@@ -188,7 +190,7 @@ export class ReimbursementsService {
       .from(expenses)
       .where(and(eq(expenses.orgId, u.orgId), eq(expenses.reimbursementBatchId, batchId)));
 
-    const totalStr = parseFloat(batch.totalAmount).toFixed(2);
+    const totalStr = formatDecimal(batch.totalAmount, 2);
 
     const postResult = await this.posting.postJournal(u, {
       entryDate: input.paidDate,
@@ -239,7 +241,7 @@ export class ReimbursementsService {
     const uniqueEmployeeIds = [...new Set(batchExpenses.map((e) => e.userId))];
     for (const employeeId of uniqueEmployeeIds) {
       const employeeExpenses = batchExpenses.filter((e) => e.userId === employeeId);
-      const employeeTotal = employeeExpenses.reduce((s, e) => s + parseFloat(e.amount), 0).toFixed(2);
+      const employeeTotal = formatDecimal(employeeExpenses.reduce((s, e) => addDecimals(s, e.amount), "0"), 2);
 
       void this.dispatch.emit({
         eventKey: "accounting.reimbursement.paid",

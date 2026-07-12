@@ -232,7 +232,7 @@ export class BudgetsService {
             orgId,
             accountId: line.accountId,
             periodKey: line.periodKey,
-            amount: line.amount,
+            amount: String(line.amount),
             departmentId: line.departmentId ?? null,
             projectId: line.projectId ?? null,
           })),
@@ -426,12 +426,13 @@ export class BudgetsService {
       return updated;
     });
 
+    if (!finalBudget) throw new NotFoundException("Duplicated budget not found");
     this.audit.log({
       action: "budget.duplicated",
       userId,
       orgId,
       resourceType: "fin_budget",
-      resourceId: String(newBudget.id),
+      resourceId: String(finalBudget.id),
       metadata: { sourceBudgetId: budgetId },
     });
     return finalBudget;

@@ -1,6 +1,6 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
-import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, organizationMembers } from "../../db/schema";
+import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, organizationMembers, accountingSettings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
@@ -8,6 +8,9 @@ import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
+import { RateResolverService } from "../finance-controls/rate-resolver.service";
+import { FxService } from "../finance-controls/fx.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreateInvoiceInput, RecordPaymentInput, UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
 const GST_RATES = [0, 5, 12, 18, 28] as const;
@@ -60,12 +63,16 @@ function advanceDate(fromIso: string, interval: string | null): string {
 
 @Injectable()
 export class InvoicesWriteService {
+  private readonly classLogger = new Logger(InvoicesWriteService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lifecycle: InvoicesLifecycleService,
     private readonly audit: AuditService,
+    private readonly rateResolver: RateResolverService,
+    private readonly fx: FxService,
   ) {}
 
   private async resolveSupplierStateCode(orgId: string): Promise<string> {
@@ -206,6 +213,15 @@ export class InvoicesWriteService {
       return inserted;
     });
 
+    this.audit.log({
+      action: "accounting.invoice.created",
+      userId,
+      orgId,
+      resourceType: "invoice",
+      resourceId: String(invoice.id),
+      result: "SUCCESS",
+    });
+
     return { invoice, posted: status === "ISSUED" };
   }
 
@@ -265,6 +281,16 @@ export class InvoicesWriteService {
         }
       });
 
+      this.audit.log({
+        action: "accounting.invoice.updated",
+        userId,
+        orgId,
+        resourceType: "invoice",
+        resourceId: String(invoiceId),
+        metadata: { status: input.status },
+        result: "SUCCESS",
+      });
+
       return { success: true, posted: willPost };
     }
 
@@ -298,6 +324,15 @@ export class InvoicesWriteService {
       .update(invoices)
       .set(updateData)
       .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
+
+    this.audit.log({
+      action: "accounting.invoice.updated",
+      userId,
+      orgId,
+      resourceType: "invoice",
+      resourceId: String(invoiceId),
+      result: "SUCCESS",
+    });
 
     return { success: true, posted: false };
   }
@@ -404,6 +439,8 @@ export class InvoicesWriteService {
       return payment;
     });
 
+    void this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
+
     const members = await this.db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
@@ -421,7 +458,79 @@ export class InvoicesWriteService {
       message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
     }).catch(() => undefined);
 
+    this.audit.log({
+      action: "accounting.invoice.payment_recorded",
+      userId,
+      orgId,
+      resourceType: "invoice_payment",
+      resourceId: String(created.id),
+      result: "SUCCESS",
+    });
+
     return created;
+  }
+
+  private async postArFxGainLoss(
+    orgId: string,
+    userId: string,
+    invoice: { id: number; currency: string; exchangeRate: string },
+    allocatedAmount: number,
+    paymentDateIso: string,
+  ): Promise<void> {
+    const settingsRows = await this.db
+      .select({ baseCurrency: accountingSettings.baseCurrency })
+      .from(accountingSettings)
+      .where(eq(accountingSettings.orgId, orgId))
+      .limit(1);
+    const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
+
+    if (invoice.currency === baseCurrency) return;
+
+    const bookedRate = Number(invoice.exchangeRate ?? 1);
+    const baseAmountBooked = (allocatedAmount * bookedRate).toFixed(4);
+
+    try {
+      const settledRate = await this.rateResolver.getRate(
+        orgId,
+        invoice.currency,
+        baseCurrency,
+        new Date(`${paymentDateIso}T00:00:00.000Z`),
+      );
+      const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
+
+      const permissions: string[] = [];
+      const enabledModules: string[] = [];
+      const user: CurrentUserContext = {
+        userId,
+        orgId,
+        branchId: null,
+        role: "system",
+        permissions,
+        enabledModules,
+        plan: null,
+        isPlatformAdmin: false,
+        isOrgOwner: false,
+        sessionId: "",
+      };
+
+      this.fx
+        .postRealizedGainLoss(user, {
+          sourceType: "invoice",
+          sourceId: String(invoice.id),
+          baseAmountBooked,
+          baseAmountSettled,
+          counterPurpose: "AR",
+        })
+        .catch((err: unknown) => {
+          this.classLogger.warn(
+            `FX gain/loss post failed for invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    } catch (err) {
+      this.classLogger.warn(
+        `No exchange rate for FX on invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   voidInvoice(orgId: string, userId: string, invoiceId: number): Promise<{ success: true }> {

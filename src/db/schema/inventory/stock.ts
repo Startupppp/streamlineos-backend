@@ -4,6 +4,7 @@ import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum } from "../enum
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
+import { invLots, invSerialNumbers } from "./traceability";
 
 export const invStockLevels = pgTable("inv_stock_levels", {
   id: serial("id").primaryKey(),
@@ -116,6 +117,8 @@ export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   quantityReceived: decimal("quantity_received", { precision: 18, scale: 4 }).default("0").notNull(),
+  lotId: integer("lot_id"),
+  serialId: integer("serial_id"),
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_transfer_lines_transfer").on(table.transferId),
@@ -161,4 +164,6 @@ export const invStockTransfersRelations = relations(invStockTransfers, ({ one, m
 export const invStockTransferLinesRelations = relations(invStockTransferLines, ({ one }) => ({
   transfer: one(invStockTransfers, { fields: [invStockTransferLines.transferId], references: [invStockTransfers.id] }),
   productVariant: one(invProductVariants, { fields: [invStockTransferLines.productVariantId], references: [invProductVariants.id] }),
+  lot: one(invLots, { fields: [invStockTransferLines.lotId], references: [invLots.id] }),
+  serial: one(invSerialNumbers, { fields: [invStockTransferLines.serialId], references: [invSerialNumbers.id] }),
 }));

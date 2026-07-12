@@ -199,7 +199,7 @@ export class ReservationService {
           quantityAfter: "0",
           reason: "reservation_consume",
           createdBy: userId,
-          metadata: { reservationId: r.id } as Record<string, unknown>,
+          metadata: { reservationId: r.id },
         })),
       );
     }
@@ -210,6 +210,11 @@ export class ReservationService {
     const result = await this.db.update(invStockReservations)
       .set({ status: "EXPIRED" })
       .where(and(eq(invStockReservations.orgId, orgId), eq(invStockReservations.status, "ACTIVE"), lt(invStockReservations.expiresAt, now)));
-    return (result as unknown as { rowCount: number }).rowCount ?? 0;
+    const raw: unknown = result;
+    if (raw && typeof raw === "object") {
+      if ("rowCount" in raw) return Number(raw.rowCount ?? 0);
+      if ("count" in raw) return Number(raw.count ?? 0);
+    }
+    return 0;
   }
 }

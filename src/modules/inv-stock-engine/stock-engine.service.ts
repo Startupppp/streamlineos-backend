@@ -139,7 +139,8 @@ export class StockEngineService {
       });
 
       const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
-      await tx.update(invIdempotencyKeys).set({ status: "COMPLETED", response: engineResult as unknown as Record<string, unknown> })
+      const responsePayload: Record<string, unknown> = { ...engineResult };
+      await tx.update(invIdempotencyKeys).set({ status: "COMPLETED", response: responsePayload })
         .where(and(eq(invIdempotencyKeys.orgId, orgId), eq(invIdempotencyKeys.idempotencyKey, cmd.idempotencyKey)));
 
       return engineResult;
@@ -244,7 +245,7 @@ export class StockEngineService {
   private async invalidateCaches(orgId: string): Promise<void> {
     await Promise.allSettled([
       this.cache.invalidatePattern(CACHE_KEYS.invStockLevelPattern(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invDashboardPattern(orgId)),
+      this.cache.invalidate(CACHE_KEYS.invDashboard(orgId)),
       this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
       this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),
       this.cache.invalidate(CACHE_KEYS.invReorderReport(orgId)),

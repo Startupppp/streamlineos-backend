@@ -20,10 +20,11 @@ jest.mock("../crm-automation-bus.service", () => ({
     ) {
       const depth = opts?.depth ?? 0;
       if (depth >= (this as { MAX_CHAIN_DEPTH: number }).MAX_CHAIN_DEPTH) return;
-      const rules = await (this as { db: { select: () => unknown } }).db.select();
-      if (!rules || (Array.isArray(rules) && rules.length === 0)) return;
-      for (const rule of rules as unknown[]) {
-        await (this as { runner: { executeRule: () => void } }).runner.executeRule(orgId, rule, payload, depth);
+      type SelectChain = { from: (t: unknown) => { where: (c: unknown) => Promise<unknown[]> } };
+      const rules = await (this as { db: { select: () => SelectChain } }).db.select().from(null).where(null);
+      if (!rules || rules.length === 0) return;
+      for (const rule of rules) {
+        await (this as { runner: { executeRule: (orgId: string, rule: unknown, payload: unknown, depth: number) => void } }).runner.executeRule(orgId, rule, payload, depth);
       }
     };
   }),

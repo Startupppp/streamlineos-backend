@@ -6,6 +6,7 @@ import { payrollRuns, payrollRunEmployees, payrollRunEvents } from "../../../db/
 import { canTransitionRun } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
+import { PayrollPostingService } from "../payroll-posting.service";
 
 @Injectable()
 export class LockingService {
@@ -13,6 +14,7 @@ export class LockingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly generate: GenerateService,
+    private readonly payrollPosting: PayrollPostingService,
   ) {}
 
   async lock(orgId: string, userId: string, runId: number) {
@@ -69,6 +71,16 @@ export class LockingService {
       targetType: "payroll_run",
       metadata: { month: run.month },
     });
+
+    void this.payrollPosting.postFinalized(
+      { userId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isPlatformAdmin: false, isOrgOwner: true, sessionId: "system" },
+      runId,
+      run.month,
+      run.grossTotal ?? "0",
+      run.deductionTotal ?? "0",
+      run.netTotal ?? "0",
+      run.employerCostTotal ?? "0",
+    );
 
     return { success: true, lockedAt: now };
   }

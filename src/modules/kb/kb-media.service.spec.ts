@@ -4,6 +4,7 @@ import { BadRequestException, ServiceUnavailableException } from "@nestjs/common
 import { KbMediaService } from "./kb-media.service";
 import type { StorageService, UploadResult } from "../storage/storage.service";
 import type { AuditService } from "../../common/audit/audit.service";
+import type { KbIndexingService } from "./kb-indexing.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 interface MockChain {
@@ -81,9 +82,12 @@ describe("KbMediaService", () => {
     };
     mockAudit = { log: jest.fn() };
 
+    const mockIndexing = {} as unknown as KbIndexingService;
+
     service = new KbMediaService(
       mockStorage as unknown as StorageService,
       mockAudit as unknown as AuditService,
+      mockIndexing,
     );
   });
 

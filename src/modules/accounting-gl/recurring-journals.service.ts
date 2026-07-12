@@ -3,6 +3,7 @@ import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { AuditService } from "../../common/audit/audit.service";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import {
   type CreateRecurringJournalInput,
@@ -37,7 +38,10 @@ function advanceDate(date: string, frequency: string): string {
 export class RecurringJournalsService {
   private readonly logger = new Logger(RecurringJournalsService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
 
   async listTemplates(orgId: string, page = 1, pageSize = 50) {
     const { offset, limit } = paginateOffset({ page, pageSize });
@@ -72,6 +76,16 @@ export class RecurringJournalsService {
         createdBy: userId,
       })
       .returning();
+    if (inserted) {
+      this.audit.log({
+        action: "accounting.recurring_journal.created",
+        userId,
+        orgId,
+        resourceType: "recurring_journal_template",
+        resourceId: String(inserted.id),
+        result: "SUCCESS",
+      });
+    }
     return inserted;
   }
 
@@ -92,6 +106,14 @@ export class RecurringJournalsService {
       .returning();
 
     if (!updated) throw new NotFoundException("Recurring journal template not found");
+    this.audit.log({
+      action: "accounting.recurring_journal.updated",
+      userId: "system",
+      orgId,
+      resourceType: "recurring_journal_template",
+      resourceId: String(templateId),
+      result: "SUCCESS",
+    });
     return updated;
   }
 
@@ -102,6 +124,14 @@ export class RecurringJournalsService {
       .returning({ id: finRecurringJournalTemplates.id });
 
     if (!deleted) throw new NotFoundException("Recurring journal template not found");
+    this.audit.log({
+      action: "accounting.recurring_journal.deleted",
+      userId: "system",
+      orgId,
+      resourceType: "recurring_journal_template",
+      resourceId: String(templateId),
+      result: "SUCCESS",
+    });
     return { id: templateId, deleted: true };
   }
 

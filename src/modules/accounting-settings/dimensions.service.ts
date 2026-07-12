@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, eq } from "drizzle-orm";
@@ -79,6 +80,8 @@ export class DimensionsService {
         })
         .returning();
 
+      if (!dim) throw new InternalServerErrorException("Failed to create dimension.");
+
       await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
 
       this.audit.log({
@@ -86,11 +89,11 @@ export class DimensionsService {
         userId: u.userId,
         orgId: u.orgId,
         resourceType: "accounting_dimension",
-        resourceId: String(dim!.id),
+        resourceId: String(dim.id),
         after: { name: input.name, key: input.key } as Record<string, unknown>,
       });
 
-      return dim!;
+      return dim;
     } catch (err: unknown) {
       if (
         typeof err === "object" &&
@@ -121,6 +124,8 @@ export class DimensionsService {
       .where(and(eq(accountingDimensions.id, dimensionId), eq(accountingDimensions.orgId, u.orgId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update dimension.");
+
     await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
 
     this.audit.log({
@@ -132,7 +137,7 @@ export class DimensionsService {
       after: { ...input } as Record<string, unknown>,
     });
 
-    return updated!;
+    return updated;
   }
 
   async listValues(orgId: string, dimensionId: number) {
@@ -182,6 +187,8 @@ export class DimensionsService {
         })
         .returning();
 
+      if (!val) throw new InternalServerErrorException("Failed to create dimension value.");
+
       await this.cache.invalidate(DIMENSIONS_CACHE_KEY(u.orgId));
 
       this.audit.log({
@@ -189,11 +196,11 @@ export class DimensionsService {
         userId: u.userId,
         orgId: u.orgId,
         resourceType: "accounting_dimension_value",
-        resourceId: String(val!.id),
+        resourceId: String(val.id),
         after: { dimensionId, name: input.name, code: input.code } as Record<string, unknown>,
       });
 
-      return val!;
+      return val;
     } catch (err: unknown) {
       if (
         typeof err === "object" &&
@@ -241,6 +248,8 @@ export class DimensionsService {
       )
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update dimension value.");
+
     this.audit.log({
       action: "accounting.dimension_value.updated",
       userId: u.userId,
@@ -250,6 +259,6 @@ export class DimensionsService {
       after: { ...input } as Record<string, unknown>,
     });
 
-    return updated!;
+    return updated;
   }
 }

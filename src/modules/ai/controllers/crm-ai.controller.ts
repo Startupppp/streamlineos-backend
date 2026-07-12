@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
+  Inject,
   InternalServerErrorException,
   NotFoundException,
   Post,
@@ -21,7 +23,11 @@ import { CrmScoringService } from "../services/crm-scoring.service";
 import { CrmContentService } from "../services/crm-content.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { CrmTasksService } from "../services/crm-tasks.service";
+import { OrgFeaturesService } from "../services/org-features.service";
 import { requireFeature } from "../billing/feature-gates";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.module";
+import { auditLogs } from "../../../db/schema";
 import {
   accountSummarySchema,
   churnRiskSchema,
@@ -62,19 +68,40 @@ function hasLeadIds(body: unknown): body is { leadIds: unknown } {
 @RequirePermission("crm:ai:use")
 export class CrmAiController {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly llm: LlmService,
     private readonly scoring: CrmScoringService,
     private readonly content: CrmContentService,
     private readonly brief: CrmBriefService,
     private readonly aiTasks: CrmTasksService,
+    private readonly orgFeatures: OrgFeaturesService,
   ) {}
 
   private ensureLlm(message: string): void {
     if (!this.llm.isConfigured()) throw new ServiceUnavailableException(message);
   }
 
+  private async requireAiFlag(orgId: string, flag: "aiLeadScoring" | "aiEmailDraft" | "aiChat"): Promise<void> {
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags[flag]) {
+      throw new ForbiddenException("AI features are disabled for this organization");
+    }
+  }
+
+  private auditAiAction(orgId: string, userId: string, action: string, targetType: string, targetId: string): Promise<void> {
+    return this.db.insert(auditLogs).values({
+      action,
+      userId,
+      orgId,
+      targetId,
+      targetType,
+      metadata: { source: "crm-ai" },
+    }).then(() => undefined);
+  }
+
   @Post("score-lead")
   async scoreLead(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.lead-scoring");
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");
 
@@ -87,6 +114,7 @@ export class CrmAiController {
     const { leadId } = scoreLeadSingleSchema.parse(body);
     const result = await this.scoring.scoreLead(u.orgId, leadId);
     if (!result) throw new NotFoundException("Lead not found or scoring failed");
+    void this.auditAiAction(u.orgId, u.userId, "crm.ai.score_generated", "lead", String(leadId));
     return result;
   }
 
@@ -95,10 +123,12 @@ export class CrmAiController {
     @Body(new ZodValidationPipe(predictDealSchema)) body: PredictDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.deal-prediction");
     this.ensureLlm("AI prediction is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.predictDeal(u.orgId, body.dealId);
     if (!result) throw new NotFoundException("Deal not found or prediction failed");
+    void this.auditAiAction(u.orgId, u.userId, "crm.ai.deal_prediction", "deal", String(body.dealId));
     return result;
   }
 
@@ -107,6 +137,7 @@ export class CrmAiController {
     @Body(new ZodValidationPipe(churnRiskSchema)) body: ChurnRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.churn-risk");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.analyzeChurnRisk(u.orgId, body.clientId, {
@@ -123,6 +154,7 @@ export class CrmAiController {
     @Body(new ZodValidationPipe(nextActionSchema)) body: NextActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.next-action");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.scoring.nextBestAction(u.orgId, body.leadId);
@@ -131,37 +163,44 @@ export class CrmAiController {
   }
 
   @Post("account-summary")
-  accountSummary(
+  async accountSummary(
     @Body(new ZodValidationPipe(accountSummarySchema)) body: AccountSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.deal-summary");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.brief.accountSummary(u.orgId, body);
   }
 
   @Post("meeting-prep")
-  meetingPrep(
+  async meetingPrep(
     @Body(new ZodValidationPipe(meetingPrepSchema)) body: MeetingPrepInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.next-action");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.brief.meetingPrep(u.orgId, body);
   }
 
   @Post("nl-search")
-  nlSearch(
+  async nlSearch(
     @Body(new ZodValidationPipe(nlSearchSchema)) body: NlSearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     requireFeature(u.plan, "ai.next-action");
     this.ensureLlm("AI search is not configured. Set OPENAI_API_KEY.");
     return this.brief.nlSearch(u.orgId, body);
   }
 
   @Post("enrich-lead")
-  enrichLead(@Body(new ZodValidationPipe(enrichLeadSchema)) body: EnrichLeadInput) {
+  async enrichLead(
+    @Body(new ZodValidationPipe(enrichLeadSchema)) body: EnrichLeadInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
     this.ensureLlm("AI not configured");
     return this.content.enrichLead(body);
   }
@@ -171,37 +210,55 @@ export class CrmAiController {
     @Body(new ZodValidationPipe(generateEmailSchema)) body: GenerateEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiEmailDraft");
     requireFeature(u.plan, "ai.email-drafting");
     this.ensureLlm("AI email generation is not configured. Set OPENAI_API_KEY.");
     return this.content.generateEmail(u.userId, body);
   }
 
   @Post("objection-handler")
-  objectionHandler(@Body(new ZodValidationPipe(objectionHandlerSchema)) body: ObjectionHandlerInput) {
+  async objectionHandler(
+    @Body(new ZodValidationPipe(objectionHandlerSchema)) body: ObjectionHandlerInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.requireAiFlag(u.orgId, "aiEmailDraft");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.content.handleObjection(body);
   }
 
   @Post("sentiment-analysis")
-  sentimentAnalysis(@Body(new ZodValidationPipe(sentimentAnalysisSchema)) body: SentimentAnalysisInput) {
+  async sentimentAnalysis(
+    @Body(new ZodValidationPipe(sentimentAnalysisSchema)) body: SentimentAnalysisInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.content.analyzeSentiment(body);
   }
 
   @Post("summarize")
-  summarize(@Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput) {
+  async summarize(
+    @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI not configured");
     return this.content.summarize(body);
   }
 
   @Post("report-narrator")
-  reportNarrator(@Body(new ZodValidationPipe(reportNarratorSchema)) body: ReportNarratorInput) {
+  async reportNarrator(
+    @Body(new ZodValidationPipe(reportNarratorSchema)) body: ReportNarratorInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.content.narrateReport(body);
   }
 
   @Get("prioritize-tasks")
-  prioritizeTasks(@CurrentUser() u: CurrentUserContext) {
+  async prioritizeTasks(@CurrentUser() u: CurrentUserContext) {
+    await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     return this.aiTasks.prioritizeTasks(u.orgId, u.userId);
   }
@@ -211,6 +268,7 @@ export class CrmAiController {
     @Query(new ZodValidationPipe(suggestionsQuerySchema)) query: SuggestionsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.requireAiFlag(u.orgId, "aiChat");
     try {
       if (query.type === "tasks" && query.projectId) {
         const projectId = parseInt(query.projectId, 10);

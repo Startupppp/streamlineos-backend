@@ -56,7 +56,7 @@ describe("ApprovalsService.createApproval", () => {
     );
     await expect(
       svc.createApproval("org-1", "user-1", 1, {
-        entityType: "ticket",
+        entityType: "task",
         entityId: 1,
         title: "Self-review",
         approverId: "user-1",

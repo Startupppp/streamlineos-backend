@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { FinancePostingService } from "../accounting/finance-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
@@ -15,6 +16,7 @@ export class InvoicesLifecycleService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly financePosting: FinancePostingService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly bus: CrmAutomationBusService,
   ) {}
 
   async recomputeInvoiceBalance(invoiceId: number, tx: DbOrTx): Promise<void> {
@@ -25,7 +27,7 @@ export class InvoicesLifecycleService {
 
     const invoice = await tx.query.invoices.findFirst({
       where: eq(invoices.id, invoiceId),
-      columns: { total: true, status: true, dueDate: true },
+      columns: { total: true, status: true, dueDate: true, orgId: true },
     });
 
     if (!invoice) return;
@@ -51,6 +53,14 @@ export class InvoicesLifecycleService {
         updatedAt: new Date(),
       })
       .where(eq(invoices.id, invoiceId));
+
+    if (newStatus === "PAID") {
+      void this.bus.emit(invoice.orgId, "invoice.paid", {
+        entityType: "invoice",
+        entityId: String(invoiceId),
+        data: { invoiceId, paidAt: new Date().toISOString() },
+      }).catch(() => undefined);
+    }
   }
 
   async voidInvoice(orgId: string, userId: string, invoiceId: number): Promise<{ success: true }> {

@@ -1,5 +1,28 @@
 import { z } from "zod";
 
+export const paymentTermSchema = z.object({
+  key: z.string().min(1).max(64),
+  label: z.string().min(1).max(128),
+  days: z.number().int().min(0),
+  isDefault: z.boolean().optional(),
+});
+
+export const upsertPaymentTermsSchema = z.object({
+  terms: z.array(paymentTermSchema).max(20),
+}).superRefine((val, ctx) => {
+  const keys = val.terms.map(t => t.key);
+  const uniqueKeys = new Set(keys);
+  if (uniqueKeys.size !== keys.length) {
+    ctx.addIssue({ code: "custom", message: "Payment term keys must be unique", path: ["terms"] });
+  }
+  const defaults = val.terms.filter(t => t.isDefault === true);
+  if (defaults.length > 1) {
+    ctx.addIssue({ code: "custom", message: "Exactly one payment term must be the default", path: ["terms"] });
+  }
+});
+
+export type UpsertPaymentTermsInput = z.infer<typeof upsertPaymentTermsSchema>;
+
 export const updateSettingsSchema = z.object({
   baseCurrency: z.string().length(3).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),

@@ -345,7 +345,11 @@ export class DepreciationRunsService {
         const systemUser: CurrentUserContext = {
           userId: "system",
           orgId: oId,
-          email: "",
+          branchId: null,
+          role: "SYSTEM",
+          permissions: [],
+          enabledModules: [],
+          plan: null,
           isPlatformAdmin: false,
           isOrgOwner: false,
           sessionId: "cron",

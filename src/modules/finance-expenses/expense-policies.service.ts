@@ -30,6 +30,7 @@ export class ExpensePoliciesService {
           where: eq(finExpensePolicies.orgId, orgId),
           with: { category: true },
           orderBy: (p, { asc }) => [asc(p.name)],
+          limit: 200,
         }),
       300,
     );

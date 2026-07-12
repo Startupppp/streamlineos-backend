@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { AccountingModule } from "../accounting/accounting.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ApprovalPoliciesController } from "./approval-policies.controller";
@@ -14,7 +14,7 @@ import { FxService } from "./fx.service";
 import { ProviderBridgeService } from "./provider-bridge.service";
 
 @Module({
-  imports: [AccountingModule, NotificationsModule],
+  imports: [forwardRef(() => AccountingModule), NotificationsModule],
   controllers: [
     ApprovalPoliciesController,
     ApprovalsController,

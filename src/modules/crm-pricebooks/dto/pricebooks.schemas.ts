@@ -38,14 +38,14 @@ export const quoteSettingsSchema = z.object({
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   isDefault: z.boolean().default(false),
-  branding: z.record(z.unknown()).optional(),
+  branding: z.record(z.string(), z.unknown()).optional(),
   terms: z.string().optional(),
 });
 
 export const updateTemplateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   isDefault: z.boolean().optional(),
-  branding: z.record(z.unknown()).optional(),
+  branding: z.record(z.string(), z.unknown()).optional(),
   terms: z.string().optional(),
 });
 

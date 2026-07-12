@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 type RoleRow = { id: number; name: string; slug: string };
 type GrantRow = { roleId: number; permissionKey: string };
@@ -68,8 +69,12 @@ function makeAudit(): AuditService {
   return { log: jest.fn() } as Partial<AuditService> as AuditService;
 }
 
+function makeDispatch(): NotificationDispatchService {
+  return { emit: jest.fn() } as unknown as NotificationDispatchService;
+}
+
 function makeService(db: Db): RolesService {
-  return new RolesService(db, makeCache(), makeAudit());
+  return new RolesService(db, makeCache(), makeAudit(), makeDispatch());
 }
 
 describe("RolesService.getPermissionsMatrix", () => {

@@ -55,7 +55,6 @@ export class ProjectsTicketsService {
     private readonly notifications: NotificationsService,
     private readonly projectsEmail: ProjectsEmailService,
     private readonly activity: ProjectsActivityService,
-    private readonly audit: AuditService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly workQuery: ProjectsWorkQueryService,
     private readonly read: ProjectsTicketsReadService,

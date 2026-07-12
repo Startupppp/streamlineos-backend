@@ -65,7 +65,13 @@ export class InvStockTransfersService {
         fromWarehouse: { columns: { id: true, name: true } },
         toWarehouse: { columns: { id: true, name: true } },
         creator: { columns: { id: true, name: true } },
-        lines: { with: { productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } } } },
+        lines: {
+          with: {
+            productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
+            lot: { columns: { id: true, lotNumber: true } },
+            serial: { columns: { id: true, serialNumber: true } },
+          },
+        },
       },
     });
   }
@@ -92,6 +98,8 @@ export class InvStockTransfersService {
         transferId: transfer.id,
         productVariantId: line.productVariantId,
         quantity: line.quantity.toString(),
+        lotId: line.lotId ?? null,
+        serialId: line.serialId ?? null,
       }))
     );
 
@@ -113,6 +121,8 @@ export class InvStockTransfersService {
         sourceLineId: line.id.toString(),
         productVariantId: line.productVariantId,
         locationId: transfer.fromLocationId,
+        lotId: line.lotId ?? undefined,
+        serialId: line.serialId ?? undefined,
         qty: line.quantity,
       });
     }
@@ -144,6 +154,8 @@ export class InvStockTransfersService {
         productVariantId: line.productVariantId,
         locationId: transfer.fromLocationId,
         quantityDelta: `-${line.quantity}`,
+        lotId: line.lotId ?? undefined,
+        serialId: line.serialId ?? undefined,
       })),
     });
 
@@ -181,6 +193,8 @@ export class InvStockTransfersService {
           productVariantId: line.productVariantId,
           locationId: transfer.toLocationId,
           quantityDelta: completion.quantityReceived.toFixed(4),
+          lotId: line.lotId ?? undefined,
+          serialId: line.serialId ?? undefined,
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);

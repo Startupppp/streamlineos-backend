@@ -89,10 +89,12 @@ export class TransfersService {
     if (!fromAccount.isActive) throw new BadRequestException("Source bank account is inactive");
     if (!toAccount.isActive) throw new BadRequestException("Destination bank account is inactive");
 
-    if (!fromAccount.ledgerAccountId) {
+    const fromLedgerAccountId = fromAccount.ledgerAccountId;
+    const toLedgerAccountId = toAccount.ledgerAccountId;
+    if (fromLedgerAccountId === null) {
       throw new BadRequestException("Source bank account has no linked ledger account");
     }
-    if (!toAccount.ledgerAccountId) {
+    if (toLedgerAccountId === null) {
       throw new BadRequestException("Destination bank account has no linked ledger account");
     }
 
@@ -112,8 +114,8 @@ export class TransfersService {
         sourceId: `${input.fromBankAccountId}-${input.toBankAccountId}-${input.transferDate}`,
         sourceEvent: "transfer",
         lines: [
-          { accountId: toAccount.ledgerAccountId, debit: input.amount, credit: "0" },
-          { accountId: fromAccount.ledgerAccountId, debit: "0", credit: input.amount },
+          { accountId: toLedgerAccountId, debit: input.amount, credit: "0" },
+          { accountId: fromLedgerAccountId, debit: "0", credit: input.amount },
         ],
       });
 

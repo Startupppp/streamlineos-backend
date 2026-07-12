@@ -320,6 +320,30 @@ export class DealsAnalyticsService {
       .offset(query.offset ?? 0);
   }
 
+  async overrideForecastSnapshot(
+    orgId: string,
+    userId: string,
+    snapshotId: string,
+    input: { overrideAmount?: number; overrideNote?: string },
+  ) {
+    const existing = await this.db.query.crmForecastSnapshots.findFirst({
+      where: and(eq(crmForecastSnapshots.id, snapshotId), eq(crmForecastSnapshots.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!existing) throw new NotFoundException("Forecast snapshot not found");
+
+    const [updated] = await this.db
+      .update(crmForecastSnapshots)
+      .set({
+        overrideAmount: input.overrideAmount !== undefined ? String(input.overrideAmount) : undefined,
+        overrideNote: input.overrideNote,
+        overriddenBy: userId,
+      })
+      .where(and(eq(crmForecastSnapshots.id, snapshotId), eq(crmForecastSnapshots.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
   async compareForecastSnapshots(orgId: string, input: CompareForecastSnapshotsInput) {
     const snapshot = await this.db.query.crmForecastSnapshots.findFirst({
       where: and(eq(crmForecastSnapshots.orgId, orgId), eq(crmForecastSnapshots.period, input.period)),

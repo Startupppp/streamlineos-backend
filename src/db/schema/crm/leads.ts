@@ -131,6 +131,7 @@ export const leadScoringRules = pgTable("lead_scoring_rules", {
   operator: scoringOperatorEnum("operator").notNull(),
   value: text("value").notNull(),
   points: integer("points").notNull(),
+  dimension: text("dimension").notNull().default("fit"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_lead_scoring_rules_org").on(table.orgId),

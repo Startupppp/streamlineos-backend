@@ -121,7 +121,6 @@ export const CACHE_KEYS = {
   invTraceabilityLot: (orgId: string, lotId: number) => `inv:trace:lot:${orgId}:${lotId}`,
   invTraceabilitySerial: (orgId: string, serialId: number) => `inv:trace:serial:${orgId}:${serialId}`,
   invStockLevelPattern: (orgId: string) => `inv:stock:levels:${orgId}:*`,
-  invDashboardPattern: (orgId: string) => `inv:dashboard:${orgId}`,
 
   featureFlags: () => "feature-flags:all",
 

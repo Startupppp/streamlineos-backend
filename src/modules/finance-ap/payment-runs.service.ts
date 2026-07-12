@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
@@ -15,12 +16,16 @@ import {
   vendorPayments,
   finVendorPaymentAllocations,
   clients,
+  accountingSettings,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { JournalPostingService } from "../accounting/journal-posting.service";
+import { RateResolverService } from "../finance-controls/rate-resolver.service";
+import { FxService } from "../finance-controls/fx.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import { checkApprovalPolicy } from "./ap-approval.helper";
 import type {
@@ -37,12 +42,16 @@ const PAYMENT_RUN_CACHE_KEY = (orgId: string) => `fin:payment-runs:${orgId}`;
 
 @Injectable()
 export class PaymentRunsService {
+  private readonly logger = new Logger(PaymentRunsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
     private readonly journalPosting: JournalPostingService,
+    private readonly rateResolver: RateResolverService,
+    private readonly fx: FxService,
   ) {}
 
   async listRuns(orgId: string, query: ListPaymentRunsQuery) {
@@ -265,7 +274,17 @@ export class PaymentRunsService {
     const today = new Date().toISOString().slice(0, 10);
     await this.journalPosting.seedChartOfAccountsForOrg(orgId);
 
+    const settingsRows = await this.db
+      .select({ baseCurrency: accountingSettings.baseCurrency })
+      .from(accountingSettings)
+      .where(eq(accountingSettings.orgId, orgId))
+      .limit(1);
+    const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
+
     for (const item of pendingItems) {
+      type FxCapture = { billId: number; currency: string; exchangeRate: string; amount: number; userId: string };
+      let fxCapture: FxCapture | null = null;
+
       try {
         await this.db.transaction(async (tx) => {
           const [payment] = await tx
@@ -322,6 +341,16 @@ export class PaymentRunsService {
               },
               tx,
             );
+
+            if (billRow.currency !== baseCurrency) {
+              fxCapture = {
+                billId: billRow.id,
+                currency: billRow.currency,
+                exchangeRate: billRow.exchangeRate,
+                amount: Number(item.amount),
+                userId,
+              };
+            }
           }
 
           await tx
@@ -339,6 +368,10 @@ export class PaymentRunsService {
             variables: { amount: Number(item.amount), billId: item.billId },
           });
         });
+
+        if (fxCapture !== null) {
+          void this.postRunItemFxGainLoss(orgId, baseCurrency, fxCapture, today);
+        }
       } catch {
         await this.db
           .update(finPaymentRunItems)
@@ -465,5 +498,58 @@ export class PaymentRunsService {
     });
 
     return { id: itemId, updated: true };
+  }
+
+  private async postRunItemFxGainLoss(
+    orgId: string,
+    baseCurrency: string,
+    capture: { billId: number; currency: string; exchangeRate: string; amount: number; userId: string },
+    paymentDateIso: string,
+  ): Promise<void> {
+    const bookedRate = Number(capture.exchangeRate ?? 1);
+    const baseAmountBooked = (capture.amount * bookedRate).toFixed(4);
+
+    try {
+      const settledRate = await this.rateResolver.getRate(
+        orgId,
+        capture.currency,
+        baseCurrency,
+        new Date(`${paymentDateIso}T00:00:00.000Z`),
+      );
+      const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
+
+      const permissions: string[] = [];
+      const enabledModules: string[] = [];
+      const user: CurrentUserContext = {
+        userId: capture.userId,
+        orgId,
+        branchId: null,
+        role: "system",
+        permissions,
+        enabledModules,
+        plan: null,
+        isPlatformAdmin: false,
+        isOrgOwner: false,
+        sessionId: "",
+      };
+
+      this.fx
+        .postRealizedGainLoss(user, {
+          sourceType: "purchase_bill",
+          sourceId: String(capture.billId),
+          baseAmountBooked,
+          baseAmountSettled,
+          counterPurpose: "AP",
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `FX gain/loss post failed for purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    } catch (err) {
+      this.logger.warn(
+        `No exchange rate for FX on purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

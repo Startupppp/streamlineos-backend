@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { z } from "zod";
 import { and, count, eq, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -230,7 +231,6 @@ export class RecurringBillsService {
           variables: { billNumber: bill.billNumber, templateName: template.name },
         });
       } catch {
-        // log and continue so other templates still run
       }
     }
   }
@@ -240,25 +240,31 @@ export class RecurringBillsService {
     userId: string,
     template: typeof finRecurringBillTemplates.$inferSelect,
   ) {
-    const payload = template.payload as {
-      vendorId: number;
-      billDate: string;
-      dueDate?: string;
-      placeOfSupply?: string;
-      vendorGstin?: string;
-      supplierGstin?: string;
-      reverseCharge: boolean;
-      discount: number;
-      notes?: string;
-      expenseAccountCode: string;
-      items: Array<{
-        description: string;
-        hsnSacCode?: string;
-        quantity: number;
-        rate: number;
-        gstRate: number;
-      }>;
-    };
+    const recurringBillPayloadSchema = z.object({
+      vendorId: z.number(),
+      billDate: z.string(),
+      dueDate: z.string().optional(),
+      placeOfSupply: z.string().optional(),
+      vendorGstin: z.string().optional(),
+      supplierGstin: z.string().optional(),
+      reverseCharge: z.boolean(),
+      discount: z.number(),
+      notes: z.string().optional(),
+      expenseAccountCode: z.string(),
+      items: z.array(z.object({
+        description: z.string(),
+        hsnSacCode: z.string().optional(),
+        quantity: z.number(),
+        rate: z.number(),
+        gstRate: z.number(),
+      })),
+    });
+
+    const parseResult = recurringBillPayloadSchema.safeParse(template.payload);
+    if (!parseResult.success) {
+      throw new Error(`Invalid recurring bill template payload for template ${template.id}: ${parseResult.error.message}`);
+    }
+    const payload = parseResult.data;
 
     const today = new Date().toISOString().slice(0, 10);
 

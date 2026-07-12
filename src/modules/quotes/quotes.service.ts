@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import type {
   CreateInput,
   ExportInput,
@@ -46,6 +47,7 @@ export class QuotesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly bus: CrmAutomationBusService,
   ) {}
 
   async list(orgId: string, filters: ListInput) {
@@ -369,6 +371,8 @@ export class QuotesService {
       metadata: { quoteNumber: existing.quoteNumber },
     });
 
+    void this.bus.emit(orgId, "quote.sent", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId }, actorId: userId }).catch(() => undefined);
+
     await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
 
     return updated;
@@ -535,6 +539,9 @@ export class QuotesService {
       targetType: "quote",
       metadata: { quoteNumber: existing.quoteNumber, documentRef },
     });
+
+    void this.bus.emit(orgId, "quote.signed", { entityType: "quote", entityId: String(quoteId), data: { quoteNumber: existing.quoteNumber, dealId: existing.dealId, clientId: existing.clientId, documentRef: documentRef ?? null }, actorId: userId }).catch(() => undefined);
+
     await this.cache.invalidatePattern(`quotes:list:${orgId}:*`);
     return updated;
   }

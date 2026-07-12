@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, lt, or, sql, sum } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lt, ne, sql, sum } from "drizzle-orm";
 import {
   branches,
   clientAccounts,
@@ -83,12 +83,8 @@ export class DashboardCrmService {
             .where(
               and(
                 eq(deals.orgId, orgId),
-                or(
-                  eq(deals.stage, "LEAD"),
-                  eq(deals.stage, "CONTACTED"),
-                  eq(deals.stage, "PROPOSAL"),
-                  eq(deals.stage, "NEGOTIATION"),
-                ),
+                ne(deals.stage, "WON"),
+                ne(deals.stage, "LOST"),
               ),
             ),
           this.db

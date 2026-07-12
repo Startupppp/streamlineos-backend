@@ -1,6 +1,6 @@
 import {
   BadRequestException, Inject, Injectable,
-  NotFoundException, UnprocessableEntityException,
+  InternalServerErrorException, NotFoundException, UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -116,12 +116,14 @@ export class AssetsService {
       })
       .returning();
 
+    if (!asset) throw new InternalServerErrorException("Failed to create asset.");
+
     this.audit.log({
       action: "CREATE",
       orgId: u.orgId,
       userId: u.userId,
       resourceType: "fixed_asset",
-      resourceId: String(asset!.id),
+      resourceId: String(asset.id),
     });
 
     await this.cache.invalidatePattern(`fin:assets:list:${u.orgId}:*`);

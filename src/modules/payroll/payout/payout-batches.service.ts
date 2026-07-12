@@ -20,6 +20,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
+import { PayrollPostingService } from "../payroll-posting.service";
 
 function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
   if (currency === "INR") return "NEFT_CSV";
@@ -73,6 +74,7 @@ export class PayoutBatchesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    private readonly payrollPosting: PayrollPostingService,
   ) {}
 
   async createBatch(
@@ -612,6 +614,21 @@ export class PayoutBatchesService {
         targetType: "payroll_run",
         metadata: { paidCount: paidUserIds.length },
       });
+
+      const paidRun = await this.db
+        .select({ month: payrollRuns.month, netTotal: payrollRuns.netTotal })
+        .from(payrollRuns)
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
+        .limit(1);
+
+      if (paidRun[0]) {
+        void this.payrollPosting.postPaid(
+          { userId: actorId, orgId, branchId: null, role: "system", permissions: [], enabledModules: [], plan: null, isPlatformAdmin: false, isOrgOwner: true, sessionId: "system" },
+          runId,
+          paidRun[0].month,
+          paidRun[0].netTotal ?? "0",
+        );
+      }
     }
   }
 

@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { compareDecimals, formatDecimal } from "../accounting/money.util";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../accounting/finance-posting.service";
 import type { PostJournalLine } from "../accounting/finance-posting.types";
@@ -33,7 +34,7 @@ function buildReceiptHash(
   expenseDate: string,
   merchant: string | null | undefined,
 ): string {
-  const raw = `${orgId}|${parseFloat(amount).toFixed(2)}|${expenseDate}|${normalizeMerchant(merchant)}`;
+  const raw = `${orgId}|${formatDecimal(amount, 2)}|${expenseDate}|${normalizeMerchant(merchant)}`;
   return createHash("sha256").update(raw).digest("hex");
 }
 
@@ -110,13 +111,13 @@ export class ExpenseLifecycleService {
     let policyFlag: string | null = null;
 
     for (const policy of applicable) {
-      if (policy.maxAmount !== null && amount > parseFloat(policy.maxAmount)) {
+      if (policy.maxAmount !== null && compareDecimals(amount.toString(), policy.maxAmount) > 0) {
         return { policyFlag: "OVER_LIMIT", blocked: true, blockReason: `Amount exceeds policy limit of ${policy.maxAmount}` };
       }
 
       if (
         policy.requiresReceiptAbove !== null &&
-        amount > parseFloat(policy.requiresReceiptAbove) &&
+        compareDecimals(amount.toString(), policy.requiresReceiptAbove) > 0 &&
         !hasReceipt
       ) {
         policyFlag = "RECEIPT_REQUIRED";
@@ -143,7 +144,7 @@ export class ExpenseLifecycleService {
 
     const applicable = policies.find((p) => {
       if (p.minAmount === null) return true;
-      return amount >= parseFloat(p.minAmount);
+      return compareDecimals(amount.toString(), p.minAmount) >= 0;
     });
 
     if (!applicable) {
@@ -172,7 +173,7 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be submitted`);
     }
 
-    const amount = parseFloat(expense.amount);
+    const amount = Number(expense.amount);
     const hasReceipt = !!expense.receiptUrl;
 
     const hash = buildReceiptHash(u.orgId, expense.amount, expense.expenseDate, expense.merchant);
@@ -284,9 +285,9 @@ export class ExpenseLifecycleService {
         })
       : null;
 
-    const amount = parseFloat(expense.amount);
+    const amount = Number(expense.amount);
     const amountStr = amount.toFixed(2);
-    const taxAmount = expense.taxAmount ? parseFloat(expense.taxAmount) : 0;
+    const taxAmount = expense.taxAmount ? Number(expense.taxAmount) : 0;
     const expenseAmount = amount - taxAmount;
 
     const lines: PostJournalLine[] = [
