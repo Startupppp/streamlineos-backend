@@ -21,14 +21,6 @@ function computeTrend(current: number, previous: number) {
   return { value: Math.round(Math.abs(change) * 10) / 10, isPositive: change >= 0 };
 }
 
-const STAGE_ORDER = ["Discovery", "Qualified", "Proposal", "Negotiation", "Closed Won"] as const;
-const STAGE_COLORS: Record<string, string> = {
-  Discovery: "#3B82F6",
-  Qualified: "#6366F1",
-  Proposal: "#8B5CF6",
-  Negotiation: "#A855F7",
-  "Closed Won": "#10B981",
-};
 
 @Injectable()
 export class CrmSalesDashboardService {
@@ -129,10 +121,10 @@ export class CrmSalesDashboardService {
       .map((m) => ({ month: m.month, value: Number(m.revenue) }))
       .reverse();
 
-    const salesFunnel = STAGE_ORDER.map((stage) => {
-      const agg = stageMap.get(stage);
-      return { stage, value: agg?.dealCount ?? 0, color: STAGE_COLORS[stage] };
-    });
+    const salesFunnel = stageAggs
+      .filter((r) => r.stage !== "Closed Won")
+      .sort((a, b) => b.dealCount - a.dealCount)
+      .map((r) => ({ stage: r.stage, value: r.dealCount, color: "#3B82F6" }));
 
     const topDeals = topDealsRaw.map((d) => ({
       company: d.companyName,
@@ -163,15 +155,12 @@ export class CrmSalesDashboardService {
       };
     });
 
-    const dealsByStage = STAGE_ORDER.map((stage) => {
-      const agg = stageMap.get(stage);
-      return {
-        stage,
-        count: agg?.dealCount ?? 0,
-        value: agg?.totalValue ?? 0,
-        color: STAGE_COLORS[stage],
-      };
-    });
+    const dealsByStage = stageAggs.map((r) => ({
+      stage: r.stage,
+      count: r.dealCount,
+      value: r.totalValue,
+      color: "#3B82F6",
+    }));
 
     const statusMap = new Map(leadMetrics.map((r) => [r.status, r.cnt]));
     const activityMap: Record<string, number> = Object.fromEntries(

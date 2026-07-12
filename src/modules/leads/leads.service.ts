@@ -505,31 +505,6 @@ export class LeadsService {
     });
     if (!existing) return null;
 
-    if (input.status && input.status !== existing.status) {
-      const defaultPipeline = await this.db
-        .select({ id: crmPipelines.id })
-        .from(crmPipelines)
-        .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
-        .limit(1)
-        .then((r) => r[0]);
-
-      if (defaultPipeline) {
-        const transitionCheck = await this.blueprints.assertTransitionAllowed(
-          orgId,
-          defaultPipeline.id,
-          existing.status,
-          input.status,
-          { ...input, name: existing.name } as Record<string, unknown>,
-        );
-        if (!transitionCheck.allowed) {
-          throw new BadRequestException({
-            message: "Status transition blocked: missing required fields",
-            missingFields: transitionCheck.missingFields,
-          });
-        }
-      }
-    }
-
     const record: Record<string, unknown> = {
       name: input.name ?? existing.name,
       email: input.email ?? existing.email,

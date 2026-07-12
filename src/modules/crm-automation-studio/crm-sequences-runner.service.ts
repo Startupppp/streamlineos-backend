@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, lte } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { crmSequenceEnrollments, crmSequenceSteps, tasks } from "../../db/schema";
+import { crmSequenceEnrollments, crmSequenceSteps, crmSequences, tasks, leads } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
 import { AutomationEmailService } from "../automation/automation-email.service";
 
@@ -18,6 +18,37 @@ export class CrmSequencesRunnerService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: AutomationEmailService,
   ) {}
+
+  private async evaluateStopOn(
+    stopOn: Record<string, unknown>,
+    enrollment: { orgId: string; entityType: string; entityId: string },
+  ): Promise<{ stop: boolean; reason: string }> {
+    if (stopOn["converted"] === true) {
+      if (enrollment.entityType === "lead") {
+        const [row] = await this.db
+          .select({ convertedAt: leads.convertedAt })
+          .from(leads)
+          .where(and(
+            eq(leads.orgId, enrollment.orgId),
+            eq(leads.id, parseInt(enrollment.entityId, 10)),
+            isNotNull(leads.convertedAt),
+          ))
+          .limit(1);
+        if (row) return { stop: true, reason: "stopOn_converted" };
+      } else {
+        return { stop: false, reason: "stopOn_converted_unsupported_entity" };
+      }
+    }
+
+    const unsupported = ["replied", "meeting_booked"] as const;
+    for (const key of unsupported) {
+      if (stopOn[key] === true) {
+        logger.warn("crm-sequences-runner: stopOn key not supported", { key });
+      }
+    }
+
+    return { stop: false, reason: "" };
+  }
 
   async flushDueEnrollments(now = new Date()): Promise<FlushResult> {
     const enrollments = await this.db
@@ -43,11 +74,29 @@ export class CrmSequencesRunnerService {
 
     if (enrollments.length === 0) return { processed: 0, advanced: 0, stopped: 0 };
 
+    const seqRows = await this.db
+      .select({ id: crmSequences.id, stopOn: crmSequences.stopOn })
+      .from(crmSequences)
+      .where(isNull(crmSequences.deletedAt));
+    const seqStopOnMap = new Map(seqRows.map((s) => [s.id, s.stopOn]));
+
     let advanced = 0;
     let stopped = 0;
 
     for (const enrollment of enrollments) {
       try {
+        const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
+        if (rawStopOn && typeof rawStopOn === "object") {
+          const { stop, reason } = await this.evaluateStopOn(rawStopOn as Record<string, unknown>, enrollment);
+          if (stop) {
+            await this.db.update(crmSequenceEnrollments)
+              .set({ status: "stopped", stopReason: reason, updatedAt: new Date() })
+              .where(eq(crmSequenceEnrollments.id, enrollment.id));
+            stopped++;
+            continue;
+          }
+        }
+
         const steps = await this.db
           .select()
           .from(crmSequenceSteps)

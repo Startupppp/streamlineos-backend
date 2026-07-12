@@ -972,6 +972,12 @@ const CRM_PERMISSIONS: Permission[] = [
     description: "Capture and view forecast snapshots",
   },
   {
+    name: "crm:deals:manage",
+    resource: "crm:deals",
+    action: "manage",
+    description: "Manage deal forecasts and overrides",
+  },
+  {
     name: "crm:contacts:view",
     resource: "crm:contacts",
     action: "view",

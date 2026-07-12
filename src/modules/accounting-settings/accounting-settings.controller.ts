@@ -17,10 +17,12 @@ import { AccountingSettingsService } from "./accounting-settings.service";
 import {
   updateSettingsSchema,
   updateSequenceSchema,
+  upsertPaymentTermsSchema,
   SEQUENCE_ENTITY_TYPES,
   type UpdateSettingsInput,
   type UpdateSequenceInput,
   type SequenceEntityType,
+  type UpsertPaymentTermsInput,
 } from "./dto/settings.schemas";
 import { BadRequestException } from "@nestjs/common";
 
@@ -55,6 +57,15 @@ export class AccountingSettingsController {
   @RequirePermission("accounting:settings:read")
   listSequences(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listSequences(u.orgId);
+  }
+
+  @Patch("payment-terms")
+  @RequirePermission("accounting:settings:manage")
+  updatePaymentTerms(
+    @Body(new ZodValidationPipe(upsertPaymentTermsSchema)) body: UpsertPaymentTermsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.updatePaymentTerms(u, body);
   }
 
   @Patch("sequences/:entityType")

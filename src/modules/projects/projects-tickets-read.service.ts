@@ -3,7 +3,6 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL
 import {
   projectMembers,
   projects,
-  ticketAttachments,
   ticketComments,
   tickets,
 } from "../../db/schema";

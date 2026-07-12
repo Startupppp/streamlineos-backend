@@ -50,7 +50,7 @@ describe("DealsService – blueprint transition enforcement", () => {
 
   beforeEach(() => {
     mockDb = makeMockDb();
-    mockBlueprints = { assertTransitionAllowed: jest.fn().mockResolvedValue(undefined) };
+    mockBlueprints = { assertTransitionAllowed: jest.fn().mockResolvedValue({ allowed: true, requiresApproval: false, missingFields: [] }) };
     mockCrmMetadata = {
       getAggregate: jest.fn().mockResolvedValue({
         pipelines: [{ id: "pipe1", type: "deal", isDefault: true }],
@@ -65,13 +65,14 @@ describe("DealsService – blueprint transition enforcement", () => {
 
     service = new DealsService(
       mockDb,
-      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn() } as unknown as CacheService,
+      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,
       { sendDealAssigned: jest.fn() } as unknown as EmailService,
-      { trigger: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
+      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
       { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
       mockBlueprints as unknown as CrmBlueprintsService,
       mockCrmMetadata as unknown as CrmMetadataService,
+      { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm-metadata/crm-validation.service").CrmValidationService,
       { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm-automation-studio/crm-automation-bus.service").CrmAutomationBusService,
     );
   });
@@ -100,9 +101,10 @@ describe("DealsService – blueprint transition enforcement", () => {
 
     expect(mockBlueprints.assertTransitionAllowed).toHaveBeenCalledWith(
       "org1",
+      "pipe1",
       "LEAD",
       "PROPOSAL",
-      expect.objectContaining({ id: 1 }),
+      expect.objectContaining({ stage: "PROPOSAL" }),
     );
   });
 

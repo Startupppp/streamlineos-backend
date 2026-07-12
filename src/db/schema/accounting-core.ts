@@ -61,6 +61,13 @@ export const accountingDimensionValues = pgTable("accounting_dimension_values", 
   index("idx_accounting_dim_values_org_dim").on(table.orgId, table.dimensionId),
 ]);
 
+export interface PaymentTerm {
+  key: string;
+  label: string;
+  days: number;
+  isDefault?: boolean;
+}
+
 export const accountingSettings = pgTable("accounting_settings", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -71,6 +78,7 @@ export const accountingSettings = pgTable("accounting_settings", {
   coaTemplate: text("coa_template"),
   setupCompletedAt: timestamp("setup_completed_at"),
   retainedEarningsAccountId: integer("retained_earnings_account_id").references(() => ledgerAccounts.id),
+  paymentTerms: jsonb("payment_terms").$type<PaymentTerm[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

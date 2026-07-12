@@ -35,7 +35,8 @@ export class SystemAccountsService {
       })
       .from(accSystemAccountMap)
       .innerJoin(ledgerAccounts, eq(accSystemAccountMap.accountId, ledgerAccounts.id))
-      .where(eq(accSystemAccountMap.orgId, orgId));
+      .where(eq(accSystemAccountMap.orgId, orgId))
+      .limit(500);
 
     const mappedByPurpose = new Map(mapped.map((r) => [r.purpose, r]));
 

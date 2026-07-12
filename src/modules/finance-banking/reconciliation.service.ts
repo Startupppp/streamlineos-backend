@@ -15,6 +15,11 @@ import {
   journalEntries,
   journalLines,
 } from "../../db/schema";
+import {
+  checkApprovalPolicy,
+  getApprovalRequest,
+  insertApprovalRequest,
+} from "../finance-ap/ap-approval.helper";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -124,6 +129,25 @@ export class ReconciliationService {
     }
     if (txn.status === "IGNORED") {
       throw new BadRequestException("Transaction is ignored — unmatch first");
+    }
+
+    if (input.matchType === "BANK_FEE" || input.matchType === "MANUAL_JOURNAL") {
+      const txnAmount = Math.abs(parseFloat(txn.amount));
+      const approval = await checkApprovalPolicy(this.db, orgId, "BANK_ADJUSTMENT", txnAmount);
+
+      if (approval.needsApproval) {
+        const existing = await getApprovalRequest(this.db, orgId, "BANK_ADJUSTMENT", txn.id);
+
+        if (existing?.status === "APPROVED") {
+        } else if (existing?.status === "PENDING") {
+          throw new BadRequestException("Bank adjustment awaiting approval — cannot reconcile yet");
+        } else {
+          await insertApprovalRequest(this.db, orgId, "BANK_ADJUSTMENT", txn.id, userId);
+          throw new BadRequestException(
+            "Bank adjustment requires approval — approval request created",
+          );
+        }
+      }
     }
 
     await this.db.transaction(async (tx) => {

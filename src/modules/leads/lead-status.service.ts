@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { eq, and, count, sql, inArray } from "drizzle-orm";
 import {
   leads,
@@ -9,6 +9,7 @@ import {
   clientAccounts,
   organizationMembers,
   users,
+  crmPipelines,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -20,6 +21,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { appUrl } from "../email/app-url";
 import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
@@ -38,6 +40,7 @@ export class LeadStatusService {
     private readonly dispatch: NotificationDispatchService,
     private readonly email: EmailService,
     private readonly crmMetadata: CrmMetadataService,
+    private readonly blueprints: CrmBlueprintsService,
   ) {}
 
   private async getSemantics(orgId: string) {
@@ -286,13 +289,37 @@ export class LeadStatusService {
     const isConverted = semantics.convertedKeys.includes(input.status);
     const isLost = semantics.lostKeys.includes(input.status);
 
-    if (isConverted) {
-      const existing = await this.db.query.leads.findFirst({
-        where: and(eq(leads.id, leadId), eq(leads.orgId, orgId)),
-        columns: { status: true },
-      });
-      if (existing && semantics.convertedKeys.includes(existing.status)) {
-        return { ok: false, reason: "already_converted" };
+    const existing = await this.db.query.leads.findFirst({
+      where: and(eq(leads.id, leadId), eq(leads.orgId, orgId)),
+    });
+
+    if (isConverted && existing && semantics.convertedKeys.includes(existing.status)) {
+      return { ok: false, reason: "already_converted" };
+    }
+
+    if (existing) {
+      const defaultPipeline = await this.db
+        .select({ id: crmPipelines.id })
+        .from(crmPipelines)
+        .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (defaultPipeline) {
+        const leadRecord: Record<string, unknown> = { ...existing };
+        const transitionCheck = await this.blueprints.assertTransitionAllowed(
+          orgId,
+          defaultPipeline.id,
+          existing.status,
+          input.status,
+          leadRecord,
+        );
+        if (!transitionCheck.allowed) {
+          throw new BadRequestException({
+            message: "Status transition blocked: missing required fields",
+            missingFields: transitionCheck.missingFields,
+          });
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollRunsModule } from "../runs/payroll-runs.module";
+import { AccountingModule } from "../../accounting/accounting.module";
 import { ApprovalsController } from "./approvals.controller";
 import { ApprovalsService } from "./approvals.service";
 import { LockingController } from "./locking.controller";
@@ -16,9 +17,10 @@ import { PayslipTemplatesController } from "./payslip-templates.controller";
 import { PayslipTemplatesService } from "./payslip-templates.service";
 import { PublishingController } from "./publishing.controller";
 import { PublishingService } from "./publishing.service";
+import { PayrollPostingService } from "../payroll-posting.service";
 
 @Module({
-  imports: [PayrollInsightsModule, PayrollRunsModule],
+  imports: [PayrollInsightsModule, PayrollRunsModule, AccountingModule],
   controllers: [
     ApprovalsController,
     LockingController,
@@ -35,6 +37,7 @@ import { PublishingService } from "./publishing.service";
     PayoutValidationService,
     PayslipTemplatesService,
     PublishingService,
+    PayrollPostingService,
   ],
 })
 export class PayrollPayoutModule {}

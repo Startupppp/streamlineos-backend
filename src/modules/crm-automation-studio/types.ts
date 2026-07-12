@@ -11,5 +11,6 @@ export interface RunStepLog {
   type: string;
   status: "ok" | "skipped" | "error";
   message?: string;
+  branchTaken?: string;
   at: string;
 }

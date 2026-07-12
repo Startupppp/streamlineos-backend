@@ -225,6 +225,13 @@
       "when": 1752368400000,
       "tag": "0253_inv_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1752451200000,
+      "tag": "0256_acc_payment_terms",
+      "breakpoints": true
     }
   ]
 }

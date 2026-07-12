@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { finReminderPolicies, finReminderLog, invoices, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -39,6 +39,7 @@ export class RemindersService {
       })
       .returning();
     if (!policy) throw new Error("Policy insert returned no rows");
+    this.audit.log({ action: "accounting.reminder_policy.created", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(policy.id), result: "SUCCESS" });
     return policy;
   }
 
@@ -57,6 +58,7 @@ export class RemindersService {
       })
       .where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)))
       .returning();
+    this.audit.log({ action: "accounting.reminder_policy.updated", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(id), result: "SUCCESS" });
     return updated;
   }
 
@@ -64,6 +66,7 @@ export class RemindersService {
     const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)) });
     if (!existing) throw new NotFoundException("Reminder policy not found");
     await this.db.delete(finReminderPolicies).where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)));
+    this.audit.log({ action: "accounting.reminder_policy.deleted", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(id), result: "SUCCESS" });
     return { success: true };
   }
 
@@ -83,7 +86,7 @@ export class RemindersService {
     const todayMs = new Date(`${today}T00:00:00Z`).getTime();
 
     const policyWhere = orgId ? and(eq(finReminderPolicies.isActive, true), eq(finReminderPolicies.orgId, orgId)) : eq(finReminderPolicies.isActive, true);
-    const policies = await this.db.select().from(finReminderPolicies).where(policyWhere);
+    const policies = await this.db.select().from(finReminderPolicies).where(policyWhere).limit(1000).orderBy(asc(finReminderPolicies.id));
     if (policies.length === 0) return { sent: 0 };
 
     const invWhere = and(
@@ -94,7 +97,9 @@ export class RemindersService {
     const openInvoices = await this.db
       .select({ id: invoices.id, orgId: invoices.orgId, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, collectionOwnerId: invoices.collectionOwnerId })
       .from(invoices)
-      .where(invWhere);
+      .where(invWhere)
+      .limit(2000)
+      .orderBy(asc(invoices.id));
 
     let sent = 0;
     for (const policy of policies) {

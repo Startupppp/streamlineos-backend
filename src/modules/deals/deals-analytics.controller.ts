@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -80,5 +80,15 @@ export class DealsAnalyticsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getDealHealth(u.orgId, Number(dealId));
+  }
+
+  @Patch("forecast/:snapshotId/override")
+  @RequirePermission("crm:deals:manage")
+  overrideForecast(
+    @Param("snapshotId") snapshotId: string,
+    @Body() body: { overrideAmount?: number; overrideNote?: string },
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.analytics.overrideForecastSnapshot(u.orgId, u.userId, snapshotId, body);
   }
 }

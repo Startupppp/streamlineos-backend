@@ -13,7 +13,7 @@ import {
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { SETTINGS_CACHE_KEY, COA_TREE_CACHE_KEY, PURPOSE_ALLOWED_TYPES, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
-import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType } from "./dto/settings.schemas";
+import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType, UpsertPaymentTermsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
@@ -169,6 +169,29 @@ export class AccountingSettingsService {
     });
 
     return { items: all };
+  }
+
+  async updatePaymentTerms(u: CurrentUserContext, input: UpsertPaymentTermsInput) {
+    await this.getOrCreateSettings(u.orgId);
+
+    const [updated] = await this.db
+      .update(accountingSettings)
+      .set({ paymentTerms: input.terms, updatedAt: new Date() })
+      .where(eq(accountingSettings.orgId, u.orgId))
+      .returning();
+
+    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+
+    this.audit.log({
+      action: "accounting.settings.payment_terms_updated",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "accounting_settings",
+      resourceId: u.orgId,
+      after: { terms: input.terms },
+    });
+
+    return updated!;
   }
 
   async updateSequence(u: CurrentUserContext, entityType: SequenceEntityType, input: UpdateSequenceInput) {

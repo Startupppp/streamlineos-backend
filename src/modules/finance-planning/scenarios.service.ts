@@ -62,7 +62,8 @@ export class ScenariosService {
       .select()
       .from(finCashFlowScenarios)
       .where(eq(finCashFlowScenarios.orgId, orgId))
-      .orderBy(asc(finCashFlowScenarios.createdAt));
+      .orderBy(asc(finCashFlowScenarios.createdAt))
+      .limit(200);
   }
 
   async createScenario(

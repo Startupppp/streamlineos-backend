@@ -13,6 +13,7 @@ import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmValidationService } from "../crm-metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
@@ -34,6 +35,7 @@ export class DealsService {
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly blueprints: CrmBlueprintsService,
     private readonly crmMetadata: CrmMetadataService,
+    private readonly crmValidation: CrmValidationService,
     private readonly bus: CrmAutomationBusService,
   ) {}
 
@@ -72,7 +74,7 @@ export class DealsService {
         orgId,
         name: channelName,
         type: "GROUP",
-        description: `Auto-created channel for deal #${dealId} entering Negotiation`,
+        description: `Auto-created deal channel for deal #${dealId}`,
         createdBy: userId,
         linkedDealId: dealId,
       })
@@ -156,6 +158,20 @@ export class DealsService {
         columns: { userId: true },
       });
       if (!member) throw new BadRequestException("Assigned user is not a member of this organization");
+    }
+
+    const validationRecord: Record<string, unknown> = {
+      name: input.name,
+      value: input.value ?? null,
+      stage: input.stage ?? null,
+      contactEmail: input.contactEmail ?? null,
+      contactPhone: input.contactPhone ?? null,
+    };
+    const validation = await this.crmValidation.evaluate(orgId, "deal", validationRecord, {
+      stageKey: input.stage ?? undefined,
+    });
+    if (!validation.valid) {
+      throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
     }
 
     const [deal] = await this.db
@@ -256,11 +272,25 @@ export class DealsService {
           orgId, dealId, type: "stage_change", previousValue: existing.stage, newValue: input.stage,
           subject: `Stage changed from ${existing.stage} to ${input.stage}`, userId,
         });
-        const stageLower = input.stage.toLowerCase();
-        if (stageLower === "negotiation") {
+        if (stageInfo && stageInfo.probability >= 75 && stageInfo.stageType === "open") {
           await this.maybeCreateNegotiationChannel(orgId, userId, dealId);
         }
       }
+    }
+
+    const updateValidationRecord: Record<string, unknown> = {
+      name: input.name ?? null,
+      value: input.value ?? null,
+      stage: input.stage ?? null,
+      contactEmail: input.contactEmail ?? null,
+      contactPhone: input.contactPhone ?? null,
+    };
+    const updateValidation = await this.crmValidation.evaluate(orgId, "deal", updateValidationRecord, {
+      stageKey: input.stage ?? undefined,
+      existingRecordId: String(dealId),
+    });
+    if (!updateValidation.valid) {
+      throw new BadRequestException(updateValidation.errors.map((e) => e.message).join("; "));
     }
 
     if (input.name !== undefined) updateData.name = input.name;
