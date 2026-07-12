@@ -15,10 +15,21 @@ import { SignFieldsService } from "./sign-fields.service";
 import { SignFieldsController } from "./sign-fields.controller";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
+import { SignFinalizationService } from "./sign-finalization.service";
+import { SignPublicService } from "./sign-public.service";
+import { SignPublicController } from "./sign-public.controller";
+import { SignCertificatesController } from "./sign-certificates.controller";
 
 @Module({
   imports: [StorageModule, EmailModule, AccessModule],
-  controllers: [SignDocumentsController, SignRecipientsController, SignFieldsController, SignEnvelopesController],
+  controllers: [
+    SignDocumentsController,
+    SignRecipientsController,
+    SignFieldsController,
+    SignEnvelopesController,
+    SignPublicController,
+    SignCertificatesController,
+  ],
   providers: [
     SignAuditService,
     SignTokensService,
@@ -29,7 +40,9 @@ import { SignEnvelopesController } from "./sign-envelopes.controller";
     SignRecipientsService,
     SignFieldsService,
     SignEnvelopesService,
+    SignFinalizationService,
+    SignPublicService,
   ],
-  exports: [SignAuditService, SignSettingsService, SignEnvelopesService],
+  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService],
 })
 export class SignosModule {}

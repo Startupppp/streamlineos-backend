@@ -13,6 +13,21 @@ export interface StampField {
   checked?: boolean;
   imageBytes?: Buffer;
   imageFormat?: "png" | "jpg";
+  fontStyle?: "normal" | "signature";
+}
+
+export interface CertificateData {
+  certificateNumber: string;
+  tenantName: string;
+  envelopeTitle: string;
+  senderName: string;
+  senderEmail: string;
+  finalPdfHash: string;
+  watermarked: boolean;
+  completedAt: string;
+  documents: { fileName: string; sha256Hash: string; pageCount: number | null }[];
+  recipients: { name: string; email: string | null; role: string; authMethod: string; completedAt: string | null }[];
+  events: { eventType: string; actorName: string | null; createdAt: string; ipAddress: string | null }[];
 }
 
 export interface WatermarkSpec {
@@ -79,6 +94,7 @@ export class SignPdfService {
   async stampFields(pdfBytes: Buffer, fields: StampField[]): Promise<Buffer> {
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const signatureFont = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
     const pages = pdfDoc.getPages();
 
     for (const field of fields) {
@@ -105,7 +121,8 @@ export class SignPdfService {
       }
 
       if (field.textValue) {
-        this.drawFittedText(page, font, field.textValue, field.x, pdfY, field.width, field.height);
+        const useFont = field.fontStyle === "signature" ? signatureFont : font;
+        this.drawFittedText(page, useFont, field.textValue, field.x, pdfY, field.width, field.height);
       }
     }
 
@@ -181,6 +198,61 @@ export class SignPdfService {
           }
         }
       }
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  }
+
+  async generateCertificatePdf(data: CertificateData): Promise<Buffer> {
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    let page = pdfDoc.addPage([612, 792]);
+    let cursorY = 742;
+    const marginX = 56;
+    const lineHeight = 16;
+
+    const ensureSpace = (needed: number) => {
+      if (cursorY - needed < 56) {
+        page = pdfDoc.addPage([612, 792]);
+        cursorY = 742;
+      }
+    };
+
+    const drawLine = (text: string, opts?: { bold?: boolean; size?: number; gap?: number }) => {
+      const size = opts?.size ?? 10;
+      ensureSpace(lineHeight);
+      page.drawText(text, { x: marginX, y: cursorY, size, font: opts?.bold ? bold : font, color: rgb(0.1, 0.1, 0.1) });
+      cursorY -= (opts?.gap ?? lineHeight);
+    };
+
+    drawLine("Certificate of Completion", { bold: true, size: 20, gap: 28 });
+    drawLine(`Certificate Number: ${data.certificateNumber}`);
+    drawLine(`Organization: ${data.tenantName}`);
+    drawLine(`Envelope: ${data.envelopeTitle}`);
+    drawLine(`Sender: ${data.senderName} <${data.senderEmail}>`);
+    drawLine(`Completed at: ${data.completedAt}`);
+    drawLine(`Final PDF SHA-256: ${data.finalPdfHash}`, { gap: 24 });
+    drawLine(`Watermarked final PDF: ${data.watermarked ? "Yes" : "No"}`, { gap: 24 });
+
+    drawLine("Documents", { bold: true, size: 13, gap: 20 });
+    for (const doc of data.documents) {
+      drawLine(`${doc.fileName} — ${doc.pageCount ?? "?"} page(s) — SHA-256: ${doc.sha256Hash}`);
+    }
+    cursorY -= 8;
+
+    drawLine("Recipients", { bold: true, size: 13, gap: 20 });
+    for (const r of data.recipients) {
+      drawLine(`${r.name}${r.email ? ` <${r.email}>` : ""} — ${r.role} — auth: ${r.authMethod} — completed: ${r.completedAt ?? "n/a"}`);
+    }
+    cursorY -= 8;
+
+    drawLine("Event Timeline", { bold: true, size: 13, gap: 20 });
+    for (const event of data.events) {
+      const actor = event.actorName ? ` by ${event.actorName}` : "";
+      const ip = event.ipAddress ? ` from ${event.ipAddress}` : "";
+      drawLine(`${event.createdAt} — ${event.eventType}${actor}${ip}`, { size: 9 });
     }
 
     return Buffer.from(await pdfDoc.save());

@@ -19,6 +19,17 @@ ${renderButton("View status", envelopeViewUrl)}`,
     await this.email.sendEmail({ to: email, subject: `Copied on: ${envelopeTitle}`, html });
   }
 
+  async sendOtpCode(email: string, name: string, code: string): Promise<void> {
+    const html = getEmailTemplate({
+      title: "Your one-time signing code",
+      preheader: `Your code is ${code}`,
+      content: `<p class="email-text">Hi ${escapeHtml(name)},</p>
+<p class="email-text">Use this one-time code to continue signing. It expires in 10 minutes.</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${escapeHtml(code)}</p>`,
+    });
+    await this.email.sendEmail({ to: email, subject: `Your signing code: ${code}`, html });
+  }
+
   async sendInvitation(
     recipientEmail: string,
     recipientName: string,
