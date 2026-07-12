@@ -1,0 +1,512 @@
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema";
+import {
+  users,
+  organizations,
+  organizationMembers,
+  roles,
+  permissions,
+} from "../db/schema/auth";
+import {
+  rolePermissionGrants,
+  userRoles,
+  accessVersions,
+} from "../db/schema/access";
+import { orgDepartments, orgTeams, orgLocations } from "../db/schema/organization";
+import { departments } from "../db/schema/hr/employees";
+import { subscriptions } from "../db/schema/shared";
+import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
+import { hrTeams, hrLocations } from "../db/schema/hr/core-org";
+import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";
+import { leavePolicies } from "../db/schema/hr/leave-policies";
+import { attendance, holidays, helpdeskTickets } from "../db/schema/hr/attendance";
+import { shiftTemplates, employeeShiftAssignments } from "../db/schema/hr/shifts";
+import { jobPostings, candidates, candidateApplications } from "../db/schema/hr/hiring";
+import { assets } from "../db/schema/hr/assets";
+import { documents } from "../db/schema/hr/documents";
+import { reviewCycles } from "../db/schema/hr/performance";
+import {
+  hrWorkflowDefinitions,
+  hrWorkflowSteps,
+  hrWorkflowInstances,
+  hrWorkflowStepActions,
+} from "../db/schema/hr/workflow-engine";
+import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions.constants";
+
+type Db = PostgresJsDatabase<typeof schema>;
+
+const ORG_ID = "e1000001-0000-4000-8000-000000000001";
+const ADMIN_ID = "e1000001-0000-4000-8000-000000000002";
+const ORG_SLUG = "enterprise-demo-workspace";
+const ADMIN_EMAIL = "admin@enterprise-demo.streamlineos.in";
+const PASSWORD = "Enterprise@2026!";
+
+const PEOPLE = [
+  { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", role: "ENGINEERING", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
+  { id: "e1000001-0000-4000-8000-000000000004", email: "rahul.mgr@enterprise-demo.in", first: "Rahul", last: "Mehta", role: "HR", emp: "EMP-MGR-02", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "HR Manager", dept: "People Operations", isManager: true },
+  { id: "e1000001-0000-4000-8000-000000000005", email: "anita@enterprise-demo.in", first: "Anita", last: "Kapoor", role: "ENGINEERING", emp: "EMP-001", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000006", email: "vikram@enterprise-demo.in", first: "Vikram", last: "Singh", role: "ENGINEERING", emp: "EMP-002", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Software Engineer", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000007", email: "neha@enterprise-demo.in", first: "Neha", last: "Gupta", role: "ENGINEERING", emp: "EMP-003", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Product Analyst", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000008", email: "alex.contractor@enterprise-demo.in", first: "Alex", last: "Turner", role: "ENGINEERING", emp: "CTR-001", worker: "CONTRACTOR" as const, status: "ACTIVE" as const, designation: "DevOps Consultant", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-000000000009", email: "meera.intern@enterprise-demo.in", first: "Meera", last: "Patel", role: "ENGINEERING", emp: "INT-001", worker: "INTERN" as const, status: "ACTIVE" as const, designation: "Engineering Intern", dept: "Engineering", manager: "priya.mgr@enterprise-demo.in" },
+  { id: "e1000001-0000-4000-8000-00000000000a", email: "sanjay.exited@enterprise-demo.in", first: "Sanjay", last: "Reddy", role: "ENGINEERING", emp: "EMP-004", worker: "FULL_TIME" as const, status: "EXITED" as const, designation: "Former Analyst", dept: "Engineering", inactive: true },
+] as const;
+
+function normalizeDatabaseUrl(url: string): string {
+  if (!/\.neon\.tech/i.test(url)) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete("channel_binding");
+    return parsed.toString();
+  } catch {
+    return url.replace(/[&?]channel_binding=[^&]*/g, "").replace(/\?&/, "?");
+  }
+}
+
+async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole: string): Promise<void> {
+  if (PERMISSIONS.length > 0) {
+    await db.insert(permissions).values(
+      PERMISSIONS.map((p) => ({
+        name: p.name,
+        resource: p.resource,
+        action: p.action,
+        description: p.description ?? null,
+      })),
+    ).onConflictDoNothing();
+  }
+
+  const catalogRows = await db.select({ name: permissions.name }).from(permissions);
+  const catalog = new Set(catalogRows.map((r) => r.name));
+
+  for (const slug of Object.keys(ROLE_DEFAULT_PERMISSIONS)) {
+    await db.insert(roles).values({
+      name: slug === "OWNER" ? "Owner" : slug.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      slug,
+      orgId,
+      isSystem: true,
+    }).onConflictDoNothing({ target: [roles.slug, roles.orgId] });
+  }
+
+  const orgRoles = await db.select({ id: roles.id, slug: roles.slug, isSystem: roles.isSystem }).from(roles).where(eq(roles.orgId, orgId));
+  for (const role of orgRoles) {
+    const keys = [...new Set(role.isSystem ? (ROLE_DEFAULT_PERMISSIONS[role.slug] ?? []) : [])].filter((k) => catalog.has(k));
+    if (!keys.length) continue;
+    await db.insert(rolePermissionGrants).values(
+      keys.map((permissionKey) => ({ orgId, roleId: role.id, permissionKey, scope: "all" as const })),
+    ).onConflictDoNothing();
+  }
+
+  const ownerRole = orgRoles.find((r) => r.slug === memberRole);
+  if (ownerRole) {
+    await db.insert(userRoles).values({ orgId, userId: memberUserId, roleId: ownerRole.id }).onConflictDoNothing();
+  }
+  await db.insert(accessVersions).values({ orgId, permissionsVersion: 1 }).onConflictDoNothing({ target: accessVersions.orgId });
+}
+
+async function seed(db: Db): Promise<Record<string, unknown>> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const passwordHash = await bcrypt.hash(PASSWORD, 12);
+  const memberHash = await bcrypt.hash(PASSWORD, 10);
+
+  await db.insert(organizations).values({
+    id: ORG_ID,
+    name: "Enterprise Demo Co",
+    slug: ORG_SLUG,
+    industry: "Technology",
+    companySize: "51-200",
+    country: "IN",
+    enabledModules: ["HR", "CRM", "PROJECTS", "SUPPORT", "ACCOUNTING"],
+    onboardingCompletedAt: now,
+    status: "ACTIVE",
+  }).onConflictDoNothing({ target: organizations.id });
+
+  await db.insert(users).values({
+    id: ADMIN_ID,
+    email: ADMIN_EMAIL,
+    name: "Enterprise Admin",
+    firstName: "Enterprise",
+    lastName: "Admin",
+    password: passwordHash,
+    emailVerified: now,
+    isActive: true,
+    hasDashboardAccess: true,
+    role: "OWNER",
+    userStatus: "active",
+    lastActiveOrgId: ORG_ID,
+    activatedAt: now,
+  }).onConflictDoUpdate({
+    target: users.email,
+    set: { password: passwordHash, isActive: true, lastActiveOrgId: ORG_ID },
+  });
+
+  await db.insert(organizationMembers).values({
+    userId: ADMIN_ID,
+    orgId: ORG_ID,
+    role: "OWNER",
+    isOwner: true,
+  }).onConflictDoNothing();
+
+  const existingSub = await db.select({ id: subscriptions.id }).from(subscriptions).where(eq(subscriptions.orgId, ORG_ID)).limit(1);
+  if (!existingSub.length) {
+    await db.insert(subscriptions).values({ orgId: ORG_ID, plan: "ENTERPRISE", status: "ACTIVE" });
+  } else {
+    await db.update(subscriptions).set({ plan: "ENTERPRISE", status: "ACTIVE" }).where(eq(subscriptions.orgId, ORG_ID));
+  }
+
+  await seedRbac(db, ORG_ID, ADMIN_ID, "OWNER");
+
+  for (const p of PEOPLE) {
+    await db.insert(users).values({
+      id: p.id,
+      email: p.email,
+      name: `${p.first} ${p.last}`,
+      firstName: p.first,
+      lastName: p.last,
+      password: memberHash,
+      emailVerified: now,
+      isActive: !("inactive" in p && p.inactive),
+      hasDashboardAccess: true,
+      role: p.role,
+      userStatus: p.status === "EXITED" ? "inactive" : "active",
+      lastActiveOrgId: ORG_ID,
+      activatedAt: now,
+    }).onConflictDoNothing({ target: users.email });
+
+    await db.insert(organizationMembers).values({
+      userId: p.id,
+      orgId: ORG_ID,
+      role: p.role,
+      isOwner: false,
+    }).onConflictDoNothing();
+  }
+
+  const deptNames = ["Engineering", "People Operations"] as const;
+  const deptIds = new Map<string, number>();
+  for (const name of deptNames) {
+    const [row] = await db.insert(departments).values({
+      orgId: ORG_ID,
+      name,
+      managerId: name === "Engineering" ? PEOPLE[0].id : PEOPLE[1].id,
+    }).onConflictDoNothing().returning({ id: departments.id });
+    if (row) deptIds.set(name, row.id);
+  }
+  const existingDepts = await db
+    .select({ id: departments.id, name: departments.name })
+    .from(departments)
+    .where(eq(departments.orgId, ORG_ID));
+  for (const d of existingDepts) deptIds.set(d.name, d.id);
+
+  for (const d of [
+    { name: "Engineering", code: "ENG" },
+    { name: "People Operations", code: "HR" },
+  ]) {
+    await db.insert(orgDepartments).values({ orgId: ORG_ID, name: d.name, code: d.code, status: "ACTIVE" }).onConflictDoNothing();
+  }
+  for (const t of [
+    { name: "Platform Team", code: "PLAT" },
+    { name: "Talent Team", code: "TA" },
+  ]) {
+    await db.insert(orgTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, status: "ACTIVE" }).onConflictDoNothing();
+    await db.insert(hrTeams).values({ orgId: ORG_ID, name: t.name, code: t.code, leadUserId: t.code === "PLAT" ? PEOPLE[0].id : PEOPLE[1].id }).onConflictDoNothing();
+  }
+  for (const loc of [
+    { name: "Mumbai HQ", code: "BOM", city: "Mumbai" },
+    { name: "Bangalore Tech Park", code: "BLR", city: "Bangalore" },
+  ]) {
+    await db.insert(orgLocations).values({
+      orgId: ORG_ID,
+      name: loc.name,
+      type: "OFFICE",
+      address: `${loc.city}, India`,
+      status: "ACTIVE",
+    }).onConflictDoNothing();
+    await db.insert(hrLocations).values({
+      orgId: ORG_ID,
+      name: loc.name,
+      code: loc.code,
+      type: "OFFICE",
+      address: { city: loc.city, country: "IN" },
+    }).onConflictDoNothing();
+  }
+
+  const hrLocRows = await db.select({ id: hrLocations.id, name: hrLocations.name }).from(hrLocations).where(eq(hrLocations.orgId, ORG_ID));
+  const locId = hrLocRows[0]?.id ?? null;
+  const employmentIds = new Map<string, number>();
+
+  for (const p of PEOPLE) {
+    const [person] = await db.insert(hrPeople).values({
+      orgId: ORG_ID,
+      userId: p.id,
+      firstName: p.first,
+      lastName: p.last,
+      workEmail: p.email,
+    }).onConflictDoNothing().returning({ id: hrPeople.id });
+
+    let personId = person?.id;
+    if (!personId) {
+      const existing = await db
+        .select({ id: hrPeople.id })
+        .from(hrPeople)
+        .where(eq(hrPeople.workEmail, p.email))
+        .limit(1);
+      personId = existing[0]?.id;
+    }
+    if (!personId) continue;
+
+    const [emp] = await db.insert(hrEmployments).values({
+      orgId: ORG_ID,
+      personId,
+      employeeNumber: p.emp,
+      lifecycleStatus: p.status,
+      workerType: p.worker,
+      departmentId: deptIds.get(p.dept) ?? null,
+      locationId: locId,
+      designation: p.designation,
+      joiningDate: "2025-01-15",
+      exitDate: p.status === "EXITED" ? "2026-05-30" : null,
+      lastWorkingDay: p.status === "EXITED" ? "2026-05-30" : null,
+    }).onConflictDoNothing().returning({ id: hrEmployments.id });
+
+    if (emp) employmentIds.set(p.email, emp.id);
+  }
+
+  const priyaEmp = employmentIds.get(PEOPLE[0].email);
+  if (priyaEmp) {
+    for (const p of PEOPLE) {
+      if ("manager" in p && p.manager === PEOPLE[0].email) {
+        const reporteeId = employmentIds.get(p.email);
+        if (reporteeId) {
+          await db.insert(hrReportingLines).values({
+            orgId: ORG_ID,
+            employmentId: reporteeId,
+            managerEmploymentId: priyaEmp,
+            effectiveFrom: "2025-01-15",
+          }).onConflictDoNothing();
+        }
+      }
+    }
+  }
+
+  const [leaveType] = await db.insert(leaveTypes).values({
+    orgId: ORG_ID,
+    name: "Annual Leave",
+    daysPerYear: 18,
+    carryForward: true,
+  }).onConflictDoNothing().returning({ id: leaveTypes.id });
+
+  const leaveTypeId = leaveType?.id ?? (await db.select({ id: leaveTypes.id }).from(leaveTypes).where(eq(leaveTypes.orgId, ORG_ID)).limit(1))[0]?.id;
+  if (leaveTypeId) {
+    await db.insert(leavePolicies).values({
+      orgId: ORG_ID,
+      leaveTypeId,
+      name: "Standard Annual Leave",
+      accrualRate: "1.5",
+      effectiveFrom: "2026-01-01",
+    }).onConflictDoNothing();
+  }
+
+  await db.insert(holidays).values({
+    orgId: ORG_ID,
+    name: "Independence Day",
+    date: "2026-08-15",
+    isPublic: true,
+  }).onConflictDoNothing();
+
+  const [shift] = await db.insert(shiftTemplates).values({
+    orgId: ORG_ID,
+    name: "General Shift",
+    startTime: "09:00:00",
+    endTime: "18:00:00",
+  }).onConflictDoNothing().returning({ id: shiftTemplates.id });
+
+  if (shift) {
+    await db.insert(employeeShiftAssignments).values({
+      orgId: ORG_ID,
+      userId: PEOPLE[2].id,
+      shiftId: shift.id,
+      effectiveFrom: "2026-01-01",
+    }).onConflictDoNothing();
+  }
+
+  const checkIn = new Date(`${today}T09:15:00`);
+  const checkOut = new Date(`${today}T18:05:00`);
+  await db.insert(attendance).values({
+    orgId: ORG_ID,
+    userId: PEOPLE[2].id,
+    date: today,
+    checkIn,
+    checkOut,
+    status: "PRESENT",
+    workHours: "8.50",
+  }).onConflictDoNothing();
+
+  const [job] = await db.insert(jobPostings).values({
+    orgId: ORG_ID,
+    title: "Senior Software Engineer",
+    departmentId: deptIds.get("Engineering") ?? null,
+    location: "Mumbai / Remote",
+    type: "FULL_TIME",
+    description: "Build scalable HR and enterprise products.",
+    status: "OPEN",
+    postedBy: ADMIN_ID,
+  }).onConflictDoNothing().returning({ id: jobPostings.id });
+
+  const [candidate] = await db.insert(candidates).values({
+    orgId: ORG_ID,
+    firstName: "Arjun",
+    lastName: "Iyer",
+    email: "arjun.iyer.candidate@example.com",
+    phone: "+91-9876543210",
+    source: "LINKEDIN",
+    status: "SCREENING",
+    currentRole: "Software Engineer",
+    currentCompany: "Acme Tech",
+  }).onConflictDoNothing().returning({ id: candidates.id });
+
+  if (job && candidate) {
+    await db.insert(candidateApplications).values({
+      orgId: ORG_ID,
+      candidateId: candidate.id,
+      jobPostingId: job.id,
+      status: "APPLIED",
+    }).onConflictDoNothing();
+  }
+
+  await db.insert(documents).values({
+    orgId: ORG_ID,
+    userId: PEOPLE[2].id,
+    name: "Offer Letter - Anita Kapoor",
+    type: "OFFER_LETTER",
+    fileUrl: "https://example.com/docs/offer-anita.pdf",
+    fileName: "offer-anita.pdf",
+    uploadedBy: ADMIN_ID,
+  }).onConflictDoNothing();
+
+  await db.insert(assets).values({
+    orgId: ORG_ID,
+    name: "MacBook Pro 14",
+    type: "LAPTOP",
+    brand: "Apple",
+    model: "M3 Pro",
+    serialNumber: "MBP-ENT-001",
+    assignedTo: PEOPLE[2].id,
+    status: "ASSIGNED",
+    purchaseDate: "2025-06-01",
+    location: "Mumbai HQ",
+  }).onConflictDoNothing();
+
+  await db.insert(helpdeskTickets).values({
+    orgId: ORG_ID,
+    userId: PEOPLE[2].id,
+    title: "Laptop fan noise issue",
+    description: "Fan runs loudly during video calls.",
+    category: "IT",
+    priority: "MEDIUM",
+    status: "TODO",
+    assigneeId: ADMIN_ID,
+  }).onConflictDoNothing();
+
+  await db.insert(reviewCycles).values({
+    orgId: ORG_ID,
+    name: "H1 2026 Performance Review",
+    type: "HALF_YEARLY",
+    periodStart: "2026-01-01",
+    periodEnd: "2026-06-30",
+    deadline: "2026-07-15",
+    status: "ACTIVE",
+    createdBy: ADMIN_ID,
+  }).onConflictDoNothing();
+
+  const [wfDef] = await db.insert(hrWorkflowDefinitions).values({
+    orgId: ORG_ID,
+    objectType: "leave_request",
+    name: "Leave Approval",
+    status: "active",
+    isDefault: true,
+  }).onConflictDoNothing().returning({ id: hrWorkflowDefinitions.id });
+
+  if (wfDef && leaveTypeId) {
+    const [step] = await db.insert(hrWorkflowSteps).values({
+      definitionId: wfDef.id,
+      stepOrder: 1,
+      name: "Manager Approval",
+      approverType: "direct_manager",
+      mode: "serial",
+    }).onConflictDoNothing().returning({ id: hrWorkflowSteps.id });
+
+    const [leaveReq] = await db.insert(leaveRequests).values({
+      orgId: ORG_ID,
+      userId: PEOPLE[2].id,
+      leaveTypeId,
+      startDate: "2026-07-20",
+      endDate: "2026-07-22",
+      reason: "Family event",
+      status: "PENDING",
+      approverId: PEOPLE[0].id,
+    }).onConflictDoNothing().returning({ id: leaveRequests.id });
+
+    if (leaveReq && step) {
+      const [instance] = await db.insert(hrWorkflowInstances).values({
+        orgId: ORG_ID,
+        definitionId: wfDef.id,
+        definitionSnapshot: { steps: [{ order: 1, name: "Manager Approval" }] },
+        objectType: "leave_request",
+        objectId: String(leaveReq.id),
+        requestedBy: PEOPLE[2].id,
+        subjectEmployeeId: PEOPLE[2].id,
+        status: "in_progress",
+        currentStepOrder: 1,
+      }).onConflictDoNothing().returning({ id: hrWorkflowInstances.id });
+
+      if (instance) {
+        await db.insert(hrWorkflowStepActions).values({
+          orgId: ORG_ID,
+          instanceId: instance.id,
+          stepOrder: 1,
+          approverUserId: PEOPLE[0].id,
+          actedByUserId: PEOPLE[0].id,
+          action: "commented",
+          comment: "Please confirm coverage plan before approval.",
+        }).onConflictDoNothing();
+      }
+    }
+  }
+
+  return {
+    seed: "enterprise-workspace-complete",
+    orgId: ORG_ID,
+    slug: ORG_SLUG,
+    adminEmail: ADMIN_EMAIL,
+    password: PASSWORD,
+    plan: "ENTERPRISE",
+    employees: PEOPLE.length,
+    departments: deptNames.length,
+    teams: 2,
+    managers: 2,
+    locations: 2,
+    loginUrl: "http://localhost:1000",
+    apiUrl: "http://localhost:1500",
+  };
+}
+
+async function main(): Promise<void> {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) throw new Error("DATABASE_URL is required");
+  const client = postgres(normalizeDatabaseUrl(raw), { prepare: false, max: 5 });
+  const db = drizzle(client, { schema });
+  try {
+    const summary = await seed(db);
+    process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
+
+main().catch((err: unknown) => {
+  process.stderr.write(`[seed-enterprise-workspace] failed: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+});
