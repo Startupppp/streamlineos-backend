@@ -17,7 +17,9 @@ export const signFields = pgTable(
     fieldType: signFieldTypeEnum("field_type").notNull(),
     label: text("label"),
     pageNumber: integer("page_number").notNull(),
-    // Coordinates are page-relative fractions (0..1) of page width/height, not viewport pixels.
+    // Coordinates are in PDF points, relative to the page's top-left corner (not viewport
+    // pixels, not bottom-left PDF space) — the PDF stamping engine flips y against the
+    // actual page height read from the source PDF at render time.
     x: integer("x").notNull(),
     y: integer("y").notNull(),
     width: integer("width").notNull(),

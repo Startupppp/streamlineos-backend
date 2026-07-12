@@ -32,6 +32,12 @@ const TIERS: Record<string, Tier> = {
   "support:chat-widget": { limit: 60, windowSecs: 60 },
   "feedbucket:widget-submit": { limit: 10, windowSecs: 60 },
   "feedbucket:widget-config": { limit: 60, windowSecs: 60 },
+  "sign:public-session": { limit: 60, windowSecs: 60 },
+  "sign:public-auth": { limit: 10, windowSecs: 60 },
+  "sign:public-otp-request": { limit: 5, windowSecs: 3600 },
+  "sign:public-complete": { limit: 10, windowSecs: 60 },
+  "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
+  "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
