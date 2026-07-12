@@ -215,7 +215,12 @@ export const recurrenceRuleSchema = z.object({
 export type RecurrenceRuleInput = z.infer<typeof recurrenceRuleSchema>;
 
 export const createTicketSchema = z.object({
-  title: z.string().min(1).max(500).trim(),
+  title: z
+    .string()
+    .trim()
+    .min(3, "Title must be at least 3 characters")
+    .max(500)
+    .refine((v) => /[a-zA-Z0-9]/.test(v), { message: "Title must contain at least one letter or number" }),
   description: z.string().optional(),
   type: z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]).default("TASK"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),

@@ -3454,6 +3454,9 @@ const EMPLOYEE_SELF_SERVICE = [
   "onboarding:tours:view",
   "hr:onboarding:tasks:view",
   "hr:onboarding:tasks:complete",
+  "timesheets:entries:view",
+  "timesheets:entries:create",
+  "timesheets:entries:update",
 ];
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);

@@ -23,7 +23,7 @@ const meetingTitleUpdateSchema = z
 export const recurrenceRuleSchema = z.object({
   frequency: z.enum(["daily", "weekly", "biweekly", "custom"]),
   weekdays: z.array(z.number().int().min(0).max(6)).optional(),
-  endDate: z.coerce.date().optional(),
+  endDate: z.string().optional(),
   occurrences: z.number().int().positive().optional(),
 });
 
