@@ -42,7 +42,16 @@ export const updateSchema = z.object({
   lineItems: z.array(lineItemSchema).optional(),
 });
 
+export const approveRejectSchema = z.object({
+  reason: z.string().optional(),
+});
+export const markSignedSchema = z.object({
+  documentRef: z.string().optional(),
+});
+
 export type ListInput = z.infer<typeof listSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
+export type ApproveRejectInput = z.infer<typeof approveRejectSchema>;
+export type MarkSignedInput = z.infer<typeof markSignedSchema>;

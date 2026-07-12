@@ -1,4 +1,4 @@
-
+﻿
 import { pgEnum } from "drizzle-orm/pg-core";
 
 export const ticketTypeEnum = pgEnum("ticket_type", ["EPIC", "STORY", "TASK", "BUG"]);
@@ -15,7 +15,7 @@ export const viewLayoutEnum = pgEnum("view_layout", ["board", "list", "table", "
 
 export const leaveStatusEnum = pgEnum("leave_status", ["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
 export const payrollStatusEnum = pgEnum("payroll_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PAID"]);
-export const expenseStatusEnum = pgEnum("expense_status", ["PENDING", "APPROVED", "REJECTED", "PAID"]);
+export const expenseStatusEnum = pgEnum("expense_status", ["DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID"]);
 export const assetStatusEnum = pgEnum("asset_status", ["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]);
 export const documentTypeEnum = pgEnum("document_type", ["CONTRACT", "CERTIFICATE", "ID_PROOF", "PAYSLIP", "POLICY", "OFFER_LETTER", "RESUME", "OTHER"]);
 export const reviewStatusEnum = pgEnum("review_status", ["DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"]);
@@ -40,13 +40,8 @@ export const onboardingDocStatusEnum = pgEnum("onboarding_doc_status", ["PENDING
 export const onboardingDocumentStatusEnum = pgEnum("onboarding_document_status", ["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]);
 export const docAuditActionEnum = pgEnum("doc_audit_action", ["UPLOADED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED", "RE_UPLOADED"]);
 
-export const leadPipelineStatusEnum = pgEnum("lead_pipeline_status", ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"]);
-export const leadActivityTypeEnum = pgEnum("lead_activity_type", ["call", "email", "whatsapp", "meeting", "site_visit"]);
-export const leadSourceEnum = pgEnum("lead_source", ["referral", "campaign", "cold_call", "website", "social_media", "walk_in", "other"]);
-export const leadPriorityEnum = pgEnum("lead_priority", ["HOT", "WARM", "COLD"]);
 export const leadEmailDirectionEnum = pgEnum("lead_email_direction", ["sent", "received"]);
 export const leadTaskStatusEnum = pgEnum("lead_task_status", ["open", "done"]);
-export const dealStageEnum = pgEnum("deal_stage", ["LEAD", "CONTACTED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"]);
 export const dealActivityTypeEnum = pgEnum("deal_activity_type", ["stage_change", "note", "call", "email", "meeting", "document"]);
 export const clientAccountStatusEnum = pgEnum("client_account_status", ["ACCOUNT_OPENING", "QUERIES", "PLAN_SELECTED", "INVESTED"]);
 export const incentiveStatusEnum = pgEnum("incentive_status", ["PENDING", "APPROVED", "REJECTED", "ADDED_TO_PAYROLL"]);
@@ -91,7 +86,7 @@ export const notificationChannelEnum = pgEnum("notification_channel", [
   "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
 ]);
 
-// Delivery engine (notifications) — one row per channel per recipient tracks its full lifecycle.
+// Delivery engine (notifications) â€” one row per channel per recipient tracks its full lifecycle.
 export const notificationDeliveryStatusEnum = pgEnum("notification_delivery_status", [
   "PENDING", "QUEUED", "SENDING", "SENT", "DELIVERED", "READ", "CLICKED",
   "FAILED", "BOUNCED", "SUPPRESSED", "CANCELLED", "DEAD",
@@ -113,7 +108,7 @@ export const notificationSuppressionReasonEnum = pgEnum("notification_suppressio
   "NO_PROVIDER", "CONSENT_MISSING", "CHANNEL_DISABLED", "COST_LIMIT",
 ]);
 
-export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "ISSUED", "PAID", "FAILED", "VOIDED"]);
+export const invoiceStatusEnum = pgEnum("invoice_status", ["DRAFT", "ISSUED", "SENT", "PARTIALLY_PAID", "OVERDUE", "PAID", "FAILED", "VOIDED"]);
 
 export const supportTicketStatusEnum = pgEnum("support_ticket_status", ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"]);
 export const supportTicketPriorityEnum = pgEnum("support_ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
@@ -133,7 +128,7 @@ export const taskStatusEnum = pgEnum("task_status", ["pending", "completed", "ca
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["draft", "published", "archived"]);
 
 export const accountTypeEnum = pgEnum("account_type", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
-export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "POSTED", "VOID"]);
+export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "PENDING_APPROVAL", "POSTED", "VOID"]);
 
 export const invProductStatusEnum = pgEnum("inv_product_status", ["ACTIVE", "INACTIVE", "DISCONTINUED"]);
 export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]);
@@ -264,7 +259,7 @@ export const payrollLoanAdjustmentTypeEnum = pgEnum("payroll_loan_adjustment_typ
   "SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST",
 ]);
 
-// Onboarding Flow (org setup / module checklists / guided tours) — see onboarding.ts.
+// Onboarding Flow (org setup / module checklists / guided tours) â€” see onboarding.ts.
 // Named "onboarding_flow_*" to avoid colliding with the pre-existing HR employee
 // onboarding tables (onboarding_templates, onboarding_template_steps, onboarding_tasks,
 // onboarding_steps) which remain in hr/offboarding.ts and auth.ts unchanged.
@@ -304,7 +299,7 @@ export const guidedTourProgressStatusEnum = pgEnum("guided_tour_progress_status"
 
 // Payment provider setup (12_Payment_Integration_Setup_Page.md). Deliberately separate from
 // the existing subscriptions/subscription_payments (and platform_subscriptions/platform_payments)
-// tables in shared.ts/platform.ts — those are StreamlineOS billing tenants for their own SaaS
+// tables in shared.ts/platform.ts â€” those are StreamlineOS billing tenants for their own SaaS
 // plan; this system is for tenants connecting their own Razorpay/Stripe account to charge their
 // own customers. See payment-providers.ts.
 export const paymentEnvironmentEnum = pgEnum("payment_environment", ["test", "live"]);
@@ -369,3 +364,4 @@ export const invWebhookEventStatusEnum = pgEnum("inv_webhook_event_status", ["PE
 export const invReservationStrategyEnum = pgEnum("inv_reservation_strategy", ["MANUAL", "AUTO_ON_CONFIRM", "FEFO", "FIFO"]);
 export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN", "ALLOW"]);
 export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "ACKNOWLEDGED", "DISMISSED"]);
+

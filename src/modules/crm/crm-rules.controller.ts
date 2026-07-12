@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CrmRulesService } from "./crm-rules.service";
 import {
+  assignmentPreviewSchema,
   assignmentReorderSchema,
   assignmentRuleCreateSchema,
   assignmentRuleUpdateSchema,
@@ -26,6 +27,7 @@ import {
   emailTemplateUpdateSchema,
   scoringRuleCreateSchema,
   scoringRuleUpdateSchema,
+  type AssignmentPreviewInput,
   type AssignmentReorderInput,
   type AssignmentRuleCreateInput,
   type AssignmentRuleUpdateInput,
@@ -46,6 +48,15 @@ export class CrmRulesController {
   @RequirePermission("crm:assignment-rules:manage")
   listAssignmentRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listAssignmentRules(u.orgId);
+  }
+
+  @Post("assignment-rules/preview")
+  @RequirePermission("crm:assignment-rules:manage")
+  previewAssignment(
+    @Body(new ZodValidationPipe(assignmentPreviewSchema)) body: AssignmentPreviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.rules.preview(u.orgId, body.sampleLead);
   }
 
   @Post("assignment-rules")

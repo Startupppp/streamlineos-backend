@@ -26,6 +26,11 @@ export class CrmSlaService {
             priority: crmSla.priority,
             firstResponseHours: crmSla.firstResponseHours,
             resolutionHours: crmSla.resolutionHours,
+            conditions: crmSla.conditions,
+            targetMinutes: crmSla.targetMinutes,
+            businessHours: crmSla.businessHours,
+            appliesToText: crmSla.appliesToText,
+            priorityText: crmSla.priorityText,
             createdAt: crmSla.createdAt,
           })
           .from(crmSla)
@@ -37,6 +42,8 @@ export class CrmSlaService {
   }
 
   async createPolicy(orgId: string, input: SlaPolicyCreateInput) {
+    const targetMinutes = input.targetMinutes ?? input.firstResponseHours * 60;
+
     const [policy] = await this.db
       .insert(crmSla)
       .values({
@@ -46,19 +53,31 @@ export class CrmSlaService {
         priority: input.priority,
         firstResponseHours: input.firstResponseHours,
         resolutionHours: input.resolutionHours,
+        conditions: input.conditions ?? {},
+        targetMinutes,
+        businessHours: input.businessHours ?? false,
+        appliesToText: input.appliesToText ?? null,
+        priorityText: input.priorityText ?? null,
       })
       .returning();
     await this.cache.invalidatePattern(`crm:sla-policies:${orgId}*`);
     return policy;
   }
 
-  updatePolicy(orgId: string, id: number, input: SlaPolicyUpdateInput) {
-    return this.db
+  async updatePolicy(orgId: string, id: number, input: SlaPolicyUpdateInput) {
+    const updates: Record<string, unknown> = { ...input };
+
+    if (input.firstResponseHours && !input.targetMinutes) {
+      updates.targetMinutes = input.firstResponseHours * 60;
+    }
+
+    const [updated] = await this.db
       .update(crmSla)
-      .set(input)
+      .set(updates)
       .where(and(eq(crmSla.id, id), eq(crmSla.orgId, orgId)))
-      .returning()
-      .then((rows) => rows[0]);
+      .returning();
+    await this.cache.invalidatePattern(`crm:sla-policies:${orgId}*`);
+    return updated;
   }
 
   async deletePolicy(orgId: string, id: number) {

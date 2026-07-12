@@ -83,6 +83,14 @@ export const recordPaymentSchema = z.object({
   paymentMethod: z.enum(["bank_transfer", "upi", "cheque", "cash", "card", "other"]),
   referenceNumber: z.string().optional(),
   notes: z.string().optional(),
+  allocations: z
+    .array(
+      z.object({
+        invoiceId: z.number().int().positive(),
+        amount: z.number().positive(),
+      }),
+    )
+    .optional(),
 });
 
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;

@@ -27,10 +27,14 @@ import {
   exportSchema,
   listSchema,
   updateSchema,
+  approveRejectSchema,
+  markSignedSchema,
   type CreateInput,
   type ExportInput,
   type ListInput,
   type UpdateInput,
+  type ApproveRejectInput,
+  type MarkSignedInput,
 } from "./dto/quote.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -119,5 +123,43 @@ export class QuotesController {
     if (!result) throw new NotFoundException("Quote not found");
     if (isSendNotDraft(result)) throw new BadRequestException("Only draft quotes can be sent");
     return result;
+  }
+
+  @Post(":quoteId/approve")
+  @RequirePermission("crm:quotes:approve")
+  async approve(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.quotes.approve(u.orgId, u.userId, quoteId);
+  }
+
+  @Post(":quoteId/reject")
+  @RequirePermission("crm:quotes:approve")
+  async reject(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @Body(new ZodValidationPipe(approveRejectSchema)) body: ApproveRejectInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.quotes.reject(u.orgId, u.userId, quoteId, body.reason);
+  }
+
+  @Post(":quoteId/convert-to-invoice")
+  @RequirePermission("crm:quotes:create")
+  async convertToInvoice(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.quotes.convertToInvoice(u.orgId, u.userId, quoteId);
+  }
+
+  @Post(":quoteId/mark-signed")
+  @RequirePermission("crm:quotes:update")
+  async markSigned(
+    @Param("quoteId", ParseIntPipe) quoteId: number,
+    @Body(new ZodValidationPipe(markSignedSchema)) body: MarkSignedInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.quotes.markSigned(u.orgId, u.userId, quoteId, body.documentRef);
   }
 }

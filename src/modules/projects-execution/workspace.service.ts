@@ -1,5 +1,5 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 import {
   intakeItems,
   pages,
@@ -203,12 +203,19 @@ export class IntakeService {
 export class ViewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listViews(orgId: string, projectId: number) {
+  listViews(orgId: string, userId: string, projectId: number) {
     return this.db
       .select()
       .from(projectViews)
-      .where(and(eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)))
-      .orderBy(desc(projectViews.isPinned), projectViews.name);
+      .where(
+        and(
+          eq(projectViews.projectId, projectId),
+          eq(projectViews.orgId, orgId),
+          or(eq(projectViews.visibility, "shared"), eq(projectViews.createdBy, userId)),
+        ),
+      )
+      .orderBy(desc(projectViews.isPinned), desc(projectViews.updatedAt))
+      .limit(100);
   }
 
   async createView(orgId: string, userId: string, projectId: number, input: CreateViewInput) {
@@ -224,25 +231,115 @@ export class ViewsService {
         orderBy: input.orderBy,
         layoutType: input.layoutType,
         isPinned: input.isPinned,
+        visibility: input.visibility,
+        displayOptions: input.displayOptions,
+        scope: "project",
       })
       .returning();
     return view;
   }
 
-  async updateView(orgId: string, viewId: number, input: UpdateViewInput) {
+  async updateView(orgId: string, userId: string, viewId: number, input: UpdateViewInput) {
+    const existing = await this.db.query.projectViews.findFirst({
+      where: and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)),
+      columns: { id: true, createdBy: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundException("View not found");
+    if (existing.createdBy !== userId && existing.visibility !== "shared") {
+      throw new ForbiddenException("Cannot mutate a private view you do not own");
+    }
     const [updated] = await this.db
       .update(projectViews)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)))
+      .where(eq(projectViews.id, viewId))
       .returning();
-    if (!updated) throw new NotFoundException("View not found");
     return updated;
   }
 
-  async deleteView(orgId: string, viewId: number) {
-    await this.db
-      .delete(projectViews)
-      .where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)));
+  async deleteView(orgId: string, userId: string, viewId: number) {
+    const existing = await this.db.query.projectViews.findFirst({
+      where: and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)),
+      columns: { id: true, createdBy: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundException("View not found");
+    if (existing.createdBy !== userId && existing.visibility !== "shared") {
+      throw new ForbiddenException("Cannot delete a private view you do not own");
+    }
+    await this.db.delete(projectViews).where(eq(projectViews.id, viewId));
+    return { success: true };
+  }
+
+  listWorkspaceViews(orgId: string, userId: string) {
+    return this.db
+      .select()
+      .from(projectViews)
+      .where(
+        and(
+          eq(projectViews.orgId, orgId),
+          eq(projectViews.scope, "workspace"),
+          or(eq(projectViews.visibility, "shared"), eq(projectViews.createdBy, userId)),
+        ),
+      )
+      .orderBy(desc(projectViews.isPinned), desc(projectViews.updatedAt))
+      .limit(100);
+  }
+
+  async createWorkspaceView(orgId: string, userId: string, input: CreateViewInput) {
+    const [view] = await this.db
+      .insert(projectViews)
+      .values({
+        projectId: null,
+        orgId,
+        createdBy: userId,
+        name: input.name,
+        filters: input.filters,
+        groupBy: input.groupBy,
+        orderBy: input.orderBy,
+        layoutType: input.layoutType,
+        isPinned: input.isPinned,
+        visibility: input.visibility,
+        displayOptions: input.displayOptions,
+        scope: "workspace",
+      })
+      .returning();
+    return view;
+  }
+
+  async updateWorkspaceView(orgId: string, userId: string, viewId: number, input: UpdateViewInput) {
+    const existing = await this.db.query.projectViews.findFirst({
+      where: and(
+        eq(projectViews.id, viewId),
+        eq(projectViews.orgId, orgId),
+        eq(projectViews.scope, "workspace"),
+      ),
+      columns: { id: true, createdBy: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundException("Workspace view not found");
+    if (existing.createdBy !== userId && existing.visibility !== "shared") {
+      throw new ForbiddenException("Cannot mutate a private view you do not own");
+    }
+    const [updated] = await this.db
+      .update(projectViews)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(projectViews.id, viewId))
+      .returning();
+    return updated;
+  }
+
+  async deleteWorkspaceView(orgId: string, userId: string, viewId: number) {
+    const existing = await this.db.query.projectViews.findFirst({
+      where: and(
+        eq(projectViews.id, viewId),
+        eq(projectViews.orgId, orgId),
+        eq(projectViews.scope, "workspace"),
+      ),
+      columns: { id: true, createdBy: true, visibility: true },
+    });
+    if (!existing) throw new NotFoundException("Workspace view not found");
+    if (existing.createdBy !== userId && existing.visibility !== "shared") {
+      throw new ForbiddenException("Cannot delete a private view you do not own");
+    }
+    await this.db.delete(projectViews).where(eq(projectViews.id, viewId));
     return { success: true };
   }
 }

@@ -1,11 +1,10 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
   projectReleases,
   releaseTickets,
-  tickets,
   projects,
 } from "../../db/schema";
 import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
@@ -15,12 +14,29 @@ export class ProjectsReleasesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listReleases(orgId: string, projectId: number) {
-    const rows = await this.db.query.projectReleases.findMany({
-      where: and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId)),
-      with: { tickets: true },
-      orderBy: (r, { desc }) => [desc(r.createdAt)],
-    });
-    return rows.map((r) => ({ ...r, ticketCount: r.tickets.length }));
+    const rows = await this.db
+      .select({
+        id: projectReleases.id,
+        orgId: projectReleases.orgId,
+        projectId: projectReleases.projectId,
+        name: projectReleases.name,
+        version: projectReleases.version,
+        description: projectReleases.description,
+        status: projectReleases.status,
+        releaseDate: projectReleases.releaseDate,
+        createdBy: projectReleases.createdBy,
+        createdAt: projectReleases.createdAt,
+        updatedAt: projectReleases.updatedAt,
+        ticketCount: sql<number>`CAST(
+          (SELECT COUNT(*) FROM ${releaseTickets} WHERE ${releaseTickets.releaseId} = ${projectReleases.id})
+          AS INT)`,
+      })
+      .from(projectReleases)
+      .where(and(eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId)))
+      .orderBy(sql`${projectReleases.createdAt} DESC`)
+      .limit(100);
+
+    return rows;
   }
 
   async createRelease(orgId: string, projectId: number, userId: string, data: CreateReleaseInput) {

@@ -116,6 +116,8 @@ export const crmOrganizations = pgTable("crm_organizations", {
   healthScore: integer("health_score"),
   parentId: integer("parent_id"),
   notes: text("notes"),
+  deletedAt: timestamp("deleted_at"),
+  mergedIntoId: integer("merged_into_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -141,6 +143,8 @@ export const contacts = pgTable("contacts", {
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
   dealId: integer("deal_id"),
   tags: jsonb("tags").$type<string[]>().default([]).notNull(),
+  deletedAt: timestamp("deleted_at"),
+  mergedIntoId: integer("merged_into_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

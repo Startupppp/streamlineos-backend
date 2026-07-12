@@ -1,12 +1,9 @@
 import { z } from "zod";
 
-const LEAD_STATUSES = ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"] as const;
-const LEAD_PRIORITIES = ["HOT", "WARM", "COLD"] as const;
-const LEAD_SOURCES = ["referral", "campaign", "cold_call", "website", "social_media", "walk_in", "other"] as const;
 const MERGE_FIELD_SIDES = ["winner", "loser"] as const;
 
 export const logActivitySchema = z.object({
-  type: z.enum(["call", "email", "whatsapp", "meeting", "site_visit"]),
+  type: z.string(),
   date: z.string(),
   duration: z.number().optional(),
   subject: z.string().optional(),
@@ -22,7 +19,7 @@ export const customDataSchema = z.object({
 });
 
 export const verifySchema = z.object({
-  priority: z.enum(LEAD_PRIORITIES).optional(),
+  priority: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -35,8 +32,8 @@ export const assignSchema = z.object({
 });
 
 export const transitionLeadStatusSchema = z.object({
-  status: z.enum(LEAD_STATUSES),
-  expectedStatus: z.enum(LEAD_STATUSES).optional(),
+  status: z.string(),
+  expectedStatus: z.string().optional(),
   lostReason: z.string().optional(),
   estimatedInvestment: z.string().optional(),
   conversionNotes: z.string().optional(),
@@ -68,8 +65,8 @@ export const topMergeSchema = z.object({
 export const bulkUpdateSchema = z.object({
   leadIds: z.array(z.number()).min(1),
   update: z.object({
-    status: z.enum(LEAD_STATUSES).optional(),
-    priority: z.enum(LEAD_PRIORITIES).optional(),
+    status: z.string().optional(),
+    priority: z.string().optional(),
     assignedToId: z.string().optional(),
   }),
 });
@@ -83,7 +80,7 @@ export const importRowSchema = z.object({
   email: z.string().optional().or(z.literal("")),
   phone: z.string().optional(),
   company: z.string().optional(),
-  source: z.enum(LEAD_SOURCES).optional(),
+  source: z.string().optional(),
   notes: z.string().optional(),
   city: z.string().optional(),
   designation: z.string().optional(),
@@ -92,7 +89,7 @@ export const importRowSchema = z.object({
   investmentInterest: z.string().optional(),
   whatsappNumber: z.string().optional(),
   website: z.string().optional(),
-  priority: z.enum(LEAD_PRIORITIES).optional(),
+  priority: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
 

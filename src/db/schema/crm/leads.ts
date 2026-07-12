@@ -1,7 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
-  leadPipelineStatusEnum, leadActivityTypeEnum, leadSourceEnum, leadPriorityEnum,
   leadEmailDirectionEnum, leadTaskStatusEnum, scoringOperatorEnum,
   assignmentRuleTypeEnum,
 } from "../enums";
@@ -15,10 +14,10 @@ export const leads = pgTable("leads", {
   email: text("email"),
   phone: text("phone"),
   whatsappNumber: text("whatsapp_number"),
-  source: leadSourceEnum("source").default("other").notNull(),
+  source: text("source").default("other").notNull(),
   campaignId: integer("campaign_id").references(() => crmCampaigns.id, { onDelete: "set null" }),
-  status: leadPipelineStatusEnum("status").default("NEW").notNull(),
-  priority: leadPriorityEnum("priority").default("WARM").notNull(),
+  status: text("status").default("NEW").notNull(),
+  priority: text("priority").default("WARM").notNull(),
   investmentInterest: decimal("investment_interest", { precision: 15, scale: 2 }),
   potentialValue: decimal("potential_value", { precision: 15, scale: 2 }),
   notes: text("notes"),
@@ -65,7 +64,7 @@ export const leadActivities = pgTable("lead_activities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
-  type: leadActivityTypeEnum("type").notNull(),
+  type: text("type").notNull(),
   date: timestamp("date").notNull(),
   duration: integer("duration"),
   subject: text("subject"),
@@ -137,6 +136,12 @@ export const leadScoringRules = pgTable("lead_scoring_rules", {
   index("idx_lead_scoring_rules_org").on(table.orgId),
 ]);
 
+export interface AssignmentConfig {
+  weights?: Record<string, number>;
+  leastLoadedWindowDays?: number;
+  fallbackUserId?: string;
+}
+
 export const leadAssignmentRules = pgTable("lead_assignment_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -147,6 +152,8 @@ export const leadAssignmentRules = pgTable("lead_assignment_rules", {
   roundRobinUserIds: jsonb("round_robin_user_ids").$type<string[]>().default([]),
   priority: integer("priority").notNull().default(0),
   isActive: boolean("is_active").default(true).notNull(),
+  config: jsonb("config").$type<AssignmentConfig>().default({}).notNull(),
+  assignmentTypeText: text("assignment_type_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_lead_assignment_rules_org").on(table.orgId),

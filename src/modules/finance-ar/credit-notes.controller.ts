@@ -1,0 +1,73 @@
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { CreditNotesService } from "./credit-notes.service";
+import {
+  createCreditNoteSchema,
+  listCreditNotesSchema,
+  applyCreditNoteSchema,
+  type CreateCreditNoteInput,
+  type ListCreditNotesQuery,
+  type ApplyCreditNoteInput,
+} from "./dto/finance-ar.schemas";
+
+@RequireModule("accounting")
+@Controller("accounting/credit-notes")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class CreditNotesController {
+  constructor(private readonly svc: CreditNotesService) {}
+
+  @Get()
+  @RequirePermission("accounting:credit-notes:read")
+  list(
+    @Query(new ZodValidationPipe(listCreditNotesSchema)) query: ListCreditNotesQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.list(u.orgId, query);
+  }
+
+  @Post()
+  @HttpCode(201)
+  @RequirePermission("accounting:credit-notes:create")
+  create(
+    @Body(new ZodValidationPipe(createCreditNoteSchema)) body: CreateCreditNoteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.create(u.orgId, u.userId, body);
+  }
+
+  @Get(":creditNoteId")
+  @RequirePermission("accounting:credit-notes:read")
+  get(
+    @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.get(u.orgId, creditNoteId);
+  }
+
+  @Post(":creditNoteId/post")
+  @HttpCode(200)
+  @RequirePermission("accounting:credit-notes:manage")
+  postNote(
+    @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.post(u.orgId, u.userId, creditNoteId);
+  }
+
+  @Post(":creditNoteId/apply")
+  @HttpCode(200)
+  @RequirePermission("accounting:credit-notes:manage")
+  apply(
+    @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
+    @Body(new ZodValidationPipe(applyCreditNoteSchema)) body: ApplyCreditNoteInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.apply(u.orgId, u.userId, creditNoteId, body);
+  }
+}

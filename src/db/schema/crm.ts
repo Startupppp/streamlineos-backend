@@ -1,6 +1,7 @@
 export * from "./crm/campaigns";
 export * from "./crm/leads";
 export * from "./crm/contacts";
+export * from "./crm/contact-roles";
 export * from "./crm/deals";
 export * from "./crm/billing";
 export * from "./crm/analytics";
@@ -9,3 +10,6 @@ export * from "./crm/nps";
 export * from "./crm/playbook";
 export * from "./crm/automation-rules";
 export * from "./crm/products";
+export * from "./crm/pricebooks";
+export * from "./crm/metadata";
+export * from "./crm/automation-studio";

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { cycles, modules, sprints, tickets, timesheets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -24,12 +24,52 @@ export class SprintsService {
     @Optional() private readonly webhooksDispatch: ProjectsWebhooksDispatchService | null,
   ) {}
 
-  listSprints(orgId: string, projectId: number) {
-    return this.db.query.sprints.findMany({
-      where: and(eq(sprints.orgId, orgId), eq(sprints.projectId, projectId)),
-      with: { tickets: { with: { assignee: true } } },
-      orderBy: [desc(sprints.startDate)],
-    });
+  async listSprints(orgId: string, projectId: number) {
+    const sprintList = await this.db
+      .select({
+        id: sprints.id,
+        orgId: sprints.orgId,
+        projectId: sprints.projectId,
+        name: sprints.name,
+        startDate: sprints.startDate,
+        endDate: sprints.endDate,
+        goal: sprints.goal,
+        status: sprints.status,
+      })
+      .from(sprints)
+      .where(and(eq(sprints.orgId, orgId), eq(sprints.projectId, projectId)))
+      .orderBy(desc(sprints.startDate))
+      .limit(100);
+
+    if (sprintList.length === 0) return [];
+
+    const sprintIds = sprintList.map((s) => s.id);
+    const ticketRows = await this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        points: tickets.points,
+        sprintId: tickets.sprintId,
+      })
+      .from(tickets)
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)));
+
+    const ticketsBySprintId = new Map<number, typeof ticketRows>();
+    for (const ticket of ticketRows) {
+      if (ticket.sprintId === null) continue;
+      const existing = ticketsBySprintId.get(ticket.sprintId);
+      if (existing) {
+        existing.push(ticket);
+      } else {
+        ticketsBySprintId.set(ticket.sprintId, [ticket]);
+      }
+    }
+
+    return sprintList.map((sprint) => ({
+      ...sprint,
+      tickets: ticketsBySprintId.get(sprint.id) ?? [],
+    }));
   }
 
   async createSprint(orgId: string, projectId: number, input: CreateSprintInput) {
@@ -127,13 +167,20 @@ export class SprintsService {
       return { date, points: idealPoints };
     });
 
-    const allTimeEntries = await this.db.query.timesheets.findMany({
-      where: and(
-        eq(timesheets.orgId, orgId),
-        sql`${timesheets.ticketId} IN (SELECT id FROM tickets WHERE sprint_id = ${sprintId})`,
-      ),
-      with: { ticket: true },
-    });
+    const allTimeEntries = await this.db
+      .select({
+        ticketId: timesheets.ticketId,
+        date: timesheets.date,
+      })
+      .from(timesheets)
+      .where(
+        and(
+          eq(timesheets.orgId, orgId),
+          gte(timesheets.date, formatDateOnly(startDate)),
+          lte(timesheets.date, formatDateOnly(endDate)),
+          sql`${timesheets.ticketId} IN (SELECT id FROM tickets WHERE sprint_id = ${sprintId})`,
+        ),
+      );
 
     const completedTickets = sprint.tickets.filter((t) => t.status === "DONE");
     const completedPointsByDate = new Map<string, number>();
@@ -174,7 +221,8 @@ export class CyclesService {
       .select()
       .from(cycles)
       .where(and(...conditions))
-      .orderBy(cycles.startDate);
+      .orderBy(cycles.startDate)
+      .limit(100);
 
     if (cycleList.length === 0) return [];
 
@@ -282,7 +330,8 @@ export class ModulesService {
       .select()
       .from(modules)
       .where(and(eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
-      .orderBy(modules.name);
+      .orderBy(asc(modules.name))
+      .limit(100);
 
     if (moduleList.length === 0) return [];
 
@@ -362,6 +411,7 @@ export class EpicsService {
       ),
       with: { assignee: true },
       orderBy: [desc(tickets.createdAt)],
+      limit: 100,
     });
   }
 

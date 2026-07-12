@@ -146,7 +146,7 @@ export class ViewsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.listViews(u.orgId, projectId);
+    return this.views.listViews(u.orgId, u.userId, projectId);
   }
 
   @Post()
@@ -167,7 +167,7 @@ export class ViewsController {
     @Body(new ZodValidationPipe(updateViewSchema)) body: UpdateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.updateView(u.orgId, viewId, body);
+    return this.views.updateView(u.orgId, u.userId, viewId, body);
   }
 
   @Delete(":viewId")
@@ -176,7 +176,49 @@ export class ViewsController {
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.deleteView(u.orgId, viewId);
+    return this.views.deleteView(u.orgId, u.userId, viewId);
+  }
+}
+
+@RequireModule("projects")
+@Controller("projects/views")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class WorkspaceViewsController {
+  constructor(private readonly views: ViewsService) {}
+
+  @Get()
+  @RequirePermission("projects:view")
+  listWorkspaceViews(@CurrentUser() u: CurrentUserContext) {
+    return this.views.listWorkspaceViews(u.orgId, u.userId);
+  }
+
+  @Post()
+  @HttpCode(201)
+  @RequirePermission("projects:workspace:manage")
+  createWorkspaceView(
+    @Body(new ZodValidationPipe(createViewSchema)) body: CreateViewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.views.createWorkspaceView(u.orgId, u.userId, body);
+  }
+
+  @Patch(":viewId")
+  @RequirePermission("projects:workspace:manage")
+  updateWorkspaceView(
+    @Param("viewId", ParseIntPipe) viewId: number,
+    @Body(new ZodValidationPipe(updateViewSchema)) body: UpdateViewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.views.updateWorkspaceView(u.orgId, u.userId, viewId, body);
+  }
+
+  @Delete(":viewId")
+  @RequirePermission("projects:workspace:manage")
+  deleteWorkspaceView(
+    @Param("viewId", ParseIntPipe) viewId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.views.deleteWorkspaceView(u.orgId, u.userId, viewId);
   }
 }
 

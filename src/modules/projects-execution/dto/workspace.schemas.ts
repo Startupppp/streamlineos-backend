@@ -36,6 +36,17 @@ export const intakeListQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative().optional(),
 });
 
+const MAX_DISPLAY_OPTIONS_BYTES = 8192;
+
+const displayOptionsSchema = z
+  .record(z.string(), z.unknown())
+  .default({})
+  .superRefine((val, ctx) => {
+    if (JSON.stringify(val).length > MAX_DISPLAY_OPTIONS_BYTES) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "displayOptions exceeds the 8KB limit" });
+    }
+  });
+
 export const createViewSchema = z.object({
   name: z.string().min(1).max(100),
   filters: z.record(z.string(), z.unknown()).default({}),
@@ -45,6 +56,8 @@ export const createViewSchema = z.object({
     .enum(["board", "list", "table", "calendar", "gantt"])
     .default("board"),
   isPinned: z.boolean().default(false),
+  visibility: z.enum(["private", "shared"]).default("shared"),
+  displayOptions: displayOptionsSchema,
 });
 
 export const updateViewSchema = z.object({
@@ -54,6 +67,15 @@ export const updateViewSchema = z.object({
   orderBy: z.string().nullable().optional(),
   layoutType: z.enum(["board", "list", "table", "calendar", "gantt"]).optional(),
   isPinned: z.boolean().optional(),
+  visibility: z.enum(["private", "shared"]).optional(),
+  displayOptions: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .superRefine((val, ctx) => {
+      if (val !== undefined && JSON.stringify(val).length > MAX_DISPLAY_OPTIONS_BYTES) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "displayOptions exceeds the 8KB limit" });
+      }
+    }),
 });
 
 export const createWhiteboardSchema = z.object({

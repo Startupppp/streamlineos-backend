@@ -1,0 +1,102 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs } from "../../db/schema";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { CreateBlueprintInput, UpdateBlueprintInput } from "./dto/blueprints.schemas";
+
+@Injectable()
+export class CrmBlueprintsService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async list(orgId: string) {
+    return this.db.select().from(crmBlueprints).where(eq(crmBlueprints.orgId, orgId));
+  }
+
+  async create(u: CurrentUserContext, input: CreateBlueprintInput) {
+    const [row] = await this.db.insert(crmBlueprints).values({ orgId: u.orgId, ...input }).returning();
+    void this.auditLog(u, "crm_blueprint.created", row!.id, { name: input.name, pipelineId: input.pipelineId });
+    return row;
+  }
+
+  async update(u: CurrentUserContext, blueprintId: string, input: UpdateBlueprintInput) {
+    await this.assertOwner(u.orgId, blueprintId);
+    const [row] = await this.db.update(crmBlueprints).set({ ...input, updatedAt: new Date() }).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, u.orgId))).returning();
+    if (!row) throw new NotFoundException("Blueprint not found");
+    void this.auditLog(u, "crm_blueprint.updated", blueprintId, input as Record<string, unknown>);
+    return row;
+  }
+
+  async delete(u: CurrentUserContext, blueprintId: string) {
+    await this.assertOwner(u.orgId, blueprintId);
+    await this.db.update(crmBlueprints).set({ isActive: false, updatedAt: new Date() }).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, u.orgId)));
+    void this.auditLog(u, "crm_blueprint.deleted", blueprintId, {});
+    return { success: true };
+  }
+
+  async testTransition(orgId: string, blueprintId: string, fromStageKey: string, toStageKey: string, record: Record<string, unknown>) {
+    const bp = await this.db.select({ pipelineId: crmBlueprints.pipelineId }).from(crmBlueprints).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, orgId))).limit(1).then((r) => r[0]);
+    if (!bp) throw new NotFoundException("Blueprint not found");
+    return this.assertTransitionAllowed(orgId, bp.pipelineId, fromStageKey, toStageKey, record, blueprintId);
+  }
+
+  async assertTransitionAllowed(
+    orgId: string,
+    pipelineId: string,
+    fromStageKey: string,
+    toStageKey: string,
+    record: Record<string, unknown>,
+    blueprintIdOverride?: string,
+  ): Promise<{ allowed: boolean; requiresApproval: boolean; missingFields: string[] }> {
+    const stage = await this.db.select({ allowedNextStageKeys: crmPipelineStages.allowedNextStageKeys }).from(crmPipelineStages).where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, pipelineId), eq(crmPipelineStages.key, fromStageKey), eq(crmPipelineStages.isActive, true))).limit(1).then((r) => r[0]);
+
+    if (!stage) return { allowed: true, requiresApproval: false, missingFields: [] };
+
+    const allowedKeys = stage.allowedNextStageKeys as string[] | null;
+    if (allowedKeys !== null && !allowedKeys.includes(toStageKey)) {
+      return { allowed: false, requiresApproval: false, missingFields: [] };
+    }
+
+    const blueprintCondition = blueprintIdOverride
+      ? and(eq(crmBlueprints.id, blueprintIdOverride), eq(crmBlueprints.orgId, orgId))
+      : and(eq(crmBlueprints.orgId, orgId), eq(crmBlueprints.pipelineId, pipelineId), eq(crmBlueprints.isActive, true));
+
+    const blueprint = await this.db.select({ id: crmBlueprints.id }).from(crmBlueprints).where(blueprintCondition).limit(1).then((r) => r[0]);
+
+    if (!blueprint) return { allowed: true, requiresApproval: false, missingFields: [] };
+
+    const transition = await this.db.select().from(crmBlueprintTransitions).where(and(eq(crmBlueprintTransitions.blueprintId, blueprint.id), eq(crmBlueprintTransitions.orgId, orgId), eq(crmBlueprintTransitions.fromStageKey, fromStageKey), eq(crmBlueprintTransitions.toStageKey, toStageKey))).limit(1).then((r) => r[0]);
+
+    if (!transition) return { allowed: true, requiresApproval: false, missingFields: [] };
+
+    const requiredFields = (transition.requiredFields as string[]) ?? [];
+    const missingFields = requiredFields.filter((f) => {
+      const v = record[f];
+      return v === null || v === undefined || v === "";
+    });
+
+    return {
+      allowed: missingFields.length === 0,
+      requiresApproval: Boolean(transition.requiresApproval),
+      missingFields,
+    };
+  }
+
+  private async assertOwner(orgId: string, blueprintId: string) {
+    const [b] = await this.db.select({ id: crmBlueprints.id }).from(crmBlueprints).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, orgId))).limit(1);
+    if (!b) throw new NotFoundException("Blueprint not found");
+    return b;
+  }
+
+  private auditLog(u: CurrentUserContext, action: string, targetId: string, metadata: Record<string, unknown>): Promise<void> {
+    return this.db.insert(auditLogs).values({
+      action,
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId,
+      targetType: "crm_blueprint",
+      metadata,
+    }).then(() => undefined);
+  }
+}

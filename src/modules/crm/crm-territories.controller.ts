@@ -22,9 +22,11 @@ import { CrmTerritoriesService } from "./crm-territories.service";
 import {
   territoryCreateSchema,
   territoryListSchema,
+  territoryPreviewSchema,
   territoryUpdateSchema,
   type TerritoryCreateInput,
   type TerritoryListInput,
+  type TerritoryPreviewInput,
   type TerritoryUpdateInput,
 } from "./dto/territories.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -42,6 +44,15 @@ export class CrmTerritoriesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.territories.list(u.orgId, query.limit);
+  }
+
+  @Post("preview")
+  @RequirePermission("crm:territories:manage")
+  preview(
+    @Body(new ZodValidationPipe(territoryPreviewSchema)) body: TerritoryPreviewInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.territories.preview(u.orgId, body.sample);
   }
 
   @Post()

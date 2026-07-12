@@ -132,6 +132,7 @@ export class ProjectsTicketSubresourcesService {
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)),
       with: { assignee: true },
+      limit: 200,
     });
   }
 
@@ -162,6 +163,7 @@ export class ProjectsTicketSubresourcesService {
         workItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
         relatedWorkItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
       },
+      limit: 200,
     });
 
     return relations.map((r) => {
@@ -219,6 +221,7 @@ export class ProjectsTicketSubresourcesService {
     return this.db.query.ticketWatchers.findMany({
       where: eq(ticketWatchers.ticketId, ticketId),
       with: { user: true },
+      limit: 200,
     });
   }
 
@@ -293,6 +296,7 @@ export class ProjectsTicketSubresourcesService {
       where: and(eq(ticketChecklists.ticketId, ticketId), eq(ticketChecklists.orgId, orgId)),
       with: { items: { orderBy: (i, { asc }) => [asc(i.order)] } },
       orderBy: (c, { asc }) => [asc(c.createdAt)],
+      limit: 100,
     });
   }
 
@@ -389,6 +393,7 @@ export class ProjectsTicketSubresourcesService {
       })
       .from(gitTicketLinks)
       .where(and(eq(gitTicketLinks.ticketId, ticketId), eq(gitTicketLinks.orgId, orgId)))
-      .orderBy(desc(gitTicketLinks.createdAt));
+      .orderBy(desc(gitTicketLinks.createdAt))
+      .limit(100);
   }
 }

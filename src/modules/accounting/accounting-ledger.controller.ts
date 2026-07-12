@@ -116,7 +116,7 @@ export class AccountingLedgerController {
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ledger.postJournalEntry(u.orgId, entryId);
+    return this.ledger.postJournalEntry(u.orgId, u.userId, entryId);
   }
 
   @Post("journal/:entryId/reverse")

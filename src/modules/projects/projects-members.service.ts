@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -33,7 +33,9 @@ export class ProjectsMembersService {
       })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
-      .where(eq(projectMembers.projectId, projectId));
+      .where(eq(projectMembers.projectId, projectId))
+      .orderBy(asc(projectMembers.joinedAt))
+      .limit(200);
   }
 
   async addMember(projectId: number, body: AddMemberInput, orgId: string, actorId: string) {
@@ -137,7 +139,8 @@ export class ProjectsMembersService {
   listLabels(orgId: string) {
     return this.db.query.ticketLabels.findMany({
       where: eq(ticketLabels.orgId, orgId),
-      orderBy: [desc(ticketLabels.createdAt)],
+      orderBy: [asc(ticketLabels.name)],
+      limit: 300,
     });
   }
 

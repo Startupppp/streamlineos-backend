@@ -1,14 +1,11 @@
 import { z } from "zod";
 
-const LEAD_STATUSES = ["NEW", "CONTACTED", "INTERESTED", "QUALIFIED", "CONVERTED", "LOST"] as const;
-const LEAD_PRIORITIES = ["HOT", "WARM", "COLD"] as const;
-const LEAD_SOURCES = ["referral", "campaign", "cold_call", "website", "social_media", "walk_in", "other"] as const;
 const LEAD_SORTABLE = ["name", "email", "company", "status", "priority", "source", "score", "potentialValue", "createdAt"] as const;
 
 export const listSchema = z.object({
-  status: z.enum(LEAD_STATUSES).optional(),
-  priority: z.enum(LEAD_PRIORITIES).optional(),
-  source: z.enum(LEAD_SOURCES).optional(),
+  status: z.string().optional(),
+  priority: z.string().optional(),
+  source: z.string().optional(),
   assignedToId: z.string().optional(),
   search: z.string().optional(),
   sortBy: z.enum(LEAD_SORTABLE).optional(),
@@ -24,7 +21,7 @@ export const createSchema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   whatsappNumber: z.string().optional(),
-  source: z.enum(LEAD_SOURCES).default("other"),
+  source: z.string().default("other"),
   campaignId: z.number().optional(),
   investmentInterest: z.string().optional(),
   potentialValue: z.string().optional(),
@@ -35,7 +32,7 @@ export const createSchema = z.object({
   referredBy: z.string().optional(),
   tags: z.array(z.string()).optional(),
   assignedToId: z.string().optional(),
-  priority: z.enum(LEAD_PRIORITIES).default("WARM"),
+  priority: z.string().default("WARM"),
 });
 
 export const updateSchema = z.object({
@@ -43,7 +40,7 @@ export const updateSchema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   whatsappNumber: z.string().optional(),
-  source: z.enum(LEAD_SOURCES).optional(),
+  source: z.string().optional(),
   campaignId: z.number().optional(),
   investmentInterest: z.string().optional(),
   potentialValue: z.string().optional(),
@@ -53,7 +50,7 @@ export const updateSchema = z.object({
   city: z.string().optional(),
   tags: z.array(z.string()).optional(),
   lostReason: z.string().optional(),
-  priority: z.enum(LEAD_PRIORITIES).optional(),
+  priority: z.string().optional(),
 });
 
 export const ingestSchema = z.object({

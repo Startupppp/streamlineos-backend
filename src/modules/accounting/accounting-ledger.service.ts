@@ -12,7 +12,9 @@ import type { DataScope } from "../access/access.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
+import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DraftLine } from "./journal-posting.service";
+import { FinancePostingService } from "./finance-posting.service";
 import {
   type CreateAccountInput,
   type CreateJournalEntryInput,
@@ -43,6 +45,8 @@ export class AccountingLedgerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
+    private readonly finPosting: FinancePostingService,
+    private readonly audit: AuditService,
   ) {}
 
   async listAccounts(orgId: string, query: ListAccountsQuery) {
@@ -131,9 +135,10 @@ export class AccountingLedgerService {
       }
     }
 
+    await this.finPosting.assertPeriodOpen(orgId, input.entryDate);
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
-    return this.db.transaction((tx) =>
+    const result = await this.db.transaction((tx) =>
       this.posting.persistJournalEntry(
         {
           orgId,
@@ -154,6 +159,18 @@ export class AccountingLedgerService {
         tx,
       ),
     );
+
+    this.audit.log({
+      action: "accounting.journal.create",
+      userId,
+      orgId,
+      resourceType: "journal_entry",
+      resourceId: String(result.id),
+      metadata: { entryNumber: result.entryNumber },
+      result: "SUCCESS",
+    });
+
+    return result;
   }
 
   async getJournalEntry(orgId: string, entryId: number) {
@@ -185,9 +202,9 @@ export class AccountingLedgerService {
     return { ...header, lines };
   }
 
-  async postJournalEntry(orgId: string, entryId: number) {
+  async postJournalEntry(orgId: string, userId: string, entryId: number) {
     const rows = await this.db
-      .select({ id: journalEntries.id, status: journalEntries.status })
+      .select({ id: journalEntries.id, status: journalEntries.status, entryDate: journalEntries.entryDate, entryNumber: journalEntries.entryNumber })
       .from(journalEntries)
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);
@@ -197,9 +214,15 @@ export class AccountingLedgerService {
     if (entry.status === "POSTED") throw new ConflictException("Entry is already posted");
     if (entry.status === "VOID") throw new ConflictException("Cannot post a voided entry");
 
+    await this.finPosting.assertPeriodOpen(orgId, entry.entryDate);
+
+    if (entry.status === "PENDING_APPROVAL") {
+      await this.finPosting.assertApprovalGranted(orgId, entryId);
+    }
+
     const updated = await this.db
       .update(journalEntries)
-      .set({ status: "POSTED", updatedAt: new Date() })
+      .set({ status: "POSTED", postedBy: userId, postedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .returning({
         id: journalEntries.id,
@@ -207,10 +230,23 @@ export class AccountingLedgerService {
         status: journalEntries.status,
       });
 
+    this.audit.log({
+      action: "accounting.journal.post",
+      userId,
+      orgId,
+      resourceType: "journal_entry",
+      resourceId: String(entryId),
+      metadata: { entryNumber: entry.entryNumber },
+      result: "SUCCESS",
+    });
+
     return updated[0];
   }
 
   async reverseJournalEntry(orgId: string, userId: string, entryId: number) {
+    const today = todayIsoDate();
+    await this.finPosting.assertPeriodOpen(orgId, today);
+
     const headerRows = await this.db
       .select()
       .from(journalEntries)
@@ -262,13 +298,23 @@ export class AccountingLedgerService {
 
     const persisted = await this.posting.persistJournalEntry({
       orgId,
-      entryDate: todayIsoDate(),
+      entryDate: today,
       description: `Reversing entry for ${original.entryNumber}`,
       sourceType: original.sourceType,
       sourceId: original.sourceId,
       sourceEvent: "reverse",
       createdBy: userId,
       lines: reversingLines,
+    });
+
+    this.audit.log({
+      action: "accounting.journal.reverse",
+      userId,
+      orgId,
+      resourceType: "journal_entry",
+      resourceId: String(entryId),
+      metadata: { reversalEntryId: persisted.id, reversalEntryNumber: persisted.entryNumber },
+      result: "SUCCESS",
     });
 
     return {

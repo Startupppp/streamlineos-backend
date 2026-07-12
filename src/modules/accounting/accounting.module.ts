@@ -4,13 +4,16 @@ import { AccountingStatementsController } from "./accounting-statements.controll
 import { AccountingPayablesReceivablesController } from "./accounting-payables-receivables.controller";
 import { AccountingGstController } from "./accounting-gst.controller";
 import { JournalPostingService } from "./journal-posting.service";
+import { FinancePostingService } from "./finance-posting.service";
 import { AccountingLedgerService } from "./accounting-ledger.service";
 import { AccountingStatementsService } from "./accounting-statements.service";
 import { AccountingPayablesService } from "./accounting-payables.service";
 import { AccountingReceivablesService } from "./accounting-receivables.service";
 import { AccountingGstService } from "./accounting-gst.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [
     AccountingLedgerController,
     AccountingStatementsController,
@@ -19,12 +22,13 @@ import { AccountingGstService } from "./accounting-gst.service";
   ],
   providers: [
     JournalPostingService,
+    FinancePostingService,
     AccountingLedgerService,
     AccountingStatementsService,
     AccountingPayablesService,
     AccountingReceivablesService,
     AccountingGstService,
   ],
-  exports: [JournalPostingService],
+  exports: [JournalPostingService, FinancePostingService],
 })
 export class AccountingModule {}

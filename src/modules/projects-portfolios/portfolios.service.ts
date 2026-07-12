@@ -72,7 +72,8 @@ export class PortfoliosService {
           isNull(projectPortfolios.deletedAt),
           query.status ? eq(projectPortfolios.status, query.status) : undefined,
         ),
-      );
+      )
+      .limit(100);
   }
 
   async getPortfolio(orgId: string, portfolioId: number) {
@@ -86,7 +87,8 @@ export class PortfoliosService {
       })
       .from(portfolioProjects)
       .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
-      .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)));
+      .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)))
+      .limit(100);
     const programs = await this.db
       .select({
         id: projectPrograms.id,
@@ -100,7 +102,8 @@ export class PortfoliosService {
           eq(projectPrograms.orgId, orgId),
           isNull(projectPrograms.deletedAt),
         ),
-      );
+      )
+      .limit(100);
     return { ...portfolio, projects: linkedProjects, programs };
   }
 

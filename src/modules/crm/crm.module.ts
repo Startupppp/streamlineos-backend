@@ -8,6 +8,7 @@ import { CrmRulesController } from "./crm-rules.controller";
 import { CrmDashboardsController } from "./crm-dashboards.controller";
 import { CrmAutomationsController } from "./crm-automations.controller";
 import { CrmProductsController } from "./crm-products.controller";
+import { CrmCustomer360Controller } from "./crm-customer360.controller";
 import { CrmOrganizationsService } from "./crm-organizations.service";
 import { CrmPeopleService } from "./crm-people.service";
 import { CrmSlaService } from "./crm-sla.service";
@@ -18,6 +19,10 @@ import { CrmSalesDashboardService } from "./crm-sales-dashboard.service";
 import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
 import { CrmAutomationsService } from "./crm-automations.service";
 import { CrmProductsService } from "./crm-products.service";
+import { CrmOrgMergeService } from "./crm-org-merge.service";
+import { CrmCustomer360Service } from "./crm-customer360.service";
+import { TerritoryMatchService } from "./territory-match.service";
+import { SlaResolverService } from "./sla-resolver.service";
 
 @Module({
   controllers: [
@@ -30,6 +35,7 @@ import { CrmProductsService } from "./crm-products.service";
     CrmDashboardsController,
     CrmAutomationsController,
     CrmProductsController,
+    CrmCustomer360Controller,
   ],
   providers: [
     CrmOrganizationsService,
@@ -42,6 +48,10 @@ import { CrmProductsService } from "./crm-products.service";
     CrmSupportDashboardService,
     CrmAutomationsService,
     CrmProductsService,
+    CrmOrgMergeService,
+    CrmCustomer360Service,
+    TerritoryMatchService,
+    SlaResolverService,
   ],
 })
 export class CrmModule {}

@@ -42,11 +42,18 @@ export const invoices = pgTable("invoices", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  amountPaid: decimal("amount_paid", { precision: 18, scale: 4 }).default("0").notNull(),
+  exchangeRate: decimal("exchange_rate", { precision: 18, scale: 8 }).default("1").notNull(),
+  collectionOwnerId: text("collection_owner_id").references(() => users.id),
+  promiseToPayDate: date("promise_to_pay_date"),
+  nextReminderAt: timestamp("next_reminder_at"),
+  recurringTemplateId: integer("recurring_template_id"),
 }, (table) => [
   index("idx_invoices_org_status").on(table.orgId, table.status),
   index("idx_invoices_client").on(table.clientId),
   index("idx_invoices_project").on(table.projectId),
   index("idx_invoices_due_date").on(table.dueDate),
+  index("idx_invoices_collection_owner").on(table.collectionOwnerId),
 ]);
 
 export const invoiceItems = pgTable("invoice_items", {
@@ -106,6 +113,10 @@ export const purchaseBills = pgTable("purchase_bills", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  exchangeRate: decimal("exchange_rate", { precision: 18, scale: 8 }).default("1").notNull(),
+  approvedBy: text("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  recurringTemplateId: integer("recurring_template_id"),
 }, (table) => [
   index("idx_purchase_bills_org_status").on(table.orgId, table.status),
   index("idx_purchase_bills_vendor").on(table.vendorId),
@@ -150,10 +161,6 @@ export const supportTickets = pgTable("support_tickets", {
   title: text("title").notNull(),
   category: text("category"),
   description: text("description"),
-  // For channel-sourced tickets (email etc) where createdBy is attributed to
-  // the channel's owner rather than the actual external requester — see
-  // support-channels.service.ts. Null for normal agent/portal-created tickets
-  // where createdBy already identifies the real requester.
   requesterEmail: text("requester_email"),
   requesterName: text("requester_name"),
   status: supportTicketStatusEnum("status").default("OPEN").notNull(),
@@ -166,11 +173,7 @@ export const supportTickets = pgTable("support_tickets", {
   slaEscalationLevel: integer("sla_escalation_level").default(0).notNull(),
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
-  // Not a Drizzle-level FK to support_queues to avoid a circular import between
-  // this file and db/schema/support/support-workspace.ts; validated at the service layer.
   queueId: integer("queue_id"),
-  // Self-referential; plain column (no .references()) to avoid Drizzle self-reference
-  // typing gymnastics. Validated at the service layer.
   mergedIntoTicketId: integer("merged_into_ticket_id"),
   snoozedUntil: timestamp("snoozed_until"),
   snoozedBy: text("snoozed_by").references(() => users.id),
@@ -232,12 +235,22 @@ export const quotes = pgTable("quotes", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  pricebookId: text("pricebook_id"),
+  templateId: text("template_id"),
+  approvalStatus: text("approval_status").$type<"pending" | "approved" | "rejected">(),
+  approvedById: text("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  signedAt: timestamp("signed_at"),
+  signedDocumentRef: text("signed_document_ref"),
+  convertedInvoiceId: integer("converted_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_quotes_org_status").on(table.orgId, table.status),
   index("idx_quotes_deal").on(table.dealId),
   index("idx_quotes_client").on(table.clientId),
   index("idx_quotes_created_by").on(table.createdById),
   uniqueIndex("idx_quotes_number").on(table.orgId, table.quoteNumber),
+  index("idx_quotes_pricebook").on(table.pricebookId),
+  index("idx_quotes_converted_invoice").on(table.convertedInvoiceId),
 ]);
 
 export const quoteLineItems = pgTable("quote_line_items", {
@@ -256,7 +269,8 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   organization: one(organizations, { fields: [invoices.orgId], references: [organizations.id] }),
   client: one(clients, { fields: [invoices.clientId], references: [clients.id] }),
   project: one(projects, { fields: [invoices.projectId], references: [projects.id] }),
-  creator: one(users, { fields: [invoices.createdBy], references: [users.id] }),
+  creator: one(users, { fields: [invoices.createdBy], references: [users.id], relationName: "invoiceCreatedBy" }),
+  collectionOwner: one(users, { fields: [invoices.collectionOwnerId], references: [users.id], relationName: "invoiceCollectionOwner" }),
   payments: many(payments),
   items: many(invoiceItems),
 }));
@@ -274,7 +288,8 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
 export const purchaseBillsRelations = relations(purchaseBills, ({ one, many }) => ({
   organization: one(organizations, { fields: [purchaseBills.orgId], references: [organizations.id] }),
   vendor: one(clients, { fields: [purchaseBills.vendorId], references: [clients.id] }),
-  creator: one(users, { fields: [purchaseBills.createdBy], references: [users.id] }),
+  creator: one(users, { fields: [purchaseBills.createdBy], references: [users.id], relationName: "billCreatedBy" }),
+  approver: one(users, { fields: [purchaseBills.approvedBy], references: [users.id], relationName: "billApprovedBy" }),
   items: many(purchaseBillItems),
 }));
 

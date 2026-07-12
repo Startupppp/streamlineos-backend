@@ -5,6 +5,7 @@ import {
   reimbursementStatusEnum, loanStatusEnum, bonusTypeEnum, fnfStatusEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
+import { journalEntries } from "../accounting";
 import { projects } from "../projects";
 import { resignations } from "./offboarding";
 import { assets } from "./assets";
@@ -76,6 +77,9 @@ export const expenses = pgTable("expenses", {
   receiptUrl: text("receipt_url"),
   receiptFileName: text("receipt_file_name"),
   merchant: text("merchant"),
+  receiptNumber: text("receipt_number"),
+  receiptHash: text("receipt_hash"),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
   paymentMethod: text("payment_method"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   status: expenseStatusEnum("status").default("PENDING").notNull(),
@@ -84,6 +88,9 @@ export const expenses = pgTable("expenses", {
   rejectionReason: text("rejection_reason"),
   paidAt: timestamp("paid_at"),
   transactionRef: text("transaction_ref"),
+  reimbursementBatchId: integer("reimbursement_batch_id"),
+  postedJournalEntryId: integer("posted_journal_entry_id").references(() => journalEntries.id),
+  policyFlag: text("policy_flag"),
   expenseDate: date("expense_date").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -91,6 +98,7 @@ export const expenses = pgTable("expenses", {
   index("idx_expenses_user_id").on(table.userId),
   index("idx_expenses_org_status_date").on(table.orgId, table.status, table.expenseDate),
   index("idx_expenses_category").on(table.categoryId),
+  index("idx_expenses_org_receipt_hash").on(table.orgId, table.receiptHash),
 ]);
 
 export const reimbursements = pgTable("reimbursements", {
@@ -211,6 +219,7 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   approver: one(users, { fields: [expenses.approverId], references: [users.id], relationName: "expenseApprover" }),
   expenseCategory: one(expenseCategories, { fields: [expenses.categoryId], references: [expenseCategories.id] }),
   project: one(projects, { fields: [expenses.projectId], references: [projects.id] }),
+  postedJournalEntry: one(journalEntries, { fields: [expenses.postedJournalEntryId], references: [journalEntries.id] }),
 }));
 
 export const reimbursementsRelations = relations(reimbursements, ({ one }) => ({

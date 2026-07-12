@@ -119,6 +119,16 @@ export const crmEmailTemplates = pgTable("crm_email_templates", {
   index("idx_crm_email_templates_org").on(table.orgId),
 ]);
 
+export interface SlaConditions {
+  sourceKeys?: string[];
+  priorityKeys?: string[];
+  scoreMin?: number;
+  scoreMax?: number;
+  territoryIds?: number[];
+  segment?: string;
+  appliesToText?: string;
+}
+
 export const crmSla = pgTable("crm_sla_policies", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -127,6 +137,11 @@ export const crmSla = pgTable("crm_sla_policies", {
   priority: slaPriorityEnum("priority").notNull(),
   firstResponseHours: integer("first_response_hours").notNull(),
   resolutionHours: integer("resolution_hours").notNull(),
+  conditions: jsonb("conditions").$type<SlaConditions>().default({}).notNull(),
+  targetMinutes: integer("target_minutes"),
+  businessHours: boolean("business_hours").default(false).notNull(),
+  appliesToText: text("applies_to_text"),
+  priorityText: text("priority_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_sla_org").on(table.orgId),

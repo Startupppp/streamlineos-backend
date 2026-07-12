@@ -1,17 +1,20 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { territories } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { TerritoryCreateInput, TerritoryUpdateInput } from "./dto/territories.schemas";
+import { TerritoryMatchService } from "./territory-match.service";
+import type { SampleLead } from "./dto/territories.schemas";
 
 @Injectable()
 export class CrmTerritoriesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly territoryMatch: TerritoryMatchService,
   ) {}
 
   list(orgId: string, limit: number) {
@@ -27,11 +30,13 @@ export class CrmTerritoriesService {
             assignedReps: territories.assignedReps,
             description: territories.description,
             isActive: territories.isActive,
+            criteria: territories.criteria,
+            priority: territories.priority,
             createdAt: territories.createdAt,
           })
           .from(territories)
           .where(eq(territories.orgId, orgId))
-          .orderBy(territories.name)
+          .orderBy(desc(territories.priority), territories.name)
           .limit(limit),
       CACHE_TTL.MEDIUM,
     );
@@ -48,6 +53,8 @@ export class CrmTerritoriesService {
         assignedReps: input.assignedReps,
         description: input.description ?? null,
         isActive: input.isActive,
+        criteria: input.criteria ?? {},
+        priority: input.priority ?? 0,
         createdBy: userId,
       })
       .returning();
@@ -72,17 +79,27 @@ export class CrmTerritoriesService {
     return Boolean(row);
   }
 
-  update(orgId: string, id: number, input: TerritoryUpdateInput) {
-    return this.db
+  async update(orgId: string, id: number, input: TerritoryUpdateInput) {
+    const [updated] = await this.db
       .update(territories)
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(territories.id, id), eq(territories.orgId, orgId)))
-      .returning()
-      .then((rows) => rows[0]);
+      .returning();
+    await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
+    return updated;
   }
 
   async remove(orgId: string, id: number) {
     await this.db.delete(territories).where(and(eq(territories.id, id), eq(territories.orgId, orgId)));
+    await this.cache.invalidatePattern(`crm:territories:${orgId}:*`);
     return { success: true };
+  }
+
+  async preview(orgId: string, sample: SampleLead) {
+    const result = await this.territoryMatch.match(orgId, sample);
+    return {
+      matchedTerritory: result?.territory ?? null,
+      assignedReps: result?.assignedReps ?? [],
+    };
   }
 }

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
+import { CrmMetadataModule } from "../crm-metadata/crm-metadata.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -16,7 +17,7 @@ import { LeadsOpsService } from "./leads-ops.service";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,

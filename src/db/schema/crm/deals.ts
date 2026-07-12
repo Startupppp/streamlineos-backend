@@ -1,8 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
-  dealStageEnum, dealActivityTypeEnum, slaAppliesToEnum, slaPriorityEnum,
-  incentiveStatusEnum, taskEntityTypeEnum, taskTypeEnum, taskStatusEnum,
+  incentiveStatusEnum, taskEntityTypeEnum, taskStatusEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
 import { payrolls } from "../hr";
@@ -16,7 +15,7 @@ export const deals = pgTable("deals", {
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }).default("0").notNull(),
-  stage: dealStageEnum("stage").default("LEAD").notNull(),
+  stage: text("stage").default("LEAD").notNull(),
   probability: integer("probability").default(0).notNull(),
   contactPerson: text("contact_person"),
   contactEmail: text("contact_email"),
@@ -44,7 +43,7 @@ export const dealActivities = pgTable("deal_activities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
-  type: dealActivityTypeEnum("type").notNull(),
+  type: text("type").notNull(),
   previousValue: text("previous_value"),
   newValue: text("new_value"),
   subject: text("subject"),
@@ -238,8 +237,9 @@ export const tasks = pgTable("tasks", {
   notes: text("notes"),
   entityType: taskEntityTypeEnum("entity_type"),
   entityId: integer("entity_id"),
-  type: taskTypeEnum("type").notNull().default("CUSTOM"),
+  type: text("type").notNull().default("CUSTOM"),
   status: taskStatusEnum("status").notNull().default("pending"),
+  snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
   assigneeId: text("assignee_id").references(() => users.id),
   createdBy: text("created_by").references(() => users.id),
   dueDate: timestamp("due_date", { withTimezone: true }),
@@ -284,6 +284,17 @@ export const taskSequenceSteps = pgTable("task_sequence_steps", {
   order: integer("order").notNull().default(0),
 });
 
+export interface TerritoryCriteria {
+  countries?: string[];
+  states?: string[];
+  cities?: string[];
+  postalCodes?: string[];
+  industries?: string[];
+  companySizes?: string[];
+  productKeys?: string[];
+  accountTypes?: string[];
+}
+
 export const territories = pgTable("territories", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -293,11 +304,27 @@ export const territories = pgTable("territories", {
   assignedReps: integer("assigned_reps").array().default([]),
   description: text("description"),
   isActive: boolean("is_active").default(true).notNull(),
+  criteria: jsonb("criteria").$type<TerritoryCriteria>().default({}).notNull(),
+  priority: integer("priority").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("territories_org_id_idx").on(table.orgId),
+]);
+
+export const crmSlaBreachLog = pgTable("crm_sla_breach_log", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  leadId: integer("lead_id").notNull(),
+  policyId: integer("policy_id"),
+  breachedAt: timestamp("breached_at", { withTimezone: true }).defaultNow().notNull(),
+  taskCreated: boolean("task_created").default(false).notNull(),
+  notified: boolean("notified").default(false).notNull(),
+}, (table) => [
+  uniqueIndex("crm_sla_breach_log_lead_policy_unique").on(table.leadId, table.policyId),
+  index("idx_sla_breach_org_idx").on(table.orgId),
+  index("idx_sla_breach_lead_idx").on(table.leadId),
 ]);
 
 export const customFieldDefinitions = pgTable("custom_field_definitions", {

@@ -130,6 +130,9 @@ import { TimesheetsCoreModule } from "./modules/timesheets-core/timesheets-core.
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
 import { HrImportModule } from "./modules/hr-import/hr-import.module";
+import { CrmMetadataModule } from "./modules/crm-metadata/crm-metadata.module";
+import { CrmPricebooksModule } from "./modules/crm-pricebooks/crm-pricebooks.module";
+import { CrmInboxModule } from "./modules/crm-inbox/crm-inbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -166,6 +169,9 @@ import { MeService } from "./me/me.service";
     WebhooksModule,
     ClientsModule,
     CrmModule,
+    CrmMetadataModule,
+    CrmPricebooksModule,
+    CrmInboxModule,
     DashboardModule,
     PublicModule,
     RbacModule,

@@ -10,6 +10,7 @@ import {
   lt,
   count,
   inArray,
+  notInArray,
   isNotNull,
 } from "drizzle-orm";
 import {
@@ -18,7 +19,10 @@ import {
   deals,
   users,
   organizationMembers,
+  crmOptions,
+  crmPipelineStages,
 } from "../../db/schema";
+import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
   AnalyticsQuery,
   FollowUpsQuery,
@@ -54,21 +58,25 @@ export class LeadsReportsService {
     if (filters.dateTo)
       f.push(lte(leads.createdAt, new Date(filters.dateTo + "T23:59:59")));
 
-    const allLeadsData = await this.db.query.leads.findMany({
-      where: and(...f),
-      columns: {
-        id: true,
-        status: true,
-        source: true,
-        assignedToId: true,
-        createdAt: true,
-        potentialValue: true,
-      },
-    });
+    const [allLeadsData, statusOptions] = await Promise.all([
+      this.db.query.leads.findMany({
+        where: and(...f),
+        columns: {
+          id: true,
+          status: true,
+          source: true,
+          assignedToId: true,
+          createdAt: true,
+          potentialValue: true,
+        },
+      }),
+      this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
+    ]);
+    const semantics = resolveLeadStatusSemantics(statusOptions);
 
     const totalLeads = allLeadsData.length;
     const converted = allLeadsData.filter(
-      (l) => l.status === "CONVERTED",
+      (l) => semantics.convertedKeys.includes(l.status),
     ).length;
     const conversionRate =
       totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
@@ -87,13 +95,17 @@ export class LeadsReportsService {
     });
     const prevTotal = prevPeriodLeads.length;
     const prevConverted = prevPeriodLeads.filter(
-      (l) => l.status === "CONVERTED",
+      (l) => semantics.convertedKeys.includes(l.status),
     ).length;
     const prevConversionRate =
       prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
 
+    const wonStages = await this.db.select({ key: crmPipelineStages.key }).from(crmPipelineStages)
+      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.stageType, "won")));
+    const wonStageKeys = wonStages.length ? wonStages.map((s) => s.key) : ["WON"];
+
     const wonDeals = await this.db.query.deals.findMany({
-      where: and(eq(deals.orgId, orgId), eq(deals.stage, "WON")),
+      where: and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys)),
       columns: { value: true, createdAt: true },
     });
     const totalRevenue = wonDeals.reduce(
@@ -112,7 +124,7 @@ export class LeadsReportsService {
       const src = l.source ?? "other";
       const entry = sourceMap.get(src) || { total: 0, converted: 0 };
       entry.total++;
-      if (l.status === "CONVERTED") entry.converted++;
+      if (semantics.convertedKeys.includes(l.status)) entry.converted++;
       sourceMap.set(src, entry);
     }
     for (const [source, data] of sourceMap) {
@@ -174,6 +186,11 @@ export class LeadsReportsService {
   async getDashboardMetrics(orgId: string) {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
+    const statusOptions = await this.db.select().from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+    const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
+
     const [leadCounts, activityCounts, followUpCount] = await Promise.all([
       this.db
         .select({ status: leads.status, cnt: count() })
@@ -196,7 +213,7 @@ export class LeadsReportsService {
         .where(
           and(
             eq(leads.orgId, orgId),
-            sql`${leads.status} NOT IN ('CONVERTED','LOST')`,
+            notInArray(leads.status, terminalKeys),
             lt(leads.updatedAt, threeDaysAgo),
           ),
         )
@@ -208,8 +225,8 @@ export class LeadsReportsService {
     const byType: Record<string, number> = {};
     for (const r of activityCounts) byType[r.type] = r.cnt;
 
-    const activeClients = byStatus["CONVERTED"] ?? 0;
-    const inactiveClients = byStatus["LOST"] ?? 0;
+    const activeClients = semantics.convertedKeys.reduce((s, k) => s + (byStatus[k] ?? 0), 0);
+    const inactiveClients = semantics.lostKeys.reduce((s, k) => s + (byStatus[k] ?? 0), 0);
     const totalLeads = Object.values(byStatus).reduce((s, n) => s + n, 0);
 
     return {

@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, lte, sql } from "drizzle-orm";
-import { invoices, invoiceItems, payments, organizations, indianStates } from "../../db/schema";
+import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, journalEntries, journalLines, ledgerAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/journal-posting.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CreateInvoiceInput, RecordPaymentInput, UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
 const GST_RATES = [0, 5, 12, 18, 28] as const;
@@ -60,6 +61,7 @@ export class InvoicesWriteService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   private async resolveSupplierStateCode(orgId: string): Promise<string> {

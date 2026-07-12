@@ -19,13 +19,15 @@ import { EmailService } from "../email/email.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { appUrl } from "../email/app-url";
 import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
+import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
 
 export type TransitionLeadStatusResult =
   | { ok: true; lead: LeadRow }
-  | { ok: false; reason: "already_converted" | "stale_or_missing" };
+  | { ok: false; reason: "already_converted" | "stale_or_missing" | "lost_reason_required" };
 
 @Injectable()
 export class LeadStatusService {
@@ -35,7 +37,20 @@ export class LeadStatusService {
     private readonly audit: AuditService,
     private readonly dispatch: NotificationDispatchService,
     private readonly email: EmailService,
+    private readonly crmMetadata: CrmMetadataService,
   ) {}
+
+  private async getSemantics(orgId: string) {
+    const aggregate = await this.crmMetadata.getAggregate(orgId);
+    const statusOptions = aggregate.options.filter((o) => o.type === "lead_status");
+    return resolveLeadStatusSemantics(
+      statusOptions.map((o) => ({
+        key: o.key,
+        isTerminal: o.isTerminal ?? false,
+        metadata: o.metadata as Record<string, unknown> | null,
+      })),
+    );
+  }
 
   private async getNextCrmAssignee(orgId: string): Promise<string | null> {
     const csMembers = await this.db
@@ -267,13 +282,25 @@ export class LeadStatusService {
     leadId: number,
     input: TransitionLeadStatusInput,
   ): Promise<TransitionLeadStatusResult> {
-    if (input.status === "CONVERTED") {
+    const semantics = await this.getSemantics(orgId);
+    const isConverted = semantics.convertedKeys.includes(input.status);
+    const isLost = semantics.lostKeys.includes(input.status);
+
+    if (isConverted) {
       const existing = await this.db.query.leads.findFirst({
         where: and(eq(leads.id, leadId), eq(leads.orgId, orgId)),
         columns: { status: true },
       });
-      if (existing?.status === "CONVERTED") {
+      if (existing && semantics.convertedKeys.includes(existing.status)) {
         return { ok: false, reason: "already_converted" };
+      }
+    }
+
+    if (isLost && !input.lostReason) {
+      const aggregate = await this.crmMetadata.getAggregate(orgId);
+      const lostReasonOptions = aggregate.options.filter((o) => o.type === "lost_reason");
+      if (lostReasonOptions.length > 0) {
+        return { ok: false, reason: "lost_reason_required" };
       }
     }
 
@@ -281,9 +308,8 @@ export class LeadStatusService {
       status: input.status,
       updatedAt: new Date(),
     };
-    if (input.status === "CONVERTED") updateData.convertedAt = new Date();
-    if (input.status === "LOST" && input.lostReason)
-      updateData.lostReason = input.lostReason;
+    if (isConverted) updateData.convertedAt = new Date();
+    if (isLost && input.lostReason) updateData.lostReason = input.lostReason;
 
     const conditions = [eq(leads.id, leadId), eq(leads.orgId, orgId)];
     if (input.expectedStatus)
@@ -297,11 +323,16 @@ export class LeadStatusService {
 
     if (!updated) return { ok: false, reason: "stale_or_missing" };
 
-    if (input.status === "INTERESTED" || input.status === "QUALIFIED") {
+    const isQualifyingForDeal =
+      !semantics.convertedKeys.includes(input.status) &&
+      !semantics.lostKeys.includes(input.status) &&
+      semantics.activeKeys.indexOf(input.status) >= 2;
+
+    if (isQualifyingForDeal) {
       await this.ensureDealForLead(orgId, updated);
     }
 
-    if (input.status === "CONVERTED") {
+    if (isConverted) {
       const crmAssigneeId = await this.getNextCrmAssignee(orgId);
       await this.convertLeadToClient(
         orgId,

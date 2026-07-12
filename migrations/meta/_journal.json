@@ -106,6 +106,97 @@
       "when": 1783200000003,
       "tag": "0150_payroll_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783200000100,
+      "tag": "0227_crm_metadata_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1783300000000,
+      "tag": "0230_crm_customer360",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783500000000,
+      "tag": "0239_crm_quote_to_cash",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783600000000,
+      "tag": "0248_crm_territories_sla",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783700000000,
+      "tag": "0232_crm_activities_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783800000000,
+      "tag": "0240_acc_core_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783800000001,
+      "tag": "0241_acc_journal_multicurrency",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783800000002,
+      "tag": "0242_fin_ar_ap",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1783800000003,
+      "tag": "0243_fin_banking",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783800000004,
+      "tag": "0244_fin_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783800000005,
+      "tag": "0245_fin_planning",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783800000006,
+      "tag": "0246_fin_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1783800000007,
+      "tag": "0247_fin_expenses",
+      "breakpoints": true
     }
   ]
 }

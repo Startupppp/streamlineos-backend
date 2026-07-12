@@ -20,6 +20,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CrmOrganizationsService } from "./crm-organizations.service";
+import { CrmOrgMergeService } from "./crm-org-merge.service";
 import {
   organizationCreateSchema,
   organizationListSchema,
@@ -28,13 +29,22 @@ import {
   type OrganizationListInput,
   type OrganizationUpdateInput,
 } from "./dto/organizations.schemas";
+import {
+  mergeOrgsSchema,
+  orgDuplicatesQuerySchema,
+  type MergeOrgsInput,
+  type OrgDuplicatesQueryInput,
+} from "./dto/org-merge.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("crm")
 @Controller("crm/organizations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmOrganizationsController {
-  constructor(private readonly orgs: CrmOrganizationsService) {}
+  constructor(
+    private readonly orgs: CrmOrganizationsService,
+    private readonly orgMerge: CrmOrgMergeService,
+  ) {}
 
   @Get()
   @RequirePermission("crm:organizations:view")
@@ -137,5 +147,24 @@ export class CrmOrganizationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.getAccountTimeline(u.orgId, organizationId);
+  }
+
+  @Get("duplicates")
+  @RequirePermission("crm:organizations:view")
+  getDuplicates(
+    @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgMerge.getDuplicateOrgs(u.orgId, query);
+  }
+
+  @Post("merge")
+  @HttpCode(200)
+  @RequirePermission("crm:organizations:merge")
+  mergeOrganizations(
+    @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgMerge.mergeOrganizations(u.orgId, body, u.userId);
   }
 }

@@ -1,0 +1,72 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  UseGuards,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccountingSettingsService } from "./accounting-settings.service";
+import {
+  updateSettingsSchema,
+  updateSequenceSchema,
+  SEQUENCE_ENTITY_TYPES,
+  type UpdateSettingsInput,
+  type UpdateSequenceInput,
+  type SequenceEntityType,
+} from "./dto/settings.schemas";
+import { BadRequestException } from "@nestjs/common";
+
+@RequireModule("accounting")
+@Controller("accounting/settings")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class AccountingSettingsController {
+  constructor(private readonly svc: AccountingSettingsService) {}
+
+  @Get()
+  @RequirePermission("accounting:settings:read")
+  getSettings(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.getSettings(u.orgId);
+  }
+
+  @Patch()
+  @RequirePermission("accounting:settings:manage")
+  updateSettings(
+    @Body(new ZodValidationPipe(updateSettingsSchema)) body: UpdateSettingsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.updateSettings(u, body);
+  }
+
+  @Get("setup-status")
+  @RequirePermission("accounting:settings:read")
+  getSetupStatus(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.getSetupStatus(u.orgId);
+  }
+
+  @Get("sequences")
+  @RequirePermission("accounting:settings:read")
+  listSequences(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.listSequences(u.orgId);
+  }
+
+  @Patch("sequences/:entityType")
+  @RequirePermission("accounting:settings:manage")
+  updateSequence(
+    @Param("entityType") entityType: string,
+    @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!(SEQUENCE_ENTITY_TYPES as readonly string[]).includes(entityType)) {
+      throw new BadRequestException(`Invalid entityType. Allowed: ${SEQUENCE_ENTITY_TYPES.join(", ")}`);
+    }
+    return this.svc.updateSequence(u, entityType as SequenceEntityType, body);
+  }
+}

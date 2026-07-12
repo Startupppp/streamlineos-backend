@@ -23,6 +23,7 @@ import {
   addLabelSchema,
   addRelationSchema,
   addWatcherSchema,
+  allWorkQuerySchema,
   attachmentSchema,
   bulkUpdateSchema,
   commentSchema,
@@ -37,6 +38,7 @@ import {
   type AddLabelInput,
   type AddRelationInput,
   type AddWatcherInput,
+  type AllWorkQuery,
   type AttachmentInput,
   type BulkUpdateInput,
   type CommentInput,
@@ -69,6 +71,15 @@ export class ProjectsTicketsController {
     private readonly tickets: ProjectsTicketsService,
     private readonly subresources: ProjectsTicketSubresourcesService,
   ) {}
+
+  @Get("all-work")
+  @RequirePermission("projects:tickets:view")
+  getAllWork(
+    @Query(new ZodValidationPipe(allWorkQuerySchema)) query: AllWorkQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.tickets.getAllWork(u, query);
+  }
 
   @Get("search/tickets")
   @RequirePermission("projects:tickets:view")

@@ -2,6 +2,14 @@ import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index } from
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
+export interface AutomationGraphNode {
+  id: string;
+  type: string;
+  config?: Record<string, unknown>;
+  nextId?: string;
+  branches?: { condition: Record<string, unknown>; nextId: string }[];
+}
+
 type CrmAutomationTrigger =
   | "lead.created"
   | "lead.status_changed"
@@ -34,6 +42,11 @@ export const crmAutomationRules = pgTable("crm_automation_rules", {
   isActive: boolean("is_active").default(true).notNull(),
   executionCount: integer("execution_count").default(0).notNull(),
   lastRunAt: timestamp("last_run_at"),
+  graph: jsonb("graph").$type<AutomationGraphNode[] | null>(),
+  version: integer("version").default(1).notNull(),
+  isDraft: boolean("is_draft").default(false).notNull(),
+  lastError: text("last_error"),
+  cooldownMinutes: integer("cooldown_minutes").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),

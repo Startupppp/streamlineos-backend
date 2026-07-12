@@ -8,6 +8,20 @@ const conditionSchema = z.object({
 
 const scoringOperatorEnum = z.enum(["eq", "gt", "lt", "contains", "in"]);
 
+const extendedAssignmentTypeEnum = z.enum([
+  "assign_user",
+  "round_robin",
+  "weighted_round_robin",
+  "least_loaded",
+  "territory",
+]);
+
+const configSchema = z.object({
+  weights: z.record(z.string(), z.number()).optional(),
+  leastLoadedWindowDays: z.number().int().positive().optional(),
+  fallbackUserId: z.string().optional(),
+}).optional().default({});
+
 export const assignmentRuleCreateSchema = z.object({
   name: z.string().min(1, "Name is required"),
   assignmentType: z.enum(["assign_user", "round_robin"]),
@@ -16,6 +30,8 @@ export const assignmentRuleCreateSchema = z.object({
   conditions: z.array(conditionSchema).optional(),
   priority: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
+  config: configSchema,
+  assignmentTypeText: extendedAssignmentTypeEnum.optional(),
 });
 
 export const assignmentRuleUpdateSchema = z.object({
@@ -26,6 +42,12 @@ export const assignmentRuleUpdateSchema = z.object({
   conditions: z.array(conditionSchema).optional(),
   priority: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
+  config: z.object({
+    weights: z.record(z.string(), z.number()).optional(),
+    leastLoadedWindowDays: z.number().int().positive().optional(),
+    fallbackUserId: z.string().optional(),
+  }).optional(),
+  assignmentTypeText: extendedAssignmentTypeEnum.optional(),
 });
 
 export const assignmentReorderSchema = z.object({
@@ -58,6 +80,19 @@ export const emailTemplateUpdateSchema = z.object({
   body: z.string().min(1).optional(),
 });
 
+const sampleLeadSchema = z.object({
+  source: z.string().optional(),
+  priority: z.string().optional(),
+  score: z.number().optional(),
+  language: z.string().optional(),
+  city: z.string().optional(),
+  customData: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const assignmentPreviewSchema = z.object({
+  sampleLead: sampleLeadSchema,
+});
+
 export type AssignmentRuleCreateInput = z.infer<typeof assignmentRuleCreateSchema>;
 export type AssignmentRuleUpdateInput = z.infer<typeof assignmentRuleUpdateSchema>;
 export type AssignmentReorderInput = z.infer<typeof assignmentReorderSchema>;
@@ -65,3 +100,5 @@ export type ScoringRuleCreateInput = z.infer<typeof scoringRuleCreateSchema>;
 export type ScoringRuleUpdateInput = z.infer<typeof scoringRuleUpdateSchema>;
 export type EmailTemplateCreateInput = z.infer<typeof emailTemplateCreateSchema>;
 export type EmailTemplateUpdateInput = z.infer<typeof emailTemplateUpdateSchema>;
+export type AssignmentPreviewInput = z.infer<typeof assignmentPreviewSchema>;
+export type SampleLeadForPreview = z.infer<typeof sampleLeadSchema>;

@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -21,6 +21,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "../access/access.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -34,6 +35,7 @@ import {
 } from "../../common/http/api-exceptions";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type {
+  AllWorkQuery,
   BulkUpdateInput,
   CreateTicketInput,
   ImportTicketsInput,
@@ -42,6 +44,14 @@ import type {
   UpdateTicketInput,
 } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
+
+const TICKET_ORDERBY_COLUMNS = {
+  created: tickets.createdAt,
+  updated: tickets.updatedAt,
+  priority: tickets.priority,
+  dueDate: tickets.dueDate,
+  order: tickets.order,
+} as const;
 
 type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 
@@ -68,56 +78,161 @@ export class ProjectsTicketsService {
     private readonly audit: AuditService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly cache: CacheService,
   ) {}
 
-  private async checkProjectAccess(orgId: string, userId: string, projectId: number): Promise<boolean> {
+  private async checkProjectAccess(
+    orgId: string,
+    userId: string,
+    projectId: number,
+  ): Promise<{ hasAccess: boolean; role: string | null }> {
     const perms = await this.access.resolveUserPermissions(orgId, userId);
-    if (perms.has("projects:manage")) return true;
+    if (perms.has("projects:manage")) return { hasAccess: true, role: "OWNER" };
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
       columns: { managerId: true },
     });
-    if (!project) return false;
-    if (project.managerId === userId) return true;
+    if (!project) return { hasAccess: false, role: null };
+    if (project.managerId === userId) return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
-      .select({ id: projectMembers.id })
+      .select({ id: projectMembers.id, role: projectMembers.role })
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
-    return membership.length > 0;
+    if (membership.length === 0) return { hasAccess: false, role: null };
+    return { hasAccess: true, role: membership[0]?.role ?? null };
   }
 
   async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
-    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
-    const { page, limit, search } = query;
+    const {
+      page,
+      limit,
+      search,
+      status,
+      priority,
+      type,
+      assigneeId,
+      labelIds,
+      sprintId,
+      cycleId,
+      epicId,
+      dueDateFrom,
+      dueDateTo,
+      orderBy,
+      orderDir,
+    } = query;
     const offset = (page - 1) * limit;
 
-    const baseConditions = [eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId)];
-    const searchConditions =
-      search && search.trim()
-        ? [
-            ...baseConditions,
-            sql`${tickets.title} ILIKE ${"%" + search + "%"}`,
-          ]
-        : baseConditions;
-    const filtered = searchConditions.filter((c): c is NonNullable<typeof c> => c !== undefined);
+    const conditions: ReturnType<typeof eq>[] = [
+      eq(tickets.orgId, u.orgId),
+      eq(tickets.projectId, projectId),
+    ];
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      if (isTicketRef) {
+        const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
+        const num = parseInt(numStr, 10);
+        conditions.push(
+          or(
+            sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
+            isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+          ) as ReturnType<typeof eq>,
+        );
+      } else {
+        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}` as ReturnType<typeof eq>);
+      }
+    }
+
+    if (status && status.length > 0) {
+      conditions.push(inArray(tickets.status, status) as ReturnType<typeof eq>);
+    }
+
+    if (priority && priority.length > 0) {
+      conditions.push(inArray(tickets.priority, priority) as ReturnType<typeof eq>);
+    }
+
+    if (type && type.length > 0) {
+      conditions.push(
+        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])` as ReturnType<typeof eq>,
+      );
+    }
+
+    if (assigneeId && assigneeId.length > 0) {
+      const unassigned = assigneeId.includes("__unassigned__");
+      const realIds = assigneeId.filter((id) => id !== "__unassigned__");
+      if (unassigned && realIds.length > 0) {
+        conditions.push(
+          or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds)) as ReturnType<typeof eq>,
+        );
+      } else if (unassigned) {
+        conditions.push(isNull(tickets.assigneeId) as ReturnType<typeof eq>);
+      } else {
+        conditions.push(inArray(tickets.assigneeId, realIds) as ReturnType<typeof eq>);
+      }
+    }
+
+    if (labelIds && labelIds.length > 0) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ticket_label_mappings tlm
+          WHERE tlm.ticket_id = ${tickets.id}
+          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+        )` as ReturnType<typeof eq>,
+      );
+    }
+
+    if (sprintId !== undefined) {
+      conditions.push(eq(tickets.sprintId, sprintId) as ReturnType<typeof eq>);
+    }
+
+    if (cycleId && cycleId.length > 0) {
+      conditions.push(inArray(tickets.cycleId, cycleId) as ReturnType<typeof eq>);
+    }
+
+    if (epicId !== undefined) {
+      conditions.push(eq(tickets.epicId, epicId) as ReturnType<typeof eq>);
+    }
+
+    if (dueDateFrom) {
+      conditions.push(gte(tickets.dueDate, dueDateFrom) as ReturnType<typeof eq>);
+    }
+
+    if (dueDateTo) {
+      conditions.push(lte(tickets.dueDate, dueDateTo) as ReturnType<typeof eq>);
+    }
+
+    const where = and(...conditions);
+
+    const col = TICKET_ORDERBY_COLUMNS[orderBy];
+    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
+    const dir = orderDir ?? defaultDir;
+
+    const sortExpr =
+      orderBy === "order"
+        ? [asc(tickets.order), desc(tickets.createdAt)]
+        : dir === "asc"
+        ? [asc(col), desc(tickets.createdAt)]
+        : [desc(col), desc(tickets.createdAt)];
 
     const [dataResult, countResult] = await Promise.all([
       this.db.query.tickets.findMany({
-        where: and(...filtered),
+        where,
         with: {
           assignee: true,
           reporter: true,
           assignees: { with: { user: true } },
           labels: { with: { label: true } },
         },
-        orderBy: [desc(tickets.updatedAt)],
+        orderBy: sortExpr,
         limit,
         offset,
       }),
-      this.db.select({ total: count() }).from(tickets).where(and(...filtered)),
+      this.db.select({ total: count() }).from(tickets).where(where),
     ]);
 
     const total = countResult[0]?.total ?? 0;
@@ -131,7 +246,7 @@ export class ProjectsTicketsService {
   }
 
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
-    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     if (body.status !== undefined) {
@@ -241,6 +356,8 @@ export class ProjectsTicketsService {
       actor: u.userId,
       timestamp: new Date().toISOString(),
     });
+
+    void this.cache.del(`projects:analytics:${u.orgId}:${projectId}`).catch(() => undefined);
 
     return ticket;
   }
@@ -373,20 +490,21 @@ export class ProjectsTicketsService {
       }
     }
 
-    const hasAccess = u.isOrgOwner || u.isPlatformAdmin || await this.checkProjectAccess(orgId, actingUserId, before.projectId);
-    if (!hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
+    const accessResult = u.isOrgOwner || u.isPlatformAdmin
+      ? { hasAccess: true, role: "OWNER" as string | null }
+      : await this.checkProjectAccess(orgId, actingUserId, before.projectId);
+    if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     if (input.status !== undefined) {
       const statusChanged = input.status !== before.status;
       if (statusChanged) {
-        const [userProjectRole] = await Promise.all([
-          this.resolveProjectRole(orgId, actingUserId, before.projectId),
+        await Promise.all([
           this.query.validateTicketStatus(before.projectId, orgId, input.status),
           this.query.enforceWipLimitForStatus(orgId, before.projectId, input.status, ticketId),
         ]);
         await this.query.assertTransitionAllowed(orgId, before.projectId, before.status, input.status, {
           userId: actingUserId,
-          userProjectRole,
+          userProjectRole: accessResult.role,
           isOrgOwner: u.isOrgOwner,
           isPlatformAdmin: u.isPlatformAdmin,
           ticketId,
@@ -449,6 +567,8 @@ export class ProjectsTicketsService {
         timestamp: now.toISOString(),
       });
     }
+
+    void this.cache.del(`projects:analytics:${orgId}:${ticketProjectId}`).catch(() => undefined);
 
     return { updated: true, updatedAt: now.toISOString() };
   }
@@ -525,7 +645,7 @@ export class ProjectsTicketsService {
     });
     if (!existing || !existing.projectId) throw new NotFoundException("Ticket not found");
 
-    const hasAccess = await this.checkProjectAccess(orgId, userId, existing.projectId);
+    const { hasAccess } = await this.checkProjectAccess(orgId, userId, existing.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {
@@ -568,6 +688,8 @@ export class ProjectsTicketsService {
       timestamp: new Date().toISOString(),
     });
 
+    void this.cache.del(`projects:analytics:${orgId}:${existing.projectId}`).catch(() => undefined);
+
     return { deleted: true };
   }
 
@@ -595,7 +717,7 @@ export class ProjectsTicketsService {
   }
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const rows = await this.db
@@ -632,7 +754,7 @@ export class ProjectsTicketsService {
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    const hasAccess = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const [validStatuses, memberEmails] = await Promise.all([
@@ -693,6 +815,7 @@ export class ProjectsTicketsService {
       return { created: 0, skipped };
     }
 
+    const CHUNK_SIZE = 100;
     let createdCount = 0;
 
     await this.db.transaction(async (tx) => {
@@ -705,15 +828,22 @@ export class ProjectsTicketsService {
 
       let nextNum = (maxRow?.maxNum ?? 0) + 1;
 
-      for (const item of toCreate) {
+      const rowsWithNumbers = toCreate.map((item) => {
+        const ticketNumber = nextNum++;
         const { _rowIndex, ...values } = item;
+        return { values: { ...values, ticketNumber }, _rowIndex };
+      });
+
+      for (let i = 0; i < rowsWithNumbers.length; i += CHUNK_SIZE) {
+        const chunk = rowsWithNumbers.slice(i, i + CHUNK_SIZE);
         try {
-          await tx.insert(tickets).values({ ...values, ticketNumber: nextNum });
-          nextNum++;
-          createdCount++;
+          await tx.insert(tickets).values(chunk.map((r) => r.values));
+          createdCount += chunk.length;
         } catch (error) {
           const msg = error instanceof Error ? error.message : "Unknown error";
-          skipped.push({ row: _rowIndex, reason: msg });
+          for (const r of chunk) {
+            skipped.push({ row: r._rowIndex, reason: msg });
+          }
         }
       }
     });
@@ -727,5 +857,9 @@ export class ProjectsTicketsService {
 
   async getMyWork(orgId: string, userId: string) {
     return this.query.getMyWork(orgId, userId);
+  }
+
+  async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
+    return this.query.getAllWork(u, query);
   }
 }

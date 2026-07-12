@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CrmAiController } from "./controllers/crm-ai.controller";
+import { CrmCopilotController } from "./controllers/crm-copilot.controller";
 import { HrAiController } from "./controllers/hr-ai.controller";
 import { KbRagController } from "./controllers/kb-rag.controller";
 import { ChatAssistantController } from "./controllers/chat-assistant.controller";
@@ -10,6 +11,7 @@ import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
 import { CrmBriefService } from "./services/crm-brief.service";
 import { CrmTasksService } from "./services/crm-tasks.service";
+import { CrmCopilotService } from "./services/crm-copilot.service";
 import { HrAiService } from "./services/hr-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
@@ -22,7 +24,7 @@ import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
   imports: [CalendarModule],
-  controllers: [CrmAiController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController],
+  controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController],
   providers: [
     LlmService,
     EmbeddingsService,
@@ -30,6 +32,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CrmContentService,
     CrmBriefService,
     CrmTasksService,
+    CrmCopilotService,
     HrAiService,
     KbRagService,
     ChatAssistantService,

@@ -37,7 +37,7 @@ export const projectMembers = pgTable("project_members", {
 
 export const projectViews = pgTable("project_views", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   name: text("name").notNull(),
@@ -46,11 +46,15 @@ export const projectViews = pgTable("project_views", {
   orderBy: text("order_by"),
   layoutType: viewLayoutEnum("layout_type").default("board").notNull(),
   isPinned: boolean("is_pinned").default(false).notNull(),
+  visibility: text("visibility").default("shared").notNull(),
+  displayOptions: jsonb("display_options").$type<Record<string, unknown>>().default({}).notNull(),
+  scope: text("scope").default("project").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_project_views_project").on(table.projectId),
   index("idx_project_views_org").on(table.orgId),
+  index("idx_project_views_org_scope").on(table.orgId, table.scope),
 ]);
 
 export const intakeItems = pgTable("intake_items", {

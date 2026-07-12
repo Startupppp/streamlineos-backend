@@ -89,10 +89,100 @@ export const updateLabelSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
+const csvToStringArray = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined));
+
+const csvToIntArray = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n)) : undefined));
+
 export const ticketsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   search: z.string().optional(),
+  status: csvToStringArray,
+  priority: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
+              ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
+            )
+        : undefined,
+    ),
+  type: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
+              ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
+            )
+        : undefined,
+    ),
+  assigneeId: csvToStringArray,
+  labelIds: csvToIntArray,
+  sprintId: z.coerce.number().int().positive().optional(),
+  cycleId: csvToIntArray,
+  epicId: z.coerce.number().int().positive().optional(),
+  dueDateFrom: z.string().optional(),
+  dueDateTo: z.string().optional(),
+  orderBy: z.enum(["created", "updated", "priority", "dueDate", "order"]).default("order"),
+  orderDir: z.enum(["asc", "desc"]).optional(),
+});
+
+export const allWorkQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  search: z.string().optional(),
+  status: csvToStringArray,
+  priority: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s): s is "LOW" | "MEDIUM" | "HIGH" | "URGENT" =>
+              ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(s),
+            )
+        : undefined,
+    ),
+  type: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s): s is "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK" =>
+              ["TASK", "BUG", "STORY", "EPIC", "SUBTASK"].includes(s),
+            )
+        : undefined,
+    ),
+  assigneeId: csvToStringArray,
+  labelIds: csvToIntArray,
+  sprintId: z.coerce.number().int().positive().optional(),
+  cycleId: csvToIntArray,
+  epicId: z.coerce.number().int().positive().optional(),
+  dueDateFrom: z.string().optional(),
+  dueDateTo: z.string().optional(),
+  orderBy: z.enum(["created", "updated", "priority", "dueDate", "order"]).default("order"),
+  orderDir: z.enum(["asc", "desc"]).optional(),
+  projectIds: csvToIntArray,
+  scope: z.enum(["all", "mine"]).default("all"),
 });
 
 export const searchTicketsQuerySchema = z.object({
@@ -333,6 +423,7 @@ export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
 export type CreateStateInput = z.infer<typeof createStateSchema>;
 export type CreateLabelInput = z.infer<typeof createLabelSchema>;
 export type TicketsListQuery = z.infer<typeof ticketsListQuerySchema>;
+export type AllWorkQuery = z.infer<typeof allWorkQuerySchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type BulkUpdateInput = z.infer<typeof bulkUpdateSchema>;

@@ -60,6 +60,7 @@ export const tickets = pgTable("tickets", {
   index("idx_tickets_sprint").on(t.sprintId),
   index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
   index("idx_tickets_org_project").on(t.orgId, t.projectId),
+  index("idx_tickets_org_project_status").on(t.orgId, t.projectId, t.status),
   index("idx_tickets_cycle").on(t.cycleId),
   index("idx_tickets_parent").on(t.parentTicketId),
   index("idx_tickets_recurrence_next").on(t.recurrenceNextRunAt).where(sql`is_recurring = true`),
