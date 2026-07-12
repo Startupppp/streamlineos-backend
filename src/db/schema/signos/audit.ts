@@ -11,7 +11,8 @@ export const signAuditEvents = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
+    // Nullable: template/bulk-job/admin-setting events are tenant-scoped, not tied to one envelope.
+    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }),
     recipientId: integer("recipient_id").references(() => signRecipients.id, { onDelete: "set null" }),
     actorType: signActorTypeEnum("actor_type").notNull(),
     actorUserId: text("actor_user_id"),

@@ -10,11 +10,13 @@ import {
   publicFieldValueSchema,
   adoptSignatureSchema,
   declineSchema,
+  publicFormSubmitSchema,
   type PublicAuthInput,
   type PublicConsentInput,
   type PublicFieldValueInput,
   type AdoptSignatureInput,
   type DeclineInput,
+  type PublicFormSignosSubmitInput,
 } from "./dto/signos.schemas";
 
 function clientIp(req: Request): string {
@@ -116,5 +118,22 @@ export class SignPublicController {
   ) {
     await this.guard("sign:public-complete", token, req);
     return this.publicSigning.decline(token, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+  }
+
+  @Get("forms/:slug")
+  async getPublicForm(@Param("slug") slug: string, @Req() req: Request) {
+    await this.guard("sign:public-session", slug, req);
+    return this.publicSigning.getPublicForm(slug);
+  }
+
+  @Post("forms/:slug/submit")
+  @HttpCode(201)
+  async submitPublicForm(
+    @Param("slug") slug: string,
+    @Body(new ZodValidationPipe(publicFormSubmitSchema)) body: PublicFormSignosSubmitInput,
+    @Req() req: Request,
+  ) {
+    await this.guard("sign:public-form-submit", slug, req);
+    return this.publicSigning.submitPublicForm(slug, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
   }
 }

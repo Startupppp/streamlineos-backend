@@ -19,6 +19,10 @@ import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
 import { SignPublicController } from "./sign-public.controller";
 import { SignCertificatesController } from "./sign-certificates.controller";
+import { SignTemplatesService } from "./sign-templates.service";
+import { SignTemplatesController } from "./sign-templates.controller";
+import { SignBulkSendService } from "./sign-bulk-send.service";
+import { SignBulkSendController } from "./sign-bulk-send.controller";
 
 @Module({
   imports: [StorageModule, EmailModule, AccessModule],
@@ -29,6 +33,8 @@ import { SignCertificatesController } from "./sign-certificates.controller";
     SignEnvelopesController,
     SignPublicController,
     SignCertificatesController,
+    SignTemplatesController,
+    SignBulkSendController,
   ],
   providers: [
     SignAuditService,
@@ -41,8 +47,10 @@ import { SignCertificatesController } from "./sign-certificates.controller";
     SignFieldsService,
     SignEnvelopesService,
     SignFinalizationService,
+    SignTemplatesService,
     SignPublicService,
+    SignBulkSendService,
   ],
-  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService],
+  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
 })
 export class SignosModule {}

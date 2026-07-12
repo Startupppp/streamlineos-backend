@@ -59,7 +59,8 @@ export interface SignAuditActor {
 
 export interface SignAuditRecordInput extends SignAuditActor {
   orgId: string;
-  envelopeId: number;
+  /** Omit for tenant-scoped events (template/bulk-job/admin-setting changes) not tied to one envelope. */
+  envelopeId?: number | null;
   recipientId?: number | null;
   eventType: SignAuditEventType;
   eventMessage?: string;
@@ -84,7 +85,7 @@ export class SignAuditService {
     const db = (tx ?? this.db) as Db;
     await db.insert(signAuditEvents).values({
       orgId: input.orgId,
-      envelopeId: input.envelopeId,
+      envelopeId: input.envelopeId ?? null,
       recipientId: input.recipientId ?? null,
       actorType: input.actorType,
       actorUserId: input.actorUserId ?? null,
