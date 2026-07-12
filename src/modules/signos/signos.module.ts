@@ -25,6 +25,8 @@ import { SignBulkSendService } from "./sign-bulk-send.service";
 import { SignBulkSendController } from "./sign-bulk-send.controller";
 import { SignWatermarkService } from "./sign-watermark.service";
 import { SignAdminController } from "./sign-admin.controller";
+import { SignReportsService } from "./sign-reports.service";
+import { SignReportsController } from "./sign-reports.controller";
 
 @Module({
   imports: [StorageModule, EmailModule, AccessModule],
@@ -38,6 +40,7 @@ import { SignAdminController } from "./sign-admin.controller";
     SignTemplatesController,
     SignBulkSendController,
     SignAdminController,
+    SignReportsController,
   ],
   providers: [
     SignAuditService,
@@ -54,6 +57,7 @@ import { SignAdminController } from "./sign-admin.controller";
     SignPublicService,
     SignBulkSendService,
     SignWatermarkService,
+    SignReportsService,
   ],
   exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
 })
