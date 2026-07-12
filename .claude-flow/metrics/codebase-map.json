@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-12T03:51:45.273Z",
+  "timestamp": "2026-07-12T04:21:45.331Z",
   "projectRoot": "D:\\projects\\personal\\Streamlineos\\backend",
   "structure": {
     "hasPackageJson": true,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1783828305274
+  "scannedAt": 1783830105332
 }

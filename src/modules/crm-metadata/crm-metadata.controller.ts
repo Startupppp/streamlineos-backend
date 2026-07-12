@@ -22,7 +22,9 @@ import {
 } from "./dto/validation-rules.schemas";
 import {
   createBlueprintSchema, updateBlueprintSchema, testTransitionSchema,
+  createTransitionSchema, updateTransitionSchema,
   type CreateBlueprintInput, type UpdateBlueprintInput, type TestTransitionInput,
+  type CreateTransitionInput, type UpdateTransitionInput,
 } from "./dto/blueprints.schemas";
 
 @RequireModule("crm")
@@ -251,5 +253,55 @@ export class CrmMetadataController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blueprintsSvc.testTransition(u.orgId, blueprintId, body.fromStageKey, body.toStageKey, body.record);
+  }
+
+  @Post("blueprints/:blueprintId/test")
+  @RequirePermission("crm:settings:view")
+  testBlueprintTransitionAlias(
+    @Param("blueprintId") blueprintId: string,
+    @Body(new ZodValidationPipe(testTransitionSchema)) body: TestTransitionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.blueprintsSvc.testTransition(u.orgId, blueprintId, body.fromStageKey, body.toStageKey, body.record);
+  }
+
+  @Get("blueprints/:blueprintId/transitions")
+  @RequirePermission("crm:settings:view")
+  listBlueprintTransitions(
+    @Param("blueprintId") blueprintId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.blueprintsSvc.listTransitions(u.orgId, blueprintId);
+  }
+
+  @Post("blueprints/:blueprintId/transitions")
+  @RequirePermission("crm:settings:manage")
+  createBlueprintTransition(
+    @Param("blueprintId") blueprintId: string,
+    @Body(new ZodValidationPipe(createTransitionSchema)) body: CreateTransitionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.blueprintsSvc.createTransition(u, blueprintId, body);
+  }
+
+  @Patch("blueprints/:blueprintId/transitions/:transitionId")
+  @RequirePermission("crm:settings:manage")
+  updateBlueprintTransition(
+    @Param("blueprintId") blueprintId: string,
+    @Param("transitionId") transitionId: string,
+    @Body(new ZodValidationPipe(updateTransitionSchema)) body: UpdateTransitionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.blueprintsSvc.updateTransition(u, blueprintId, transitionId, body);
+  }
+
+  @Delete("blueprints/:blueprintId/transitions/:transitionId")
+  @RequirePermission("crm:settings:manage")
+  deleteBlueprintTransition(
+    @Param("blueprintId") blueprintId: string,
+    @Param("transitionId") transitionId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.blueprintsSvc.deleteTransition(u, blueprintId, transitionId);
   }
 }

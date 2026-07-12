@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { CreateBlueprintInput, UpdateBlueprintInput } from "./dto/blueprints.schemas";
+import type { CreateBlueprintInput, UpdateBlueprintInput, CreateTransitionInput, UpdateTransitionInput } from "./dto/blueprints.schemas";
 
 @Injectable()
 export class CrmBlueprintsService {
@@ -32,6 +32,36 @@ export class CrmBlueprintsService {
     await this.assertOwner(u.orgId, blueprintId);
     await this.db.update(crmBlueprints).set({ isActive: false, updatedAt: new Date() }).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, u.orgId)));
     void this.auditLog(u, "crm_blueprint.deleted", blueprintId, {});
+    return { success: true };
+  }
+
+  async listTransitions(orgId: string, blueprintId: string) {
+    return this.db.select().from(crmBlueprintTransitions).where(
+      and(eq(crmBlueprintTransitions.orgId, orgId), eq(crmBlueprintTransitions.blueprintId, blueprintId)),
+    );
+  }
+
+  async createTransition(u: CurrentUserContext, blueprintId: string, input: CreateTransitionInput) {
+    await this.assertOwner(u.orgId, blueprintId);
+    const [row] = await this.db.insert(crmBlueprintTransitions).values({ orgId: u.orgId, blueprintId, ...input }).returning();
+    return row;
+  }
+
+  async updateTransition(u: CurrentUserContext, blueprintId: string, transitionId: string, input: UpdateTransitionInput) {
+    await this.assertOwner(u.orgId, blueprintId);
+    const [row] = await this.db.update(crmBlueprintTransitions)
+      .set(input)
+      .where(and(eq(crmBlueprintTransitions.id, transitionId), eq(crmBlueprintTransitions.blueprintId, blueprintId), eq(crmBlueprintTransitions.orgId, u.orgId)))
+      .returning();
+    if (!row) throw new NotFoundException("Transition not found");
+    return row;
+  }
+
+  async deleteTransition(u: CurrentUserContext, blueprintId: string, transitionId: string) {
+    await this.assertOwner(u.orgId, blueprintId);
+    await this.db.delete(crmBlueprintTransitions).where(
+      and(eq(crmBlueprintTransitions.id, transitionId), eq(crmBlueprintTransitions.blueprintId, blueprintId), eq(crmBlueprintTransitions.orgId, u.orgId)),
+    );
     return { success: true };
   }
 

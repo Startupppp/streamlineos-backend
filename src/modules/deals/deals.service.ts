@@ -13,6 +13,7 @@ import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
 type DealRow = typeof deals.$inferSelect;
@@ -33,6 +34,7 @@ export class DealsService {
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly blueprints: CrmBlueprintsService,
     private readonly crmMetadata: CrmMetadataService,
+    private readonly bus: CrmAutomationBusService,
   ) {}
 
   private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {
@@ -190,6 +192,7 @@ export class DealsService {
         targetType: "deal",
         metadata: { name: deal.name, stage: deal.stage, value: deal.value },
       });
+      void this.bus.emit(orgId, "deal.created", { entityType: "deal", entityId: String(deal.id), data: { name: deal.name, stage: deal.stage, value: deal.value }, actorId: userId }).catch(() => undefined);
     }
 
     return deal;
@@ -306,6 +309,15 @@ export class DealsService {
         this.webhooksDispatch.dispatch(orgId, "deal.won", { id: updated.id, name: updated.name, value: updated.value, assignedToId: updated.assignedToId });
       } else if (newStageInfo2?.stageType === "lost") {
         this.webhooksDispatch.dispatch(orgId, "deal.lost", { id: updated.id, name: updated.name, value: updated.value, lostReason: updated.lostReason });
+      }
+
+      const stageMap3 = await this.resolvePipelineStageMap(orgId, null);
+      const stageInfoBus = stageMap3.get(input.stage);
+      void this.bus.emit(orgId, "deal.stage_changed", { entityType: "deal", entityId: String(updated.id), data: { stage: updated.stage, previousStage: previousStage ?? undefined }, actorId: userId }).catch(() => undefined);
+      if (stageInfoBus?.stageType === "won") {
+        void this.bus.emit(orgId, "deal.won", { entityType: "deal", entityId: String(updated.id), data: { value: updated.value }, actorId: userId }).catch(() => undefined);
+      } else if (stageInfoBus?.stageType === "lost") {
+        void this.bus.emit(orgId, "deal.lost", { entityType: "deal", entityId: String(updated.id), data: { lostReason: updated.lostReason ?? undefined }, actorId: userId }).catch(() => undefined);
       }
     }
 

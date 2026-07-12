@@ -61,5 +61,6 @@ import { SlaResolverService } from "./sla-resolver.service";
     TerritoryMatchService,
     SlaResolverService,
   ],
+  exports: [CrmAttributionReportService],
 })
 export class CrmModule {}

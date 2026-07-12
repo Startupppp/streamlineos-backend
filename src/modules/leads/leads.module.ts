@@ -3,6 +3,8 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { CrmMetadataModule } from "../crm-metadata/crm-metadata.module";
+import { CrmModule } from "../crm/crm.module";
+import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -17,7 +19,7 @@ import { LeadsOpsService } from "./leads-ops.service";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,

@@ -27,7 +27,9 @@ import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
+import { CrmAttributionReportService } from "../crm/crm-attribution-report.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
@@ -82,6 +84,8 @@ export class LeadsService {
     private readonly automation: AutomationService,
     private readonly webhooksDispatch: WebhooksDispatchService,
     private readonly crmValidation: CrmValidationService,
+    private readonly bus: CrmAutomationBusService,
+    private readonly attribution: CrmAttributionReportService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -417,6 +421,15 @@ export class LeadsService {
       metadata: { name: newLead.name, source: newLead.source, assignedToId: newLead.assignedToId },
     });
 
+    void this.attribution.recordTouch({
+      orgId,
+      leadId: newLead.id,
+      campaignId: input.campaignId ?? null,
+      sourceKey: input.source ?? "direct",
+      touchType: "first_touch",
+      occurredAt: newLead.createdAt ?? new Date(),
+    }).catch(() => undefined);
+
     if (newLead.assignedToId) {
       void this.sendLeadAssignedNotification(userId, {
         assignedToId: newLead.assignedToId,
@@ -435,6 +448,8 @@ export class LeadsService {
         assignedToId: newLead.assignedToId,
       })
       .catch(() => undefined);
+
+    void this.bus.emit(orgId, "lead.created", { entityType: "lead", entityId: String(newLead.id), data: { name: newLead.name, source: newLead.source, assignedToId: newLead.assignedToId }, actorId: userId }).catch(() => undefined);
 
     this.webhooksDispatch.dispatch(orgId, "lead.created", {
       id: newLead.id,
@@ -493,6 +508,17 @@ export class LeadsService {
 
     const changedFields = Object.keys(input);
 
+    if (changedFields.includes("source") || changedFields.includes("campaignId")) {
+      void this.attribution.recordTouch({
+        orgId,
+        leadId: updated.id,
+        campaignId: updated.campaignId ?? null,
+        sourceKey: updated.source ?? "direct",
+        touchType: "interaction",
+        occurredAt: new Date(),
+      }).catch(() => undefined);
+    }
+
     if (changedFields.includes("status")) {
       void this.automation
         .runAutomationsForEvent(orgId, "lead.status_changed", {
@@ -502,6 +528,7 @@ export class LeadsService {
           previousStatus: existing.status,
         })
         .catch(() => undefined);
+      void this.bus.emit(orgId, "lead.stage_changed", { entityType: "lead", entityId: String(updated.id), data: { status: updated.status, previousStatus: existing.status }, actorId: userId }).catch(() => undefined);
     }
 
     if (changedFields.includes("assignedToId") && updated.assignedToId) {
@@ -513,6 +540,8 @@ export class LeadsService {
           previousAssignedToId: existing.assignedToId,
         })
         .catch(() => undefined);
+
+      void this.bus.emit(orgId, "lead.assigned", { entityType: "lead", entityId: String(updated.id), data: { assignedToId: updated.assignedToId }, actorId: userId }).catch(() => undefined);
 
       void this.sendLeadAssignedNotification(userId, {
         assignedToId: updated.assignedToId,
@@ -531,6 +560,8 @@ export class LeadsService {
       assignedToId: updated.assignedToId,
       changedFields,
     });
+
+    void this.bus.emit(orgId, "lead.updated", { entityType: "lead", entityId: String(updated.id), data: { changedFields }, actorId: userId }).catch(() => undefined);
 
     return updated;
   }

@@ -23,6 +23,9 @@ export const createTransitionSchema = z.object({
 }).strict();
 export type CreateTransitionInput = z.infer<typeof createTransitionSchema>;
 
+export const updateTransitionSchema = createTransitionSchema.partial().strict();
+export type UpdateTransitionInput = z.infer<typeof updateTransitionSchema>;
+
 export const testTransitionSchema = z.object({
   fromStageKey: z.string().min(1),
   toStageKey: z.string().min(1),
