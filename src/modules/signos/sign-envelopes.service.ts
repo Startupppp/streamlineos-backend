@@ -506,6 +506,55 @@ export class SignEnvelopesService {
     return expiring.length;
   }
 
+  private async remindEnvelopeRecipients(envelope: typeof signEnvelopes.$inferSelect, actorType: "system" | "internal_user", actorUserId?: string): Promise<number> {
+    const now = new Date();
+    const recipientRows = await this.recipients.listForEnvelope(envelope.orgId, envelope.id);
+    const senderName = await this.senderName(envelope.senderUserId);
+    let remindedCount = 0;
+
+    for (const r of recipientRows) {
+      if (!isSigningType(r.recipientType)) continue;
+      if (r.status !== "invited" && r.status !== "viewed" && r.status !== "authenticated") continue;
+      if (!r.email || !r.signingTokenHash) continue;
+
+      const rawToken = this.tokens.generateSigningToken();
+      await this.db.update(signRecipients).set({ signingTokenHash: this.tokens.hash(rawToken) }).where(eq(signRecipients.id, r.id));
+      const signingUrl = this.tokens.buildSigningUrl(r.id, rawToken);
+      const daysRemaining = envelope.expiresAt
+        ? Math.max(0, Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000))
+        : null;
+      await this.notifications.sendReminder(r.email, r.name, senderName, envelope.title, signingUrl, daysRemaining);
+      await this.audit.record({
+        orgId: envelope.orgId,
+        envelopeId: envelope.id,
+        recipientId: r.id,
+        actorType,
+        actorUserId,
+        eventType: "reminder_sent",
+        eventMessage: `Reminder sent to ${r.name}`,
+      });
+      remindedCount++;
+    }
+
+    if (remindedCount > 0) {
+      await this.db
+        .update(signEnvelopes)
+        .set({ reminderSentCount: envelope.reminderSentCount + 1, lastReminderAt: now })
+        .where(eq(signEnvelopes.id, envelope.id));
+    }
+    return remindedCount;
+  }
+
+  /** Admin/sender-triggered "send reminder now" button — bypasses the interval and max-count gates. */
+  async sendManualReminder(orgId: string, envelopeId: number, actor: SignActorContext): Promise<{ remindedCount: number }> {
+    const envelope = await this.mustGet(orgId, envelopeId);
+    if (!isEnvelopeSignable(envelope.status as SignEnvelopeStatus)) {
+      throw new ForbiddenException("Reminders can only be sent for envelopes awaiting signature");
+    }
+    const remindedCount = await this.remindEnvelopeRecipients(envelope, "internal_user", actor.userId);
+    return { remindedCount };
+  }
+
   async runReminderSweep(): Promise<number> {
     const now = new Date();
     const candidates = await this.db.query.signEnvelopes.findMany({
@@ -520,40 +569,7 @@ export class SignEnvelopesService {
       const intervalDays = envelope.reminderSentCount === 0 ? envelope.reminderFirstAfterDays : envelope.reminderRepeatDays;
       if (addDays(baseline, intervalDays).getTime() > now.getTime()) continue;
 
-      const recipientRows = await this.recipients.listForEnvelope(envelope.orgId, envelope.id);
-      const senderName = await this.senderName(envelope.senderUserId);
-      let remindedAny = false;
-
-      for (const r of recipientRows) {
-        if (!isSigningType(r.recipientType)) continue;
-        if (r.status !== "invited" && r.status !== "viewed" && r.status !== "authenticated") continue;
-        if (!r.email || !r.signingTokenHash) continue;
-
-        const rawToken = this.tokens.generateSigningToken();
-        await this.db.update(signRecipients).set({ signingTokenHash: this.tokens.hash(rawToken) }).where(eq(signRecipients.id, r.id));
-        const signingUrl = this.tokens.buildSigningUrl(r.id, rawToken);
-        const daysRemaining = envelope.expiresAt
-          ? Math.max(0, Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000))
-          : null;
-        await this.notifications.sendReminder(r.email, r.name, senderName, envelope.title, signingUrl, daysRemaining);
-        await this.audit.record({
-          orgId: envelope.orgId,
-          envelopeId: envelope.id,
-          recipientId: r.id,
-          actorType: "system",
-          eventType: "reminder_sent",
-          eventMessage: `Reminder sent to ${r.name}`,
-        });
-        remindedAny = true;
-        sentCount++;
-      }
-
-      if (remindedAny) {
-        await this.db
-          .update(signEnvelopes)
-          .set({ reminderSentCount: envelope.reminderSentCount + 1, lastReminderAt: now })
-          .where(eq(signEnvelopes.id, envelope.id));
-      }
+      sentCount += await this.remindEnvelopeRecipients(envelope, "system");
     }
     return sentCount;
   }

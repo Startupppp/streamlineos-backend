@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { signOrgSettings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { SignAuditService } from "./sign-audit.service";
 import type { UpdateSignSettingsInput } from "./dto/signos.schemas";
 
 export type SignOrgSettings = typeof signOrgSettings.$inferSelect;
@@ -30,7 +31,10 @@ const DEFAULTS: Omit<SignOrgSettings, "id" | "orgId" | "createdAt" | "updatedAt"
 
 @Injectable()
 export class SignSettingsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: SignAuditService,
+  ) {}
 
   async getOrCreate(orgId: string): Promise<SignOrgSettings> {
     const existing = await this.db.query.signOrgSettings.findFirst({ where: eq(signOrgSettings.orgId, orgId) });
@@ -49,7 +53,7 @@ export class SignSettingsService {
     return row;
   }
 
-  async update(orgId: string, input: UpdateSignSettingsInput): Promise<SignOrgSettings> {
+  async update(orgId: string, input: UpdateSignSettingsInput, userId?: string): Promise<SignOrgSettings> {
     const current = await this.getOrCreate(orgId);
     const brandingJson = input.brandingJson
       ? { ...(current.brandingJson ?? {}), ...input.brandingJson }
@@ -64,6 +68,15 @@ export class SignSettingsService {
       })
       .where(eq(signOrgSettings.orgId, orgId))
       .returning();
+
+    await this.audit.record({
+      orgId,
+      actorType: userId ? "internal_user" : "system",
+      actorUserId: userId,
+      eventType: "admin_setting_changed",
+      eventMessage: "Updated SignOS organization settings",
+      eventPayload: input as Record<string, unknown>,
+    });
     return updated;
   }
 }

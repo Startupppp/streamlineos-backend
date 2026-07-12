@@ -110,6 +110,12 @@ export class SignEnvelopesController {
     return this.envelopes.resend(u.orgId, id, actorFrom(u, req));
   }
 
+  @Post(":id/send-reminder")
+  @RequirePermission("sign:envelope:send")
+  sendReminder(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.sendManualReminder(u.orgId, id, actorFrom(u, req));
+  }
+
   @Post(":id/extend-expiration")
   @RequirePermission("sign:envelope:correct")
   extendExpiration(
