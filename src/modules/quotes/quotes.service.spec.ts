@@ -3,7 +3,10 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
 import { QuotesService } from "./quotes.service";
+
+const mockBus = { emit: jest.fn().mockResolvedValue(undefined) };
 
 const makeUpdateChain = () => ({
   set: jest.fn().mockReturnThis(),
@@ -86,6 +89,7 @@ describe("QuotesService.convertToInvoice", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CrmAutomationBusService, useValue: mockBus },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -164,6 +168,7 @@ describe("QuotesService.approve", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CrmAutomationBusService, useValue: mockBus },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -211,6 +216,7 @@ describe("QuotesService.reject", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CrmAutomationBusService, useValue: mockBus },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -258,6 +264,7 @@ describe("QuotesService.send", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CrmAutomationBusService, useValue: mockBus },
       ],
     }).compile();
     svc = module.get(QuotesService);

@@ -8,6 +8,24 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { InvSettingsRow } from "./stock-engine.types";
 
 type InvSettingsInsert = typeof invSettings.$inferInsert;
+type InvSettingsSelect = typeof invSettings.$inferSelect;
+
+const toSettingsRow = (row: InvSettingsSelect | InvSettingsInsert): InvSettingsRow => ({
+  allowNegativeStock: row.allowNegativeStock ?? false,
+  allowBackorders: row.allowBackorders ?? false,
+  reservationStrategy: row.reservationStrategy ?? "AUTO_ON_CONFIRM",
+  defaultCostingMethod: row.defaultCostingMethod ?? "WEIGHTED_AVERAGE",
+  expiryReservationPolicy: row.expiryReservationPolicy ?? "BLOCK",
+  inspectionOnReceipt: row.inspectionOnReceipt ?? false,
+  inspectionOnReturn: row.inspectionOnReturn ?? false,
+  overReceiptTolerancePct: row.overReceiptTolerancePct ?? "0.00",
+  requirePoApproval: row.requirePoApproval ?? false,
+  adjustmentApprovalThreshold: row.adjustmentApprovalThreshold ?? null,
+  autoReserveOnConfirm: row.autoReserveOnConfirm ?? true,
+  allowPartialShipment: row.allowPartialShipment ?? true,
+  packageRequiredForShipping: row.packageRequiredForShipping ?? false,
+  channelPublishPolicy: row.channelPublishPolicy ?? null,
+});
 
 const buildDefaults = (orgId: string): InvSettingsInsert => ({
   orgId,
@@ -40,11 +58,11 @@ export class InventorySettingsService {
       const existing = await this.db.query.invSettings.findFirst({
         where: eq(invSettings.orgId, orgId),
       });
-      if (existing) return existing as unknown as InvSettingsRow;
+      if (existing) return toSettingsRow(existing);
 
       await this.db.insert(invSettings).values(buildDefaults(orgId)).onConflictDoNothing();
       const seeded = await this.db.query.invSettings.findFirst({ where: eq(invSettings.orgId, orgId) });
-      return (seeded ?? buildDefaults(orgId)) as unknown as InvSettingsRow;
+      return toSettingsRow(seeded ?? buildDefaults(orgId));
     }, CACHE_TTL.MEDIUM);
   }
 
@@ -57,8 +75,8 @@ export class InventorySettingsService {
       action: "settings.update",
       resourceType: "inv_settings",
       resourceId: orgId,
-      before: before as unknown as Record<string, unknown>,
-      after: { ...before, ...patch } as Record<string, unknown>,
+      before: { ...before },
+      after: { ...before, ...patch },
     });
     await this.cache.invalidate(CACHE_KEYS.invSettings(orgId));
     return this.get(orgId);

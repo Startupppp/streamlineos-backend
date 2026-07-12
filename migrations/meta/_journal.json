@@ -232,6 +232,13 @@
       "when": 1752451200000,
       "tag": "0256_acc_payment_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1752372000000,
+      "tag": "0257_inv_transfer_line_lot_serial",
+      "breakpoints": true
     }
   ]
 }

@@ -3,18 +3,27 @@ import type { Db } from "../../db/drizzle.module";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 
-function makeMockDb(): Db {
+function makeChain(result: unknown[] = []): Record<string, unknown> {
+  const chain: Record<string, unknown> = {};
+  const methods = ["from", "where", "leftJoin", "innerJoin", "rightJoin", "orderBy", "groupBy", "having", "limit", "offset"];
+  for (const method of methods) {
+    chain[method] = jest.fn(() => chain);
+  }
+  chain.then = (resolve: (value: unknown[]) => unknown) => resolve(result);
+  return chain;
+}
+
+function makeMockDb(selectResult: unknown[] = []): Db {
+  const first = selectResult[0];
   return {
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
-          }),
-          limit: jest.fn().mockResolvedValue([]),
-        }),
-      }),
-    }),
+    select: jest.fn(() => makeChain(selectResult)),
+    query: {
+      deals: {
+        findFirst: jest.fn().mockResolvedValue(
+          first ? { ...(first as Record<string, unknown>), activities: [] } : undefined,
+        ),
+      },
+    },
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
         returning: jest.fn().mockResolvedValue([
@@ -88,26 +97,18 @@ describe("DealsAnalyticsService – deal health", () => {
   let mockDb: Db;
 
   beforeEach(() => {
-    mockDb = makeMockDb();
-    (mockDb.select as jest.Mock).mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([
-            {
-              id: 42,
-              orgId: "org1",
-              stage: "PROPOSAL",
-              probability: 50,
-              value: "100000",
-              expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-              updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-              createdAt: new Date().toISOString(),
-            },
-          ]),
-          orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-        }),
-      }),
-    });
+    mockDb = makeMockDb([
+      {
+        id: 42,
+        orgId: "org1",
+        stage: "PROPOSAL",
+        probability: 50,
+        value: "100000",
+        expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+        updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+    ]);
     service = new DealsAnalyticsService(
       mockDb,
       mockCache as unknown as CacheService,

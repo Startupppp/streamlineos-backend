@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { AccountingLedgerController } from "./accounting-ledger.controller";
 import { AccountingStatementsController } from "./accounting-statements.controller";
 import { AccountingPayablesReceivablesController } from "./accounting-payables-receivables.controller";
@@ -8,12 +8,14 @@ import { FinancePostingService } from "./finance-posting.service";
 import { AccountingLedgerService } from "./accounting-ledger.service";
 import { AccountingStatementsService } from "./accounting-statements.service";
 import { AccountingPayablesService } from "./accounting-payables.service";
+import { AccountingPayablesQueryService } from "./accounting-payables-query.service";
 import { AccountingReceivablesService } from "./accounting-receivables.service";
 import { AccountingGstService } from "./accounting-gst.service";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { FinanceControlsModule } from "../finance-controls/finance-controls.module";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, forwardRef(() => FinanceControlsModule)],
   controllers: [
     AccountingLedgerController,
     AccountingStatementsController,
@@ -25,6 +27,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     FinancePostingService,
     AccountingLedgerService,
     AccountingStatementsService,
+    AccountingPayablesQueryService,
     AccountingPayablesService,
     AccountingReceivablesService,
     AccountingGstService,

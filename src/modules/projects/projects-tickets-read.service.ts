@@ -117,8 +117,9 @@ export class ProjectsTicketsReadService {
     }
 
     if (assigneeId && assigneeId.length > 0) {
-      const unassigned = assigneeId.includes("__unassigned__");
-      const realIds = assigneeId.filter((id) => id !== "__unassigned__");
+      const resolved = assigneeId.map((id) => (id === "@me" ? u.userId : id));
+      const unassigned = resolved.includes("__unassigned__");
+      const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
         const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
         if (assigneeCondition) {
