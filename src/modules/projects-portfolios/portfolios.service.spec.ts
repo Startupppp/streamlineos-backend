@@ -111,13 +111,11 @@ describe("PortfoliosService", () => {
       const programs = [{ id: 7, name: "Prog1", status: "active" }];
 
       const { selectChain: portChain } = makeSelectChain([portfolio]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce(portChain);
 
-      const projectsWhereChain = jest.fn().mockResolvedValue(linkedProjects);
-      const programsWhereChain = jest.fn().mockResolvedValue(programs);
+      const projectsLimitChain = jest.fn().mockResolvedValue(linkedProjects);
+      const programsLimitChain = jest.fn().mockResolvedValue(programs);
 
       let selectCount = 0;
-      const originalSelect = (mockDb as { select: jest.Mock }).select;
       (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
         selectCount++;
         if (selectCount === 1) return portChain;
@@ -125,14 +123,14 @@ describe("PortfoliosService", () => {
           return {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
-                where: projectsWhereChain,
+                where: jest.fn().mockReturnValue({ limit: projectsLimitChain }),
               }),
             }),
           };
         }
         return {
           from: jest.fn().mockReturnValue({
-            where: programsWhereChain,
+            where: jest.fn().mockReturnValue({ limit: programsLimitChain }),
           }),
         };
       });

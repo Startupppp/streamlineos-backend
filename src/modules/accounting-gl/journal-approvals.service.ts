@@ -96,7 +96,8 @@ export class JournalApprovalsService {
         ),
       )
       .limit(1);
-    if (!approvalRows[0]) throw new NotFoundException("No pending approval request found for this entry");
+    const [approvalRow] = approvalRows;
+    if (!approvalRow) throw new NotFoundException("No pending approval request found for this entry");
 
     const newEntryStatus = "DRAFT";
 
@@ -104,7 +105,7 @@ export class JournalApprovalsService {
       await tx
         .update(finApprovalRequests)
         .set({ status: decision, decidedBy: userId, decidedAt: new Date(), decisionComment: comment ?? null })
-        .where(and(eq(finApprovalRequests.id, approvalRows[0]!.id)));
+        .where(and(eq(finApprovalRequests.id, approvalRow.id)));
 
       await tx
         .update(journalEntries)

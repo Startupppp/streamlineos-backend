@@ -86,9 +86,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     const mockSelect = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([{ maxNum: 5 }]),
-        }),
+        where: jest.fn().mockResolvedValue([{ maxNum: 5 }]),
       }),
     });
     const mockInsertTicket = jest.fn().mockReturnValue({
@@ -156,9 +154,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     const mockSelect = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
-        }),
+        where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
       }),
     });
     let insertCallCount = 0;
@@ -292,9 +288,7 @@ describe("SubmissionsService.createSubmission", () => {
     const executeSpy = jest.fn().mockResolvedValue(undefined);
     const mockSelect = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
-        }),
+        where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
       }),
     });
     let insertCallCount = 0;

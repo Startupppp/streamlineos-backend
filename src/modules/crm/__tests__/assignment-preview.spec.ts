@@ -26,10 +26,10 @@ function makeDbWithRules(rules: unknown[], leadCounts: Record<string, number> = 
           orderBy: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue(rules),
           }),
+          groupBy: jest.fn().mockResolvedValue(
+            Object.entries(leadCounts).map(([assignedToId, cnt]) => ({ assignedToId, cnt })),
+          ),
         }),
-        groupBy: jest.fn().mockResolvedValue(
-          Object.entries(leadCounts).map(([assignedToId, cnt]) => ({ assignedToId, cnt }))
-        ),
       }),
     })),
   };

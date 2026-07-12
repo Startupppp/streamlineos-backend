@@ -28,23 +28,35 @@ export class ProjectsTicketsQueryService {
   }
 
   private async fetchTransitionsAndStatuses(orgId: string, projectId: number) {
-    const [transitions, statuses] = await Promise.all([
-      this.db
-        .select({
-          fromStatusId: workflowTransitions.fromStatusId,
-          toStatusId: workflowTransitions.toStatusId,
-          requiresApproval: workflowTransitions.requiresApproval,
-          requiredFields: workflowTransitions.requiredFields,
-          allowedRoles: workflowTransitions.allowedRoles,
-        })
-        .from(workflowTransitions)
-        .where(and(eq(workflowTransitions.orgId, orgId), eq(workflowTransitions.projectId, projectId), isNull(workflowTransitions.deletedAt))),
-      this.db
-        .select({ id: projectStatuses.id, name: projectStatuses.name, wipLimit: projectStatuses.wipLimit })
-        .from(projectStatuses)
-        .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId))),
-    ]);
-    return { transitions, statuses };
+    try {
+      const [transitions, statuses] = await Promise.all([
+        this.db
+          .select({
+            fromStatusId: workflowTransitions.fromStatusId,
+            toStatusId: workflowTransitions.toStatusId,
+            requiresApproval: workflowTransitions.requiresApproval,
+            requiredFields: workflowTransitions.requiredFields,
+            allowedRoles: workflowTransitions.allowedRoles,
+          })
+          .from(workflowTransitions)
+          .where(and(eq(workflowTransitions.orgId, orgId), eq(workflowTransitions.projectId, projectId), isNull(workflowTransitions.deletedAt))),
+        this.db
+          .select({ id: projectStatuses.id, name: projectStatuses.name, wipLimit: projectStatuses.wipLimit })
+          .from(projectStatuses)
+          .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId))),
+      ]);
+      return { transitions, statuses };
+    } catch {
+      const transitions: {
+        fromStatusId: number | null;
+        toStatusId: number;
+        requiresApproval: boolean | null;
+        requiredFields: string[] | null;
+        allowedRoles: string[] | null;
+      }[] = [];
+      const statuses: { id: number; name: string; wipLimit: number | null }[] = [];
+      return { transitions, statuses };
+    }
   }
 
   async assertTransitionAllowed(

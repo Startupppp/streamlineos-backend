@@ -13,6 +13,7 @@ import {
   finApprovalPolicies,
   finApprovalRequests,
 } from "../../db/schema";
+import type { NewJournalLine } from "../../db/schema/accounting";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -424,7 +425,7 @@ export class FinancePostingService {
 
       if (!reversal) throw new Error("Reversal entry insert returned no rows");
 
-      const reversalLines = lines.map((line, idx) => ({
+      const reversalLines: NewJournalLine[] = lines.map((line, idx) => ({
         entryId: reversal.id,
         accountId: line.accountId,
         orgId,
@@ -434,8 +435,8 @@ export class FinancePostingService {
         lineOrder: idx,
         currency: line.currency,
         exchangeRate: line.exchangeRate,
-        baseDebit: null as string | null,
-        baseCredit: null as string | null,
+        baseDebit: null,
+        baseCredit: null,
         clientId: line.clientId,
         vendorId: line.vendorId,
         projectId: line.projectId,

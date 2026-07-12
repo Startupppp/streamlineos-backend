@@ -1,3 +1,5 @@
+process.env.APP_URL ??= "http://localhost:1000";
+
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { ApprovalsService } from "./approvals.service";
 import type { AccessService } from "../access/access.service";

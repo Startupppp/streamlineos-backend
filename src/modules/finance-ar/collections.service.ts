@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import type { ListCollectionActivitiesQuery, CreateCollectionActivityInput, UpdateInvoiceCollectionInput } from "./dto/finance-ar.schemas";
+import { computeRiskScore } from "./collections-risk.util";
 
 interface AgingBucket {
   label: string;
@@ -44,6 +45,10 @@ export class CollectionsService {
       { label: "61-90", count: 0, amount: 0 },
       { label: "91+", count: 0, amount: 0 },
     ];
+    const [currentBucket, d1_30Bucket, d31_60Bucket, d61_90Bucket, d91pBucket] = buckets;
+    if (!currentBucket || !d1_30Bucket || !d31_60Bucket || !d61_90Bucket || !d91pBucket) {
+      throw new Error("Aging bucket initialization failed");
+    }
 
     const clientMap = new Map<number, { overdueAmount: number; totalInvoiced: number; maxDaysOverdue: number }>();
 
@@ -55,8 +60,8 @@ export class CollectionsService {
       existing.totalInvoiced += Number(inv.total ?? 0);
 
       if (!inv.dueDate) {
-        buckets[0]!.count++;
-        buckets[0]!.amount += outstanding;
+        currentBucket.count++;
+        currentBucket.amount += outstanding;
         clientMap.set(clientId, existing);
         continue;
       }
@@ -65,23 +70,22 @@ export class CollectionsService {
       const daysOverdue = Math.floor((today.getTime() - dueMs) / 86400000);
 
       if (daysOverdue <= 0) {
-        buckets[0]!.count++;
-        buckets[0]!.amount += outstanding;
+        currentBucket.count++;
+        currentBucket.amount += outstanding;
       } else {
         existing.overdueAmount += outstanding;
         existing.maxDaysOverdue = Math.max(existing.maxDaysOverdue, daysOverdue);
-        if (daysOverdue <= 30) { buckets[1]!.count++; buckets[1]!.amount += outstanding; }
-        else if (daysOverdue <= 60) { buckets[2]!.count++; buckets[2]!.amount += outstanding; }
-        else if (daysOverdue <= 90) { buckets[3]!.count++; buckets[3]!.amount += outstanding; }
-        else { buckets[4]!.count++; buckets[4]!.amount += outstanding; }
+        if (daysOverdue <= 30) { d1_30Bucket.count++; d1_30Bucket.amount += outstanding; }
+        else if (daysOverdue <= 60) { d31_60Bucket.count++; d31_60Bucket.amount += outstanding; }
+        else if (daysOverdue <= 90) { d61_90Bucket.count++; d61_90Bucket.amount += outstanding; }
+        else { d91pBucket.count++; d91pBucket.amount += outstanding; }
       }
       clientMap.set(clientId, existing);
     }
 
     const topRisk: CustomerRisk[] = Array.from(clientMap.entries())
       .map(([clientId, data]) => {
-        const ratio = data.totalInvoiced > 0 ? data.overdueAmount / data.totalInvoiced : 0;
-        const riskScore = Math.min(100, Math.round(Math.min(ratio, 1) * 50 + Math.min(data.maxDaysOverdue, 180) / 180 * 50));
+        const riskScore = computeRiskScore(data.overdueAmount, data.totalInvoiced, data.maxDaysOverdue);
         return { clientId: clientId || null, overdueAmount: data.overdueAmount, totalInvoiced: data.totalInvoiced, maxDaysOverdue: data.maxDaysOverdue, riskScore };
       })
       .filter((r) => r.overdueAmount > 0)

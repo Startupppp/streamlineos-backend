@@ -1,7 +1,4 @@
-function computeRiskScore(overdueAmount: number, totalInvoiced: number, maxDaysOverdue: number): number {
-  const ratio = totalInvoiced > 0 ? overdueAmount / totalInvoiced : 0;
-  return Math.round(ratio * 50 + Math.min(maxDaysOverdue, 180) / 180 * 50);
-}
+import { computeRiskScore } from "./collections-risk.util";
 
 describe("computeRiskScore", () => {
   describe("bounds 0–100", () => {
@@ -13,9 +10,9 @@ describe("computeRiskScore", () => {
       expect(computeRiskScore(1000, 1000, 180)).toBe(100);
     });
 
-    it("can exceed 100 when overdueAmount > totalInvoiced (ratio > 1, formula does not clamp ratio)", () => {
+    it("is capped at 100 even when overdueAmount > totalInvoiced", () => {
       const score = computeRiskScore(99999, 1000, 365);
-      expect(score).toBeGreaterThan(100);
+      expect(score).toBe(100);
     });
 
     it("is never negative", () => {

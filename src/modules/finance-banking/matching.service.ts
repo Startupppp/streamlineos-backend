@@ -142,8 +142,11 @@ export class MatchingService {
 
     if (txns.length === 0) return;
 
-    const dateMin = txns.reduce((min, t) => (t.txnDate < min ? t.txnDate : min), txns[0]!.txnDate);
-    const dateMax = txns.reduce((max, t) => (t.txnDate > max ? t.txnDate : max), txns[0]!.txnDate);
+    const [firstTxn] = txns;
+    if (!firstTxn) return;
+
+    const dateMin = txns.reduce((min, t) => (t.txnDate < min ? t.txnDate : min), firstTxn.txnDate);
+    const dateMax = txns.reduce((max, t) => (t.txnDate > max ? t.txnDate : max), firstTxn.txnDate);
 
     const windowMin = new Date(dateMin);
     windowMin.setDate(windowMin.getDate() - 3);

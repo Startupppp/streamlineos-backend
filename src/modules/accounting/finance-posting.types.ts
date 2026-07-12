@@ -1,22 +1,5 @@
-export type SystemAccountPurpose =
-  | "AR"
-  | "AP"
-  | "BANK_CLEARING"
-  | "SALES_INCOME"
-  | "DISCOUNT_GIVEN"
-  | "TAX_PAYABLE"
-  | "TAX_RECEIVABLE"
-  | "PAYROLL_PAYABLE"
-  | "EXPENSE_CLEARING"
-  | "RETAINED_EARNINGS"
-  | "OWNER_EQUITY"
-  | "PAYMENT_FEES"
-  | "REIMBURSEMENT_PAYABLE"
-  | "FX_GAIN_LOSS"
-  | "DEPRECIATION_EXPENSE"
-  | "ACCUM_DEPRECIATION"
-  | "SALARY_EXPENSE"
-  | "ASSET_DISPOSAL_GAIN_LOSS";
+import type { SystemAccountPurpose } from "../accounting-settings/dto/settings.schemas";
+export type { SystemAccountPurpose };
 
 export interface PostJournalLine {
   accountId?: number;

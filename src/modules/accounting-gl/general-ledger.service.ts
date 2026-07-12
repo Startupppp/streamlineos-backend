@@ -89,7 +89,7 @@ export class GeneralLedgerService {
           ) sub
         `,
       );
-      const prRow = priorPageRows[0] as Record<string, unknown> | undefined;
+      const prRow = priorPageRows[0];
       priorPageBalance =
         openingBalance +
         Number(prRow?.total_debit ?? 0) -

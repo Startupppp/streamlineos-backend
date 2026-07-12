@@ -1,42 +1,62 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import { CrmCustomer360Service } from "./crm-customer360.service";
-import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import { AccessService } from "../access/access.service";
-import { CacheService } from "../../common/cache/cache.service";
+import type { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
+import type { AccessService } from "../access/access.service";
+import type { CacheService } from "../../common/cache/cache.service";
 
 const ORG = "org-test";
 
-function makeDb() {
+function makeDb(resolveWith: unknown[] = []) {
+  const chain: Record<string, unknown> = {};
+  chain.select = jest.fn(() => chain);
+  chain.from = jest.fn(() => chain);
+  chain.where = jest.fn().mockResolvedValue(resolveWith);
+  chain.orderBy = jest.fn(() => chain);
+  chain.limit = jest.fn().mockResolvedValue(resolveWith);
+  chain.then = jest.fn().mockResolvedValue(null);
+  chain.execute = jest.fn().mockResolvedValue([]);
+  return chain;
+}
+
+function makeSectionsMock() {
+  const emptySection = { items: [], total: 0 };
   return {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([]),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    then: jest.fn().mockResolvedValue(null),
-    execute: jest.fn().mockResolvedValue([]),
-  };
+    fetchContacts: jest.fn().mockResolvedValue(emptySection),
+    fetchContactsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchLeadsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchLeadsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchDealsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchDealsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchQuotesForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchQuotesForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchInvoicesForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchInvoicesForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchPaymentsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchPaymentsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchSupportTicketsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchSupportTicketsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchSurveysForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchSurveysForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchProjectsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchProjectsForClient: jest.fn().mockResolvedValue(emptySection),
+    fetchSignedDocumentsForOrg: jest.fn().mockResolvedValue(emptySection),
+    fetchSignedDocumentsForClient: jest.fn().mockResolvedValue(emptySection),
+  } as unknown as CrmCustomer360SectionsService;
 }
 
 describe("CrmCustomer360Service – permission filtering", () => {
   let svc: CrmCustomer360Service;
   let accessSvc: { resolveUserPermissions: jest.Mock };
+  let sections: ReturnType<typeof makeSectionsMock>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     accessSvc = { resolveUserPermissions: jest.fn() };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CrmCustomer360Service,
-        CrmCustomer360SectionsService,
-        { provide: DRIZZLE, useValue: makeDb() },
-        { provide: AccessService, useValue: accessSvc },
-        { provide: CacheService, useValue: { cached: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) } },
-      ],
-    }).compile();
-
-    svc = module.get(CrmCustomer360Service);
+    sections = makeSectionsMock();
+    svc = new CrmCustomer360Service(
+      makeDb() as never,
+      accessSvc as unknown as AccessService,
+      { cached: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) } as unknown as CacheService,
+      sections,
+    );
   });
 
   it("returns an empty object when org has no company record", async () => {
@@ -52,47 +72,28 @@ describe("CrmCustomer360Service – permission filtering", () => {
   });
 
   it("includes contacts section when caller has crm:contacts:view", async () => {
-    function chainThat(resolveWith: unknown[]) {
-      const chain: Record<string, unknown> = {
-        from: () => chain,
-        where: () => chain,
-        orderBy: () => chain,
-        limit: () => Promise.resolve(resolveWith),
-        then: (fn: (rows: unknown[]) => unknown) => Promise.resolve(fn(resolveWith)),
-      };
-      return chain;
-    }
+    accessSvc.resolveUserPermissions.mockResolvedValue({
+      "crm:contacts:view": "all",
+      "crm:customer360:view": "all",
+    });
 
-    let callCount = 0;
-    const smartDb = {
-      select: jest.fn(() => {
-        callCount++;
-        if (callCount === 1) return chainThat([{ id: 1, name: "Test Co" }]);
-        return chainThat([]);
-      }),
-      execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn(),
-    };
+    const localSections = makeSectionsMock();
+    (localSections.fetchContacts as jest.Mock).mockResolvedValue({ items: [{ id: 1, name: "Contact 1" }], total: 1 });
 
-    const mod2 = await Test.createTestingModule({
-      providers: [
-        CrmCustomer360Service,
-        CrmCustomer360SectionsService,
-        { provide: DRIZZLE, useValue: smartDb },
-        {
-          provide: AccessService,
-          useValue: {
-            resolveUserPermissions: jest.fn().mockResolvedValue({
-              "crm:contacts:view": "all",
-              "crm:customer360:view": "all",
-            }),
-          },
-        },
-        { provide: CacheService, useValue: { cached: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) } },
-      ],
-    }).compile();
+    const chain: Record<string, unknown> = {};
+    chain.select = jest.fn(() => chain);
+    chain.from = jest.fn(() => chain);
+    chain.where = jest.fn().mockResolvedValue([{ id: 1, name: "Test Co" }]);
+    chain.orderBy = jest.fn(() => chain);
+    chain.limit = jest.fn().mockResolvedValue([{ id: 1, name: "Test Co" }]);
 
-    const localSvc = mod2.get(CrmCustomer360Service);
+    const localSvc = new CrmCustomer360Service(
+      chain as never,
+      accessSvc as unknown as AccessService,
+      { cached: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) } as unknown as CacheService,
+      localSections,
+    );
+
     const result = await localSvc.getCompany360(ORG, 1, "user-1");
     expect((result as Record<string, unknown>).contacts).toBeDefined();
   });

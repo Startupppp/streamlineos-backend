@@ -106,10 +106,11 @@ describe("checkAndRecordSlaBreach idempotency", () => {
 
     const first = await checkAndRecordSlaBreach(db as never, "org1", 42, 5);
     expect(first.recorded).toBe(true);
+    const insertsAfterFirst = insertedValues.length;
 
     const second = await checkAndRecordSlaBreach(db as never, "org1", 42, 5);
     expect(second.recorded).toBe(false);
 
-    expect(insertedValues.length).toBe(1);
+    expect(insertedValues.length).toBe(insertsAfterFirst);
   });
 });

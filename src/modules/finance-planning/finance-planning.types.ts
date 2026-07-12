@@ -97,10 +97,3 @@ export interface PlannedSpendItem {
   startWeek: number;
   recurringWeekly: boolean;
 }
-
-export interface ScenarioAssumptions {
-  collectionRatePct: number;
-  payDelayDays: number;
-  revenueGrowthPct: number;
-  plannedSpend: PlannedSpendItem[];
-}

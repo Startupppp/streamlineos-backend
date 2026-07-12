@@ -23,12 +23,12 @@ import {
 import type {
   ForecastQuery,
   CompareScenariosQuery,
+  ScenarioAssumptions,
 } from "./dto/finance-planning.schemas";
 import type {
   ForecastResponse,
   ForecastWeek,
   ScenarioCompareResponse,
-  ScenarioAssumptions,
 } from "./finance-planning.types";
 
 const FORECAST_CACHE_KEY = (orgId: string, sid?: number, weeks?: number) =>

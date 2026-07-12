@@ -100,7 +100,8 @@ export class InsightsFindersService {
       const total = Number(row.total ?? 0);
       const monthKey = row.monthKey ?? "";
       if (!byCategory.has(catId)) byCategory.set(catId, { name, months: [] });
-      byCategory.get(catId)!.months.push({ monthKey, total });
+      const catEntry = byCategory.get(catId);
+      if (catEntry) catEntry.months.push({ monthKey, total });
     }
 
     const findings: AnomalyFinding[] = [];
