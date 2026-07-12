@@ -199,11 +199,19 @@ export class BudgetsService {
         .where(eq(finBudgetRevisions.budgetId, budgetId));
       const nextRevision = Number(maxRevResult[0]?.maxRev ?? 0) + 1;
 
+      const snapshotData = currentLines.map((l) => ({
+        accountId: l.accountId,
+        periodKey: l.periodKey,
+        amount: l.amount,
+        departmentId: l.departmentId ?? null,
+        projectId: l.projectId ?? null,
+      }));
+
       await tx.insert(finBudgetRevisions).values({
         budgetId,
         orgId,
         revisionNumber: nextRevision,
-        snapshot: currentLines as unknown,
+        snapshot: snapshotData,
         note: input.note ?? null,
         createdBy: userId,
       });

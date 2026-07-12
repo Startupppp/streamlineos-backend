@@ -10,7 +10,8 @@ function makeWhereChain(result: unknown[]) {
 function makeInsertChain(insertedValues: Record<string, unknown>[] = []) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockImplementation((v: unknown) => {
-    insertedValues.push(v as Record<string, unknown>);
+    const rows = Array.isArray(v) ? v : [v];
+    for (const row of rows) insertedValues.push(row as Record<string, unknown>);
     return { onConflictDoUpdate };
   });
   return { values };

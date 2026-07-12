@@ -740,6 +740,12 @@ const HR_PERMISSIONS: Permission[] = [
     description: "View travel requests",
   },
   {
+    name: "hr:travel:create",
+    resource: "hr:travel",
+    action: "create",
+    description: "Submit travel requests",
+  },
+  {
     name: "hr:travel:manage",
     resource: "hr:travel",
     action: "manage",
@@ -3417,6 +3423,9 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:payroll",
   "hr:leaves:create",
   "hr:expenses:create",
+  "hr:expenses:view",
+  "hr:travel:view",
+  "hr:travel:create",
   "chat:channels:read",
   "chat:channels:write",
   "chat:messages:read",

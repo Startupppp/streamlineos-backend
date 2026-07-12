@@ -32,13 +32,17 @@ import {
   exportSchema,
   listSchema,
   pageDataSchema,
+  rejectExpenseSchema,
   reportSchema,
+  updateExpensePatchSchema,
   type CreateExpenseInput,
   type EmailReportInput,
   type ExportInput,
   type ListInput,
   type PageDataInput,
+  type RejectExpenseInput,
   type ReportInput,
+  type UpdateExpensePatchInput,
 } from "./dto/expense.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -55,7 +59,7 @@ const EXPORT_HEADERS = [
 
 @RequireModule("accounting")
 @Controller("hr/expenses")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class ExpensesController {
   constructor(
     private readonly expenses: ExpensesService,
@@ -71,6 +75,7 @@ export class ExpensesController {
   }
 
   @Get()
+  @RequirePermission("hr:expenses:view")
   async list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +85,7 @@ export class ExpensesController {
 
   @Post()
   @HttpCode(201)
+  @RequirePermission("hr:expenses:create")
   async create(
     @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
@@ -88,9 +94,10 @@ export class ExpensesController {
   }
 
   @Patch(":expenseId")
+  @RequirePermission("hr:expenses:approve")
   async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(updateExpensePatchSchema)) body: UpdateExpensePatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.expensesWrite.update(u, await this.canApprove(u), expenseId, body);
@@ -98,19 +105,16 @@ export class ExpensesController {
 
   @Post("email-report")
   @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:expenses:read")
+  @RequirePermission("hr:expenses:approve")
   async emailReport(
     @Body(new ZodValidationPipe(emailReportSchema)) body: EmailReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(await this.canApprove(u))) {
-      throw new BadRequestException("Only HR and CEO can send expense reports");
-    }
     return this.expensesWrite.emailReport(u.orgId, u.userId, true, body);
   }
 
   @Get("page-data")
+  @RequirePermission("hr:expenses:view")
   async pageData(
     @Query(new ZodValidationPipe(pageDataSchema)) filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +123,7 @@ export class ExpensesController {
   }
 
   @Get("report")
+  @RequirePermission("hr:expenses:read")
   async report(
     @Query(new ZodValidationPipe(reportSchema)) filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -127,6 +132,7 @@ export class ExpensesController {
   }
 
   @Get("export-data")
+  @RequirePermission("hr:expenses:read")
   async exportData(
     @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -139,6 +145,7 @@ export class ExpensesController {
   }
 
   @Get("export")
+  @RequirePermission("hr:expenses:read")
   async export(
     @Query(new ZodValidationPipe(exportSchema)) filters: ExportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -175,6 +182,7 @@ export class ExpensesController {
 
   @Post(":expenseId/submit")
   @HttpCode(200)
+  @RequirePermission("hr:expenses:create")
   async submit(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -184,7 +192,6 @@ export class ExpensesController {
 
   @Post(":expenseId/approve")
   @HttpCode(200)
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:expenses:approve")
   async approve(
     @Param("expenseId", ParseIntPipe) expenseId: number,
@@ -195,11 +202,10 @@ export class ExpensesController {
 
   @Post(":expenseId/reject")
   @HttpCode(200)
-  @UseGuards(PermissionGuard)
   @RequirePermission("hr:expenses:approve")
   async reject(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body() body: { rejectionReason?: string },
+    @Body(new ZodValidationPipe(rejectExpenseSchema)) body: RejectExpenseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const reason = body.rejectionReason?.trim() || "No reason provided";
@@ -207,6 +213,7 @@ export class ExpensesController {
   }
 
   @Delete(":expenseId")
+  @RequirePermission("hr:expenses:create")
   async remove(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,

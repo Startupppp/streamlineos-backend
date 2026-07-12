@@ -4,6 +4,7 @@ import { invoices, invoiceItems, payments, organizations, indianStates, finPayme
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
@@ -64,6 +65,7 @@ export class InvoicesWriteService {
     private readonly posting: JournalPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lifecycle: InvoicesLifecycleService,
+    private readonly audit: AuditService,
   ) {}
 
   private async resolveSupplierStateCode(orgId: string): Promise<string> {

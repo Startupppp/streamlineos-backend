@@ -127,3 +127,15 @@ export type ListCollectionActivitiesInput = z.infer<typeof listCollectionActivit
 export type ListCollectionActivitiesQuery = ListCollectionActivitiesInput;
 export type CreateCollectionActivityInput = z.infer<typeof createCollectionActivitySchema>;
 export type UpdateInvoiceCollectionInput = z.infer<typeof updateInvoiceCollectionSchema>;
+
+export const listArPaymentsSchema = z.object({
+  method: z.enum(["bank_transfer", "upi", "cheque", "cash", "card", "other"]).optional(),
+  clientId: z.coerce.number().int().positive().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export type ListArPaymentsInput = z.infer<typeof listArPaymentsSchema>;
+export type ListArPaymentsQuery = ListArPaymentsInput;

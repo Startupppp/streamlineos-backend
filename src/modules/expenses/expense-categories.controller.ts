@@ -16,6 +16,7 @@ export class ExpenseCategoriesController {
   constructor(private readonly expenses: ExpensesService) {}
 
   @Get()
+  @RequirePermission("hr:expenses:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.expenses.getCategories(u.orgId);
   }

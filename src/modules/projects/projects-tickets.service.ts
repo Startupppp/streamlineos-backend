@@ -1,9 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import {
-  projectMembers,
-  projectStatuses,
-  projects,
   ticketActivityLog,
   ticketAssignees,
   ticketAttachments,
@@ -13,25 +10,22 @@ import {
   ticketTypeEnum,
   ticketWatchers,
   timesheets,
-  users,
   workItemRelations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { AccessService } from "../access/access.service";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { resolveTicketsScope } from "./tickets-scope";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import {
-  ProjectsForbiddenTicketException,
   ProjectsTicketConflictException,
-  ProjectsTicketNotFoundException,
 } from "../../common/http/api-exceptions";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type {
@@ -44,14 +38,7 @@ import type {
   UpdateTicketInput,
 } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
-
-const TICKET_ORDERBY_COLUMNS = {
-  created: tickets.createdAt,
-  updated: tickets.updatedAt,
-  priority: tickets.priority,
-  dueDate: tickets.dueDate,
-  order: tickets.order,
-} as const;
+import { resolveAssigneeId } from "./tickets-helpers";
 
 type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 
@@ -61,12 +48,6 @@ function normalizeTicketType(type: string): TicketType {
   return ticketTypeEnum.enumValues.find((v) => v === mapped) ?? "TASK";
 }
 
-function resolveAssigneeId(raw: string | undefined): string | null | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "" || raw === "unassigned") return null;
-  return raw;
-}
-
 @Injectable()
 export class ProjectsTicketsService {
   constructor(
@@ -74,181 +55,21 @@ export class ProjectsTicketsService {
     private readonly notifications: NotificationsService,
     private readonly projectsEmail: ProjectsEmailService,
     private readonly activity: ProjectsActivityService,
-    private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly query: ProjectsTicketsQueryService,
+    private readonly workQuery: ProjectsWorkQueryService,
+    private readonly read: ProjectsTicketsReadService,
+    private readonly transfer: ProjectsTicketsTransferService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly cache: CacheService,
   ) {}
 
-  private async checkProjectAccess(
-    orgId: string,
-    userId: string,
-    projectId: number,
-  ): Promise<{ hasAccess: boolean; role: string | null }> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
-    if (perms.has("projects:manage")) return { hasAccess: true, role: "OWNER" };
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-      columns: { managerId: true },
-    });
-    if (!project) return { hasAccess: false, role: null };
-    if (project.managerId === userId) return { hasAccess: true, role: "MANAGER" };
-    const membership = await this.db
-      .select({ id: projectMembers.id, role: projectMembers.role })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-      .limit(1);
-    if (membership.length === 0) return { hasAccess: false, role: null };
-    return { hasAccess: true, role: membership[0]?.role ?? null };
-  }
-
   async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
-    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
-
-    const {
-      page,
-      limit,
-      search,
-      status,
-      priority,
-      type,
-      assigneeId,
-      labelIds,
-      sprintId,
-      cycleId,
-      epicId,
-      dueDateFrom,
-      dueDateTo,
-      orderBy,
-      orderDir,
-    } = query;
-    const offset = (page - 1) * limit;
-
-    const conditions: SQL<unknown>[] = [
-      eq(tickets.orgId, u.orgId),
-      eq(tickets.projectId, projectId),
-    ];
-
-    if (search && search.trim()) {
-      const term = search.trim();
-      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
-      if (isTicketRef) {
-        const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
-        const num = parseInt(numStr, 10);
-        const searchCondition = or(
-          sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
-          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
-        );
-        if (searchCondition) {
-          conditions.push(searchCondition);
-        }
-      } else {
-        conditions.push(sql`${tickets.title} ILIKE ${"%" + term + "%"}`);
-      }
-    }
-
-    if (status && status.length > 0) {
-      conditions.push(inArray(tickets.status, status));
-    }
-
-    if (priority && priority.length > 0) {
-      conditions.push(inArray(tickets.priority, priority));
-    }
-
-    if (type && type.length > 0) {
-      conditions.push(
-        sql`${tickets.type}::text = ANY(ARRAY[${sql.join(type.map((t) => sql`${t}`), sql`, `)}])`,
-      );
-    }
-
-    if (assigneeId && assigneeId.length > 0) {
-      const unassigned = assigneeId.includes("__unassigned__");
-      const realIds = assigneeId.filter((id) => id !== "__unassigned__");
-      if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
-        if (assigneeCondition) {
-          conditions.push(assigneeCondition);
-        }
-      } else if (unassigned) {
-        conditions.push(isNull(tickets.assigneeId));
-      } else {
-        conditions.push(inArray(tickets.assigneeId, realIds));
-      }
-    }
-
-    if (labelIds && labelIds.length > 0) {
-      conditions.push(
-        sql`EXISTS (
-          SELECT 1 FROM ticket_label_mappings tlm
-          WHERE tlm.ticket_id = ${tickets.id}
-          AND tlm.label_id = ANY(ARRAY[${sql.join(labelIds.map((id) => sql`${id}`), sql`, `)}]::int[])
-        )`,
-      );
-    }
-
-    if (sprintId !== undefined) {
-      conditions.push(eq(tickets.sprintId, sprintId));
-    }
-
-    if (cycleId && cycleId.length > 0) {
-      conditions.push(inArray(tickets.cycleId, cycleId));
-    }
-
-    if (epicId !== undefined) {
-      conditions.push(eq(tickets.epicId, epicId));
-    }
-
-    if (dueDateFrom) {
-      conditions.push(gte(tickets.dueDate, dueDateFrom));
-    }
-
-    if (dueDateTo) {
-      conditions.push(lte(tickets.dueDate, dueDateTo));
-    }
-
-    const where = and(...conditions);
-
-    const col = TICKET_ORDERBY_COLUMNS[orderBy];
-    const defaultDir = orderBy === "created" || orderBy === "updated" ? "desc" : "asc";
-    const dir = orderDir ?? defaultDir;
-
-    const sortExpr =
-      orderBy === "order"
-        ? [asc(tickets.order), desc(tickets.createdAt)]
-        : dir === "asc"
-        ? [asc(col), desc(tickets.createdAt)]
-        : [desc(col), desc(tickets.createdAt)];
-
-    const [dataResult, countResult] = await Promise.all([
-      this.db.query.tickets.findMany({
-        where,
-        with: {
-          assignee: true,
-          reporter: true,
-          assignees: { with: { user: true } },
-          labels: { with: { label: true } },
-        },
-        orderBy: sortExpr,
-        limit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(tickets).where(where),
-    ]);
-
-    const total = countResult[0]?.total ?? 0;
-    return {
-      data: dataResult,
-      total: Number(total),
-      page,
-      limit,
-      totalPages: Math.ceil(Number(total) / limit),
-    };
+    return this.read.listTickets(u, projectId, query);
   }
 
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
-    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     if (body.status !== undefined) {
@@ -410,41 +231,7 @@ export class ProjectsTicketsService {
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
-      with: {
-        project: true,
-        sprint: true,
-        assignee: true,
-        reporter: true,
-        assignees: { with: { user: true } },
-        comments: { with: { user: true }, orderBy: [desc(ticketComments.createdAt)] },
-        attachments: { with: { uploader: true } },
-        labels: { with: { label: true } },
-      },
-    });
-    if (!ticket) throw new ProjectsTicketNotFoundException();
-
-    const scope = await resolveTicketsScope(this.access, u);
-    if (scope !== "all") {
-      const isAssignee =
-        ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
-      const isReporter = ticket.reporterId === u.userId;
-      if (!isAssignee && !isReporter) {
-        this.audit.log({
-          action: "ticket.access_denied",
-          userId: u.userId,
-          orgId: u.orgId,
-          targetId: String(ticketId),
-          targetType: "ticket",
-          metadata: { ticketId, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
-          result: "FAILURE",
-        });
-        throw new ProjectsForbiddenTicketException();
-      }
-    }
-
-    return ticket;
+    return this.read.getTicket(u, ticketId);
   }
 
   async updateTicket(u: CurrentUserContext, ticketId: number, input: UpdateTicketInput) {
@@ -494,7 +281,7 @@ export class ProjectsTicketsService {
 
     const accessResult = u.isOrgOwner || u.isPlatformAdmin
       ? { hasAccess: true, role: "OWNER" as string | null }
-      : await this.checkProjectAccess(orgId, actingUserId, before.projectId);
+      : await this.read.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     if (input.status !== undefined) {
@@ -538,7 +325,7 @@ export class ProjectsTicketsService {
         .catch((error) => logger.error("Failed to log ticket activity", { error })),
     ]);
 
-    void this.notifyNewAssignees(orgId, ticketId, actingUserId, input).catch((error) =>
+    void this.transfer.notifyNewAssignees(orgId, ticketId, actingUserId, input).catch((error) =>
       logger.error("Failed to notify ticket assignees", { error }),
     );
 
@@ -598,48 +385,6 @@ export class ProjectsTicketsService {
     }
   }
 
-  private async notifyNewAssignees(
-    orgId: string,
-    ticketId: number,
-    actingUserId: string,
-    input: UpdateTicketInput,
-  ): Promise<void> {
-    const notifyIds = new Set<string>();
-    if (input.assigneeIds !== undefined) {
-      input.assigneeIds.forEach((uid) => notifyIds.add(uid));
-    } else {
-      const primary = resolveAssigneeId(input.assigneeId);
-      if (primary) notifyIds.add(primary);
-    }
-    if (notifyIds.size === 0) return;
-
-    const ticketData = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, projectId: true },
-    });
-
-    await Promise.all(
-      Array.from(notifyIds)
-        .filter((userId) => userId !== actingUserId)
-        .map((userId) =>
-          this.notifications
-            .create({
-              orgId,
-              userId,
-              type: "INFO",
-              title: "Ticket Assigned to You",
-              message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-              link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
-            })
-            .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
-        ),
-    );
-
-    void this.projectsEmail
-      .notifyTicketAssignees(actingUserId, ticketId, Array.from(notifyIds))
-      .catch(() => undefined);
-  }
-
   async deleteTicket(orgId: string, userId: string, ticketId: number, force: boolean) {
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
@@ -647,7 +392,7 @@ export class ProjectsTicketsService {
     });
     if (!existing || !existing.projectId) throw new NotFoundException("Ticket not found");
 
-    const { hasAccess } = await this.checkProjectAccess(orgId, userId, existing.projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(orgId, userId, existing.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {
@@ -708,149 +453,22 @@ export class ProjectsTicketsService {
   }
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
-
-    const rows = await this.db
-      .select({
-        number: tickets.ticketNumber,
-        title: tickets.title,
-        type: tickets.type,
-        status: tickets.status,
-        priority: tickets.priority,
-        points: tickets.points,
-        dueDate: tickets.dueDate,
-        assigneeName: users.name,
-        assigneeFirstName: users.firstName,
-        assigneeLastName: users.lastName,
-        assigneeEmail: users.email,
-      })
-      .from(tickets)
-      .leftJoin(users, eq(tickets.assigneeId, users.id))
-      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId)))
-      .orderBy(tickets.ticketNumber);
-
-    return rows.map((r) => ({
-      number: r.number,
-      title: r.title,
-      type: r.type,
-      status: r.status,
-      priority: r.priority,
-      points: r.points ?? null,
-      dueDate: r.dueDate ?? null,
-      assignee: r.assigneeName ?? (r.assigneeFirstName && r.assigneeLastName
-        ? `${r.assigneeFirstName} ${r.assigneeLastName}`.trim()
-        : r.assigneeEmail ?? null),
-    }));
+    return this.transfer.exportTickets(u, projectId);
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    const { hasAccess } = await this.checkProjectAccess(u.orgId, u.userId, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
-
-    const [validStatuses, memberEmails] = await Promise.all([
-      this.db
-        .select({ name: projectStatuses.name })
-        .from(projectStatuses)
-        .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
-      this.db
-        .select({ userId: projectMembers.userId, email: users.email })
-        .from(projectMembers)
-        .innerJoin(users, eq(projectMembers.userId, users.id))
-        .where(eq(projectMembers.projectId, projectId)),
-    ]);
-
-    const validStatusSet = new Set(validStatuses.map((s) => s.name));
-    const emailToUserId = new Map(memberEmails.map((m) => [m.email, m.userId]));
-    const defaultStatus = validStatuses[0]?.name ?? "TODO";
-
-    const skipped: Array<{ row: number; reason: string }> = [];
-    const toCreate: Array<typeof tickets.$inferInsert & { _rowIndex: number }> = [];
-
-    for (let i = 0; i < body.rows.length; i++) {
-      const row = body.rows[i];
-      if (!row) continue;
-
-      if (row.status && !validStatusSet.has(row.status)) {
-        skipped.push({ row: i + 1, reason: `Status '${row.status}' does not exist in this project` });
-        continue;
-      }
-
-      let assigneeId: string | undefined;
-      if (row.assigneeEmail) {
-        const uid = emailToUserId.get(row.assigneeEmail);
-        if (!uid) {
-          skipped.push({ row: i + 1, reason: `Email '${row.assigneeEmail}' is not a project member` });
-          continue;
-        }
-        assigneeId = uid;
-      }
-
-      toCreate.push({
-        orgId: u.orgId,
-        projectId,
-        ticketNumber: 0,
-        title: row.title,
-        type: row.type ?? "TASK",
-        status: row.status ?? defaultStatus,
-        priority: row.priority ?? "MEDIUM",
-        points: row.points ?? undefined,
-        assigneeId,
-        dueDate: row.dueDate ?? undefined,
-        reporterId: u.userId,
-        _rowIndex: i + 1,
-      });
-    }
-
-    if (toCreate.length === 0) {
-      return { created: 0, skipped };
-    }
-
-    const CHUNK_SIZE = 100;
-    let createdCount = 0;
-
-    await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)));
-
-      let nextNum = (maxRow?.maxNum ?? 0) + 1;
-
-      const rowsWithNumbers = toCreate.map((item) => {
-        const ticketNumber = nextNum++;
-        const { _rowIndex, ...values } = item;
-        return { values: { ...values, ticketNumber }, _rowIndex };
-      });
-
-      for (let i = 0; i < rowsWithNumbers.length; i += CHUNK_SIZE) {
-        const chunk = rowsWithNumbers.slice(i, i + CHUNK_SIZE);
-        try {
-          await tx.insert(tickets).values(chunk.map((r) => r.values));
-          createdCount += chunk.length;
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : "Unknown error";
-          for (const r of chunk) {
-            skipped.push({ row: r._rowIndex, reason: msg });
-          }
-        }
-      }
-    });
-
-    return { created: createdCount, skipped };
+    return this.transfer.importTickets(u, projectId, body);
   }
 
   async searchOrgTickets(orgId: string, userId: string, q: string, limit: number) {
-    return this.query.searchOrgTickets(orgId, userId, q, limit);
+    return this.workQuery.searchOrgTickets(orgId, userId, q, limit);
   }
 
   async getMyWork(orgId: string, userId: string) {
-    return this.query.getMyWork(orgId, userId);
+    return this.workQuery.getMyWork(orgId, userId);
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
-    return this.query.getAllWork(u, query);
+    return this.workQuery.getAllWork(u, query);
   }
 }

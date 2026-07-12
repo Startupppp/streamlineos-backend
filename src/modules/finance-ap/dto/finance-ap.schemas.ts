@@ -41,7 +41,7 @@ export const listVendorCreditsQuerySchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
 });
 
-const recurringBillPayloadSchema = z.object({
+export const recurringBillPayloadSchema = z.object({
   vendorId: z.number().int().positive(),
   vendorBillNumber: z.string().max(60).optional(),
   billDate: isoDate,
