@@ -7,7 +7,6 @@ import { EngagementExtrasController } from "./engagement-extras.controller";
 import { DocumentsController } from "./documents.controller";
 import { KpisController } from "./kpis.controller";
 import { FeedbackController } from "./feedback.controller";
-import { SignaturesController } from "./signatures.controller";
 import { CoursesController } from "./courses.controller";
 import { TrainingController } from "./training.controller";
 import { CareerController } from "./career.controller";
@@ -25,7 +24,6 @@ import { RichDocumentsService } from "./rich-documents.service";
 import { LettersService } from "./letters.service";
 import { KpisService } from "./kpis.service";
 import { FeedbackService } from "./feedback.service";
-import { SignaturesService } from "./signatures.service";
 import { CoursesService } from "./courses.service";
 import { TrainingService } from "./training.service";
 import { CareerService } from "./career.service";
@@ -43,7 +41,6 @@ import { SkillGapService } from "./skill-gap.service";
     DocumentsController,
     KpisController,
     FeedbackController,
-    SignaturesController,
     CoursesController,
     TrainingController,
     CareerController,
@@ -63,7 +60,6 @@ import { SkillGapService } from "./skill-gap.service";
     LettersService,
     KpisService,
     FeedbackService,
-    SignaturesService,
     CoursesService,
     TrainingService,
     CareerService,

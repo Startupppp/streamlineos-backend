@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { hrTemplateRenders, hrTemplates, signatureRequests, users } from "../../db/schema";
+import { hrTemplateRenders, hrTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { RenderLetterInput, SaveLetterInput } from "./dto/documents.schemas";
@@ -93,41 +93,5 @@ export class LettersService {
       .returning();
 
     return record;
-  }
-
-  async sendLetterToSign(orgId: string, userId: string, renderId: number, signerUserIds: string[]) {
-    const render = await this.db.query.hrTemplateRenders.findFirst({
-      where: and(
-        eq(hrTemplateRenders.id, renderId),
-        eq(hrTemplateRenders.orgId, orgId),
-      ),
-      with: { template: { columns: { name: true, letterType: true } } },
-    });
-    if (!render) throw new NotFoundException("Letter render not found.");
-
-    const tpl = render.template as { name: string; letterType: string | null } | undefined;
-    const title = tpl?.name ?? "Letter";
-
-    const signers = signerUserIds.map((uid, idx) => ({
-      userId: uid,
-      order: idx + 1,
-      status: "PENDING",
-    }));
-
-    const [request] = await this.db
-      .insert(signatureRequests)
-      .values({
-        orgId,
-        requestedBy: userId,
-        title,
-        documentType: tpl?.letterType ?? "letter",
-        documentUrl: `render:${renderId}`,
-        signers,
-        status: "PENDING",
-        auditTrail: [{ action: "CREATED", userId, timestamp: new Date().toISOString() }],
-      })
-      .returning();
-
-    return request;
   }
 }

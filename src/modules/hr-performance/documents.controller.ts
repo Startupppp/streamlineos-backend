@@ -236,17 +236,6 @@ export class DocumentsController {
     return this.letters.saveLetter(u.orgId, u.userId, body);
   }
 
-  @Post("documents/letters/:renderId/sign")
-  @RequirePermission("hr:signatures:manage")
-  @HttpCode(201)
-  sendLetterToSign(
-    @Param("renderId", ParseIntPipe) renderId: number,
-    @Body() body: { signerUserIds: string[] },
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.letters.sendLetterToSign(u.orgId, u.userId, renderId, body.signerUserIds ?? []);
-  }
-
   @Get("compliance/calendar")
   @RequirePermission("hr:compliance:manage")
   complianceCalendar(
