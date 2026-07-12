@@ -11,7 +11,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { ProjectsEmailService } from "./projects-email.service";
-import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
@@ -20,13 +20,13 @@ import { resolveAssigneeId } from "./tickets-helpers";
 export class ProjectsTicketsTransferService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly workQuery: ProjectsWorkQueryService,
+    private readonly read: ProjectsTicketsReadService,
     private readonly notifications: NotificationsService,
     private readonly projectsEmail: ProjectsEmailService,
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const { hasAccess } = await this.workQuery.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const rows = await this.db
@@ -63,7 +63,7 @@ export class ProjectsTicketsTransferService {
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    const { hasAccess } = await this.workQuery.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     const [validStatuses, memberEmails] = await Promise.all([

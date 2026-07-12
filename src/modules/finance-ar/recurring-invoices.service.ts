@@ -9,7 +9,7 @@ import { InvoicesWriteService } from "../invoices/invoices-write.service";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateRecurringTemplateInput, UpdateRecurringTemplateInput, ListRecurringTemplatesQuery } from "./dto/finance-ar.schemas";
-import type { CreateInvoiceInput } from "../invoices/dto/invoice-write.schemas";
+import { createInvoiceSchema } from "../invoices/dto/invoice-write.schemas";
 
 type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
 
@@ -132,7 +132,12 @@ export class RecurringInvoicesService {
   }
 
   private async runTemplate(orgId: string, userId: string, tpl: typeof finRecurringInvoiceTemplates.$inferSelect) {
-    const payload = tpl.payload as CreateInvoiceInput;
+    const parseResult = createInvoiceSchema.safeParse(tpl.payload);
+    if (!parseResult.success) {
+      logger.error("Recurring invoice template has invalid payload", { templateId: tpl.id, orgId: tpl.orgId, error: parseResult.error.message });
+      throw new Error(`Template ${tpl.id} payload validation failed: ${parseResult.error.message}`);
+    }
+    const payload = parseResult.data;
     const { invoice } = await this.invoicesWrite.createInvoice(orgId, userId, payload);
 
     const nextRunDate = advanceByFrequency(tpl.nextRunDate ?? new Date().toISOString().slice(0, 10), tpl.frequency);

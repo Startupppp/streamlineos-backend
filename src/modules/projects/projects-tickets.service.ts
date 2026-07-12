@@ -1,7 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, or, sql } from "drizzle-orm";
 import {
-  projectMembers,
   ticketActivityLog,
   ticketAssignees,
   ticketAttachments,
@@ -16,7 +15,6 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -24,6 +22,7 @@ import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import {
   ProjectsTicketConflictException,
@@ -59,17 +58,18 @@ export class ProjectsTicketsService {
     private readonly audit: AuditService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly workQuery: ProjectsWorkQueryService,
+    private readonly read: ProjectsTicketsReadService,
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly cache: CacheService,
   ) {}
 
   async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
-    return this.workQuery.listTickets(u, projectId, query);
+    return this.read.listTickets(u, projectId, query);
   }
 
   async createTicket(u: CurrentUserContext, projectId: number, body: CreateTicketInput) {
-    const { hasAccess } = await this.workQuery.checkProjectAccess(u.orgId, u.userId, projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
 
     if (body.status !== undefined) {
@@ -231,7 +231,7 @@ export class ProjectsTicketsService {
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
-    return this.workQuery.getTicket(u, ticketId);
+    return this.read.getTicket(u, ticketId);
   }
 
   async updateTicket(u: CurrentUserContext, ticketId: number, input: UpdateTicketInput) {
@@ -281,7 +281,7 @@ export class ProjectsTicketsService {
 
     const accessResult = u.isOrgOwner || u.isPlatformAdmin
       ? { hasAccess: true, role: "OWNER" as string | null }
-      : await this.workQuery.checkProjectAccess(orgId, actingUserId, before.projectId);
+      : await this.read.checkProjectAccess(orgId, actingUserId, before.projectId);
     if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
 
     if (input.status !== undefined) {
@@ -392,7 +392,7 @@ export class ProjectsTicketsService {
     });
     if (!existing || !existing.projectId) throw new NotFoundException("Ticket not found");
 
-    const { hasAccess } = await this.workQuery.checkProjectAccess(orgId, userId, existing.projectId);
+    const { hasAccess } = await this.read.checkProjectAccess(orgId, userId, existing.projectId);
     if (!hasAccess) throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {

@@ -9,6 +9,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { VendorReturnsService } from "./vendor-returns.service";
 import {
   listReturnsSchema, createVendorReturnSchema, postVendorReturnSchema,
@@ -17,7 +18,7 @@ import {
 
 @RequireModule("inventory")
 @Controller("inventory/vendor-returns")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard)
 export class VendorReturnsController {
   constructor(private readonly service: VendorReturnsService) {}
 

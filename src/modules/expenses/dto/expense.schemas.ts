@@ -111,6 +111,15 @@ export const updateExpenseDetailsSchema = z.object({
   receiptFileName: z.string().optional(),
 });
 
+export const rejectExpenseSchema = z.object({
+  rejectionReason: z.string().max(1000).optional(),
+});
+
+export const updateExpensePatchSchema = z.union([
+  updateExpenseStatusSchema,
+  updateExpenseDetailsSchema,
+]);
+
 export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
 export type AllExpenseStatus = (typeof ALL_EXPENSE_STATUSES)[number];
 export type ListInput = z.infer<typeof listSchema>;
@@ -123,3 +132,5 @@ export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type UpdateExpenseStatusInput = z.infer<typeof updateExpenseStatusSchema>;
 export type UpdateExpenseDetailsInput = z.infer<typeof updateExpenseDetailsSchema>;
+export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
+export type UpdateExpensePatchInput = z.infer<typeof updateExpensePatchSchema>;

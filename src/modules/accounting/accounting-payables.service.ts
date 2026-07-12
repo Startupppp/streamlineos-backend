@@ -20,6 +20,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
+import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService } from "./journal-posting.service";
 import type { AgedPayablesRow, VendorLedgerLine } from "./accounting.types";
 import {
@@ -89,6 +90,7 @@ export class AccountingPayablesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: JournalPostingService,
+    private readonly audit: AuditService,
   ) {}
 
   async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
@@ -145,7 +147,7 @@ export class AccountingPayablesService {
       await this.posting.seedChartOfAccountsForOrg(orgId);
     }
 
-    return this.db.transaction(async (tx) => {
+    const created = await this.db.transaction(async (tx) => {
       const countRows = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(purchaseBills)
@@ -220,6 +222,18 @@ export class AccountingPayablesService {
 
       return inserted;
     });
+
+    this.audit.log({
+      action: "accounting.bill.created",
+      userId,
+      orgId,
+      resourceType: "purchase_bill",
+      resourceId: String(created.id),
+      metadata: { billNumber: created.billNumber, status: created.status },
+      result: "SUCCESS",
+    });
+
+    return created;
   }
 
   async getPurchaseBill(orgId: string, billId: number) {
@@ -312,6 +326,16 @@ export class AccountingPayablesService {
         .where(and(eq(purchaseBills.id, billId), eq(purchaseBills.orgId, orgId)));
     }
 
+    this.audit.log({
+      action: "accounting.bill.status_updated",
+      userId,
+      orgId,
+      resourceType: "purchase_bill",
+      resourceId: String(billId),
+      metadata: { status: input.status },
+      result: "SUCCESS",
+    });
+
     return { id: billId, status: input.status };
   }
 
@@ -357,7 +381,7 @@ export class AccountingPayablesService {
 
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
-    return this.db.transaction(async (tx) => {
+    const payment = await this.db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(vendorPayments)
         .values({
@@ -400,6 +424,18 @@ export class AccountingPayablesService {
 
       return inserted;
     });
+
+    this.audit.log({
+      action: "accounting.bill.payment_recorded",
+      userId,
+      orgId,
+      resourceType: "vendor_payment",
+      resourceId: String(payment.id),
+      metadata: { billId, amount: input.amount.toFixed(2) },
+      result: "SUCCESS",
+    });
+
+    return payment;
   }
 
   async listVendors(orgId: string, query: ListCustomersOutstandingQuery) {

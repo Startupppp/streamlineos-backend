@@ -12,6 +12,8 @@ import { StatementsController } from "./statements.controller";
 import { StatementsService } from "./statements.service";
 import { CollectionsController } from "./collections.controller";
 import { CollectionsService } from "./collections.service";
+import { ArPaymentsController } from "./ar-payments.controller";
+import { ArPaymentsService } from "./ar-payments.service";
 
 @Module({
   imports: [AccountingModule, InvoicesModule, NotificationsModule],
@@ -21,6 +23,7 @@ import { CollectionsService } from "./collections.service";
     RemindersController,
     StatementsController,
     CollectionsController,
+    ArPaymentsController,
   ],
   providers: [
     CreditNotesService,
@@ -28,6 +31,7 @@ import { CollectionsService } from "./collections.service";
     RemindersService,
     StatementsService,
     CollectionsService,
+    ArPaymentsService,
   ],
   exports: [RecurringInvoicesService, RemindersService],
 })

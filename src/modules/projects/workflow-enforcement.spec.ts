@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const ORG_ID = "org-1";
@@ -45,6 +46,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
       providers: [
         ProjectsTicketsQueryService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: CacheService, useValue: { del: jest.fn() } },
       ],
     }).compile();
     svc = module.get(ProjectsTicketsQueryService);

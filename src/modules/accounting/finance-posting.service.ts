@@ -158,8 +158,8 @@ export class FinancePostingService {
 
     const row = inserted[0];
     if (!row) throw new Error("Sequence upsert returned no rows");
-    const seq = (row.next as number) - 1;
-    const pad = (row.padding as number | null) ?? 5;
+    const seq = row.next - 1;
+    const pad = row.padding ?? 5;
     const period = yyyymm(entryDate);
     return `JE-${period}-${String(seq).padStart(pad, "0")}`;
   }

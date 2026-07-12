@@ -128,8 +128,8 @@ export class VendorCreditsService {
 
     const row = inserted[0];
     if (!row) throw new Error("Sequence upsert returned no rows");
-    const seq = (row.next as number) - 1;
-    const pad = (row.padding as number | null) ?? 4;
+    const seq = row.next - 1;
+    const pad = row.padding ?? 4;
     return `VC-${String(seq).padStart(pad, "0")}`;
   }
 
