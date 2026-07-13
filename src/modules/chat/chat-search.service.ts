@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
-import { chatChannelMembers, chatChannels, chatMessages, users } from "../../db/schema";
+import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 
@@ -71,10 +71,16 @@ export class ChatSearchService {
   async searchUsers(orgId: string, query: string) {
     if (!query.trim()) return [];
     const q = `%${query.trim()}%`;
-    return this.db.query.users.findMany({
-      where: or(ilike(users.name, q), ilike(users.email, q)),
-      columns: { id: true, name: true, email: true, image: true },
-      limit: 10,
-    });
+    return this.db
+      .select({ id: users.id, name: users.name, email: users.email, image: users.image })
+      .from(users)
+      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          or(ilike(users.name, q), ilike(users.email, q)),
+        ),
+      )
+      .limit(10);
   }
 }

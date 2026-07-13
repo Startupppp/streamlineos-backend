@@ -30,10 +30,12 @@ export class SearchService {
   ) {}
 
   search(orgId: string, userId: string, q: string, limit: number | undefined): Promise<SearchResponse> {
-    const queryHash = Buffer.from(q + (limit ?? "")).toString("base64url").slice(0, 32);
+    const trimmed = q.trim();
+    if (!trimmed) return Promise.resolve({ results: [], total: 0 });
+    const queryHash = Buffer.from(trimmed + (limit ?? "")).toString("base64url").slice(0, 32);
     return this.cache.cached(
       CACHE_KEYS.searchResults(orgId, userId, queryHash),
-      () => this.executeSearch(orgId, q, limit),
+      () => this.executeSearch(orgId, trimmed, limit),
       CACHE_TTL.SHORT,
     );
   }
