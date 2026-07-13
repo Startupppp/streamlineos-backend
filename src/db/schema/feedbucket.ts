@@ -50,6 +50,18 @@ export interface FeedbucketConsoleEntry {
   ts?: number;
 }
 
+export interface FeedbucketNetworkEntry {
+  method: string;
+  url: string;
+  status: number;
+  statusText: string;
+  durationMs: number;
+  startedAt: string;
+  type: "xhr" | "fetch";
+  ok: boolean;
+  error?: string;
+}
+
 export interface FeedbucketWidgetTheme {
   color?: string;
   position?: "bottom-right" | "bottom-left";
@@ -128,6 +140,7 @@ export const feedbucketSubmissions = pgTable(
     screenshotKey: text("screenshot_key"),
     metadata: jsonb("metadata").$type<FeedbucketMetadata>(),
     consoleLogs: jsonb("console_logs").$type<FeedbucketConsoleEntry[]>(),
+    networkLogs: jsonb("network_logs").$type<FeedbucketNetworkEntry[]>(),
     reporterName: text("reporter_name"),
     reporterEmail: text("reporter_email"),
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),

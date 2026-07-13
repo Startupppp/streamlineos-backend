@@ -39,6 +39,7 @@ export class FeedbucketPublicService {
         reporterEmail: dto.reporterEmail,
         metadata: dto.metadata,
         consoleLogs: dto.consoleLogs,
+        networkLogs: dto.networkLogs,
         screenshotUrl,
         status: "open",
       })

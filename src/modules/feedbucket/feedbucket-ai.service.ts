@@ -31,6 +31,7 @@ import {
   buildBugDescription,
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
 
 const AI_CREDIT_COST = 5;
 const FEATURE_KEY = "feedbucket.ai-analyze" as const;
@@ -190,6 +191,7 @@ export class FeedbucketAiService {
     message: string;
     pageUrl?: string | null;
     imageDataUrls: string[];
+    networkLogs?: FeedbucketNetworkEntry[] | null;
   }): Promise<FeedbackAnalysis> {
     const system = buildSystemPrompt();
     const userContent = buildUserPrompt({
@@ -198,6 +200,7 @@ export class FeedbucketAiService {
       pageUrl: opts.pageUrl,
       metadata: null,
       consoleLogs: null,
+      networkLogs: opts.networkLogs,
     });
     const rawResult = await this.llm.invokeStructuredWithImage({
       model: "standard",
@@ -224,6 +227,7 @@ export class FeedbucketAiService {
     message: string;
     pageUrl?: string | null;
     screenshotBuffer?: Buffer | null;
+    networkLogs?: FeedbucketNetworkEntry[] | null;
   }): Promise<{ suggestedType: string; title: string; description: string }> {
     this.ensureLlm();
 
@@ -251,6 +255,7 @@ export class FeedbucketAiService {
         message: opts.message,
         pageUrl: opts.pageUrl,
         imageDataUrls,
+        networkLogs: opts.networkLogs,
       });
     } catch (err) {
       if (err instanceof ServiceUnavailableException) {
@@ -311,6 +316,7 @@ export class FeedbucketAiService {
       pageUrl: submission.pageUrl,
       metadata: submission.metadata,
       consoleLogs: submission.consoleLogs,
+      networkLogs: submission.networkLogs,
     });
 
     let rawResult: FeedbackAnalysis;

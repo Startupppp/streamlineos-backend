@@ -1,5 +1,5 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { desc, eq, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -170,6 +170,57 @@ export class AiCreditsService {
     });
   }
 
+  async purchaseCreditsDirectly(orgId: string, userId: string, packId: number) {
+    const [pack] = await this.db
+      .select()
+      .from(aiCreditPacks)
+      .where(and(eq(aiCreditPacks.id, packId), eq(aiCreditPacks.isActive, true)));
+
+    if (!pack) throw new NotFoundException("AI credit pack not found or inactive");
+
+    const creditsAdded = pack.credits + pack.bonusCredits;
+
+    const wallet = await this.db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(orgAiCredits)
+        .where(eq(orgAiCredits.orgId, orgId))
+        .for("update");
+
+      let currentBalance = 0;
+      if (locked) {
+        currentBalance = locked.balance;
+      } else {
+        await tx.insert(orgAiCredits).values({ orgId });
+      }
+
+      const newBalance = currentBalance + creditsAdded;
+      const [updated] = await tx
+        .update(orgAiCredits)
+        .set({
+          balance: newBalance,
+          lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(orgAiCredits.orgId, orgId))
+        .returning();
+
+      await tx.insert(aiCreditTransactions).values({
+        orgId,
+        userId,
+        type: "PURCHASE",
+        amount: creditsAdded,
+        balanceAfter: newBalance,
+        feature: "credit_purchase",
+        referenceId: String(packId),
+      });
+
+      return updated;
+    });
+
+    return { balance: wallet.balance, creditsAdded, pack };
+  }
+
   async updateAutoTopUp(
     orgId: string,
     enabled: boolean,
@@ -198,4 +249,5 @@ export class AiCreditsService {
       .returning();
     return updated;
   }
+
 }

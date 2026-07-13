@@ -12,10 +12,43 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput, UpdateChannelInput } from "./dto/chat.schemas";
+import {
+  isStaleEntityChannelName,
+  resolveEntityChannelName,
+} from "./entity-channel-name.util";
 
 @Injectable()
 export class ChatChannelsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private async ensureEntityChannelDisplayName<
+    T extends {
+      id: number;
+      name: string;
+      entityType: string | null;
+      entityId: string | null;
+    },
+  >(channel: T, orgId: string): Promise<T> {
+    if (!channel.entityType || !channel.entityId) return channel;
+
+    const resolved = await resolveEntityChannelName(
+      this.db,
+      channel.entityType,
+      channel.entityId,
+      orgId,
+    );
+    if (!resolved || channel.name === resolved) return channel;
+    if (!isStaleEntityChannelName(channel.name, channel.entityType, channel.entityId)) {
+      return channel;
+    }
+
+    await this.db
+      .update(chatChannels)
+      .set({ name: resolved })
+      .where(eq(chatChannels.id, channel.id));
+
+    return { ...channel, name: resolved };
+  }
 
   private async assertMember(channelId: number, userId: string) {
     const member = await this.db.query.chatChannelMembers.findFirst({
@@ -114,7 +147,11 @@ export class ChatChannelsService {
         ]),
       );
 
-      return channels.map((ch) => ({
+      const enrichedChannels = await Promise.all(
+        channels.map((ch) => this.ensureEntityChannelDisplayName(ch, orgId)),
+      );
+
+      return enrichedChannels.map((ch) => ({
         ...ch,
         unreadCount: unreadMap.get(ch.id) ?? 0,
         lastMessage: lastMsgMap.get(ch.id) ?? null,
@@ -169,7 +206,9 @@ export class ChatChannelsService {
       },
     });
 
-    return channel ?? null;
+    if (!channel) return null;
+
+    return this.ensureEntityChannelDisplayName(channel, channel.orgId);
   }
 
   async listMembers(channelId: number, userId: string) {
@@ -503,15 +542,23 @@ export class ChatChannelsService {
           role: "MEMBER",
         });
       }
-      return existing;
+      return this.ensureEntityChannelDisplayName(existing, orgId);
     }
+
+    const resolvedName = await resolveEntityChannelName(
+      this.db,
+      entityType,
+      entityId,
+      orgId,
+    );
+    const fallbackName = `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`;
 
     const channel = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(chatChannels)
         .values({
           orgId,
-          name: `${entityType.charAt(0).toUpperCase() + entityType.slice(1)}: ${entityId}`,
+          name: resolvedName ?? fallbackName,
           type: "GROUP",
           createdBy: userId,
           entityType,

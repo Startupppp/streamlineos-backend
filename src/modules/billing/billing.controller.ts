@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -8,6 +8,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { RazorpayService } from "./razorpay.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -28,7 +29,7 @@ import {
   type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import { autoTopUpSchema } from "./dto/ai-credits.schemas";
+import { autoTopUpSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import {
@@ -49,6 +50,7 @@ export class BillingController {
     private readonly billing: BillingService,
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
+    private readonly razorpay: RazorpayService,
     private readonly affiliate: AffiliateService,
     private readonly referral: ReferralService,
     private readonly analytics: RevenueAnalyticsService,
@@ -188,6 +190,28 @@ export class BillingController {
       body.packId,
       body.threshold,
     );
+  }
+
+  @Post("ai-credits/purchase")
+  @HttpCode(200)
+  @RequirePermission("billing:ai-credits:purchase")
+  async purchaseAiCredits(
+    @Body(new ZodValidationPipe(purchaseAiPackSchema)) body: PurchaseAiPackInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (body.paymentId) {
+      const valid = this.razorpay.verifyPaymentSignature(
+        body.orderId ?? "",
+        body.paymentId,
+        body.signature ?? "",
+      );
+      if (!valid) throw new BadRequestException("Invalid payment signature");
+      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
+    }
+    if (this.razorpay.isConfigured()) {
+      return this.billing.purchaseAddon(u.orgId, u.userId, `ai_pack_${body.packId}`, 1);
+    }
+    return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
   }
 
   @Get("profile")

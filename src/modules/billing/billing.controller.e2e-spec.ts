@@ -77,6 +77,23 @@ describe("Billing auth/RBAC (e2e)", () => {
     expect(res.status).not.toBe(403);
   });
 
+  it("401 on POST /billing/ai-credits/purchase without a token", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/billing/ai-credits/purchase")
+      .send({ packId: 1 });
+    expect(res.status).toBe(401);
+  });
+
+  it("403 on POST /billing/ai-credits/purchase without billing:ai-credits:purchase permission", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post("/billing/ai-credits/purchase")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ packId: 1 });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "RBAC_DENIED" });
+  });
+
   it("POST /webhooks/razorpay is public and rejects an invalid signature", async () => {
     const res = await request(app.getHttpServer())
       .post("/webhooks/razorpay")

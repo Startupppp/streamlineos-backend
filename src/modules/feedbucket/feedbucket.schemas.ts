@@ -22,6 +22,18 @@ const feedbucketConsoleEntrySchema = z.object({
   ts: z.number().optional(),
 });
 
+const feedbucketNetworkEntrySchema = z.object({
+  method: z.string().max(16),
+  url: z.string().max(2048),
+  status: z.number().int().min(0).max(999),
+  statusText: z.string().max(200),
+  durationMs: z.number().min(0),
+  startedAt: z.string().max(64),
+  type: z.enum(["xhr", "fetch"]),
+  ok: z.boolean(),
+  error: z.string().max(500).optional(),
+});
+
 export const createWidgetSchema = z.object({
   name: z.string().min(1).max(100),
   projectId: z.number().int().positive().nullable().optional(),
@@ -66,12 +78,14 @@ export const publicSubmitSchema = z.object({
   reporterEmail: z.string().email().optional(),
   metadata: feedbucketMetadataSchema,
   consoleLogs: z.array(feedbucketConsoleEntrySchema).max(50).optional(),
+  networkLogs: z.array(feedbucketNetworkEntrySchema).max(50).optional(),
 });
 
 export const publicAiAssistSchema = z.object({
   type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
   message: z.string().max(5000).optional(),
   pageUrl: z.string().url().max(2048).optional(),
+  networkLogs: z.array(feedbucketNetworkEntrySchema).max(50).optional(),
 });
 
 export type PublicAiAssistInput = z.infer<typeof publicAiAssistSchema>;

@@ -1,4 +1,4 @@
-import type { FeedbucketMetadata, FeedbucketConsoleEntry } from "../../db/schema/feedbucket";
+import type { FeedbucketMetadata, FeedbucketConsoleEntry, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
 import type { FeedbackAnalysis } from "./feedbucket-ai.schemas";
 
 const INJECTION_GUARD =
@@ -27,6 +27,7 @@ export function buildUserPrompt(opts: {
   pageUrl: string | null | undefined;
   metadata: FeedbucketMetadata | null | undefined;
   consoleLogs: FeedbucketConsoleEntry[] | null | undefined;
+  networkLogs?: FeedbucketNetworkEntry[] | null;
 }): string {
   const env = [
     opts.metadata?.browser && `Browser: ${opts.metadata.browser} ${opts.metadata.browserVersion ?? ""}`.trim(),
@@ -45,12 +46,19 @@ export function buildUserPrompt(opts: {
     .map((e) => `[${e.level.toUpperCase()}] ${e.message}`)
     .join("\n");
 
+  const failedNetworkLines = (opts.networkLogs ?? [])
+    .filter((e) => !e.ok || e.status === 0 || e.status >= 400)
+    .slice(0, 10)
+    .map((e) => `${e.method} ${e.url} → ${e.status || "FAILED"} (${e.durationMs}ms)${e.error ? ` [${e.error}]` : ""}`)
+    .join("\n");
+
   return [
     `<<<FEEDBACK_TYPE>>>\n${opts.type}\n<<<END_FEEDBACK_TYPE>>>`,
     `<<<FEEDBACK_MESSAGE>>>\n${opts.message}\n<<<END_FEEDBACK_MESSAGE>>>`,
     opts.pageUrl ? `<<<PAGE_URL>>>\n${opts.pageUrl}\n<<<END_PAGE_URL>>>` : null,
     env ? `<<<ENVIRONMENT>>>\n${env}\n<<<END_ENVIRONMENT>>>` : null,
     errorLines ? `<<<CONSOLE_LOGS>>>\n${errorLines}\n<<<END_CONSOLE_LOGS>>>` : null,
+    failedNetworkLines ? `<<<FAILED_NETWORK_REQUESTS>>>\n${failedNetworkLines}\n<<<END_FAILED_NETWORK_REQUESTS>>>` : null,
   ]
     .filter(Boolean)
     .join("\n\n");

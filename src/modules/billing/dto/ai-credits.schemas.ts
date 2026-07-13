@@ -7,6 +7,8 @@ export const purchaseAiPackSchema = z.object({
   signature: z.string().optional(),
 });
 
+export type PurchaseAiPackInput = z.infer<typeof purchaseAiPackSchema>;
+
 export const consumeCreditsSchema = z.object({
   amount: z.number().int().positive(),
   feature: z.string().max(100),

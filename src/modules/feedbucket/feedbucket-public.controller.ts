@@ -71,7 +71,7 @@ function originHostname(req: Request): string | undefined {
 }
 
 function parseMultipartField(raw: unknown, fieldName: string): unknown {
-  if (fieldName === "consoleLogs" || fieldName === "metadata") {
+  if (fieldName === "consoleLogs" || fieldName === "metadata" || fieldName === "networkLogs") {
     if (typeof raw === "string") {
       try {
         return JSON.parse(raw);
@@ -303,7 +303,11 @@ export class FeedbucketPublicController {
       }
     }
 
-    const dto = publicAiAssistSchema.parse(rawBody);
+    const normalizedAiBody: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(rawBody)) {
+      normalizedAiBody[key] = parseMultipartField(val, key);
+    }
+    const dto = publicAiAssistSchema.parse(normalizedAiBody);
 
     const actorUserId = widget.createdBy ?? "system";
 
@@ -317,6 +321,7 @@ export class FeedbucketPublicController {
         message: dto.message ?? "",
         pageUrl: dto.pageUrl,
         screenshotBuffer: screenshot?.buffer ?? null,
+        networkLogs: dto.networkLogs,
       });
     } catch (err) {
       if (err instanceof HttpException && err.getStatus() === HttpStatus.SERVICE_UNAVAILABLE) {
