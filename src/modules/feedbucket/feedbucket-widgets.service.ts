@@ -27,6 +27,7 @@ export class FeedbucketWidgetsService {
           projectId: dto.projectId ?? null,
           allowedDomains: dto.allowedDomains ?? [],
           autoCreateTicket: dto.autoCreateTicket ?? false,
+          aiAssistEnabled: dto.aiAssistEnabled ?? false,
           defaultTicketType: dto.defaultTicketType ?? "BUG",
           theme: dto.theme ?? null,
           createdBy: userId,
@@ -96,6 +97,7 @@ export class FeedbucketWidgetsService {
     if (dto.projectId !== undefined) patch.projectId = dto.projectId;
     if (dto.allowedDomains !== undefined) patch.allowedDomains = dto.allowedDomains;
     if (dto.autoCreateTicket !== undefined) patch.autoCreateTicket = dto.autoCreateTicket;
+    if (dto.aiAssistEnabled !== undefined) patch.aiAssistEnabled = dto.aiAssistEnabled;
     if (dto.defaultTicketType !== undefined) patch.defaultTicketType = dto.defaultTicketType;
     if (dto.theme !== undefined) patch.theme = dto.theme ?? null;
     if (dto.isActive !== undefined) patch.isActive = dto.isActive;

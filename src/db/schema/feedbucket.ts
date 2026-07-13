@@ -96,6 +96,7 @@ export const feedbucketWidgets = pgTable(
     autoCreateTicket: boolean("auto_create_ticket").notNull().default(false),
     defaultTicketType: text("default_ticket_type").notNull().default("BUG"),
     isActive: boolean("is_active").notNull().default(true),
+    aiAssistEnabled: boolean("ai_assist_enabled").notNull().default(false),
     theme: jsonb("theme").$type<FeedbucketWidgetTheme>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -34,6 +34,34 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 const AI_CREDIT_COST = 5;
 const FEATURE_KEY = "feedbucket.ai-analyze" as const;
+const PUBLIC_FEATURE_KEY = "feedbucket.ai-assist" as const;
+
+const WIDGET_TYPE_MAP: Record<FeedbackAnalysis["type"], string> = {
+  bug: "bug",
+  feature: "feature",
+  improvement: "idea",
+  question: "question",
+  praise: "praise",
+  other: "other",
+};
+
+function mapPublicType(type: FeedbackAnalysis["type"]): string {
+  return WIDGET_TYPE_MAP[type];
+}
+
+function buildPlaintextDescription(analysis: FeedbackAnalysis): string {
+  const parts: string[] = [analysis.summary];
+  if (analysis.reproductionSteps.length > 0) {
+    parts.push("\nSteps to reproduce:");
+    analysis.reproductionSteps.forEach((step, i) => parts.push(`${i + 1}. ${step}`));
+  }
+  if (analysis.suggestions.length > 0) {
+    parts.push("\nSuggestions:");
+    analysis.suggestions.forEach((s) => parts.push(`- ${s}`));
+  }
+  return parts.join("\n");
+}
+
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 8000;
 
@@ -155,6 +183,93 @@ export class FeedbucketAiService {
     } catch {
       return [];
     }
+  }
+
+  async runVisionAnalysis(opts: {
+    type: string;
+    message: string;
+    pageUrl?: string | null;
+    imageDataUrls: string[];
+  }): Promise<FeedbackAnalysis> {
+    const system = buildSystemPrompt();
+    const userContent = buildUserPrompt({
+      type: opts.type,
+      message: opts.message,
+      pageUrl: opts.pageUrl,
+      metadata: null,
+      consoleLogs: null,
+    });
+    const rawResult = await this.llm.invokeStructuredWithImage({
+      model: "standard",
+      schema: FeedbackAnalysisSchema,
+      schemaName: "FeedbackAnalysis",
+      system,
+      user: userContent,
+      images: opts.imageDataUrls,
+    });
+    return {
+      ...rawResult,
+      suggestedTicketType: mapToTicketType(rawResult.type),
+      description: sanitizeHtml(rawResult.description),
+      model: "standard",
+      processedAt: new Date().toISOString(),
+    };
+  }
+
+  async analyzePublic(opts: {
+    orgId: string;
+    actorUserId: string;
+    widgetId: number;
+    type: string;
+    message: string;
+    pageUrl?: string | null;
+    screenshotBuffer?: Buffer | null;
+  }): Promise<{ suggestedType: string; title: string; description: string }> {
+    this.ensureLlm();
+
+    let imageDataUrls: string[] = [];
+    if (opts.screenshotBuffer) {
+      const mime = detectImageMime(opts.screenshotBuffer);
+      if (mime) {
+        imageDataUrls = [`data:${mime};base64,${opts.screenshotBuffer.toString("base64")}`];
+      }
+    }
+
+    await this.credits.consumeCredits(
+      opts.orgId,
+      opts.actorUserId,
+      AI_CREDIT_COST,
+      PUBLIC_FEATURE_KEY,
+      "standard",
+      String(opts.widgetId),
+    );
+
+    let analysis: FeedbackAnalysis;
+    try {
+      analysis = await this.runVisionAnalysis({
+        type: opts.type,
+        message: opts.message,
+        pageUrl: opts.pageUrl,
+        imageDataUrls,
+      });
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        await this.credits.refundCredits(
+          opts.orgId,
+          opts.actorUserId,
+          AI_CREDIT_COST,
+          PUBLIC_FEATURE_KEY,
+          String(opts.widgetId),
+        );
+      }
+      throw err;
+    }
+
+    return {
+      suggestedType: mapPublicType(analysis.type),
+      title: analysis.title,
+      description: buildPlaintextDescription(analysis),
+    };
   }
 
   async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis> {

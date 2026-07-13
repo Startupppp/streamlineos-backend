@@ -3,27 +3,31 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpException,
+  HttpStatus,
   Inject,
   NotFoundException,
   Param,
   Post,
   Req,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from "@nestjs/common";
-import { FileFieldsInterceptor } from "@nestjs/platform-express";
+import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
 import { FeedbucketPublicService } from "./feedbucket-public.service";
+import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../projects/projects-tickets.service";
 import { validateMagicBytes } from "../storage/file-signatures";
-import { publicSubmitSchema } from "./feedbucket.schemas";
+import { publicSubmitSchema, publicAiAssistSchema } from "./feedbucket.schemas";
 import { feedbucketAttachments, feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -84,12 +88,38 @@ function parseMultipartField(raw: unknown, fieldName: string): unknown {
 export class FeedbucketPublicController {
   constructor(
     private readonly publicService: FeedbucketPublicService,
+    private readonly aiService: FeedbucketAiService,
     private readonly storage: StorageService,
     private readonly notifications: NotificationsService,
     private readonly rateLimitService: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
+
+  @Get(":publicKey/config")
+  async config(
+    @Param("publicKey") publicKey: string,
+    @Req() req: Request,
+  ) {
+    const widget = await this.publicService.resolveWidget(publicKey);
+    if (!widget) throw new NotFoundException("Widget not found");
+
+    const ip = clientIp(req);
+    const rlResult = await this.rateLimitService.check(
+      "feedbucket:widget-config",
+      `${widget.id}:${ip ?? "anon"}`,
+    );
+    if (!rlResult.allowed) {
+      throw new HttpException({ message: "Rate limit exceeded" }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    return {
+      name: widget.name,
+      theme: widget.theme,
+      defaultTicketType: widget.defaultTicketType,
+      aiAssistEnabled: widget.aiAssistEnabled,
+    };
+  }
 
   @Post(":publicKey")
   @HttpCode(200)
@@ -221,6 +251,90 @@ export class FeedbucketPublicController {
     }
 
     return { ok: true };
+  }
+
+  @Post(":publicKey/ai-assist")
+  @HttpCode(200)
+  @UseInterceptors(
+    FileInterceptor("screenshot", { limits: { fileSize: MAX_SCREENSHOT_BYTES } }),
+  )
+  async aiAssist(
+    @Param("publicKey") publicKey: string,
+    @Body() rawBody: Record<string, unknown>,
+    @UploadedFile() screenshot: Express.Multer.File | undefined,
+    @Req() req: Request,
+  ) {
+    const widget = await this.publicService.resolveWidget(publicKey);
+    if (!widget) throw new NotFoundException("Widget not found");
+
+    if (!widget.aiAssistEnabled) throw new NotFoundException("Widget not found");
+
+    const host = originHostname(req);
+    if (widget.allowedDomains.length > 0 && host !== undefined && !widget.allowedDomains.includes(host)) {
+      throw new ForbiddenException("Origin not allowed");
+    }
+
+    const ip = clientIp(req);
+    const perIpResult = await this.rateLimitService.check(
+      "feedbucket:ai-assist",
+      `${widget.id}:${ip ?? "anon"}`,
+    );
+    if (!perIpResult.allowed) {
+      throw new HttpException({ message: "Rate limit exceeded" }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const dailyResult = await this.rateLimitService.check(
+      "feedbucket:ai-assist-daily",
+      String(widget.id),
+    );
+    if (!dailyResult.allowed) {
+      throw new HttpException({ message: "Widget daily AI limit reached" }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    if (screenshot) {
+      if (screenshot.size > MAX_SCREENSHOT_BYTES) {
+        throw new BadRequestException("Screenshot must be under 5MB");
+      }
+      if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype)) {
+        throw new BadRequestException("Screenshot must be an image (JPEG, PNG, GIF, or WebP)");
+      }
+      if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype)) {
+        throw new BadRequestException("Screenshot file content does not match its type");
+      }
+    }
+
+    const dto = publicAiAssistSchema.parse(rawBody);
+
+    const actorUserId = widget.createdBy ?? "system";
+
+    let result: { suggestedType: string; title: string; description: string };
+    try {
+      result = await this.aiService.analyzePublic({
+        orgId: widget.orgId,
+        actorUserId,
+        widgetId: widget.id,
+        type: dto.type ?? "other",
+        message: dto.message ?? "",
+        pageUrl: dto.pageUrl,
+        screenshotBuffer: screenshot?.buffer ?? null,
+      });
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.SERVICE_UNAVAILABLE) {
+        throw new HttpException(
+          { message: "AI service is temporarily unavailable. Please try again later." },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.BAD_REQUEST) {
+        throw new HttpException(
+          { message: "Insufficient AI credits for this widget." },
+          HttpStatus.PAYMENT_REQUIRED,
+        );
+      }
+      throw err;
+    }
+
+    return result;
   }
 
   private async autoLinkTicket(

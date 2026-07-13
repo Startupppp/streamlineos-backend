@@ -24,6 +24,7 @@ const activeWidget = {
   projectId: 10,
   allowedDomains: [],
   autoCreateTicket: false,
+  aiAssistEnabled: false,
   defaultTicketType: "BUG",
   isActive: true,
   theme: null,

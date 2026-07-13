@@ -33,6 +33,8 @@ const TIERS: Record<string, Tier> = {
   "feedbucket:widget-submit": { limit: 10, windowSecs: 60 },
   "feedbucket:widget-config": { limit: 60, windowSecs: 60 },
   "feedbucket:ai-analyze": { limit: 20, windowSecs: 60 },
+  "feedbucket:ai-assist": { limit: 5, windowSecs: 60 },
+  "feedbucket:ai-assist-daily": { limit: 200, windowSecs: 86400 },
   "sign:public-session": { limit: 60, windowSecs: 60 },
   "sign:public-auth": { limit: 10, windowSecs: 60 },
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },

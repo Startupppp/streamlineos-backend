@@ -27,6 +27,7 @@ export const createWidgetSchema = z.object({
   projectId: z.number().int().positive().nullable().optional(),
   allowedDomains: z.array(z.string()).optional(),
   autoCreateTicket: z.boolean().optional(),
+  aiAssistEnabled: z.boolean().optional(),
   defaultTicketType: z.string().optional(),
   theme: z
     .object({
@@ -66,6 +67,14 @@ export const publicSubmitSchema = z.object({
   metadata: feedbucketMetadataSchema,
   consoleLogs: z.array(feedbucketConsoleEntrySchema).max(50).optional(),
 });
+
+export const publicAiAssistSchema = z.object({
+  type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
+  message: z.string().max(5000).optional(),
+  pageUrl: z.string().url().max(2048).optional(),
+});
+
+export type PublicAiAssistInput = z.infer<typeof publicAiAssistSchema>;
 
 export type CreateWidgetInput = z.infer<typeof createWidgetSchema>;
 export type UpdateWidgetInput = z.infer<typeof updateWidgetSchema>;
