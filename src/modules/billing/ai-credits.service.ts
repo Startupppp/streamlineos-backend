@@ -84,6 +84,49 @@ export class AiCreditsService {
     });
   }
 
+  async refundCredits(
+    orgId: string,
+    userId: string,
+    amount: number,
+    feature: string,
+    referenceId?: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select()
+        .from(orgAiCredits)
+        .where(eq(orgAiCredits.orgId, orgId))
+        .for("update");
+
+      const currentBalance = wallet?.balance ?? 0;
+      const newBalance = currentBalance + amount;
+
+      if (wallet) {
+        await tx
+          .update(orgAiCredits)
+          .set({
+            balance: newBalance,
+            updatedAt: new Date(),
+          })
+          .where(eq(orgAiCredits.orgId, orgId));
+      } else {
+        await tx.insert(orgAiCredits).values({ orgId, balance: newBalance });
+      }
+
+      await tx.insert(aiCreditTransactions).values({
+        orgId,
+        userId,
+        type: "REFUND",
+        amount,
+        balanceAfter: newBalance,
+        feature,
+        referenceId,
+      });
+
+      return { balance: newBalance };
+    });
+  }
+
   async grantPlanCredits(orgId: string, plan: string, userId?: string) {
     const grantMap: Record<string, number> = {
       STARTER: 500,

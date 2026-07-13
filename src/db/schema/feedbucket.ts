@@ -15,6 +15,21 @@ import { organizations, users } from "./auth";
 import { projects } from "./projects/core";
 import { tickets } from "./projects/tasks";
 
+export interface FeedbucketAiAnalysis {
+  type: string;
+  confidence: number;
+  suggestedTicketType: string;
+  title: string;
+  summary: string;
+  description: string;
+  reproductionSteps: string[];
+  suggestions: string[];
+  acceptanceCriteria: string[];
+  priority: string;
+  model: string;
+  processedAt: string;
+}
+
 export interface FeedbucketMetadata {
   browser?: string;
   browserVersion?: string;
@@ -116,6 +131,11 @@ export const feedbucketSubmissions = pgTable(
     reporterEmail: text("reporter_email"),
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+    aiType: text("ai_type"),
+    aiConfidence: integer("ai_confidence"),
+    aiAnalysis: jsonb("ai_analysis").$type<FeedbucketAiAnalysis>(),
+    aiModel: text("ai_model"),
+    aiProcessedAt: timestamp("ai_processed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),

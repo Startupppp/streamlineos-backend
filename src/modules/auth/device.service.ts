@@ -5,6 +5,7 @@ import { devices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { withDeviceClientInfo } from "../../common/http/parse-user-agent";
 
 @Injectable()
 export class DeviceService {
@@ -17,8 +18,8 @@ export class DeviceService {
     userId: string;
     fingerprint: string;
     browser?: string;
-    os?: string;
-    platform?: string;
+    os?: string | null;
+    platform?: string | null;
   }): Promise<{ id: string; trusted: boolean }> {
     const existing = await this.db.query.devices.findFirst({
       where: and(eq(devices.userId, params.userId), eq(devices.fingerprint, params.fingerprint)),
@@ -27,7 +28,12 @@ export class DeviceService {
     if (existing) {
       await this.db
         .update(devices)
-        .set({ lastSeenAt: new Date() })
+        .set({
+          lastSeenAt: new Date(),
+          ...(params.browser !== undefined ? { browser: params.browser } : {}),
+          ...(params.os !== undefined ? { os: params.os } : {}),
+          ...(params.platform !== undefined ? { platform: params.platform } : {}),
+        })
         .where(and(eq(devices.userId, params.userId), eq(devices.fingerprint, params.fingerprint)));
       return { id: existing.id, trusted: existing.trusted };
     }
@@ -49,7 +55,13 @@ export class DeviceService {
   async list(userId: string) {
     return this.cache.cached(
       `devices:${userId}`,
-      () => this.db.query.devices.findMany({ where: eq(devices.userId, userId), orderBy: (t, { desc }) => [desc(t.lastSeenAt)] }),
+      async () => {
+        const rows = await this.db.query.devices.findMany({
+          where: eq(devices.userId, userId),
+          orderBy: (t, { desc }) => [desc(t.lastSeenAt)],
+        });
+        return rows.map(withDeviceClientInfo);
+      },
       60,
     );
   }

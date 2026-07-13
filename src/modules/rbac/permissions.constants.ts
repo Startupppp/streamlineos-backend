@@ -3354,6 +3354,12 @@ const FEEDBUCKET_PERMISSIONS: Permission[] = [
     action: "assign",
     description: "Assign feedback submissions to team members",
   },
+  {
+    name: "feedbucket:submissions:ai",
+    resource: "feedbucket:submissions",
+    action: "ai",
+    description: "Run AI triage analysis on feedback submissions",
+  },
 ];
 
 const NOTIFICATIONS_PERMISSIONS: Permission[] = [
@@ -3777,6 +3783,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "feedbucket:submissions:delete",
     "feedbucket:submissions:manage",
     "feedbucket:submissions:assign",
+    "feedbucket:submissions:ai",
   ],
 
   ENGINEERING: [
@@ -4096,6 +4103,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "feedbucket:submissions:delete",
     "feedbucket:submissions:manage",
     "feedbucket:submissions:assign",
+    "feedbucket:submissions:ai",
     "crm:ai:use",
   ],
 

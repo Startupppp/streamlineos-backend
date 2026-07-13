@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
+import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { ProjectsTicketsService } from "../projects/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -31,6 +32,7 @@ import {
   type UpdateSubmissionInput,
   type UpdateWidgetInput,
 } from "./feedbucket.schemas";
+import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
 
 @Controller("feedbucket")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -39,6 +41,7 @@ export class FeedbucketController {
     private readonly widgets: FeedbucketWidgetsService,
     private readonly submissions: FeedbucketSubmissionsService,
     private readonly tickets: ProjectsTicketsService,
+    private readonly feedbucketAi: FeedbucketAiService,
   ) {}
 
   @Get("widgets")
@@ -139,6 +142,25 @@ export class FeedbucketController {
     @Param("submissionId", ParseIntPipe) submissionId: number,
   ) {
     return this.submissions.convertToTicket(user.orgId, user.userId, submissionId, this.tickets);
+  }
+
+  @Post("submissions/:submissionId/ai-analyze")
+  @RequirePermission("feedbucket:submissions:ai")
+  analyzeSubmission(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("submissionId", ParseIntPipe) submissionId: number,
+    @Body(new ZodValidationPipe(analyzeBodySchema)) body: AnalyzeBodyInput,
+  ) {
+    return this.feedbucketAi.analyze(user, submissionId, body.force ?? false);
+  }
+
+  @Post("submissions/:submissionId/ai-create-ticket")
+  @RequirePermission("feedbucket:submissions:manage")
+  createTicketFromAnalysis(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("submissionId", ParseIntPipe) submissionId: number,
+  ) {
+    return this.feedbucketAi.createTicketFromAnalysis(user, submissionId);
   }
 
   @Get("stats")

@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import type { Redis } from "@upstash/redis";
+import { withClientInfo } from "../../common/http/parse-user-agent";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 
@@ -34,7 +35,10 @@ export class SessionsService {
       columns: { id: true, userAgent: true, ipAddress: true, lastActive: true, createdAt: true },
     });
 
-    return rows.map((s) => ({ ...s, isCurrent: s.id === currentSessionId }));
+    return rows.map((s) => ({
+      ...withClientInfo(s),
+      isCurrent: s.id === currentSessionId,
+    }));
   }
 
   async revokeOne(userId: string, currentSessionId: string, targetSessionId: string) {

@@ -32,6 +32,7 @@ import { SessionService } from "./session.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import { decryptTotpSecret, verifyTotpCode } from "./totp.util";
 import { hashToken } from "../../common/security/token.util";
+import { parseUserAgent } from "../../common/http/parse-user-agent";
 import { addDays, addHours } from "date-fns";
 import type {
   LoginInput,
@@ -287,10 +288,13 @@ export class AuthService {
       }
     }
 
+    const clientInfo = parseUserAgent(context.userAgent);
     const device = await this.deviceService.findOrCreate({
       userId: user.id,
       fingerprint: context.fingerprint ?? context.userAgent ?? "unknown",
-      browser: context.userAgent?.split(" ")?.[0],
+      browser: clientInfo.browser,
+      os: clientInfo.os,
+      platform: clientInfo.platform,
     });
 
     const expiresAt = input.rememberMe ? addDays(new Date(), 30) : addDays(new Date(), 1);

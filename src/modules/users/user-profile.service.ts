@@ -19,6 +19,7 @@ import type {
   UpdateMembershipInput,
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
+import { withClientInfo, withDeviceClientInfo } from "../../common/http/parse-user-agent";
 
 @Injectable()
 export class UserProfileService {
@@ -40,11 +41,12 @@ export class UserProfileService {
 
   async getUserSessions(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
-    return this.db
+    const rows = await this.db
       .select()
       .from(userSessions)
       .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
       .orderBy(desc(userSessions.createdAt));
+    return rows.map(withClientInfo);
   }
 
   async revokeSession(orgId: string, userId: string, sessionId: string, actorUserId: string) {
@@ -79,11 +81,12 @@ export class UserProfileService {
 
   async getUserDevices(orgId: string, userId: string) {
     await this.assertMember(orgId, userId);
-    return this.db
+    const rows = await this.db
       .select()
       .from(devices)
       .where(eq(devices.userId, userId))
       .orderBy(desc(devices.lastSeenAt));
+    return rows.map(withDeviceClientInfo);
   }
 
   async removeDevice(orgId: string, userId: string, deviceId: string, actorUserId: string) {
@@ -243,7 +246,7 @@ export class UserProfileService {
     ]);
 
     return {
-      data,
+      data: data.map(withClientInfo),
       pagination: {
         page,
         limit,

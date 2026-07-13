@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { z } from "zod";
 import { resolveLlmProvider, type LlmProviderConfig } from "./llm-provider.config";
 
@@ -11,6 +12,10 @@ interface InvokeOptions<T extends z.ZodTypeAny> {
   schemaName: string;
   system: string;
   user: string;
+}
+
+interface InvokeWithImageOptions<T extends z.ZodTypeAny> extends InvokeOptions<T> {
+  images: string[];
 }
 
 interface TextOptions {
@@ -85,6 +90,30 @@ export class LlmService {
         { role: "system", content: opts.system },
         { role: "user", content: opts.user },
       ]),
+    );
+    return opts.schema.parse(result);
+  }
+
+  async invokeStructuredWithImage<T extends z.ZodTypeAny>(opts: InvokeWithImageOptions<T>): Promise<z.infer<T>> {
+    if (opts.images.length === 0) return this.invokeStructured(opts);
+
+    const structured = this.modelFor(opts.model).withStructuredOutput(opts.schema, {
+      name: opts.schemaName,
+      method: "jsonSchema",
+      strict: true,
+    });
+
+    const imageBlocks = opts.images.map((dataUrl) => {
+      const match = /^data:(image\/[a-z]+);base64,(.+)$/.exec(dataUrl);
+      if (!match) return { type: "image_url" as const, image_url: { url: dataUrl } };
+      const [, mimeType, data] = match;
+      return { type: "image_url" as const, image_url: { url: `data:${mimeType};base64,${data}` } };
+    });
+
+    const humanContent = [{ type: "text" as const, text: opts.user }, ...imageBlocks];
+
+    const result = await this.run(() =>
+      structured.invoke([new SystemMessage(opts.system), new HumanMessage({ content: humanContent })]),
     );
     return opts.schema.parse(result);
   }

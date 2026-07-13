@@ -32,6 +32,7 @@ const TIERS: Record<string, Tier> = {
   "support:chat-widget": { limit: 60, windowSecs: 60 },
   "feedbucket:widget-submit": { limit: 10, windowSecs: 60 },
   "feedbucket:widget-config": { limit: 60, windowSecs: 60 },
+  "feedbucket:ai-analyze": { limit: 20, windowSecs: 60 },
   "sign:public-session": { limit: 60, windowSecs: 60 },
   "sign:public-auth": { limit: 10, windowSecs: 60 },
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },

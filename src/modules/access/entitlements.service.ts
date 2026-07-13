@@ -18,7 +18,6 @@ const MODULE_CATALOG = [
   "support",
   "surveys",
   "payroll",
-  "feedbucket",
   "sign",
 ] as const;
 

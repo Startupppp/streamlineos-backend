@@ -11,6 +11,7 @@ import {
   encryptBankDetails,
 } from "../modules/onboarding/crypto.helpers";
 import type { UpdateProfileInput } from "./dto/me.schemas";
+import { withClientInfo, withDeviceClientInfo } from "../common/http/parse-user-agent";
 
 const SPECIAL_CHARS = "@$!%*?&#^_+=\\-";
 const PASSWORD_HISTORY_LIMIT = 5;
@@ -186,14 +187,20 @@ export class MeService {
       }),
       this.db.select({ count: count() }).from(loginHistory).where(eq(loginHistory.userId, userId)),
     ]);
-    return { data: rows, total: countResult[0]?.count ?? 0, page, limit };
+    return {
+      data: rows.map(withClientInfo),
+      total: countResult[0]?.count ?? 0,
+      page,
+      limit,
+    };
   }
 
   async getDevices(userId: string) {
-    return this.db.query.devices.findMany({
+    const rows = await this.db.query.devices.findMany({
       where: eq(devices.userId, userId),
       orderBy: [desc(devices.lastSeenAt)],
     });
+    return rows.map(withDeviceClientInfo);
   }
 
   async deleteDevice(userId: string, deviceId: string): Promise<{ message: string }> {
