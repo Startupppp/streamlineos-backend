@@ -216,12 +216,18 @@ export class ProjectsService {
         where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
         with: {
           statuses: { orderBy: [asc(projectStatuses.order)] },
-          members: { with: { user: true } },
-          tickets: {
+          members: {
             with: {
-              assignee: true,
-              labels: { with: { label: true } },
-              cycle: { columns: { id: true, name: true, status: true, startDate: true, endDate: true } },
+              user: {
+                columns: {
+                  id: true,
+                  name: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  image: true,
+                },
+              },
             },
           },
         },

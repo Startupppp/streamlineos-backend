@@ -175,14 +175,70 @@ export class ProjectsTicketsReadService {
         ? [asc(col), desc(tickets.createdAt)]
         : [desc(col), desc(tickets.createdAt)];
 
+    const userCols = {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      image: true,
+    } as const;
+
     const [dataResult, countResult] = await Promise.all([
       this.db.query.tickets.findMany({
         where,
+        columns: {
+          id: true,
+          orgId: true,
+          title: true,
+          description: true,
+          type: true,
+          status: true,
+          priority: true,
+          projectId: true,
+          ticketNumber: true,
+          sprintId: true,
+          epicId: true,
+          assigneeId: true,
+          reporterId: true,
+          points: true,
+          storyPoints: true,
+          link: true,
+          order: true,
+          parentTicketId: true,
+          originalEstimate: true,
+          timeSpent: true,
+          startDate: true,
+          dueDate: true,
+          stateId: true,
+          moduleId: true,
+          cycleId: true,
+          sequenceId: true,
+          estimate: true,
+          createdAt: true,
+          updatedAt: true,
+        },
         with: {
-          assignee: true,
-          reporter: true,
-          assignees: { with: { user: true } },
-          labels: { with: { label: true } },
+          assignee: { columns: userCols },
+          assignees: {
+            with: { user: { columns: userCols } },
+          },
+          labels: {
+            with: {
+              label: {
+                columns: { id: true, name: true, color: true },
+              },
+            },
+          },
+          cycle: {
+            columns: {
+              id: true,
+              name: true,
+              status: true,
+              startDate: true,
+              endDate: true,
+            },
+          },
         },
         orderBy: sortExpr,
         limit,
@@ -202,17 +258,46 @@ export class ProjectsTicketsReadService {
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
+    const userCols = {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      image: true,
+    } as const;
+
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
       with: {
-        project: true,
-        sprint: true,
-        assignee: true,
-        reporter: true,
-        assignees: { with: { user: true } },
-        comments: { with: { user: true }, orderBy: [desc(ticketComments.createdAt)] },
-        attachments: { with: { uploader: true } },
-        labels: { with: { label: true } },
+        project: {
+          columns: { id: true, name: true, key: true, orgId: true },
+        },
+        sprint: {
+          columns: { id: true, name: true },
+        },
+        assignee: { columns: userCols },
+        reporter: { columns: userCols },
+        assignees: {
+          with: { user: { columns: userCols } },
+        },
+        comments: {
+          with: { user: { columns: userCols } },
+          orderBy: [desc(ticketComments.createdAt)],
+          limit: 50,
+        },
+        attachments: {
+          with: {
+            uploader: { columns: userCols },
+          },
+        },
+        labels: {
+          with: {
+            label: {
+              columns: { id: true, name: true, color: true },
+            },
+          },
+        },
       },
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
