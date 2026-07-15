@@ -75,6 +75,7 @@ export class AssetsService {
         userId: body.userId,
         assetId: body.assetId ?? null,
         assetName: body.assetName,
+        condition: body.condition ?? null,
         notes: body.notes ?? null,
         status: "PENDING",
       })

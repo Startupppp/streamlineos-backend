@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { AiModule } from "../ai/ai.module";
+import { BillingModule } from "../billing/billing.module";
 import { HrDepartmentsController } from "./hr-departments.controller";
 import { HrHolidaysController } from "./hr-holidays.controller";
 import { HrLeaveBlackoutController } from "./hr-leave-blackout.controller";
@@ -27,6 +29,7 @@ import { HrHandbookService } from "./hr-handbook.service";
 import { HrNotificationPreferencesService } from "./hr-notification-preferences.service";
 
 @Module({
+  imports: [AiModule, BillingModule],
   controllers: [
     HrDepartmentsController,
     HrHolidaysController,

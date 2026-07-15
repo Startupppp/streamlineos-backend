@@ -20,8 +20,10 @@ import { HrEmailTemplatesService } from "./hr-email-templates.service";
 import {
   createEmailTemplateSchema,
   updateEmailTemplateSchema,
+  generateEmailTemplateAiSchema,
   type CreateEmailTemplateInput,
   type UpdateEmailTemplateInput,
+  type GenerateEmailTemplateAiInput,
 } from "./dto/email-templates.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -61,5 +63,14 @@ export class HrEmailTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.emailTemplates.remove(u.orgId, templateId);
+  }
+
+  @Post("generate-ai")
+  @HttpCode(200)
+  generateAi(
+    @Body(new ZodValidationPipe(generateEmailTemplateAiSchema)) body: GenerateEmailTemplateAiInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.emailTemplates.generateWithAi(u.orgId, u.userId, body);
   }
 }

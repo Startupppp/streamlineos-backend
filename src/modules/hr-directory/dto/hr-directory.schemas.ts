@@ -42,7 +42,8 @@ export const createAssetReturnSchema = z.object({
   userId: z.string().min(1),
   assetId: z.number().int().positive().optional(),
   assetName: z.string().min(1, "Asset name is required"),
-  notes: z.string().optional(),
+  condition: z.string().optional(),
+  notes: z.string().max(1000, "Notes must be at most 1000 characters").optional(),
 });
 
 export const patchAssetReturnSchema = z.object({
@@ -139,19 +140,51 @@ export const patchAssetSchema = z.object({
 });
 
 export const createBgvSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1, "Employee is required"),
   type: z.string().min(1, "Verification type is required"),
-  provider: z.string().optional(),
-  referenceNumber: z.string().optional(),
-  notes: z.string().max(1000).optional(),
+  provider: z
+    .string()
+    .max(200, "Provider name must be 200 characters or fewer")
+    .refine((v) => v.trim().length > 0, "Provider name cannot be blank")
+    .optional(),
+  referenceNumber: z
+    .string()
+    .max(100, "Reference number must be 100 characters or fewer")
+    .refine((v) => v.trim().length > 0, "Reference number cannot be blank")
+    .refine(
+      (v) => /^[a-zA-Z0-9_/-]+$/.test(v.trim()),
+      "Reference number may only contain letters, digits, hyphens, underscores, and forward slashes",
+    )
+    .optional(),
+  notes: z.string().max(1000, "Notes must be 1000 characters or fewer").optional(),
 });
 
-export const updateBgvSchema = z.object({
-  id: z.number().int().positive(),
-  status: z.enum(["PENDING", "IN_PROGRESS", "PASSED", "FAILED"]).optional(),
-  result: z.string().max(500).optional(),
-  notes: z.string().max(1000).optional(),
-});
+const TERMINAL_BGV_STATUSES = ["PASSED", "FAILED"] as const;
+
+export const updateBgvSchema = z
+  .object({
+    id: z.number().int().positive(),
+    status: z.enum(["PENDING", "IN_PROGRESS", "PASSED", "FAILED"]).optional(),
+    result: z
+      .string()
+      .max(500, "Result must be 500 characters or fewer")
+      .refine((v) => v.trim().length > 0, "Result cannot be blank")
+      .optional(),
+    notes: z.string().max(1000, "Notes must be 1000 characters or fewer").optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.status !== undefined &&
+      (TERMINAL_BGV_STATUSES as readonly string[]).includes(data.status) &&
+      (!data.result || data.result.trim().length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["result"],
+        message: "Result is required when setting status to Passed or Failed",
+      });
+    }
+  });
 
 const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
 
