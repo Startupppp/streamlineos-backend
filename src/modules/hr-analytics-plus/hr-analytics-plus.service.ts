@@ -299,13 +299,19 @@ export class HrAnalyticsPlusService {
       async () => {
         const cycleFilter = cycleId ? sql` AND pr.cycle_id = ${cycleId}` : sql``;
         const rows = await this.db.execute(sql`
-          SELECT rating, COUNT(*) as count
+          SELECT overall_rating as rating, COUNT(*) as count
           FROM performance_reviews pr
           WHERE pr.org_id = ${orgId}${cycleFilter}
-          GROUP BY rating
-          ORDER BY rating
+            AND overall_rating IS NOT NULL
+          GROUP BY overall_rating
+          ORDER BY overall_rating
         `);
-        return { distribution: rows };
+        return {
+          distribution: rows.map((r) => ({
+            rating: Number(r.rating ?? 0),
+            count: Number(r.count ?? 0),
+          })),
+        };
       },
       CACHE_TTL.MEDIUM,
     );
