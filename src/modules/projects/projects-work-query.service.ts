@@ -135,10 +135,28 @@ export class ProjectsWorkQueryService {
     } = query;
     const offset = (page - 1) * limit;
 
-    const memberRows = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .where(eq(projectMembers.userId, u.userId));
+    const scopeQuery: Promise<{ ticketId: number }[]> =
+      scope === "mine"
+        ? this.db
+            .select({ ticketId: ticketAssignees.ticketId })
+            .from(ticketAssignees)
+            .where(eq(ticketAssignees.userId, u.userId))
+            .limit(1000)
+        : scope === "subscribed"
+          ? this.db
+              .select({ ticketId: ticketWatchers.ticketId })
+              .from(ticketWatchers)
+              .where(eq(ticketWatchers.userId, u.userId))
+              .limit(1000)
+          : Promise.resolve([]);
+
+    const [memberRows, scopeRows] = await Promise.all([
+      this.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .where(eq(projectMembers.userId, u.userId)),
+      scopeQuery,
+    ]);
 
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) {
@@ -161,12 +179,7 @@ export class ProjectsWorkQueryService {
     ];
 
     if (scope === "mine") {
-      const assigneeRows = await this.db
-        .select({ ticketId: ticketAssignees.ticketId })
-        .from(ticketAssignees)
-        .where(eq(ticketAssignees.userId, u.userId))
-        .limit(1000);
-      const assigneeTicketIds = assigneeRows.map((r) => r.ticketId);
+      const assigneeTicketIds = scopeRows.map((r) => r.ticketId);
       const mineCondition =
         assigneeTicketIds.length > 0
           ? or(eq(tickets.assigneeId, u.userId), inArray(tickets.id, assigneeTicketIds))
@@ -181,12 +194,7 @@ export class ProjectsWorkQueryService {
     }
 
     if (scope === "subscribed") {
-      const watcherRows = await this.db
-        .select({ ticketId: ticketWatchers.ticketId })
-        .from(ticketWatchers)
-        .where(eq(ticketWatchers.userId, u.userId))
-        .limit(1000);
-      const watchedTicketIds = watcherRows.map((r) => r.ticketId);
+      const watchedTicketIds = scopeRows.map((r) => r.ticketId);
       if (watchedTicketIds.length > 0) {
         conditions.push(inArray(tickets.id, watchedTicketIds));
       } else {

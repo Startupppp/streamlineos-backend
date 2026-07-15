@@ -40,7 +40,8 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId)));
+      .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId)))
+      .limit(100);
   }
 
   async getProjectOverview(orgId: string, userId: string, projectId: number) {
@@ -71,7 +72,8 @@ export class ClientPortalService {
           eq(projectMilestones.orgId, orgId),
           eq(projectMilestones.projectId, projectId),
           eq(projectMilestones.clientVisible, true),
-        )),
+        ))
+        .limit(100),
 
       this.db
         .select({
@@ -86,7 +88,8 @@ export class ClientPortalService {
           eq(tickets.orgId, orgId),
           eq(tickets.projectId, projectId),
           eq(tickets.clientVisible, true),
-        )),
+        ))
+        .limit(100),
 
       this.db
         .select({
@@ -103,7 +106,8 @@ export class ClientPortalService {
         .where(and(
           eq(ticketAttachments.orgId, orgId),
           eq(ticketAttachments.clientVisible, true),
-        )),
+        ))
+        .limit(100),
 
       this.db
         .select({
@@ -122,7 +126,8 @@ export class ClientPortalService {
         .where(and(
           eq(ticketComments.orgId, orgId),
           eq(ticketComments.clientVisible, true),
-        )),
+        ))
+        .limit(100),
     ]);
 
     return { project, milestones, tasks, attachments, comments };
@@ -149,7 +154,8 @@ export class ClientPortalService {
         eq(changeRequests.orgId, orgId),
         eq(changeRequests.projectId, projectId),
         isNull(changeRequests.deletedAt),
-      ));
+      ))
+      .limit(100);
   }
 
   async createPortalChangeRequest(orgId: string, userId: string, projectId: number, input: CreatePortalCrInput) {

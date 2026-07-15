@@ -21,7 +21,20 @@ export class ProjectsAnalyticsService {
   private async computeProjectAnalytics(orgId: string, projectId: number) {
     const orgFilter = and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId));
 
-    const [stateDistribution, priorityBreakdown, assigneeCompletion] = await Promise.all([
+    const today = new Date();
+    const twelveWeeksAgo = new Date();
+    twelveWeeksAgo.setDate(twelveWeeksAgo.getDate() - 84);
+    const todayStr = today.toISOString().slice(0, 10);
+
+    const [
+      stateDistribution,
+      priorityBreakdown,
+      assigneeCompletion,
+      volumeOverTime,
+      cycleVelocity,
+      estimateVsActual,
+      overdueResult,
+    ] = await Promise.all([
       this.db.select({ status: tickets.status, count: count() }).from(tickets).where(orgFilter).groupBy(tickets.status),
       this.db
         .select({ priority: tickets.priority, count: count() })
@@ -39,12 +52,6 @@ export class ProjectsAnalyticsService {
         .leftJoin(users, eq(users.id, tickets.assigneeId))
         .where(and(orgFilter, sql`${tickets.assigneeId} IS NOT NULL`))
         .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name),
-    ]);
-
-    const twelveWeeksAgo = new Date();
-    twelveWeeksAgo.setDate(twelveWeeksAgo.getDate() - 84);
-
-    const [volumeOverTime, cycleVelocity, estimateVsActual] = await Promise.all([
       this.db
         .select({
           week: sql<string>`TO_CHAR(DATE_TRUNC('week', ${tickets.createdAt}), 'YYYY-MM-DD')`,
@@ -77,30 +84,27 @@ export class ProjectsAnalyticsService {
         .where(and(orgFilter, sql`${tickets.originalEstimate} IS NOT NULL`))
         .groupBy(tickets.id, tickets.title, tickets.originalEstimate)
         .limit(50),
+      this.db
+        .select({ count: count() })
+        .from(tickets)
+        .where(
+          and(
+            orgFilter,
+            sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`,
+            sql`${tickets.dueDate} IS NOT NULL`,
+            sql`${tickets.dueDate} < ${todayStr}`,
+          ),
+        ),
     ]);
-
-    const today = new Date();
     const totalTickets = stateDistribution.reduce((s, r) => s + Number(r.count), 0);
     const doneTickets = stateDistribution
       .filter((r) => r.status === "DONE")
       .reduce((s, r) => s + Number(r.count), 0);
     const completionRate = totalTickets > 0 ? doneTickets / totalTickets : 0;
-
-    const [overdueResult] = await this.db
-      .select({ count: count() })
-      .from(tickets)
-      .where(
-        and(
-          orgFilter,
-          sql`${tickets.status} NOT IN ('DONE', 'CANCELLED')`,
-          sql`${tickets.dueDate} IS NOT NULL`,
-          sql`${tickets.dueDate} < ${today.toISOString().slice(0, 10)}`,
-        ),
-      );
     const openTickets = stateDistribution
       .filter((r) => !["DONE", "CANCELLED"].includes(r.status))
       .reduce((s, r) => s + Number(r.count), 0);
-    const overdueCount = Number(overdueResult?.count ?? 0);
+    const overdueCount = Number(overdueResult[0]?.count ?? 0);
     const onTimeRate = openTickets > 0 ? 1 - overdueCount / openTickets : 1;
 
     const velocities = cycleVelocity.map((c) => Number(c.completedPoints));

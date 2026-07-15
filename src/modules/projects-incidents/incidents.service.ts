@@ -65,7 +65,8 @@ export class IncidentsService {
           query.severity ? eq(projectIncidents.severity, query.severity) : undefined,
         ),
       )
-      .orderBy(sql`${projectIncidents.detectedAt} DESC NULLS LAST`);
+      .orderBy(sql`${projectIncidents.detectedAt} DESC NULLS LAST`)
+      .limit(100);
   }
 
   async getIncident(orgId: string, projectId: number, incidentId: number) {

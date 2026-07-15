@@ -38,7 +38,8 @@ export class TestRunsService {
       .select()
       .from(testRuns)
       .where(and(...conditions))
-      .orderBy(testRuns.runNumber);
+      .orderBy(testRuns.runNumber)
+      .limit(100);
     if (runs.length === 0) return [];
     const runIds = runs.map((r) => r.id);
     const countRows = await this.db

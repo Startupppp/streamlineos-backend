@@ -47,7 +47,8 @@ export class SubmissionsService {
       .select()
       .from(formSubmissions)
       .where(and(eq(formSubmissions.orgId, orgId), eq(formSubmissions.formId, formId)))
-      .orderBy(desc(formSubmissions.createdAt));
+      .orderBy(desc(formSubmissions.createdAt))
+      .limit(100);
   }
 
   async createSubmission(

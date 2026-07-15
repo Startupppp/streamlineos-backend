@@ -39,12 +39,14 @@ export class ProjectsTicketsReadService {
     userId: string,
     projectId: number,
   ): Promise<{ hasAccess: boolean; role: string | null }> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
+    const [perms, project] = await Promise.all([
+      this.access.resolveUserPermissions(orgId, userId),
+      this.db.query.projects.findFirst({
+        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+        columns: { managerId: true },
+      }),
+    ]);
     if (perms.has("projects:manage")) return { hasAccess: true, role: "OWNER" };
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-      columns: { managerId: true },
-    });
     if (!project) return { hasAccess: false, role: null };
     if (project.managerId === userId) return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db

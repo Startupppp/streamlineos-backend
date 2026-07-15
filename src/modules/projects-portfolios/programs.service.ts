@@ -73,7 +73,8 @@ export class ProgramsService {
           query.status ? eq(projectPrograms.status, query.status) : undefined,
           query.portfolioId ? eq(projectPrograms.portfolioId, query.portfolioId) : undefined,
         ),
-      );
+      )
+      .limit(100);
   }
 
   async getProgram(orgId: string, programId: number) {

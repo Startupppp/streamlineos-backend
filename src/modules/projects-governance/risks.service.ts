@@ -54,7 +54,8 @@ export class RisksService {
           query.status ? eq(projectRisks.status, query.status) : undefined,
         ),
       )
-      .orderBy(desc(projectRisks.createdAt));
+      .orderBy(desc(projectRisks.createdAt))
+      .limit(100);
   }
 
   async getRisk(orgId: string, projectId: number, riskId: number) {

@@ -62,7 +62,8 @@ export class DecisionsService {
           query.status ? eq(projectDecisions.status, query.status) : undefined,
         ),
       )
-      .orderBy(desc(projectDecisions.createdAt));
+      .orderBy(desc(projectDecisions.createdAt))
+      .limit(100);
   }
 
   async getDecision(orgId: string, projectId: number, decisionId: number) {

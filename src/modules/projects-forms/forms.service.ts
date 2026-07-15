@@ -52,7 +52,8 @@ export class FormsService {
           query.isActive !== undefined ? eq(projectForms.isActive, query.isActive) : undefined,
         ),
       )
-      .orderBy(desc(projectForms.createdAt));
+      .orderBy(desc(projectForms.createdAt))
+      .limit(100);
   }
 
   async getForm(orgId: string, projectId: number, formId: number) {

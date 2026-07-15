@@ -113,7 +113,8 @@ export class MeetingsService {
           attendeeMeetingIds !== undefined ? (attendeeMeetingIds.length > 0 ? inArray(projectMeetings.id, attendeeMeetingIds) : sql`false`) : undefined,
         ),
       )
-      .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`);
+      .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`)
+      .limit(100);
 
     if (meetings.length === 0) return meetings;
     const ids = meetings.map((m) => m.id);

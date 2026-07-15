@@ -107,7 +107,8 @@ export class ApprovalsService {
           isNull(projectApprovals.deletedAt),
         ),
       )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`);
+      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
+      .limit(100);
   }
 
   async listApprovals(orgId: string, projectId: number, query: ListApprovalsQuery) {
@@ -124,7 +125,8 @@ export class ApprovalsService {
           query.entityType ? eq(projectApprovals.entityType, query.entityType) : undefined,
         ),
       )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`);
+      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
+      .limit(100);
   }
 
   async getApproval(orgId: string, projectId: number, approvalId: number) {

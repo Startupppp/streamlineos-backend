@@ -35,7 +35,8 @@ export class TestManagementService {
           isNull(testSuites.deletedAt),
         ),
       )
-      .orderBy(testSuites.position, testSuites.id);
+      .orderBy(testSuites.position, testSuites.id)
+      .limit(100);
   }
 
   async createSuite(orgId: string, userId: string, projectId: number, input: CreateTestSuiteInput) {
@@ -123,7 +124,8 @@ export class TestManagementService {
       .select()
       .from(testCases)
       .where(and(...conditions))
-      .orderBy(testCases.caseNumber);
+      .orderBy(testCases.caseNumber)
+      .limit(100);
   }
 
   async getCase(orgId: string, projectId: number, caseId: number) {
