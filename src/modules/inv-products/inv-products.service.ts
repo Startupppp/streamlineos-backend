@@ -37,6 +37,15 @@ import type {
   UpdateUomInput,
 } from "./dto/inv-products.schemas";
 
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    err.code === "23505"
+  );
+}
+
 @Injectable()
 export class InvProductsService {
   constructor(
@@ -51,21 +60,35 @@ export class InvProductsService {
     excludeProductId?: number,
     excludeVariantId?: number,
   ): Promise<void> {
-    const productConditions = [eq(invProducts.orgId, orgId), eq(invProducts.barcode, barcode)];
+    const productConditions = [
+      eq(invProducts.orgId, orgId),
+      eq(invProducts.barcode, barcode),
+    ];
     if (excludeProductId !== undefined) {
       productConditions.push(ne(invProducts.id, excludeProductId));
     }
-    const variantConditions = [eq(invProductVariants.orgId, orgId), eq(invProductVariants.barcode, barcode)];
+    const variantConditions = [
+      eq(invProductVariants.orgId, orgId),
+      eq(invProductVariants.barcode, barcode),
+    ];
     if (excludeVariantId !== undefined) {
       variantConditions.push(ne(invProductVariants.id, excludeVariantId));
     }
 
     const [productHit, variantHit] = await Promise.all([
-      this.db.query.invProducts.findFirst({ where: and(...productConditions), columns: { id: true } }),
-      this.db.query.invProductVariants.findFirst({ where: and(...variantConditions), columns: { id: true } }),
+      this.db.query.invProducts.findFirst({
+        where: and(...productConditions),
+        columns: { id: true },
+      }),
+      this.db.query.invProductVariants.findFirst({
+        where: and(...variantConditions),
+        columns: { id: true },
+      }),
     ]);
     if ((productHit ?? variantHit) !== undefined) {
-      throw new ConflictException("Barcode already in use in this organisation");
+      throw new ConflictException(
+        "Barcode already in use in this organisation",
+      );
     }
   }
 
@@ -76,13 +99,18 @@ export class InvProductsService {
     message: string,
   ): Promise<void> {
     const variants = await this.db.query.invProductVariants.findMany({
-      where: and(eq(invProductVariants.productId, productId), eq(invProductVariants.orgId, orgId)),
+      where: and(
+        eq(invProductVariants.productId, productId),
+        eq(invProductVariants.orgId, orgId),
+      ),
       columns: { id: true },
     });
     if (variants.length === 0) return;
     const variantIds = variants.map((v) => v.id);
     const [result] = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
+      .select({
+        total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
+      })
       .from(invStockLevels)
       .where(inArray(invStockLevels.productVariantId, variantIds));
     if (parseFloat(result?.total ?? "0") > 0) {
@@ -90,24 +118,43 @@ export class InvProductsService {
     }
   }
 
-  private async assertUomBelongsToOrg(orgId: string, uomId: number, fieldName: string): Promise<void> {
+  private async assertUomBelongsToOrg(
+    orgId: string,
+    uomId: number,
+    fieldName: string,
+  ): Promise<void> {
     const uom = await this.db.query.invUom.findFirst({
       where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
       columns: { id: true },
     });
-    if (!uom) throw new BadRequestException(`${fieldName} refers to a UOM not found in this organisation`);
+    if (!uom)
+      throw new BadRequestException(
+        `${fieldName} refers to a UOM not found in this organisation`,
+      );
   }
 
-  private async assertVendorBelongsToOrg(orgId: string, vendorId: number): Promise<void> {
+  private async assertVendorBelongsToOrg(
+    orgId: string,
+    vendorId: number,
+  ): Promise<void> {
     const vendor = await this.db.query.invVendors.findFirst({
       where: and(eq(invVendors.id, vendorId), eq(invVendors.orgId, orgId)),
       columns: { id: true },
     });
-    if (!vendor) throw new BadRequestException("defaultVendorId refers to a vendor not found in this organisation");
+    if (!vendor)
+      throw new BadRequestException(
+        "defaultVendorId refers to a vendor not found in this organisation",
+      );
   }
 
-  async listProducts(orgId: string, filters: ListProductsInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
+  async listProducts(
+    orgId: string,
+    filters: ListProductsInput,
+    scope: DataScope = "all",
+    userId?: string,
+  ) {
+    if (scope === "none")
+      return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
     const { status, productType, categoryId, search, page, limit } = filters;
     const offset = (page - 1) * limit;
@@ -115,39 +162,58 @@ export class InvProductsService {
     const hash = `${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
     const key = CACHE_KEYS.invProductsList(orgId, hash);
 
-    return this.cache.cached(key, async () => {
-      const conditions = [eq(invProducts.orgId, orgId)];
-      if (status) conditions.push(eq(invProducts.status, status));
-      if (productType) conditions.push(eq(invProducts.productType, productType));
-      if (categoryId) conditions.push(eq(invProducts.categoryId, categoryId));
-      if (search) {
-        conditions.push(or(
-          ilike(invProducts.name, `%${search}%`),
-          ilike(invProducts.sku, `%${search}%`),
-        )!);
-      }
-      if (scope !== "all" && userId) {
-        conditions.push(applyScope(scope, userId, { ownerColumn: invProducts.createdBy }));
-      }
-      const where = and(...conditions);
+    return this.cache.cached(
+      key,
+      async () => {
+        const conditions = [eq(invProducts.orgId, orgId)];
+        if (status) conditions.push(eq(invProducts.status, status));
+        if (productType)
+          conditions.push(eq(invProducts.productType, productType));
+        if (categoryId) conditions.push(eq(invProducts.categoryId, categoryId));
+        if (search) {
+          conditions.push(
+            or(
+              ilike(invProducts.name, `%${search}%`),
+              ilike(invProducts.sku, `%${search}%`),
+            )!,
+          );
+        }
+        if (scope !== "all" && userId) {
+          conditions.push(
+            applyScope(scope, userId, { ownerColumn: invProducts.createdBy }),
+          );
+        }
+        const where = and(...conditions);
 
-      const [items, countResult] = await Promise.all([
-        this.db.query.invProducts.findMany({
-          where,
-          orderBy: [desc(invProducts.createdAt)],
-          limit,
-          offset,
-          with: {
-            category: { columns: { id: true, name: true } },
-            uom: { columns: { id: true, name: true, abbreviation: true } },
-            variants: { columns: { id: true, sku: true, name: true, isActive: true } },
-          },
-        }),
-        this.db.select({ count: sql<number>`count(*)::int` }).from(invProducts).where(where),
-      ]);
+        const [items, countResult] = await Promise.all([
+          this.db.query.invProducts.findMany({
+            where,
+            orderBy: [desc(invProducts.createdAt)],
+            limit,
+            offset,
+            with: {
+              category: { columns: { id: true, name: true } },
+              uom: { columns: { id: true, name: true, abbreviation: true } },
+              variants: {
+                columns: { id: true, sku: true, name: true, isActive: true },
+              },
+            },
+          }),
+          this.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invProducts)
+            .where(where),
+        ]);
 
-      return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
-    }, CACHE_TTL.SHORT);
+        return {
+          items,
+          total: countResult[0]?.count ?? 0,
+          page,
+          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+        };
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 
   async getProduct(orgId: string, productId: number) {
@@ -164,60 +230,136 @@ export class InvProductsService {
     return product;
   }
 
-  async createProduct(orgId: string, userId: string, data: CreateProductInput) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, data.sku)),
-      columns: { id: true },
-    });
-    if (existing) throw new ConflictException("A product with this SKU already exists");
+  private async generateNextSku(orgId: string): Promise<string> {
+    const [row] = await this.db
+      .select({
+        maxSeq: sql<number>`COALESCE(MAX(CAST(SUBSTRING(${invProducts.sku} FROM 6) AS INTEGER)), 0)`,
+      })
+      .from(invProducts)
+      .where(
+        and(
+          eq(invProducts.orgId, orgId),
+          sql`${invProducts.sku} ~ '^PROD-[0-9]+$'`,
+        ),
+      );
 
-    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
-    if (data.purchaseUomId) await this.assertUomBelongsToOrg(orgId, data.purchaseUomId, "purchaseUomId");
-    if (data.salesUomId) await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
-    if (data.defaultVendorId) await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
-
-    const [product] = await this.db.insert(invProducts).values({
-      orgId,
-      createdBy: userId,
-      ...data,
-    }).returning();
-
-    if (!data.hasVariants) {
-      await this.db.insert(invProductVariants).values({
-        orgId,
-        productId: product.id,
-        name: data.name,
-        sku: data.sku,
-        barcode: data.barcode,
-        costPrice: data.costPrice ?? "0",
-        sellingPrice: data.sellingPrice ?? "0",
-        attributeValues: {},
-      });
-    }
-
-    await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
-    return product;
+    const next = Number(row?.maxSeq ?? 0) + 1;
+    return `PROD-${String(next).padStart(3, "0")}`;
   }
 
-  async updateProduct(orgId: string, productId: number, data: UpdateProductInput) {
+  async createProduct(orgId: string, userId: string, data: CreateProductInput) {
+    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
+    if (data.purchaseUomId)
+      await this.assertUomBelongsToOrg(
+        orgId,
+        data.purchaseUomId,
+        "purchaseUomId",
+      );
+    if (data.salesUomId)
+      await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+    if (data.defaultVendorId)
+      await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
+
+    const { sku: providedSku, ...rest } = data;
+    const maxAttempts = providedSku ? 1 : 5;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const sku = providedSku ?? (await this.generateNextSku(orgId));
+
+      if (providedSku) {
+        const existing = await this.db.query.invProducts.findFirst({
+          where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, sku)),
+          columns: { id: true },
+        });
+        if (existing)
+          throw new ConflictException("A product with this SKU already exists");
+      }
+
+      try {
+        const [product] = await this.db
+          .insert(invProducts)
+          .values({
+            orgId,
+            createdBy: userId,
+            ...rest,
+            sku,
+          })
+          .returning();
+
+        if (!data.hasVariants) {
+          await this.db.insert(invProductVariants).values({
+            orgId,
+            productId: product.id,
+            name: data.name,
+            sku,
+            barcode: data.barcode,
+            costPrice: data.costPrice ?? "0",
+            sellingPrice: data.sellingPrice ?? "0",
+            attributeValues: {},
+          });
+        }
+
+        await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
+        return product;
+      } catch (err) {
+        if (!providedSku && isUniqueViolation(err)) continue;
+        if (isUniqueViolation(err)) {
+          throw new ConflictException("A product with this SKU already exists");
+        }
+        throw err;
+      }
+    }
+
+    throw new ConflictException(
+      "Could not allocate a unique SKU. Please retry.",
+    );
+  }
+
+  async updateProduct(
+    orgId: string,
+    productId: number,
+    data: UpdateProductInput,
+  ) {
     const existing = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
       columns: { id: true, trackingMethod: true, costingMethod: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
 
-    if (data.trackingMethod && data.trackingMethod !== existing.trackingMethod) {
-      await this.assertNoStockForVariants(orgId, productId, "TRACKING_METHOD_LOCKED", "Cannot change tracking method while non-zero stock exists");
+    if (
+      data.trackingMethod &&
+      data.trackingMethod !== existing.trackingMethod
+    ) {
+      await this.assertNoStockForVariants(
+        orgId,
+        productId,
+        "TRACKING_METHOD_LOCKED",
+        "Cannot change tracking method while non-zero stock exists",
+      );
     }
     if (data.costingMethod && data.costingMethod !== existing.costingMethod) {
-      await this.assertNoStockForVariants(orgId, productId, "COSTING_METHOD_LOCKED", "Cannot change costing method while non-zero stock exists");
+      await this.assertNoStockForVariants(
+        orgId,
+        productId,
+        "COSTING_METHOD_LOCKED",
+        "Cannot change costing method while non-zero stock exists",
+      );
     }
-    if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode, productId);
-    if (data.purchaseUomId) await this.assertUomBelongsToOrg(orgId, data.purchaseUomId, "purchaseUomId");
-    if (data.salesUomId) await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
-    if (data.defaultVendorId) await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
+    if (data.barcode)
+      await this.assertNoBarcodeConflict(orgId, data.barcode, productId);
+    if (data.purchaseUomId)
+      await this.assertUomBelongsToOrg(
+        orgId,
+        data.purchaseUomId,
+        "purchaseUomId",
+      );
+    if (data.salesUomId)
+      await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+    if (data.defaultVendorId)
+      await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
 
-    const [updated] = await this.db.update(invProducts)
+    const [updated] = await this.db
+      .update(invProducts)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
       .returning();
@@ -235,7 +377,10 @@ export class InvProductsService {
     if (!existing) throw new NotFoundException("Product not found");
 
     const variants = await this.db.query.invProductVariants.findMany({
-      where: and(eq(invProductVariants.productId, productId), eq(invProductVariants.orgId, orgId)),
+      where: and(
+        eq(invProductVariants.productId, productId),
+        eq(invProductVariants.orgId, orgId),
+      ),
       columns: { id: true },
     });
 
@@ -243,12 +388,16 @@ export class InvProductsService {
       const variantIds = variants.map((v) => v.id);
 
       const [stockResult] = await this.db
-        .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
+        .select({
+          total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
+        })
         .from(invStockLevels)
         .where(inArray(invStockLevels.productVariantId, variantIds));
 
       if (parseFloat(stockResult?.total ?? "0") > 0) {
-        throw new ConflictException("Cannot delete product with existing stock. Archive it instead.");
+        throw new ConflictException(
+          "Cannot delete product with existing stock. Archive it instead.",
+        );
       }
 
       const openPoLines = await this.db
@@ -264,7 +413,9 @@ export class InvProductsService {
         .limit(1);
 
       if (openPoLines.length > 0) {
-        throw new ConflictException("Cannot delete product referenced in open purchase or sales orders. Archive it instead.");
+        throw new ConflictException(
+          "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
+        );
       }
 
       const openSoLines = await this.db
@@ -280,11 +431,15 @@ export class InvProductsService {
         .limit(1);
 
       if (openSoLines.length > 0) {
-        throw new ConflictException("Cannot delete product referenced in open purchase or sales orders. Archive it instead.");
+        throw new ConflictException(
+          "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
+        );
       }
     }
 
-    await this.db.delete(invProducts).where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
+    await this.db
+      .delete(invProducts)
+      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
     await this.cache.invalidatePattern(`inv:products:list:${orgId}:*`);
   }
@@ -343,7 +498,11 @@ export class InvProductsService {
     return updated;
   }
 
-  async createVariant(orgId: string, productId: number, data: CreateVariantInput) {
+  async createVariant(
+    orgId: string,
+    productId: number,
+    data: CreateVariantInput,
+  ) {
     const product = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
       columns: { id: true },
@@ -351,32 +510,57 @@ export class InvProductsService {
     if (!product) throw new NotFoundException("Product not found");
 
     const existing = await this.db.query.invProductVariants.findFirst({
-      where: and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.sku, data.sku)),
+      where: and(
+        eq(invProductVariants.orgId, orgId),
+        eq(invProductVariants.sku, data.sku),
+      ),
       columns: { id: true },
     });
-    if (existing) throw new ConflictException("A variant with this SKU already exists");
+    if (existing)
+      throw new ConflictException("A variant with this SKU already exists");
 
     if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
 
-    const [variant] = await this.db.insert(invProductVariants).values({ orgId, productId, ...data }).returning();
+    const [variant] = await this.db
+      .insert(invProductVariants)
+      .values({ orgId, productId, ...data })
+      .returning();
     await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
     return variant;
   }
 
-  async updateVariant(orgId: string, variantId: number, data: UpdateVariantInput) {
+  async updateVariant(
+    orgId: string,
+    variantId: number,
+    data: UpdateVariantInput,
+  ) {
     if (data.barcode) {
-      await this.assertNoBarcodeConflict(orgId, data.barcode, undefined, variantId);
+      await this.assertNoBarcodeConflict(
+        orgId,
+        data.barcode,
+        undefined,
+        variantId,
+      );
     }
 
-    const [updated] = await this.db.update(invProductVariants)
+    const [updated] = await this.db
+      .update(invProductVariants)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(invProductVariants.id, variantId), eq(invProductVariants.orgId, orgId)))
+      .where(
+        and(
+          eq(invProductVariants.id, variantId),
+          eq(invProductVariants.orgId, orgId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Variant not found");
     return updated;
   }
 
-  listVariants(orgId: string, filters: { activeOnly: boolean; page: number; limit: number }) {
+  listVariants(
+    orgId: string,
+    filters: { activeOnly: boolean; page: number; limit: number },
+  ) {
     const { activeOnly, page, limit } = filters;
     const offset = (page - 1) * limit;
     const conditions = [eq(invProductVariants.orgId, orgId)];
@@ -400,22 +584,35 @@ export class InvProductsService {
   }
 
   listCategories(orgId: string) {
-    return this.cache.cached(`inv:products:categories:${orgId}`, () =>
-      this.db.query.invCategories.findMany({ where: eq(invCategories.orgId, orgId), orderBy: [asc(invCategories.name)] }),
-      CACHE_TTL.MEDIUM
+    return this.cache.cached(
+      `inv:products:categories:${orgId}`,
+      () =>
+        this.db.query.invCategories.findMany({
+          where: eq(invCategories.orgId, orgId),
+          orderBy: [asc(invCategories.name)],
+        }),
+      CACHE_TTL.MEDIUM,
     );
   }
 
   async createCategory(orgId: string, data: CreateCategoryInput) {
-    const [cat] = await this.db.insert(invCategories).values({ orgId, ...data }).returning();
+    const [cat] = await this.db
+      .insert(invCategories)
+      .values({ orgId, ...data })
+      .returning();
     await this.cache.del(`inv:products:categories:${orgId}`);
     return cat;
   }
 
   listUom(orgId: string) {
-    return this.cache.cached(`inv:products:uom:${orgId}`, () =>
-      this.db.query.invUom.findMany({ where: eq(invUom.orgId, orgId), orderBy: [asc(invUom.name)] }),
-      CACHE_TTL.MEDIUM
+    return this.cache.cached(
+      `inv:products:uom:${orgId}`,
+      () =>
+        this.db.query.invUom.findMany({
+          where: eq(invUom.orgId, orgId),
+          orderBy: [asc(invUom.name)],
+        }),
+      CACHE_TTL.MEDIUM,
     );
   }
 
@@ -424,17 +621,33 @@ export class InvProductsService {
       await this.db
         .update(invUom)
         .set({ isBase: false })
-        .where(and(eq(invUom.orgId, orgId), eq(invUom.category, data.category), eq(invUom.isBase, true)));
+        .where(
+          and(
+            eq(invUom.orgId, orgId),
+            eq(invUom.category, data.category),
+            eq(invUom.isBase, true),
+          ),
+        );
     }
-    const [uom] = await this.db.insert(invUom).values({ orgId, ...data }).returning();
+    const [uom] = await this.db
+      .insert(invUom)
+      .values({ orgId, ...data })
+      .returning();
     await this.cache.del(`inv:products:uom:${orgId}`);
     return uom;
   }
 
-  async updateCategory(orgId: string, categoryId: number, data: UpdateCategoryInput) {
-    const [updated] = await this.db.update(invCategories)
+  async updateCategory(
+    orgId: string,
+    categoryId: number,
+    data: UpdateCategoryInput,
+  ) {
+    const [updated] = await this.db
+      .update(invCategories)
       .set({ ...data })
-      .where(and(eq(invCategories.id, categoryId), eq(invCategories.orgId, orgId)))
+      .where(
+        and(eq(invCategories.id, categoryId), eq(invCategories.orgId, orgId)),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Category not found");
     await this.cache.del(`inv:products:categories:${orgId}`);
@@ -464,7 +677,8 @@ export class InvProductsService {
       }
     }
 
-    const [updated] = await this.db.update(invUom)
+    const [updated] = await this.db
+      .update(invUom)
       .set({ ...data })
       .where(and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)))
       .returning();

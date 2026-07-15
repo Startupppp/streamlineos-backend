@@ -16,11 +16,17 @@ export type ListProductsInput = z.infer<typeof listProductsSchema>;
 export const createProductSchema = z.object({
   name: z.string().trim().min(1).max(255),
   sku: z
-    .string()
-    .trim()
-    .min(1)
-    .max(100)
-    .regex(SKU_PATTERN, "SKU must contain only uppercase letters, digits, hyphens, or underscores"),
+    .preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .regex(SKU_PATTERN, "SKU must contain only uppercase letters, digits, hyphens, or underscores")
+        .transform((v) => v.toUpperCase())
+        .optional(),
+    ),
   barcode: z.string().trim().max(100).optional(),
   description: z.string().trim().max(2000).optional(),
   categoryId: z.number().int().positive().optional(),
