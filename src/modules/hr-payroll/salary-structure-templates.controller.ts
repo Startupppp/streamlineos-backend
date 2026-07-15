@@ -14,7 +14,14 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SalaryStructureTemplatesService } from "./salary-structure-templates.service";
+import {
+  createSalaryStructureTemplateSchema,
+  updateSalaryStructureTemplateSchema,
+  type CreateSalaryStructureTemplateInput,
+  type UpdateSalaryStructureTemplateInput,
+} from "./dto/payroll.schemas";
 
 @UseGuards(JwtAuthGuard)
 @Controller("hr/payroll/salary-structures")
@@ -33,12 +40,9 @@ export class SalaryStructureTemplatesController {
   @RequirePermission("hr:salary:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: Record<string, unknown>,
+    @Body(new ZodValidationPipe(createSalaryStructureTemplateSchema)) body: CreateSalaryStructureTemplateInput,
   ) {
-    return this.service.create(
-      u.orgId,
-      body as Parameters<SalaryStructureTemplatesService["create"]>[1],
-    );
+    return this.service.create(u.orgId, body);
   }
 
   @Patch(":id")
@@ -47,13 +51,9 @@ export class SalaryStructureTemplatesController {
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,
-    @Body() body: Record<string, unknown>,
+    @Body(new ZodValidationPipe(updateSalaryStructureTemplateSchema)) body: UpdateSalaryStructureTemplateInput,
   ) {
-    return this.service.update(
-      u.orgId,
-      id,
-      body as Parameters<SalaryStructureTemplatesService["update"]>[2],
-    );
+    return this.service.update(u.orgId, id, body);
   }
 
   @Delete(":id")

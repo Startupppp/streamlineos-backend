@@ -184,3 +184,35 @@ export const patchTaxWindowBodySchema = z.object({
   status: z.enum(["DRAFT", "OPEN", "CLOSED", "LOCKED"]).optional(),
 });
 export type PatchTaxWindowBody = z.infer<typeof patchTaxWindowBodySchema>;
+
+const salaryTemplateNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Name is required")
+  .max(100, "Name must be at most 100 characters")
+  .refine((v) => /[a-zA-Z0-9]/.test(v), "Name must contain at least one letter or digit")
+  .transform((v) => v.replace(/\s+/g, " ").trim());
+
+const decimalStringSchema = z.string().refine(
+  (v) => v === "" || !isNaN(parseFloat(v)),
+  "Must be a valid number",
+);
+
+export const createSalaryStructureTemplateSchema = z.object({
+  name: salaryTemplateNameSchema,
+  basicSalary: decimalStringSchema.refine((v) => v.length > 0, "Basic salary is required"),
+  hraPercent: decimalStringSchema,
+  specialAllowance: decimalStringSchema.nullable().optional(),
+  medicalAllowance: decimalStringSchema.nullable().optional(),
+  travelAllowance: decimalStringSchema.nullable().optional(),
+  otherAllowances: decimalStringSchema.nullable().optional(),
+  pfDeductionPercent: decimalStringSchema.nullable().optional(),
+  professionalTax: decimalStringSchema.nullable().optional(),
+  effectiveFrom: z.string().min(1, "Effective from is required"),
+  effectiveTo: z.string().nullable().optional(),
+  isActive: z.boolean().optional().default(true),
+});
+export type CreateSalaryStructureTemplateInput = z.infer<typeof createSalaryStructureTemplateSchema>;
+
+export const updateSalaryStructureTemplateSchema = createSalaryStructureTemplateSchema.partial();
+export type UpdateSalaryStructureTemplateInput = z.infer<typeof updateSalaryStructureTemplateSchema>;
