@@ -9,10 +9,10 @@ import { ProjectsEmailService } from "./projects-email.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 
 const DEFAULT_STATUSES = [
-  { name: "TODO", order: 0, color: "#e2e8f0" },
-  { name: "IN_PROGRESS", order: 1, color: "#3b82f6" },
-  { name: "IN_REVIEW", order: 2, color: "#eab308" },
-  { name: "DONE", order: 3, color: "#22c55e" },
+  { name: "TODO", order: 0, color: "#e2e8f0", type: "unstarted" as const },
+  { name: "IN_PROGRESS", order: 1, color: "#3b82f6", type: "started" as const },
+  { name: "IN_REVIEW", order: 2, color: "#eab308", type: "started" as const },
+  { name: "DONE", order: 3, color: "#22c55e", type: "completed" as const },
 ];
 
 function generateProjectKey(name: string): string {
@@ -66,6 +66,7 @@ export class ProjectsProvisionService {
           name: s.name,
           order: s.order,
           color: s.color,
+          type: s.type,
         })),
       );
 
@@ -148,6 +149,7 @@ export class ProjectsProvisionService {
           name: s.name,
           order: s.order,
           color: s.color,
+          type: s.type,
         })),
       );
 

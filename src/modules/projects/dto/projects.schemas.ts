@@ -83,18 +83,25 @@ const columnNameSchema = z
     message: "Name must contain at least one letter or number",
   });
 
+export const projectStatusTypeSchema = z.enum([
+  "unstarted",
+  "started",
+  "completed",
+  "cancelled",
+]);
+
 export const createStateSchema = z.object({
   name: columnNameSchema,
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   order: z.number().int().min(0).optional(),
-  type: z.string().optional(),
+  type: projectStatusTypeSchema.optional(),
 });
 
 export const updateCustomStateSchema = z.object({
   name: columnNameSchema.optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   order: z.number().int().min(0).optional(),
-  type: z.string().optional(),
+  type: projectStatusTypeSchema.optional(),
 });
 
 export const createLabelSchema = z.object({

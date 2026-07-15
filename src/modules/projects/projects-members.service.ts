@@ -1,4 +1,10 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -11,6 +17,10 @@ import type {
   UpdateCustomStateInput,
 } from "./dto/projects.schemas";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+
+function statusTypeOf(type: string | null | undefined): string {
+  return type ?? "unstarted";
+}
 
 @Injectable()
 export class ProjectsMembersService {
@@ -245,11 +255,66 @@ export class ProjectsMembersService {
   }
 
   async deleteCustomState(orgId: string, stateId: number) {
-    const [deleted] = await this.db
-      .delete(projectStatuses)
+    const [existing] = await this.db
+      .select()
+      .from(projectStatuses)
       .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Status not found");
+      .limit(1);
+    if (!existing) throw new NotFoundException("Status not found");
+
+    const siblings = await this.db
+      .select()
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.projectId, existing.projectId),
+          eq(projectStatuses.orgId, orgId),
+        ),
+      )
+      .orderBy(projectStatuses.order);
+
+    const remaining = siblings.filter((s) => s.id !== stateId);
+    if (remaining.length === 0) {
+      throw new BadRequestException("At least one workflow status is required");
+    }
+
+    const existingType = statusTypeOf(existing.type);
+    if (
+      existingType === "unstarted" &&
+      !remaining.some((s) => statusTypeOf(s.type) === "unstarted")
+    ) {
+      throw new BadRequestException("Keep at least one Unstarted status");
+    }
+    if (
+      existingType === "completed" &&
+      !remaining.some((s) => statusTypeOf(s.type) === "completed")
+    ) {
+      throw new BadRequestException("Keep at least one Completed status");
+    }
+
+    const fallback =
+      remaining.find((s) => statusTypeOf(s.type) === "unstarted") ?? remaining[0];
+    if (!fallback) {
+      throw new BadRequestException("At least one workflow status is required");
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set({ status: fallback.name })
+        .where(
+          and(
+            eq(tickets.orgId, orgId),
+            eq(tickets.projectId, existing.projectId),
+            eq(tickets.status, existing.name),
+          ),
+        );
+
+      await tx
+        .delete(projectStatuses)
+        .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)));
+    });
+
     return { success: true };
   }
 }

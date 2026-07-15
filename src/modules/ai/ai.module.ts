@@ -19,6 +19,7 @@ import { ChatHistoryService } from "./services/chat-history.service";
 import { AiUsageService } from "./services/ai-usage.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
+import { TicketAiService } from "./services/ticket-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { CalendarModule } from "../calendar/calendar.module";
 import { ChatModule } from "../chat/chat.module";
@@ -41,6 +42,7 @@ import { ChatModule } from "../chat/chat.module";
     AiUsageService,
     OrgFeaturesService,
     ProjectsAiService,
+    TicketAiService,
     HrCopilotTools,
   ],
   exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService],
