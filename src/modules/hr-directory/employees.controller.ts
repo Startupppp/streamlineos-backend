@@ -107,9 +107,12 @@ export class EmployeesController {
 
   @Get("check-email")
   @RequirePermission("hr:employees:view")
-  checkEmail(@Query("email") email: string | undefined) {
+  checkEmail(
+    @Query("email") email: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     if (!email) throw new BadRequestException("Email is required");
-    return this.employees.checkEmail(email);
+    return this.employees.checkEmail(u.orgId, email);
   }
 
   @Get("find-expert")

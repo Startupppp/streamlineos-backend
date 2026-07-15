@@ -269,12 +269,21 @@ export class EmployeesService {
     };
   }
 
-  async checkEmail(email: string) {
+  async checkEmail(orgId: string, email: string) {
+    const normalised = email.toLowerCase().trim();
     const existing = await this.db.query.users.findFirst({
-      where: eq(users.email, email.toLowerCase().trim()),
+      where: eq(users.email, normalised),
       columns: { id: true },
     });
-    return { exists: !!existing };
+    if (!existing) return { exists: false };
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, existing.id),
+      ),
+      columns: { userId: true },
+    });
+    return { exists: !!member };
   }
 
   getProjects(orgId: string, userId: string) {

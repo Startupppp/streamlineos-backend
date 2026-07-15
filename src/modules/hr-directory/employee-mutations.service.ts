@@ -339,17 +339,107 @@ export class EmployeeMutationsService {
   }
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
-    const existing = await this.db.query.users.findFirst({
+    const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, body.email.toLowerCase()),
       columns: { id: true },
     });
-    if (existing) throw new ConflictException("A user with this email already exists.");
 
-    const passwordHash = randomBytes(32).toString("hex");
-    const userId = randomUUID();
+    if (existingUser) {
+      const alreadyMember = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, actor.orgId),
+          eq(organizationMembers.userId, existingUser.id),
+        ),
+        columns: { userId: true },
+      });
+      if (alreadyMember) {
+        throw new ConflictException("This email already belongs to an employee in your organization.");
+      }
+    }
+
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
     const role = body.role || "ENGINEERING";
     const payrollDefaults = await this.resolveOrgPayrollDefaults(actor.orgId);
+
+    if (existingUser) {
+      const linkedUser = await this.db.transaction(async (tx) => {
+        const updateData: Partial<typeof users.$inferInsert> = {
+          designation: body.designation,
+          departmentId: body.departmentId,
+          role,
+          employeeId: resolvedEmployeeId,
+          joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
+          dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
+          isActive: true,
+          hasDashboardAccess: true,
+        };
+        if (body.taxId) updateData.taxId = encrypt(body.taxId);
+        if (body.monthlySalary !== undefined) updateData.monthlySalary = body.monthlySalary.toString();
+        if (body.bankDetails?.accountNumber) {
+          updateData.bankDetails = encryptBankDetails(toBankDetails(body.bankDetails));
+        }
+
+        await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
+        await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: existingUser.id, role });
+
+        if (body.monthlySalary && body.monthlySalary > 0) {
+          const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
+          const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
+          await tx.insert(salaryStructures).values({
+            orgId: actor.orgId,
+            userId: existingUser.id,
+            basicSalary: basicSalary.toString(),
+            hraPercentage: String(payrollDefaults.defaultHraPercent),
+            allowances: specialAllowance.toString(),
+            deductions: "0",
+            effectiveFrom: body.joiningDate
+              ? formatDateOnly(new Date(body.joiningDate))
+              : formatDateOnly(new Date()),
+            isActive: true,
+          });
+        }
+
+        const updated = await tx.query.users.findFirst({
+          where: eq(users.id, existingUser.id),
+          columns: { id: true, email: true, firstName: true, lastName: true },
+        });
+        if (!updated) throw new InternalServerErrorException("Failed to link user record.");
+        return updated;
+      });
+
+      await this.invalidateHrDashboardCache(actor.orgId);
+
+      void this.automation
+        .runAutomationsForEvent(actor.orgId, "onboarding.started", {
+          userId: linkedUser.id,
+          employeeName: `${linkedUser.firstName ?? ""} ${linkedUser.lastName ?? ""}`.trim(),
+          employeeEmail: linkedUser.email,
+          departmentId: body.departmentId ?? null,
+          joiningDate: body.joiningDate ?? null,
+          startedAt: new Date().toISOString(),
+        })
+        .catch(() => undefined);
+
+      this.audit.log({
+        action: "hr.employee_onboarded",
+        userId: actor.userId,
+        orgId: actor.orgId,
+        targetId: linkedUser.id,
+        targetType: "employee",
+        metadata: {
+          email: body.email,
+          name: `${body.firstName} ${body.lastName}`,
+          role: body.role,
+          designation: body.designation,
+          linked: true,
+        },
+      });
+
+      return { success: true, userId: linkedUser.id };
+    }
+
+    const passwordHash = randomBytes(32).toString("hex");
+    const userId = randomUUID();
 
     const newUser = await this.db.transaction(async (tx) => {
       const [created] = await tx
