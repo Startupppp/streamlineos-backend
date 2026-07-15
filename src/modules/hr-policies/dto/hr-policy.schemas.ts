@@ -43,10 +43,15 @@ export const policiesListQuerySchema = z.object({
 
 export type PoliciesListQuery = z.infer<typeof policiesListQuerySchema>;
 
-export const policyScopeSchema = z.object({
-  scopeType: z.enum(HR_SCOPE_TYPES),
-  scopeValue: z.string().min(1),
-});
+export const policyScopeSchema = z
+  .object({
+    scopeType: z.enum(HR_SCOPE_TYPES),
+    scopeValue: z.string(),
+  })
+  .refine(
+    (s) => s.scopeType === "organization" || s.scopeValue.length > 0,
+    { message: "Scope value is required for non-organization scopes", path: ["scopeValue"] },
+  );
 
 export const createPolicySchema = z.object({
   policyType: z.enum(HR_POLICY_TYPES),

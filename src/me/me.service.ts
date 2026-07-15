@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, desc, count, gte, and } from "drizzle-orm";
+import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { DRIZZLE } from "../db/drizzle.constants";
@@ -176,16 +176,19 @@ export class MeService {
     return this.forceChangePassword(userId, { newPassword: password });
   }
 
-  async getLoginHistory(userId: string, page: number, limit: number) {
+  async getLoginHistory(userId: string, page: number, limit: number, success?: boolean) {
     const offset = (page - 1) * limit;
+    const conditions: SQL[] = [eq(loginHistory.userId, userId)];
+    if (success !== undefined) conditions.push(eq(loginHistory.success, success));
+    const where = and(...conditions);
     const [rows, countResult] = await Promise.all([
       this.db.query.loginHistory.findMany({
-        where: eq(loginHistory.userId, userId),
+        where,
         orderBy: [desc(loginHistory.createdAt)],
         limit,
         offset,
       }),
-      this.db.select({ count: count() }).from(loginHistory).where(eq(loginHistory.userId, userId)),
+      this.db.select({ count: count() }).from(loginHistory).where(where),
     ]);
     return {
       data: rows.map(withClientInfo),

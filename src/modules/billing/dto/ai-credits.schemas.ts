@@ -21,3 +21,10 @@ export const autoTopUpSchema = z.object({
   packId: z.number().int().positive().optional(),
   threshold: z.number().int().min(0).optional(),
 });
+
+export const listTransactionsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type ListTransactionsQuery = z.infer<typeof listTransactionsSchema>;

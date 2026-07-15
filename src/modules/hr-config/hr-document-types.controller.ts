@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -21,8 +22,10 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrDocumentTypesService } from "./hr-document-types.service";
 import {
   createDocumentTypeSchema,
+  listDocumentTypesSchema,
   updateDocumentTypeSchema,
   type CreateDocumentTypeInput,
+  type ListDocumentTypesInput,
   type UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -38,10 +41,13 @@ export class HrDocumentTypesController {
 
   @Get()
   @RequirePermission("hr:documents:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
+  async list(
+    @Query(new ZodValidationPipe(listDocumentTypesSchema)) query: ListDocumentTypesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
-    return this.documentTypes.list(u.orgId, isAdmin);
+    return this.documentTypes.list(u.orgId, isAdmin, query);
   }
 
   @Post()

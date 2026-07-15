@@ -140,18 +140,16 @@ export class HrAnalyticsPlusService {
       headcount: {
         total: Object.values(statusMap).reduce((a, b) => a + b, 0),
         active: statusMap["ACTIVE"] ?? 0,
-        onboarding: statusMap["ONBOARDING"] ?? 0,
+        probation: statusMap["ONBOARDING"] ?? 0,
         notice: statusMap["NOTICE"] ?? 0,
-        byStatus: statusMap,
       },
-      attritionRate12m: attritionPct,
+      attritionRate12mo: attritionPct,
       avgTenureMonths,
       leaveUtilizationPct: leaveUtil,
-      attendanceRate30d: attendancePct,
+      attendanceRatePct: attendancePct,
       openCasesCount: casesCount,
-      avgMood30d: moodRaw ? Number(Number(moodRaw).toFixed(2)) : null,
-      lastPayrollGross: payrollGrossRaw ? Number(payrollGrossRaw) : null,
-      lastPayrollMonth: payrollMonthRaw ?? null,
+      avgMood: moodRaw ? Number(Number(moodRaw).toFixed(2)) : null,
+      payrollCostLastMonth: payrollGrossRaw ? Number(payrollGrossRaw) : null,
     };
   }
 
@@ -210,8 +208,14 @@ export class HrAnalyticsPlusService {
 
         return {
           joinsVsExits: Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)),
-          byDepartment: byDepartment,
-          byReason: byReason,
+          byDepartment: byDepartment.map((r) => ({
+            department: String(r.department ?? "Unknown"),
+            exits: Number(r.exits ?? 0),
+          })),
+          byReason: byReason.map((r) => ({
+            reason: String(r.reason ?? "Unknown"),
+            count: Number(r.count ?? 0),
+          })),
         };
       },
       CACHE_TTL.MEDIUM,
@@ -252,7 +256,12 @@ export class HrAnalyticsPlusService {
             AND month >= to_char(NOW() - INTERVAL '12 months', 'YYYY-MM')
           ORDER BY month DESC
         `);
-        return { monthly: rows };
+        return {
+          monthly: rows.map((r) => ({
+            month: String(r.month ?? ""),
+            grossTotal: Number(r.gross_total ?? 0),
+          })),
+        };
       },
       CACHE_TTL.MEDIUM,
     );
@@ -273,7 +282,12 @@ export class HrAnalyticsPlusService {
           GROUP BY 1
           ORDER BY 1
         `);
-        return { monthly: rows };
+        return {
+          moodByMonth: rows.map((r) => ({
+            month: String(r.month ?? ""),
+            avgMood: Number(r.avg_mood ?? 0),
+          })),
+        };
       },
       CACHE_TTL.MEDIUM,
     );
@@ -310,7 +324,12 @@ export class HrAnalyticsPlusService {
           GROUP BY category, severity
           ORDER BY count DESC
         `);
-        return { gaps: rows };
+        return {
+          openCases: rows.map((r) => ({
+            category: String(r.category ?? "Unknown"),
+            count: Number(r.count ?? 0),
+          })),
+        };
       },
       CACHE_TTL.SHORT,
     );

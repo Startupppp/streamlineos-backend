@@ -29,7 +29,7 @@ import {
   type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import { autoTopUpSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
+import { autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import {
@@ -175,6 +175,15 @@ export class BillingController {
       this.aiCredits.listPacks(),
     ]);
     return { ...wallet, packs };
+  }
+
+  @Get("ai-credits/transactions")
+  @RequirePermission("billing:ai-credits:view")
+  listAiCreditTransactions(
+    @Query(new ZodValidationPipe(listTransactionsSchema)) query: ReturnType<typeof listTransactionsSchema.parse>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
   }
 
   @Post("ai-credits/auto-topup")

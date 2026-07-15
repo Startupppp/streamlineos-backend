@@ -23,13 +23,48 @@ import type {
 export class AssetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listAssetReturns(orgId: string, userId: string, scope: DataScope) {
-    return this.db
-      .select()
+  async listAssetReturns(orgId: string, userId: string, scope: DataScope) {
+    const rows = await this.db
+      .select({
+        id: assetReturns.id,
+        orgId: assetReturns.orgId,
+        userId: assetReturns.userId,
+        assetId: assetReturns.assetId,
+        assetName: assetReturns.assetName,
+        status: assetReturns.status,
+        returnedAt: assetReturns.returnedAt,
+        condition: assetReturns.condition,
+        notes: assetReturns.notes,
+        createdAt: assetReturns.createdAt,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
       .from(assetReturns)
+      .leftJoin(users, eq(assetReturns.userId, users.id))
       .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
       .orderBy(desc(assetReturns.createdAt))
       .limit(500);
+
+    return rows.map((r) => {
+      const name = `${r.userFirstName ?? ""} ${r.userLastName ?? ""}`.trim();
+      const employeeName = name || r.userEmail || null;
+      return {
+        id: r.id,
+        orgId: r.orgId,
+        userId: r.userId,
+        assetId: r.assetId,
+        assetName: r.assetName,
+        assetType: null as string | null,
+        serialNumber: null as string | null,
+        status: r.status,
+        returnedAt: r.returnedAt,
+        condition: r.condition,
+        notes: r.notes,
+        createdAt: r.createdAt,
+        employeeName,
+      };
+    });
   }
 
   async createAssetReturn(orgId: string, body: CreateAssetReturnInput) {

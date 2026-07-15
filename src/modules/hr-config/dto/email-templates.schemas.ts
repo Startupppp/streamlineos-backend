@@ -16,5 +16,12 @@ export const updateEmailTemplateSchema = z.object({
   variables: z.array(z.string()).optional(),
 });
 
+export const generateEmailTemplateAiSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters").max(100, "Name must be at most 100 characters"),
+  subject: z.string().trim().max(200).optional(),
+  category: z.string().optional(),
+});
+
 export type CreateEmailTemplateInput = z.infer<typeof createEmailTemplateSchema>;
 export type UpdateEmailTemplateInput = z.infer<typeof updateEmailTemplateSchema>;
+export type GenerateEmailTemplateAiInput = z.infer<typeof generateEmailTemplateAiSchema>;

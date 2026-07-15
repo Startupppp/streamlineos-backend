@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -219,6 +219,25 @@ export class AiCreditsService {
     });
 
     return { balance: wallet.balance, creditsAdded, pack };
+  }
+
+  async listTransactions(orgId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const [items, [countRow]] = await Promise.all([
+      this.db
+        .select()
+        .from(aiCreditTransactions)
+        .where(eq(aiCreditTransactions.orgId, orgId))
+        .orderBy(desc(aiCreditTransactions.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(aiCreditTransactions)
+        .where(eq(aiCreditTransactions.orgId, orgId)),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   async updateAutoTopUp(

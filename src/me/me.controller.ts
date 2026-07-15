@@ -67,9 +67,12 @@ export class MeController {
   getLoginHistory(
     @Query("page") page = 1,
     @Query("limit") limit = 20,
+    @Query("success") success: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): ReturnType<MeService["getLoginHistory"]> {
-    return this.meService.getLoginHistory(u.userId, Number(page), Math.min(Number(limit), 100));
+    const successFilter =
+      success === "true" ? true : success === "false" ? false : undefined;
+    return this.meService.getLoginHistory(u.userId, Number(page), Math.min(Number(limit), 100), successFilter);
   }
 
   @Get("devices")

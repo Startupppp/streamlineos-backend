@@ -26,22 +26,40 @@ export const listProvisioningSchema = paginationSchema.extend({
   status: z.enum(["pending", "completed", "verified", "failed"]).optional(),
 });
 
+const ALPHANUMERIC_RE = /[a-zA-Z0-9]/;
+
+const templateNameSchema = z
+  .string()
+  .min(1, "Template name is required")
+  .max(200, "Template name must be 200 characters or fewer")
+  .refine((v) => v.trim().length > 0, { message: "Template name cannot be only whitespace" })
+  .refine((v) => ALPHANUMERIC_RE.test(v), { message: "Template name must contain at least one letter or digit" })
+  .transform((v) => v.trim());
+
+const systemConfigItemSchema = z.object({
+  systemName: z
+    .string()
+    .min(1, "System name is required")
+    .max(200, "System name must be 200 characters or fewer")
+    .transform((v) => v.trim()),
+  action: z.enum(["grant", "revoke", "review"]),
+});
+
 export const createTemplateSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: templateNameSchema,
   triggeredBy: z.enum(["joiner", "mover", "leaver"]),
-  systemsConfig: z.array(z.object({
-    systemName: z.string().min(1).max(200),
-    action: z.enum(["grant", "revoke", "review"]),
-  })),
+  systemsConfig: z
+    .array(systemConfigItemSchema)
+    .min(1, "At least one system is required"),
 });
 
 export const updateTemplateSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
+  name: templateNameSchema.optional(),
   triggeredBy: z.enum(["joiner", "mover", "leaver"]).optional(),
-  systemsConfig: z.array(z.object({
-    systemName: z.string().min(1).max(200),
-    action: z.enum(["grant", "revoke", "review"]),
-  })).optional(),
+  systemsConfig: z
+    .array(systemConfigItemSchema)
+    .min(1, "At least one system is required")
+    .optional(),
 });
 
 export const generateProvisioningSchema = z.object({
