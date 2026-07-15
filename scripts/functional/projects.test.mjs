@@ -70,7 +70,6 @@ async function main() {
     ["GET", "/projects/1/sprints"],
     ["POST", "/projects/1/sprints"],
     ["GET", "/projects/1/sprints/1"],
-    ["GET", "/projects/1/sprints/1/burndown"],
     ["GET", "/projects/1/cycles"],
     ["POST", "/projects/1/cycles"],
     ["GET", "/projects/1/modules"],
@@ -207,7 +206,6 @@ async function main() {
   check("ERR GET feedback/:bad -> 404", await req("GET", `/projects/feedback/${BAD}`, { token: owner }), 404);
   check("ERR GET changelog/:bad -> 404", await req("GET", `/projects/changelog/${BAD}`, { token: owner }), 404);
   check("ERR GET sprints/:bad -> 404", await req("GET", `/projects/${P}/sprints/${BAD}`, { token: owner }), 404);
-  check("ERR GET sprints/:bad/burndown -> 404", await req("GET", `/projects/${P}/sprints/${BAD}/burndown`, { token: owner }), 404);
   check("ERR GET tickets/:bad -> 404", await req("GET", `/projects/${P}/tickets/${BAD}`, { token: owner }), 404);
   check("ERR GET whiteboards/:bad -> 404", await req("GET", `/projects/${P}/whiteboards/${BAD}`, { token: owner }), 404);
   // from-deal with non-existent deal -> 404

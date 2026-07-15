@@ -38,7 +38,6 @@ describe("ProjectsExecution auth/RBAC (e2e)", () => {
     ["post", "/projects/1/sprints"],
     ["get", "/projects/1/sprints/1"],
     ["patch", "/projects/1/sprints/1"],
-    ["get", "/projects/1/sprints/1/burndown"],
     ["get", "/projects/1/cycles"],
     ["post", "/projects/1/cycles"],
     ["patch", "/projects/1/cycles/1"],

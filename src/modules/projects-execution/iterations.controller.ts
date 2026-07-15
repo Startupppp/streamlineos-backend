@@ -66,15 +66,6 @@ export class SprintsController {
     return this.sprints.createSprint(u.orgId, projectId, body);
   }
 
-  @Get(":sprintId/burndown")
-  @RequirePermission("projects:sprints:view")
-  burndown(
-    @Param("sprintId", ParseIntPipe) sprintId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.sprints.burndown(u.orgId, sprintId);
-  }
-
   @Get(":sprintId")
   @RequirePermission("projects:sprints:view")
   getSprint(
