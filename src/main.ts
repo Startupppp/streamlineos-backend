@@ -27,11 +27,12 @@ async function bootstrap(): Promise<void> {
     origin:
       config.NODE_ENV === "development"
         ? (origin, callback) => {
-            if (!origin || isLocalDevOrigin(origin) || config.corsOrigins.includes(origin)) {
-              callback(null, true);
-            } else {
-              callback(null, false);
-            }
+            callback(
+              null,
+              !origin ||
+                isLocalDevOrigin(origin) ||
+                config.corsOrigins.includes(origin),
+            );
           }
         : config.corsOrigins,
     credentials: true,
