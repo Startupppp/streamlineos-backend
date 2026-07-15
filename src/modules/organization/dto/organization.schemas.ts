@@ -7,6 +7,13 @@ export const createOrganizationSchema = z.object({
     .min(1)
     .max(50)
     .regex(/^[a-z0-9-]+$/),
+  billingEmail: z
+    .string()
+    .email()
+    .max(255)
+    .trim()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export const listMembersSchema = z.object({

@@ -104,8 +104,23 @@ export class OrganizationService {
 
     const orgId = randomUUID();
 
+    let billingEmail: string | null = input.billingEmail ?? null;
+    if (!billingEmail) {
+      const [actor] = await this.db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      billingEmail = actor?.email ?? null;
+    }
+
     await this.db.transaction(async (tx) => {
-      await tx.insert(organizations).values({ id: orgId, name: input.name, slug: input.slug });
+      await tx.insert(organizations).values({
+        id: orgId,
+        name: input.name,
+        slug: input.slug,
+        billingEmail,
+      });
       await tx.insert(organizationMembers).values({ userId, orgId, role: "CEO" });
     });
 
