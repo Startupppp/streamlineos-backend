@@ -137,23 +137,6 @@ export const publicWhiteboardUpdateSchema = z.object({
   data: excalidrawSceneSchema,
 });
 
-export const createPageSchema = z.object({
-  title: z.string().min(1).max(200),
-  content: z.unknown().optional(),
-  icon: z.string().optional(),
-  parentPageId: z.number().optional(),
-});
-
-export const updatePageSchema = z.object({
-  title: z.string().min(1).max(200).optional(),
-  content: z.unknown().optional(),
-  icon: z.string().nullable().optional(),
-  coverImage: z.string().nullable().optional(),
-  isPublic: z.boolean().optional(),
-  isPinned: z.boolean().optional(),
-  parentPageId: z.number().nullable().optional(),
-});
-
 export type CreateMilestoneInput = z.infer<typeof createMilestoneSchema>;
 export type UpdateMilestoneInput = z.infer<typeof updateMilestoneSchema>;
 export type CreateIntakeInput = z.infer<typeof createIntakeSchema>;
@@ -167,5 +150,3 @@ export type UpdateWhiteboardInput = z.infer<typeof updateWhiteboardSchema>;
 export type UpdateWhiteboardSharingInput = z.infer<typeof updateWhiteboardSharingSchema>;
 export type SetWhiteboardSharesInput = z.infer<typeof setWhiteboardSharesSchema>;
 export type PublicWhiteboardUpdateInput = z.infer<typeof publicWhiteboardUpdateSchema>;
-export type CreatePageInput = z.infer<typeof createPageSchema>;
-export type UpdatePageInput = z.infer<typeof updatePageSchema>;

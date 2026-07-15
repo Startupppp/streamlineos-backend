@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { and, asc, count, desc, eq, or, sql } from "drizzle-orm";
 import {
   intakeItems,
-  pages,
   projectMilestones,
   projectViews,
   projects,
@@ -13,12 +12,10 @@ import { type Db } from "../../db/drizzle.module";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
-  CreatePageInput,
   CreateViewInput,
   IntakeListQuery,
   UpdateIntakeInput,
   UpdateMilestoneInput,
-  UpdatePageInput,
   UpdateViewInput,
 } from "./dto/workspace.schemas";
 
@@ -344,47 +341,3 @@ export class ViewsService {
   }
 }
 
-@Injectable()
-export class PagesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  listPages(orgId: string, projectId: number) {
-    return this.db
-      .select()
-      .from(pages)
-      .where(and(eq(pages.projectId, projectId), eq(pages.orgId, orgId)))
-      .orderBy(asc(pages.title));
-  }
-
-  async createPage(orgId: string, userId: string, projectId: number, input: CreatePageInput) {
-    const [page] = await this.db
-      .insert(pages)
-      .values({
-        projectId,
-        orgId,
-        title: input.title,
-        content: input.content ?? null,
-        icon: input.icon,
-        parentPageId: input.parentPageId,
-        createdBy: userId,
-      })
-      .returning();
-    return page;
-  }
-
-  async updatePage(orgId: string, pageId: number, input: UpdatePageInput) {
-    const [updated] = await this.db
-      .update(pages)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(pages.id, pageId), eq(pages.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-    return updated;
-  }
-
-  async deletePage(orgId: string, pageId: number) {
-    await this.db.update(pages).set({ parentPageId: null }).where(eq(pages.parentPageId, pageId));
-    await this.db.delete(pages).where(and(eq(pages.id, pageId), eq(pages.orgId, orgId)));
-    return { success: true };
-  }
-}

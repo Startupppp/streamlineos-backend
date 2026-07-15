@@ -20,31 +20,26 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
   IntakeService,
   MilestonesService,
-  PagesService,
   ViewsService,
 } from "./workspace.service";
 import { WhiteboardsService } from "./whiteboards.service";
 import {
   createIntakeSchema,
   createMilestoneSchema,
-  createPageSchema,
   createViewSchema,
   createWhiteboardSchema,
   intakeListQuerySchema,
   updateIntakeSchema,
   updateMilestoneSchema,
-  updatePageSchema,
   updateViewSchema,
   updateWhiteboardSchema,
   type CreateIntakeInput,
   type CreateMilestoneInput,
-  type CreatePageInput,
   type CreateViewInput,
   type CreateWhiteboardInput,
   type IntakeListQuery,
   type UpdateIntakeInput,
   type UpdateMilestoneInput,
-  type UpdatePageInput,
   type UpdateViewInput,
   type UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
@@ -293,48 +288,3 @@ export class WhiteboardsController {
   }
 }
 
-@RequireModule("projects")
-@Controller("projects/:projectId/pages")
-@UseGuards(JwtAuthGuard, PermissionGuard)
-export class PagesController {
-  constructor(private readonly pages: PagesService) {}
-
-  @Get()
-  @RequirePermission("projects:view")
-  listPages(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.pages.listPages(u.orgId, projectId);
-  }
-
-  @Post()
-  @HttpCode(201)
-  @RequirePermission("projects:workspace:manage")
-  createPage(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.pages.createPage(u.orgId, u.userId, projectId, body);
-  }
-
-  @Patch(":pageId")
-  @RequirePermission("projects:workspace:manage")
-  updatePage(
-    @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(updatePageSchema)) body: UpdatePageInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.pages.updatePage(u.orgId, pageId, body);
-  }
-
-  @Delete(":pageId")
-  @RequirePermission("projects:workspace:manage")
-  deletePage(
-    @Param("pageId", ParseIntPipe) pageId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.pages.deletePage(u.orgId, pageId);
-  }
-}
