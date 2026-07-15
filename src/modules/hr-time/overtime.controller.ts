@@ -5,7 +5,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OvertimeService } from "./overtime.service";
+import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -21,7 +23,10 @@ export class OvertimeController {
 
   @Post()
   @RequirePermission("hr:attendance:view")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: { date: string; hours: string; reason?: string; convertToCompOff?: boolean }) {
+  create(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createOvertimeSchema)) body: CreateOvertimeInput,
+  ) {
     return this.service.createRequest(u.orgId, u.userId, body);
   }
 
