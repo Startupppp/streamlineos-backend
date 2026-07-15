@@ -5,10 +5,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { LlmService } from "./providers/llm.service";
 import { AuditService } from "../../common/audit/audit.service";
 
-function q(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock } {
+function q(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock; groupBy: jest.Mock } {
   const p = Promise.resolve(value);
   const limitFn = jest.fn().mockResolvedValue(value);
-  return Object.assign(p, { limit: limitFn }) as unknown as Promise<unknown[]> & { limit: jest.Mock };
+  const self = Object.assign(p, { limit: limitFn }) as unknown as Promise<unknown[]> & { limit: jest.Mock; groupBy: jest.Mock };
+  const groupByFn = jest.fn().mockReturnValue(self);
+  self.groupBy = groupByFn;
+  return self;
 }
 
 function sqlHasColumn(expr: unknown, colName: string): boolean {
@@ -58,6 +61,7 @@ describe("ProjectsAiService", () => {
       from: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
       where: mockWhere,
     };
 
@@ -183,6 +187,34 @@ describe("ProjectsAiService", () => {
 
       await expect(service.draftClientUpdate("attacker_org", 1, "attacker_user")).rejects.toThrow(NotFoundException);
       expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ask — per-member evidence", () => {
+    it("includes per-member ticket counts in the evidence string passed to the LLM", async () => {
+      const assigneeRows = [
+        { assigneeId: "user_a", assigneeName: "Aditya Challa", total: 14, done: 9, inProgress: 3, overdue: 0 },
+        { assigneeId: "user_b", assigneeName: "Jane D", total: 6, done: 6, inProgress: 0, overdue: 0 },
+        { assigneeId: null, assigneeName: null, total: 3, done: 0, inProgress: 0, overdue: 0 },
+      ];
+
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        if (callCount === 2) return q([{ status: "DONE", dueDate: null, sprintId: null }]);
+        return q(assigneeRows);
+      });
+
+      mockLlm.invokeStructured.mockResolvedValue({ answer: "Aditya worked on 14 tickets.", confidence: "high" });
+
+      await service.ask("org_1", 1, "How many tickets did Aditya work on?", "user_1");
+
+      expect(mockLlm.invokeStructured).toHaveBeenCalledTimes(1);
+      const callArg = mockLlm.invokeStructured.mock.calls[0][0] as { user: string };
+      expect(callArg.user).toContain("Aditya Challa — 14 total (9 done, 3 in progress)");
+      expect(callArg.user).toContain("Jane D — 6 total (6 done, 0 in progress)");
+      expect(callArg.user).toContain("Unassigned — 3 total");
     });
   });
 });

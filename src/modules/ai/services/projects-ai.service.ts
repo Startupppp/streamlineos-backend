@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, lt, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems } from "../../../db/schema";
+import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, users } from "../../../db/schema";
 import { LlmService } from "../providers/llm.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
@@ -49,6 +49,45 @@ export class ProjectsAiService {
       .select({ status: tickets.status, dueDate: tickets.dueDate, sprintId: tickets.sprintId })
       .from(tickets)
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+  }
+
+  private async fetchAssigneeStats(orgId: string, projectId: number) {
+    const nowStr = new Date().toISOString().split("T")[0];
+    const rows = await this.db
+      .select({
+        assigneeId: tickets.assigneeId,
+        assigneeName: sql<string | null>`COALESCE(NULLIF(TRIM(CONCAT(${users.firstName}, ' ', ${users.lastName})), ''), ${users.name})`,
+        total: count(),
+        done: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
+        inProgress: count(sql`CASE WHEN ${tickets.status} IN ('IN_PROGRESS','IN_REVIEW') THEN 1 END`),
+        overdue: count(sql`CASE WHEN ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${nowStr} AND ${tickets.status} != 'DONE' THEN 1 END`),
+      })
+      .from(tickets)
+      .leftJoin(users, eq(users.id, tickets.assigneeId))
+      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)))
+      .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name)
+      .limit(50);
+
+    return rows;
+  }
+
+  private buildMemberEvidenceLine(rows: Array<{ assigneeId: string | null; assigneeName: string | null; total: number; done: number; inProgress: number; overdue: number }>): string {
+    const assigned = rows.filter((r) => r.assigneeId !== null);
+    const unassigned = rows.find((r) => r.assigneeId === null);
+
+    const parts = assigned.map((r) => {
+      const name = r.assigneeName ?? r.assigneeId ?? "Unknown";
+      const total = Number(r.total);
+      const done = Number(r.done);
+      const inProg = Number(r.inProgress);
+      return `${name} — ${total} total (${done} done, ${inProg} in progress)`;
+    });
+
+    if (unassigned && Number(unassigned.total) > 0) {
+      parts.push(`Unassigned — ${Number(unassigned.total)} total`);
+    }
+
+    return parts.length > 0 ? `Members: ${parts.join("; ")}` : "Members: none";
   }
 
   async summarize(orgId: string, projectId: number, userId: string) {
@@ -179,7 +218,10 @@ export class ProjectsAiService {
 
   async ask(orgId: string, projectId: number, question: string, userId: string) {
     const project = await this.assertProject(orgId, projectId);
-    const rows = await this.fetchTicketRows(orgId, projectId);
+    const [rows, assigneeRows] = await Promise.all([
+      this.fetchTicketRows(orgId, projectId),
+      this.fetchAssigneeStats(orgId, projectId),
+    ]);
 
     const nowStr = new Date().toISOString().split("T")[0];
     const totalTasks = rows.length;
@@ -188,7 +230,8 @@ export class ProjectsAiService {
     const blocked = rows.filter((r) => r.status === "BLOCKED").length;
     const overdue = rows.filter((r) => r.dueDate !== null && r.dueDate < nowStr && r.status !== "DONE").length;
 
-    const evidence = `Total tasks: ${totalTasks} | Done: ${done} | In progress: ${inProgress} | Blocked: ${blocked} | Overdue: ${overdue} | Project status: ${project.status}`;
+    const memberLine = this.buildMemberEvidenceLine(assigneeRows);
+    const evidence = `Total tasks: ${totalTasks} | Done: ${done} | In progress: ${inProgress} | Blocked: ${blocked} | Overdue: ${overdue} | Project status: ${project.status}\n${memberLine}`;
     const { system, user } = askPrompt({ projectName: project.name, evidence, question });
     const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmAskOutputSchema, schemaName: "ProjectAsk", system, user });
     this.audit.log({ action: "ai.project.ask", userId, orgId, resourceType: "project", resourceId: String(projectId) });

@@ -21,6 +21,11 @@ import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { TicketAiService } from "./services/ticket-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
+import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
+import { OpsCopilotTools } from "./ops-copilot-tools";
+import { CrmCopilotTools } from "./crm-copilot-tools";
+import { CommsCopilotTools } from "./comms-copilot-tools";
+import { ToolAccessService } from "./tool-access.service";
 import { CalendarModule } from "../calendar/calendar.module";
 import { ChatModule } from "../chat/chat.module";
 
@@ -44,6 +49,11 @@ import { ChatModule } from "../chat/chat.module";
     ProjectsAiService,
     TicketAiService,
     HrCopilotTools,
+    WorkspaceCopilotTools,
+    OpsCopilotTools,
+    CrmCopilotTools,
+    CommsCopilotTools,
+    ToolAccessService,
   ],
   exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService],
 })

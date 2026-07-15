@@ -1,10 +1,10 @@
-import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
+import { Injectable, Inject } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AccessService } from "../access/access.service";
+import { ToolAccessService } from "./tool-access.service";
 import { LlmService } from "./providers/llm.service";
 
 export interface HrToolContext {
@@ -16,16 +16,9 @@ export interface HrToolContext {
 export class HrCopilotTools {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: AccessService,
+    private readonly toolAccess: ToolAccessService,
     private readonly llm: LlmService,
   ) {}
-
-  private async assertPermission(orgId: string, userId: string, permission: string): Promise<void> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
-    if (!perms.has(permission)) {
-      throw new ForbiddenException(`${permission} required`);
-    }
-  }
 
   buildTools(ctx: HrToolContext) {
     const { orgId, userId } = ctx;
@@ -38,6 +31,9 @@ export class HrCopilotTools {
           question: z.string().min(1).describe("The HR policy question to answer"),
         }),
         execute: async ({ question }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:policies:view");
+          if (deny) return { denied: true, reason: deny };
+
           const policies = await this.db.execute(sql`
             SELECT id, policy_type, status, scope_type, created_at
             FROM hr_policies
@@ -100,6 +96,9 @@ export class HrCopilotTools {
             .describe("Optional department ID to filter by"),
         }),
         execute: async ({ departmentId }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:analytics:read");
+          if (deny) return { denied: true, reason: deny };
+
           const rows = await this.db.execute(sql`
             SELECT
               COUNT(*) FILTER (WHERE lifecycle_status NOT IN ('EXITED','ALUMNI','CANDIDATE')) AS total,
@@ -128,6 +127,9 @@ export class HrCopilotTools {
           "Get attrition statistics: number of exits in the past 12 months and attrition rate. Use when asked about turnover, attrition, or how many people left.",
         inputSchema: z.object({}),
         execute: async () => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:analytics:read");
+          if (deny) return { denied: true, reason: deny };
+
           const twelveMonthsAgo = new Date();
           twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
           const cutoff = twelveMonthsAgo.toISOString().split("T")[0];
@@ -172,7 +174,8 @@ export class HrCopilotTools {
           areasForImprovement,
           overallRating,
         }) => {
-          await this.assertPermission(orgId, userId, "hr:performance:manage");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:performance:manage");
+          if (deny) return { denied: true, reason: deny };
 
           const empRows = await this.db.execute(sql`
             SELECT p.first_name, p.last_name
@@ -231,7 +234,8 @@ export class HrCopilotTools {
           additionalContext: z.string().optional().describe("Additional context for the letter"),
         }),
         execute: async ({ employeeId, newTitle, newGrade, effectiveDate, additionalContext }) => {
-          await this.assertPermission(orgId, userId, "hr:employees:update");
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:employees:update");
+          if (deny) return { denied: true, reason: deny };
 
           const empRows = await this.db.execute(sql`
             SELECT p.first_name, p.last_name, e.designation
@@ -289,6 +293,9 @@ export class HrCopilotTools {
           "Get the mood check-in trend for the organization over the past 30 days, broken down by week. Use when asked about team morale, mood, or wellbeing trends.",
         inputSchema: z.object({}),
         execute: async () => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:engagement:view");
+          if (deny) return { denied: true, reason: deny };
+
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
           const cutoff = thirtyDaysAgo.toISOString().split("T")[0];
@@ -339,6 +346,9 @@ export class HrCopilotTools {
           "Get leave utilization statistics: how many employees are currently on leave, pending leave requests, and leave approved this month. Use when asked about leave usage or who is out.",
         inputSchema: z.object({}),
         execute: async () => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:leaves:view");
+          if (deny) return { denied: true, reason: deny };
+
           const today = new Date().toISOString().split("T")[0];
           const monthStart = new Date();
           monthStart.setDate(1);

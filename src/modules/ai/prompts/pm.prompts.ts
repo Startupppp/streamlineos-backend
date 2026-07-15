@@ -108,7 +108,9 @@ export interface AskPromptContext {
 
 export function askPrompt(ctx: AskPromptContext) {
   return {
-    system: `You are an AI project assistant. Answer questions about the project using ONLY the provided data. If the data is insufficient, acknowledge it and state low confidence.`,
+    system: `You are an AI project assistant. Answer questions about the project using ONLY the provided data.
+Per-member ticket counts are included in the data under "Members:". When the question asks about a specific person, match their name case-insensitively and partially (e.g. "aditya" matches "Aditya Challa"), then answer precisely using their counts. If the name matches no member, say so explicitly and list the member names that are available.
+If the data is insufficient to answer, acknowledge it and state low confidence.`,
     user: `Project: "${ctx.projectName}"
 Current project data:\n${ctx.evidence}
 Question: ${ctx.question}`,

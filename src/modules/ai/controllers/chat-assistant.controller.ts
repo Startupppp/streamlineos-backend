@@ -141,8 +141,7 @@ export class ChatAssistantController {
     try {
       const result = await this.chat.processChat(
         parsed.data.messages,
-        u.userId,
-        u.orgId,
+        u,
         parsed.data.conversationId,
       );
       const model = this.chat.getChatModelId();
