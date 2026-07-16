@@ -19,6 +19,8 @@ export const KB_EVENT_TYPES = [
   "ai_answer",
   "ai_answer_no_context",
   "ticket_deflected",
+  "ai_feedback",
+  "research_brief_requested",
 ] as const;
 export type KbEventType = (typeof KB_EVENT_TYPES)[number];
 

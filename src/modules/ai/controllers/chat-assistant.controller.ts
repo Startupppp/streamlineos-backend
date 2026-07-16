@@ -211,6 +211,7 @@ export class ChatAssistantController {
         parsed.data.messages,
         u,
         parsed.data.conversationId,
+        parsed.data.persona,
       );
       const model = this.chat.getChatModelId();
 

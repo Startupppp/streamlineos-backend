@@ -13,6 +13,7 @@ import { CrmContentService } from "./services/crm-content.service";
 import { CrmBriefService } from "./services/crm-brief.service";
 import { CrmTasksService } from "./services/crm-tasks.service";
 import { CrmCopilotService } from "./services/crm-copilot.service";
+import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { HrAiService } from "./services/hr-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
@@ -38,10 +39,15 @@ import { BillingModule } from "../billing/billing.module";
 import { AiCreditsService } from "../billing/ai-credits.service";
 import { AiConfirmationModule } from "../ai-confirmation/ai-confirmation.module";
 import { ProjectsModule } from "../projects/projects.module";
+import { IntegrationsModule } from "../integrations/integrations.module";
+import { MeetingsAiController } from "./controllers/meetings-ai.controller";
+import { MeetingsPrepService } from "./services/meetings-prep.service";
+import { ExecutiveBriefModule } from "./executive-brief/executive-brief.module";
+import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 
 @Module({
-  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule],
-  controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController],
+  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule],
+  controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController],
   providers: [
     LlmService,
     EmbeddingsService,
@@ -50,6 +56,7 @@ import { ProjectsModule } from "../projects/projects.module";
     CrmBriefService,
     CrmTasksService,
     CrmCopilotService,
+    CrmPipelineService,
     HrAiService,
     KbRagService,
     ChatAssistantService,
@@ -68,6 +75,7 @@ import { ProjectsModule } from "../projects/projects.module";
     ToolAccessService,
     AiGatewayService,
     AiFeedbackService,
+    MeetingsPrepService,
     { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
   exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService, AiGatewayService],

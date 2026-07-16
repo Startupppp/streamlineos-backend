@@ -80,3 +80,34 @@ export const PmAskOutputSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).describe("Confidence based on data quality"),
 });
 export type PmAskOutput = z.infer<typeof PmAskOutputSchema>;
+
+export const weeklyUpdateBodySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional(),
+});
+export type WeeklyUpdateBodyInput = z.infer<typeof weeklyUpdateBodySchema>;
+
+const WeeklyUpdateCitationSchema = z.object({
+  source: z.enum(["ticket", "blocker", "risk", "decision", "discussion"]),
+  label: z.string(),
+});
+
+export const PmWeeklyUpdateOutputSchema = z.object({
+  headline: z.string().describe("One-line headline for the week, max 15 words"),
+  completedHighlights: z.array(z.string()).describe("Up to 5 completed work highlights, each referencing real data"),
+  blockers: z.array(z.string()).describe("Current blockers, max 3"),
+  upcomingFocus: z.array(z.string()).describe("Top 2-3 things to focus on next week"),
+  citations: z.array(WeeklyUpdateCitationSchema).describe("Data sources cited in the draft"),
+});
+export type PmWeeklyUpdateOutput = z.infer<typeof PmWeeklyUpdateOutputSchema>;
+
+export const PmChangeImpactOutputSchema = z.object({
+  headline: z.string().describe("One-line impact summary, max 15 words"),
+  scopeImpact: z.string().describe("2-3 sentence scope impact analysis"),
+  scheduleImpact: z.string().describe("2-3 sentence schedule/timeline impact"),
+  budgetImpact: z.string().describe("2-3 sentence budget impact, use 'none identified' if not applicable"),
+  riskSummary: z.array(z.string()).describe("Up to 3 key risk bullet points introduced by the changes"),
+  pendingApprovals: z.array(z.string()).describe("Titles of approvals still pending, empty if none"),
+  citations: z.array(z.object({ source: z.enum(["change_request", "risk", "approval", "plan"]), label: z.string() })).describe("Sources cited"),
+});
+export type PmChangeImpactOutput = z.infer<typeof PmChangeImpactOutputSchema>;

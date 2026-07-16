@@ -9,9 +9,16 @@ import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { OrgFeaturesService } from "./org-features.service";
 import { CrmScoringService } from "./crm-scoring.service";
 import { CrmContentService } from "./crm-content.service";
+import { CrmPipelineService } from "./crm-pipeline.service";
 import { findDuplicateLeads } from "../../leads/duplicate-leads";
 import { ConversationSummarySchema } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
+
+interface CitationItem {
+  id: string;
+  title: string;
+  snippet: string;
+}
 
 const DealInsightsSchema = z.object({
   summary: z.string(),
@@ -42,6 +49,7 @@ export class CrmCopilotService {
     private readonly orgFeatures: OrgFeaturesService,
     private readonly scoring: CrmScoringService,
     private readonly content: CrmContentService,
+    private readonly pipeline: CrmPipelineService,
   ) {}
 
   private async auditAiAction(
@@ -228,13 +236,13 @@ ${truncate(activitiesText, 1500)}`;
       .orderBy(desc(leads.score))
       .limit(fetchLimit);
 
-    const results: Array<{ leadId: number; leadName: string; action: string; urgency: string; reasoning: string }> = [];
+    const results: Array<{ leadId: number; leadName: string; action: string; urgency: string; reasoning: string; evidence: unknown[]; rationale: string }> = [];
 
     for (const lead of topLeads) {
       try {
-        const nba = await this.scoring.nextBestAction(orgId, lead.id, userId);
+        const nba = await this.scoring.nextBestActionWithEvidence(orgId, lead.id, userId);
         if (nba) {
-          results.push({ leadId: lead.id, leadName: lead.name, action: nba.action, urgency: nba.urgency, reasoning: nba.reasoning });
+          results.push({ leadId: lead.id, leadName: lead.name, action: nba.action, urgency: nba.urgency, reasoning: nba.reasoning, evidence: nba.evidence, rationale: nba.rationale });
         }
       } catch {
         continue;
@@ -376,5 +384,83 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     await this.auditAiAction(orgId, userId, "ai.crm.duplicate_suggestions", "lead", String(leadId));
 
     return { leadId, duplicates: relevant, aiExplanation, generatedAt: new Date().toISOString() };
+  }
+
+  async leadSummaryWithCitations(orgId: string, leadId: number, userId: string) {
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
+
+    const [[lead], activityCount] = await Promise.all([
+      this.db
+        .select({ id: leads.id, name: leads.name, score: leads.score, priority: leads.priority, status: leads.status, source: leads.source })
+        .from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+      this.db
+        .select({ date: leadActivities.date })
+        .from(leadActivities)
+        .where(eq(leadActivities.leadId, leadId))
+        .orderBy(desc(leadActivities.date))
+        .limit(10),
+    ]);
+
+    if (!lead) throw new NotFoundException("Lead not found");
+
+    const citations: CitationItem[] = [
+      { id: `lead-score-${leadId}`, title: "AI Lead Score", snippet: `Score: ${lead.score ?? "Not scored"}, Priority: ${lead.priority ?? "N/A"}` },
+      { id: `lead-status-${leadId}`, title: "Lead Status", snippet: `Status: ${lead.status}, Source: ${lead.source ?? "N/A"}` },
+    ];
+    if (activityCount.length > 0) {
+      citations.push({
+        id: `lead-activity-${leadId}`,
+        title: "Activity History",
+        snippet: `${activityCount.length} activities. Latest: ${activityCount[0]?.date ? new Date(activityCount[0].date).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+
+    const base = await this.leadSummary(orgId, leadId, userId);
+    return { ...base, citations };
+  }
+
+  async dealSummaryWithCitations(orgId: string, dealId: number, userId: string) {
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
+
+    const [[deal], activities] = await Promise.all([
+      this.db
+        .select({ id: deals.id, name: deals.name, stage: deals.stage, value: deals.value, probability: deals.probability, assignedToId: deals.assignedToId })
+        .from(deals)
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
+      this.db
+        .select({ createdAt: dealActivities.createdAt })
+        .from(dealActivities)
+        .where(eq(dealActivities.dealId, dealId))
+        .orderBy(desc(dealActivities.createdAt))
+        .limit(10),
+    ]);
+
+    if (!deal) throw new NotFoundException("Deal not found");
+
+    const citations: CitationItem[] = [
+      { id: `deal-stage-${dealId}`, title: "Deal Stage & Value", snippet: `Stage: ${deal.stage}, Value: ₹${Number(deal.value ?? 0).toLocaleString("en-IN")}` },
+      { id: `deal-probability-${dealId}`, title: "Win Probability", snippet: `Current probability: ${deal.probability}%` },
+    ];
+    if (activities.length > 0) {
+      citations.push({
+        id: `deal-activity-${dealId}`,
+        title: "Activity History",
+        snippet: `${activities.length} activities. Latest: ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+
+    const base = await this.dealSummary(orgId, dealId, userId);
+    return { ...base, citations };
+  }
+
+  stalePipelineDigest(orgId: string, userId: string, inactiveDays?: number) {
+    return this.pipeline.stalePipelineDigest(orgId, userId, inactiveDays);
+  }
+
+  dataQualityCopilot(orgId: string, userId: string) {
+    return this.pipeline.dataQualityCopilot(orgId, userId);
   }
 }

@@ -7,8 +7,13 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
+import { AiConfirmationService } from "../ai-confirmation/ai-confirmation.service";
+import { InvReplenishmentService } from "../inv-replenishment/inv-replenishment.service";
+import { InvVendorsService } from "../inv-vendors/inv-vendors.service";
 
 const FEATURE_KEY = "inv.insight-explain" as const;
+const REORDER_FEATURE_KEY = "inv.reorder-explain" as const;
+const DELAY_FEATURE_KEY = "inv.supplier-delay-briefing" as const;
 
 const ExplainFactorSchema = z.object({
   label: z.string(),
@@ -43,6 +48,34 @@ export interface InventoryDigest {
   groups: DigestGroup[];
   totalNew: number;
   narration?: string;
+}
+
+export interface ReorderProposalResult {
+  evidence: Record<string, unknown>;
+  explanation: ExplainResponse;
+  proposal: { proposalId: number; token: string; expiresAt: Date };
+}
+
+interface VendorPerformance {
+  vendorId: number;
+  onTimeRate: number;
+  fillRate: number;
+  avgLeadTimeDays: number;
+  returnRate: number;
+  openPoCount: number;
+  totalSpend: string;
+}
+
+export interface SupplierDelayBriefingResult {
+  vendors: Array<{
+    vendorId: number;
+    vendorName: string;
+    insightCount: number;
+    insights: Array<{ id: number; title: string; body: string; severity: string }>;
+    performance: VendorPerformance;
+  }>;
+  narration: string;
+  generatedAt: Date;
 }
 
 function buildSystemPrompt(): string {
@@ -86,11 +119,35 @@ function buildDigestUserPrompt(groups: DigestGroup[]): string {
   ].join("\n");
 }
 
+function buildReorderUserPrompt(evidence: Record<string, unknown>): string {
+  return [
+    "Reorder proposal evidence (all numbers are pre-computed — do not modify or re-derive them):",
+    JSON.stringify(evidence, null, 2),
+    "",
+    "Explain why this reorder is operationally necessary based on the evidence above.",
+    "Extract factual quantities/dates/thresholds as factors (isFactual: true). Add procurement suggestions as factors (isFactual: false).",
+    "Return valid JSON: { explanation: string, factors: [{label, value, isFactual}], suggestedActions: string[] }",
+  ].join("\n");
+}
+
+function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorPerformance }>): string {
+  return [
+    "Supplier delay briefing — all performance figures are pre-computed (do not invent or modify any numbers):",
+    JSON.stringify(vendors, null, 2),
+    "",
+    "Write a 3-5 sentence operational narrative summarising vendor delay risk across the listed suppliers.",
+    "Reference the exact on-time rates, lead times, and open PO counts provided. Do not invent any figures.",
+  ].join("\n");
+}
+
 @Injectable()
 export class InvAiExplainService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
+    private readonly confirmation: AiConfirmationService,
+    private readonly replenishment: InvReplenishmentService,
+    private readonly vendors: InvVendorsService,
   ) {}
 
   async explainInsight(orgId: string, userId: string, insightId: number): Promise<InsightNarration> {
@@ -195,5 +252,193 @@ export class InvAiExplainService {
     }
 
     return digest;
+  }
+
+  async getReorderProposal(
+    orgId: string,
+    userId: string,
+    variantId: number,
+    warehouseId?: number,
+  ): Promise<ReorderProposalResult> {
+    const { items } = await this.replenishment.getSuggestions(orgId, { page: 1, limit: 100 });
+    const filtered = items.filter(
+      (s) =>
+        s.productVariantId === variantId &&
+        (warehouseId == null || s.warehouseId === warehouseId),
+    );
+
+    if (filtered.length === 0) {
+      throw new NotFoundException("No reorder suggestion found for this variant — it may not be below the reorder threshold");
+    }
+
+    const suggestion = filtered[0];
+
+    const evidence: Record<string, unknown> = {
+      productVariantId: suggestion.productVariantId,
+      variantSku: suggestion.variantSku,
+      variantName: suggestion.variantName,
+      productName: suggestion.productName,
+      currentOnHand: suggestion.currentOnHand,
+      forecastedQty: suggestion.forecasted,
+      suggestedOrderQty: suggestion.suggestedQty,
+      vendorId: suggestion.vendorId,
+      leadTimeDays: suggestion.leadTimeDays,
+      expectedDeliveryDate: suggestion.expectedDate,
+      reorderReason: suggestion.reason,
+      warehouseId: suggestion.warehouseId,
+      warehouseName: suggestion.warehouseName,
+    };
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: REORDER_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 512,
+      charge: {
+        credits: getFeatureCost(REORDER_FEATURE_KEY),
+        idempotencyKey: `inv-reorder-${orgId}-${variantId}-${randomUUID()}`,
+      },
+      redact: false,
+      schema: ExplainResponseSchema,
+      prompt: {
+        system: buildSystemPrompt(),
+        user: buildReorderUserPrompt(evidence),
+        promptKey: "inv.reorder-explain",
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) {
+      throw new ServiceUnavailableException(result.message);
+    }
+
+    const proposal = await this.confirmation.propose({
+      orgId,
+      userId,
+      action: "inventory:create-draft-po",
+      payload: { suggestion, explanation: result.data } as Record<string, unknown>,
+      idempotencyKey: `reorder-${orgId}-${variantId}-${Date.now()}`,
+      ttlSeconds: 120,
+    });
+
+    return { evidence, explanation: result.data, proposal };
+  }
+
+  async confirmReorderProposal(
+    orgId: string,
+    userId: string,
+    proposalId: number,
+    token: string,
+  ) {
+    const confirmed = await this.confirmation.confirm({
+      token,
+      actor: { orgId, userId },
+    });
+
+    const payload = confirmed.payload;
+    const suggestion = payload["suggestion"] as {
+      productVariantId: number;
+      suggestedQty: number;
+      vendorId: number | null;
+      warehouseId: number | null;
+    };
+
+    if (!suggestion.vendorId) {
+      throw new NotFoundException("No vendor associated with this reorder suggestion — assign a vendor to the reorder rule first");
+    }
+
+    const po = await this.replenishment.generatePo(orgId, userId, {
+      vendorId: suggestion.vendorId,
+      warehouseId: suggestion.warehouseId ?? undefined,
+      suggestions: [
+        {
+          productVariantId: suggestion.productVariantId,
+          suggestedQty: suggestion.suggestedQty,
+          unitCost: 0,
+        },
+      ],
+    });
+
+    await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id });
+    return po;
+  }
+
+  async getSupplierDelayBriefing(
+    orgId: string,
+    userId: string,
+    vendorId?: number,
+  ): Promise<SupplierDelayBriefingResult> {
+    const insightRows = await this.db.query.invAiInsights.findMany({
+      where: and(eq(invAiInsights.orgId, orgId), eq(invAiInsights.insightType, "vendor_delay")),
+      columns: { id: true, title: true, body: true, severity: true, sourceRefs: true },
+      limit: 100,
+    });
+
+    const filteredInsights = vendorId
+      ? insightRows.filter((r) => {
+          const refs = (r.sourceRefs ?? {}) as Record<string, unknown>;
+          return Number(refs["vendorId"]) === vendorId;
+        })
+      : insightRows;
+
+    const vendorMap = new Map<
+      number,
+      { vendorName: string; insights: typeof filteredInsights }
+    >();
+
+    for (const insight of filteredInsights) {
+      const refs = (insight.sourceRefs ?? {}) as Record<string, unknown>;
+      const vId = Number(refs["vendorId"]);
+      const vName = String(refs["vendorName"] ?? "Unknown");
+      if (!vId) continue;
+      const entry = vendorMap.get(vId) ?? { vendorName: vName, insights: [] };
+      entry.insights.push(insight);
+      vendorMap.set(vId, entry);
+    }
+
+    const vendors = await Promise.all(
+      Array.from(vendorMap.entries()).map(async ([vId, entry]) => {
+        const performance = await this.vendors.getVendorPerformance(orgId, vId);
+        return {
+          vendorId: vId,
+          vendorName: entry.vendorName,
+          insightCount: entry.insights.length,
+          insights: entry.insights.map((i) => ({
+            id: i.id,
+            title: i.title,
+            body: i.body,
+            severity: i.severity,
+          })),
+          performance,
+        };
+      }),
+    );
+
+    const narration =
+      vendors.length === 0
+        ? "No active supplier delay alerts detected."
+        : await (async () => {
+            const result = await this.gateway.invokeText({
+              actor: { orgId, userId },
+              feature: DELAY_FEATURE_KEY,
+              tier: "fast",
+              maxTokens: 512,
+              charge: {
+                credits: getFeatureCost(DELAY_FEATURE_KEY),
+                idempotencyKey: `inv-delay-${orgId}-${randomUUID()}`,
+              },
+              redact: false,
+              prompt: {
+                system: buildSystemPrompt(),
+                user: buildDelayBriefingUserPrompt(vendors),
+                promptKey: "inv.supplier-delay-briefing",
+                promptVersion: 1,
+              },
+            });
+            if (!result.ok) throw new ServiceUnavailableException(result.message);
+            return result.data;
+          })();
+
+    return { vendors, narration, generatedAt: new Date() };
   }
 }

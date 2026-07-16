@@ -142,6 +142,46 @@ export class ProjectsAnalyticsService {
     };
   }
 
+  async getOrgProjectHealthSummary(orgId: string): Promise<{
+    total: number;
+    healthy: number;
+    atRisk: number;
+    critical: number;
+    avgScore: number;
+  }> {
+    const rows = await this.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.orgId, orgId));
+
+    const results = await Promise.allSettled(rows.map((p) => this.getProjectAnalytics(orgId, p.id)));
+
+    let healthy = 0;
+    let atRisk = 0;
+    let critical = 0;
+    let totalScore = 0;
+    let counted = 0;
+
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        const { healthScore, healthStatus } = r.value;
+        totalScore += healthScore ?? 0;
+        counted++;
+        if (healthStatus === "EXCELLENT" || healthStatus === "GOOD") healthy++;
+        else if (healthStatus === "AT_RISK") atRisk++;
+        else if (healthStatus === "CRITICAL") critical++;
+      }
+    }
+
+    return {
+      total: rows.length,
+      healthy,
+      atRisk,
+      critical,
+      avgScore: counted > 0 ? Math.round(totalScore / counted) : 0,
+    };
+  }
+
   async resourceAllocation(orgId: string) {
     const activeProjects = await this.db.query.projects.findMany({
       where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE")),

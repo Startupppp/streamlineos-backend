@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
@@ -281,6 +282,7 @@ Tone: Professional, concise, actionable.`;
     messages: ChatMessage[],
     actor: CurrentUserContext,
     conversationId?: number,
+    persona?: string,
   ) {
     const { userId, orgId } = actor;
 
@@ -297,7 +299,9 @@ Tone: Professional, concise, actionable.`;
     }
 
     const context = await this.fetchContext(userId, orgId);
-    const contextPrompt = this.buildContextPrompt(context);
+    const basePrompt = this.buildContextPrompt(context);
+    const personaConfig = persona ? getPersona(persona) : undefined;
+    const contextPrompt = personaConfig ? `${personaConfig.preamble}\n\n${basePrompt}` : basePrompt;
 
     const latest = messages.at(-1);
     if (latest?.role === "user") {
@@ -316,109 +320,115 @@ Tone: Professional, concise, actionable.`;
 
     const modelId = resolveChatModelId();
 
-    const buildStream = () => streamText({
-        model: resolveChatModel(),
-        messages: modelMessages,
-        system: contextPrompt,
-        temperature: 0.7,
-        stopWhen: stepCountIs(10),
-        onFinish: async ({ text }) => {
-          void this.ledger.settle(reservationId, { model: modelId }).catch(() => undefined);
-          void this.usageSvc.track({ orgId, userId, feature: CHAT_FEATURE, model: modelId }).catch(() => undefined);
+    const inlineTools = {
+      searchProjects: tool({
+        description: "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",
+        inputSchema: z.object({
+          query: z.string().min(1).describe("Partial project name to search"),
+        }),
+        execute: async ({ query }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:view");
+          if (deny) return { denied: true, reason: deny };
+
+          const results = await this.db
+            .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
+            .from(projects)
+            .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`)))
+            .limit(10);
+          if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
+          return { results, message: `Found ${results.length} project(s).` };
+        },
+      }),
+
+      askProjectAI: tool({
+        description: "Ask an AI question about a specific project — e.g. what's blocked, why is it late, what are the risks. Requires a projectId; use searchProjects first if you only have a name.",
+        inputSchema: z.object({
+          projectId: z.number().int().positive().describe("Numeric project ID"),
+          question: z.string().min(1).describe("Question to ask about the project"),
+        }),
+        execute: async ({ projectId, question }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
+          if (deny) return { denied: true, reason: deny };
+
           try {
-            if (conversationId !== undefined) {
-              await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
-            } else {
-              await this.history.append(orgId, userId, "assistant", text);
-            }
-          } catch (error) {
-            logger.error("Failed to persist assistant chat message", { error });
+            return await this.projectsAi.ask(orgId, projectId, question, userId);
+          } catch (_e) {
+            return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
           }
         },
-      tools: {
-        ...this.hrCopilot.buildTools({ orgId, userId }),
-        ...this.workspaceCopilot.buildTools({ actor }),
-        ...this.opsCopilot.buildTools({ actor }),
-        ...this.crmCopilot.buildTools({ actor }),
-        ...this.commsCopilot.buildTools({ actor }),
-        ...this.projectsCopilot.buildTools({ actor }),
-        ...this.commsActions.buildTools({ actor }),
+      }),
 
-        searchProjects: tool({
-          description: "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",
-          inputSchema: z.object({
-            query: z.string().min(1).describe("Partial project name to search"),
-          }),
-          execute: async ({ query }) => {
-            const deny = await this.toolAccess.denyReason(orgId, userId, "projects:view");
-            if (deny) return { denied: true, reason: deny };
-
-            const results = await this.db
-              .select({ id: projects.id, name: projects.name, key: projects.key, status: projects.status })
-              .from(projects)
-              .where(and(eq(projects.orgId, orgId), ne(projects.status, "ARCHIVED"), ilike(projects.name, `%${query}%`)))
-              .limit(10);
-            if (results.length === 0) return { results: [], message: `No projects found matching "${query}".` };
-            return { results, message: `Found ${results.length} project(s).` };
-          },
+      getProjectSummary: tool({
+        description: "Get an AI-generated summary of a project's health, progress, and highlights. Requires a projectId; use searchProjects first if you only have a name.",
+        inputSchema: z.object({
+          projectId: z.number().int().positive().describe("Numeric project ID"),
         }),
+        execute: async ({ projectId }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
+          if (deny) return { denied: true, reason: deny };
 
-        askProjectAI: tool({
-          description: "Ask an AI question about a specific project — e.g. what's blocked, why is it late, what are the risks. Requires a projectId; use searchProjects first if you only have a name.",
-          inputSchema: z.object({
-            projectId: z.number().int().positive().describe("Numeric project ID"),
-            question: z.string().min(1).describe("Question to ask about the project"),
-          }),
-          execute: async ({ projectId, question }) => {
-            const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
-            if (deny) return { denied: true, reason: deny };
+          try {
+            return await this.projectsAi.summarize(orgId, projectId, userId);
+          } catch (_e) {
+            return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
+          }
+        },
+      }),
 
-            try {
-              return await this.projectsAi.ask(orgId, projectId, question, userId);
-            } catch (_e) {
-              return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
-            }
-          },
+      searchKnowledgeBase: tool({
+        description:
+          "Search the organization's knowledge base (wiki pages and uploaded documents/notes) to answer the user's question with grounded information. Use this whenever the user asks about company docs, policies, uploaded files, notes, or wiki content.",
+        inputSchema: z.object({
+          query: z.string().describe("The question to answer from the knowledge base"),
         }),
+        execute: async ({ query }) => {
+          const deny = await this.toolAccess.denyReason(orgId, userId, "kb:articles:view");
+          if (deny) return { denied: true, reason: deny };
 
-        getProjectSummary: tool({
-          description: "Get an AI-generated summary of a project's health, progress, and highlights. Requires a projectId; use searchProjects first if you only have a name.",
-          inputSchema: z.object({
-            projectId: z.number().int().positive().describe("Numeric project ID"),
-          }),
-          execute: async ({ projectId }) => {
-            const deny = await this.toolAccess.denyReason(orgId, userId, "projects:ai:use");
-            if (deny) return { denied: true, reason: deny };
+          try {
+            const kbAsk = this.moduleRef.get(KbAskService, { strict: false });
+            const result = await kbAsk.ask(actor, { question: query });
+            return { answer: result.answer, hasContext: result.hasContext };
+          } catch (_e) {
+            return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
+          }
+        },
+      }),
+    };
 
-            try {
-              return await this.projectsAi.summarize(orgId, projectId, userId);
-            } catch (_e) {
-              return { success: false, message: `Project ${projectId} not found or has no ticket data.` };
-            }
-          },
-        }),
+    const allBuiltTools = {
+      ...this.hrCopilot.buildTools({ orgId, userId }),
+      ...this.workspaceCopilot.buildTools({ actor }),
+      ...this.opsCopilot.buildTools({ actor }),
+      ...this.crmCopilot.buildTools({ actor }),
+      ...this.commsCopilot.buildTools({ actor }),
+      ...this.projectsCopilot.buildTools({ actor }),
+      ...this.commsActions.buildTools({ actor }),
+      ...inlineTools,
+    };
 
-        searchKnowledgeBase: tool({
-          description:
-            "Search the organization's knowledge base (wiki pages and uploaded documents/notes) to answer the user's question with grounded information. Use this whenever the user asks about company docs, policies, uploaded files, notes, or wiki content.",
-          inputSchema: z.object({
-            query: z.string().describe("The question to answer from the knowledge base"),
-          }),
-          execute: async ({ query }) => {
-            const deny = await this.toolAccess.denyReason(orgId, userId, "kb:articles:view");
-            if (deny) return { denied: true, reason: deny };
+    const effectiveTools = persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools;
 
-            try {
-              const kbAsk = this.moduleRef.get(KbAskService, { strict: false });
-              const result = await kbAsk.ask(actor, { question: query });
-              return { answer: result.answer, hasContext: result.hasContext };
-            } catch (_e) {
-              return { answer: "Knowledge base search is unavailable right now.", hasContext: false };
-            }
-          },
-        }),
-
+    const buildStream = () => streamText({
+      model: resolveChatModel(),
+      messages: modelMessages,
+      system: contextPrompt,
+      temperature: 0.7,
+      stopWhen: stepCountIs(10),
+      onFinish: async ({ text }) => {
+        void this.ledger.settle(reservationId, { model: modelId }).catch(() => undefined);
+        void this.usageSvc.track({ orgId, userId, feature: CHAT_FEATURE, model: modelId }).catch(() => undefined);
+        try {
+          if (conversationId !== undefined) {
+            await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
+          } else {
+            await this.history.append(orgId, userId, "assistant", text);
+          }
+        } catch (error) {
+          logger.error("Failed to persist assistant chat message", { error });
+        }
       },
+      tools: effectiveTools,
     });
 
     try {

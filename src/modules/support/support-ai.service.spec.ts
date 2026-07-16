@@ -1,6 +1,9 @@
 import { BadRequestException, ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { SupportAiService } from "./support-ai.service";
+import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
+import { SupportAiSettingsService } from "./support-ai-settings.service";
+import { SupportAiReportHelper } from "./support-ai-report.helper";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { EmbeddingsService } from "../ai/providers/embeddings.service";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
@@ -12,6 +15,8 @@ const mockDb = {
     supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
     supportMacros: { findMany: jest.fn().mockResolvedValue([]) },
     supportAiSuggestions: { findFirst: jest.fn() },
+    supportTicketDrafts: { findFirst: jest.fn() },
+    supportAiSettings: { findFirst: jest.fn() },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -26,6 +31,18 @@ const mockDb = {
   innerJoin: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue([]),
+  delete: jest.fn().mockReturnThis(),
+};
+
+const mockAiSettings = {
+  getSettings: jest.fn().mockResolvedValue({ confidenceThreshold: 0.7 }),
+  updateSettings: jest.fn(),
+};
+
+const mockReportHelper = {
+  getAiReport: jest.fn().mockResolvedValue({
+    acceptanceRate: 0, resolutionRate: 0, reopenRate: 0, escalationRate: 0, sourceCoverage: 0, unsupportedRate: 0, csatImpact: null,
+  }),
 };
 
 const makeGatewayOk = <T>(data: T) => ({
@@ -74,13 +91,18 @@ describe("SupportAiService", () => {
     mockDb.limit.mockResolvedValue([]);
     mockDb.onConflictDoUpdate.mockResolvedValue(undefined);
 
+    mockDb.query.supportAiSettings.findFirst.mockResolvedValue(null);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportAiService,
+        SupportAiEmbeddingsHelper,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: EmbeddingsService, useValue: mockEmbeddings },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
+        { provide: SupportAiSettingsService, useValue: mockAiSettings },
+        { provide: SupportAiReportHelper, useValue: mockReportHelper },
       ],
     }).compile();
     service = module.get(SupportAiService);
@@ -161,8 +183,42 @@ describe("SupportAiService", () => {
       expect(call[0].charge).toBeDefined();
       expect(call[0].charge.credits).toBeGreaterThan(0);
       expect(mockDb.values).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "reply", payload: { body: "Thanks for reaching out — try resetting your password." } }),
+        expect.objectContaining({ type: "reply", payload: expect.objectContaining({ body: "Thanks for reaching out — try resetting your password." }) }),
       );
+    });
+
+    it("includes a sources array in the persisted reply payload", async () => {
+      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Here is how to reset your password."));
+      mockDb.limit.mockResolvedValueOnce([
+        { articleId: 5, title: "Password reset guide", slug: "password-reset", similarity: 0.8 },
+      ]);
+
+      await service.suggestReply("org1", 42);
+
+      const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
+      expect((replyCall[0].payload as { sources: unknown[] }).sources).toHaveLength(1);
+    });
+
+    it("sets escalated:true in payload when prior confidence is below threshold", async () => {
+      mockAiSettings.getSettings.mockResolvedValueOnce({ confidenceThreshold: 0.9 });
+      mockDb.query.supportAiSuggestions.findFirst.mockResolvedValueOnce({ confidence: "0.6" });
+      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Try resetting your password."));
+
+      await service.suggestReply("org1", 42);
+
+      const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
+      expect((replyCall[0].payload as { escalated: boolean }).escalated).toBe(true);
+    });
+
+    it("sets escalated:false when confidence is above threshold", async () => {
+      mockAiSettings.getSettings.mockResolvedValueOnce({ confidenceThreshold: 0.5 });
+      mockDb.query.supportAiSuggestions.findFirst.mockResolvedValueOnce({ confidence: "0.9" });
+      mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Try resetting your password."));
+
+      await service.suggestReply("org1", 42);
+
+      const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
+      expect((replyCall[0].payload as { escalated: boolean }).escalated).toBe(false);
     });
 
     it("throws BadRequestException on quota_exceeded", async () => {
@@ -389,6 +445,59 @@ describe("SupportAiService", () => {
     it("swallows errors from sub-calls (fire-and-forget safety)", async () => {
       mockGateway.invokeStructured.mockRejectedValueOnce(new Error("unexpected boom"));
       await expect(service.runFullAnalysis("org1", 42)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("improveReply", () => {
+    it("returns null when AI is unavailable", async () => {
+      mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
+      const result = await service.improveReply("org1", 42, "Please help");
+      expect(result).toBeNull();
+    });
+
+    it("returns improved reply with changes list", async () => {
+      mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({
+        improved: "Thank you for reaching out. Please try resetting your password.",
+        changes: ["Added greeting", "Made tone more empathetic"],
+      }));
+
+      const result = await service.improveReply("org1", 42, "try resetting password", "user1");
+
+      expect(result).not.toBeNull();
+      const [call] = mockGateway.invokeStructured.mock.calls;
+      expect(call[0].feature).toBe("support.reply");
+      expect(call[0].charge).toBeDefined();
+      expect(result?.improved).toBe("Thank you for reaching out. Please try resetting your password.");
+      expect(result?.changes).toHaveLength(2);
+    });
+
+    it("throws BadRequestException when credits are exhausted", async () => {
+      mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
+      await expect(service.improveReply("org1", 42, "some draft")).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws ServiceUnavailableException when provider is down", async () => {
+      mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
+      await expect(service.improveReply("org1", 42, "some draft")).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe("getAiReport", () => {
+    it("delegates to reportHelper and returns the aggregated report shape", async () => {
+      mockReportHelper.getAiReport.mockResolvedValueOnce({
+        acceptanceRate: 0.75,
+        resolutionRate: 0.5,
+        reopenRate: 0.1,
+        escalationRate: 0.1,
+        sourceCoverage: 0.4,
+        unsupportedRate: 0.05,
+        csatImpact: { aiResolved: 4.2, nonAiResolved: 3.8 },
+      });
+
+      const result = await service.getAiReport("org1", { dateFrom: new Date("2026-01-01") });
+
+      expect(result).toMatchObject({ acceptanceRate: 0.75, resolutionRate: 0.5 });
+      expect(mockReportHelper.getAiReport).toHaveBeenCalledWith("org1", expect.objectContaining({ dateFrom: expect.any(Date) }));
     });
   });
 

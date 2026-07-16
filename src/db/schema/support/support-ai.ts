@@ -11,9 +11,8 @@ import {
   vector,
   pgEnum,
 } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations, users } from "../auth";
 import { supportTickets } from "../crm/billing";
-import { users } from "../auth";
 
 export const SUPPORT_AI_EMBEDDING_DIMENSIONS = 1536;
 
@@ -57,6 +56,17 @@ export const supportAiSuggestions = pgTable(
     index("idx_support_ai_suggestions_org_type").on(table.orgId, table.type),
     index("idx_support_ai_suggestions_status").on(table.status),
   ],
+);
+
+export const supportAiSettings = pgTable(
+  "support_ai_settings",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    confidenceThreshold: numeric("confidence_threshold", { precision: 4, scale: 3 }).default("0.7").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [uniqueIndex("uniq_support_ai_settings_org").on(table.orgId)],
 );
 
 // One embedding per ticket (title + description), regenerated on update. Used for

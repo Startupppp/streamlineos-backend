@@ -13,8 +13,8 @@ const SNIPPET_LENGTH = 160;
 const RRF_CONSTANT = 60;
 
 export type RetrievedSource =
-  | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string }
-  | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string };
+  | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
+  | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string; updatedAt: Date };
 
 export type { RetrievedSource as RetrievedArticle };
 
@@ -167,6 +167,7 @@ export class KbSearchService {
           slug: kbArticles.slug,
           spaceId: kbArticles.spaceId,
           contentText: kbArticles.contentText,
+          updatedAt: kbArticles.updatedAt,
         })
         .from(kbArticles)
         .where(and(...articleConditions));
@@ -182,6 +183,7 @@ export class KbSearchService {
           title: kbPages.title,
           spaceId: kbPages.spaceId,
           contentText: kbPages.contentText,
+          updatedAt: kbPages.updatedAt,
         })
         .from(kbPages)
         .where(
@@ -420,42 +422,50 @@ export class KbSearchService {
   }
 
   async retrieveTopSources(
-    orgId: string,
+    user: CurrentUserContext,
     query: string,
     limit: number,
-  ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string }>> {
+  ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>> {
     if (!this.embeddings.isConfigured() || !query.trim()) return [];
     try {
+      const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
       const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+
+      const spaceFilter = accessibleSpaceIds.length > 0
+        ? or(isNull(kbSources.spaceId), inArray(kbSources.spaceId, accessibleSpaceIds))
+        : isNull(kbSources.spaceId);
+
       const rows = await this.db
         .select({
           sourceId: kbSources.id,
           title: kbSources.title,
           spaceId: kbSources.spaceId,
+          updatedAt: kbSources.updatedAt,
           content: kbArticleChunks.content,
         })
         .from(kbArticleChunks)
         .innerJoin(kbSources, eq(kbSources.id, kbArticleChunks.sourceId))
         .where(
           and(
-            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.orgId, user.orgId),
             eq(kbArticleChunks.source, "source"),
             isNull(kbSources.deletedAt),
             eq(kbSources.status, "ready"),
-            eq(kbSources.orgId, orgId),
+            eq(kbSources.orgId, user.orgId),
+            spaceFilter,
           ),
         )
         .orderBy(distance)
         .limit(limit * 4);
 
       const seen = new Set<number>();
-      const result: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string }> = [];
+      const result: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }> = [];
       for (const row of rows) {
         const id = row.sourceId;
         if (seen.has(id)) continue;
         seen.add(id);
-        result.push({ sourceId: id, title: row.title, spaceId: row.spaceId, snippet: row.content.slice(0, 1200) });
+        result.push({ sourceId: id, title: row.title, spaceId: row.spaceId, updatedAt: row.updatedAt, snippet: row.content.slice(0, 1200) });
         if (result.length >= limit) break;
       }
       return result;

@@ -42,3 +42,27 @@ export const kbConversationMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 export type KbConversationMessagesQueryInput = z.infer<typeof kbConversationMessagesQuerySchema>;
+
+export const kbAiFeedbackSchema = z.object({
+  rating: z.enum(["helpful", "not_helpful", "missing_source"]),
+  question: z.string().trim().min(3).max(1000),
+  comment: z.string().trim().max(500).optional(),
+});
+export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
+
+export const kbResearchBriefCreateSchema = z.object({
+  topic: z.string().trim().min(3).max(300),
+  spaceId: z.coerce.number().int().positive().optional(),
+});
+export type KbResearchBriefCreateInput = z.infer<typeof kbResearchBriefCreateSchema>;
+
+export const kbResearchBriefListSchema = z.object({
+  cursor: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type KbResearchBriefListInput = z.infer<typeof kbResearchBriefListSchema>;
+
+export const kbResearchBriefRateSchema = z.object({
+  rating: z.enum(["helpful", "not_helpful"]),
+});
+export type KbResearchBriefRateInput = z.infer<typeof kbResearchBriefRateSchema>;

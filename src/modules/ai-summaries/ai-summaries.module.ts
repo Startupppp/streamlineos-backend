@@ -5,5 +5,6 @@ import { AiSummariesService } from "./ai-summaries.service";
 @Module({
   controllers: [AiSummariesController],
   providers: [AiSummariesService],
+  exports: [AiSummariesService],
 })
 export class AiSummariesModule {}

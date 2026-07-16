@@ -150,6 +150,7 @@ import { FinanceTaxModule } from "./modules/finance-tax/finance-tax.module";
 import { FinancePlanningModule } from "./modules/finance-planning/finance-planning.module";
 import { FinanceAssetsModule } from "./modules/finance-assets/finance-assets.module";
 import { FinanceControlsModule } from "./modules/finance-controls/finance-controls.module";
+import { AccountingAiModule } from "./modules/accounting-ai/accounting-ai.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -305,6 +306,7 @@ import { MeService } from "./me/me.service";
     FinancePlanningModule,
     FinanceAssetsModule,
     FinanceControlsModule,
+    AccountingAiModule,
     AgentAccessModule,
   ],
   controllers: [HealthController, MeController],

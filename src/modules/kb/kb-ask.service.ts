@@ -17,9 +17,9 @@ const ASK_SYSTEM_PROMPT =
   "Never invent facts that are not present in the context.";
 
 export type AskCitation =
-  | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null }
-  | { kind: "page"; pageId: number; title: string; spaceId: number | null }
-  | { kind: "source"; sourceId: number; title: string; spaceId: number | null };
+  | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null; updatedAt: Date }
+  | { kind: "page"; pageId: number; title: string; spaceId: number | null; updatedAt: Date }
+  | { kind: "source"; sourceId: number; title: string; spaceId: number | null; updatedAt: Date };
 
 @Injectable()
 export class KbAskService {
@@ -45,7 +45,7 @@ export class KbAskService {
       MAX_CONTEXT_ARTICLES,
       input.spaceId,
     );
-    const sources = await this.search.retrieveTopSources(user.orgId, input.question, 4);
+    const sources = await this.search.retrieveTopSources(user, input.question, 4);
     if (top.length === 0 && sources.length === 0) {
       this.events.record(user.orgId, "ai_answer_no_context", {
         actorId: user.userId,
@@ -115,11 +115,11 @@ export class KbAskService {
     const citations: AskCitation[] = [
       ...top.map((source): AskCitation => {
         if (source.kind === "article") {
-          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId };
+          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId, updatedAt: source.updatedAt };
         }
-        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId };
+        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId, updatedAt: source.updatedAt };
       }),
-      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId })),
+      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt })),
     ];
 
     return { answer, citations, hasContext: true };

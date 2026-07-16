@@ -5,6 +5,8 @@ import {
   candidates,
   goals,
   helpdeskTickets,
+  hiringFlowRounds,
+  interviews,
   jobPostings,
   leaveRequests,
   performanceReviews,
@@ -16,22 +18,35 @@ import {
   attritionRiskPrompt,
   candidateScoringPrompt,
   helpdeskReplyPrompt,
+  interviewKitPrompt,
+  interviewNotesSummaryPrompt,
+  letterDraftPrompt,
+  policyQaPrompt,
   reviewDraftPrompt,
 } from "../prompts/hr.prompts";
 import {
   AttritionRiskSchema,
   CandidateScoreSchema,
   HelpdeskReplySchema,
+  InterviewKitSchema,
+  InterviewNotesSummarySchema,
+  LetterDraftSchema,
+  PolicyQaSchema,
   ReviewDraftSchema,
   type AttritionRiskResult,
   type CandidateScoreResult,
   type HelpdeskReplyResult,
+  type InterviewKitResult,
+  type InterviewNotesSummaryResult,
+  type LetterDraftResult,
+  type PolicyQaResult,
   type ReviewDraftResult,
 } from "../dto/output.schemas";
 import type { GenerateJdInput } from "../dto/request.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
+import { redactSensitiveData } from "../redaction.util";
 
 @Injectable()
 export class HrAiService {
@@ -265,13 +280,187 @@ export class HrAiService {
     const data = unwrapAiResult(result);
     data.score = Math.max(0, Math.min(100, Math.round(data.score)));
 
-    const ratingFiveScale = Math.round((data.score / 100) * 5);
+    return data;
+  }
+
+  async acceptCandidateScore(orgId: string, candidateId: number, aiScore: number): Promise<{ accepted: boolean }> {
+    const ratingFiveScale = Math.round((aiScore / 100) * 5);
     await this.db
       .update(candidates)
-      .set({ rating: ratingFiveScale, updatedAt: new Date() })
+      .set({ rating: ratingFiveScale, aiScore, aiScoreGeneratedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    return { accepted: true };
+  }
 
-    return data;
+  async policyQa(orgId: string, userId: string, question: string): Promise<PolicyQaResult & { suggestTicket: boolean }> {
+    const safeQuestion = redactSensitiveData(question);
+
+    const rows = await this.db.execute(sql`
+      SELECT id, policy_type, scope_type, name
+      FROM hr_policies
+      WHERE org_id = ${orgId}
+        AND status = 'active'
+        AND deleted_at IS NULL
+      ORDER BY priority DESC, created_at DESC
+      LIMIT 20
+    `);
+
+    const policies = (rows as Array<Record<string, unknown>>).map((p) => ({
+      id: Number(p.id),
+      policyType: String(p.policy_type),
+      scopeType: p.scope_type ? String(p.scope_type) : null,
+      name: p.name ? String(p.name) : null,
+    }));
+
+    const prompt = policyQaPrompt({ question: safeQuestion, policies });
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "hr.policy-qa",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.policy_qa", promptVersion: 1 },
+      schema: PolicyQaSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("hr.policy-qa") },
+    });
+
+    const data = unwrapAiResult(result);
+    const suggestTicket = data.confidence === "not_found" || data.shouldEscalate;
+    return { ...data, suggestTicket };
+  }
+
+  async generateInterviewKit(orgId: string, jobPostingId: number): Promise<InterviewKitResult | null> {
+    const [job] = await this.db
+      .select({ title: jobPostings.title, description: jobPostings.description, requirements: jobPostings.requirements, hiringFlowId: jobPostings.hiringFlowId })
+      .from(jobPostings)
+      .where(and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)));
+    if (!job) return null;
+
+    let roundTypes: string[] | null = null;
+    if (job.hiringFlowId) {
+      const roundRows = await this.db
+        .select({ roundType: hiringFlowRounds.roundType })
+        .from(hiringFlowRounds)
+        .where(eq(hiringFlowRounds.flowId, job.hiringFlowId))
+        .orderBy(hiringFlowRounds.orderIndex);
+      if (roundRows.length > 0) {
+        roundTypes = roundRows.map((r) => r.roundType);
+      }
+    }
+
+    const prompt = interviewKitPrompt({
+      jobTitle: job.title,
+      jobDescription: job.description,
+      requirements: job.requirements,
+      roundTypes,
+    });
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId: null },
+      feature: "hr.interview-kit",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.interview_kit", promptVersion: 1 },
+      schema: InterviewKitSchema,
+      tier: "fast",
+      maxTokens: 2048,
+      charge: { credits: getFeatureCost("hr.interview-kit") },
+    });
+
+    return unwrapAiResult(result);
+  }
+
+  async draftLetter(orgId: string, _actorUserId: string, targetUserId: string, letterType: string, details: string | null): Promise<LetterDraftResult | null> {
+    const empRows = await this.db.execute(sql`
+      SELECT p.first_name, p.last_name, e.designation
+      FROM hr_employments e
+      JOIN hr_people p ON p.id = e.person_id
+      WHERE e.org_id = ${orgId}
+        AND p.user_id = ${targetUserId}
+        AND e.deleted_at IS NULL
+      LIMIT 1
+    `);
+
+    let employeeName: string;
+    let currentTitle: string | null = null;
+
+    if (empRows.length > 0) {
+      const emp = empRows[0] as Record<string, unknown>;
+      employeeName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim();
+      currentTitle = emp.designation ? String(emp.designation) : null;
+    } else {
+      const [userRow] = await this.db
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, targetUserId));
+      if (!userRow) return null;
+      employeeName = userRow.name ?? targetUserId;
+    }
+
+    const safeDetails = details ? redactSensitiveData(details) : null;
+    const prompt = letterDraftPrompt({ letterType, employeeName, currentTitle, details: safeDetails });
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId: targetUserId },
+      feature: "hr.letter-draft",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.letter_draft", promptVersion: 1 },
+      schema: LetterDraftSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("hr.letter-draft") },
+    });
+
+    return unwrapAiResult(result);
+  }
+
+  async summarizeInterviewNotes(orgId: string, candidateId: number, jobPostingId?: number): Promise<InterviewNotesSummaryResult | null> {
+    const [candidate] = await this.db
+      .select({ firstName: candidates.firstName, lastName: candidates.lastName })
+      .from(candidates)
+      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    if (!candidate) return null;
+
+    const conditions = [eq(interviews.orgId, orgId), eq(interviews.candidateId, candidateId)];
+    if (jobPostingId) conditions.push(eq(interviews.jobPostingId, jobPostingId));
+
+    const interviewRows = await this.db
+      .select({ type: interviews.type, feedback: interviews.feedback, notes: interviews.notes, rating: interviews.rating, result: interviews.result })
+      .from(interviews)
+      .where(and(...conditions))
+      .orderBy(desc(interviews.scheduledAt))
+      .limit(10);
+
+    if (interviewRows.length === 0) return null;
+
+    let jobTitle: string | null = null;
+    if (jobPostingId) {
+      const [job] = await this.db
+        .select({ title: jobPostings.title })
+        .from(jobPostings)
+        .where(and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)));
+      if (job) jobTitle = job.title;
+    }
+
+    const rounds = interviewRows.map((r) => ({
+      roundType: r.type,
+      feedback: r.feedback ? redactSensitiveData(r.feedback) : null,
+      notes: r.notes ? redactSensitiveData(r.notes) : null,
+      rating: r.rating,
+      result: r.result,
+    }));
+
+    const candidateName = `${candidate.firstName} ${candidate.lastName}`;
+    const prompt = interviewNotesSummaryPrompt({ candidateName, jobTitle, rounds });
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId: null },
+      feature: "hr.interview-notes-summary",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.interview_notes_summary", promptVersion: 1 },
+      schema: InterviewNotesSummarySchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("hr.interview-notes-summary") },
+    });
+
+    return unwrapAiResult(result);
   }
 
   async generateJd(input: GenerateJdInput) {

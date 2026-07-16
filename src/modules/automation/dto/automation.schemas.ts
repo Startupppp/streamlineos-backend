@@ -23,6 +23,10 @@ const automationActionSchema = z.object({
     "support_set_priority",
     "support_add_tag",
     "support_internal_note",
+    "ai_classify",
+    "ai_summarize",
+    "ai_extract",
+    "ai_routing_suggestion",
   ]),
   config: z.record(z.string(), z.unknown()),
 });

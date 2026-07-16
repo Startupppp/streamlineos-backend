@@ -191,3 +191,77 @@ Months Since Last Promotion: ${input.lastPromotionMonths ?? "Never promoted"}
 Has Active Goals: ${input.hasGoals ? "Yes" : "No"}`,
   };
 }
+
+export interface PolicyQaPromptInput {
+  question: string;
+  policies: Array<{ id: number; policyType: string; scopeType: string | null; name?: string | null; content?: string | null }>;
+}
+
+export function policyQaPrompt(input: PolicyQaPromptInput) {
+  const policyList = input.policies
+    .map((p) => `[Policy: ${p.id}] Type: ${p.policyType} | Scope: ${p.scopeType ?? "org"} | Name: ${p.name ?? "Unnamed"}${p.content ? `\nContent: ${p.content.slice(0, 600)}` : ""}`)
+    .join("\n\n");
+  return {
+    system: `You are an expert HR policy assistant. Answer the employee's question strictly from the provided policies.
+Cite each policy used inline as [Policy: <id>]. State your confidence level. If no policy confidently answers the question, say so explicitly — never invent policy rules.
+Return JSON: { "answer": string, "confidence": "high"|"medium"|"low"|"not_found", "citations": [{ "policyType": string, "policyId": number, "snippet": string }], "shouldEscalate": boolean, "escalationReason"?: string }`,
+    user: `Question: ${input.question}\n\nAvailable policies:\n${policyList || "No policies found."}`,
+  };
+}
+
+export interface InterviewKitPromptInput {
+  jobTitle: string;
+  jobDescription: string | null;
+  requirements: string | null;
+  roundTypes?: string[] | null;
+}
+
+export function interviewKitPrompt(input: InterviewKitPromptInput) {
+  return {
+    system: `You are an expert technical interviewer. Draft a structured interview kit. This is a draft only for human review.
+Return JSON: { "roundKits": [{ "round": string, "questions": [{ "question": string, "category": string, "expectedAnswer": string, "redFlags": string[] }], "rubric": [{ "criterion": string, "weight": number, "description": string }] }] }`,
+    user: `Job Title: ${input.jobTitle}
+Description: ${input.jobDescription?.slice(0, 1000) ?? "Not provided"}
+Requirements: ${input.requirements?.slice(0, 500) ?? "Not provided"}
+${input.roundTypes?.length ? `Interview Rounds: ${input.roundTypes.join(", ")}` : ""}`,
+  };
+}
+
+export interface LetterDraftPromptInput {
+  letterType: string;
+  employeeName: string;
+  currentTitle: string | null;
+  details: string | null;
+}
+
+export function letterDraftPrompt(input: LetterDraftPromptInput) {
+  return {
+    system: `You are an HR professional drafting formal employment letters. This is a draft only — it requires human review and authorized signature before any official use.
+Write in a professional tone across 3-4 paragraphs.
+Return JSON: { "subject": string, "body": string, "disclaimer": string }`,
+    user: `Letter Type: ${input.letterType}
+Employee Name: ${input.employeeName}
+Current Title: ${input.currentTitle ?? "Not specified"}
+Additional Details: ${input.details ?? "None"}`,
+  };
+}
+
+export interface InterviewNotesSummaryPromptInput {
+  candidateName: string;
+  jobTitle: string | null;
+  rounds: Array<{ roundType: string; feedback: string | null; notes: string | null; rating: number | null; result: string }>;
+}
+
+export function interviewNotesSummaryPrompt(input: InterviewNotesSummaryPromptInput) {
+  const roundsText = input.rounds
+    .map((r, i) => `Round ${i + 1} (${r.roundType}) — Result: ${r.result} | Rating: ${r.rating ?? "N/A"}\nFeedback: ${r.feedback ?? "None"}\nNotes: ${r.notes ?? "None"}`)
+    .join("\n\n");
+  return {
+    system: `You are an expert recruiter summarizing interview notes into a structured hiring brief.
+Return JSON: { "overallRecommendation": string, "confidence": "low"|"medium"|"high", "strengthsSummary": string, "concernsSummary": string, "roundSummaries": [{ "round": string, "verdict": string, "keyPoints": string[] }], "suggestedNextStep": string }`,
+    user: `Candidate: ${input.candidateName}
+Role: ${input.jobTitle ?? "Not specified"}
+
+Interview Rounds:\n${roundsText || "No rounds provided."}`,
+  };
+}

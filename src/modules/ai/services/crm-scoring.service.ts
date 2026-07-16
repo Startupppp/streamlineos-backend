@@ -17,10 +17,13 @@ import {
   DealPredictionSchema,
   LeadScoreSchema,
   NextActionSchema,
+  NextActionWithEvidenceSchema,
   type ChurnRiskResult,
   type DealPredictionResult,
   type LeadScoreResult,
   type NextActionResult,
+  type NextActionWithEvidenceResult,
+  type EvidenceItem,
 } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
 
@@ -344,6 +347,103 @@ export class CrmScoringService {
       schema: NextActionSchema,
       tier: "fast",
       maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.next-action") },
+    });
+
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
+  }
+
+  async nextBestActionWithEvidence(orgId: string, leadId: number, userId?: string): Promise<NextActionWithEvidenceResult | null> {
+    const [[lead], [lastActivity], recentActivities] = await Promise.all([
+      this.db
+        .select({
+          id: leads.id,
+          name: leads.name,
+          status: leads.status,
+          priority: leads.priority,
+          potentialValue: leads.potentialValue,
+          assignedToId: leads.assignedToId,
+          followUpDate: leads.followUpDate,
+          notes: leads.notes,
+          source: leads.source,
+          company: leads.company,
+          email: leads.email,
+          score: leads.score,
+        })
+        .from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+      this.db
+        .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
+        .from(leadActivities)
+        .where(eq(leadActivities.leadId, leadId))
+        .orderBy(desc(leadActivities.date))
+        .limit(1),
+      this.db
+        .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
+        .from(leadActivities)
+        .where(eq(leadActivities.leadId, leadId))
+        .orderBy(desc(leadActivities.date))
+        .limit(3),
+    ]);
+
+    if (!lead) return null;
+
+    const now = new Date();
+    const lastActivityDate = lastActivity?.date ? new Date(lastActivity.date) : null;
+    const daysSinceLastActivity = lastActivityDate
+      ? Math.floor((now.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    const followUpDate = lead.followUpDate ? new Date(lead.followUpDate) : null;
+    const isOverdueFollowUp = followUpDate ? followUpDate < now : false;
+
+    const evidence: EvidenceItem[] = [];
+    if (daysSinceLastActivity !== null) {
+      evidence.push({ kind: "activity", label: "Days since last contact", value: String(daysSinceLastActivity) });
+    }
+    if (lead.score !== null && lead.score !== undefined) {
+      evidence.push({ kind: "signal", label: "AI lead score", value: String(lead.score) });
+    }
+    if (isOverdueFollowUp) {
+      evidence.push({ kind: "signal", label: "Follow-up overdue", value: "Yes" });
+    }
+    if (lead.status) {
+      evidence.push({ kind: "field", label: "Status", value: lead.status });
+    }
+
+    const recentActivityText = recentActivities.length === 0
+      ? "No recent activities."
+      : recentActivities.map((a) => {
+          const d = a.date ? new Date(a.date).toLocaleDateString("en-IN") : "?";
+          return `[${d}] ${a.type}${a.outcome ? ` | ${a.outcome}` : ""}`;
+        }).join("\n");
+
+    const prompt = nextActionPrompt({
+      entityType: "lead",
+      name: lead.name,
+      status: lead.status,
+      priority: lead.priority,
+      lastActivityType: lastActivity?.type ?? null,
+      lastActivityDate: lastActivity?.date ? new Date(lastActivity.date).toISOString().split("T")[0] : null,
+      daysSinceLastActivity,
+      value: lead.potentialValue ? Number(lead.potentialValue) : null,
+      assignedTo: lead.assignedToId,
+      followUpDate: followUpDate?.toISOString().split("T")[0] ?? null,
+      isOverdueFollowUp,
+      notes: trunc(lead.notes),
+    });
+
+    const evidenceSummary = evidence.map((e) => `${e.label}: ${e.value}`).join("; ");
+    const enhancedUser = `${prompt.user}\n\nDetected signals: ${evidenceSummary}\nRecent activities:\n${recentActivityText}\nSource: ${lead.source ?? "N/A"}, Company: ${lead.company ?? "N/A"}`;
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.next-action",
+      prompt: { system: prompt.system, user: enhancedUser, promptKey: "crm.next_action_evidence", promptVersion: 1 },
+      schema: NextActionWithEvidenceSchema,
+      tier: "fast",
+      maxTokens: 600,
       charge: { credits: getFeatureCost("crm.next-action") },
     });
 

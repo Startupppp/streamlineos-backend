@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, lt, ne, sql } from "drizzle-orm";
+import { and, count, eq, isNull, gte, lte, lt, ne, notInArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, users } from "../../../db/schema";
+import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, users, projectRisks, projectDecisions } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   PmSummaryOutputSchema,
@@ -11,6 +11,8 @@ import {
   PmPlanOutputSchema,
   PmExtractOutputSchema,
   PmAskOutputSchema,
+  PmWeeklyUpdateOutputSchema,
+  PmChangeImpactOutputSchema,
 } from "../dto/pm.schemas";
 import {
   summaryPrompt,
@@ -19,6 +21,8 @@ import {
   planPrompt,
   extractPrompt,
   askPrompt,
+  weeklyUpdatePrompt,
+  changeImpactPrompt,
 } from "../prompts/pm.prompts";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
@@ -305,5 +309,105 @@ export class ProjectsAiService {
     const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.ask", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, evidence: { totalTasks, done, inProgress, blocked, overdue } };
+  }
+
+  async weeklyUpdate(orgId: string, projectId: number, startDate: string | undefined, endDate: string | undefined, userId: string) {
+    const project = await this.assertProject(orgId, projectId);
+
+    const now = new Date();
+    const endDateObj = endDate ? new Date(endDate) : now;
+    const startDateObj = startDate ? new Date(startDate) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const resolvedStart = startDate ?? startDateObj.toISOString().split("T")[0];
+    const resolvedEnd = endDate ?? endDateObj.toISOString().split("T")[0];
+
+    const [completedTasks, blockedTasks, openRisks, decisions] = await Promise.all([
+      this.db
+        .select({ title: tickets.title })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "DONE"), gte(tickets.updatedAt, startDateObj), lte(tickets.updatedAt, endDateObj)))
+        .limit(30),
+      this.db
+        .select({ title: tickets.title })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), eq(tickets.status, "BLOCKED")))
+        .limit(10),
+      this.db
+        .select({ title: projectRisks.title, probability: projectRisks.probability, impact: projectRisks.impact })
+        .from(projectRisks)
+        .where(and(eq(projectRisks.projectId, projectId), eq(projectRisks.orgId, orgId), isNull(projectRisks.deletedAt), ne(projectRisks.status, "closed")))
+        .limit(5),
+      this.db
+        .select({ title: projectDecisions.title, status: projectDecisions.status })
+        .from(projectDecisions)
+        .where(and(eq(projectDecisions.projectId, projectId), eq(projectDecisions.orgId, orgId), isNull(projectDecisions.deletedAt)))
+        .limit(5),
+    ]);
+
+    const dateRange = `${resolvedStart} to ${resolvedEnd}`;
+    const { system, user } = weeklyUpdatePrompt({ projectName: project.name, dateRange, completedTasks, blockedTasks, openRisks, decisions });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.weekly-update",
+      prompt: { system, user, promptKey: "pm.weekly-update", promptVersion: 1 },
+      schema: PmWeeklyUpdateOutputSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("pm.weekly-update") },
+    });
+
+    const data = unwrapAiResult(result);
+    this.audit.log({ action: "ai.project.weekly-update", userId, orgId, resourceType: "project", resourceId: String(projectId) });
+    return { ...data, dateRange: { startDate: resolvedStart, endDate: resolvedEnd }, suggestions: true };
+  }
+
+  async changeImpact(orgId: string, projectId: number, userId: string) {
+    await this.assertProject(orgId, projectId);
+
+    const [openCrs, openRisks, pendingApprovals] = await Promise.all([
+      this.db
+        .select({ title: changeRequests.title, status: changeRequests.status, timelineImpactDays: changeRequests.timelineImpactDays, budgetImpactCents: changeRequests.budgetImpactCents, impact: changeRequests.impact })
+        .from(changeRequests)
+        .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.orgId, orgId), isNull(changeRequests.deletedAt), notInArray(changeRequests.status, ["rejected", "completed"])))
+        .limit(20),
+      this.db
+        .select({ title: projectRisks.title, probability: projectRisks.probability, impact: projectRisks.impact })
+        .from(projectRisks)
+        .where(and(eq(projectRisks.projectId, projectId), eq(projectRisks.orgId, orgId), isNull(projectRisks.deletedAt), ne(projectRisks.status, "closed")))
+        .limit(10),
+      this.db
+        .select({ title: projectApprovals.title, entityType: projectApprovals.entityType })
+        .from(projectApprovals)
+        .where(and(eq(projectApprovals.projectId, projectId), eq(projectApprovals.orgId, orgId), isNull(projectApprovals.deletedAt), notInArray(projectApprovals.status, ["approved", "rejected", "cancelled"])))
+        .limit(10),
+    ]);
+
+    if (openCrs.length === 0 && openRisks.length === 0 && pendingApprovals.length === 0) {
+      return {
+        headline: "No active changes, risks, or pending approvals",
+        scopeImpact: "No open change requests, risks, or approvals found for this project.",
+        scheduleImpact: "No schedule impact identified.",
+        budgetImpact: "none identified",
+        riskSummary: [],
+        pendingApprovals: [],
+        citations: [],
+        evidence: { openChangeRequests: 0, openRisks: 0, pendingApprovals: 0 },
+      };
+    }
+
+    const project = await this.assertProject(orgId, projectId);
+    const { system, user } = changeImpactPrompt({ projectName: project.name, changeRequests: openCrs, openRisks, pendingApprovals });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.change-impact",
+      prompt: { system, user, promptKey: "pm.change-impact", promptVersion: 1 },
+      schema: PmChangeImpactOutputSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("pm.change-impact") },
+    });
+
+    const data = unwrapAiResult(result);
+    this.audit.log({ action: "ai.project.change-impact", userId, orgId, resourceType: "project", resourceId: String(projectId) });
+    return { ...data, evidence: { openChangeRequests: openCrs.length, openRisks: openRisks.length, pendingApprovals: pendingApprovals.length } };
   }
 }

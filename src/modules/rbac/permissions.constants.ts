@@ -1428,6 +1428,12 @@ const SHARED_PERMISSIONS: Permission[] = [
     description: "Create and manage calendar events",
   },
   {
+    name: "calendar:ai:use",
+    resource: "calendar:ai",
+    action: "use",
+    description: "Use AI meeting preparation and follow-up features",
+  },
+  {
     name: "integrations:connections:view",
     resource: "integrations:connections",
     action: "view",
@@ -2031,6 +2037,12 @@ const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage recurring transaction templates",
   },
+  {
+    name: "accounting:ai:use",
+    resource: "accounting:ai",
+    action: "use",
+    description: "Use AI features in the accounting module (variance narration, reconciliation explanation, document extraction)",
+  },
 ];
 
 const INVENTORY_PERMISSIONS: Permission[] = [
@@ -2186,6 +2198,7 @@ const INVENTORY_PERMISSIONS: Permission[] = [
   { name: "inventory:channels:manage", resource: "inventory:channels", action: "manage", description: "Manage sales channel stock publications" },
   { name: "inventory:3pl:manage", resource: "inventory:3pl", action: "manage", description: "Manage 3PL warehouse connections" },
   { name: "inventory:replenishment:manage", resource: "inventory:replenishment", action: "manage", description: "Manage reorder rules and replenishment" },
+  { name: "inventory:ai:propose", resource: "inventory:ai", action: "propose", description: "Propose AI-generated reorder draft POs and confirm them" },
 ];
 
 const KB_PERMISSIONS: Permission[] = [
@@ -2566,6 +2579,21 @@ const AI_SUMMARIES_PERMISSIONS: Permission[] = [
     resource: "ai:summaries",
     action: "create",
     description: "Persist AI-generated summary snapshots",
+  },
+];
+
+const EXECUTIVE_BRIEF_PERMISSIONS: Permission[] = [
+  {
+    name: "ai:executive-brief:view",
+    resource: "ai:executive-brief",
+    action: "view",
+    description: "View the AI-generated cross-module executive brief",
+  },
+  {
+    name: "ai:executive-brief:generate",
+    resource: "ai:executive-brief",
+    action: "generate",
+    description: "Trigger generation of a new executive brief",
   },
 ];
 
@@ -3463,6 +3491,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_WORKFLOW_PERMISSIONS,
   ...FEEDBUCKET_PERMISSIONS,
   ...AI_SUMMARIES_PERMISSIONS,
+  ...EXECUTIVE_BRIEF_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -3498,6 +3527,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "settings:api-tokens:write",
   "calendar:read",
   "calendar:write",
+  "calendar:ai:use",
   "integrations:connections:view",
   "integrations:connections:manage",
   "onboarding:module-checklists:view",
@@ -4100,6 +4130,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:sales-orders:confirm",
     "inventory:sales-orders:ship",
     "inventory:reports:read",
+    "inventory:ai:propose",
     "inventory:valuation:read",
     "inventory:quality:read",
     "workflows:workflows:view",
@@ -4329,6 +4360,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:3pl:manage",
     "inventory:replenishment:manage",
     "inventory:reports:read",
+    "inventory:ai:propose",
     "reports:view",
   ],
 
@@ -4405,6 +4437,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "accounting:audit:export",
     "accounting:recurring:read",
     "accounting:recurring:manage",
+    "accounting:ai:use",
     "reports:view",
     "reports:export",
     "reports:generate",

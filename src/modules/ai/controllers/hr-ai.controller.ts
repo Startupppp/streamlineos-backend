@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   NotFoundException,
   Post,
   ServiceUnavailableException,
@@ -19,18 +18,30 @@ import { LlmService } from "../providers/llm.service";
 import { HrAiService } from "../services/hr-ai.service";
 import { requireFeature } from "../billing/feature-gates";
 import {
+  acceptCandidateScoreSchema,
   attritionRiskSchema,
   generateJdSchema,
   generateReviewSchema,
   helpdeskReplySchema,
+  interviewKitSchema,
+  interviewNotesSummarySchema,
+  letterDraftSchema,
+  policyQaSchema,
   scoreCandidateSchema,
+  type AcceptCandidateScoreInput,
   type AttritionRiskInput,
   type GenerateJdInput,
   type GenerateReviewInput,
   type HelpdeskReplyInput,
+  type InterviewKitInput,
+  type InterviewNotesSummaryInput,
+  type LetterDraftInput,
+  type PolicyQaInput,
   type ScoreCandidateInput,
 } from "../dto/request.schemas";
 import type { HelpdeskReplyResult } from "../dto/output.schemas";
+
+const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -54,7 +65,7 @@ export class HrAiController {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.hr.analyzeAttritionRisk(u.orgId, body.userId);
     if (!result) throw new NotFoundException("Employee not found or analysis failed");
-    return result;
+    return { ...result, advisory: true, disclaimer: ADVISORY_DISCLAIMER };
   }
 
   @Post("generate-review")
@@ -66,7 +77,7 @@ export class HrAiController {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     const result = await this.hr.generateReview(u.orgId, body.userId, body.periodStart, body.periodEnd);
     if (!result) throw new NotFoundException("Employee not found or review generation failed");
-    return result;
+    return { ...result, advisory: true, disclaimer: "Draft only — requires human review before any official use." };
   }
 
   @Post("generate-jd")
@@ -89,7 +100,11 @@ export class HrAiController {
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");
     const result = await this.hr.scoreCandidate(u.orgId, body.candidateId, body.jobId);
     if (!result) throw new NotFoundException("Candidate not found or scoring failed");
-    return result;
+    return {
+      ...result,
+      advisory: true,
+      disclaimer: "AI estimate only. Human decision required. Score is not applied until explicitly accepted.",
+    };
   }
 
   @Post("helpdesk-reply")
@@ -109,5 +124,72 @@ export class HrAiController {
     }
     if (!result) throw new NotFoundException("Ticket not found or reply generation failed");
     return result;
+  }
+
+  @Post("hr/policy-qa")
+  @RequirePermission("hr:policies:view")
+  async policyQa(
+    @Body(new ZodValidationPipe(policyQaSchema)) body: PolicyQaInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm("AI policy Q&A is not configured.");
+    return this.hr.policyQa(u.orgId, u.userId, body.question);
+  }
+
+  @Post("hr/interview-kit")
+  @RequirePermission("hr:interviews:manage")
+  async interviewKit(
+    @Body(new ZodValidationPipe(interviewKitSchema)) body: InterviewKitInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.review-generation");
+    this.ensureLlm("AI interview kit is not configured.");
+    const result = await this.hr.generateInterviewKit(u.orgId, body.jobPostingId);
+    if (!result) throw new NotFoundException("Job posting not found");
+    return { ...result, advisory: true, disclaimer: "Draft only. Review and customize before use." };
+  }
+
+  @Post("hr/letter-draft")
+  @RequirePermission("hr:employees:manage")
+  async letterDraft(
+    @Body(new ZodValidationPipe(letterDraftSchema)) body: LetterDraftInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.review-generation");
+    this.ensureLlm("AI letter drafting is not configured.");
+    const result = await this.hr.draftLetter(u.orgId, u.userId, body.userId, body.letterType, body.details ?? null);
+    if (!result) throw new NotFoundException("Employee not found");
+    return {
+      ...result,
+      advisory: true,
+      disclaimer: "DRAFT — AI-generated. Requires human review, editing, and authorized signature before official use.",
+    };
+  }
+
+  @Post("hr/interview-notes-summary")
+  @RequirePermission("hr:interviews:manage")
+  async interviewNotesSummary(
+    @Body(new ZodValidationPipe(interviewNotesSummarySchema)) body: InterviewNotesSummaryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm("AI interview summary is not configured.");
+    const result = await this.hr.summarizeInterviewNotes(u.orgId, body.candidateId, body.jobPostingId);
+    if (!result) throw new NotFoundException("No interview notes found for this candidate");
+    return {
+      ...result,
+      advisory: true,
+      disclaimer: "AI-generated summary. Verify against original notes before making decisions.",
+    };
+  }
+
+  @Post("hr/accept-candidate-score")
+  @RequirePermission("hr:interviews:manage")
+  async acceptCandidateScore(
+    @Body(new ZodValidationPipe(acceptCandidateScoreSchema)) body: AcceptCandidateScoreInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.candidate-scoring");
+    this.ensureLlm("AI scoring is not configured.");
+    return this.hr.acceptCandidateScore(u.orgId, body.candidateId, body.aiScore);
   }
 }

@@ -14,6 +14,23 @@ import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { NlSearchFilterSchema } from "../dto/output.schemas";
 import type { AccountSummaryInput, MeetingPrepInput, NlSearchInput } from "../dto/request.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
+import { OrgFeaturesService } from "./org-features.service";
+
+interface MeetingFollowUpInput {
+  meetingTitle: string;
+  attendeeType: "lead" | "client";
+  attendeeId: number;
+  outcome: string;
+  actionItems?: string[];
+  scheduledAt: string;
+  notes?: string;
+}
+
+interface CitationItem {
+  id: string;
+  title: string;
+  snippet: string;
+}
 
 const MAX_NOTES = 2000;
 
@@ -27,6 +44,7 @@ export class CrmBriefService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
+    private readonly orgFeatures: OrgFeaturesService,
   ) {}
 
   async accountSummary(orgId: string, input: AccountSummaryInput, userId?: string) {
@@ -341,5 +359,119 @@ Please generate a structured pre-meeting brief with:
     }));
 
     return { query: input.query, parsedFilters, leads: leadsResult, total: leadsResult.length };
+  }
+
+  async meetingFollowUpDraft(orgId: string, input: MeetingFollowUpInput, userId?: string) {
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags.aiLeadScoring) throw new NotFoundException("AI features are disabled for this organization");
+
+    let attendeeName = "Unknown";
+
+    if (input.attendeeType === "lead") {
+      const lead = await this.db.query.leads.findFirst({
+        where: and(eq(leads.id, input.attendeeId), eq(leads.orgId, orgId)),
+      });
+      if (!lead) throw new NotFoundException("Lead not found");
+      attendeeName = lead.name;
+    } else {
+      const account = await this.db.query.clientAccounts.findFirst({
+        where: and(eq(clientAccounts.id, input.attendeeId), eq(clientAccounts.orgId, orgId)),
+      });
+      if (!account) throw new NotFoundException("Client account not found");
+      attendeeName = account.clientName;
+    }
+
+    const actionItemsText = (input.actionItems ?? []).length > 0
+      ? input.actionItems!.map((item, i) => `${i + 1}. ${item}`).join("\n")
+      : "No specific action items recorded.";
+
+    const userPrompt = `Draft a professional follow-up email for this meeting.
+
+Meeting: ${input.meetingTitle}
+Attendee: ${attendeeName}
+Scheduled: ${new Date(input.scheduledAt).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}
+Outcome: ${input.outcome}
+${input.notes ? `Additional Notes: ${trunc(input.notes)}` : ""}
+
+Agreed Action Items:
+${actionItemsText}
+
+Write a concise, professional follow-up email (subject + body) that:
+1. Thanks the attendee for their time
+2. Summarizes the key outcomes from the meeting
+3. Lists the agreed action items clearly
+4. Sets expectations for next steps
+Keep the tone professional but warm. Max 200 words for the body.`;
+
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.meeting-follow-up",
+      prompt: {
+        system: "You are an executive assistant drafting professional follow-up emails for an Indian investment firm. Write clear, concise, and actionable follow-up emails. Never auto-send; return draft text only.",
+        user: userPrompt,
+      },
+      tier: "standard",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.meeting-follow-up") },
+    });
+
+    if (!result.ok) throwOnAiFailure(result);
+    return { draft: result.data, attendeeName, generatedAt: new Date().toISOString() };
+  }
+
+  async accountSummaryWithCitations(orgId: string, input: AccountSummaryInput, userId?: string) {
+    const account = await this.db.query.clientAccounts.findFirst({
+      where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
+    });
+
+    if (!account) throw new NotFoundException("Client account not found");
+
+    const [resolvedLead, activities] = await Promise.all([
+      account.leadId
+        ? this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
+        : Promise.resolve(null),
+      this.db
+        .select({
+          activityType: clientAccountActivities.activityType,
+          description: clientAccountActivities.description,
+          createdAt: clientAccountActivities.createdAt,
+        })
+        .from(clientAccountActivities)
+        .where(eq(clientAccountActivities.clientAccountId, input.clientId))
+        .orderBy(desc(clientAccountActivities.createdAt))
+        .limit(20),
+    ]);
+
+    const citations: CitationItem[] = [
+      {
+        id: `account-${account.id}`,
+        title: "Account Profile",
+        snippet: `${account.clientName} — Plan: ${account.planName ?? "N/A"}, Status: ${account.status}, Renewal Stage: ${account.renewalStage}`,
+      },
+    ];
+    if (account.investmentAmount) {
+      citations.push({
+        id: `account-investment-${account.id}`,
+        title: "Investment Details",
+        snippet: `Investment: ₹${Number(account.investmentAmount).toLocaleString("en-IN")}, Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+    if (activities.length > 0) {
+      citations.push({
+        id: `account-activities-${account.id}`,
+        title: "Recent Activity Summary",
+        snippet: `${activities.length} activities recorded. Latest: ${activities[0]?.activityType ?? "N/A"} on ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+    if (resolvedLead) {
+      citations.push({
+        id: `lead-${resolvedLead.id}`,
+        title: "Lead Context",
+        snippet: `Source: ${resolvedLead.source ?? "N/A"}, Priority: ${resolvedLead.priority ?? "N/A"}, City: ${resolvedLead.city ?? "N/A"}`,
+      });
+    }
+
+    const base = await this.accountSummary(orgId, input, userId);
+    return { ...base, citations };
   }
 }

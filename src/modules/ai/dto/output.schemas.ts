@@ -20,7 +20,8 @@ export const GeneratedEmailSchema = z.object({
 export type GeneratedEmail = z.infer<typeof GeneratedEmailSchema>;
 
 export const DealPredictionSchema = z.object({
-  winProbability: z.number().min(0).max(100).describe("Win probability 0-100"),
+  winProbability: z.number().min(0).max(100).describe("AI win-probability estimate 0-100; not a validated statistical probability"),
+  estimateDisclaimer: z.string().default("This is an AI estimate based on available signals, not a statistically validated probability."),
   confidence: z.enum(["low", "medium", "high"]),
   reasoning: z.string(),
   riskFactors: z.array(z.string()),
@@ -146,3 +147,112 @@ export const PriorityResponseSchema = z.object({
   items: z.array(PriorityItemSchema),
   summary: z.string(),
 });
+
+export const PolicyQaSchema = z.object({
+  answer: z.string(),
+  confidence: z.enum(["high", "medium", "low", "not_found"]),
+  citations: z.array(z.object({
+    policyType: z.string(),
+    policyId: z.number(),
+    snippet: z.string(),
+  })),
+  shouldEscalate: z.boolean(),
+  escalationReason: z.string().optional(),
+});
+export type PolicyQaResult = z.infer<typeof PolicyQaSchema>;
+
+export const InterviewKitRoundSchema = z.object({
+  round: z.string(),
+  questions: z.array(z.object({
+    question: z.string(),
+    category: z.string(),
+    expectedAnswer: z.string(),
+    redFlags: z.array(z.string()),
+  })),
+  rubric: z.array(z.object({
+    criterion: z.string(),
+    weight: z.number(),
+    description: z.string(),
+  })),
+});
+
+export const InterviewKitSchema = z.object({
+  roundKits: z.array(InterviewKitRoundSchema),
+});
+export type InterviewKitResult = z.infer<typeof InterviewKitSchema>;
+
+export const LetterDraftSchema = z.object({
+  subject: z.string(),
+  body: z.string(),
+  disclaimer: z.string(),
+});
+export type LetterDraftResult = z.infer<typeof LetterDraftSchema>;
+
+export const InterviewNotesSummarySchema = z.object({
+  overallRecommendation: z.string(),
+  confidence: z.enum(["low", "medium", "high"]),
+  strengthsSummary: z.string(),
+  concernsSummary: z.string(),
+  roundSummaries: z.array(z.object({
+    round: z.string(),
+    verdict: z.string(),
+    keyPoints: z.array(z.string()),
+  })),
+  suggestedNextStep: z.string(),
+});
+export type InterviewNotesSummaryResult = z.infer<typeof InterviewNotesSummarySchema>;
+
+export const EvidenceItemSchema = z.object({
+  kind: z.enum(["activity", "stage", "signal", "field"]),
+  label: z.string(),
+  value: z.string(),
+});
+export type EvidenceItem = z.infer<typeof EvidenceItemSchema>;
+
+export const NextActionWithEvidenceSchema = z.object({
+  action: z.string().describe("Concise action, max 10 words"),
+  urgency: z.enum(["low", "medium", "high", "critical"]),
+  reasoning: z.string().describe("1 sentence why"),
+  template: z.string().describe("Message template if email/call, else empty string"),
+  evidence: z.array(EvidenceItemSchema).describe("2-4 signals used to reach this recommendation"),
+  rationale: z.string().describe("1-2 sentences explaining what evidence drove the recommendation"),
+});
+export type NextActionWithEvidenceResult = z.infer<typeof NextActionWithEvidenceSchema>;
+
+export const StaleDealSchema = z.object({
+  dealId: z.number(),
+  dealName: z.string(),
+  stage: z.string(),
+  value: z.number(),
+  daysSinceActivity: z.number(),
+  assignedToId: z.string().nullable(),
+  evidence: z.array(z.string()).describe("2-3 deterministic signals about why this deal is stale"),
+});
+export type StaleDeal = z.infer<typeof StaleDealSchema>;
+
+export const StalePipelineDigestSchema = z.object({
+  summary: z.string().describe("2-3 sentence overview of pipeline health"),
+  criticalCount: z.number(),
+  groupedByStage: z.record(z.string(), z.array(z.string())).describe("stage => deal names with evidence"),
+  topRisk: z.string().describe("1 sentence on the biggest stale risk"),
+});
+export type StalePipelineDigest = z.infer<typeof StalePipelineDigestSchema>;
+
+export const DataQualityIssueSchema = z.object({
+  entityType: z.enum(["lead", "deal"]),
+  entityId: z.number(),
+  entityName: z.string(),
+  issueKind: z.enum(["missing_field", "likely_duplicate", "incomplete_stage", "stale_data"]),
+  field: z.string().nullable().describe("Which field is missing or problematic"),
+  severity: z.enum(["low", "medium", "high"]),
+  suggestedFix: z.string().describe("What the user should do to fix this issue"),
+});
+export type DataQualityIssue = z.infer<typeof DataQualityIssueSchema>;
+
+export const DataQualityCopilotSchema = z.object({
+  issues: z.array(DataQualityIssueSchema),
+  summary: z.string().describe("1-2 sentence overall data health summary"),
+  priorityAction: z.string().describe("The single most important fix right now"),
+  totalIssues: z.number(),
+});
+export type DataQualityCopilotResult = z.infer<typeof DataQualityCopilotSchema>;

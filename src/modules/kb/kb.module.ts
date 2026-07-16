@@ -1,7 +1,9 @@
 ﻿import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/billing.module";
 import { AiModule } from "../ai/ai.module";
+import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { AI_JOB_HANDLERS } from "../ai-jobs/ai-job-handler";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
@@ -57,9 +59,14 @@ import { KbSourcesController } from "./kb-sources.controller";
 import { KbSourcesService } from "./kb-sources.service";
 import { KbSettingsController } from "./kb-settings.controller";
 import { KbSettingsService } from "./kb-settings.service";
+import { KbAiFeedbackService } from "./kb-ai-feedback.service";
+import { KbAiFeedbackController } from "./kb-ai-feedback.controller";
+import { KbResearchBriefService } from "./kb-research-brief.service";
+import { KbResearchBriefController } from "./kb-research-brief.controller";
+import { KbResearchBriefHandler } from "./kb-research-brief.handler";
 
 @Module({
-  imports: [BillingModule, AiModule, NotificationsModule],
+  imports: [BillingModule, AiModule, AiJobsModule, NotificationsModule],
   controllers: [
     KbSpacesController,
     KbCategoriesController,
@@ -87,6 +94,8 @@ import { KbSettingsService } from "./kb-settings.service";
     KbMediaController,
     KbSourcesController,
     KbSettingsController,
+    KbAiFeedbackController,
+    KbResearchBriefController,
   ],
   providers: [
     KbCreditsService,
@@ -118,6 +127,14 @@ import { KbSettingsService } from "./kb-settings.service";
     KbMediaService,
     KbSourcesService,
     KbSettingsService,
+    KbAiFeedbackService,
+    KbResearchBriefService,
+    KbResearchBriefHandler,
+    {
+      provide: AI_JOB_HANDLERS,
+      useExisting: KbResearchBriefHandler,
+      multi: true,
+    },
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService, KbArticlesService],
 })

@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Get,
   NotFoundException,
   Param,
   ParseIntPipe,
   Post,
+  Query,
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
@@ -19,9 +21,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
+import { CrmBriefService } from "../services/crm-brief.service";
 
 const nextBestActionsSchema = z.object({
   limit: z.number().int().min(1).max(20).default(10),
+  withEvidence: z.boolean().optional().default(true),
 });
 
 const emailDraftSchema = z.object({
@@ -40,6 +44,27 @@ const objectionHelpSchema = z.object({
   context: z.string().max(1000).optional(),
 });
 
+const meetingFollowUpSchema = z.object({
+  meetingTitle: z.string().min(1).max(200),
+  attendeeType: z.enum(["lead", "client"]),
+  attendeeId: z.number().int().positive(),
+  outcome: z.string().min(1).max(3000),
+  actionItems: z.array(z.string().max(500)).max(20).optional(),
+  scheduledAt: z.string(),
+  notes: z.string().max(2000).optional(),
+});
+type MeetingFollowUpBodyInput = z.infer<typeof meetingFollowUpSchema>;
+
+const accountSummaryWithCitationsSchema = z.object({
+  clientId: z.number().int().positive(),
+});
+type AccountSummaryWithCitationsInput = z.infer<typeof accountSummaryWithCitationsSchema>;
+
+const stalePipelineQuerySchema = z.object({
+  inactiveDays: z.coerce.number().int().min(1).max(90).default(14),
+});
+type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
+
 @Controller("ai/crm")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("crm:ai:use")
@@ -48,6 +73,7 @@ export class CrmCopilotController {
   constructor(
     private readonly llm: LlmService,
     private readonly copilot: CrmCopilotService,
+    private readonly brief: CrmBriefService,
   ) {}
 
   private ensureLlm(): void {
@@ -119,5 +145,58 @@ export class CrmCopilotController {
   ) {
     this.ensureLlm();
     return this.copilot.duplicateSuggestionsForLead(u.orgId, leadId, u.userId);
+  }
+
+  @Post("meeting-follow-up")
+  async meetingFollowUp(
+    @Body(new ZodValidationPipe(meetingFollowUpSchema)) body: MeetingFollowUpBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm();
+    return this.brief.meetingFollowUpDraft(u.orgId, body, u.userId);
+  }
+
+  @Get("stale-pipeline")
+  async stalePipeline(
+    @Query(new ZodValidationPipe(stalePipelineQuerySchema)) query: StalePipelineQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm();
+    return this.copilot.stalePipelineDigest(u.orgId, u.userId, query.inactiveDays);
+  }
+
+  @Get("data-quality")
+  async dataQuality(@CurrentUser() u: CurrentUserContext) {
+    this.ensureLlm();
+    return this.copilot.dataQualityCopilot(u.orgId, u.userId);
+  }
+
+  @Post("leads/:leadId/summary-with-citations")
+  async leadSummaryWithCitations(
+    @Param("leadId", ParseIntPipe) leadId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm();
+    const result = await this.copilot.leadSummaryWithCitations(u.orgId, leadId, u.userId);
+    if (!result) throw new NotFoundException("Lead not found");
+    return result;
+  }
+
+  @Post("deals/:dealId/summary-with-citations")
+  async dealSummaryWithCitations(
+    @Param("dealId", ParseIntPipe) dealId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm();
+    return this.copilot.dealSummaryWithCitations(u.orgId, dealId, u.userId);
+  }
+
+  @Post("account-summary-with-citations")
+  async accountSummaryWithCitations(
+    @Body(new ZodValidationPipe(accountSummaryWithCitationsSchema)) body: AccountSummaryWithCitationsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    this.ensureLlm();
+    return this.brief.accountSummaryWithCitations(u.orgId, body, u.userId);
   }
 }
