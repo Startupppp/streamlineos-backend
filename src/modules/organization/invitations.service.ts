@@ -16,6 +16,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   invitations,
   magicLinkTokens,
@@ -42,6 +43,7 @@ export class InvitationsService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly email: EmailService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async invite(
@@ -50,7 +52,7 @@ export class InvitationsService {
     email: string,
     role: string,
     extra?: InviteExtra,
-  ): Promise<{ success: true; invitationId: string; organizationName: string }> {
+  ): Promise<{ success: true; invitationId: string; organizationName: string; resent: boolean }> {
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, email),
     });
@@ -64,17 +66,6 @@ export class InvitationsService {
       });
       if (existingMember) throw new ConflictException("User is already a member");
     }
-
-    const existingInvitation = await this.db.query.invitations.findFirst({
-      where: and(
-        eq(invitations.email, email),
-        eq(invitations.orgId, orgId),
-        gt(invitations.expiresAt, new Date()),
-        isNull(invitations.acceptedAt),
-      ),
-    });
-    if (existingInvitation)
-      throw new ConflictException("An invitation has already been sent to this email");
 
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
@@ -90,19 +81,89 @@ export class InvitationsService {
       }
     }
 
+    const now = new Date();
+
+    const pendingResult = await this.db.transaction(async (tx) => {
+      const pending = await tx
+        .select()
+        .from(invitations)
+        .where(
+          and(
+            eq(invitations.email, email),
+            eq(invitations.orgId, orgId),
+            gt(invitations.expiresAt, now),
+            isNull(invitations.acceptedAt),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const pendingInvitation = pending[0];
+      if (!pendingInvitation) return null;
+
+      const rawToken = randomBytes(32).toString("hex");
+      const newExpiresAt = addDays(now, 7);
+
+      await tx
+        .update(invitations)
+        .set({ token: hashToken(rawToken), expiresAt: newExpiresAt, role, invitedBy: actorUserId })
+        .where(eq(invitations.id, pendingInvitation.id));
+
+      return { pendingInvitation, rawToken };
+    });
+
+    if (pendingResult) {
+      const { pendingInvitation, rawToken } = pendingResult;
+      void this.email
+        .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
+        .catch(() => {});
+
+      this.audit.log({
+        action: "user.invitation.resent",
+        userId: actorUserId,
+        orgId,
+        targetId: pendingInvitation.id,
+        targetType: "invitation",
+        metadata: { email, role, ...extra },
+      });
+
+      return { success: true, invitationId: pendingInvitation.id, organizationName: org?.name ?? "", resent: true };
+    }
+
+    await this.planLimits.assertWithinLimit(orgId, "members");
+
     const invitationId = randomUUID();
     const rawToken = randomBytes(32).toString("hex");
-    const expiresAt = addDays(new Date(), 7);
+    const expiresAt = addDays(now, 7);
 
-    await this.db.insert(invitations).values({
-      id: invitationId,
-      email,
-      token: hashToken(rawToken),
-      orgId,
-      role,
-      invitedBy: actorUserId,
-      expiresAt,
-    });
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx
+          .delete(invitations)
+          .where(
+            and(
+              eq(invitations.email, email),
+              eq(invitations.orgId, orgId),
+              isNull(invitations.acceptedAt),
+            ),
+          );
+
+        await tx.insert(invitations).values({
+          id: invitationId,
+          email,
+          token: hashToken(rawToken),
+          orgId,
+          role,
+          invitedBy: actorUserId,
+          expiresAt,
+        });
+      });
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "23505") {
+        throw new ConflictException("An invitation is already pending for this email");
+      }
+      throw err;
+    }
 
     void this.email
       .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
@@ -117,7 +178,7 @@ export class InvitationsService {
       metadata: { email, role, ...extra },
     });
 
-    return { success: true, invitationId, organizationName: org?.name ?? "" };
+    return { success: true, invitationId, organizationName: org?.name ?? "", resent: false };
   }
 
   async bulkInvite(

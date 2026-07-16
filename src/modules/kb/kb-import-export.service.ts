@@ -4,6 +4,7 @@ import { kbPages, kbImportJobs, kbExportJobs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { ExportPageInput, ImportPagesInput } from "./dto/kb-import-export.schemas";
 import { toMarkdown, toHtml } from "./kb-export-serializer";
@@ -29,6 +30,7 @@ export class KbImportExportService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async exportPage(
@@ -91,6 +93,8 @@ export class KbImportExportService {
   ): Promise<ImportResult> {
     const orgId = user.orgId;
     const items = input.items;
+
+    await this.planLimits.assertWithinLimit(orgId, "kbPages", items.length);
 
     const parentIds = [
       ...new Set(items.map(function getParent(i) {

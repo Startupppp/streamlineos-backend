@@ -12,6 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { SignActorContext } from "./sign-recipients.service";
 import type {
   CreateTemplateInput,
@@ -81,6 +82,7 @@ export class SignTemplatesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async create(orgId: string, userId: string, input: CreateTemplateInput) {
@@ -233,6 +235,8 @@ export class SignTemplatesService {
     if (missingRoles.length > 0) {
       throw new BadRequestException(`Missing recipients for template role(s): ${missingRoles.map((r) => r.roleName).join(", ")}`);
     }
+
+    await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
 
     const [envelope] = await this.db
       .insert(signEnvelopes)

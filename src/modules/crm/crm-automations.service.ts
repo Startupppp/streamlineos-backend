@@ -8,12 +8,14 @@ import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto
 import { CrmAutomationRunnerService } from "../crm-automation-studio/crm-automation-runner.service";
 import { testAutomationRuleSchema, type TestAutomationRuleInput } from "../crm-automation-studio/dto/automation-studio.schemas";
 import type { CrmAutomationCondition } from "../../db/schema/crm/automation-rules";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 
 @Injectable()
 export class CrmAutomationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly runner: CrmAutomationRunnerService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async list(orgId: string) {
@@ -27,6 +29,8 @@ export class CrmAutomationsService {
   }
 
   async create(orgId: string, input: CreateAutomationRuleInput) {
+    await this.planLimits.assertWithinLimit(orgId, "automations");
+
     const [rule] = await this.db
       .insert(crmAutomationRules)
       .values({

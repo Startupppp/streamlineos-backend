@@ -15,6 +15,7 @@ import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CreateDealInput, ListDealsInput, LogActivityInput, PatchCustomDataInput, UpdateDealInput } from "./dto/deals.schemas";
 
 type DealRow = typeof deals.$inferSelect;
@@ -37,6 +38,7 @@ export class DealsService {
     private readonly crmMetadata: CrmMetadataService,
     private readonly crmValidation: CrmValidationService,
     private readonly bus: CrmAutomationBusService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {
@@ -152,6 +154,8 @@ export class DealsService {
   }
 
   async createDeal(orgId: string, userId: string, input: CreateDealInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmDeals");
+
     if (input.assignedToId && input.assignedToId !== userId) {
       const member = await this.db.query.organizationMembers.findFirst({
         where: and(eq(organizationMembers.userId, input.assignedToId), eq(organizationMembers.orgId, orgId)),
@@ -400,6 +404,8 @@ export class DealsService {
   }
 
   async cloneDeal(orgId: string, dealId: number) {
+    await this.planLimits.assertWithinLimit(orgId, "crmDeals");
+
     const existing = await this.db.query.deals.findFirst({
       where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
     });

@@ -5,11 +5,11 @@ import {
   chatChannels,
   chatChannelMembers,
   chatMessages,
-  subscriptions,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput, UpdateChannelInput } from "./dto/chat.schemas";
 import {
@@ -19,7 +19,10 @@ import {
 
 @Injectable()
 export class ChatChannelsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   private async ensureEntityChannelDisplayName<
     T extends {
@@ -290,28 +293,7 @@ export class ChatChannelsService {
     const isPrivate = channelType === "PRIVATE";
 
     if (!entityType) {
-      const subscription = await this.db.query.subscriptions.findFirst({
-        where: eq(subscriptions.orgId, orgId),
-        columns: { status: true },
-      });
-      const isPaid = subscription?.status === "ACTIVE";
-      if (!isPaid) {
-        const [{ value: channelCount }] = await this.db
-          .select({ value: count() })
-          .from(chatChannels)
-          .where(
-            and(
-              eq(chatChannels.orgId, orgId),
-              inArray(chatChannels.type, ["GROUP", "PUBLIC", "PRIVATE"]),
-              isNull(chatChannels.entityType),
-            ),
-          );
-        if (channelCount >= 1) {
-          throw new ForbiddenException(
-            "Free plan is limited to 1 channel. Upgrade to create more.",
-          );
-        }
-      }
+      await this.planLimits.assertWithinLimit(orgId, "chatChannels");
     }
 
     const channel = await this.db.transaction(async (tx) => {

@@ -22,6 +22,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { queryAiUsage } from "./ai-usage.query";
 import { ALL_ROLES, PERMISSIONS } from "../rbac/permissions.constants";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
@@ -43,7 +44,10 @@ import type {
 
 @Injectable()
 export class SettingsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   getPermissions() {
     return PERMISSIONS;
@@ -134,6 +138,7 @@ export class SettingsService {
   }
 
   async createAutomation(orgId: string, userId: string, input: CreateAutomationInput) {
+    await this.planLimits.assertWithinLimit(orgId, "automations");
     const [rule] = await this.db
       .insert(automationRules)
       .values({

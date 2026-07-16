@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -138,6 +138,7 @@ export const aiCreditTransactions = pgTable(
   (t) => [
     index("ai_credit_txns_org_idx").on(t.orgId),
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
+    uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
   ],
 );
 

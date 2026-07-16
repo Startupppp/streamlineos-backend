@@ -13,6 +13,7 @@ import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { extractMentionUserIds, extractPageLinkIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb-pages.schemas";
@@ -36,10 +37,14 @@ export class KbPagesService {
     private readonly notifications: NotificationsService,
     private readonly reviews: KbPageReviewsService,
     private readonly indexing: KbIndexingService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
     const orgId = user.orgId;
+
+    await this.planLimits.assertWithinLimit(orgId, "kbPages");
+
     let templateContent: KbPageContent | null = null;
 
     if (input.templateId) {

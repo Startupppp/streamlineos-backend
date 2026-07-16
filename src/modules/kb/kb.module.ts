@@ -1,4 +1,5 @@
 ﻿import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/billing.module";
 import { AiModule } from "../ai/ai.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { KbCreditsService } from "./kb-credits.service";
@@ -58,7 +59,7 @@ import { KbSettingsController } from "./kb-settings.controller";
 import { KbSettingsService } from "./kb-settings.service";
 
 @Module({
-  imports: [AiModule, NotificationsModule],
+  imports: [BillingModule, AiModule, NotificationsModule],
   controllers: [
     KbSpacesController,
     KbCategoriesController,

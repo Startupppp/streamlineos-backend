@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Inject,
   Injectable,
@@ -23,6 +23,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { RazorpayService } from "./razorpay.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { PlanLimitsService } from "./plan-limits.service";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -34,6 +35,7 @@ import {
   type VerifyPaymentInput,
   type WebhookEvent,
 } from "./dto/billing.schemas";
+import { PLAN_LIMITS } from "./plan-entitlements.constants";
 
 const PLAN_PRICES: Record<Plan, number> = {
   STARTER: 99900,
@@ -53,6 +55,7 @@ export class BillingService {
     private readonly razorpay: RazorpayService,
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -179,6 +182,8 @@ export class BillingService {
       });
     });
 
+    this.planLimits.bust(orgId);
+
     this.audit.log({
       action: "settings.updated",
       userId,
@@ -186,6 +191,12 @@ export class BillingService {
       targetType: "subscription",
       metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
     });
+
+    this.aiCredits
+      .grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id)
+      .catch((err: unknown) =>
+        logger.warn("[billing] plan credit grant failed (non-fatal)", { orgId, plan: input.plan, err }),
+      );
 
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
@@ -244,7 +255,7 @@ export class BillingService {
       discountAmount,
       message: coupon.type === "PERCENTAGE"
         ? `${couponValue}% discount applied`
-        : `₹${couponValue} discount applied`,
+        : `â‚¹${couponValue} discount applied`,
     };
   }
 
@@ -457,20 +468,14 @@ export class BillingService {
   }
 
   async getSeatInfo(orgId: string) {
-    const { subscription } = await this.getSubscription(orgId);
-    const PLAN_SEATS: Record<string, number> = {
-      STARTER: 10,
-      PROFESSIONAL: 50,
-      ENTERPRISE: 500,
-    };
-    const plan = subscription?.plan ?? "STARTER";
-    const total = PLAN_SEATS[plan] ?? 10;
+    const { plan } = await this.planLimits.resolveTier(orgId);
+    const total = PLAN_LIMITS.members[plan];
     const [usedResult] = await this.db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: sql<number>`count(*)::int` })
       .from(organizationMembers)
       .where(eq(organizationMembers.orgId, orgId));
     const used = Number(usedResult?.count ?? 0);
-    return { total, used, available: Math.max(0, total - used) };
+    return { total, used, available: total === null ? null : Math.max(0, total - used) };
   }
 
   async requestAffiliatePayoutRequest(orgId: string) {

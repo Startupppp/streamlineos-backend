@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/billing.module";
 import { KbModule } from "../kb/kb.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { AutomationModule } from "../automation/automation.module";
@@ -36,7 +37,7 @@ import { SupportDraftsService } from "./support-drafts.service";
 import { SupportIntegrationsService } from "./support-integrations.service";
 
 @Module({
-  imports: [KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
+  imports: [BillingModule, KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
   controllers: [
     SupportKbController,
     SupportMacrosController,

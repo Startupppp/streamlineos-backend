@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { ExportInput } from "./dto/quote.schemas";
 
 export type SendNotDraft = { error: "not_draft" };
@@ -26,6 +27,7 @@ export class QuotesLifecycleService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly bus: CrmAutomationBusService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async send(orgId: string, userId: string, quoteId: number) {
@@ -132,6 +134,8 @@ export class QuotesLifecycleService {
     if (existing.status !== "ACCEPTED") {
       throw new BadRequestException("Only accepted quotes can be converted to invoice");
     }
+
+    await this.planLimits.assertWithinLimit(orgId, "acctInvoices");
 
     const result = await this.db.transaction(async (tx) => {
       const today = new Date();

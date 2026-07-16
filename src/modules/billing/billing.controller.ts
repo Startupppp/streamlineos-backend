@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+﻿import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -13,6 +13,7 @@ import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
+import { PlanLimitsService } from "./plan-limits.service";
 import {
   createCouponSchema,
   createOrderSchema,
@@ -55,6 +56,7 @@ export class BillingController {
     private readonly referral: ReferralService,
     private readonly analytics: RevenueAnalyticsService,
     private readonly enterpriseQuotes: EnterpriseQuotesService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   @Get()
@@ -95,6 +97,11 @@ export class BillingController {
   @Get("summary")
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSummary(u.orgId);
+  }
+
+  @Get("entitlements")
+  getEntitlements(@CurrentUser() u: CurrentUserContext) {
+    return this.planLimits.getEntitlements(u.orgId);
   }
 
   @Get("coupons/validate")

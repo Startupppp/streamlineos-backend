@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { ProjectsEmailService } from "./projects-email.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 
@@ -31,11 +32,14 @@ export class ProjectsProvisionService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly planLimits: PlanLimitsService,
     private readonly projectsEmail: ProjectsEmailService,
   ) {}
 
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
     const projectKey = input.key ?? generateProjectKey(input.name);
+
+    await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const project = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -115,6 +119,8 @@ export class ProjectsProvisionService {
       where: and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)),
     });
     if (!deal) throw new NotFoundException("Deal not found");
+
+    await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const namePart = input.name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
     const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");

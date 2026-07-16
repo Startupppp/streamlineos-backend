@@ -31,6 +31,7 @@ import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
 import { CrmAttributionReportService } from "../crm/crm-attribution-report.service";
 import { TerritoryMatchService } from "../crm/territory-match.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { LeadsBoardService, type BoardOpts, type StatsFilters } from "./leads-board.service";
 import { applyScope } from "../access/apply-scope";
@@ -88,6 +89,7 @@ export class LeadsService {
     private readonly attribution: CrmAttributionReportService,
     private readonly territoryMatch: TerritoryMatchService,
     private readonly boardService: LeadsBoardService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async sendLeadAssignedNotification(
@@ -209,6 +211,8 @@ export class LeadsService {
   }
 
   async create(orgId: string, userId: string, input: CreateInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmLeads");
+
     if (input.assignedToId) {
       const member = await this.db.query.organizationMembers.findFirst({
         where: and(eq(organizationMembers.userId, input.assignedToId), eq(organizationMembers.orgId, orgId)),
@@ -464,6 +468,8 @@ export class LeadsService {
   }
 
   async ingestCreate(orgId: string, input: IngestInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmLeads");
+
     const [lead] = await this.db
       .insert(leads)
       .values({

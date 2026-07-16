@@ -23,6 +23,7 @@ import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import { CrmMetadataService } from "../crm-metadata/crm-metadata.service";
 import { CrmBlueprintsService } from "../crm-metadata/crm-blueprints.service";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 
 type LeadRow = typeof leads.$inferSelect;
@@ -41,6 +42,7 @@ export class LeadStatusService {
     private readonly email: EmailService,
     private readonly crmMetadata: CrmMetadataService,
     private readonly blueprints: CrmBlueprintsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async getSemantics(orgId: string) {
@@ -103,6 +105,7 @@ export class LeadStatusService {
       where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId)),
     });
     if (existingDeal) return;
+    await this.planLimits.assertWithinLimit(orgId, "crmDeals");
     await this.db.insert(deals).values({
       orgId,
       leadId: lead.id,

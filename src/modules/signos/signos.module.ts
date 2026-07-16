@@ -5,6 +5,7 @@ import { AccessModule } from "../access/access.module";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { BillingModule } from "../billing/billing.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTokensService } from "./sign-tokens.service";
@@ -33,7 +34,7 @@ import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule],
+  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,

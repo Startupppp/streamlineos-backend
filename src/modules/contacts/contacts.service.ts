@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CreateInput, ListInput, UpdateInput } from "./dto/contact.schemas";
 
 @Injectable()
@@ -12,6 +13,7 @@ export class ContactsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   list(orgId: string, filters: ListInput) {
@@ -92,6 +94,8 @@ export class ContactsService {
   }
 
   async create(orgId: string, input: CreateInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmContacts");
+
     const [contact] = await this.db
       .insert(contacts)
       .values({

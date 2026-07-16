@@ -14,6 +14,7 @@ import { type Db } from "../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { KbIndexingService } from "./kb-indexing.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 
@@ -47,6 +48,7 @@ export class KbPageTreeService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly indexing: KbIndexingService,
     private readonly audit: AuditService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async getTree(user: CurrentUserContext): Promise<{
@@ -353,6 +355,8 @@ export class KbPageTreeService {
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
     });
     if (!root) throw new NotFoundException("Page not found");
+
+    await this.planLimits.assertWithinLimit(orgId, "kbPages");
 
     return this.db.transaction(async (tx) => {
       const subtreeMap = await this.buildSubtreeMap(tx, orgId, pageId);

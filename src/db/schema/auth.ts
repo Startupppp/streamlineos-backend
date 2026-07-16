@@ -1,6 +1,6 @@
 
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum } from "./enums";
 
 import { departments } from "./hr";
@@ -188,6 +188,7 @@ export const invitations = pgTable("invitations", {
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
   index("idx_invitations_expires").on(table.expiresAt),
+  uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
 ]);
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {

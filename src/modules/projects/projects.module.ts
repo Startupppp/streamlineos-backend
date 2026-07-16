@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/billing.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { ProjectsController } from "./projects.controller";
 import { ProjectsTicketsController } from "./projects-tickets.controller";
@@ -34,7 +35,7 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [BillingModule, NotificationsModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,

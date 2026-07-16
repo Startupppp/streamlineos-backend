@@ -16,9 +16,10 @@ import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { CrmMetadataModule } from "../crm-metadata/crm-metadata.module";
 import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
+import { BillingModule } from "../billing/billing.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmAutomationStudioModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmAutomationStudioModule, BillingModule],
   controllers: [
     DealsAnalyticsController,
     DealsApprovalsController,

@@ -3,11 +3,15 @@ import { and, eq, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { projectAutomations } from "../../db/schema";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CreateAutomationInput, UpdateAutomationInput } from "./dto/automation.schemas";
 
 @Injectable()
 export class ProjectsAutomationsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   listAutomations(orgId: string, projectId: number) {
     return this.db
@@ -18,6 +22,8 @@ export class ProjectsAutomationsService {
   }
 
   async createAutomation(orgId: string, projectId: number, createdBy: string, data: CreateAutomationInput) {
+    await this.planLimits.assertWithinLimit(orgId, "automations");
+
     const [automation] = await this.db
       .insert(projectAutomations)
       .values({ orgId, projectId, createdBy, ...data })

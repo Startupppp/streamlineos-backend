@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/billing.module";
 import { AiModule } from "../ai/ai.module";
 import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { AutomationModule } from "../automation/automation.module";
@@ -38,7 +39,7 @@ import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule],
+  imports: [AutomationModule, AiModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,

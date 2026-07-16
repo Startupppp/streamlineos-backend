@@ -13,6 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMentionsService } from "./support-mentions.service";
@@ -82,6 +83,7 @@ export class SupportTicketsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
     private readonly macros: SupportMacrosService,
     private readonly notifications: SupportNotificationsService,
     private readonly realtime: SupportRealtimeService,
@@ -206,6 +208,8 @@ export class SupportTicketsService {
         error: routingError instanceof Error ? routingError.message : String(routingError),
       });
     }
+
+    await this.planLimits.assertWithinLimit(orgId, "supportTickets");
 
     const resolvedPolicy = await this.sla.resolvePolicy(orgId, finalPriority, input.category ?? null);
     const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
