@@ -267,6 +267,7 @@ export class UsersController {
     return this.userProfile.updatePreferences(userId, body);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/login-history")
   getLoginHistory(
     @Param("userId") userId: string,
@@ -276,11 +277,13 @@ export class UsersController {
     return this.userProfile.getLoginHistory(u.orgId, userId, query);
   }
 
+  @RequirePermission("hr:employees:view")
   @Get(":userId/membership")
   getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getMembership(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:update")
   @Patch(":userId/membership")
   updateMembership(
     @Param("userId") userId: string,
@@ -290,11 +293,13 @@ export class UsersController {
     return this.userProfile.updateMembership(u.orgId, userId, body, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post(":userId/reset-password")
   resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.resetPassword(u.orgId, userId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/audit")
   getUserAuditLog(
     @Param("userId") userId: string,

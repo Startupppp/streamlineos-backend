@@ -68,9 +68,11 @@ export class HrAnalyticsPlusController {
 
   @Get("payroll-cost")
   async getPayrollCost(@CurrentUser() u: CurrentUserContext) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (!perms.has("hr:salary:view") && !perms.has("hr:payroll:view")) {
-      throw new ForbiddenException("hr:salary:view or hr:payroll:view required");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      if (!perms.has("hr:salary:view") && !perms.has("hr:payroll:view")) {
+        throw new ForbiddenException("hr:salary:view or hr:payroll:view required");
+      }
     }
     return this.svc.getPayrollCost(u.orgId);
   }
@@ -149,11 +151,8 @@ export class HrAnalyticsPlusController {
   }
 
   @Get("workforce/succession-risk")
-  async getSuccessionRisk(@CurrentUser() u: CurrentUserContext) {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (!perms.has("hr:succession:view")) {
-      throw new ForbiddenException("hr:succession:view required");
-    }
+  @RequirePermission("hr:succession:view")
+  getSuccessionRisk(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getSuccessionRisk(u.orgId);
   }
 

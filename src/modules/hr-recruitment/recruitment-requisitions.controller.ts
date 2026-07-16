@@ -32,7 +32,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Post()
-  @RequirePermission("hr:requisitions:view")
+  @RequirePermission("hr:requisitions:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createRequisitionSchema)) body: CreateRequisitionInput,
@@ -41,7 +41,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":id/submit")
-  @RequirePermission("hr:requisitions:view")
+  @RequirePermission("hr:requisitions:manage")
   submit(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
     return this.service.submit(u.orgId, id);
   }
@@ -69,7 +69,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":id")
-  @RequirePermission("hr:requisitions:view")
+  @RequirePermission("hr:requisitions:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,

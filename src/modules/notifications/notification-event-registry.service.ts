@@ -7,7 +7,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NOTIFICATION_EVENT_CATALOG, NOTIFICATION_EVENT_MAP } from "./notification-events.catalog";
-import type { NotificationChannel, NotificationEventDefinition, NotificationPriority, NotificationLevel, QuietHoursBehavior } from "./notification.types";
+import { ALL_CHANNELS } from "./notification.types";
+import type { NotificationChannel, NotificationEventDefinition, NotificationPriority, QuietHoursBehavior } from "./notification.types";
 
 type EventRow = typeof notificationEvents.$inferSelect;
 
@@ -103,14 +104,14 @@ export class NotificationEventRegistryService implements OnModuleInit {
       category: row.category,
       displayName: row.displayName,
       description: row.description ?? row.displayName,
-      defaultPriority: row.defaultPriority as NotificationPriority,
-      defaultType: row.defaultType as NotificationLevel,
-      defaultChannels: row.defaultChannels as NotificationChannel[],
-      allowedChannels: row.allowedChannels as NotificationChannel[],
+      defaultPriority: row.defaultPriority,
+      defaultType: row.defaultType,
+      defaultChannels: row.defaultChannels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)),
+      allowedChannels: row.allowedChannels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)),
       mandatory: (base?.mandatory ?? false) || row.mandatory,
       userConfigurable: row.userConfigurable,
       adminConfigurable: row.adminConfigurable,
-      quietHoursBehavior: row.quietHoursBehavior as QuietHoursBehavior,
+      quietHoursBehavior: row.quietHoursBehavior,
       dedupeWindowSeconds: row.dedupeWindowSeconds,
       rateLimitWindowSeconds: row.rateLimitWindowSeconds,
       rateLimitMax: row.rateLimitMax,
@@ -162,14 +163,14 @@ export class NotificationEventRegistryService implements OnModuleInit {
       category: base.category,
       displayName: base.displayName,
       description: base.description,
-      defaultPriority: patch.defaultPriority ?? (existing?.defaultPriority as NotificationPriority | undefined) ?? base.defaultPriority,
+      defaultPriority: patch.defaultPriority ?? existing?.defaultPriority ?? base.defaultPriority,
       defaultType: base.defaultType,
-      defaultChannels: patch.defaultChannels ?? (existing?.defaultChannels as NotificationChannel[] | undefined) ?? base.defaultChannels,
-      allowedChannels: patch.allowedChannels ?? (existing?.allowedChannels as NotificationChannel[] | undefined) ?? base.allowedChannels,
+      defaultChannels: patch.defaultChannels ?? (existing ? existing.defaultChannels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)) : undefined) ?? base.defaultChannels,
+      allowedChannels: patch.allowedChannels ?? (existing ? existing.allowedChannels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)) : undefined) ?? base.allowedChannels,
       mandatory: base.mandatory || (patch.mandatory ?? existing?.mandatory ?? false),
       userConfigurable: patch.userConfigurable ?? existing?.userConfigurable ?? base.userConfigurable,
       adminConfigurable: base.adminConfigurable,
-      quietHoursBehavior: patch.quietHoursBehavior ?? (existing?.quietHoursBehavior as QuietHoursBehavior | undefined) ?? base.quietHoursBehavior,
+      quietHoursBehavior: patch.quietHoursBehavior ?? existing?.quietHoursBehavior ?? base.quietHoursBehavior,
       dedupeWindowSeconds: patch.dedupeWindowSeconds ?? existing?.dedupeWindowSeconds ?? base.dedupeWindowSeconds,
       rateLimitWindowSeconds: patch.rateLimitWindowSeconds ?? existing?.rateLimitWindowSeconds ?? base.rateLimitWindowSeconds,
       rateLimitMax: patch.rateLimitMax ?? existing?.rateLimitMax ?? base.rateLimitMax,
