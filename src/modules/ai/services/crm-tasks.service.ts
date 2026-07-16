@@ -3,9 +3,11 @@ import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
 import { crmDeals, leads, tasks, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { LlmService } from "../providers/llm.service";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { PriorityResponseSchema } from "../dto/output.schemas";
 import { formatDateOnly } from "../ai-date.util";
+import { throwOnAiFailure } from "./gateway-result.util";
 
 export interface TaskSuggestion {
   ticketId: number;
@@ -31,12 +33,20 @@ function diffHours(a: Date, b: Date): number {
 export class CrmTasksService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
   ) {}
 
   async prioritizeTasks(orgId: string, userId: string) {
     const pendingTasks = await this.db
-      .select()
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        type: tasks.type,
+        notes: tasks.notes,
+        dueDate: tasks.dueDate,
+        entityType: tasks.entityType,
+        entityId: tasks.entityId,
+      })
       .from(tasks)
       .where(
         and(
@@ -125,11 +135,11 @@ export class CrmTasksService {
 
     const taskListJson = JSON.stringify(enriched, null, 2);
 
-    return this.llm.invokeStructured({
-      model: "fast",
-      schema: PriorityResponseSchema,
-      schemaName: "task_priority",
-      system: `You are a sales productivity assistant. Your job is to rank a sales rep's pending tasks by urgency and business impact.
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "crm.prioritize-tasks",
+      prompt: {
+        system: `You are a sales productivity assistant. Your job is to rank a sales rep's pending tasks by urgency and business impact.
 
 Ranking criteria (in order of importance):
 1. SLA breaches — tasks tied to leads with an overdue SLA MUST be ranked highest
@@ -146,8 +156,16 @@ For each task return:
 - reasoning (1-2 sentences explaining why this rank)
 
 Also return a short summary (2-3 sentences) with overall advice for the rep.`,
-      user: `Here are my ${enriched.length} pending tasks. Please prioritize them:\n\n${taskListJson}`,
+        user: `Here are my ${enriched.length} pending tasks. Please prioritize them:\n\n${taskListJson}`,
+      },
+      schema: PriorityResponseSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("crm.prioritize-tasks") },
     });
+
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
   async suggestTaskAssignments(orgId: string, projectId: number): Promise<TaskSuggestion[]> {

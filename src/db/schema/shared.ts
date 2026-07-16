@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, numeric, date, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -400,6 +400,9 @@ export const aiUsageLogs = pgTable("ai_usage_logs", {
   totalTokens: integer("total_tokens").notNull().default(0),
   estimatedCostUsd: numeric("estimated_cost_usd", { precision: 12, scale: 6 }),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  latencyMs: integer("latency_ms"),
+  correlationId: varchar("correlation_id", { length: 64 }),
+  outcome: varchar("outcome", { length: 20 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_ai_usage_org_feature").on(table.orgId, table.feature),

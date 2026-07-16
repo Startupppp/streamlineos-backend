@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { LlmService } from "../providers/llm.service";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
 import {
   conversationSummaryPrompt,
   emailGeneratorPrompt,
@@ -27,23 +28,43 @@ import type {
   SentimentAnalysisInput,
   SummarizeInput,
 } from "../dto/request.schemas";
+import { throwOnAiFailure } from "./gateway-result.util";
+
+const MAX_TEXT = 2000;
+
+function trunc(s: string | null | undefined, max = MAX_TEXT): string {
+  if (!s) return "";
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+function actorCharge(
+  feature: string,
+  actor: { orgId: string; userId: string | null } | undefined,
+): { charge: { credits: number } | undefined } {
+  return actor?.orgId ? { charge: { credits: getFeatureCost(feature) } } : { charge: undefined };
+}
 
 @Injectable()
 export class CrmContentService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
   ) {}
 
-  enrichLead(input: EnrichLeadInput) {
+  async enrichLead(input: EnrichLeadInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId: null };
     const prompt = leadEnrichmentPrompt(input);
-    return this.llm.invokeStructured({
-      model: "standard",
+    const result = await this.gateway.invokeStructured({
+      actor: resolvedActor,
+      feature: "crm.enrich-lead",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.lead_enrichment", promptVersion: 1 },
       schema: LeadEnrichmentSchema,
-      schemaName: "lead_enrichment",
-      system: prompt.system,
-      user: prompt.user,
+      tier: "standard",
+      maxTokens: 1024,
+      ...actorCharge("crm.enrich-lead", actor),
     });
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
   private async getSender(userId: string): Promise<{ name: string; role?: string }> {
@@ -54,18 +75,26 @@ export class CrmContentService {
     return { name: user?.name || "Sales Team", role: user?.role || undefined };
   }
 
-  private generateFollowUpEmail(input: EmailGeneratorInput): Promise<GeneratedEmail> {
+  private async generateFollowUpEmail(
+    input: EmailGeneratorInput,
+    actor: { orgId: string; userId: string | null },
+  ): Promise<GeneratedEmail> {
     const prompt = emailGeneratorPrompt(input);
-    return this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor,
+      feature: "crm.generate-email",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.email_generator", promptVersion: 1 },
       schema: GeneratedEmailSchema,
-      schemaName: "generated_email",
-      system: prompt.system,
-      user: prompt.user,
+      tier: "fast",
+      maxTokens: 1024,
+      ...actorCharge("crm.generate-email", actor),
     });
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
-  async generateEmail(userId: string, input: GenerateEmailInput) {
+  async generateEmail(userId: string, input: GenerateEmailInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId };
     const sender = await this.getSender(userId);
     const base = {
       leadName: input.leadName,
@@ -74,28 +103,29 @@ export class CrmContentService {
       dealStage: input.dealStage,
       lastActivityType: input.lastActivityType,
       lastActivityDate: input.lastActivityDate,
-      lastActivityNotes: input.lastActivityNotes,
+      lastActivityNotes: trunc(input.lastActivityNotes),
       potentialValue: input.potentialValue,
       senderName: sender.name,
       senderRole: sender.role,
-      context: input.context,
+      context: trunc(input.context),
     };
 
     if (input.allVariations) {
       const tones: EmailTone[] = ["formal", "friendly", "urgent"];
       const variations: Partial<Record<EmailTone, GeneratedEmail>> = {};
       for (const tone of tones) {
-        variations[tone] = await this.generateFollowUpEmail({ ...base, tone });
+        variations[tone] = await this.generateFollowUpEmail({ ...base, tone }, resolvedActor);
       }
       return { variations };
     }
 
-    return this.generateFollowUpEmail({ ...base, tone: input.tone });
+    return this.generateFollowUpEmail({ ...base, tone: input.tone }, resolvedActor);
   }
 
-  handleObjection(input: ObjectionHandlerInput) {
+  async handleObjection(input: ObjectionHandlerInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId: null };
     const userPrompt = [
-      `Client Objection: "${input.objection}"`,
+      `Client Objection: "${trunc(input.objection)}"`,
       `Deal Stage: ${input.dealStage}`,
       input.productName ? `Product/Service: ${input.productName}` : null,
       input.dealValue ? `Deal Value: ${input.dealValue}` : null,
@@ -103,58 +133,84 @@ export class CrmContentService {
       .filter(Boolean)
       .join("\n");
 
-    return this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor: resolvedActor,
+      feature: "crm.objection-handler",
+      prompt: {
+        system:
+          "You are an expert B2B sales coach helping Indian investment firm sales reps overcome objections. " +
+          "Provide practical, culturally-aware counter-arguments. " +
+          "Return 3-5 counter arguments, 3-5 talking points, and a concise suggested response script.",
+        user: userPrompt,
+      },
       schema: ObjectionResponseSchema,
-      schemaName: "objection_response",
-      system:
-        "You are an expert B2B sales coach helping Indian investment firm sales reps overcome objections. " +
-        "Provide practical, culturally-aware counter-arguments. " +
-        "Return 3-5 counter arguments, 3-5 talking points, and a concise suggested response script.",
-      user: userPrompt,
+      tier: "fast",
+      maxTokens: 1024,
+      ...actorCharge("crm.objection-handler", actor),
     });
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
-  analyzeSentiment(input: SentimentAnalysisInput) {
+  async analyzeSentiment(input: SentimentAnalysisInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId: null };
     const userPrompt = [
       input.clientName ? `Client: ${input.clientName}` : null,
-      `\nRecent Client Communications:\n${input.text}`,
+      `\nRecent Client Communications:\n${trunc(input.text)}`,
     ]
       .filter(Boolean)
       .join("\n");
 
-    return this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor: resolvedActor,
+      feature: "crm.sentiment",
+      prompt: {
+        system:
+          "You are a customer success analyst for a financial services CRM. Analyze client interaction text and identify sentiment, churn risk, and actionable recommendations. The score (0-100) represents client health: 0 = extremely dissatisfied/critical, 100 = extremely satisfied/promoter. Provide 2-5 risk factors and 3-5 specific, actionable recommendations.",
+        user: userPrompt,
+      },
       schema: SentimentSchema,
-      schemaName: "sentiment_analysis",
-      system:
-        "You are a customer success analyst for a financial services CRM. Analyze client interaction text and identify sentiment, churn risk, and actionable recommendations. The score (0-100) represents client health: 0 = extremely dissatisfied/critical, 100 = extremely satisfied/promoter. Provide 2-5 risk factors and 3-5 specific, actionable recommendations.",
-      user: userPrompt,
+      tier: "fast",
+      maxTokens: 512,
+      ...actorCharge("crm.sentiment", actor),
     });
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
-  summarize(input: SummarizeInput) {
+  async summarize(input: SummarizeInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId: null };
     const prompt = conversationSummaryPrompt(input);
-    return this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor: resolvedActor,
+      feature: "crm.summarize",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.conversation_summary", promptVersion: 1 },
       schema: ConversationSummarySchema,
-      schemaName: "conversation_summary",
-      system: prompt.system,
-      user: prompt.user,
+      tier: "fast",
+      maxTokens: 512,
+      ...actorCharge("crm.summarize", actor),
+      dedupe: true,
     });
+    if (!result.ok) throwOnAiFailure(result);
+    return result.data;
   }
 
-  async narrateReport(input: ReportNarratorInput) {
-    const narrative = await this.llm.invokeText({
-      model: "fast",
-      system:
-        "You are a business analyst who writes clear, insightful plain-English narratives from raw data for an Indian investment and financial services firm. Focus on key trends, notable changes, and actionable insights. Keep it concise (2-3 paragraphs). Use relevant financial context and terminology appropriate for the Indian market when applicable.",
-      user: `Context: ${input.context ?? "Business performance data"}
-
-Data:
-${input.data}`,
+  async narrateReport(input: ReportNarratorInput, actor?: { orgId: string; userId: string | null }) {
+    const resolvedActor = actor ?? { orgId: "", userId: null };
+    const result = await this.gateway.invokeText({
+      actor: resolvedActor,
+      feature: "crm.report-narrator",
+      prompt: {
+        system:
+          "You are a business analyst who writes clear, insightful plain-English narratives from raw data for an Indian investment and financial services firm. Focus on key trends, notable changes, and actionable insights. Keep it concise (2-3 paragraphs). Use relevant financial context and terminology appropriate for the Indian market when applicable.",
+        user: `Context: ${input.context ?? "Business performance data"}\n\nData:\n${trunc(input.data)}`,
+      },
+      tier: "fast",
+      maxTokens: 1024,
+      ...actorCharge("crm.report-narrator", actor),
     });
 
-    return { narrative, generatedAt: new Date().toISOString() };
+    if (!result.ok) throwOnAiFailure(result);
+    return { narrative: result.data, generatedAt: new Date().toISOString() };
   }
 }

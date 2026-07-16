@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
@@ -12,8 +13,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { feedbucketSubmissions } from "../../db/schema";
-import { LlmService } from "../ai/providers/llm.service";
-import { AiCreditsService } from "../billing/ai-credits.service";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { AiUsageService } from "../ai/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -33,9 +34,8 @@ import {
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
 
-const AI_CREDIT_COST = 5;
-const FEATURE_KEY = "feedbucket.ai-analyze" as const;
-const PUBLIC_FEATURE_KEY = "feedbucket.ai-assist" as const;
+const FEATURE_KEY = "feedbucket.analyze" as const;
+const PUBLIC_FEATURE_KEY = "feedbucket.assist" as const;
 
 const WIDGET_TYPE_MAP: Record<FeedbackAnalysis["type"], string> = {
   bug: "bug",
@@ -99,23 +99,32 @@ function sanitizeHtml(html: string): string {
     .replace(/src\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'src=""');
 }
 
+function throwOnFailure(kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output", message: string): never {
+  switch (kind) {
+    case "quota_exceeded":
+      throw new BadRequestException(message);
+    case "not_configured":
+    case "provider_unavailable":
+      throw new ServiceUnavailableException(message);
+    case "invalid_output":
+      throw new ServiceUnavailableException("AI returned an invalid response");
+    default: {
+      const _exhaustive: never = kind;
+      throw new ServiceUnavailableException(`Unhandled AI failure: ${String(_exhaustive)}`);
+    }
+  }
+}
+
 @Injectable()
 export class FeedbucketAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
-    private readonly credits: AiCreditsService,
+    private readonly gateway: AiGatewayService,
     private readonly aiUsage: AiUsageService,
     private readonly audit: AuditService,
     private readonly rateLimiter: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
   ) {}
-
-  private ensureLlm(): void {
-    if (!this.llm.isConfigured()) {
-      throw new ServiceUnavailableException("AI is not configured. Set OPENAI_API_KEY.");
-    }
-  }
 
   private async loadSubmission(orgId: string, submissionId: number) {
     const row = await this.db.query.feedbucketSubmissions.findFirst({
@@ -186,30 +195,45 @@ export class FeedbucketAiService {
     }
   }
 
-  async runVisionAnalysis(opts: {
+  private async runVisionAnalysis(opts: {
+    orgId: string;
+    userId: string | null;
+    feature: string;
     type: string;
     message: string;
     pageUrl?: string | null;
     imageDataUrls: string[];
     networkLogs?: FeedbucketNetworkEntry[] | null;
+    metadata?: unknown;
+    consoleLogs?: unknown;
   }): Promise<FeedbackAnalysis> {
     const system = buildSystemPrompt();
     const userContent = buildUserPrompt({
       type: opts.type,
       message: opts.message,
       pageUrl: opts.pageUrl,
-      metadata: null,
-      consoleLogs: null,
+      metadata: opts.metadata ?? null,
+      consoleLogs: opts.consoleLogs ?? null,
       networkLogs: opts.networkLogs,
     });
-    const rawResult = await this.llm.invokeStructuredWithImage({
-      model: "standard",
+
+    const credits = getFeatureCost(opts.feature);
+    const result = await this.gateway.invokeStructuredWithImage({
+      actor: { orgId: opts.orgId, userId: opts.userId },
+      feature: opts.feature,
+      tier: "standard",
+      prompt: { system, user: userContent },
       schema: FeedbackAnalysisSchema,
-      schemaName: "FeedbackAnalysis",
-      system,
-      user: userContent,
       images: opts.imageDataUrls,
+      charge: { credits },
+      redact: false,
     });
+
+    if (!result.ok) {
+      throwOnFailure(result.kind, result.message);
+    }
+
+    const rawResult = result.data;
     return {
       ...rawResult,
       suggestedTicketType: mapToTicketType(rawResult.type),
@@ -229,8 +253,6 @@ export class FeedbucketAiService {
     screenshotBuffer?: Buffer | null;
     networkLogs?: FeedbucketNetworkEntry[] | null;
   }): Promise<{ suggestedType: string; title: string; description: string }> {
-    this.ensureLlm();
-
     let imageDataUrls: string[] = [];
     if (opts.screenshotBuffer) {
       const mime = detectImageMime(opts.screenshotBuffer);
@@ -239,36 +261,16 @@ export class FeedbucketAiService {
       }
     }
 
-    await this.credits.consumeCredits(
-      opts.orgId,
-      opts.actorUserId,
-      AI_CREDIT_COST,
-      PUBLIC_FEATURE_KEY,
-      "standard",
-      String(opts.widgetId),
-    );
-
-    let analysis: FeedbackAnalysis;
-    try {
-      analysis = await this.runVisionAnalysis({
-        type: opts.type,
-        message: opts.message,
-        pageUrl: opts.pageUrl,
-        imageDataUrls,
-        networkLogs: opts.networkLogs,
-      });
-    } catch (err) {
-      if (err instanceof ServiceUnavailableException) {
-        await this.credits.refundCredits(
-          opts.orgId,
-          opts.actorUserId,
-          AI_CREDIT_COST,
-          PUBLIC_FEATURE_KEY,
-          String(opts.widgetId),
-        );
-      }
-      throw err;
-    }
+    const analysis = await this.runVisionAnalysis({
+      orgId: opts.orgId,
+      userId: opts.actorUserId,
+      feature: PUBLIC_FEATURE_KEY,
+      type: opts.type,
+      message: opts.message,
+      pageUrl: opts.pageUrl,
+      imageDataUrls,
+      networkLogs: opts.networkLogs,
+    });
 
     return {
       suggestedType: mapPublicType(analysis.type),
@@ -279,7 +281,6 @@ export class FeedbucketAiService {
 
   async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis> {
     requireFeature(u.plan, "ai.feedbucket");
-    this.ensureLlm();
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
     this.assertProjectAccess(submission, u.orgId);
@@ -297,53 +298,20 @@ export class FeedbucketAiService {
       );
     }
 
-    const model = "standard";
-
-    await this.credits.consumeCredits(
-      u.orgId,
-      u.userId,
-      AI_CREDIT_COST,
-      FEATURE_KEY,
-      model,
-      String(submissionId),
-    );
-
     const images = await this.resolveScreenshotForVision(submission.screenshotUrl);
-    const system = buildSystemPrompt();
-    const userContent = buildUserPrompt({
+
+    const analysis = await this.runVisionAnalysis({
+      orgId: u.orgId,
+      userId: u.userId,
+      feature: FEATURE_KEY,
       type: submission.type,
       message: submission.message,
       pageUrl: submission.pageUrl,
+      imageDataUrls: images,
+      networkLogs: submission.networkLogs,
       metadata: submission.metadata,
       consoleLogs: submission.consoleLogs,
-      networkLogs: submission.networkLogs,
     });
-
-    let rawResult: FeedbackAnalysis;
-    try {
-      rawResult = await this.llm.invokeStructuredWithImage({
-        model,
-        schema: FeedbackAnalysisSchema,
-        schemaName: "FeedbackAnalysis",
-        system,
-        user: userContent,
-        images,
-      });
-    } catch (err) {
-      if (err instanceof ServiceUnavailableException) {
-        await this.credits.refundCredits(u.orgId, u.userId, AI_CREDIT_COST, FEATURE_KEY, String(submissionId));
-      }
-      throw err;
-    }
-
-    const suggestedTicketType = mapToTicketType(rawResult.type);
-    const analysis: FeedbackAnalysis = {
-      ...rawResult,
-      suggestedTicketType,
-      description: sanitizeHtml(rawResult.description),
-      model,
-      processedAt: new Date().toISOString(),
-    };
 
     await this.db
       .update(feedbucketSubmissions)
@@ -351,7 +319,7 @@ export class FeedbucketAiService {
         aiType: analysis.type,
         aiConfidence: analysis.confidence,
         aiAnalysis: analysis,
-        aiModel: model,
+        aiModel: "standard",
         aiProcessedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -365,14 +333,7 @@ export class FeedbucketAiService {
       orgId: u.orgId,
       resourceType: "feedbucket_submission",
       resourceId: String(submissionId),
-      metadata: { type: analysis.type, confidence: analysis.confidence, model },
-    });
-
-    void this.aiUsage.track({
-      orgId: u.orgId,
-      userId: u.userId,
-      feature: FEATURE_KEY,
-      model,
+      metadata: { type: analysis.type, confidence: analysis.confidence, model: "standard" },
     });
 
     return analysis;

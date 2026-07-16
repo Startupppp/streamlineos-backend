@@ -1,16 +1,17 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { auditLogs, dealActivities, deals, leadActivities, leads } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { LlmService } from "../providers/llm.service";
-import { AiUsageService } from "./ai-usage.service";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { OrgFeaturesService } from "./org-features.service";
 import { CrmScoringService } from "./crm-scoring.service";
 import { CrmContentService } from "./crm-content.service";
 import { findDuplicateLeads } from "../../leads/duplicate-leads";
 import { ConversationSummarySchema } from "../dto/output.schemas";
+import { throwOnAiFailure } from "./gateway-result.util";
 
 const DealInsightsSchema = z.object({
   summary: z.string(),
@@ -20,6 +21,11 @@ const DealInsightsSchema = z.object({
 });
 
 type DealInsights = z.infer<typeof DealInsightsSchema>;
+
+const LeadSummarySchema = z.object({
+  summary: z.string(),
+  nextBestActions: z.array(z.string()),
+});
 
 const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const;
 
@@ -32,18 +38,11 @@ function truncate(s: string | null | undefined, max: number): string {
 export class CrmCopilotService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
-    private readonly usage: AiUsageService,
+    private readonly gateway: AiGatewayService,
     private readonly orgFeatures: OrgFeaturesService,
     private readonly scoring: CrmScoringService,
     private readonly content: CrmContentService,
   ) {}
-
-  private ensureLlm(): void {
-    if (!this.llm.isConfigured()) {
-      throw new ServiceUnavailableException("AI provider is not configured. Set OPENAI_API_KEY.");
-    }
-  }
 
   private async auditAiAction(
     orgId: string,
@@ -65,20 +64,37 @@ export class CrmCopilotService {
   async leadSummary(orgId: string, leadId: number, userId: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
-    const [lead] = await this.db
-      .select()
-      .from(leads)
-      .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+    const [[lead], activities] = await Promise.all([
+      this.db
+        .select({
+          id: leads.id,
+          name: leads.name,
+          email: leads.email,
+          company: leads.company,
+          status: leads.status,
+          priority: leads.priority,
+          score: leads.score,
+          potentialValue: leads.potentialValue,
+          notes: leads.notes,
+        })
+        .from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId))),
+      this.db
+        .select({
+          type: leadActivities.type,
+          date: leadActivities.date,
+          subject: leadActivities.subject,
+          notes: leadActivities.notes,
+          outcome: leadActivities.outcome,
+        })
+        .from(leadActivities)
+        .where(eq(leadActivities.leadId, leadId))
+        .orderBy(desc(leadActivities.date))
+        .limit(10),
+    ]);
+
     if (!lead) throw new NotFoundException("Lead not found");
-
-    const activities = await this.db
-      .select({ type: leadActivities.type, date: leadActivities.date, subject: leadActivities.subject, notes: leadActivities.notes, outcome: leadActivities.outcome })
-      .from(leadActivities)
-      .where(eq(leadActivities.leadId, leadId))
-      .orderBy(desc(leadActivities.date))
-      .limit(10);
 
     const activitiesText = activities.length === 0
       ? "No activities recorded."
@@ -99,45 +115,65 @@ Potential Value: ${lead.potentialValue ?? "Not set"}
 Notes: ${truncate(lead.notes, 500)}
 
 Recent Activities (newest first):
-${truncate(activitiesText, 1500)}
+${truncate(activitiesText, 1500)}`;
 
-Return a JSON object:
-{
-  "summary": "<2-3 sentence executive summary>",
-  "nextBestActions": ["<action1>", "<action2>", "<action3>"]
-}`;
-
-    const result = await this.llm.invokeJson<{ summary: string; nextBestActions: string[] }>({
-      model: "standard",
-      system: "You are a CRM sales assistant. Return valid JSON only matching the requested schema.",
-      user: userPrompt,
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "crm.copilot.summary",
+      prompt: {
+        system: "You are a CRM sales assistant. Return valid JSON only matching the requested schema.",
+        user: userPrompt,
+      },
+      schema: LeadSummarySchema,
+      tier: "standard",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.copilot.summary") },
+      dedupe: true,
     });
 
-    await Promise.all([
-      this.usage.track({ orgId, userId, feature: "crm.lead-summary", model: "standard" }),
-      this.auditAiAction(orgId, userId, "ai.crm.lead_summary", "lead", String(leadId)),
-    ]);
+    if (!result.ok) throwOnAiFailure(result);
 
-    return { summary: result.summary ?? "", nextBestActions: result.nextBestActions ?? [], generatedAt: new Date().toISOString() };
+    await this.auditAiAction(orgId, userId, "ai.crm.lead_summary", "lead", String(leadId));
+
+    return {
+      summary: result.data.summary ?? "",
+      nextBestActions: result.data.nextBestActions ?? [],
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   async dealSummary(orgId: string, dealId: number, userId: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
-    const [deal] = await this.db
-      .select()
-      .from(deals)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
+    const [[deal], activities] = await Promise.all([
+      this.db
+        .select({
+          id: deals.id,
+          name: deals.name,
+          value: deals.value,
+          stage: deals.stage,
+          probability: deals.probability,
+          contactPerson: deals.contactPerson,
+          expectedCloseDate: deals.expectedCloseDate,
+          notes: deals.notes,
+        })
+        .from(deals)
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId))),
+      this.db
+        .select({
+          type: dealActivities.type,
+          subject: dealActivities.subject,
+          notes: dealActivities.notes,
+          createdAt: dealActivities.createdAt,
+        })
+        .from(dealActivities)
+        .where(eq(dealActivities.dealId, dealId))
+        .orderBy(desc(dealActivities.createdAt))
+        .limit(10),
+    ]);
+
     if (!deal) throw new NotFoundException("Deal not found");
-
-    const activities = await this.db
-      .select({ type: dealActivities.type, subject: dealActivities.subject, notes: dealActivities.notes, createdAt: dealActivities.createdAt })
-      .from(dealActivities)
-      .where(eq(dealActivities.dealId, dealId))
-      .orderBy(desc(dealActivities.createdAt))
-      .limit(10);
 
     const activitiesText = activities.length === 0
       ? "No activities recorded."
@@ -157,36 +193,32 @@ Expected Close: ${deal.expectedCloseDate ?? "Not set"}
 Notes: ${truncate(deal.notes, 500)}
 
 Recent Activities:
-${truncate(activitiesText, 1500)}
+${truncate(activitiesText, 1500)}`;
 
-Return a JSON object:
-{
-  "summary": "<2-3 sentence deal health summary>",
-  "risks": ["<risk1>", "<risk2>"],
-  "recommendedPlays": ["<play1>", "<play2>"],
-  "stakeholdersGap": "<one sentence on missing stakeholders or contacts>"
-}`;
-
-    const insights = await this.llm.invokeStructured<typeof DealInsightsSchema>({
-      model: "standard",
+    const result = await this.gateway.invokeStructured<DealInsights>({
+      actor: { orgId, userId },
+      feature: "crm.copilot.summary",
+      prompt: {
+        system: "You are a B2B deal analyst. Provide structured deal health analysis. Return JSON matching the schema exactly.",
+        user: userPrompt,
+      },
       schema: DealInsightsSchema,
-      schemaName: "deal_insights",
-      system: "You are a B2B deal analyst. Provide structured deal health analysis. Return JSON matching the schema exactly.",
-      user: userPrompt,
+      tier: "standard",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.copilot.summary") },
+      dedupe: true,
     });
 
-    await Promise.all([
-      this.usage.track({ orgId, userId, feature: "crm.deal-summary", model: "standard" }),
-      this.auditAiAction(orgId, userId, "ai.crm.deal_summary", "deal", String(dealId)),
-    ]);
+    if (!result.ok) throwOnAiFailure(result);
 
-    return { stage: deal.stage, ...insights, generatedAt: new Date().toISOString() };
+    await this.auditAiAction(orgId, userId, "ai.crm.deal_summary", "deal", String(dealId));
+
+    return { stage: deal.stage, ...result.data, generatedAt: new Date().toISOString() };
   }
 
   async nextBestActionsAcrossPipeline(orgId: string, userId: string, limit: number) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
     const fetchLimit = Math.min(limit * 2, 40);
     const topLeads = await this.db
@@ -200,7 +232,7 @@ Return a JSON object:
 
     for (const lead of topLeads) {
       try {
-        const nba = await this.scoring.nextBestAction(orgId, lead.id);
+        const nba = await this.scoring.nextBestAction(orgId, lead.id, userId);
         if (nba) {
           results.push({ leadId: lead.id, leadName: lead.name, action: nba.action, urgency: nba.urgency, reasoning: nba.reasoning });
         }
@@ -215,8 +247,6 @@ Return a JSON object:
       return ao - bo;
     });
 
-    await this.usage.track({ orgId, userId, feature: "crm.next-best-actions", model: "fast" });
-
     return { actions: results.slice(0, limit) };
   }
 
@@ -227,7 +257,6 @@ Return a JSON object:
   ) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiEmailDraft) throw new ForbiddenException("AI email draft is disabled for this organization");
-    this.ensureLlm();
 
     let entityName = "";
     let company: string | null = null;
@@ -252,17 +281,15 @@ Return a JSON object:
       contextLine = `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}`;
     }
 
+    const actor = { orgId, userId };
     const draft = await this.content.generateEmail(userId, {
       leadName: entityName,
       company: company ?? undefined,
       tone: input.tone,
       context: `Intent: ${input.intent}. ${contextLine}`,
-    });
+    }, actor);
 
-    await Promise.all([
-      this.usage.track({ orgId, userId, feature: "crm.email-draft", model: "fast" }),
-      this.auditAiAction(orgId, userId, "ai.crm.email_draft", input.entityType, String(input.entityId)),
-    ]);
+    await this.auditAiAction(orgId, userId, "ai.crm.email_draft", input.entityType, String(input.entityId));
 
     const email = "variations" in draft ? Object.values(draft.variations ?? {})[0] : draft;
     return { subject: email?.subject ?? "", body: email?.body ?? "", generatedAt: new Date().toISOString() };
@@ -271,55 +298,57 @@ Return a JSON object:
   async summarizeNotes(orgId: string, userId: string, text: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiChat) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
-    const result = await this.llm.invokeStructured({
-      model: "fast",
-      schema: ConversationSummarySchema.extend({ objections: z.array(z.string()).default([]) }),
-      schemaName: "notes_summary",
-      system: `You are a sales assistant. Summarize meeting/call notes into structured insights.
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "crm.copilot.notes",
+      prompt: {
+        system: `You are a sales assistant. Summarize meeting/call notes into structured insights.
 Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
-      user: truncate(text, 6000),
+        user: truncate(text, 6000),
+      },
+      schema: ConversationSummarySchema.extend({ objections: z.array(z.string()).default([]) }),
+      tier: "fast",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.copilot.notes") },
     });
 
-    await this.usage.track({ orgId, userId, feature: "crm.notes-summary", model: "fast" });
+    if (!result.ok) throwOnAiFailure(result);
+    const data = result.data;
 
     return {
-      summary: result.summary,
-      actionItems: result.actionItems,
-      objections: result.objections ?? [],
-      sentiment: result.sentiment,
+      summary: data.summary,
+      actionItems: data.actionItems,
+      objections: data.objections ?? [],
+      sentiment: data.sentiment,
     };
   }
 
   async objectionHelp(orgId: string, userId: string, input: { objection: string; context?: string }) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiChat) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
-    const result = await this.content.handleObjection({
+    const actor = { orgId, userId };
+    return this.content.handleObjection({
       objection: input.objection,
       dealStage: "Unknown",
       ...(input.context ? { productName: undefined } : {}),
-    });
-
-    await this.usage.track({ orgId, userId, feature: "crm.objection-help", model: "fast" });
-
-    return result;
+    }, actor);
   }
 
   async duplicateSuggestionsForLead(orgId: string, leadId: number, userId: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-    this.ensureLlm();
 
     const [lead] = await this.db
       .select({ id: leads.id, name: leads.name })
       .from(leads)
       .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+
     if (!lead) throw new NotFoundException("Lead not found");
 
     const allGroups = await findDuplicateLeads(this.db, orgId);
+
     const relevant = allGroups.filter((g) => g.leads.some((l) => l.id === leadId));
 
     let aiExplanation = "No likely duplicates found for this lead.";
@@ -328,17 +357,23 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
         `- Leads: ${g.leads.map((l) => `${l.name} (id:${l.id})`).join(" vs ")} | Match: ${g.matchReason.join(", ")} | Score: ${g.score}`
       ).join("\n");
 
-      aiExplanation = await this.llm.invokeText({
-        model: "fast",
-        system: "You are a CRM data quality assistant. Explain duplicate lead matches in 2-3 sentences and recommend what to do.",
-        user: `Lead "${lead.name}" (id: ${leadId}) has these potential duplicate groups:\n${groupSummaries}\n\nExplain the situation and recommend action.`,
+      const result = await this.gateway.invokeText({
+        actor: { orgId, userId },
+        feature: "crm.copilot.duplicates",
+        prompt: {
+          system: "You are a CRM data quality assistant. Explain duplicate lead matches in 2-3 sentences and recommend what to do.",
+          user: `Lead "${lead.name}" (id: ${leadId}) has these potential duplicate groups:\n${groupSummaries}\n\nExplain the situation and recommend action.`,
+        },
+        tier: "fast",
+        maxTokens: 512,
+        charge: { credits: getFeatureCost("crm.copilot.duplicates") },
       });
+
+      if (!result.ok) throwOnAiFailure(result);
+      aiExplanation = result.data;
     }
 
-    await Promise.all([
-      this.usage.track({ orgId, userId, feature: "crm.duplicate-suggestions", model: "fast" }),
-      this.auditAiAction(orgId, userId, "ai.crm.duplicate_suggestions", "lead", String(leadId)),
-    ]);
+    await this.auditAiAction(orgId, userId, "ai.crm.duplicate_suggestions", "lead", String(leadId));
 
     return { leadId, duplicates: relevant, aiExplanation, generatedAt: new Date().toISOString() };
   }

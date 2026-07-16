@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { ChatOpenAI } from "@langchain/openai";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 
 export type SmartNotificationEvent =
   | "LEAD_ASSIGNED"
@@ -15,6 +15,7 @@ export interface SmartNotificationInput {
   defaultTitle: string;
   defaultMessage: string;
   context: SmartNotificationContext;
+  orgId: string;
 }
 
 export interface SmartNotificationResult {
@@ -115,11 +116,7 @@ Output format: TITLE|||MESSAGE
 
 @Injectable()
 export class LeadNotificationAiService {
-  private fastModel: ChatOpenAI | null = null;
-
-  isConfigured(): boolean {
-    return Boolean(process.env.OPENAI_API_KEY);
-  }
+  constructor(private readonly gateway: AiGatewayService) {}
 
   async generateSmartNotification(input: SmartNotificationInput): Promise<SmartNotificationResult> {
     const fallback: SmartNotificationResult = {
@@ -128,13 +125,21 @@ export class LeadNotificationAiService {
       enriched: false,
     };
 
-    if (!this.isConfigured()) return fallback;
-
     try {
       const promptFn = EVENT_PROMPTS[input.event];
       if (!promptFn) return fallback;
 
-      const raw = await this.invokeText(promptFn(input.context));
+      const result = await this.gateway.invokeText({
+        actor: { orgId: input.orgId, userId: null },
+        feature: "lead.smart-notification",
+        tier: "fast",
+        maxTokens: 256,
+        prompt: { system: SYSTEM_PROMPT, user: promptFn(input.context) },
+      });
+
+      if (!result.ok) return fallback;
+
+      const raw = result.data;
       const separatorIdx = raw.indexOf(SEPARATOR);
       if (separatorIdx === -1) return fallback;
 
@@ -146,25 +151,5 @@ export class LeadNotificationAiService {
     } catch {
       return fallback;
     }
-  }
-
-  private getModel(): ChatOpenAI {
-    if (this.fastModel) return this.fastModel;
-    this.fastModel = new ChatOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: "gpt-4o-mini",
-      temperature: 0.4,
-      timeout: 30000,
-      maxRetries: 2,
-    });
-    return this.fastModel;
-  }
-
-  private async invokeText(user: string): Promise<string> {
-    const result = await this.getModel().invoke([
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: user },
-    ]);
-    return typeof result.content === "string" ? result.content : JSON.stringify(result.content);
   }
 }

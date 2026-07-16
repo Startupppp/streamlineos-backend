@@ -6,6 +6,7 @@ import { CrmMetadataModule } from "../crm-metadata/crm-metadata.module";
 import { CrmModule } from "../crm/crm.module";
 import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/billing.module";
+import { AiModule } from "../ai/ai.module";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -22,7 +23,7 @@ import { LeadsOpsService } from "./leads-ops.service";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule, AiModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,

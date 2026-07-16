@@ -1,20 +1,43 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { tickets, ticketComments } from "../../../db/schema";
-import { LlmService } from "../providers/llm.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   TicketSummaryOutputSchema,
   TicketSubtasksOutputSchema,
 } from "../dto/ticket-ai.schemas";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
+import type { AiInvokeResult } from "../gateway/ai-gateway.types";
+
+const TEXT_LIMIT = 2000;
+
+function assertNever(x: never): never {
+  throw new Error(`Unhandled kind: ${String(x)}`);
+}
+
+function unwrapOrThrow<T>(result: AiInvokeResult<T>): T {
+  if (result.ok) return result.data;
+  switch (result.kind) {
+    case "quota_exceeded":
+      throw new BadRequestException(result.message);
+    case "not_configured":
+    case "provider_unavailable":
+      throw new ServiceUnavailableException(result.message);
+    case "invalid_output":
+      throw new ServiceUnavailableException("AI returned an invalid response");
+    default:
+      return assertNever(result.kind);
+  }
+}
 
 @Injectable()
 export class TicketAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
     private readonly audit: AuditService,
   ) {}
 
@@ -44,37 +67,41 @@ export class TicketAiService {
       .select({ content: ticketComments.content })
       .from(ticketComments)
       .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
-      .limit(20);
+      .limit(10);
 
     const commentBlock = comments.length > 0
-      ? comments.map((c, i) => `Comment ${i + 1}: ${c.content}`).join("\n")
+      ? comments.map((c, i) => `Comment ${i + 1}: ${c.content.slice(0, 500)}`).join("\n")
       : "No comments.";
 
     const system = "You are a project management assistant. Summarize the given ticket concisely.";
     const user = `Ticket: "${ticket.title}"
 Type: ${ticket.type} | Status: ${ticket.status} | Priority: ${ticket.priority}
-Description: ${ticket.description ?? "(none)"}
+Description: ${(ticket.description ?? "(none)").slice(0, TEXT_LIMIT)}
 Comments:
 ${commentBlock}
 
 Provide a summary, key points, and any blockers visible in the discussion.`;
 
-    const result = await this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.summarize",
+      prompt: { system, user },
       schema: TicketSummaryOutputSchema,
-      schemaName: "TicketSummary",
-      system,
-      user,
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("ticket.summarize") },
+      dedupe: true,
     });
 
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.ticket.summarize", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
-    return result;
+    return data;
   }
 
   async improveDescription(orgId: string, userId: string, projectId: number, ticketId: number, draft?: string) {
     const ticket = await this.assertTicket(orgId, projectId, ticketId);
 
-    const sourceText = draft ?? ticket.description ?? ticket.title;
+    const sourceText = (draft ?? ticket.description ?? ticket.title).slice(0, TEXT_LIMIT);
 
     const system = `You are a technical writer specializing in software tickets.
 Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
@@ -87,11 +114,18 @@ ${sourceText}
 
 Produce an improved HTML description.`;
 
-    const description = await this.llm.invokeText({ model: "fast", system, user });
-    const trimmed = description.slice(0, 5000);
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId },
+      feature: "ticket.improve-description",
+      prompt: { system, user },
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("ticket.improve-description") },
+    });
 
+    const description = unwrapOrThrow(result);
     this.audit.log({ action: "ai.ticket.improve-description", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
-    return { description: trimmed };
+    return { description: description.slice(0, 5000) };
   }
 
   async suggestSubtasks(orgId: string, userId: string, projectId: number, ticketId: number) {
@@ -107,21 +141,24 @@ Produce an improved HTML description.`;
 
     const system = "You are a project management assistant. Suggest 3-7 concrete, actionable subtasks to complete the given ticket. Avoid duplicating existing subtasks.";
     const user = `Ticket: "${ticket.title}"
-Description: ${ticket.description ?? "(none)"}
+Description: ${(ticket.description ?? "(none)").slice(0, TEXT_LIMIT)}
 Type: ${ticket.type} | Priority: ${ticket.priority}
 ${existingTitles.length > 0 ? `Existing subtasks (DO NOT duplicate):\n${existingTitles.map((t) => `- ${t}`).join("\n")}` : "No existing subtasks."}
 
 Suggest 3-7 subtask titles.`;
 
-    const result = await this.llm.invokeStructured({
-      model: "fast",
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.suggest-subtasks",
+      prompt: { system, user },
       schema: TicketSubtasksOutputSchema,
-      schemaName: "TicketSubtasks",
-      system,
-      user,
+      tier: "fast",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("ticket.suggest-subtasks") },
     });
 
-    const deduped = result.subtasks.filter(
+    const data = unwrapOrThrow(result);
+    const deduped = data.subtasks.filter(
       (s) => !existingTitles.some((t) => t.toLowerCase() === s.title.toLowerCase()),
     ).slice(0, 7);
 

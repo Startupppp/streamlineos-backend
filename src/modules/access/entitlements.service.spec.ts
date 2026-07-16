@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
+import type { PlanLimitsService } from "../billing/plan-limits.service";
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
@@ -13,7 +14,7 @@ function buildMockDb() {
   const insert = jest.fn().mockReturnValue({ values });
   const execute = jest.fn().mockResolvedValue({ rows: [] });
   const findFirst = jest.fn();
-  const findMany = jest.fn();
+  const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
 
   const txDb = { insert, execute };
@@ -50,90 +51,96 @@ function buildMockCache(
   return { cache: cache as unknown as CacheService, mocks: { cached, invalidate } };
 }
 
+function buildService(db: Db, cache: CacheService) {
+  const resolveTier = jest.fn().mockResolvedValue({ tier: "ENTERPRISE", plan: "ENTERPRISE" });
+  const planLimits: DeepPartial<PlanLimitsService> = { resolveTier };
+  return new EntitlementsService(db, cache, planLimits as unknown as PlanLimitsService);
+}
+
 describe("EntitlementsService", () => {
   describe("isModuleEnabled", () => {
     it("delegates to cache.cached with the correct cache key and ttl", async () => {
       const { db, mocks: dbMocks } = buildMockDb();
       const { cache, mocks: cacheMocks } = buildMockCache();
-      dbMocks.findFirst.mockResolvedValue({ enabled: true });
+      dbMocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: true }]);
 
-      await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(cacheMocks.cached).toHaveBeenCalledWith(
-        "entitlements:module:org-1:hr",
+        "entitlements:modules:org-1",
         expect.any(Function),
         30,
       );
     });
 
-    it("returns true when no row found (no entitlement row defaults to allowed)", async () => {
+    it("returns true when no row found for the module key (defaults to allowed)", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockResolvedValue(undefined);
+      mocks.findMany.mockResolvedValue([]);
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(true);
     });
 
     it("returns true on 42P01 error (graceful degradation — org_modules table missing)", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockRejectedValue({ code: "42P01" });
+      mocks.findMany.mockRejectedValue({ code: "42P01" });
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(true);
     });
 
     it("returns true when the error message includes 'does not exist'", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockRejectedValue(new Error("relation does not exist"));
+      mocks.findMany.mockRejectedValue(new Error("relation does not exist"));
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(true);
     });
 
     it("returns false when the row has enabled=false", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockResolvedValue({ enabled: false });
+      mocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: false }]);
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(false);
     });
 
     it("returns true when the row has enabled=true", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockResolvedValue({ enabled: true });
+      mocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: true }]);
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(true);
     });
 
     it("re-throws errors that are not missing-table errors", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.findFirst.mockRejectedValue(new Error("connection refused"));
+      mocks.findMany.mockRejectedValue(new Error("connection refused"));
       const { cache } = buildMockCache();
 
       await expect(
-        new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr"),
+        buildService(db, cache).isModuleEnabled("org-1", "hr"),
       ).rejects.toThrow("connection refused");
     });
 
     it("returns the cached value without querying the db on a cache hit", async () => {
       const { db, mocks: dbMocks } = buildMockDb();
-      const { cache } = buildMockCache(async () => false);
+      const { cache } = buildMockCache(async () => ({ hr: false }));
 
-      const result = await new EntitlementsService(db, cache).isModuleEnabled("org-1", "hr");
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(false);
-      expect(dbMocks.findFirst).not.toHaveBeenCalled();
+      expect(dbMocks.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -142,7 +149,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(mocks.transaction).toHaveBeenCalledTimes(1);
     });
@@ -151,7 +158,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(mocks.insert).toHaveBeenCalledTimes(1);
       expect(mocks.values).toHaveBeenCalledWith({
@@ -169,7 +176,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
@@ -186,7 +193,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(mocks.execute).toHaveBeenCalledTimes(1);
     });
@@ -195,7 +202,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
       expect(mocks.execute).toHaveBeenCalledTimes(1);
     });
@@ -205,7 +212,7 @@ describe("EntitlementsService", () => {
       const { cache } = buildMockCache();
 
       await expect(
-        new EntitlementsService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
+        buildService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -214,7 +221,7 @@ describe("EntitlementsService", () => {
       const { cache } = buildMockCache();
 
       await expect(
-        new EntitlementsService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
+        buildService(db, cache).setModuleEnabled("org-1", "kb", true, "user-1"),
       ).rejects.toThrow("always-on");
     });
 
@@ -222,7 +229,7 @@ describe("EntitlementsService", () => {
       const { db } = buildMockDb();
       const { cache, mocks: cacheMocks } = buildMockCache();
 
-      await new EntitlementsService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:module:org-1:hr");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:modules:org-1");
@@ -237,9 +244,9 @@ describe("EntitlementsService", () => {
       mocks.orgFindFirst.mockResolvedValue({ enabledModules: null });
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).listModules("org-1");
+      const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(10);
+      expect(result).toHaveLength(11);
       expect(result.every((r) => r.enabled)).toBe(true);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
@@ -250,9 +257,9 @@ describe("EntitlementsService", () => {
       mocks.orgFindFirst.mockResolvedValue({ enabledModules: ["HR", "PROJECTS"] });
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).listModules("org-1");
+      const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(10);
+      expect(result).toHaveLength(11);
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "projects")?.enabled).toBe(true);
@@ -266,9 +273,9 @@ describe("EntitlementsService", () => {
       mocks.orgFindFirst.mockResolvedValue({ enabledModules: [] });
       const { cache } = buildMockCache();
 
-      const result = await new EntitlementsService(db, cache).listModules("org-1");
+      const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(10);
+      expect(result).toHaveLength(11);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);
@@ -280,7 +287,7 @@ describe("EntitlementsService", () => {
       const { cache } = buildMockCache();
 
       await expect(
-        new EntitlementsService(db, cache).listModules("org-1"),
+        buildService(db, cache).listModules("org-1"),
       ).rejects.toThrow("query error");
     });
   });

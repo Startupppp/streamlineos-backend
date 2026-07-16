@@ -1,13 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { KbCreditsService } from "./kb-credits.service";
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
-import { LlmService } from "../ai/providers/llm.service";
-import { InsufficientCreditsException } from "./kb.errors";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
 
-const ASK_COST = 1;
 const MAX_CONTEXT_ARTICLES = 6;
 const MAX_CONTEXT_CHARS = 1500;
 
@@ -28,9 +26,8 @@ export class KbAskService {
   private readonly logger = new Logger(KbAskService.name);
 
   constructor(
-    private readonly credits: KbCreditsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
-    private readonly llm: LlmService,
     private readonly search: KbSearchService,
   ) {}
 
@@ -42,14 +39,6 @@ export class KbAskService {
     citations: AskCitation[];
     hasContext: boolean;
   }> {
-    if (!this.llm.isConfigured()) {
-      return { answer: "The AI assistant isn't available right now.", citations: [], hasContext: false };
-    }
-
-    if (!(await this.credits.hasCredits(user.orgId, ASK_COST))) {
-      throw new InsufficientCreditsException();
-    }
-
     const top = await this.search.retrieveTopArticles(
       user,
       input.question,
@@ -96,28 +85,26 @@ export class KbAskService {
       : context;
     if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
 
-    await this.credits.consume(user.orgId, ASK_COST, {
-      reason: "kb_ask",
-      feature: "ask",
-      actorId: user.userId,
-    });
-
-    let answer: string;
-    try {
-      answer = await this.llm.invokeText({
-        model: "fast",
-        temperature: 0.2,
+    const gatewayResult = await this.aiGateway.invokeText({
+      actor: { orgId: user.orgId, userId: user.userId },
+      feature: "kb.ask",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("kb.ask") },
+      prompt: {
         system: ASK_SYSTEM_PROMPT,
         user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
-      });
-    } catch (error) {
-      await this.credits.grant(user.orgId, ASK_COST, {
-        reason: "kb_ask_refund",
-        feature: "ask",
-        actorId: user.userId,
-      });
-      throw error;
+      },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") {
+        throw new BadRequestException(gatewayResult.message);
+      }
+      throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
+
+    const answer = gatewayResult.data;
 
     await this.events.record(user.orgId, "ai_answer", {
       actorId: user.userId,

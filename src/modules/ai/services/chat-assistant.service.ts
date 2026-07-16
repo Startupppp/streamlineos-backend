@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
@@ -19,6 +19,9 @@ import { type Db } from "../../../db/drizzle.module";
 import { getTodayString } from "../ai-date.util";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
+import { AiUsageService } from "./ai-usage.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { KbAskService } from "../../kb/kb-ask.service";
 import { ChatHistoryService } from "./chat-history.service";
@@ -63,6 +66,8 @@ interface ChatContext {
   topLeads: Array<{ name: string; status: string; priority: string | null }>;
 }
 
+const CHAT_FEATURE = "chat.message";
+
 @Injectable()
 export class ChatAssistantService {
   constructor(
@@ -76,6 +81,8 @@ export class ChatAssistantService {
     private readonly commsCopilot: CommsCopilotTools,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
+    private readonly usageSvc: AiUsageService,
+    @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
   ) {}
 
   getChatModelId(): string {
@@ -245,6 +252,19 @@ Tone: Professional, concise, actionable.`;
     conversationId?: number,
   ) {
     const { userId, orgId } = actor;
+
+    const credits = getFeatureCost(CHAT_FEATURE);
+    let reservationId = 0;
+    try {
+      const reserved = await this.ledger.reserve({ orgId, userId, feature: CHAT_FEATURE, credits });
+      reservationId = reserved.reservationId;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException(error.message ?? "Insufficient AI credits");
+      }
+      throw error;
+    }
+
     const context = await this.fetchContext(userId, orgId);
     const contextPrompt = this.buildContextPrompt(context);
 
@@ -263,23 +283,29 @@ Tone: Professional, concise, actionable.`;
         : { role: "assistant", content: m.content },
     );
 
-    return streamText({
-      model: resolveChatModel(),
-      messages: modelMessages,
-      system: contextPrompt,
-      temperature: 0.7,
-      stopWhen: stepCountIs(5),
-      onFinish: async ({ text }) => {
-        try {
-          if (conversationId !== undefined) {
-            await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
-          } else {
-            await this.history.append(orgId, userId, "assistant", text);
+    const modelId = resolveChatModelId();
+
+    let stream: ReturnType<typeof streamText>;
+    try {
+      stream = streamText({
+        model: resolveChatModel(),
+        messages: modelMessages,
+        system: contextPrompt,
+        temperature: 0.7,
+        stopWhen: stepCountIs(5),
+        onFinish: async ({ text }) => {
+          void this.ledger.settle(reservationId, { model: modelId }).catch(() => undefined);
+          void this.usageSvc.track({ orgId, userId, feature: CHAT_FEATURE, model: modelId }).catch(() => undefined);
+          try {
+            if (conversationId !== undefined) {
+              await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);
+            } else {
+              await this.history.append(orgId, userId, "assistant", text);
+            }
+          } catch (error) {
+            logger.error("Failed to persist assistant chat message", { error });
           }
-        } catch (error) {
-          logger.error("Failed to persist assistant chat message", { error });
-        }
-      },
+        },
       tools: {
         ...this.hrCopilot.buildTools({ orgId, userId }),
         ...this.workspaceCopilot.buildTools({ actor }),
@@ -363,5 +389,11 @@ Tone: Professional, concise, actionable.`;
 
       },
     });
+    } catch (error) {
+      void this.ledger.release(reservationId, "stream_setup_error").catch(() => undefined);
+      throw error;
+    }
+
+    return stream;
   }
 }

@@ -240,4 +240,38 @@ export class LlmService {
     const usageMeta = aiMsg?.usage_metadata ?? null;
     return { data: parsed, usage: extractUsage(usageMeta), model: modelName };
   }
+
+  async invokeStructuredWithImageWithUsage<T extends z.ZodTypeAny>(
+    opts: InvokeWithImageOptions<T> & { maxTokens?: number },
+  ): Promise<LlmStructuredResult<z.infer<T>>> {
+    if (opts.images.length === 0) return this.invokeStructuredWithUsage(opts);
+
+    const modelName = opts.model === "standard" ? this.config.standardModel : this.config.fastModel;
+    const base = opts.maxTokens !== undefined
+      ? this.buildModelWithMaxTokens(opts.model, 0.3, opts.maxTokens)
+      : this.modelFor(opts.model);
+    const structured = base.withStructuredOutput(opts.schema, {
+      name: opts.schemaName,
+      method: "jsonSchema",
+      strict: true,
+      includeRaw: true,
+    });
+
+    const imageBlocks = opts.images.map((dataUrl) => {
+      const match = /^data:(image\/[a-z]+);base64,(.+)$/.exec(dataUrl);
+      if (!match) return { type: "image_url" as const, image_url: { url: dataUrl } };
+      const [, mimeType, data] = match;
+      return { type: "image_url" as const, image_url: { url: `data:${mimeType};base64,${data}` } };
+    });
+
+    const humanContent = [{ type: "text" as const, text: opts.user }, ...imageBlocks];
+
+    const result = await this.run(() =>
+      structured.invoke([new SystemMessage(opts.system), new HumanMessage({ content: humanContent })]),
+    );
+    const parsed: z.infer<T> = opts.schema.parse(result.parsed);
+    const aiMsg = AIMessage.isInstance(result.raw) ? result.raw : null;
+    const usageMeta = aiMsg?.usage_metadata ?? null;
+    return { data: parsed, usage: extractUsage(usageMeta), model: modelName };
+  }
 }

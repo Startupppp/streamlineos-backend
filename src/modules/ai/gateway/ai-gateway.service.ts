@@ -16,6 +16,10 @@ interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {
   schema: z.ZodType<T>;
 }
 
+interface InvokeStructuredWithImageOpts<T> extends InvokeStructuredOpts<T> {
+  images: string[];
+}
+
 type InvokeTextOpts = AiInvokeBaseOpts;
 
 type ReserveResult =
@@ -50,6 +54,11 @@ export class AiGatewayService {
     }
 
     return promise;
+  }
+
+  async invokeStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>): Promise<AiInvokeResult<T>> {
+    const correlationId = randomUUID();
+    return this.runStructuredWithImage(opts, correlationId);
   }
 
   async invokeText(opts: InvokeTextOpts): Promise<AiInvokeResult<string>> {
@@ -94,6 +103,56 @@ export class AiGatewayService {
         schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
         system: prompt.system,
         user: prompt.user,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      });
+
+      const latencyMs = Date.now() - start;
+      const usage = result.usage;
+
+      await this.settleAndTrack(reservationId, charge, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok");
+
+      return {
+        ok: true,
+        data: result.data,
+        model: result.model,
+        latencyMs,
+        correlationId,
+        usage: {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+        },
+      };
+    } catch (error) {
+      const latencyMs = Date.now() - start;
+      return this.handleProviderError(error, reservationId, actor, feature, opts.prompt, correlationId, latencyMs);
+    }
+  }
+
+  private async runStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>, correlationId: string): Promise<AiInvokeResult<T>> {
+    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
+    const prompt = redact
+      ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
+      : opts.prompt;
+
+    let reservationId = 0;
+
+    if (charge) {
+      const reserveResult = await this.reserveCredits(charge, actor, feature, correlationId);
+      if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
+      reservationId = reserveResult.reservationId;
+    }
+
+    const start = Date.now();
+
+    try {
+      const result = await this.llm.invokeStructuredWithImageWithUsage({
+        model: tier ?? "fast",
+        schema: opts.schema,
+        schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
+        system: prompt.system,
+        user: prompt.user,
+        images: opts.images,
         ...(maxTokens !== undefined ? { maxTokens } : {}),
       });
 

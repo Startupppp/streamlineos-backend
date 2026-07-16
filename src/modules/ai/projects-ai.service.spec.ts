@@ -1,9 +1,10 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { LlmService } from "./providers/llm.service";
+import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
+import type { AiInvokeResult } from "./gateway/ai-gateway.types";
 
 function q(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock; groupBy: jest.Mock } {
   const p = Promise.resolve(value);
@@ -34,9 +35,17 @@ const mockProject = {
 
 const mockTicketRow = { status: "DONE", dueDate: null as string | null, sprintId: null as number | null };
 
-const mockLlm = {
-  isConfigured: jest.fn().mockReturnValue(true),
+function makeGatewayOk<T>(data: T): AiInvokeResult<T> {
+  return { ok: true, data, model: "gpt-4o-mini", latencyMs: 100, correlationId: "test-corr", usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } };
+}
+
+function makeGatewayFail(kind: "quota_exceeded" | "not_configured" | "provider_unavailable" | "invalid_output"): AiInvokeResult<never> {
+  return { ok: false, kind, message: `Simulated ${kind}`, correlationId: "test-corr" };
+}
+
+const mockGateway = {
   invokeStructured: jest.fn(),
+  invokeText: jest.fn(),
 };
 
 const mockAudit = {
@@ -49,11 +58,9 @@ describe("ProjectsAiService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockLlm.invokeStructured.mockResolvedValue({
-      summary: "Default LLM summary",
-      highlights: [],
-      atRisk: false,
-    });
+    mockGateway.invokeStructured.mockResolvedValue(
+      makeGatewayOk({ summary: "Default summary", highlights: [], atRisk: false }),
+    );
 
     mockWhere = jest.fn();
     const mockDb = {
@@ -69,7 +76,7 @@ describe("ProjectsAiService", () => {
       providers: [
         ProjectsAiService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: LlmService, useValue: mockLlm },
+        { provide: AiGatewayService, useValue: mockGateway },
         { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
@@ -78,7 +85,7 @@ describe("ProjectsAiService", () => {
   });
 
   describe("summarize — empty project short-circuit", () => {
-    it("returns typed empty shape and does NOT call LLM when project has no tickets", async () => {
+    it("returns typed empty shape and does NOT call gateway when project has no tickets", async () => {
       let callCount = 0;
       mockWhere.mockImplementation(() => {
         callCount++;
@@ -94,13 +101,13 @@ describe("ProjectsAiService", () => {
         atRisk: false,
         evidence: { totalTasks: 0, done: 0, inProgress: 0, blocked: 0, overdue: 0 },
       });
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
       expect(mockAudit.log).not.toHaveBeenCalled();
     });
   });
 
   describe("detectRisks — empty project short-circuit", () => {
-    it("returns empty risks and evidence zeros, does NOT call LLM when project has no tickets", async () => {
+    it("returns empty risks and evidence zeros, does NOT call gateway when project has no tickets", async () => {
       let callCount = 0;
       mockWhere.mockImplementation(() => {
         callCount++;
@@ -114,13 +121,13 @@ describe("ProjectsAiService", () => {
         risks: [],
         evidence: { totalTasks: 0, done: 0, inProgress: 0, blocked: 0, overdue: 0 },
       });
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
       expect(mockAudit.log).not.toHaveBeenCalled();
     });
   });
 
   describe("draftClientUpdate — empty project short-circuit", () => {
-    it("returns NO_DATA headline and empty body/sections, does NOT call LLM when project has no tickets", async () => {
+    it("returns NO_DATA headline and empty body/sections, does NOT call gateway when project has no tickets", async () => {
       let callCount = 0;
       mockWhere.mockImplementation(() => {
         callCount++;
@@ -131,7 +138,7 @@ describe("ProjectsAiService", () => {
       const result = await service.draftClientUpdate("org_1", 1, "user_1");
 
       expect(result).toMatchObject({ headline: expect.any(String), body: "", sections: [] });
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
       expect(mockAudit.log).not.toHaveBeenCalled();
     });
   });
@@ -149,11 +156,9 @@ describe("ProjectsAiService", () => {
         return q([]);
       });
 
-      mockLlm.invokeStructured.mockResolvedValue({
-        headline: "On track",
-        body: "Everything is fine.",
-        sections: [],
-      });
+      mockGateway.invokeStructured.mockResolvedValue(
+        makeGatewayOk({ headline: "On track", body: "Everything is fine.", sections: [] }),
+      );
 
       await service.draftClientUpdate("org_1", 1, "user_1");
 
@@ -172,26 +177,26 @@ describe("ProjectsAiService", () => {
       mockWhere.mockReturnValue(q([]));
 
       await expect(service.summarize("other_org", 999, "user_1")).rejects.toThrow(NotFoundException);
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException for detectRisks on a project outside the caller org", async () => {
       mockWhere.mockReturnValue(q([]));
 
       await expect(service.detectRisks("attacker_org", 1, "attacker_user")).rejects.toThrow(NotFoundException);
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException for draftClientUpdate on a project outside the caller org", async () => {
       mockWhere.mockReturnValue(q([]));
 
       await expect(service.draftClientUpdate("attacker_org", 1, "attacker_user")).rejects.toThrow(NotFoundException);
-      expect(mockLlm.invokeStructured).not.toHaveBeenCalled();
+      expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
   });
 
   describe("ask — per-member evidence", () => {
-    it("includes per-member ticket counts in the evidence string passed to the LLM", async () => {
+    it("includes per-member ticket counts in the evidence string passed to the gateway", async () => {
       const assigneeRows = [
         { assigneeId: "user_a", assigneeName: "Aditya Challa", total: 14, done: 9, inProgress: 3, overdue: 0 },
         { assigneeId: "user_b", assigneeName: "Jane D", total: 6, done: 6, inProgress: 0, overdue: 0 },
@@ -206,15 +211,118 @@ describe("ProjectsAiService", () => {
         return q(assigneeRows);
       });
 
-      mockLlm.invokeStructured.mockResolvedValue({ answer: "Aditya worked on 14 tickets.", confidence: "high" });
+      mockGateway.invokeStructured.mockResolvedValue(
+        makeGatewayOk({ answer: "Aditya worked on 14 tickets.", confidence: "high" }),
+      );
 
       await service.ask("org_1", 1, "How many tickets did Aditya work on?", "user_1");
 
-      expect(mockLlm.invokeStructured).toHaveBeenCalledTimes(1);
-      const callArg = mockLlm.invokeStructured.mock.calls[0][0] as { user: string };
-      expect(callArg.user).toContain("Aditya Challa — 14 total (9 done, 3 in progress)");
-      expect(callArg.user).toContain("Jane D — 6 total (6 done, 0 in progress)");
-      expect(callArg.user).toContain("Unassigned — 3 total");
+      expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
+      const callArg = mockGateway.invokeStructured.mock.calls[0][0] as { prompt: { user: string } };
+      expect(callArg.prompt.user).toContain("Aditya Challa — 14 total (9 done, 3 in progress)");
+      expect(callArg.prompt.user).toContain("Jane D — 6 total (6 done, 0 in progress)");
+      expect(callArg.prompt.user).toContain("Unassigned — 3 total");
+    });
+  });
+
+  describe("gateway failure — quota_exceeded", () => {
+    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        return q([mockTicketRow]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("quota_exceeded"));
+
+      await expect(service.summarize("org_1", 1, "user_1")).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe("gateway failure — provider_unavailable", () => {
+    it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        return q([mockTicketRow]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("provider_unavailable"));
+
+      await expect(service.detectRisks("org_1", 1, "user_1")).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe("gateway failure — not_configured", () => {
+    it("throws ServiceUnavailableException when gateway returns not_configured", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        return q([mockTicketRow]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("not_configured"));
+
+      await expect(service.summarize("org_1", 1, "user_1")).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe("gateway failure — invalid_output", () => {
+    it("throws ServiceUnavailableException when gateway returns invalid_output", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        return q([mockTicketRow]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("invalid_output"));
+
+      await expect(service.summarize("org_1", 1, "user_1")).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe("gateway — feature keys and charge", () => {
+    it("invokes gateway with correct feature key for summarize", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        return q([mockTicketRow]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(
+        makeGatewayOk({ summary: "ok", highlights: [], atRisk: false }),
+      );
+
+      await service.summarize("org_1", 1, "user_1");
+
+      const call = mockGateway.invokeStructured.mock.calls[0][0] as { feature: string; charge: { credits: number }; dedupe: boolean };
+      expect(call.feature).toBe("pm.summary");
+      expect(call.charge).toEqual({ credits: 1 });
+      expect(call.dedupe).toBe(true);
+    });
+
+    it("invokes gateway with correct feature key for detectRisks", async () => {
+      let callCount = 0;
+      mockWhere.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return q([mockProject]);
+        if (callCount === 2) return q([mockTicketRow]);
+        return q([{ count: 0 }]);
+      });
+
+      mockGateway.invokeStructured.mockResolvedValue(
+        makeGatewayOk({ risks: [] }),
+      );
+
+      await service.detectRisks("org_1", 1, "user_1");
+
+      const call = mockGateway.invokeStructured.mock.calls[0][0] as { feature: string };
+      expect(call.feature).toBe("pm.risks");
     });
   });
 });

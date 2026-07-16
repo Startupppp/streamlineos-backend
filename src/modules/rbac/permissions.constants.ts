@@ -2528,6 +2528,12 @@ const CHAT_PERMISSIONS: Permission[] = [
     action: "use",
     description: "Use the AI chat assistant",
   },
+  {
+    name: "ai:feedback:create",
+    resource: "ai:feedback",
+    action: "create",
+    description: "Submit thumbs-up/down feedback on AI responses",
+  },
 ];
 
 const API_TOKEN_PERMISSIONS: Permission[] = [
@@ -3450,6 +3456,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "chat:messages:read",
   "chat:messages:write",
   "ai:chat:use",
+  "ai:feedback:create",
   "settings:api-tokens:read",
   "settings:api-tokens:write",
   "calendar:read",

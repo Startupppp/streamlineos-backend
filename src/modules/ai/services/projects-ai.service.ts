@@ -1,9 +1,8 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, count, eq, lt, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, users } from "../../../db/schema";
-import { LlmService } from "../providers/llm.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   PmSummaryOutputSchema,
@@ -21,17 +20,41 @@ import {
   extractPrompt,
   askPrompt,
 } from "../prompts/pm.prompts";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
+import type { AiInvokeResult } from "../gateway/ai-gateway.types";
 
 const NO_DATA = {
   noData: true,
   message: "This project has no tickets yet. Add tasks to unlock AI features.",
 } as const;
 
+const TEXT_LIMIT = 2000;
+
+function assertNever(x: never): never {
+  throw new Error(`Unhandled kind: ${String(x)}`);
+}
+
+function unwrapOrThrow<T>(result: AiInvokeResult<T>): T {
+  if (result.ok) return result.data;
+  switch (result.kind) {
+    case "quota_exceeded":
+      throw new BadRequestException(result.message);
+    case "not_configured":
+    case "provider_unavailable":
+      throw new ServiceUnavailableException(result.message);
+    case "invalid_output":
+      throw new ServiceUnavailableException("AI returned an invalid response");
+    default:
+      return assertNever(result.kind);
+  }
+}
+
 @Injectable()
 export class ProjectsAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
     private readonly audit: AuditService,
   ) {}
 
@@ -53,7 +76,7 @@ export class ProjectsAiService {
 
   private async fetchAssigneeStats(orgId: string, projectId: number) {
     const nowStr = new Date().toISOString().split("T")[0];
-    const rows = await this.db
+    return this.db
       .select({
         assigneeId: tickets.assigneeId,
         assigneeName: sql<string | null>`COALESCE(NULLIF(TRIM(CONCAT(${users.firstName}, ' ', ${users.lastName})), ''), ${users.name})`,
@@ -67,8 +90,6 @@ export class ProjectsAiService {
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)))
       .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name)
       .limit(50);
-
-    return rows;
   }
 
   private buildMemberEvidenceLine(rows: Array<{ assigneeId: string | null; assigneeName: string | null; total: number; done: number; inProgress: number; overdue: number }>): string {
@@ -97,8 +118,7 @@ export class ProjectsAiService {
       return { summary: NO_DATA.message, highlights: [], atRisk: false, evidence: { totalTasks: 0, done: 0, inProgress: 0, blocked: 0, overdue: 0 } };
     }
 
-    const now = new Date();
-    const nowStr = now.toISOString().split("T")[0];
+    const nowStr = new Date().toISOString().split("T")[0];
     const totalTasks = rows.length;
     const done = rows.filter((r) => r.status === "DONE").length;
     const inProgress = rows.filter((r) => ["IN_PROGRESS", "IN_REVIEW"].includes(r.status)).length;
@@ -119,9 +139,20 @@ export class ProjectsAiService {
     }
 
     const { system, user } = summaryPrompt({ projectName: project.name, status: project.status, totalTasks, done, inProgress, blocked, overdue, sprintProgressPct });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmSummaryOutputSchema, schemaName: "ProjectSummary", system, user });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.summary",
+      prompt: { system, user, promptKey: "pm.summary", promptVersion: 1 },
+      schema: PmSummaryOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("pm.summary") },
+      dedupe: true,
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.summary", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return { ...llmResult, evidence: { totalTasks, done, inProgress, blocked, overdue, sprintProgressPct } };
+    return { ...data, evidence: { totalTasks, done, inProgress, blocked, overdue, sprintProgressPct } };
   }
 
   async detectRisks(orgId: string, projectId: number, userId: string) {
@@ -155,9 +186,19 @@ export class ProjectsAiService {
       : undefined;
 
     const { system, user } = risksPrompt({ projectName: project.name, overdueTasks, blockedTasks, activeSprintsOverdue, openChangeRequests, pendingApprovals, daysUntilDeadline });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmRisksOutputSchema, schemaName: "ProjectRisks", system, user });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.risks",
+      prompt: { system, user, promptKey: "pm.risks", promptVersion: 1 },
+      schema: PmRisksOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("pm.risks") },
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.risks", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return { ...llmResult, evidence: { totalTasks, done: doneTasks, inProgress: inProgressTasks, blocked: blockedTasks, overdue: overdueTasks } };
+    return { ...data, evidence: { totalTasks, done: doneTasks, inProgress: inProgressTasks, blocked: blockedTasks, overdue: overdueTasks } };
   }
 
   async draftClientUpdate(orgId: string, projectId: number, userId: string) {
@@ -181,9 +222,19 @@ export class ProjectsAiService {
     ]);
 
     const { system, user } = clientUpdatePrompt({ projectName: project.name, visibleTasks: visibleTickets, visibleMilestones });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmClientUpdateOutputSchema, schemaName: "ClientUpdate", system, user });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.client-update",
+      prompt: { system, user, promptKey: "pm.client_update", promptVersion: 1 },
+      schema: PmClientUpdateOutputSchema,
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("pm.client-update") },
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.client-update", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return llmResult;
+    return data;
   }
 
   async proposePlan(orgId: string, projectId: number, userPrompt: string, userId: string) {
@@ -195,10 +246,23 @@ export class ProjectsAiService {
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE")))
       .limit(50);
 
-    const { system, user } = planPrompt({ projectName: project.name, projectDescription: project.description, existingOpenTaskTitles: openTitles.map((t) => t.title), userPrompt });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmPlanOutputSchema, schemaName: "ProjectPlan", system, user });
+    const truncatedDescription = project.description ? project.description.slice(0, TEXT_LIMIT) : null;
+    const truncatedPrompt = userPrompt.slice(0, TEXT_LIMIT);
+
+    const { system, user } = planPrompt({ projectName: project.name, projectDescription: truncatedDescription, existingOpenTaskTitles: openTitles.map((t) => t.title), userPrompt: truncatedPrompt });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.plan",
+      prompt: { system, user, promptKey: "pm.plan", promptVersion: 1 },
+      schema: PmPlanOutputSchema,
+      tier: "fast",
+      maxTokens: 1536,
+      charge: { credits: getFeatureCost("pm.plan") },
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.plan", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return { ...llmResult, suggestions: true };
+    return { ...data, suggestions: true };
   }
 
   async extractTasks(orgId: string, projectId: number, text: string, userId: string) {
@@ -210,10 +274,22 @@ export class ProjectsAiService {
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), ne(tickets.status, "DONE")))
       .limit(50);
 
-    const { system, user } = extractPrompt({ projectName: project.name, existingOpenTaskTitles: openTitles.map((t) => t.title), text });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmExtractOutputSchema, schemaName: "ExtractTasks", system, user });
+    const truncatedText = text.slice(0, TEXT_LIMIT);
+
+    const { system, user } = extractPrompt({ projectName: project.name, existingOpenTaskTitles: openTitles.map((t) => t.title), text: truncatedText });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.extract-tasks",
+      prompt: { system, user, promptKey: "pm.extract", promptVersion: 1 },
+      schema: PmExtractOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("pm.extract-tasks") },
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.extract-tasks", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return { ...llmResult, suggestions: true };
+    return { ...data, suggestions: true };
   }
 
   async ask(orgId: string, projectId: number, question: string, userId: string) {
@@ -232,9 +308,21 @@ export class ProjectsAiService {
 
     const memberLine = this.buildMemberEvidenceLine(assigneeRows);
     const evidence = `Total tasks: ${totalTasks} | Done: ${done} | In progress: ${inProgress} | Blocked: ${blocked} | Overdue: ${overdue} | Project status: ${project.status}\n${memberLine}`;
-    const { system, user } = askPrompt({ projectName: project.name, evidence, question });
-    const llmResult = await this.llm.invokeStructured({ model: "fast", schema: PmAskOutputSchema, schemaName: "ProjectAsk", system, user });
+    const truncatedQuestion = question.slice(0, TEXT_LIMIT);
+
+    const { system, user } = askPrompt({ projectName: project.name, evidence, question: truncatedQuestion });
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "pm.ask",
+      prompt: { system, user, promptKey: "pm.ask", promptVersion: 1 },
+      schema: PmAskOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("pm.ask") },
+    });
+
+    const data = unwrapOrThrow(result);
     this.audit.log({ action: "ai.project.ask", userId, orgId, resourceType: "project", resourceId: String(projectId) });
-    return { ...llmResult, evidence: { totalTasks, done, inProgress, blocked, overdue } };
+    return { ...data, evidence: { totalTasks, done, inProgress, blocked, overdue } };
   }
 }

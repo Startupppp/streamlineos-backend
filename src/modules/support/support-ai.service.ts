@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -15,15 +15,14 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { LlmService } from "../ai/providers/llm.service";
 import { EmbeddingsService, EMBEDDING_MODEL } from "../ai/providers/embeddings.service";
-import { AiUsageService } from "../ai/services/ai-usage.service";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
 import { redactSensitiveData } from "../ai/redaction.util";
 import { logger } from "../../common/logger/logger.service";
 import type { ResolveAiSuggestionInput } from "./dto/support.schemas";
 
-const AI_FEATURE_NAME = "support.ai";
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.86;
 const ROOT_CAUSE_SIMILARITY_THRESHOLD = 0.75;
 const KB_SIMILARITY_THRESHOLD = 0.2;
@@ -65,14 +64,12 @@ type SuggestionType = (typeof supportAiSuggestions.$inferInsert)["type"];
 export class SupportAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly aiGateway: AiGatewayService,
     private readonly embeddings: EmbeddingsService,
-    private readonly aiUsage: AiUsageService,
     private readonly orgFeatures: OrgFeaturesService,
   ) {}
 
   private async isAvailable(orgId: string): Promise<boolean> {
-    if (!this.llm.isConfigured()) return false;
     const flags = await this.orgFeatures.getFlags(orgId);
     return flags.supportAi;
   }
@@ -137,23 +134,20 @@ export class SupportAiService {
       redactSensitiveData(ticket.description ?? "none")
     }\n\nConversation so far:\n${thread || "(no replies yet)"}`;
 
-    let result: z.infer<typeof analysisSchema>;
-    try {
-      result = await this.llm.invokeStructured({
-        model: "fast",
-        schema: analysisSchema,
-        schemaName: "ticket_analysis",
-        system,
-        user,
-      });
-    } catch (error) {
-      logger.error("support ticket AI analysis failed", { orgId, ticketId, error });
+    const gatewayResult = await this.aiGateway.invokeStructured({
+      actor: { orgId, userId: null },
+      feature: "support.analysis",
+      tier: "fast",
+      schema: analysisSchema,
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      logger.error("support ticket AI analysis failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
 
-    void this.aiUsage
-      .track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" })
-      .catch(() => undefined);
+    const result = gatewayResult.data;
 
     await this.replacePendingSuggestions(orgId, ticketId, ["summary", "sentiment", "category", "priority", "spam"]);
 
@@ -179,7 +173,7 @@ export class SupportAiService {
   }
 
   /** On-demand: draft a reply for the agent to review, edit, and send themselves. */
-  async suggestReply(orgId: string, ticketId: number) {
+  async suggestReply(orgId: string, ticketId: number, userId?: string) {
     if (!(await this.isAvailable(orgId))) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
 
@@ -200,17 +194,22 @@ export class SupportAiService {
       thread || redactSensitiveData(ticket.description ?? "") || "(no messages yet)"
     }`;
 
-    let body: string;
-    try {
-      body = await this.llm.invokeText({ model: "fast", system, user });
-    } catch (error) {
-      logger.error("support suggest-reply failed", { orgId, ticketId, error });
-      return null;
+    const gatewayResult = await this.aiGateway.invokeText({
+      actor: { orgId, userId: userId ?? null },
+      feature: "support.reply",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("support.reply") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
 
-    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
     await this.replacePendingSuggestions(orgId, ticketId, ["reply"]);
-    return this.insertSuggestion(orgId, ticketId, "reply", { body: body.trim() }, null);
+    return this.insertSuggestion(orgId, ticketId, "reply", { body: gatewayResult.data.trim() }, null);
   }
 
   /** On-demand: pick the best-fitting macro from the org's available macros, if any. */
@@ -237,21 +236,22 @@ export class SupportAiService {
       redactSensitiveData(ticket.description ?? "")
     }\n\nAvailable macros:\n${catalog}`;
 
-    let result: z.infer<typeof macroPickSchema>;
-    try {
-      result = await this.llm.invokeStructured({
-        model: "fast",
-        schema: macroPickSchema,
-        schemaName: "macro_pick",
-        system,
-        user,
-      });
-    } catch (error) {
-      logger.error("support suggest-macro failed", { orgId, ticketId, error });
+    const gatewayResult = await this.aiGateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "support.macro",
+      tier: "fast",
+      schema: macroPickSchema,
+      charge: { credits: getFeatureCost("support.macro") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      logger.error("support suggest-macro failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
 
-    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    const result = gatewayResult.data;
     if (result.macroId === null || !macros.some((m) => m.id === result.macroId)) return null;
 
     await this.replacePendingSuggestions(orgId, ticketId, ["macro"]);
@@ -367,7 +367,7 @@ export class SupportAiService {
   }
 
   /** On-demand, stateless: translate a single message's body into the requested language. */
-  async translateMessage(orgId: string, ticketId: number, messageId: number, targetLanguage: string) {
+  async translateMessage(orgId: string, ticketId: number, messageId: number, targetLanguage: string, userId?: string) {
     if (!(await this.isAvailable(orgId))) return null;
     await this.getTicketOrThrow(orgId, ticketId);
 
@@ -382,26 +382,26 @@ export class SupportAiService {
       "translation and your best guess at the source language — never add commentary.";
     const user = `Translate the following message into ${targetLanguage}:\n\n${redactSensitiveData(message.body)}`;
 
-    let result: z.infer<typeof translationSchema>;
-    try {
-      result = await this.llm.invokeStructured({
-        model: "fast",
-        schema: translationSchema,
-        schemaName: "message_translation",
-        system,
-        user,
-      });
-    } catch (error) {
-      logger.error("support message translation failed", { orgId, ticketId, messageId, error });
+    const gatewayResult = await this.aiGateway.invokeStructured({
+      actor: { orgId, userId: userId ?? null },
+      feature: "support.translate",
+      tier: "fast",
+      schema: translationSchema,
+      charge: { credits: getFeatureCost("support.translate") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      logger.error("support message translation failed", { orgId, ticketId, messageId, kind: gatewayResult.kind });
       return null;
     }
 
-    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
-    return result;
+    return gatewayResult.data;
   }
 
   /** On-demand: a condensed briefing for an agent a ticket is being reassigned to. */
-  async generateHandoffSummary(orgId: string, ticketId: number) {
+  async generateHandoffSummary(orgId: string, ticketId: number, userId?: string) {
     if (!(await this.isAvailable(orgId))) return null;
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
 
@@ -423,21 +423,22 @@ export class SupportAiService {
       ticket.priority
     }\n\nFull history (including internal notes):\n${thread || "(no messages yet)"}`;
 
-    let result: z.infer<typeof handoffSummarySchema>;
-    try {
-      result = await this.llm.invokeStructured({
-        model: "fast",
-        schema: handoffSummarySchema,
-        schemaName: "handoff_summary",
-        system,
-        user,
-      });
-    } catch (error) {
-      logger.error("support handoff summary failed", { orgId, ticketId, error });
+    const gatewayResult = await this.aiGateway.invokeStructured({
+      actor: { orgId, userId: userId ?? null },
+      feature: "support.handoff",
+      tier: "fast",
+      schema: handoffSummarySchema,
+      charge: { credits: getFeatureCost("support.handoff") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      logger.error("support handoff summary failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
 
-    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    const result = gatewayResult.data;
     await this.replacePendingSuggestions(orgId, ticketId, ["handoff_summary"]);
     return this.insertSuggestion(orgId, ticketId, "handoff_summary", { ...result }, null);
   }
@@ -446,7 +447,7 @@ export class SupportAiService {
    * Finds other open/in-progress tickets similar enough to this one to suggest a shared
    * root cause (a broader similarity band than findDuplicates(), and requires >=1 match).
    */
-  async findRootCauseCluster(orgId: string, ticketId: number) {
+  async findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
     if (!this.embeddings.isConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
@@ -495,21 +496,22 @@ export class SupportAiService {
       "actually look related, say so plainly in the summary.";
     const user = `These tickets were flagged as similar:\n${catalog}`;
 
-    let result: z.infer<typeof rootCauseSchema>;
-    try {
-      result = await this.llm.invokeStructured({
-        model: "fast",
-        schema: rootCauseSchema,
-        schemaName: "root_cause_cluster",
-        system,
-        user,
-      });
-    } catch (error) {
-      logger.error("support root-cause clustering failed", { orgId, ticketId, error });
+    const gatewayResult = await this.aiGateway.invokeStructured({
+      actor: { orgId, userId: userId ?? null },
+      feature: "support.root-cause",
+      tier: "fast",
+      schema: rootCauseSchema,
+      charge: { credits: getFeatureCost("support.root-cause") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") throw new BadRequestException(gatewayResult.message);
+      logger.error("support root-cause clustering failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }
 
-    void this.aiUsage.track({ orgId, feature: AI_FEATURE_NAME, model: "gpt-4o-mini" }).catch(() => undefined);
+    const result = gatewayResult.data;
     await this.replacePendingSuggestions(orgId, ticketId, ["root_cause_cluster"]);
     return this.insertSuggestion(
       orgId,
