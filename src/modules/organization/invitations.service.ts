@@ -67,8 +67,6 @@ export class InvitationsService {
       if (existingMember) throw new ConflictException("User is already a member");
     }
 
-    await this.planLimits.assertWithinLimit(orgId, "members");
-
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
     });
@@ -85,24 +83,36 @@ export class InvitationsService {
 
     const now = new Date();
 
-    const pendingInvitation = await this.db.query.invitations.findFirst({
-      where: and(
-        eq(invitations.email, email),
-        eq(invitations.orgId, orgId),
-        gt(invitations.expiresAt, now),
-        isNull(invitations.acceptedAt),
-      ),
-    });
+    const pendingResult = await this.db.transaction(async (tx) => {
+      const pending = await tx
+        .select()
+        .from(invitations)
+        .where(
+          and(
+            eq(invitations.email, email),
+            eq(invitations.orgId, orgId),
+            gt(invitations.expiresAt, now),
+            isNull(invitations.acceptedAt),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const pendingInvitation = pending[0];
+      if (!pendingInvitation) return null;
 
-    if (pendingInvitation) {
       const rawToken = randomBytes(32).toString("hex");
       const newExpiresAt = addDays(now, 7);
 
-      await this.db
+      await tx
         .update(invitations)
         .set({ token: hashToken(rawToken), expiresAt: newExpiresAt, role, invitedBy: actorUserId })
         .where(eq(invitations.id, pendingInvitation.id));
 
+      return { pendingInvitation, rawToken };
+    });
+
+    if (pendingResult) {
+      const { pendingInvitation, rawToken } = pendingResult;
       void this.email
         .sendInvitationEmail(email, rawToken, org?.name ?? "Your Organization")
         .catch(() => {});
@@ -118,6 +128,8 @@ export class InvitationsService {
 
       return { success: true, invitationId: pendingInvitation.id, organizationName: org?.name ?? "", resent: true };
     }
+
+    await this.planLimits.assertWithinLimit(orgId, "members");
 
     const invitationId = randomUUID();
     const rawToken = randomBytes(32).toString("hex");

@@ -1,8 +1,9 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const mockDb = {
@@ -24,6 +25,7 @@ const mockDb = {
 
 const mockNotifications = { create: jest.fn() };
 const mockEmail = { send: jest.fn() };
+const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
 describe("AutomationService — support_* actions", () => {
   let service: AutomationService;
@@ -33,6 +35,7 @@ describe("AutomationService — support_* actions", () => {
     mockDb.where.mockReturnThis();
     mockDb.onConflictDoNothing.mockResolvedValue(undefined);
     mockDb.returning.mockResolvedValue([{ id: 1 }]);
+    mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -40,6 +43,7 @@ describe("AutomationService — support_* actions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     service = module.get(AutomationService);
@@ -133,6 +137,7 @@ describe("AutomationService — rule CRUD", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDb.returning.mockResolvedValue([{ id: 1 }]);
+    mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -140,6 +145,7 @@ describe("AutomationService — rule CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     service = module.get(AutomationService);
@@ -156,6 +162,22 @@ describe("AutomationService — rule CRUD", () => {
           isEnabled: true,
         } as never),
       ).rejects.toThrow(NotFoundException);
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it("propagates ForbiddenException from plan limit and does not insert", async () => {
+      mockPlanLimits.assertWithinLimit.mockRejectedValueOnce(
+        new ForbiddenException("Limit reached"),
+      );
+      await expect(
+        service.createRule("org1", "user1", {
+          name: "blocked rule",
+          triggerEvent: "ticket.priority_changed",
+          conditions: [],
+          actions: [],
+          isEnabled: true,
+        } as never),
+      ).rejects.toThrow(ForbiddenException);
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
 

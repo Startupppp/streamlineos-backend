@@ -1,13 +1,15 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { QuotesService } from "./quotes.service";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 
 const mockBus = { emit: jest.fn().mockResolvedValue(undefined) };
+const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
 const makeUpdateChain = () => ({
   set: jest.fn().mockReturnThis(),
@@ -78,6 +80,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockCache.invalidatePattern.mockResolvedValue(undefined);
   mockAudit.log.mockReturnValue(undefined);
+  mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
 });
 
 describe("QuotesService.convertToInvoice", () => {
@@ -92,6 +95,7 @@ describe("QuotesService.convertToInvoice", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
         { provide: CrmAutomationBusService, useValue: mockBus },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -115,6 +119,16 @@ describe("QuotesService.convertToInvoice", () => {
     mockDb.query.quotes.findFirst.mockResolvedValue(makeQuote({ status: "DRAFT" }));
 
     await expect(svc.convertToInvoice(ORG, USER, QUOTE_ID)).rejects.toThrow(BadRequestException);
+  });
+
+  it("propagates ForbiddenException from plan limit and does not start a transaction", async () => {
+    mockDb.query.quotes.findFirst.mockResolvedValue(makeQuote({ status: "ACCEPTED" }));
+    mockPlanLimits.assertWithinLimit.mockRejectedValueOnce(
+      new ForbiddenException("Invoice limit reached"),
+    );
+
+    await expect(svc.convertToInvoice(ORG, USER, QUOTE_ID)).rejects.toThrow(ForbiddenException);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 
   it("succeeds for accepted quote — calls db.transaction and returns { invoice, quoteId }", async () => {
@@ -172,6 +186,7 @@ describe("QuotesService.approve", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
         { provide: CrmAutomationBusService, useValue: mockBus },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -221,6 +236,7 @@ describe("QuotesService.reject", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
         { provide: CrmAutomationBusService, useValue: mockBus },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     svc = module.get(QuotesService);
@@ -270,6 +286,7 @@ describe("QuotesService.send", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: AuditService, useValue: mockAudit },
         { provide: CrmAutomationBusService, useValue: mockBus },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     svc = module.get(QuotesService);

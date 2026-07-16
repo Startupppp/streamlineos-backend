@@ -23,6 +23,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import { RazorpayService } from "./razorpay.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { PlanLimitsService } from "./plan-limits.service";
 import {
   webhookEventSchema,
   type BillingCycle,
@@ -54,6 +55,7 @@ export class BillingService {
     private readonly razorpay: RazorpayService,
     private readonly audit: AuditService,
     private readonly aiCredits: AiCreditsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async getSubscription(orgId: string) {
@@ -179,6 +181,8 @@ export class BillingService {
         paidAt: now,
       });
     });
+
+    this.planLimits.bust(orgId);
 
     this.audit.log({
       action: "settings.updated",
@@ -464,16 +468,10 @@ export class BillingService {
   }
 
   async getSeatInfo(orgId: string) {
-    const { subscription } = await this.getSubscription(orgId);
-    const PLAN_SEATS: Record<string, number | null> = {
-      STARTER: PLAN_LIMITS.members.STARTER,
-      PROFESSIONAL: PLAN_LIMITS.members.PROFESSIONAL,
-      ENTERPRISE: PLAN_LIMITS.members.ENTERPRISE,
-    };
-    const plan = subscription?.plan ?? "STARTER";
-    const total = PLAN_SEATS[plan] ?? PLAN_LIMITS.members.FREE ?? 5;
+    const { plan } = await this.planLimits.resolveTier(orgId);
+    const total = PLAN_LIMITS.members[plan];
     const [usedResult] = await this.db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: sql<number>`count(*)::int` })
       .from(organizationMembers)
       .where(eq(organizationMembers.orgId, orgId));
     const used = Number(usedResult?.count ?? 0);

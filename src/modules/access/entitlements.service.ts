@@ -1,11 +1,11 @@
-﻿import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { organizations, orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { PLAN_LOCKED_MODULES } from "../billing/plan-entitlements.constants";
-import type { PlanTier } from "../billing/plan-entitlements.constants";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 
@@ -58,6 +58,7 @@ export class EntitlementsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async safeRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
@@ -73,25 +74,6 @@ export class EntitlementsService {
       }
       return fallback;
     }
-  }
-
-  private async resolveTierLocally(orgId: string): Promise<PlanTier> {
-    const rows = await this.db.execute(
-      sql`SELECT plan, status, trial_ends_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
-    );
-    const row = rows[0];
-    if (!row) return "FREE";
-    const status = String(row["status"] ?? "");
-    const plan = String(row["plan"] ?? "");
-    const trialEndsAt = row["trial_ends_at"];
-    if (status === "EXPIRED" || status === "CANCELLED") return "FREE";
-    if (status === "TRIAL") {
-      const endsAt = trialEndsAt ? new Date(String(trialEndsAt)).getTime() : 0;
-      if (endsAt < Date.now()) return "FREE";
-    }
-    if (plan === "ENTERPRISE") return "ENTERPRISE";
-    if (plan === "STARTER" || plan === "PROFESSIONAL") return "PAID";
-    return "FREE";
   }
 
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
@@ -119,7 +101,7 @@ export class EntitlementsService {
       throw new BadRequestException(`Module "${moduleKey}" is always-on and cannot be toggled`);
     }
     if (enabled) {
-      const tier = await this.resolveTierLocally(orgId);
+      const { tier } = await this.planLimits.resolveTier(orgId);
       if (PLAN_LOCKED_MODULES[tier].includes(moduleKey)) {
         const label = moduleKey.charAt(0).toUpperCase() + moduleKey.slice(1);
         throw new ForbiddenException(

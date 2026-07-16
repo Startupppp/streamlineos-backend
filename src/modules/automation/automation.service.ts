@@ -20,6 +20,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
 
@@ -54,6 +55,7 @@ export class AutomationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly email: AutomationEmailService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async notifyMembers(
@@ -371,6 +373,7 @@ export class AutomationService {
     if (!isValidTrigger(input.triggerEvent)) {
       throw new NotFoundException(`Unknown trigger event: ${input.triggerEvent}`);
     }
+    await this.planLimits.assertWithinLimit(orgId, "automations");
     const [rule] = await this.db
       .insert(automationRules)
       .values({

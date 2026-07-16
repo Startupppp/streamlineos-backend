@@ -87,15 +87,20 @@ export class CronBillingService {
     let granted = 0;
     let skipped = 0;
 
+    if (activeSubscriptions.length === 0) return { granted, skipped };
+
+    const allOrgIds = activeSubscriptions.map((s) => s.orgId);
+    const alreadyGrantedSet = await this.aiCredits.getMonthlyGrantedOrgIds(allOrgIds);
+
+    const now = new Date();
+    const monthRef = `monthly-${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+
     for (const sub of activeSubscriptions) {
+      if (alreadyGrantedSet.has(sub.orgId)) {
+        skipped++;
+        continue;
+      }
       try {
-        const alreadyGranted = await this.aiCredits.hasMonthlyPlanGrant(sub.orgId);
-        if (alreadyGranted) {
-          skipped++;
-          continue;
-        }
-        const now = new Date();
-        const monthRef = `monthly-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         await this.aiCredits.grantPlanCredits(sub.orgId, sub.plan, undefined, `${sub.plan}-${monthRef}`);
         granted++;
       } catch (err) {
@@ -118,11 +123,6 @@ export class CronBillingService {
         skipped++;
         continue;
       }
-      const threshold = wallet.autoTopUpThreshold ?? 100;
-      if (wallet.balance >= threshold) {
-        skipped++;
-        continue;
-      }
       try {
         const alreadyToppedToday = await this.aiCredits.hasSameDayPurchaseForPack(
           wallet.orgId,
@@ -134,7 +134,7 @@ export class CronBillingService {
         }
         await this.aiCredits.purchaseCreditsDirectly(
           wallet.orgId,
-          "system",
+          null,
           wallet.autoTopUpPackId,
           true,
         );

@@ -16,6 +16,7 @@ import { NumberSequenceService } from "../inv-stock-engine/number-sequence.servi
 import { InventorySettingsService } from "../inv-stock-engine/inventory-settings.service";
 import { ReservationService } from "../inv-stock-engine/reservation.service";
 import { JournalPostingService } from "../accounting/journal-posting.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { ListSoInput, CreateSoInput, UpdateSoInput, CancelSoInput } from "./dto/inv-sales-orders.schemas";
 
 function computeSoTotals(lines: Array<{ quantity: number; unitPrice: string; taxRate: string }>) {
@@ -42,6 +43,7 @@ export class SoCoreService {
     private readonly settingsService: InventorySettingsService,
     private readonly reservationService: ReservationService,
     private readonly journalPosting: JournalPostingService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async listSos(orgId: string, filters: ListSoInput, scope: DataScope = "all", userId?: string) {
@@ -376,6 +378,8 @@ export class SoCoreService {
       throw new BadRequestException("Only SHIPPED or PARTIALLY_SHIPPED sales orders can be invoiced");
     }
     if (so.invoiceId) throw new ConflictException("This sales order has already been invoiced");
+
+    await this.planLimits.assertWithinLimit(orgId, "acctInvoices");
 
     const invoiceNumber = await this.numSeq.next(orgId, "SO");
     const lineItems = so.lines.map((l) => ({

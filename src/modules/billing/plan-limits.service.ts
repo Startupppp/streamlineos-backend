@@ -43,12 +43,24 @@ export class PlanLimitsService {
     }
     const value = await this.queryTier(orgId);
     this.tierCache.set(orgId, { value, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
+    if (this.tierCache.size > 2000) {
+      const now = Date.now();
+      for (const [key, entry] of this.tierCache) {
+        if (entry.expiresAt <= now) {
+          this.tierCache.delete(key);
+        }
+      }
+    }
     return value;
+  }
+
+  bust(orgId: string): void {
+    this.tierCache.delete(orgId);
   }
 
   private async queryTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
     const rows = await this.db.execute(
-      sql`SELECT plan, status, trial_ends_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+      sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
     );
     const row = rows[0];
     if (!row) {
@@ -101,7 +113,7 @@ export class PlanLimitsService {
           }
         }),
       ),
-      this.fetchNegotiatedSeats(orgId),
+      tier === "ENTERPRISE" ? this.fetchNegotiatedSeats(orgId) : Promise.resolve(null),
     ]);
 
     const baseMembersLimit = catalog.members[plan];

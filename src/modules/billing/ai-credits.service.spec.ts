@@ -165,8 +165,9 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
         if (whereCallCount === 1) {
           return { limit: jest.fn().mockResolvedValue([]) };
         }
-        return Promise.resolve([mockWalletRow]);
+        return { for: jest.fn().mockResolvedValue([mockWalletRow]) };
       }),
+      for: jest.fn().mockResolvedValue([mockWalletRow]),
       insert: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: 500 }]),

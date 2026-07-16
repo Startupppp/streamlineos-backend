@@ -13,6 +13,17 @@ const ORG_ID = "org-abc";
 const ACTOR_ID = "user-xyz";
 
 function buildMockDb() {
+  const universalTx = {
+    select: jest.fn().mockReturnThis(),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    for: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+  };
   return {
     query: {
       users: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -23,10 +34,7 @@ function buildMockDb() {
       invitations: { findFirst: jest.fn().mockResolvedValue(null) },
     },
     transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-      }),
+      fn(universalTx),
     ),
   };
 }

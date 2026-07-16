@@ -12,6 +12,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { ApplyTemplateInput, CreateTemplateInput } from "./dto/projects.schemas";
 
 const APPLY_DEFAULT_STATUSES = [
@@ -32,7 +33,10 @@ function normalizeTicketPriority(raw: string | null | undefined): (typeof ticket
 
 @Injectable()
 export class ProjectsTemplatesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   listTemplates(orgId: string) {
     return this.db.query.projectTemplates.findMany({
@@ -92,6 +96,8 @@ export class ProjectsTemplatesService {
       with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)] } },
     });
     if (!template) throw new NotFoundException("Template not found");
+
+    await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const namePart = input.name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
     const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
