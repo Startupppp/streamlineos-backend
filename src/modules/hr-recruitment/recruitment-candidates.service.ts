@@ -5,7 +5,8 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { buildListResponse } from "../../common/pagination/pagination";
 import {
   candidateApplications,
   candidateSlaTracking,
@@ -69,11 +70,11 @@ export class RecruitmentCandidatesService {
     private readonly automation: AutomationService,
   ) {}
 
-  list(orgId: string, input: CandidateListInput) {
-    const key = `hr:candidates:list:${orgId}:${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.limit}:${input.offset}`;
+  async list(orgId: string, input: CandidateListInput) {
+    const key = `hr:candidates:list:${orgId}:${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.search ?? ""}:${input.page}:${input.pageSize}`;
     return this.cache.cached(
       key,
-      () => {
+      async () => {
         const conditions = [eq(candidates.orgId, orgId)];
         if (input.status) conditions.push(eq(candidates.status, input.status));
         if (input.source) conditions.push(eq(candidates.source, input.source));
@@ -82,12 +83,50 @@ export class RecruitmentCandidatesService {
             sql`exists (select 1 from ${candidateApplications} where ${candidateApplications.candidateId} = ${candidates.id} and ${candidateApplications.jobPostingId} = ${input.jobId})`,
           );
         }
-        return this.db.query.candidates.findMany({
-          where: and(...conditions),
-          orderBy: [desc(candidates.createdAt)],
-          limit: input.limit,
-          offset: input.offset,
-        });
+        if (input.search) {
+          const q = `%${input.search}%`;
+          const searchFilter = or(
+            ilike(candidates.firstName, q),
+            ilike(candidates.lastName, q),
+            ilike(candidates.email, q),
+            ilike(candidates.currentCompany, q),
+          );
+          if (searchFilter) conditions.push(searchFilter);
+        }
+
+        const where = and(...conditions);
+
+        const [items, totalRow, statusRows] = await Promise.all([
+          this.db.query.candidates.findMany({
+            where,
+            orderBy: [desc(candidates.createdAt)],
+            limit: input.limit,
+            offset: input.offset,
+          }),
+          this.db
+            .select({ total: count() })
+            .from(candidates)
+            .where(where)
+            .then((rows) => rows[0] ?? { total: 0 }),
+          this.db
+            .select({ status: candidates.status, total: count() })
+            .from(candidates)
+            .where(eq(candidates.orgId, orgId))
+            .groupBy(candidates.status),
+        ]);
+
+        const statusCounts: Record<string, number> = {};
+        for (const row of statusRows) {
+          if (row.status) statusCounts[row.status] = Number(row.total);
+        }
+
+        return {
+          ...buildListResponse(items, Number(totalRow.total), {
+            page: input.page,
+            pageSize: input.pageSize,
+          }),
+          statusCounts,
+        };
       },
       CACHE_TTL.SHORT,
     );

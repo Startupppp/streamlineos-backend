@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import {
   attendance,
+  departments,
   leaveRequests,
   organizationMembers,
   performanceReviews,
@@ -54,25 +55,39 @@ export class EmployeesService {
   listEmployees(
     orgId: string,
     branch: BranchContext,
-    opts: { page?: number; limit?: number; search?: string },
+    opts: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      departmentId?: number;
+      isActive?: "true" | "false" | "all";
+    },
     scope: DataScope,
   ) {
     const branchKey = `${branch.role}:${branch.branchId ?? ""}:${branch.userId}`;
     const search = opts.search;
+    const pageN = opts.page ?? 1;
+    const limitN = opts.limit ?? 20;
+    const isActive = opts.isActive ?? "true";
+    const departmentId = opts.departmentId;
 
-    if (opts.page || opts.limit || search) {
-      const pageN = opts.page ?? 1;
-      const limitN = opts.limit ?? 20;
-      const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}`;
-      return this.cache.cached(
-        key,
-        () => this.getEmployeesPaginated(orgId, pageN, limitN, search, branch, scope),
-        CACHE_TTL.SHORT,
-      );
-    }
-
-    const key = `hr:employees:all:${orgId}:${branchKey}:${scope}`;
-    return this.cache.cached(key, () => this.getEmployeesAll(orgId, branch, scope), CACHE_TTL.MEDIUM);
+    // Always paginate the directory listing so large orgs don't load unbounded lists.
+    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}`;
+    return this.cache.cached(
+      key,
+      () =>
+        this.getEmployeesPaginated(
+          orgId,
+          pageN,
+          limitN,
+          search,
+          branch,
+          scope,
+          departmentId,
+          isActive,
+        ),
+      CACHE_TTL.SHORT,
+    );
   }
 
   private async getEmployeesAll(orgId: string, branch: BranchContext, scope: DataScope) {
@@ -135,14 +150,19 @@ export class EmployeesService {
     search: string | undefined,
     branch: BranchContext,
     scope: DataScope,
+    departmentId?: number,
+    isActive: "true" | "false" | "all" = "true",
   ) {
     const offset = (page - 1) * limit;
 
     const baseConditions: SQL[] = [
       eq(organizationMembers.orgId, orgId),
-      eq(users.isActive, true),
       applyScope(scope, branch.userId, { ownerColumn: organizationMembers.userId }),
     ];
+    if (isActive === "true") baseConditions.push(eq(users.isActive, true));
+    else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
+    if (departmentId != null) baseConditions.push(eq(users.departmentId, departmentId));
+
     const branchCond = branchIdFilter(users.branchId, branch);
     if (branchCond) baseConditions.push(branchCond);
 
@@ -152,6 +172,8 @@ export class EmployeesService {
           ilike(users.email, `%${search}%`),
           ilike(users.employeeId, `%${search}%`),
           ilike(users.designation, `%${search}%`),
+          ilike(users.firstName, `%${search}%`),
+          ilike(users.lastName, `%${search}%`),
         )
       : undefined;
 
@@ -169,6 +191,8 @@ export class EmployeesService {
           designation: users.designation,
           employeeId: users.employeeId,
           departmentId: users.departmentId,
+          departmentIdJoin: departments.id,
+          departmentName: departments.name,
           image: users.image,
           isActive: users.isActive,
           joiningDate: users.joiningDate,
@@ -178,6 +202,7 @@ export class EmployeesService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(departments, eq(users.departmentId, departments.id))
         .where(where)
         .orderBy(users.name)
         .limit(limit)
@@ -192,7 +217,27 @@ export class EmployeesService {
     const total = countResult[0]?.total ?? 0;
 
     return {
-      data: dataResult,
+      data: dataResult.map((row) => ({
+        id: row.id,
+        name: row.name,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        email: row.email,
+        role: row.role,
+        designation: row.designation,
+        employeeId: row.employeeId,
+        departmentId: row.departmentId,
+        department:
+          row.departmentIdJoin != null && row.departmentName
+            ? { id: row.departmentIdJoin, name: row.departmentName }
+            : null,
+        image: row.image,
+        isActive: row.isActive,
+        joiningDate: row.joiningDate,
+        hasDashboardAccess: row.hasDashboardAccess,
+        reportingTo: row.reportingTo,
+        monthlySalary: row.monthlySalary,
+      })),
       pagination: {
         page,
         limit,

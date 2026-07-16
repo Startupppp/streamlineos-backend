@@ -15,14 +15,35 @@ const CANDIDATE_SOURCES = [
   "CAMPUS",
 ] as const;
 
-export const candidateListSchema = z.object({
-  status: z.enum(CANDIDATE_STATUSES).optional(),
-  source: z.string().optional(),
-  jobId: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().min(1).max(100).default(50),
-  offset: z.coerce.number().min(0).default(0),
-});
-export type CandidateListInput = z.infer<typeof candidateListSchema>;
+export const candidateListSchema = z
+  .object({
+    status: z.enum(CANDIDATE_STATUSES).optional(),
+    source: z.string().optional(),
+    jobId: z.coerce.number().int().positive().optional(),
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+    /** @deprecated prefer page/pageSize */
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    /** @deprecated prefer page/pageSize */
+    offset: z.coerce.number().int().min(0).optional(),
+  })
+  .transform((q) => {
+    const pageSize = q.pageSize ?? q.limit ?? 20;
+    const page =
+      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
+    return {
+      status: q.status,
+      source: q.source,
+      jobId: q.jobId,
+      search: q.search || undefined,
+      page,
+      pageSize,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    };
+  });
+export type CandidateListInput = z.output<typeof candidateListSchema>;
 
 export const createCandidateSchema = z.object({
   firstName: z

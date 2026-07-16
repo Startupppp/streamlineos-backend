@@ -25,12 +25,29 @@ export const screeningQuestionSchema = z.object({
 });
 export type ScreeningQuestionInput = z.infer<typeof screeningQuestionSchema>;
 
-export const jobListSchema = z.object({
-  status: z.enum(JOB_STATUSES).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(100),
-  offset: z.coerce.number().int().min(0).default(0),
-});
-export type JobListInput = z.infer<typeof jobListSchema>;
+export const jobListSchema = z
+  .object({
+    status: z.enum(JOB_STATUSES).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(200).optional(),
+    /** @deprecated prefer page/pageSize */
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+    /** @deprecated prefer page/pageSize */
+    offset: z.coerce.number().int().min(0).optional(),
+  })
+  .transform((q) => {
+    const pageSize = q.pageSize ?? q.limit ?? 20;
+    const page =
+      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
+    return {
+      status: q.status,
+      page,
+      pageSize,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    };
+  });
+export type JobListInput = z.output<typeof jobListSchema>;
 
 export const createJobSchema = z
   .object({

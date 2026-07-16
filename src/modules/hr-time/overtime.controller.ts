@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -9,6 +10,11 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 
+const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/overtime")
@@ -17,8 +23,11 @@ export class OvertimeController {
 
   @Get()
   @RequirePermission("hr:attendance:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.service.listRequests(u.orgId);
+  list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
+  ) {
+    return this.service.listRequests(u.orgId, query);
   }
 
   @Post()

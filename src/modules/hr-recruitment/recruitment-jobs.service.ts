@@ -38,19 +38,37 @@ export class RecruitmentJobsService {
     private readonly cache: CacheService,
   ) {}
 
-  list(orgId: string, input: JobListInput) {
-    const key = `hr:jobs:list:${orgId}:${input.status ?? ""}:${input.limit}:${input.offset ?? 0}`;
+  async list(orgId: string, input: JobListInput) {
+    const key = `hr:jobs:list:${orgId}:${input.status ?? ""}:${input.page}:${input.pageSize}`;
     return this.cache.cached(
       key,
-      () => {
+      async () => {
         const conditions = [eq(jobPostings.orgId, orgId)];
         if (input.status) conditions.push(eq(jobPostings.status, input.status));
-        return this.db.query.jobPostings.findMany({
-          where: and(...conditions),
-          orderBy: [desc(jobPostings.createdAt)],
-          limit: input.limit,
-          offset: input.offset,
-        });
+        const where = and(...conditions);
+
+        const [items, totalRow] = await Promise.all([
+          this.db.query.jobPostings.findMany({
+            where,
+            orderBy: [desc(jobPostings.createdAt)],
+            limit: input.limit,
+            offset: input.offset,
+          }),
+          this.db
+            .select({ total: sql<number>`count(*)::int` })
+            .from(jobPostings)
+            .where(where)
+            .then((rows) => rows[0] ?? { total: 0 }),
+        ]);
+
+        const total = Number(totalRow.total);
+        return {
+          items,
+          total,
+          page: input.page,
+          pageSize: input.pageSize,
+          totalPages: input.pageSize > 0 ? Math.ceil(total / input.pageSize) : 0,
+        };
       },
       CACHE_TTL.MEDIUM,
     );

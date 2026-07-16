@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 export const listEmployeesSchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
   search: z.string().optional(),
   q: z.string().optional(),
+  departmentId: z.coerce.number().int().positive().optional(),
+  /** "true" | "false" | "all" — default active-only for directory */
+  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
 });
 
 export const availabilitySchema = z.object({
@@ -273,8 +276,34 @@ export const patchAccessRequestSchema = z.object({
   grantedBy: z.string().optional(),
 });
 
+/** Row shape for spreadsheet bulk onboard — department can be name or numeric id. */
+export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
+  .omit({ departmentId: true })
+  .extend({
+    departmentId: z.coerce.number().int().positive().optional(),
+    department: z.string().trim().min(1).optional(),
+  })
+  .superRefine((row, ctx) => {
+    if (row.departmentId == null && !row.department) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "department or departmentId is required",
+        path: ["department"],
+      });
+    }
+  });
+
+export const bulkOnboardEmployeesSchema = z.object({
+  employees: z
+    .array(bulkOnboardEmployeeRowSchema)
+    .min(1, "At least one employee is required")
+    .max(100, "You can onboard at most 100 employees per upload"),
+});
+
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
+export type BulkOnboardEmployeeRow = z.infer<typeof bulkOnboardEmployeeRowSchema>;
+export type BulkOnboardEmployeesInput = z.infer<typeof bulkOnboardEmployeesSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;
