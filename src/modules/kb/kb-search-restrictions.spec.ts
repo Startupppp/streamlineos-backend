@@ -1,7 +1,4 @@
 import { KbSearchService } from "./kb-search.service";
-import { KbAccessService } from "./kb-access.service";
-import { KbEventsService } from "./kb-events.service";
-import { EmbeddingsService } from "../ai/providers/embeddings.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -18,15 +15,21 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   ...overrides,
 });
 
-const makeDb = () => ({
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  where: jest.fn().mockReturnThis(),
-  orderBy: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockReturnThis(),
-  offset: jest.fn().mockReturnThis(),
-  innerJoin: jest.fn().mockReturnThis(),
-});
+const makeChain = (finalValue: unknown[] = []) => {
+  const chain: Record<string, jest.Mock> = {};
+  const methods = ["from", "where", "orderBy", "limit", "offset", "innerJoin", "leftJoin"];
+  for (const m of methods) {
+    chain[m] = jest.fn().mockReturnThis();
+  }
+  chain.limit = jest.fn().mockResolvedValue(finalValue);
+  chain.offset = jest.fn().mockResolvedValue(finalValue);
+  return chain;
+};
+
+const makeDb = () => {
+  const chain = makeChain([]);
+  return { select: jest.fn().mockReturnValue(chain) };
+};
 
 const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
   getAccessibleSpaceIds: jest.fn().mockResolvedValue(spaceIds),
@@ -36,51 +39,60 @@ const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
-const makeEmbeddings = (configured = false) => ({
-  isConfigured: jest.fn().mockReturnValue(configured),
+const makeEmbeddings = () => ({
+  isConfigured: jest.fn().mockReturnValue(false),
   embedQuery: jest.fn(),
   toVectorLiteral: jest.fn(),
 });
 
 describe("KbSearchService — restriction enforcement", () => {
-  it("articleKeywordCandidates receives principal from resolveTopArticles", async () => {
+  it("resolves principal once per retrieveTopArticles call", async () => {
     const db = makeDb();
-    (db.where as jest.Mock).mockResolvedValue([]);
-
-    const access = makeAccess([1]);
-    const events = makeEvents();
-    const embeddings = makeEmbeddings(false);
+    const access = makeAccess([1], false);
 
     const svc = new KbSearchService(
       db as never,
       access as never,
-      embeddings as never,
-      events as never,
+      makeEmbeddings() as never,
+      makeEvents() as never,
     );
 
     const user = makeUser();
-    const result = await svc.retrieveTopArticles(user, "test query", 5);
+    await svc.retrieveTopArticles(user, "test query", 5);
 
     expect(access.getPrincipalIds).toHaveBeenCalledWith(user);
-    expect(result).toEqual([]);
+    expect(access.isAdmin).toHaveBeenCalledWith(user);
   });
 
-  it("non-admin users get restriction filter applied; admin users do not", async () => {
+  it("returns empty array when query is blank", async () => {
     const db = makeDb();
-    (db.where as jest.Mock).mockResolvedValue([]);
+    const access = makeAccess([1], false);
 
-    const accessNonAdmin = makeAccess([1], false);
-    const accessAdmin = makeAccess([1], true);
-    const events = makeEvents();
-    const embeddings = makeEmbeddings(false);
+    const svc = new KbSearchService(
+      db as never,
+      access as never,
+      makeEmbeddings() as never,
+      makeEvents() as never,
+    );
 
-    const svcNonAdmin = new KbSearchService(db as never, accessNonAdmin as never, embeddings as never, events as never);
-    const svcAdmin = new KbSearchService(db as never, accessAdmin as never, embeddings as never, events as never);
+    const result = await svc.retrieveTopArticles(makeUser(), "  ", 5);
+    expect(result).toEqual([]);
+    expect(access.getPrincipalIds).not.toHaveBeenCalled();
+  });
 
-    await svcNonAdmin.retrieveTopArticles(makeUser(), "test", 5);
-    await svcAdmin.retrieveTopArticles(makeUser({ isOrgOwner: true }), "test", 5);
+  it("skips article queries when space list is empty", async () => {
+    const db = makeDb();
+    const access = makeAccess([], false);
 
-    expect(accessNonAdmin.isAdmin).toHaveBeenCalled();
-    expect(accessAdmin.isAdmin).toHaveBeenCalled();
+    const svc = new KbSearchService(
+      db as never,
+      access as never,
+      makeEmbeddings() as never,
+      makeEvents() as never,
+    );
+
+    const result = await svc.retrieveTopArticles(makeUser(), "test", 5);
+    expect(result).toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });

@@ -255,6 +255,7 @@ export class KbRagService {
 
     const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
+      this.recordNoContext(opts.orgId, opts.question);
       return {
         answer: "I couldn't find anything related to that in the knowledge base yet.",
         sources: [],

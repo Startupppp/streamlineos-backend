@@ -12,80 +12,74 @@ const makeEmbeddings = (configured = true) => ({
 
 const makeStorage = () => ({});
 
-const makeArticle = (text: string) => ({
-  status: "published" as const,
-  contentText: text,
+interface MockTx {
+  delete: jest.Mock;
+  where: jest.Mock;
+  insert: jest.Mock;
+  values: jest.Mock;
+}
+
+const makeTx = (): MockTx => ({
+  delete: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  insert: jest.fn().mockReturnThis(),
+  values: jest.fn().mockResolvedValue(undefined),
 });
 
-const makeDb = (existingChunks: { content: string }[] = []) => {
-  const tx = {
-    delete: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    insert: jest.fn().mockReturnThis(),
-    values: jest.fn().mockResolvedValue(undefined),
-  };
+const makeDb = (existingChunks: { content: string }[] = [], tx?: MockTx) => {
+  const txObj = tx ?? makeTx();
 
-  const dbObj: Record<string, jest.Mock | unknown> = {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue(existingChunks),
-    orderBy: jest.fn().mockReturnThis(),
-    transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => unknown) => fn(tx)),
-    query: {
-      kbArticles: {
-        findFirst: jest.fn().mockResolvedValue(null),
+  return {
+    db: {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockResolvedValue(existingChunks),
+          }),
+        }),
+      }),
+      transaction: jest.fn().mockImplementation(async (fn: (t: MockTx) => unknown) => fn(txObj)),
+      query: {
+        kbArticles: { findFirst: jest.fn().mockResolvedValue(null) },
+        kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
       },
     },
+    tx: txObj,
   };
-
-  dbObj.select = jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        orderBy: jest.fn().mockResolvedValue(existingChunks),
-      }),
-    }),
-  });
-
-  return { db: dbObj, tx };
 };
 
 describe("KbIndexingService — content-hash guard", () => {
-  it("skips re-embedding when content is unchanged", async () => {
+  it("skips re-embedding when article content is unchanged", async () => {
     const text = "Hello world content unchanged";
-    const chunks = [{ content: text }];
-
-    const { db } = makeDb(chunks);
-    (db.query as Record<string, unknown>).kbArticles = {
-      findFirst: jest.fn().mockResolvedValue(makeArticle(text)),
-    };
+    const { db } = makeDb([{ content: text }]);
+    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      contentText: text,
+    });
 
     const embeddings = makeEmbeddings();
-    const storage = makeStorage();
-
-    const svc = new KbIndexingService(db as never, embeddings as never, storage as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
     await svc.indexArticle("org-1", 1);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
   });
 
-  it("re-embeds when content has changed", async () => {
+  it("re-embeds when article content has changed", async () => {
     const oldText = "old content";
     const newText = "new content that is different";
 
-    const chunks = [{ content: oldText }];
-
-    const { db, tx } = makeDb(chunks);
-    (db.query as Record<string, unknown>).kbArticles = {
-      findFirst: jest.fn().mockResolvedValue(makeArticle(newText)),
-    };
-
+    const tx = makeTx();
     tx.delete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
     tx.insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
 
-    const embeddings = makeEmbeddings();
-    const storage = makeStorage();
+    const { db } = makeDb([{ content: oldText }], tx);
+    (db.query.kbArticles.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      contentText: newText,
+    });
 
-    const svc = new KbIndexingService(db as never, embeddings as never, storage as never);
+    const embeddings = makeEmbeddings();
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
     await svc.indexArticle("org-1", 1);
 
     expect(embeddings.embedQuery).toHaveBeenCalled();
@@ -93,22 +87,16 @@ describe("KbIndexingService — content-hash guard", () => {
 
   it("skips re-embedding for pages when content is unchanged", async () => {
     const text = "page content that has not changed";
-    const chunks = [{ content: text }];
-
-    const { db } = makeDb(chunks);
-    (db.query as Record<string, unknown>).kbPages = {
-      findFirst: jest.fn().mockResolvedValue({
-        status: "published",
-        visibility: "org",
-        deletedAt: null,
-        contentText: text,
-      }),
-    };
+    const { db } = makeDb([{ content: text }]);
+    (db.query.kbPages.findFirst as jest.Mock).mockResolvedValue({
+      status: "published",
+      visibility: "org",
+      deletedAt: null,
+      contentText: text,
+    });
 
     const embeddings = makeEmbeddings();
-    const storage = makeStorage();
-
-    const svc = new KbIndexingService(db as never, embeddings as never, storage as never);
+    const svc = new KbIndexingService(db as never, embeddings as never, makeStorage() as never);
     await svc.indexPage("org-1", 1);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();

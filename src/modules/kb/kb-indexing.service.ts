@@ -37,18 +37,18 @@ export class KbIndexingService {
 
   private async isContentUnchanged(
     orgId: string,
-    filter: { articleId?: number; pageId?: number },
+    filter: { articleId: number } | { pageId: number },
     source: "article_body" | "page_body",
     newText: string,
   ): Promise<boolean> {
-    const condition = filter.articleId !== undefined
-      ? and(eq(kbArticleChunks.orgId, orgId), eq(kbArticleChunks.articleId, filter.articleId), eq(kbArticleChunks.source, source))
-      : and(eq(kbArticleChunks.orgId, orgId), eq(kbArticleChunks.pageId, filter.pageId!), eq(kbArticleChunks.source, source));
+    const idCondition = "articleId" in filter
+      ? eq(kbArticleChunks.articleId, filter.articleId)
+      : eq(kbArticleChunks.pageId, filter.pageId);
 
     const existing = await this.db
       .select({ content: kbArticleChunks.content })
       .from(kbArticleChunks)
-      .where(condition)
+      .where(and(eq(kbArticleChunks.orgId, orgId), idCondition, eq(kbArticleChunks.source, source)))
       .orderBy(asc(kbArticleChunks.chunkIndex));
 
     if (existing.length === 0) return false;
@@ -105,7 +105,7 @@ export class KbIndexingService {
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(orgId, { articleId }, "article_body", article.contentText);
+    const unchanged = await this.isContentUnchanged(orgId, { articleId: articleId }, "article_body", article.contentText);
     if (unchanged) return;
 
     const chunks = this.chunkText(article.contentText);

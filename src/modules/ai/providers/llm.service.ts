@@ -221,15 +221,7 @@ export class LlmService {
   ): Promise<LlmStructuredResult<z.infer<T>>> {
     const modelName = opts.model === "standard" ? this.config.standardModel : this.config.fastModel;
     const base = opts.maxTokens !== undefined
-      ? new ChatOpenAI({
-          apiKey: this.config.apiKey,
-          model: modelName,
-          temperature: 0.3,
-          timeout: 30000,
-          maxRetries: 2,
-          maxTokens: opts.maxTokens,
-          ...(this.config.baseURL ? { configuration: { baseURL: this.config.baseURL } } : {}),
-        })
+      ? this.buildModelWithMaxTokens(opts.model, 0.3, opts.maxTokens)
       : this.modelFor(opts.model);
     const structured = base.withStructuredOutput(opts.schema, {
       name: opts.schemaName,
@@ -243,9 +235,9 @@ export class LlmService {
         { role: "user", content: opts.user },
       ]),
     );
-    const parsed = opts.schema.parse(result.parsed) as z.infer<T>;
-    const rawMsg = result.raw;
-    const usageMeta = AIMessage.isInstance(rawMsg) ? rawMsg.usage_metadata : undefined;
+    const parsed: z.infer<T> = opts.schema.parse(result.parsed);
+    const aiMsg = AIMessage.isInstance(result.raw) ? result.raw : null;
+    const usageMeta = aiMsg?.usage_metadata ?? null;
     return { data: parsed, usage: extractUsage(usageMeta), model: modelName };
   }
 }

@@ -28,9 +28,13 @@ import { CommsCopilotTools } from "./comms-copilot-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { CalendarModule } from "../calendar/calendar.module";
 import { ChatModule } from "../chat/chat.module";
+import { AiGatewayService } from "./gateway/ai-gateway.service";
+import { AI_CREDIT_LEDGER } from "./gateway/credit-ledger.interface";
+import { BillingModule } from "../billing/billing.module";
+import { AiCreditsService } from "../billing/ai-credits.service";
 
 @Module({
-  imports: [CalendarModule, ChatModule],
+  imports: [CalendarModule, ChatModule, BillingModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController],
   providers: [
     LlmService,
@@ -54,7 +58,9 @@ import { ChatModule } from "../chat/chat.module";
     CrmCopilotTools,
     CommsCopilotTools,
     ToolAccessService,
+    AiGatewayService,
+    { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
-  exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService],
+  exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService, AiGatewayService],
 })
 export class AiModule {}

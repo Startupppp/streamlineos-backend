@@ -96,6 +96,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/handoff-summary")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.ticket-insights");
@@ -104,6 +106,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/root-cause-cluster")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   findRootCauseCluster(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.ticket-insights");
