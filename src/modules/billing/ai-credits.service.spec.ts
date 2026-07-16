@@ -38,6 +38,7 @@ function makeTx(walletBalance: number) {
     returning: jest.fn().mockResolvedValue([updatedWallet]),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
   };
   return tx;
 }
@@ -114,5 +115,242 @@ describe("AiCreditsService.purchaseCreditsDirectly", () => {
       | ((tx: typeof mockTx) => Promise<unknown>)
       | undefined;
     expect(txFn).toBeDefined();
+  });
+});
+
+describe("AiCreditsService.grantPlanCredits — idempotency", () => {
+  let service: AiCreditsService;
+
+  function makeGrantDb(existingTxRow: { id: number } | undefined) {
+    const txMock = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(existingTxRow ? [existingTxRow] : []),
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: 500 }]),
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+    return {
+      db: {
+        transaction: jest.fn().mockImplementation(
+          (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+        ),
+      },
+      txMock,
+    };
+  }
+
+  it("skips insert when referenceId already has a PLAN_GRANT transaction", async () => {
+    const { db, txMock } = makeGrantDb({ id: 99 });
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    await service.grantPlanCredits("org1", "STARTER", "user1", "pay_abc123");
+
+    expect(txMock.insert).not.toHaveBeenCalled();
+  });
+
+  it("proceeds with grant when no existing transaction for referenceId", async () => {
+    let whereCallCount = 0;
+    const txChain = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation(() => {
+        whereCallCount++;
+        if (whereCallCount === 1) {
+          return { limit: jest.fn().mockResolvedValue([]) };
+        }
+        return Promise.resolve([mockWalletRow]);
+      }),
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: 500 }]),
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+
+    const db2 = {
+      transaction: jest.fn().mockImplementation(
+        (fn: (tx: typeof txChain) => Promise<unknown>) => fn(txChain),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db2 }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    await service.grantPlanCredits("org1", "STARTER", "user1", "pay_new_xyz");
+
+    expect(txChain.insert).toHaveBeenCalled();
+  });
+
+  it("does nothing for an unknown plan (0 credits)", async () => {
+    const db = { transaction: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    await service.grantPlanCredits("org1", "UNKNOWN_PLAN");
+
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("AiCreditsService.hasMonthlyPlanGrant", () => {
+  let service: AiCreditsService;
+
+  function makeMonthlyGrantDb(existingRow: { id: number } | undefined) {
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(existingRow ? [existingRow] : []),
+    };
+    return { db: chain };
+  }
+
+  it("returns true when a PLAN_GRANT exists this month", async () => {
+    const { db } = makeMonthlyGrantDb({ id: 5 });
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    const result = await service.hasMonthlyPlanGrant("org1");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when no PLAN_GRANT exists this month", async () => {
+    const { db } = makeMonthlyGrantDb(undefined);
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    const result = await service.hasMonthlyPlanGrant("org1");
+    expect(result).toBe(false);
+  });
+});
+
+describe("AiCreditsService.hasSameDayPurchaseForPack", () => {
+  let service: AiCreditsService;
+
+  function makeSameDayDb(existingRow: { id: number } | undefined) {
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(existingRow ? [existingRow] : []),
+    };
+    return { db: chain };
+  }
+
+  it("returns true when a same-day PURCHASE exists for this pack", async () => {
+    const { db } = makeSameDayDb({ id: 10 });
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    const result = await service.hasSameDayPurchaseForPack("org1", 1);
+    expect(result).toBe(true);
+  });
+
+  it("returns false when no same-day PURCHASE exists", async () => {
+    const { db } = makeSameDayDb(undefined);
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    const result = await service.hasSameDayPurchaseForPack("org1", 1);
+    expect(result).toBe(false);
+  });
+});
+
+describe("AiCreditsService.getWallet — trial grant on creation", () => {
+  let service: AiCreditsService;
+
+  it("inserts a PLAN_GRANT trial transaction when wallet does not exist", async () => {
+    const trialWallet = { ...mockWalletRow, balance: 100, lifetimeGranted: 100 };
+    const txMock = {
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([trialWallet]),
+    };
+
+    let selectCallCount = 0;
+
+    const walletChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+    };
+
+    const recentChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const dbMock = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        return selectCallCount === 1 ? walletChain : recentChain;
+      }),
+      transaction: jest.fn().mockImplementation(
+        (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbMock }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    await service.getWallet("new-org");
+
+    expect(dbMock.transaction).toHaveBeenCalledTimes(1);
+    expect(txMock.insert).toHaveBeenCalled();
+  });
+
+  it("does not create a transaction when wallet already exists", async () => {
+    let selectCallCount2 = 0;
+
+    const existingWalletChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([mockWalletRow]),
+    };
+
+    const recentChain2 = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const dbMock2 = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount2++;
+        return selectCallCount2 === 1 ? existingWalletChain : recentChain2;
+      }),
+      transaction: jest.fn(),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: dbMock2 }],
+    }).compile();
+    service = module.get(AiCreditsService);
+
+    await service.getWallet("org1");
+
+    expect(dbMock2.transaction).not.toHaveBeenCalled();
   });
 });

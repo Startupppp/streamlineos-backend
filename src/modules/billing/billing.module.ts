@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+﻿import { Module } from "@nestjs/common";
 import { BillingController } from "./billing.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { BillingService } from "./billing.service";
@@ -9,10 +9,11 @@ import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { EnterpriseQuotesService } from "./enterprise-quotes.service";
+import { PlanLimitsService } from "./plan-limits.service";
 
 @Module({
   controllers: [BillingController, RazorpayWebhookController],
-  providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService],
-  exports: [AiCreditsService, RevenueAnalyticsService],
+  providers: [BillingService, RazorpayService, MarketplaceService, AiCreditsService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService],
+  exports: [AiCreditsService, RevenueAnalyticsService, PlanLimitsService],
 })
 export class BillingModule {}

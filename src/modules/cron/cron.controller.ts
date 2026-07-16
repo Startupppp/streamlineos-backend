@@ -679,4 +679,56 @@ export class CronController {
       throw new InternalServerErrorException("Internal server error");
     }
   }
+
+  @Get("monthly-plan-grants")
+  getMonthlyPlanGrants(@Headers("authorization") authorization?: string) {
+    return this.runMonthlyPlanGrants(authorization);
+  }
+
+  @Post("monthly-plan-grants")
+  @HttpCode(200)
+  postMonthlyPlanGrants(@Headers("authorization") authorization?: string) {
+    return this.runMonthlyPlanGrants(authorization);
+  }
+
+  private async runMonthlyPlanGrants(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.billing.processMonthlyPlanGrants();
+      return {
+        success: true,
+        message: `Monthly plan grants: ${result.granted} granted, ${result.skipped} skipped`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Monthly plan grants cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("auto-topup-flush")
+  getAutoTopUpFlush(@Headers("authorization") authorization?: string) {
+    return this.runAutoTopUpFlush(authorization);
+  }
+
+  @Post("auto-topup-flush")
+  @HttpCode(200)
+  postAutoTopUpFlush(@Headers("authorization") authorization?: string) {
+    return this.runAutoTopUpFlush(authorization);
+  }
+
+  private async runAutoTopUpFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.billing.processAutoTopUps();
+      return {
+        success: true,
+        message: `Auto top-up flush: ${result.topped} topped, ${result.skipped} skipped, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Auto top-up flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
 }

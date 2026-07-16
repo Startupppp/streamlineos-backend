@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Inject,
   Injectable,
@@ -34,6 +34,7 @@ import {
   type VerifyPaymentInput,
   type WebhookEvent,
 } from "./dto/billing.schemas";
+import { PLAN_LIMITS } from "./plan-entitlements.constants";
 
 const PLAN_PRICES: Record<Plan, number> = {
   STARTER: 99900,
@@ -187,6 +188,12 @@ export class BillingService {
       metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
     });
 
+    this.aiCredits
+      .grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id)
+      .catch((err: unknown) =>
+        logger.warn("[billing] plan credit grant failed (non-fatal)", { orgId, plan: input.plan, err }),
+      );
+
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
@@ -244,7 +251,7 @@ export class BillingService {
       discountAmount,
       message: coupon.type === "PERCENTAGE"
         ? `${couponValue}% discount applied`
-        : `₹${couponValue} discount applied`,
+        : `â‚¹${couponValue} discount applied`,
     };
   }
 
@@ -458,19 +465,19 @@ export class BillingService {
 
   async getSeatInfo(orgId: string) {
     const { subscription } = await this.getSubscription(orgId);
-    const PLAN_SEATS: Record<string, number> = {
-      STARTER: 10,
-      PROFESSIONAL: 50,
-      ENTERPRISE: 500,
+    const PLAN_SEATS: Record<string, number | null> = {
+      STARTER: PLAN_LIMITS.members.STARTER,
+      PROFESSIONAL: PLAN_LIMITS.members.PROFESSIONAL,
+      ENTERPRISE: PLAN_LIMITS.members.ENTERPRISE,
     };
     const plan = subscription?.plan ?? "STARTER";
-    const total = PLAN_SEATS[plan] ?? 10;
+    const total = PLAN_SEATS[plan] ?? PLAN_LIMITS.members.FREE ?? 5;
     const [usedResult] = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(organizationMembers)
       .where(eq(organizationMembers.orgId, orgId));
     const used = Number(usedResult?.count ?? 0);
-    return { total, used, available: Math.max(0, total - used) };
+    return { total, used, available: total === null ? null : Math.max(0, total - used) };
   }
 
   async requestAffiliatePayoutRequest(orgId: string) {

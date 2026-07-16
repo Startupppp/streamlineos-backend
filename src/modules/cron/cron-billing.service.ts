@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
+import { AiCreditsService } from "../billing/ai-credits.service";
 
 const REMINDER_DAYS = [7, 3, 1] as const;
 
@@ -14,6 +15,7 @@ export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
+    private readonly aiCredits: AiCreditsService,
   ) {}
 
   async processTrialExpiry(): Promise<{ expired: number; reminded: number }> {
@@ -73,6 +75,77 @@ export class CronBillingService {
     }
 
     return { expired, reminded };
+  }
+
+  async processMonthlyPlanGrants(): Promise<{ granted: number; skipped: number }> {
+    const activeSubscriptions = await this.db
+      .select({ orgId: subscriptions.orgId, plan: subscriptions.plan })
+      .from(subscriptions)
+      .where(eq(subscriptions.status, "ACTIVE"))
+      .limit(500);
+
+    let granted = 0;
+    let skipped = 0;
+
+    for (const sub of activeSubscriptions) {
+      try {
+        const alreadyGranted = await this.aiCredits.hasMonthlyPlanGrant(sub.orgId);
+        if (alreadyGranted) {
+          skipped++;
+          continue;
+        }
+        const now = new Date();
+        const monthRef = `monthly-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        await this.aiCredits.grantPlanCredits(sub.orgId, sub.plan, undefined, `${sub.plan}-${monthRef}`);
+        granted++;
+      } catch (err) {
+        logger.error("[billing-cron] monthly plan grant failed", { orgId: sub.orgId, err });
+      }
+    }
+
+    return { granted, skipped };
+  }
+
+  async processAutoTopUps(): Promise<{ topped: number; skipped: number; failed: number }> {
+    const wallets = await this.aiCredits.getWalletsEligibleForAutoTopUp();
+
+    let topped = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const wallet of wallets) {
+      if (wallet.autoTopUpPackId === null) {
+        skipped++;
+        continue;
+      }
+      const threshold = wallet.autoTopUpThreshold ?? 100;
+      if (wallet.balance >= threshold) {
+        skipped++;
+        continue;
+      }
+      try {
+        const alreadyToppedToday = await this.aiCredits.hasSameDayPurchaseForPack(
+          wallet.orgId,
+          wallet.autoTopUpPackId,
+        );
+        if (alreadyToppedToday) {
+          skipped++;
+          continue;
+        }
+        await this.aiCredits.purchaseCreditsDirectly(
+          wallet.orgId,
+          "system",
+          wallet.autoTopUpPackId,
+          true,
+        );
+        topped++;
+      } catch (err) {
+        logger.error("[billing-cron] auto top-up failed", { orgId: wallet.orgId, err });
+        failed++;
+      }
+    }
+
+    return { topped, skipped, failed };
   }
 
   private async findOrgOwner(orgId: string): Promise<{ email: string; orgName: string } | null> {

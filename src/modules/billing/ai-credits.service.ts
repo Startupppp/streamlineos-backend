@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -7,6 +7,8 @@ import {
   aiCreditTransactions,
   orgAiCredits,
 } from "../../db/schema";
+
+const TRIAL_GRANT_AMOUNT = 100;
 
 @Injectable()
 export class AiCreditsService {
@@ -18,10 +20,22 @@ export class AiCreditsService {
       .from(orgAiCredits)
       .where(eq(orgAiCredits.orgId, orgId));
     if (!wallet) {
-      [wallet] = await this.db
-        .insert(orgAiCredits)
-        .values({ orgId })
-        .returning();
+      [wallet] = await this.db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(orgAiCredits)
+          .values({ orgId, balance: TRIAL_GRANT_AMOUNT, lifetimeGranted: TRIAL_GRANT_AMOUNT })
+          .returning();
+        await tx.insert(aiCreditTransactions).values({
+          orgId,
+          userId: null,
+          type: "PLAN_GRANT",
+          amount: TRIAL_GRANT_AMOUNT,
+          balanceAfter: TRIAL_GRANT_AMOUNT,
+          feature: "trial-grant",
+          referenceId: "trial-grant",
+        });
+        return [created];
+      });
     }
     const recentTransactions = await this.db
       .select()
@@ -127,7 +141,7 @@ export class AiCreditsService {
     });
   }
 
-  async grantPlanCredits(orgId: string, plan: string, userId?: string) {
+  async grantPlanCredits(orgId: string, plan: string, userId?: string, referenceId?: string) {
     const grantMap: Record<string, number> = {
       STARTER: 500,
       PROFESSIONAL: 2000,
@@ -137,6 +151,21 @@ export class AiCreditsService {
     if (!amount) return;
 
     await this.db.transaction(async (tx) => {
+      if (referenceId) {
+        const [existing] = await tx
+          .select({ id: aiCreditTransactions.id })
+          .from(aiCreditTransactions)
+          .where(
+            and(
+              eq(aiCreditTransactions.orgId, orgId),
+              eq(aiCreditTransactions.type, "PLAN_GRANT"),
+              eq(aiCreditTransactions.referenceId, referenceId),
+            ),
+          )
+          .limit(1);
+        if (existing) return;
+      }
+
       let [wallet] = await tx
         .select()
         .from(orgAiCredits)
@@ -165,12 +194,12 @@ export class AiCreditsService {
         amount,
         balanceAfter: newBalance,
         feature: "plan_activation",
-        referenceId: plan,
+        referenceId: referenceId ?? plan,
       });
     });
   }
 
-  async purchaseCreditsDirectly(orgId: string, userId: string, packId: number) {
+  async purchaseCreditsDirectly(orgId: string, userId: string, packId: number, automatic = false) {
     const [pack] = await this.db
       .select()
       .from(aiCreditPacks)
@@ -213,6 +242,7 @@ export class AiCreditsService {
         balanceAfter: newBalance,
         feature: "credit_purchase",
         referenceId: String(packId),
+        metadata: automatic ? { automatic: true } : null,
       });
 
       return updated;
@@ -269,4 +299,57 @@ export class AiCreditsService {
     return updated;
   }
 
+  async getWalletsEligibleForAutoTopUp() {
+    return this.db
+      .select()
+      .from(orgAiCredits)
+      .where(
+        and(
+          eq(orgAiCredits.autoTopUpEnabled, true),
+          sql`${orgAiCredits.autoTopUpPackId} is not null`,
+        ),
+      );
+  }
+
+  async hasSameDayPurchaseForPack(orgId: string, packId: number): Promise<boolean> {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date();
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const [row] = await this.db
+      .select({ id: aiCreditTransactions.id })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.orgId, orgId),
+          eq(aiCreditTransactions.type, "PURCHASE"),
+          eq(aiCreditTransactions.referenceId, String(packId)),
+          gte(aiCreditTransactions.createdAt, dayStart),
+          lt(aiCreditTransactions.createdAt, dayEnd),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  async hasMonthlyPlanGrant(orgId: string): Promise<boolean> {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    const [row] = await this.db
+      .select({ id: aiCreditTransactions.id })
+      .from(aiCreditTransactions)
+      .where(
+        and(
+          eq(aiCreditTransactions.orgId, orgId),
+          eq(aiCreditTransactions.type, "PLAN_GRANT"),
+          gte(aiCreditTransactions.createdAt, monthStart),
+          lt(aiCreditTransactions.createdAt, monthEnd),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
 }
