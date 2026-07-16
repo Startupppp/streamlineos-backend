@@ -1,8 +1,20 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, inArray, isNull, lte, notInArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
-import { signDocuments, signEnvelopes, signFields, signRecipients, users } from "../../db/schema";
+import {
+  signDocuments,
+  signEnvelopes,
+  signFields,
+  signRecipients,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
@@ -11,7 +23,10 @@ import { SignTokensService } from "./sign-tokens.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignRecipientsService, type SignActorContext } from "./sign-recipients.service";
+import {
+  SignRecipientsService,
+  type SignActorContext,
+} from "./sign-recipients.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   canTransitionEnvelope,
@@ -32,7 +47,12 @@ import type {
   ExtendExpirationInput,
 } from "./dto/signos.schemas";
 
-const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"] as const;
+const SIGNING_RECIPIENT_TYPES = [
+  "signer",
+  "approver",
+  "in_person_host",
+  "internal_reviewer",
+] as const;
 type SigningRecipientType = (typeof SIGNING_RECIPIENT_TYPES)[number];
 
 function isSigningType(type: string): type is SigningRecipientType {
@@ -96,10 +116,17 @@ export class SignEnvelopesService {
     return envelope;
   }
 
-  async update(orgId: string, envelopeId: number, input: UpdateEnvelopeInput, actor: SignActorContext) {
+  async update(
+    orgId: string,
+    envelopeId: number,
+    input: UpdateEnvelopeInput,
+    actor: SignActorContext,
+  ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
-      throw new ForbiddenException("Only draft envelopes can be edited directly");
+      throw new ForbiddenException(
+        "Only draft envelopes can be edited directly",
+      );
     }
 
     const [updated] = await this.db
@@ -125,13 +152,23 @@ export class SignEnvelopesService {
     return updated;
   }
 
-  async list(orgId: string, query: ListEnvelopesInput, scope: { userId: string; viewAll: boolean }) {
+  async list(
+    orgId: string,
+    query: ListEnvelopesInput,
+    scope: { userId: string; viewAll: boolean },
+  ) {
     const conditions = [eq(signEnvelopes.orgId, orgId)];
-    if (!scope.viewAll) conditions.push(eq(signEnvelopes.senderUserId, scope.userId));
-    if (query.status) conditions.push(eq(signEnvelopes.status, query.status as SignEnvelopeStatus));
-    if (query.sourceModule) conditions.push(eq(signEnvelopes.sourceModule, query.sourceModule));
-    if (query.sourceEntityType) conditions.push(eq(signEnvelopes.sourceEntityType, query.sourceEntityType));
-    if (query.sourceEntityId) conditions.push(eq(signEnvelopes.sourceEntityId, query.sourceEntityId));
+    if (!scope.viewAll)
+      conditions.push(eq(signEnvelopes.senderUserId, scope.userId));
+    if (query.status) conditions.push(eq(signEnvelopes.status, query.status));
+    if (query.sourceModule)
+      conditions.push(eq(signEnvelopes.sourceModule, query.sourceModule));
+    if (query.sourceEntityType)
+      conditions.push(
+        eq(signEnvelopes.sourceEntityType, query.sourceEntityType),
+      );
+    if (query.sourceEntityId)
+      conditions.push(eq(signEnvelopes.sourceEntityId, query.sourceEntityId));
 
     const rows = await this.db.query.signEnvelopes.findMany({
       where: and(...conditions),
@@ -144,7 +181,10 @@ export class SignEnvelopesService {
 
   async mustGet(orgId: string, envelopeId: number) {
     const envelope = await this.db.query.signEnvelopes.findFirst({
-      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
+      where: and(
+        eq(signEnvelopes.id, envelopeId),
+        eq(signEnvelopes.orgId, orgId),
+      ),
     });
     if (!envelope) throw new NotFoundException("Envelope not found");
     return envelope;
@@ -154,28 +194,45 @@ export class SignEnvelopesService {
     const envelope = await this.mustGet(orgId, envelopeId);
     const [documents, recipientRows, fields] = await Promise.all([
       this.db.query.signDocuments.findMany({
-        where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
+        where: and(
+          eq(signDocuments.orgId, orgId),
+          eq(signDocuments.envelopeId, envelopeId),
+        ),
         orderBy: (d, { asc }) => [asc(d.orderIndex)],
       }),
       this.recipients.listForEnvelope(orgId, envelopeId),
       this.db.query.signFields.findMany({
-        where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)),
+        where: and(
+          eq(signFields.orgId, orgId),
+          eq(signFields.envelopeId, envelopeId),
+        ),
       }),
     ]);
     return { envelope, documents, recipients: recipientRows, fields };
   }
 
-  async validate(orgId: string, envelopeId: number): Promise<EnvelopeValidationResult> {
+  async validate(
+    orgId: string,
+    envelopeId: number,
+  ): Promise<EnvelopeValidationResult> {
     const envelope = await this.mustGet(orgId, envelopeId);
     const errors: string[] = [];
 
     const documents = await this.db.query.signDocuments.findMany({
-      where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
+      where: and(
+        eq(signDocuments.orgId, orgId),
+        eq(signDocuments.envelopeId, envelopeId),
+      ),
     });
     if (documents.length === 0) errors.push("Envelope has no document");
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
-    const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
+    const recipientRows = await this.recipients.listForEnvelope(
+      orgId,
+      envelopeId,
+    );
+    const signingRecipients = recipientRows.filter((r) =>
+      isSigningType(r.recipientType),
+    );
     if (signingRecipients.length === 0) errors.push("Envelope has no signer");
 
     for (const r of signingRecipients) {
@@ -183,27 +240,46 @@ export class SignEnvelopesService {
         errors.push(`Recipient "${r.name}" is missing an email address`);
       }
       if (r.authMethod === "otp_sms" && !r.phone) {
-        errors.push(`Recipient "${r.name}" is missing a phone number for SMS OTP authentication`);
+        errors.push(
+          `Recipient "${r.name}" is missing a phone number for SMS OTP authentication`,
+        );
       }
     }
-    if (envelope.routingMode === "sequential" && signingRecipients.some((r) => !r.routingOrder)) {
-      errors.push("All recipients require a routing order for sequential envelopes");
+    if (
+      envelope.routingMode === "sequential" &&
+      signingRecipients.some((r) => !r.routingOrder)
+    ) {
+      errors.push(
+        "All recipients require a routing order for sequential envelopes",
+      );
     }
 
     const fields = await this.db.query.signFields.findMany({
-      where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)),
+      where: and(
+        eq(signFields.orgId, orgId),
+        eq(signFields.envelopeId, envelopeId),
+      ),
     });
     const recipientById = new Map(recipientRows.map((r) => [r.id, r]));
     for (const f of fields) {
       const recipient = recipientById.get(f.recipientId);
       if (f.required && recipient && !isSigningType(recipient.recipientType)) {
-        errors.push(`A required field on page ${f.pageNumber} is assigned to a non-signing recipient`);
+        errors.push(
+          `A required field on page ${f.pageNumber} is assigned to a non-signing recipient`,
+        );
       }
-      if (f.width <= 0 || f.height <= 0) errors.push(`A field on page ${f.pageNumber} has invalid coordinates`);
-      if (f.fieldType === "dropdown" && (!f.optionsJson || f.optionsJson.length === 0)) {
+      if (f.width <= 0 || f.height <= 0)
+        errors.push(`A field on page ${f.pageNumber} has invalid coordinates`);
+      if (
+        f.fieldType === "dropdown" &&
+        (!f.optionsJson || f.optionsJson.length === 0)
+      ) {
         errors.push("A dropdown field has no options");
       }
-      if (f.fieldType === "radio" && (!f.optionsJson || f.optionsJson.length < 2)) {
+      if (
+        f.fieldType === "radio" &&
+        (!f.optionsJson || f.optionsJson.length < 2)
+      ) {
         errors.push("A radio group field has fewer than two options");
       }
     }
@@ -216,7 +292,9 @@ export class SignEnvelopesService {
   }
 
   private async senderName(userId: string): Promise<string> {
-    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
     return user?.name ?? "A StreamlineOS user";
   }
 
@@ -227,23 +305,40 @@ export class SignEnvelopesService {
     }
     const validation = await this.validate(orgId, envelopeId);
     if (!validation.valid) {
-      throw new BadRequestException({ message: "Envelope is not ready to send", errors: validation.errors });
+      throw new BadRequestException({
+        message: "Envelope is not ready to send",
+        errors: validation.errors,
+      });
     }
 
     const orgSettings = await this.settings.getOrCreate(orgId);
-    const expiresAt = envelope.expiresAt ?? addDays(new Date(), orgSettings.defaultExpirationDays);
+    const expiresAt =
+      envelope.expiresAt ??
+      addDays(new Date(), orgSettings.defaultExpirationDays);
     const finalizationKey = randomUUID();
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
-    const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
+    const recipientRows = await this.recipients.listForEnvelope(
+      orgId,
+      envelopeId,
+    );
+    const signingRecipients = recipientRows.filter((r) =>
+      isSigningType(r.recipientType),
+    );
     const inviteNowIds = new Set(
-      nextEligibleRecipientIds(signingRecipients.map((r) => ({ id: r.id, routingOrder: r.routingOrder, status: r.status }))),
+      nextEligibleRecipientIds(
+        signingRecipients.map((r) => ({
+          id: r.id,
+          routingOrder: r.routingOrder,
+          status: r.status,
+        })),
+      ),
     );
     const senderName = await this.senderName(actor.userId);
 
     let invitedCount = 0;
     for (const recipient of signingRecipients) {
-      const shouldInviteNow = envelope.routingMode !== "sequential" || inviteNowIds.has(recipient.id);
+      const shouldInviteNow =
+        envelope.routingMode !== "sequential" || inviteNowIds.has(recipient.id);
       const rawToken = this.tokens.generateSigningToken();
       await this.db
         .update(signRecipients)
@@ -270,9 +365,16 @@ export class SignEnvelopesService {
     }
 
     if (envelope.ccTiming === "on_send") {
-      for (const cc of recipientRows.filter((r) => r.recipientType === "cc" || r.recipientType === "viewer")) {
+      for (const cc of recipientRows.filter(
+        (r) => r.recipientType === "cc" || r.recipientType === "viewer",
+      )) {
         if (cc.email) {
-          await this.notifications.sendCcNotice(cc.email, cc.name, envelope.title, `${appUrl}/sign/envelopes/${envelopeId}`);
+          await this.notifications.sendCcNotice(
+            cc.email,
+            cc.name,
+            envelope.title,
+            `${appUrl}/sign/envelopes/${envelopeId}`,
+          );
         }
       }
     }
@@ -299,27 +401,52 @@ export class SignEnvelopesService {
     return updated;
   }
 
-  async voidEnvelope(orgId: string, envelopeId: number, input: VoidEnvelopeInput, actor: SignActorContext) {
+  async voidEnvelope(
+    orgId: string,
+    envelopeId: number,
+    input: VoidEnvelopeInput,
+    actor: SignActorContext,
+  ) {
     const envelope = await this.mustGet(orgId, envelopeId);
-    if (!canTransitionEnvelope(envelope.status as SignEnvelopeStatus, "voided")) {
-      throw new ForbiddenException(`Cannot void an envelope in status "${envelope.status}"`);
+    if (!canTransitionEnvelope(envelope.status, "voided")) {
+      throw new ForbiddenException(
+        `Cannot void an envelope in status "${envelope.status}"`,
+      );
     }
 
     await this.db
       .update(signRecipients)
       .set({ tokenRevokedAt: new Date() })
-      .where(and(eq(signRecipients.envelopeId, envelopeId), isNull(signRecipients.completedAt)));
+      .where(
+        and(
+          eq(signRecipients.envelopeId, envelopeId),
+          isNull(signRecipients.completedAt),
+        ),
+      );
 
     const [updated] = await this.db
       .update(signEnvelopes)
-      .set({ status: "voided", voidedAt: new Date(), voidedBy: actor.userId, voidReason: input.reason })
+      .set({
+        status: "voided",
+        voidedAt: new Date(),
+        voidedBy: actor.userId,
+        voidReason: input.reason,
+      })
       .where(eq(signEnvelopes.id, envelopeId))
       .returning();
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(
+      orgId,
+      envelopeId,
+    );
     for (const r of recipientRows) {
       if (r.email && r.status !== "completed") {
-        await this.notifications.sendVoidedToRecipient(r.email, r.name, envelope.title, input.reason);
+        await this.notifications.sendVoidedToRecipient(
+          r.email,
+          r.name,
+          envelope.title,
+          input.reason,
+        );
       }
     }
 
@@ -334,19 +461,33 @@ export class SignEnvelopesService {
       userAgent: actor.userAgent,
     });
 
-    this.integrations.emitEnvelopeEvent(updated, "voided", { reason: input.reason });
+    this.integrations.emitEnvelopeEvent(updated, "voided", {
+      reason: input.reason,
+    });
 
     return updated;
   }
 
-  async correct(orgId: string, envelopeId: number, input: CorrectEnvelopeInput, actor: SignActorContext) {
+  async correct(
+    orgId: string,
+    envelopeId: number,
+    input: CorrectEnvelopeInput,
+    actor: SignActorContext,
+  ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     if (isEnvelopeTerminal(envelope.status)) {
-      throw new ForbiddenException("Completed or voided envelopes cannot be corrected");
+      throw new ForbiddenException(
+        "Completed or voided envelopes cannot be corrected",
+      );
     }
 
     for (const patch of input.recipients ?? []) {
-      await this.recipients.update(orgId, patch.id, { name: patch.name, email: patch.email, phone: patch.phone }, actor);
+      await this.recipients.update(
+        orgId,
+        patch.id,
+        { name: patch.name, email: patch.email, phone: patch.phone },
+        actor,
+      );
     }
 
     await this.audit.record({
@@ -365,26 +506,45 @@ export class SignEnvelopesService {
 
   async resend(orgId: string, envelopeId: number, actor: SignActorContext) {
     const envelope = await this.mustGet(orgId, envelopeId);
-    if (!isEnvelopeSignable(envelope.status as SignEnvelopeStatus)) {
+    if (!isEnvelopeSignable(envelope.status)) {
       throw new ForbiddenException("Only sent envelopes can be resent");
     }
 
     const senderName = await this.senderName(actor.userId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(
+      orgId,
+      envelopeId,
+    );
     let count = 0;
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
-      if (r.status === "completed" || r.status === "declined" || r.status === "delegated" || r.status === "pending") continue;
+      if (
+        r.status === "completed" ||
+        r.status === "declined" ||
+        r.status === "delegated" ||
+        r.status === "pending"
+      )
+        continue;
 
       const rawToken = this.tokens.generateSigningToken();
       await this.db
         .update(signRecipients)
-        .set({ signingTokenHash: this.tokens.hash(rawToken), tokenRevokedAt: null })
+        .set({
+          signingTokenHash: this.tokens.hash(rawToken),
+          tokenRevokedAt: null,
+        })
         .where(eq(signRecipients.id, r.id));
 
       if (r.email) {
         const signingUrl = this.tokens.buildSigningUrl(rawToken);
-        await this.notifications.sendInvitation(r.email, r.name, senderName, envelope.title, envelope.message ?? undefined, signingUrl);
+        await this.notifications.sendInvitation(
+          r.email,
+          r.name,
+          senderName,
+          envelope.title,
+          envelope.message ?? undefined,
+          signingUrl,
+        );
         count++;
       }
     }
@@ -403,17 +563,29 @@ export class SignEnvelopesService {
     return { resentCount: count };
   }
 
-  async extendExpiration(orgId: string, envelopeId: number, input: ExtendExpirationInput, actor: SignActorContext) {
+  async extendExpiration(
+    orgId: string,
+    envelopeId: number,
+    input: ExtendExpirationInput,
+    actor: SignActorContext,
+  ) {
     const envelope = await this.mustGet(orgId, envelopeId);
     const newExpiresAt = new Date(input.expiresAt);
-    if (newExpiresAt.getTime() <= Date.now()) throw new BadRequestException("New expiration must be in the future");
+    if (newExpiresAt.getTime() <= Date.now())
+      throw new BadRequestException("New expiration must be in the future");
 
-    const nextStatus: SignEnvelopeStatus = envelope.status === "expired" ? "sent" : (envelope.status as SignEnvelopeStatus);
+    const nextStatus: SignEnvelopeStatus =
+      envelope.status === "expired" ? "sent" : envelope.status;
 
     await this.db
       .update(signRecipients)
       .set({ tokenExpiresAt: newExpiresAt })
-      .where(and(eq(signRecipients.envelopeId, envelopeId), isNull(signRecipients.completedAt)));
+      .where(
+        and(
+          eq(signRecipients.envelopeId, envelopeId),
+          isNull(signRecipients.completedAt),
+        ),
+      );
 
     const [updated] = await this.db
       .update(signEnvelopes)
@@ -441,38 +613,72 @@ export class SignEnvelopesService {
    * routing, invites whichever recipients are next in line. Returns whether the envelope became
    * fully completed so the caller can trigger finalization.
    */
-  async applyRecipientOutcome(orgId: string, envelopeId: number): Promise<{ status: SignEnvelopeStatus; becameCompleted: boolean }> {
+  async applyRecipientOutcome(
+    orgId: string,
+    envelopeId: number,
+  ): Promise<{ status: SignEnvelopeStatus; becameCompleted: boolean }> {
     const envelope = await this.mustGet(orgId, envelopeId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
-    const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
-
-    const newStatus = computeEnvelopeStatusFromRecipients(
-      signingRecipients.map((r) => ({ status: r.status as SignRecipientStatus })),
-      envelope.status as SignEnvelopeStatus,
+    const recipientRows = await this.recipients.listForEnvelope(
+      orgId,
+      envelopeId,
+    );
+    const signingRecipients = recipientRows.filter((r) =>
+      isSigningType(r.recipientType),
     );
 
-    if (newStatus !== envelope.status && canTransitionEnvelope(envelope.status as SignEnvelopeStatus, newStatus)) {
-      const patch: Partial<typeof signEnvelopes.$inferInsert> = { status: newStatus };
+    const newStatus = computeEnvelopeStatusFromRecipients(
+      signingRecipients.map((r) => ({ status: r.status })),
+      envelope.status,
+    );
+
+    if (
+      newStatus !== envelope.status &&
+      canTransitionEnvelope(envelope.status, newStatus)
+    ) {
+      const patch: Partial<typeof signEnvelopes.$inferInsert> = {
+        status: newStatus,
+      };
       if (newStatus === "completed") patch.completedAt = new Date();
       if (newStatus === "declined") patch.declinedAt = new Date();
-      await this.db.update(signEnvelopes).set(patch).where(eq(signEnvelopes.id, envelopeId));
+      await this.db
+        .update(signEnvelopes)
+        .set(patch)
+        .where(eq(signEnvelopes.id, envelopeId));
 
       await this.audit.record({
         orgId,
         envelopeId,
         actorType: "system",
-        eventType: newStatus === "completed" ? "envelope_completed" : newStatus === "declined" ? "recipient_declined" : "envelope_updated",
+        eventType:
+          newStatus === "completed"
+            ? "envelope_completed"
+            : newStatus === "declined"
+              ? "recipient_declined"
+              : "envelope_updated",
         eventMessage: `Envelope status changed to ${newStatus}`,
       });
 
       if (newStatus === "declined") {
-        this.integrations.emitEnvelopeEvent({ ...envelope, ...patch } as typeof signEnvelopes.$inferSelect, "declined");
+        this.integrations.emitEnvelopeEvent(
+          { ...envelope, ...patch } as typeof signEnvelopes.$inferSelect,
+          "declined",
+        );
       }
     }
 
-    if (newStatus !== "completed" && newStatus !== "declined" && envelope.routingMode !== "parallel") {
+    if (
+      newStatus !== "completed" &&
+      newStatus !== "declined" &&
+      envelope.routingMode !== "parallel"
+    ) {
       const eligibleIds = new Set(
-        nextEligibleRecipientIds(signingRecipients.map((r) => ({ id: r.id, routingOrder: r.routingOrder, status: r.status as SignRecipientStatus }))),
+        nextEligibleRecipientIds(
+          signingRecipients.map((r) => ({
+            id: r.id,
+            routingOrder: r.routingOrder,
+            status: r.status,
+          })),
+        ),
       );
       const senderName = await this.senderName(envelope.senderUserId);
       for (const r of signingRecipients) {
@@ -480,22 +686,44 @@ export class SignEnvelopesService {
         const rawToken = this.tokens.generateSigningToken();
         await this.db
           .update(signRecipients)
-          .set({ status: "invited", signingTokenHash: this.tokens.hash(rawToken), tokenExpiresAt: envelope.expiresAt })
+          .set({
+            status: "invited",
+            signingTokenHash: this.tokens.hash(rawToken),
+            tokenExpiresAt: envelope.expiresAt,
+          })
           .where(eq(signRecipients.id, r.id));
         if (r.email) {
           const signingUrl = this.tokens.buildSigningUrl(rawToken);
-          await this.notifications.sendInvitation(r.email, r.name, senderName, envelope.title, envelope.message ?? undefined, signingUrl);
+          await this.notifications.sendInvitation(
+            r.email,
+            r.name,
+            senderName,
+            envelope.title,
+            envelope.message ?? undefined,
+            signingUrl,
+          );
         }
       }
     }
 
-    return { status: newStatus, becameCompleted: newStatus === "completed" && envelope.status !== "completed" };
+    return {
+      status: newStatus,
+      becameCompleted:
+        newStatus === "completed" && envelope.status !== "completed",
+    };
   }
 
   async runExpirationSweep(): Promise<number> {
     const now = new Date();
     const expiring = await this.db.query.signEnvelopes.findMany({
-      where: and(inArray(signEnvelopes.status, ["sent", "delivered", "partially_completed"]), lte(signEnvelopes.expiresAt, now)),
+      where: and(
+        inArray(signEnvelopes.status, [
+          "sent",
+          "delivered",
+          "partially_completed",
+        ]),
+        lte(signEnvelopes.expiresAt, now),
+      ),
     });
 
     for (const envelope of expiring) {
@@ -505,10 +733,17 @@ export class SignEnvelopesService {
         .where(
           and(
             eq(signRecipients.envelopeId, envelope.id),
-            notInArray(signRecipients.status, ["completed", "declined", "delegated"]),
+            notInArray(signRecipients.status, [
+              "completed",
+              "declined",
+              "delegated",
+            ]),
           ),
         );
-      await this.db.update(signEnvelopes).set({ status: "expired" }).where(eq(signEnvelopes.id, envelope.id));
+      await this.db
+        .update(signEnvelopes)
+        .set({ status: "expired" })
+        .where(eq(signEnvelopes.id, envelope.id));
       await this.audit.record({
         orgId: envelope.orgId,
         envelopeId: envelope.id,
@@ -516,29 +751,59 @@ export class SignEnvelopesService {
         eventType: "envelope_expired",
         eventMessage: "Envelope expired automatically",
       });
-      this.integrations.emitEnvelopeEvent({ ...envelope, status: "expired" }, "expired");
+      this.integrations.emitEnvelopeEvent(
+        { ...envelope, status: "expired" },
+        "expired",
+      );
     }
     return expiring.length;
   }
 
-  private async remindEnvelopeRecipients(envelope: typeof signEnvelopes.$inferSelect, actorType: "system" | "internal_user", actorUserId?: string): Promise<number> {
+  private async remindEnvelopeRecipients(
+    envelope: typeof signEnvelopes.$inferSelect,
+    actorType: "system" | "internal_user",
+    actorUserId?: string,
+  ): Promise<number> {
     const now = new Date();
-    const recipientRows = await this.recipients.listForEnvelope(envelope.orgId, envelope.id);
+    const recipientRows = await this.recipients.listForEnvelope(
+      envelope.orgId,
+      envelope.id,
+    );
     const senderName = await this.senderName(envelope.senderUserId);
     let remindedCount = 0;
 
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
-      if (r.status !== "invited" && r.status !== "viewed" && r.status !== "authenticated") continue;
+      if (
+        r.status !== "invited" &&
+        r.status !== "viewed" &&
+        r.status !== "authenticated"
+      )
+        continue;
       if (!r.email || !r.signingTokenHash) continue;
 
       const rawToken = this.tokens.generateSigningToken();
-      await this.db.update(signRecipients).set({ signingTokenHash: this.tokens.hash(rawToken) }).where(eq(signRecipients.id, r.id));
+      await this.db
+        .update(signRecipients)
+        .set({ signingTokenHash: this.tokens.hash(rawToken) })
+        .where(eq(signRecipients.id, r.id));
       const signingUrl = this.tokens.buildSigningUrl(rawToken);
       const daysRemaining = envelope.expiresAt
-        ? Math.max(0, Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000))
+        ? Math.max(
+            0,
+            Math.ceil(
+              (envelope.expiresAt.getTime() - now.getTime()) / 86_400_000,
+            ),
+          )
         : null;
-      await this.notifications.sendReminder(r.email, r.name, senderName, envelope.title, signingUrl, daysRemaining);
+      await this.notifications.sendReminder(
+        r.email,
+        r.name,
+        senderName,
+        envelope.title,
+        signingUrl,
+        daysRemaining,
+      );
       await this.audit.record({
         orgId: envelope.orgId,
         envelopeId: envelope.id,
@@ -554,26 +819,46 @@ export class SignEnvelopesService {
     if (remindedCount > 0) {
       await this.db
         .update(signEnvelopes)
-        .set({ reminderSentCount: envelope.reminderSentCount + 1, lastReminderAt: now })
+        .set({
+          reminderSentCount: envelope.reminderSentCount + 1,
+          lastReminderAt: now,
+        })
         .where(eq(signEnvelopes.id, envelope.id));
     }
     return remindedCount;
   }
 
   /** Admin/sender-triggered "send reminder now" button — bypasses the interval and max-count gates. */
-  async sendManualReminder(orgId: string, envelopeId: number, actor: SignActorContext): Promise<{ remindedCount: number }> {
+  async sendManualReminder(
+    orgId: string,
+    envelopeId: number,
+    actor: SignActorContext,
+  ): Promise<{ remindedCount: number }> {
     const envelope = await this.mustGet(orgId, envelopeId);
-    if (!isEnvelopeSignable(envelope.status as SignEnvelopeStatus)) {
-      throw new ForbiddenException("Reminders can only be sent for envelopes awaiting signature");
+    if (!isEnvelopeSignable(envelope.status)) {
+      throw new ForbiddenException(
+        "Reminders can only be sent for envelopes awaiting signature",
+      );
     }
-    const remindedCount = await this.remindEnvelopeRecipients(envelope, "internal_user", actor.userId);
+    const remindedCount = await this.remindEnvelopeRecipients(
+      envelope,
+      "internal_user",
+      actor.userId,
+    );
     return { remindedCount };
   }
 
   async runReminderSweep(): Promise<number> {
     const now = new Date();
     const candidates = await this.db.query.signEnvelopes.findMany({
-      where: and(inArray(signEnvelopes.status, ["sent", "delivered", "partially_completed"]), eq(signEnvelopes.reminderEnabled, true)),
+      where: and(
+        inArray(signEnvelopes.status, [
+          "sent",
+          "delivered",
+          "partially_completed",
+        ]),
+        eq(signEnvelopes.reminderEnabled, true),
+      ),
     });
 
     let sentCount = 0;
@@ -581,7 +866,10 @@ export class SignEnvelopesService {
       if (envelope.reminderSentCount >= envelope.reminderMaxCount) continue;
       const baseline = envelope.lastReminderAt ?? envelope.sentAt;
       if (!baseline) continue;
-      const intervalDays = envelope.reminderSentCount === 0 ? envelope.reminderFirstAfterDays : envelope.reminderRepeatDays;
+      const intervalDays =
+        envelope.reminderSentCount === 0
+          ? envelope.reminderFirstAfterDays
+          : envelope.reminderRepeatDays;
       if (addDays(baseline, intervalDays).getTime() > now.getTime()) continue;
 
       sentCount += await this.remindEnvelopeRecipients(envelope, "system");

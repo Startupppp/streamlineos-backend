@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrOffersService } from "./hr-offers.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createOfferTemplateSchema,
   generateOfferPdfSchema,
@@ -28,6 +29,7 @@ import {
   type UpdateOfferTemplateInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrOffersController {

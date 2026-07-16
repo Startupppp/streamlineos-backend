@@ -555,6 +555,8 @@ export class EmployeeMutationsService {
       this.cache.invalidate(`hr:dashboard:metrics:${orgId}`),
       this.cache.invalidate(`hr:dashboard:headcount-trends:${orgId}`),
       this.cache.invalidate(`hr:celebrations:${orgId}`),
+      this.cache.invalidate(`hr:salary-bands:${orgId}`),
+      this.cache.invalidate(`hr:dashboard:payroll-summary:${orgId}`),
     ]);
   }
 }

@@ -26,6 +26,7 @@ import {
   DEFAULT_PAYROLL_TOGGLES,
   type PayrollApprovalStageDef,
   type PayrollPolicyConfig,
+  type PayrollToggles,
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -71,8 +72,12 @@ export class ApprovalsService {
       );
     }
 
-    const toggles = (run.policyVersion?.toggles ?? DEFAULT_PAYROLL_TOGGLES) as typeof DEFAULT_PAYROLL_TOGGLES;
-    const policyConfig = run.policyVersion?.config as PayrollPolicyConfig | null;
+    const rawToggles = run.policyVersion?.toggles;
+    const toggles: PayrollToggles = rawToggles && typeof rawToggles === "object"
+      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
+      : { ...DEFAULT_PAYROLL_TOGGLES };
+    const rawConfig = run.policyVersion?.config;
+    const policyConfig: PayrollPolicyConfig | null = rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null;
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {
@@ -265,8 +270,11 @@ export class ApprovalsService {
     }
 
     const isLastStage = allStages.every((s) => s.id === approvalId || s.status === "APPROVED");
-    const toggles = (run.policyVersion?.toggles ?? DEFAULT_PAYROLL_TOGGLES) as typeof DEFAULT_PAYROLL_TOGGLES;
-    const lockAfterApproval = toggles.lockAfterApproval !== false;
+    const rawRunToggles = run.policyVersion?.toggles;
+    const runToggles: PayrollToggles = rawRunToggles && typeof rawRunToggles === "object"
+      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawRunToggles as Partial<PayrollToggles>) }
+      : { ...DEFAULT_PAYROLL_TOGGLES };
+    const lockAfterApproval = runToggles.lockAfterApproval !== false;
 
     const nextStage = !isLastStage
       ? (allStages.find((s) => s.id !== approvalId && s.status === "PENDING") ?? null)

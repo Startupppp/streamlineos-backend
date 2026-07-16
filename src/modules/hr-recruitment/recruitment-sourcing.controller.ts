@@ -17,6 +17,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { AccessService } from "../access/access.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import {
   createHeadcountSchema,
@@ -52,7 +53,10 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentSourcingController {
-  constructor(private readonly sourcing: RecruitmentSourcingService) {}
+  constructor(
+    private readonly sourcing: RecruitmentSourcingService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("referrals")
   @RequirePermission("hr:employees:view")
@@ -118,8 +122,10 @@ export class RecruitmentSourcingController {
 
   @Get("vendors/:vendorId/submissions")
   @RequirePermission("hr:employees:view")
-  listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.listSubmissions(u.orgId, vendorId, false);
+  async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
+    const canViewFinancials =
+      u.isOrgOwner || u.isPlatformAdmin || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
+    return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);
   }
 
   @Post("vendors/:vendorId/submissions")

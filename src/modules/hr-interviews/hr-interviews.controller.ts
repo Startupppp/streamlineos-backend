@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrInterviewsService } from "./hr-interviews.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   interviewListSchema,
   upsertSlaSchema,
@@ -25,6 +26,7 @@ import {
   type UpsertSlaInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/interviews")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrInterviewsController {

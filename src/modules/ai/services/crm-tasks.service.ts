@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { crmDeals, leads, tasks, tickets, timesheets } from "../../../db/schema";
+import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
+import { crmDeals, leads, tasks, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { LlmService } from "../providers/llm.service";
@@ -170,54 +170,69 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const activeTickets = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), sql`${tickets.status} IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')`),
-      with: { assignee: true },
-    });
+    const [ticketAgg, hoursAgg] = await Promise.all([
+      this.db
+        .select({
+          assigneeId: tickets.assigneeId,
+          activeTickets: count(),
+          totalPoints: sum(tickets.points),
+          userName: users.firstName,
+        })
+        .from(tickets)
+        .innerJoin(users, eq(users.id, tickets.assigneeId))
+        .where(
+          and(
+            eq(tickets.orgId, orgId),
+            sql`${tickets.status} IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')`,
+          ),
+        )
+        .groupBy(tickets.assigneeId, users.firstName)
+        .limit(200),
+      this.db
+        .select({
+          userId: timesheets.userId,
+          hoursThisWeek: sum(timesheets.hours),
+        })
+        .from(timesheets)
+        .where(
+          and(
+            eq(timesheets.orgId, orgId),
+            sql`${timesheets.date} >= ${formatDateOnly(weekAgo)}`,
+          ),
+        )
+        .groupBy(timesheets.userId)
+        .limit(200),
+    ]);
 
-    const timeEntries = await this.db.query.timesheets.findMany({
-      where: and(eq(timesheets.orgId, orgId), sql`${timesheets.date} >= ${formatDateOnly(weekAgo)}`),
-    });
+    const hoursMap = new Map(
+      hoursAgg.map((r) => [r.userId, parseFloat(r.hoursThisWeek ?? "0")]),
+    );
 
-    const userWorkload = new Map<string, WorkloadAnalysis>();
+    const analyses: WorkloadAnalysis[] = ticketAgg
+      .filter((r) => r.assigneeId !== null)
+      .map((r) => {
+        const activeTickets = Number(r.activeTickets);
+        const totalPoints = Number(r.totalPoints ?? 0);
+        const hoursThisWeek = hoursMap.get(r.assigneeId!) ?? 0;
 
-    for (const ticket of activeTickets) {
-      if (!ticket.assigneeId) continue;
-      const existing = userWorkload.get(ticket.assigneeId);
-      const points = ticket.points || 0;
-      if (existing) {
-        existing.activeTickets += 1;
-        existing.totalPoints += points;
-      } else {
-        userWorkload.set(ticket.assigneeId, {
-          userId: ticket.assigneeId,
-          userName: ticket.assignee?.firstName || "Unknown",
-          activeTickets: 1,
-          totalPoints: points,
-          hoursThisWeek: 0,
-          recommendation: "AVAILABLE",
-        });
-      }
-    }
+        let recommendation: WorkloadAnalysis["recommendation"] = "AVAILABLE";
+        if (hoursThisWeek > 40 || activeTickets > 10) {
+          recommendation = "OVERLOADED";
+        } else if (hoursThisWeek > 30 || activeTickets > 7) {
+          recommendation = "HEAVY";
+        } else if (hoursThisWeek > 20 || activeTickets > 4) {
+          recommendation = "MODERATE";
+        }
 
-    for (const entry of timeEntries) {
-      if (!entry.userId) continue;
-      const workload = userWorkload.get(entry.userId);
-      if (workload) workload.hoursThisWeek += parseFloat(entry.hours || "0");
-    }
-
-    const analyses = Array.from(userWorkload.values());
-    for (const analysis of analyses) {
-      if (analysis.hoursThisWeek > 40 || analysis.activeTickets > 10) {
-        analysis.recommendation = "OVERLOADED";
-      } else if (analysis.hoursThisWeek > 30 || analysis.activeTickets > 7) {
-        analysis.recommendation = "HEAVY";
-      } else if (analysis.hoursThisWeek > 20 || analysis.activeTickets > 4) {
-        analysis.recommendation = "MODERATE";
-      } else {
-        analysis.recommendation = "AVAILABLE";
-      }
-    }
+        return {
+          userId: r.assigneeId!,
+          userName: r.userName ?? "Unknown",
+          activeTickets,
+          totalPoints,
+          hoursThisWeek,
+          recommendation,
+        };
+      });
 
     return analyses;
   }

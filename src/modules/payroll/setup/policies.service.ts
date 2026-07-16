@@ -255,7 +255,8 @@ export class PayrollPoliciesService {
       ),
     });
 
-    const config = activeVersion?.config as unknown as PayrollPolicyConfig | null;
+    const rawPolicyConfig = activeVersion?.config;
+    const config: PayrollPolicyConfig | null = rawPolicyConfig && typeof rawPolicyConfig === "object" ? (rawPolicyConfig as PayrollPolicyConfig) : null;
     let packData: {
       country: string;
       items: { key: string; enabled: boolean; percentOverride?: string; label: string; kind: string | null }[];
@@ -323,7 +324,8 @@ export class PayrollPoliciesService {
         where: eq(payrollPolicyVersions.id, policy.activeVersionId),
         columns: { config: true },
       });
-      const currentConfig = (activeVersion?.config as unknown as PayrollPolicyConfig | null) ?? ({} as PayrollPolicyConfig);
+      const rawCurrentConfig = activeVersion?.config;
+      const currentConfig: PayrollPolicyConfig = rawCurrentConfig && typeof rawCurrentConfig === "object" ? (rawCurrentConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig);
       const fxRates = Object.fromEntries(
         Object.entries(input.fxRates).map(([code, rate]) => [code, String(rate)]),
       );
@@ -356,8 +358,12 @@ export class PayrollPoliciesService {
       }
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(orgId, input.templateId);
-      components = tpl.defaultComponents as unknown as TemplateComponentDef[];
-      baseToggles = tpl.defaultToggles as unknown as PayrollToggles;
+      const rawPreviewComponents = tpl.defaultComponents;
+      components = Array.isArray(rawPreviewComponents) ? (rawPreviewComponents as TemplateComponentDef[]) : [];
+      const rawPreviewToggles = tpl.defaultToggles;
+      baseToggles = rawPreviewToggles && typeof rawPreviewToggles === "object"
+        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawPreviewToggles as Partial<PayrollToggles>) }
+        : { ...DEFAULT_PAYROLL_TOGGLES };
     }
 
     const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };
@@ -425,8 +431,12 @@ export class PayrollPoliciesService {
       }
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(u.orgId, input.templateId);
-      components = tpl.defaultComponents as unknown as TemplateComponentDef[];
-      baseToggles = tpl.defaultToggles as unknown as PayrollToggles;
+      const rawActivateComponents = tpl.defaultComponents;
+      components = Array.isArray(rawActivateComponents) ? (rawActivateComponents as TemplateComponentDef[]) : [];
+      const rawActivateToggles = tpl.defaultToggles;
+      baseToggles = rawActivateToggles && typeof rawActivateToggles === "object"
+        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActivateToggles as Partial<PayrollToggles>) }
+        : { ...DEFAULT_PAYROLL_TOGGLES };
       templateKey = tpl.key ?? `custom-${tpl.id}`;
       templateSnapshot = tpl as unknown as Record<string, unknown>;
     }
@@ -553,14 +563,16 @@ export class PayrollPoliciesService {
         })
       : null;
 
-    const newToggles = {
-      ...(activeVersion?.toggles as unknown as PayrollToggles ?? DEFAULT_PAYROLL_TOGGLES),
+    const rawActiveToggles = activeVersion?.toggles;
+    const rawActiveConfig = activeVersion?.config;
+    const newToggles: PayrollToggles = {
+      ...(rawActiveToggles && typeof rawActiveToggles === "object" ? (rawActiveToggles as PayrollToggles) : DEFAULT_PAYROLL_TOGGLES),
       ...(input.toggleOverrides ?? {}),
     };
-    const newConfig = {
-      ...(activeVersion?.config as unknown as PayrollPolicyConfig ?? {}),
+    const newConfig: PayrollPolicyConfig = {
+      ...(rawActiveConfig && typeof rawActiveConfig === "object" ? (rawActiveConfig as PayrollPolicyConfig) : {}),
       ...(input.config ?? {}),
-    } as PayrollPolicyConfig;
+    };
 
     const changedRiskyToggles = RISKY_TOGGLES;
     const hasRiskyChange = input.toggleOverrides

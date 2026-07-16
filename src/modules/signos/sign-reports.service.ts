@@ -29,50 +29,54 @@ export class SignReportsService {
     const orgSettings = await this.settings.getOrCreate(orgId);
     const expiringBefore = new Date(now.getTime() + orgSettings.expirationWarningDays * 24 * 60 * 60 * 1000);
 
-    const [awaitingMe] = await this.db
-      .select({ value: count() })
-      .from(signRecipients)
-      .where(and(eq(signRecipients.orgId, orgId), eq(signRecipients.userId, userId), inArray(signRecipients.status, [...RECIPIENT_ACTIONABLE_STATUSES])));
-
-    const [sentPending] = await this.db
-      .select({ value: count() })
-      .from(signEnvelopes)
-      .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), inArray(signEnvelopes.status, [...OPEN_STATUSES])));
-
-    const [completedThisMonth] = await this.db
-      .select({ value: count() })
-      .from(signEnvelopes)
-      .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "completed"), gte(signEnvelopes.completedAt, monthStart)));
-
-    const [expiringSoon] = await this.db
-      .select({ value: count() })
-      .from(signEnvelopes)
-      .where(
-        and(
-          eq(signEnvelopes.orgId, orgId),
-          eq(signEnvelopes.senderUserId, userId),
-          inArray(signEnvelopes.status, [...OPEN_STATUSES]),
-          isNotNull(signEnvelopes.expiresAt),
-          lte(signEnvelopes.expiresAt, expiringBefore),
+    const [
+      [awaitingMe],
+      [sentPending],
+      [completedThisMonth],
+      [expiringSoon],
+      [failedEnvelopes],
+      [bouncedRecipients],
+      recentActivity,
+    ] = await Promise.all([
+      this.db
+        .select({ value: count() })
+        .from(signRecipients)
+        .where(and(eq(signRecipients.orgId, orgId), eq(signRecipients.userId, userId), inArray(signRecipients.status, [...RECIPIENT_ACTIONABLE_STATUSES]))),
+      this.db
+        .select({ value: count() })
+        .from(signEnvelopes)
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), inArray(signEnvelopes.status, [...OPEN_STATUSES]))),
+      this.db
+        .select({ value: count() })
+        .from(signEnvelopes)
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "completed"), gte(signEnvelopes.completedAt, monthStart))),
+      this.db
+        .select({ value: count() })
+        .from(signEnvelopes)
+        .where(
+          and(
+            eq(signEnvelopes.orgId, orgId),
+            eq(signEnvelopes.senderUserId, userId),
+            inArray(signEnvelopes.status, [...OPEN_STATUSES]),
+            isNotNull(signEnvelopes.expiresAt),
+            lte(signEnvelopes.expiresAt, expiringBefore),
+          ),
         ),
-      );
-
-    const [failedEnvelopes] = await this.db
-      .select({ value: count() })
-      .from(signEnvelopes)
-      .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "failed")));
-
-    const [bouncedRecipients] = await this.db
-      .select({ value: count() })
-      .from(signRecipients)
-      .innerJoin(signEnvelopes, eq(signRecipients.envelopeId, signEnvelopes.id))
-      .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signRecipients.status, "bounced")));
-
-    const recentActivity = await this.db.query.signAuditEvents.findMany({
-      where: eq(signAuditEvents.orgId, orgId),
-      orderBy: (e, { desc }) => [desc(e.createdAt)],
-      limit: 10,
-    });
+      this.db
+        .select({ value: count() })
+        .from(signEnvelopes)
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "failed"))),
+      this.db
+        .select({ value: count() })
+        .from(signRecipients)
+        .innerJoin(signEnvelopes, eq(signRecipients.envelopeId, signEnvelopes.id))
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signRecipients.status, "bounced"))),
+      this.db.query.signAuditEvents.findMany({
+        where: eq(signAuditEvents.orgId, orgId),
+        orderBy: (e, { desc }) => [desc(e.createdAt)],
+        limit: 10,
+      }),
+    ]);
 
     return {
       awaitingMe: awaitingMe.value,

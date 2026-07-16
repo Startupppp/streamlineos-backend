@@ -10,7 +10,7 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignTemplatesService, type TemplateSnapshot } from "./sign-templates.service";
+import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { SignSettingsService } from "./sign-settings.service";
 import type {
   PublicAuthInput,
@@ -77,8 +77,8 @@ export class SignPublicService {
     }
 
     const template = await this.templates.get(form.orgId, form.templateId);
-    const snapshot = template.templateJson as unknown as TemplateSnapshot;
-    const signingRole = snapshot.roles?.find((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
+    const snapshot = parseTemplateSnapshot(template.templateJson);
+    const signingRole = snapshot.roles.find((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
     if (!signingRole) throw new BadRequestException("This form's template has no signer role configured");
 
     const envelope = await this.templates.instantiate(form.orgId, form.createdBy ?? template.ownerUserId ?? "", form.templateId, {

@@ -12,6 +12,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAYROLL_TEMPLATE_SEEDS } from "./payroll-template-seeds";
 import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
+import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollTemplateSeed, TemplateComponentDef, PayrollToggles } from "../payroll.types";
 
 type TemplateRow = typeof payrollTemplates.$inferSelect;
@@ -161,10 +162,13 @@ export class PayrollTemplatesService {
 
   async preview(orgId: string, templateId: number, input: TemplatePreviewInput) {
     const template = await this.getById(orgId, templateId);
-    const components = template.defaultComponents as unknown as TemplateComponentDef[];
-    const overrides = (input.toggleOverrides ?? {}) as Partial<PayrollToggles>;
-    const effectiveToggles = {
-      ...(template.defaultToggles as unknown as PayrollToggles),
+    const rawComponents = template.defaultComponents;
+    const components: TemplateComponentDef[] = Array.isArray(rawComponents) ? (rawComponents as TemplateComponentDef[]) : [];
+    const overrides: Partial<PayrollToggles> = input.toggleOverrides && typeof input.toggleOverrides === "object" ? (input.toggleOverrides as Partial<PayrollToggles>) : {};
+    const rawDefaultToggles = template.defaultToggles;
+    const effectiveToggles: PayrollToggles = {
+      ...DEFAULT_PAYROLL_TOGGLES,
+      ...(rawDefaultToggles && typeof rawDefaultToggles === "object" ? (rawDefaultToggles as Partial<PayrollToggles>) : {}),
       ...overrides,
     };
     const preview = computeTemplatePreview(components, input.annualCtc);

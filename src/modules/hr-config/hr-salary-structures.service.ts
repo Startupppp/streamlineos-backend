@@ -4,6 +4,7 @@ import { salaryStructures } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { formatDateOnly } from "./hr-config.helpers";
 import type { CreateSalaryStructureInput } from "./dto/salary-structures.schemas";
 
@@ -12,6 +13,7 @@ export class HrSalaryStructuresService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
 
   list(orgId: string, userId: string | undefined, requestingUserId: string, isAdmin: boolean) {
@@ -60,6 +62,8 @@ export class HrSalaryStructuresService {
         })
         .returning();
     });
+
+    void this.cache.del(`hr:salary-bands:${orgId}`);
 
     this.audit.log({
       action: "hr.salary_changed",

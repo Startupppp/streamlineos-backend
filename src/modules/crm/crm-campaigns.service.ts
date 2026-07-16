@@ -136,9 +136,30 @@ export class CrmCampaignsService {
     const offset = (page - 1) * safeLimit;
 
     const [items, [{ total }]] = await Promise.all([
-      this.db.select().from(leads)
+      this.db
+        .select({
+          id: leads.id,
+          orgId: leads.orgId,
+          name: leads.name,
+          email: leads.email,
+          phone: leads.phone,
+          source: leads.source,
+          campaignId: leads.campaignId,
+          status: leads.status,
+          priority: leads.priority,
+          potentialValue: leads.potentialValue,
+          assignedToId: leads.assignedToId,
+          company: leads.company,
+          score: leads.score,
+          followUpDate: leads.followUpDate,
+          convertedAt: leads.convertedAt,
+          createdAt: leads.createdAt,
+          updatedAt: leads.updatedAt,
+        })
+        .from(leads)
         .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId)))
-        .limit(safeLimit).offset(offset),
+        .limit(safeLimit)
+        .offset(offset),
       this.db.select({ total: count() }).from(leads)
         .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId))),
     ]);

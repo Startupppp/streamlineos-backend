@@ -214,7 +214,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.markRead(channelId, u.userId);
+    return this.channels.markRead(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Mark a channel as unread" })

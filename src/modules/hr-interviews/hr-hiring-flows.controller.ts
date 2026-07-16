@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createHiringFlowSchema,
   createRoundSchema,
@@ -31,6 +32,7 @@ import {
   type UpdateRoundInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/hiring-flows")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHiringFlowsController {

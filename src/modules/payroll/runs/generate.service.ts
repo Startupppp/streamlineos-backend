@@ -17,6 +17,7 @@ import {
 } from "../../../db/schema";
 import { decryptBankDetails } from "../../hr-payroll/lib/encryption";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
@@ -319,7 +320,8 @@ export class GenerateService {
 
     if (!prevEmp?.calculationSnapshot) return null;
 
-    return prevEmp.calculationSnapshot as unknown as CalculationSnapshot;
+    const rawSnap = prevEmp.calculationSnapshot;
+    return rawSnap && typeof rawSnap === "object" ? (rawSnap as CalculationSnapshot) : null;
   }
 
   private async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{
@@ -335,9 +337,13 @@ export class GenerateService {
         .limit(1);
 
       if (version[0]) {
+        const rawToggles = version[0].toggles;
+        const rawConfig = version[0].config;
         return {
-          toggles: version[0].toggles as PayrollToggles,
-          config: version[0].config as PayrollPolicyConfig,
+          toggles: rawToggles && typeof rawToggles === "object"
+            ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
+            : { ...DEFAULT_PAYROLL_TOGGLES },
+          config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
           policyVersionId: version[0].id,
         };
       }
@@ -358,9 +364,13 @@ export class GenerateService {
 
     if (!activeVersion[0]) return null;
 
+    const rawActiveToggles = activeVersion[0].payroll_policy_versions.toggles;
+    const rawActiveConfig = activeVersion[0].payroll_policy_versions.config;
     return {
-      toggles: activeVersion[0].payroll_policy_versions.toggles as PayrollToggles,
-      config: activeVersion[0].payroll_policy_versions.config as PayrollPolicyConfig,
+      toggles: rawActiveToggles && typeof rawActiveToggles === "object"
+        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActiveToggles as Partial<PayrollToggles>) }
+        : { ...DEFAULT_PAYROLL_TOGGLES },
+      config: rawActiveConfig && typeof rawActiveConfig === "object" ? (rawActiveConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
       policyVersionId: activeVersion[0].payroll_policy_versions.id,
     };
   }

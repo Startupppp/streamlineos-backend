@@ -275,7 +275,18 @@ export class AiCreditsService {
     const offset = (page - 1) * limit;
     const [items, [countRow]] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: aiCreditTransactions.id,
+          orgId: aiCreditTransactions.orgId,
+          userId: aiCreditTransactions.userId,
+          type: aiCreditTransactions.type,
+          amount: aiCreditTransactions.amount,
+          balanceAfter: aiCreditTransactions.balanceAfter,
+          feature: aiCreditTransactions.feature,
+          model: aiCreditTransactions.model,
+          referenceId: aiCreditTransactions.referenceId,
+          createdAt: aiCreditTransactions.createdAt,
+        })
         .from(aiCreditTransactions)
         .where(eq(aiCreditTransactions.orgId, orgId))
         .orderBy(desc(aiCreditTransactions.createdAt))

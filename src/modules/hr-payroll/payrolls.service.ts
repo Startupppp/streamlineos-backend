@@ -356,6 +356,8 @@ export class PayrollsService {
       })
       .returning();
 
+    void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
+
     this.audit.log({
       action: "hr.payroll_generated",
       userId,

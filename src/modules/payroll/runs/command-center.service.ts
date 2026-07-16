@@ -11,6 +11,7 @@ import {
   payrollPolicies,
 } from "../../../db/schema";
 import { buildRunChecklist } from "./lib/checklist";
+import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig } from "../payroll.types";
 import { getStatutoryPack } from "./lib/statutory-packs";
 import type { CommandCenterQuery } from "./dto/runs.schemas";
@@ -142,7 +143,8 @@ export class CommandCenterService {
       .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
       .limit(1);
 
-    return (version[0]?.toggles as PayrollToggles) ?? null;
+    const raw = version[0]?.toggles;
+    return raw && typeof raw === "object" ? { ...DEFAULT_PAYROLL_TOGGLES, ...(raw as Partial<PayrollToggles>) } : null;
   }
 
   private async loadPackComplianceChecklist(
@@ -165,7 +167,8 @@ export class CommandCenterService {
         .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
         .limit(1);
 
-      const config = version[0]?.config as unknown as PayrollPolicyConfig | null;
+      const rawConfig = version[0]?.config;
+      const config: PayrollPolicyConfig | null = rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null;
       const packCountry = config?.statutoryPack?.country ?? country;
       return getStatutoryPack(packCountry).complianceChecklist;
     }

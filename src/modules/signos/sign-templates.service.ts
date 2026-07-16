@@ -76,6 +76,69 @@ export interface TemplateSnapshot {
   fields: TemplateField[];
 }
 
+export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSnapshot {
+  const parseRole = (r: unknown): TemplateRole => {
+    const o = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
+    return {
+      roleName: String(o["roleName"] ?? ""),
+      recipientType: String(o["recipientType"] ?? "signer"),
+      routingOrder: typeof o["routingOrder"] === "number" ? o["routingOrder"] : 0,
+      authMethod: String(o["authMethod"] ?? "email_link"),
+    };
+  };
+  const parseDocument = (d: unknown): TemplateDocument => {
+    const o = typeof d === "object" && d !== null ? (d as Record<string, unknown>) : {};
+    return {
+      fileKey: String(o["fileKey"] ?? ""),
+      fileName: String(o["fileName"] ?? ""),
+      mimeType: String(o["mimeType"] ?? ""),
+      pageCount: typeof o["pageCount"] === "number" ? o["pageCount"] : null,
+      fileSize: typeof o["fileSize"] === "number" ? o["fileSize"] : 0,
+      sha256Hash: String(o["sha256Hash"] ?? ""),
+      orderIndex: typeof o["orderIndex"] === "number" ? o["orderIndex"] : 0,
+    };
+  };
+  const parseField = (f: unknown): TemplateField => {
+    const o = typeof f === "object" && f !== null ? (f as Record<string, unknown>) : {};
+    return {
+      roleName: String(o["roleName"] ?? ""),
+      documentIndex: typeof o["documentIndex"] === "number" ? o["documentIndex"] : 0,
+      fieldType: String(o["fieldType"] ?? ""),
+      label: o["label"] != null ? String(o["label"]) : null,
+      pageNumber: typeof o["pageNumber"] === "number" ? o["pageNumber"] : 1,
+      x: typeof o["x"] === "number" ? o["x"] : 0,
+      y: typeof o["y"] === "number" ? o["y"] : 0,
+      width: typeof o["width"] === "number" ? o["width"] : 0,
+      height: typeof o["height"] === "number" ? o["height"] : 0,
+      required: Boolean(o["required"]),
+      readonly: Boolean(o["readonly"]),
+      orderIndex: typeof o["orderIndex"] === "number" ? o["orderIndex"] : 0,
+      groupId: o["groupId"] != null ? String(o["groupId"]) : null,
+      defaultValue: o["defaultValue"] != null ? String(o["defaultValue"]) : null,
+      optionsJson: Array.isArray(o["optionsJson"]) ? o["optionsJson"].map(String) : null,
+      validationType: o["validationType"] != null ? String(o["validationType"]) : null,
+      validationRulesJson: typeof o["validationRulesJson"] === "object" && o["validationRulesJson"] !== null ? (o["validationRulesJson"] as Record<string, unknown>) : null,
+      conditionalRulesJson: typeof o["conditionalRulesJson"] === "object" && o["conditionalRulesJson"] !== null ? (o["conditionalRulesJson"] as Record<string, unknown>) : null,
+    };
+  };
+  return {
+    subject: json["subject"] != null ? String(json["subject"]) : undefined,
+    message: json["message"] != null ? String(json["message"]) : undefined,
+    routingMode: String(json["routingMode"] ?? "parallel"),
+    ccTiming: String(json["ccTiming"] ?? "on_complete"),
+    allowDecline: Boolean(json["allowDecline"]),
+    expirationDays: typeof json["expirationDays"] === "number" ? json["expirationDays"] : 30,
+    reminderEnabled: Boolean(json["reminderEnabled"]),
+    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : 3,
+    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : 2,
+    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : 3,
+    watermarkPolicyId: typeof json["watermarkPolicyId"] === "number" ? json["watermarkPolicyId"] : null,
+    roles: Array.isArray(json["roles"]) ? json["roles"].map(parseRole) : [],
+    documents: Array.isArray(json["documents"]) ? json["documents"].map(parseDocument) : [],
+    fields: Array.isArray(json["fields"]) ? json["fields"].map(parseField) : [],
+  };
+}
+
 @Injectable()
 export class SignTemplatesService {
   constructor(
@@ -174,7 +237,8 @@ export class SignTemplatesService {
       })),
     };
 
-    return this.create(orgId, userId, { name, templateJson: snapshot as unknown as Record<string, unknown>, restrictedToRoles: [], restrictedToTeams: [] });
+    const templateJson: Record<string, unknown> = { ...snapshot };
+    return this.create(orgId, userId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
   }
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: SignActorContext) {
@@ -225,7 +289,7 @@ export class SignTemplatesService {
   /** Instantiates a draft envelope (documents + recipients + fields) from a template snapshot. */
   async instantiate(orgId: string, userId: string, templateId: number, input: CreateEnvelopeFromTemplateInput) {
     const template = await this.get(orgId, templateId);
-    const snapshot = template.templateJson as unknown as TemplateSnapshot;
+    const snapshot = parseTemplateSnapshot(template.templateJson);
     if (!snapshot.roles || snapshot.roles.length === 0) {
       throw new BadRequestException("This template has no recipient roles configured");
     }

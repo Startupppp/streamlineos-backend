@@ -131,7 +131,7 @@ export class NotificationDispatchService {
 
     const byChannel = new Map<NotificationChannel, RawTemplate[]>();
     for (const row of rows) {
-      const ch = row.channel as NotificationChannel;
+      const ch = row.channel;
       const existing = byChannel.get(ch);
       if (!existing) {
         byChannel.set(ch, [row]);

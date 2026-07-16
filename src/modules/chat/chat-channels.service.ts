@@ -10,6 +10,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { PlanLimitsService } from "../billing/plan-limits.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CreateChannelInput, UpdateChannelInput } from "./dto/chat.schemas";
 import {
@@ -17,11 +18,14 @@ import {
   resolveEntityChannelName,
 } from "./entity-channel-name.util";
 
+const chatUnreadKey = (userId: string, orgId: string) => `chat:unread:${userId}:${orgId}`;
+
 @Injectable()
 export class ChatChannelsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly cache: CacheService,
   ) {}
 
   private async ensureEntityChannelDisplayName<
@@ -108,24 +112,29 @@ export class ChatChannelsService {
         },
       });
 
-      const unreadRows = await this.db
-        .select({ channelId: chatMessages.channelId, count: count() })
-        .from(chatMessages)
-        .innerJoin(
-          chatChannelMembers,
-          and(
-            eq(chatChannelMembers.channelId, chatMessages.channelId),
-            eq(chatChannelMembers.userId, userId),
-          ),
-        )
-        .where(
-          and(
-            inArray(chatMessages.channelId, channelIds),
-            eq(chatMessages.isDeleted, false),
-            gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
-          ),
-        )
-        .groupBy(chatMessages.channelId);
+      const unreadRows = await this.cache.cached(
+        chatUnreadKey(userId, orgId),
+        () =>
+          this.db
+            .select({ channelId: chatMessages.channelId, count: count() })
+            .from(chatMessages)
+            .innerJoin(
+              chatChannelMembers,
+              and(
+                eq(chatChannelMembers.channelId, chatMessages.channelId),
+                eq(chatChannelMembers.userId, userId),
+              ),
+            )
+            .where(
+              and(
+                inArray(chatMessages.channelId, channelIds),
+                eq(chatMessages.isDeleted, false),
+                gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
+              ),
+            )
+            .groupBy(chatMessages.channelId),
+        15,
+      );
 
       const unreadMap = new Map(unreadRows.map((r) => [r.channelId, r.count]));
 
@@ -461,7 +470,7 @@ export class ChatChannelsService {
     return { ok: true };
   }
 
-  async markRead(channelId: number, userId: string) {
+  async markRead(channelId: number, userId: string, orgId: string) {
     await this.db
       .update(chatChannelMembers)
       .set({ lastReadAt: new Date() })
@@ -471,6 +480,8 @@ export class ChatChannelsService {
           eq(chatChannelMembers.userId, userId),
         ),
       );
+
+    await this.cache.invalidate(chatUnreadKey(userId, orgId));
 
     return { ok: true };
   }

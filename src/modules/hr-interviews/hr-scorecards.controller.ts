@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrScorecardsService } from "./hr-scorecards.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createScorecardTemplateSchema,
   scorecardAnalyticsQuerySchema,
@@ -27,6 +28,7 @@ import {
   type UpdateScorecardTemplateInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrScorecardsController {

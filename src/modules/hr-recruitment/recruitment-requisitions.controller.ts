@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuar
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -17,6 +18,7 @@ import {
   type RejectRequisitionInput,
 } from "./dto/requisitions.schemas";
 
+@RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/recruitment/requisitions")
 export class RecruitmentRequisitionsController {

@@ -29,7 +29,7 @@ export class NumberSequenceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async next(orgId: string, docType: string, tx?: Tx): Promise<string> {
-    const db = (tx ?? this.db) as Db;
+    const db = tx ?? this.db;
     const prefix = DOC_PREFIXES[docType] ?? docType;
 
     await db.insert(invNumberSequences)
