@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
@@ -6,6 +6,7 @@ import {
   kbArticleAttachments,
   kbArticleChunks,
   kbArticles,
+  kbEvents,
   kbSpaces,
   tenantAiCredits,
   tenantAiCreditTransactions,
@@ -55,6 +56,8 @@ interface AnswerOptions {
 
 @Injectable()
 export class KbRagService {
+  private readonly logger = new Logger(KbRagService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly embeddings: EmbeddingsService,
@@ -197,10 +200,25 @@ export class KbRagService {
     });
   }
 
+  private recordNoContext(orgId: string, question: string, actorId?: string): void {
+    this.db
+      .insert(kbEvents)
+      .values({
+        orgId,
+        eventType: "ai_answer_no_context",
+        actorId: actorId ?? null,
+        query: question,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+      });
+  }
+
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
     const results = await this.searchChunks(opts);
 
     if (results.length === 0) {
+      this.recordNoContext(opts.orgId, opts.question);
       return {
         answer: "I couldn't find anything related to that in the knowledge base yet.",
         sources: [],

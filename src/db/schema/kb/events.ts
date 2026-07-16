@@ -17,6 +17,7 @@ export const KB_EVENT_TYPES = [
   "search_no_results",
   "helpful_vote",
   "ai_answer",
+  "ai_answer_no_context",
   "ticket_deflected",
 ] as const;
 export type KbEventType = (typeof KB_EVENT_TYPES)[number];

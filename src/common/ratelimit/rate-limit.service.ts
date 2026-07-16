@@ -41,6 +41,11 @@ const TIERS: Record<string, Tier> = {
   "sign:public-complete": { limit: 10, windowSecs: 60 },
   "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
+  "ai:invoke": { limit: 30, windowSecs: 60 },
+  "ai:chat": { limit: 20, windowSecs: 60 },
+  "ai:vision": { limit: 10, windowSecs: 60 },
+  "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
+  "kb:ask": { limit: 20, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

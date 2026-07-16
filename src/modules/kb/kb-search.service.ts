@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleChunks, kbPages, kbSources } from "../../db/schema";
+import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages, kbSources } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { KbAccessService } from "./kb-access.service";
@@ -52,6 +52,9 @@ export class KbSearchService {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
     }
 
+    const isAdmin = this.access.isAdmin(user);
+    const principal = this.access.getPrincipalIds(user);
+
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const conditions: SQL[] = [
       eq(kbArticles.orgId, user.orgId),
@@ -59,6 +62,7 @@ export class KbSearchService {
       ne(kbArticles.status, "archived"),
       this.keywordMatch(input.q, tsquery),
     ];
+    if (!isAdmin) conditions.push(this.articleRestrictionFilter(user.orgId, principal));
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
     const where = and(...conditions);
 
@@ -116,15 +120,18 @@ export class KbSearchService {
     const q = query.trim();
     if (!q) return [];
 
+    const isAdmin = this.access.isAdmin(user);
+    const principal = this.access.getPrincipalIds(user);
+
     const pool = Math.max(limit * 3, limit);
     const lists: string[][] = [];
 
     if (ids.length > 0) {
-      const articleKeyword = await this.articleKeywordCandidates(user.orgId, ids, q, pool, spaceId);
+      const articleKeyword = await this.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId);
       if (articleKeyword.length > 0) lists.push(articleKeyword.map((id) => `a:${id}`));
 
       if (this.embeddings.isConfigured()) {
-        const articleVector = await this.articleVectorCandidates(user.orgId, ids, q, pool, spaceId);
+        const articleVector = await this.articleVectorCandidates(user.orgId, ids, q, pool, principal, spaceId);
         if (articleVector.length > 0) lists.push(articleVector.map((id) => `a:${id}`));
       }
     }
@@ -152,6 +159,7 @@ export class KbSearchService {
         eq(kbArticles.status, "published"),
       ];
       if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
+      if (!isAdmin) articleConditions.push(this.articleRestrictionFilter(user.orgId, principal));
       const articleRows = await this.db
         .select({
           id: kbArticles.id,
@@ -203,6 +211,7 @@ export class KbSearchService {
     spaceIds: number[],
     query: string,
     pool: number,
+    principal: { userId: string; role: string },
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -211,6 +220,7 @@ export class KbSearchService {
       inArray(kbArticles.spaceId, spaceIds),
       eq(kbArticles.status, "published"),
       this.keywordMatch(query, tsquery),
+      this.articleRestrictionFilter(orgId, principal),
     ];
     if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
@@ -228,6 +238,7 @@ export class KbSearchService {
     spaceIds: number[],
     query: string,
     pool: number,
+    principal: { userId: string; role: string },
     spaceId?: number,
   ): Promise<number[]> {
     try {
@@ -238,6 +249,7 @@ export class KbSearchService {
         isNotNull(kbArticleChunks.articleId),
         inArray(kbArticles.spaceId, spaceIds),
         eq(kbArticles.status, "published"),
+        this.articleRestrictionFilter(orgId, principal),
       ];
       if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
@@ -329,6 +341,28 @@ export class KbSearchService {
     } catch {
       return [];
     }
+  }
+
+  private articleRestrictionFilter(
+    orgId: string,
+    principal: { userId: string; role: string },
+  ): SQL {
+    const kar = kbArticleRestrictions;
+    return sql`(
+      NOT EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+      )
+      OR EXISTS (
+        SELECT 1 FROM ${kar}
+        WHERE ${kar.articleId} = ${kbArticles.id}
+          AND ${kar.orgId} = ${orgId}
+          AND ${kar.level} = 'view'
+          AND (${kar.userId} = ${principal.userId} OR ${kar.role} = ${principal.role})
+      )
+    )`;
   }
 
   private keywordMatch(query: string, tsquery: SQL): SQL {

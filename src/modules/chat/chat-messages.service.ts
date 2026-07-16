@@ -41,6 +41,7 @@ type PersistedMessage = {
 export class ChatMessagesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
@@ -170,6 +171,7 @@ export class ChatMessagesService {
       return created;
     });
 
+    void this.cache.invalidatePattern(`chat:unread:*:${orgId}`).catch(() => undefined);
     void this.replyReminders
       .scheduleForMessage(orgId, channelId, message.id, userId)
       .catch(() => undefined);

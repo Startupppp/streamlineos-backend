@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { and, eq, lte, lt, or, desc, inArray } from "drizzle-orm";
 import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
@@ -19,14 +19,44 @@ export interface QueueRunResult {
 }
 
 @Injectable()
-export class NotificationDeliveryWorker {
+export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationDeliveryWorker.name);
   private readonly workerId = `${process.pid}-${randomUUID().slice(0, 8)}`;
+  private drainTimer: NodeJS.Timeout | null = null;
+  private draining = false;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationProviderRegistry,
   ) {}
+
+  onModuleInit(): void {
+    if (process.env.NOTIFICATIONS_INPROCESS_WORKER === "false") return;
+    const intervalMs = Number(process.env.NOTIFICATIONS_WORKER_INTERVAL_MS) || 15_000;
+    this.drainTimer = setInterval(() => {
+      void this.drainTick();
+    }, intervalMs);
+    this.drainTimer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.drainTimer) clearInterval(this.drainTimer);
+    this.drainTimer = null;
+  }
+
+  private async drainTick(): Promise<void> {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      await this.processQueue();
+    } catch (error) {
+      this.logger.error(
+        `in-process delivery drain failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.draining = false;
+    }
+  }
 
   async processQueue(): Promise<QueueRunResult> {
     const now = new Date();

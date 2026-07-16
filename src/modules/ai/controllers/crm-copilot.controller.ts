@@ -12,6 +12,8 @@ import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -39,8 +41,9 @@ const objectionHelpSchema = z.object({
 });
 
 @Controller("ai/crm")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("crm:ai:use")
+@UseRateLimit("ai:invoke")
 export class CrmCopilotController {
   constructor(
     private readonly llm: LlmService,

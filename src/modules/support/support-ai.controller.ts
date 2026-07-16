@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards }
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -30,6 +32,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/analyze")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.ticket-insights");
@@ -38,6 +42,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/find-duplicates")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   findDuplicates(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.ticket-insights");
@@ -46,6 +52,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/suggest-kb-articles")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.ticket-insights");
@@ -54,6 +62,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/suggest-reply")
   @RequirePermission("support:tickets:reply")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.reply-suggestion");
@@ -62,6 +72,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/suggest-macro")
   @RequirePermission("support:tickets:reply")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     requireFeature(u.plan, "ai.reply-suggestion");
@@ -70,6 +82,8 @@ export class SupportAiController {
 
   @Post(":ticketId/ai/translate")
   @RequirePermission("support:tickets:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   @HttpCode(200)
   translateMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,

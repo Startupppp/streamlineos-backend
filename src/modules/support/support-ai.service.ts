@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   supportAiSuggestions,
@@ -9,7 +9,9 @@ import {
   supportTicketMessages,
   supportMacros,
   kbArticleChunks,
+  kbArticleRestrictions,
   kbArticles,
+  kbSpaces,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -282,7 +284,22 @@ export class SupportAiService {
       })
       .from(kbArticleChunks)
       .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-      .where(eq(kbArticleChunks.orgId, orgId))
+      .innerJoin(
+        kbSpaces,
+        and(eq(kbSpaces.id, kbArticles.spaceId), isNull(kbSpaces.deletedAt)),
+      )
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          eq(kbArticles.status, "published"),
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${kbArticleRestrictions} r
+            WHERE r.article_id = ${kbArticles.id}
+              AND r.org_id = ${orgId}
+              AND r.level = 'view'
+          )`,
+        ),
+      )
       .orderBy(distance)
       .limit(12);
 

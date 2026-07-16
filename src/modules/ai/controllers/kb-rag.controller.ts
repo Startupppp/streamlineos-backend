@@ -1,5 +1,7 @@
-import { Body, Controller, HttpCode, Post, ServiceUnavailableException, BadRequestException } from "@nestjs/common";
+import { Body, Controller, HttpCode, Post, ServiceUnavailableException, BadRequestException, UseGuards } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { KbRagService } from "../services/kb-rag.service";
 import { kbAskSchema } from "../dto/request.schemas";
 
@@ -10,6 +12,8 @@ export class KbRagController {
 
   @Post("ask")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:public-kb-ask")
   ask(@Body() body: unknown) {
     if (!this.kbRag.isEmbeddingConfigured()) {
       throw new ServiceUnavailableException("AI assistant is not available");

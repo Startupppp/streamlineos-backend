@@ -86,6 +86,10 @@ export class KbAccessService {
     if (!ids.includes(spaceId)) throw new NotFoundException("Space not found");
   }
 
+  getPrincipalIds(user: CurrentUserContext): { userId: string; role: string } {
+    return { userId: user.userId, role: user.role };
+  }
+
   async assertCanViewArticle(
     user: CurrentUserContext,
     row: { id: number; orgId: string; spaceId: number | null },

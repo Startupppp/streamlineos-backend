@@ -706,6 +706,32 @@ export class CronController {
     }
   }
 
+  @Get("ai-reservations-sweep")
+  getAiReservationsSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiReservationsSweep(authorization);
+  }
+
+  @Post("ai-reservations-sweep")
+  @HttpCode(200)
+  postAiReservationsSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiReservationsSweep(authorization);
+  }
+
+  private async runAiReservationsSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.billing.sweepAiReservations();
+      return {
+        success: true,
+        message: `Released ${result.released} expired AI credit reservations`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("AI reservations sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   @Get("auto-topup-flush")
   getAutoTopUpFlush(@Headers("authorization") authorization?: string) {
     return this.runAutoTopUpFlush(authorization);

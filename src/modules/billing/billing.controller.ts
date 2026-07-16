@@ -225,7 +225,7 @@ export class BillingController {
         body.signature ?? "",
       );
       if (!valid) throw new BadRequestException("Invalid payment signature");
-      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
+      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
     if (this.razorpay.isConfigured()) {
       return this.billing.purchaseAddon(u.orgId, u.userId, `ai_pack_${body.packId}`, 1);

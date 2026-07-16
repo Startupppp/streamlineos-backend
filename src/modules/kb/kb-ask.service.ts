@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -25,6 +25,8 @@ export type AskCitation =
 
 @Injectable()
 export class KbAskService {
+  private readonly logger = new Logger(KbAskService.name);
+
   constructor(
     private readonly credits: KbCreditsService,
     private readonly events: KbEventsService,
@@ -56,6 +58,12 @@ export class KbAskService {
     );
     const sources = await this.search.retrieveTopSources(user.orgId, input.question, 4);
     if (top.length === 0 && sources.length === 0) {
+      this.events.record(user.orgId, "ai_answer_no_context", {
+        actorId: user.userId,
+        query: input.question,
+      }).catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+      });
       return {
         answer:
           "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",

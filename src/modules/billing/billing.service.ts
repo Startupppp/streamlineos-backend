@@ -292,6 +292,27 @@ export class BillingService {
       return { status: 500, body: { ok: false } };
     }
 
+    if (
+      event.event === "payment.captured" &&
+      payment.status === "captured" &&
+      payment.notes?.packId &&
+      org
+    ) {
+      const packId = parseInt(String(payment.notes.packId), 10);
+      if (!isNaN(packId)) {
+        this.aiCredits
+          .grantAiPackCreditsFromWebhook(org.id, packId, payment.id)
+          .catch((err: unknown) =>
+            logger.warn("[razorpay] ai pack credit grant failed (non-fatal)", {
+              orgId: org.id,
+              packId,
+              paymentId: payment.id,
+              err,
+            }),
+          );
+      }
+    }
+
     return { status: 200, body: { ok: true } };
   }
 

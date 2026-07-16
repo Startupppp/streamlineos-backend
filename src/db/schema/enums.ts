@@ -153,6 +153,12 @@ export const aiCreditTxnTypeEnum = pgEnum("ai_credit_txn_type", [
   "EXPIRY",
 ]);
 
+export const aiCreditReservationStatusEnum = pgEnum("ai_credit_reservation_status", [
+  "RESERVED",
+  "SETTLED",
+  "RELEASED",
+]);
+
 export const affiliateStatusEnum = pgEnum("affiliate_status", [
   "PENDING",
   "ACTIVE",
