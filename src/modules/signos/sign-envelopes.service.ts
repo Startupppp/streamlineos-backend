@@ -121,6 +121,28 @@ export class SignEnvelopesService {
     return updated;
   }
 
+  async delete(orgId: string, envelopeId: number, actor: SignActorContext) {
+    const envelope = await this.mustGet(orgId, envelopeId);
+    if (!isEnvelopeEditable(envelope.status)) {
+      throw new ForbiddenException("Only draft envelopes can be deleted. Void sent envelopes instead.");
+    }
+
+    await this.db.delete(signEnvelopes).where(and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)));
+
+    await this.audit.record({
+      orgId,
+      envelopeId: null,
+      actorType: "internal_user",
+      actorUserId: actor.userId,
+      eventType: "envelope_deleted",
+      eventMessage: `Deleted draft envelope "${envelope.title}"`,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+
+    return { success: true as const };
+  }
+
   async list(orgId: string, query: ListEnvelopesInput, scope: { userId: string; viewAll: boolean }) {
     const conditions = [eq(signEnvelopes.orgId, orgId)];
     if (!scope.viewAll) conditions.push(eq(signEnvelopes.senderUserId, scope.userId));

@@ -113,10 +113,24 @@ export type UploadDocumentMetaInput = z.infer<typeof uploadDocumentMetaSchema>;
 
 // ---- Recipients ----
 
+const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s'.-]{1,79}$/;
+
 export const createRecipientSchema = z.object({
-  roleName: z.string().trim().min(1).max(100),
+  roleName: z
+    .string()
+    .trim()
+    .min(1, "Role is required")
+    .max(100)
+    .refine((v) => /[a-zA-Z0-9]/.test(v), "Role must contain at least one letter or number")
+    .refine((v) => !/^[\W_]+$/.test(v), "Role cannot consist of only special characters")
+    .refine((v) => !/\s{2,}/.test(v), "Role cannot have multiple consecutive spaces"),
   recipientType: signRecipientTypeSchema.default("signer"),
-  name: z.string().trim().min(1, "Name is required").max(200),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Name must be at least 2 characters")
+    .max(80, "Name must be at most 80 characters")
+    .regex(PERSON_NAME_REGEX, "Enter a valid name (letters, spaces, and ' . - only)"),
   email: z.string().trim().email("Valid email is required").optional(),
   phone: z.string().trim().max(30).optional(),
   userId: z.string().trim().optional(),
