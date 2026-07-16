@@ -107,6 +107,8 @@ import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
 import { EmailModule } from "./modules/email/email.module";
 import { AiModule } from "./modules/ai/ai.module";
 import { AiSummariesModule } from "./modules/ai-summaries/ai-summaries.module";
+import { WorkspaceSearchModule } from "./modules/workspace-search/workspace-search.module";
+import { SupportKbGapModule } from "./modules/support-kb-gap";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
@@ -265,6 +267,8 @@ import { MeService } from "./me/me.service";
     EmailModule,
     AiModule,
     AiSummariesModule,
+    WorkspaceSearchModule,
+    SupportKbGapModule,
     StorageModule,
     BillingModule,
     GoogleCalendarModule,

@@ -1,65 +1,27 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, ValidateNested } from "class-validator";
-import { Type } from "class-transformer";
-import type { SnapshotCitation, SnapshotStructured } from "./ai-summaries.types";
+import { z } from "zod";
+import type { SnapshotPayload } from "./ai-summaries.types";
 
-class StructuredDto implements SnapshotStructured {
-  @IsArray()
-  @IsString({ each: true })
-  highlights!: string[];
+const citationSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  title: z.string().min(1),
+  href: z.string().optional(),
+  snippet: z.string().optional(),
+  freshness: z.string().optional(),
+});
 
-  @IsArray()
-  @IsString({ each: true })
-  blockers!: string[];
+export const saveSnapshotSchema = z.object({
+  summary: z.string().min(1),
+  structured: z.object({
+    highlights: z.array(z.string()),
+    blockers: z.array(z.string()),
+    nextActions: z.array(z.string()),
+  }),
+  citations: z.array(citationSchema).optional(),
+  correlationId: z.string().optional(),
+  confidence: z.number().optional(),
+});
 
-  @IsArray()
-  @IsString({ each: true })
-  nextActions!: string[];
-}
-
-class CitationDto implements SnapshotCitation {
-  @IsNotEmpty()
-  id!: string | number;
-
-  @IsString()
-  @IsNotEmpty()
-  title!: string;
-
-  @IsOptional()
-  @IsString()
-  href?: string;
-
-  @IsOptional()
-  @IsString()
-  snippet?: string;
-
-  @IsOptional()
-  @IsString()
-  freshness?: string;
-}
-
-export class SaveSnapshotDto {
-  @IsString()
-  @IsNotEmpty()
-  summary!: string;
-
-  @ValidateNested()
-  @Type(() => StructuredDto)
-  structured!: StructuredDto;
-
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CitationDto)
-  citations?: CitationDto[];
-
-  @IsOptional()
-  @IsString()
-  correlationId?: string;
-
-  @IsOptional()
-  @IsNumber()
-  confidence?: number;
-}
+export type SaveSnapshotInput = z.infer<typeof saveSnapshotSchema> & SnapshotPayload;
 
 export const ALLOWED_ENTITY_TYPES = [
   "project",

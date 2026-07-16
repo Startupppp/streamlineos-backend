@@ -43,20 +43,6 @@ export const hrJobLevels = pgTable("hr_job_levels", {
   index("idx_hr_job_levels_org").on(table.orgId),
 ]);
 
-export const hrEmploymentTypes = pgTable("hr_employment_types", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  code: text("code"),
-  description: text("description"),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  uniqueIndex("uniq_hr_employment_types_org_name").on(table.orgId, table.name),
-  index("idx_hr_employment_types_org").on(table.orgId),
-]);
-
 export const hrTeams = pgTable("hr_teams", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -159,10 +145,6 @@ export const hrJobRolesRelations = relations(hrJobRoles, ({ one }) => ({
 
 export const hrJobLevelsRelations = relations(hrJobLevels, ({ one }) => ({
   org: one(organizations, { fields: [hrJobLevels.orgId], references: [organizations.id] }),
-}));
-
-export const hrEmploymentTypesRelations = relations(hrEmploymentTypes, ({ one }) => ({
-  org: one(organizations, { fields: [hrEmploymentTypes.orgId], references: [organizations.id] }),
 }));
 
 export const hrTeamsRelations = relations(hrTeams, ({ one }) => ({

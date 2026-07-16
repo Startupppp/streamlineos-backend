@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS onboarding_flow_tasks CASCADE;
+DROP TABLE IF EXISTS onboarding_flow_steps CASCADE;
+DROP TABLE IF EXISTS onboarding_flow_templates CASCADE;
+DROP TABLE IF EXISTS email_campaign_recipients CASCADE;
+DROP TABLE IF EXISTS email_campaigns CASCADE;
+DROP TABLE IF EXISTS crm_content CASCADE;
+DROP TABLE IF EXISTS crm_events CASCADE;
+DROP TABLE IF EXISTS crm_support_team_members CASCADE;
+DROP TABLE IF EXISTS crm_stage_requirements CASCADE;
+DROP TABLE IF EXISTS feedbucket_comments CASCADE;
+DROP TABLE IF EXISTS hr_employment_types CASCADE;
+DROP TABLE IF EXISTS module_links CASCADE;
+DROP TABLE IF EXISTS user_seats CASCADE;
+DROP TABLE IF EXISTS org_limits CASCADE;

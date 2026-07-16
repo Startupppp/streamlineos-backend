@@ -4,13 +4,10 @@ import {
   onboardingFlowTypeEnum,
   onboardingFlowSessionStatusEnum,
   onboardingFlowStepStatusEnum,
-  onboardingFlowTaskStatusEnum,
-  onboardingFlowTaskCategoryEnum,
   moduleSetupChecklistStatusEnum,
   guidedTourProgressStatusEnum,
 } from "./enums";
 import { organizations, users } from "./auth";
-import { departments } from "./hr/employees";
 
 // Server-persisted onboarding progress: org setup wizard, module setup checklists,
 // guided tours, and payment setup all share this session/step/task model.
@@ -38,71 +35,6 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
 }, (table) => [
   index("idx_onb_flow_sessions_org_user_type").on(table.orgId, table.userId, table.type),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
-]);
-
-export const onboardingFlowSteps = pgTable("onboarding_flow_steps", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  sessionId: integer("session_id").references(() => onboardingFlowSessions.id, { onDelete: "cascade" }).notNull(),
-  stepKey: text("step_key").notNull(),
-  title: text("title"),
-  status: onboardingFlowStepStatusEnum("status").notNull().default("todo"),
-  required: boolean("required").notNull().default(true),
-  ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
-  dueAt: timestamp("due_at"),
-  completedAt: timestamp("completed_at"),
-  skippedAt: timestamp("skipped_at"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_onb_flow_steps_session").on(table.sessionId),
-  unique("uq_onb_flow_steps_session_key").on(table.sessionId, table.stepKey),
-]);
-
-export const onboardingFlowTemplates = pgTable("onboarding_flow_templates", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
-  type: onboardingFlowTypeEnum("type").notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  industry: text("industry"),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
-  jobRole: text("job_role"),
-  moduleKey: text("module_key"),
-  steps: jsonb("steps").$type<Array<Record<string, unknown>>>().notNull().default([]),
-  isSystem: boolean("is_system").notNull().default(false),
-  isActive: boolean("is_active").notNull().default(true),
-  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-  deletedAt: timestamp("deleted_at"),
-}, (table) => [
-  index("idx_onb_flow_templates_org_type").on(table.orgId, table.type),
-  index("idx_onb_flow_templates_industry").on(table.industry),
-]);
-
-export const onboardingFlowTasks = pgTable("onboarding_flow_tasks", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  assigneeUserId: text("assignee_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
-  templateId: integer("template_id").references(() => onboardingFlowTemplates.id, { onDelete: "set null" }),
-  sourceType: text("source_type"),
-  sourceId: text("source_id"),
-  title: text("title").notNull(),
-  description: text("description"),
-  status: onboardingFlowTaskStatusEnum("status").notNull().default("todo"),
-  category: onboardingFlowTaskCategoryEnum("category").notNull(),
-  dueAt: timestamp("due_at"),
-  completedAt: timestamp("completed_at"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-  deletedAt: timestamp("deleted_at"),
-}, (table) => [
-  index("idx_onb_flow_tasks_assignee").on(table.orgId, table.assigneeUserId),
-  index("idx_onb_flow_tasks_status").on(table.orgId, table.status),
 ]);
 
 export const moduleSetupChecklists = pgTable("module_setup_checklists", {
@@ -180,29 +112,9 @@ export const onboardingAnalyticsEvents = pgTable("onboarding_analytics_events", 
   index("idx_onb_analytics_org_created").on(table.orgId, table.createdAt),
 ]);
 
-export const onboardingFlowSessionsRelations = relations(onboardingFlowSessions, ({ one, many }) => ({
+export const onboardingFlowSessionsRelations = relations(onboardingFlowSessions, ({ one }) => ({
   organization: one(organizations, { fields: [onboardingFlowSessions.orgId], references: [organizations.id] }),
   user: one(users, { fields: [onboardingFlowSessions.userId], references: [users.id] }),
-  steps: many(onboardingFlowSteps),
-}));
-
-export const onboardingFlowStepsRelations = relations(onboardingFlowSteps, ({ one }) => ({
-  session: one(onboardingFlowSessions, { fields: [onboardingFlowSteps.sessionId], references: [onboardingFlowSessions.id] }),
-  owner: one(users, { fields: [onboardingFlowSteps.ownerUserId], references: [users.id] }),
-}));
-
-export const onboardingFlowTemplatesRelations = relations(onboardingFlowTemplates, ({ one, many }) => ({
-  organization: one(organizations, { fields: [onboardingFlowTemplates.orgId], references: [organizations.id] }),
-  department: one(departments, { fields: [onboardingFlowTemplates.departmentId], references: [departments.id] }),
-  creator: one(users, { fields: [onboardingFlowTemplates.createdByUserId], references: [users.id] }),
-  tasks: many(onboardingFlowTasks),
-}));
-
-export const onboardingFlowTasksRelations = relations(onboardingFlowTasks, ({ one }) => ({
-  organization: one(organizations, { fields: [onboardingFlowTasks.orgId], references: [organizations.id] }),
-  assignee: one(users, { fields: [onboardingFlowTasks.assigneeUserId], references: [users.id], relationName: "onboardingFlowTaskAssignee" }),
-  owner: one(users, { fields: [onboardingFlowTasks.ownerUserId], references: [users.id], relationName: "onboardingFlowTaskOwner" }),
-  template: one(onboardingFlowTemplates, { fields: [onboardingFlowTasks.templateId], references: [onboardingFlowTemplates.id] }),
 }));
 
 export const moduleSetupChecklistsRelations = relations(moduleSetupChecklists, ({ one, many }) => ({

@@ -501,32 +501,6 @@ export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
   user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
 }));
 
-export const userSeats = pgTable("user_seats", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  moduleKey: text("module_key").notNull(),
-  status: text("status").default("ACTIVE").notNull(),
-  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
-  assignedBy: text("assigned_by").references(() => users.id),
-}, (table) => [
-  uniqueIndex("uniq_user_seats_org_user_module").on(table.orgId, table.userId, table.moduleKey),
-  index("idx_user_seats_org_module").on(table.orgId, table.moduleKey),
-  index("idx_user_seats_user").on(table.userId),
-]);
-
-export const orgLimits = pgTable("org_limits", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  limitKey: text("limit_key").notNull(),
-  limitValue: integer("limit_value").notNull(),
-  usedValue: integer("used_value").default(0).notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_org_limits_org_key").on(table.orgId, table.limitKey),
-  index("idx_org_limits_org").on(table.orgId),
-]);
-
 export const userDelegations = pgTable("user_delegations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -544,15 +518,6 @@ export const userDelegations = pgTable("user_delegations", {
   index("idx_user_delegations_delegatee_status").on(table.delegateeId, table.status),
   index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
 ]);
-
-export const userSeatsRelations = relations(userSeats, ({ one }) => ({
-  org: one(organizations, { fields: [userSeats.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [userSeats.userId], references: [users.id] }),
-}));
-
-export const orgLimitsRelations = relations(orgLimits, ({ one }) => ({
-  org: one(organizations, { fields: [orgLimits.orgId], references: [organizations.id] }),
-}));
 
 export const userDelegationsRelations = relations(userDelegations, ({ one }) => ({
   org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),

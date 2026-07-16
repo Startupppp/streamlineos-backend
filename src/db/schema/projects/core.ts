@@ -106,15 +106,6 @@ export const modules = pgTable("modules", {
   index("idx_modules_org").on(table.orgId),
 ]);
 
-export const moduleLinks = pgTable("module_links", {
-  id: serial("id").primaryKey(),
-  moduleId: integer("module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
-  linkedModuleId: integer("linked_module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_module_links").on(table.moduleId, table.linkedModuleId),
-]);
-
 export const reports = pgTable("reports", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

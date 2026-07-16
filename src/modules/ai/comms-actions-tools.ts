@@ -5,7 +5,7 @@ import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { users } from "../../db/schema";
+import { users, organizationMembers } from "../../db/schema";
 import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../ai-confirmation/ai-confirmation.service";
 import { EmailOutboxService } from "../email/email-outbox.service";
@@ -152,7 +152,8 @@ export class CommsActionsTools {
           const [employee] = await this.db
             .select({ id: users.id, name: users.name })
             .from(users)
-            .where(and(eq(users.id, employeeId), eq(users.orgId, orgId)))
+            .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+            .where(and(eq(users.id, employeeId), eq(organizationMembers.orgId, orgId)))
             .limit(1);
           if (!employee) {
             return { success: false, message: "Employee not found in this organization." };

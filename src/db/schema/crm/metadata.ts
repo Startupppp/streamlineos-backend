@@ -114,19 +114,6 @@ export const crmBlueprintTransitions = pgTable("crm_blueprint_transitions", {
   index("idx_crm_blueprint_transitions_org_blueprint").on(table.orgId, table.blueprintId),
 ]);
 
-export const crmStageRequirements = pgTable("crm_stage_requirements", {
-  id: text("id").primaryKey().$defaultFn(() => randomUUID()),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  stageId: text("stage_id").references(() => crmPipelineStages.id, { onDelete: "cascade" }).notNull(),
-  requirementType: text("requirement_type").notNull(),
-  config: jsonb("config").$type<Record<string, unknown>>(),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_crm_stage_requirements_org_stage").on(table.orgId, table.stageId),
-]);
-
 export const crmAutomationEvents = pgTable("crm_automation_events", {
   id: text("id").primaryKey().$defaultFn(() => randomUUID()),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),

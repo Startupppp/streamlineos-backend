@@ -161,23 +161,6 @@ export const feedbucketSubmissions = pgTable(
   ],
 );
 
-export const feedbucketComments = pgTable(
-  "feedbucket_comments",
-  {
-    id: serial("id").primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    submissionId: integer("submission_id")
-      .references(() => feedbucketSubmissions.id, { onDelete: "cascade" })
-      .notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
-    content: text("content").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [index("idx_feedbucket_comments_submission").on(t.orgId, t.submissionId, t.createdAt)],
-);
-
 export const feedbucketAttachments = pgTable(
   "feedbucket_attachments",
   {
@@ -218,16 +201,7 @@ export const feedbucketSubmissionsRelations = relations(feedbucketSubmissions, (
     fields: [feedbucketSubmissions.linkedTicketId],
     references: [tickets.id],
   }),
-  comments: many(feedbucketComments),
   attachments: many(feedbucketAttachments),
-}));
-
-export const feedbucketCommentsRelations = relations(feedbucketComments, ({ one }) => ({
-  submission: one(feedbucketSubmissions, {
-    fields: [feedbucketComments.submissionId],
-    references: [feedbucketSubmissions.id],
-  }),
-  user: one(users, { fields: [feedbucketComments.userId], references: [users.id] }),
 }));
 
 export const feedbucketAttachmentsRelations = relations(feedbucketAttachments, ({ one }) => ({

@@ -19,16 +19,18 @@ export interface EmailTemplateProps {
 }
 
 function buildLogoLockup(): string {
-  const r2Base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim().replace(/\/$/, "");
+  const r2Base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim().replace(
+    /\/$/,
+    "",
+  );
   const logoSrc = r2Base ? `${r2Base}/email-assets/logo-v2.png` : null;
 
-  if (logoSrc) {
+  if (logoSrc)
     return (
       `<td width="40" height="40" style="width:40px;height:40px;vertical-align:middle;">` +
       `<img src="${logoSrc}" alt="StreamlineOS" width="40" height="40" style="display:block;border:0;width:40px;height:40px;border-radius:9px;">` +
       `</td>`
     );
-  }
 
   return (
     `<td width="36" height="36" align="center" valign="middle" bgcolor="#0b1220" style="width:36px;height:36px;border-radius:9px;background:#0b1220;font-size:0;line-height:0;">` +
@@ -37,7 +39,11 @@ function buildLogoLockup(): string {
   );
 }
 
-export function getEmailTemplate({ title, preheader, content }: EmailTemplateProps): string {
+export function getEmailTemplate({
+  title,
+  preheader,
+  content,
+}: EmailTemplateProps): string {
   const supportEmail = getSupportEmail();
   const brandUrl = getBrandUrl();
   const logoCell = buildLogoLockup();

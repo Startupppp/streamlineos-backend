@@ -7,8 +7,6 @@ import {
   Param,
   Post,
   UseGuards,
-  UsePipes,
-  ValidationPipe,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -16,7 +14,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AiSummariesService } from "./ai-summaries.service";
-import { SaveSnapshotDto, isAllowedEntityType } from "./save-snapshot.dto";
+import { saveSnapshotSchema, isAllowedEntityType } from "./save-snapshot.dto";
 import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../db/schema/ai-summaries";
 
@@ -41,16 +39,17 @@ export class AiSummariesController {
   @Post(":entityType/:entityId/snapshot")
   @HttpCode(201)
   @RequirePermission("ai:summaries:create")
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
   async saveSnapshot(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
-    @Body() body: SaveSnapshotDto,
+    @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<AiSummarySnapshot> {
     if (!isAllowedEntityType(entityType)) {
       throw new BadRequestException(`Invalid entityType: ${entityType}`);
     }
-    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, body, u.userId);
+    const parsed = saveSnapshotSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Invalid request body");
+    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, parsed.data, u.userId);
   }
 }

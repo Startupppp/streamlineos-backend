@@ -8,8 +8,14 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 const mockActor: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
-  isOrgOwner: false,
+  branchId: null,
+  role: "member",
+  permissions: [],
+  enabledModules: [],
+  plan: "PROFESSIONAL",
   isPlatformAdmin: false,
+  isOrgOwner: false,
+  sessionId: "sess-1",
 };
 
 const toolOpts: ToolCallOptions = { toolCallId: "test-call", messages: [] };
