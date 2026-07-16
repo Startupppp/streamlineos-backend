@@ -106,6 +106,7 @@ import { InvWebhooksModule } from "./modules/inv-webhooks/inv-webhooks.module";
 import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
 import { EmailModule } from "./modules/email/email.module";
 import { AiModule } from "./modules/ai/ai.module";
+import { AiSummariesModule } from "./modules/ai-summaries/ai-summaries.module";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
@@ -263,6 +264,7 @@ import { MeService } from "./me/me.service";
     InvSettingsModule,
     EmailModule,
     AiModule,
+    AiSummariesModule,
     StorageModule,
     BillingModule,
     GoogleCalendarModule,

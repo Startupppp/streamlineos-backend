@@ -1616,6 +1616,18 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Configure support channels (email inbox, chat, WhatsApp, SMS)",
   },
+  {
+    name: "support:knowledge-gaps:view",
+    resource: "support:knowledge-gaps",
+    action: "view",
+    description: "View knowledge gap analysis and clustered support questions",
+  },
+  {
+    name: "support:knowledge-gaps:manage",
+    resource: "support:knowledge-gaps",
+    action: "manage",
+    description: "Trigger gap detection, draft KB articles from gaps, and dismiss gaps",
+  },
 ];
 
 const ACCOUNTING_PERMISSIONS: Permission[] = [
@@ -2534,6 +2546,27 @@ const CHAT_PERMISSIONS: Permission[] = [
     action: "create",
     description: "Submit thumbs-up/down feedback on AI responses",
   },
+  {
+    name: "ai:search:use",
+    resource: "ai:search",
+    action: "use",
+    description: "Use AI-powered cited workspace search (Ask StreamlineOS)",
+  },
+];
+
+const AI_SUMMARIES_PERMISSIONS: Permission[] = [
+  {
+    name: "ai:summaries:view",
+    resource: "ai:summaries",
+    action: "view",
+    description: "View AI-generated summary snapshots and diffs",
+  },
+  {
+    name: "ai:summaries:create",
+    resource: "ai:summaries",
+    action: "create",
+    description: "Persist AI-generated summary snapshots",
+  },
 ];
 
 const API_TOKEN_PERMISSIONS: Permission[] = [
@@ -3429,6 +3462,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_PORTFOLIO_PERMISSIONS,
   ...PROJECT_WORKFLOW_PERMISSIONS,
   ...FEEDBUCKET_PERMISSIONS,
+  ...AI_SUMMARIES_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -3457,6 +3491,9 @@ const EMPLOYEE_SELF_SERVICE = [
   "chat:messages:write",
   "ai:chat:use",
   "ai:feedback:create",
+  "ai:search:use",
+  "ai:summaries:view",
+  "ai:summaries:create",
   "settings:api-tokens:read",
   "settings:api-tokens:write",
   "calendar:read",
@@ -3715,6 +3752,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "dashboard:customer-executive:view",
     "support:kb:view",
     "support:kb:manage",
+    "support:knowledge-gaps:view",
+    "support:knowledge-gaps:manage",
     "support:macros:view",
     "support:macros:manage",
     "support:tickets:manage",
@@ -4043,6 +4082,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "settings:webhooks:manage",
     "dashboard:support:view",
     "support:kb:view",
+    "support:knowledge-gaps:view",
     "support:macros:view",
     "accounting:view",
     "accounting:report",

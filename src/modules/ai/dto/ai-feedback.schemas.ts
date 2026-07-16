@@ -7,7 +7,7 @@ export const createFeedbackSchema = z.object({
   entityType: z.string().max(50).optional(),
   entityId: z.string().max(50).optional(),
   reason: z.string().max(1000).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type CreateFeedbackDto = z.infer<typeof createFeedbackSchema>;

@@ -26,6 +26,8 @@ import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
 import { OpsCopilotTools } from "./ops-copilot-tools";
 import { CrmCopilotTools } from "./crm-copilot-tools";
 import { CommsCopilotTools } from "./comms-copilot-tools";
+import { ProjectsCopilotTools } from "./projects-copilot-tools";
+import { CommsActionsTools } from "./comms-actions-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { AiFeedbackService } from "./services/ai-feedback.service";
 import { CalendarModule } from "../calendar/calendar.module";
@@ -34,9 +36,11 @@ import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { AI_CREDIT_LEDGER } from "./gateway/credit-ledger.interface";
 import { BillingModule } from "../billing/billing.module";
 import { AiCreditsService } from "../billing/ai-credits.service";
+import { AiConfirmationModule } from "../ai-confirmation/ai-confirmation.module";
+import { ProjectsModule } from "../projects/projects.module";
 
 @Module({
-  imports: [CalendarModule, ChatModule, BillingModule],
+  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController],
   providers: [
     LlmService,
@@ -59,6 +63,8 @@ import { AiCreditsService } from "../billing/ai-credits.service";
     OpsCopilotTools,
     CrmCopilotTools,
     CommsCopilotTools,
+    ProjectsCopilotTools,
+    CommsActionsTools,
     ToolAccessService,
     AiGatewayService,
     AiFeedbackService,

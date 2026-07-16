@@ -60,18 +60,32 @@ const TOGGLE_STATUTORY_CODES: Partial<Record<PayrollToggleKey, string[]>> = {
   lwf: ["LWF"],
 };
 
-function buildApprovalChain(toggles: PayrollToggles): PayrollApprovalStageDef[] {
+function buildApprovalChain(
+  toggles: PayrollToggles,
+): PayrollApprovalStageDef[] {
   if (!toggles.approvalWorkflow) return [];
   const chain: PayrollApprovalStageDef[] = [];
   let stage = 1;
   if (toggles.managerApproval) {
-    chain.push({ stage, stageName: "Manager Review", requiredPermission: "payroll:runs:approve" });
+    chain.push({
+      stage,
+      stageName: "Manager Review",
+      requiredPermission: "payroll:runs:approve",
+    });
     stage += 1;
   }
-  chain.push({ stage, stageName: "Payroll Admin Approval", requiredPermission: "payroll:runs:approve" });
+  chain.push({
+    stage,
+    stageName: "Payroll Admin Approval",
+    requiredPermission: "payroll:runs:approve",
+  });
   stage += 1;
   if (toggles.financeApproval) {
-    chain.push({ stage, stageName: "Finance Approval", requiredPermission: "payroll:runs:approve" });
+    chain.push({
+      stage,
+      stageName: "Finance Approval",
+      requiredPermission: "payroll:runs:approve",
+    });
   }
   return chain;
 }
@@ -99,7 +113,10 @@ function calendarEventsForMonth(
       policyId,
       month: startMonth,
       type: "ATTENDANCE_CUTOFF",
-      date: format(dayOfMonth(calendar.attendanceCutoffDay, base), "yyyy-MM-dd"),
+      date: format(
+        dayOfMonth(calendar.attendanceCutoffDay, base),
+        "yyyy-MM-dd",
+      ),
       title: "Attendance Cutoff",
     },
     {
@@ -107,7 +124,10 @@ function calendarEventsForMonth(
       policyId,
       month: startMonth,
       type: "REIMBURSEMENT_CUTOFF",
-      date: format(dayOfMonth(calendar.reimbursementCutoffDay, base), "yyyy-MM-dd"),
+      date: format(
+        dayOfMonth(calendar.reimbursementCutoffDay, base),
+        "yyyy-MM-dd",
+      ),
       title: "Reimbursement Cutoff",
     },
     {
@@ -115,7 +135,10 @@ function calendarEventsForMonth(
       policyId,
       month: startMonth,
       type: "DECLARATION_CUTOFF",
-      date: format(dayOfMonth(calendar.declarationCutoffDay, base), "yyyy-MM-dd"),
+      date: format(
+        dayOfMonth(calendar.declarationCutoffDay, base),
+        "yyyy-MM-dd",
+      ),
       title: "Tax Declaration Cutoff",
     },
     {
@@ -131,7 +154,10 @@ function calendarEventsForMonth(
       policyId,
       month: startMonth,
       type: "APPROVAL_DEADLINE",
-      date: format(dayOfMonth(calendar.approvalDeadlineDay, base), "yyyy-MM-dd"),
+      date: format(
+        dayOfMonth(calendar.approvalDeadlineDay, base),
+        "yyyy-MM-dd",
+      ),
       title: "Approval Deadline",
     },
     {
@@ -147,7 +173,10 @@ function calendarEventsForMonth(
       policyId,
       month: startMonth,
       type: "PUBLISH_DATE",
-      date: format(addDays(dayOfMonth(payDay, nextMonthBase), calendar.publishOffsetDays), "yyyy-MM-dd"),
+      date: format(
+        addDays(dayOfMonth(payDay, nextMonthBase), calendar.publishOffsetDays),
+        "yyyy-MM-dd",
+      ),
       title: "Payslip Publish Date",
     },
   ];
@@ -202,21 +231,34 @@ function buildDefaultConfig(
     approvalChain,
     payslipLayout: input.payslipLayout,
     calendar: {
-      attendanceCutoffDay: calendar.attendanceCutoffDay ?? DEFAULT_CALENDAR.attendanceCutoffDay,
-      reimbursementCutoffDay: calendar.reimbursementCutoffDay ?? DEFAULT_CALENDAR.reimbursementCutoffDay,
-      declarationCutoffDay: calendar.declarationCutoffDay ?? DEFAULT_CALENDAR.declarationCutoffDay,
+      attendanceCutoffDay:
+        calendar.attendanceCutoffDay ?? DEFAULT_CALENDAR.attendanceCutoffDay,
+      reimbursementCutoffDay:
+        calendar.reimbursementCutoffDay ??
+        DEFAULT_CALENDAR.reimbursementCutoffDay,
+      declarationCutoffDay:
+        calendar.declarationCutoffDay ?? DEFAULT_CALENDAR.declarationCutoffDay,
       previewDay: calendar.previewDay ?? DEFAULT_CALENDAR.previewDay,
-      approvalDeadlineDay: calendar.approvalDeadlineDay ?? DEFAULT_CALENDAR.approvalDeadlineDay,
-      publishOffsetDays: calendar.publishOffsetDays ?? DEFAULT_CALENDAR.publishOffsetDays,
+      approvalDeadlineDay:
+        calendar.approvalDeadlineDay ?? DEFAULT_CALENDAR.approvalDeadlineDay,
+      publishOffsetDays:
+        calendar.publishOffsetDays ?? DEFAULT_CALENDAR.publishOffsetDays,
     },
     statutory: {
-      pfEmployeePercent: statutory.pfEmployeePercent ?? DEFAULT_STATUTORY.pfEmployeePercent,
-      pfEmployerPercent: statutory.pfEmployerPercent ?? DEFAULT_STATUTORY.pfEmployerPercent,
+      pfEmployeePercent:
+        statutory.pfEmployeePercent ?? DEFAULT_STATUTORY.pfEmployeePercent,
+      pfEmployerPercent:
+        statutory.pfEmployerPercent ?? DEFAULT_STATUTORY.pfEmployerPercent,
       pfWageCeiling: statutory.pfWageCeiling ?? DEFAULT_STATUTORY.pfWageCeiling,
-      esiEmployeePercent: statutory.esiEmployeePercent ?? DEFAULT_STATUTORY.esiEmployeePercent,
-      esiEmployerPercent: statutory.esiEmployerPercent ?? DEFAULT_STATUTORY.esiEmployerPercent,
-      esiWageCeiling: statutory.esiWageCeiling ?? DEFAULT_STATUTORY.esiWageCeiling,
-      professionalTaxMonthly: statutory.professionalTaxMonthly ?? DEFAULT_STATUTORY.professionalTaxMonthly,
+      esiEmployeePercent:
+        statutory.esiEmployeePercent ?? DEFAULT_STATUTORY.esiEmployeePercent,
+      esiEmployerPercent:
+        statutory.esiEmployerPercent ?? DEFAULT_STATUTORY.esiEmployerPercent,
+      esiWageCeiling:
+        statutory.esiWageCeiling ?? DEFAULT_STATUTORY.esiWageCeiling,
+      professionalTaxMonthly:
+        statutory.professionalTaxMonthly ??
+        DEFAULT_STATUTORY.professionalTaxMonthly,
       tdsMode: statutory.tdsMode ?? DEFAULT_STATUTORY.tdsMode,
       tdsFlatPercent: statutory.tdsFlatPercent ?? null,
     },
@@ -246,7 +288,8 @@ export class PayrollPoliciesService {
     const pack = getStatutoryPack(policy.country ?? "IN");
     const taxRegimeApplicable = pack.taxRegimeApplicable;
 
-    if (!policy.activeVersionId) return { policy, activeVersion: null, taxRegimeApplicable };
+    if (!policy.activeVersionId)
+      return { policy, activeVersion: null, taxRegimeApplicable };
 
     const activeVersion = await this.db.query.payrollPolicyVersions.findFirst({
       where: and(
@@ -256,10 +299,19 @@ export class PayrollPoliciesService {
     });
 
     const rawPolicyConfig = activeVersion?.config;
-    const config: PayrollPolicyConfig | null = rawPolicyConfig && typeof rawPolicyConfig === "object" ? (rawPolicyConfig as PayrollPolicyConfig) : null;
+    const config: PayrollPolicyConfig | null =
+      rawPolicyConfig && typeof rawPolicyConfig === "object"
+        ? (rawPolicyConfig as PayrollPolicyConfig)
+        : null;
     let packData: {
       country: string;
-      items: { key: string; enabled: boolean; percentOverride?: string; label: string; kind: string | null }[];
+      items: {
+        key: string;
+        enabled: boolean;
+        percentOverride?: string;
+        label: string;
+        kind: string | null;
+      }[];
       complianceChecklist: { key: string; label: string; detail: string }[];
     } | null = null;
     if (config?.statutoryPack) {
@@ -269,13 +321,22 @@ export class PayrollPoliciesService {
         country: packCountry,
         items: config.statutoryPack.items.map((item) => {
           const def = packDef.items.find((d) => d.key === item.key);
-          return { ...item, label: def?.label ?? item.key, kind: def?.kind ?? null };
+          return {
+            ...item,
+            label: def?.label ?? item.key,
+            kind: def?.kind ?? null,
+          };
         }),
         complianceChecklist: packDef.complianceChecklist,
       };
     }
 
-    return { policy, activeVersion: activeVersion ?? null, taxRegimeApplicable, statutoryPack: packData };
+    return {
+      policy,
+      activeVersion: activeVersion ?? null,
+      taxRegimeApplicable,
+      statutoryPack: packData,
+    };
   }
 
   async create(u: CurrentUserContext, input: CreatePolicyInput) {
@@ -283,7 +344,10 @@ export class PayrollPoliciesService {
       where: eq(payrollPolicies.orgId, u.orgId),
       columns: { id: true },
     });
-    if (existing) throw new ConflictException("This organisation already has a payroll policy. Use PATCH to update it.");
+    if (existing)
+      throw new ConflictException(
+        "This organisation already has a payroll policy. Use PATCH to update it.",
+      );
 
     const [policy] = await this.db
       .insert(payrollPolicies)
@@ -304,30 +368,46 @@ export class PayrollPoliciesService {
     return policy;
   }
 
-  async update(u: CurrentUserContext, policyId: number, input: UpdatePolicyInput) {
+  async update(
+    u: CurrentUserContext,
+    policyId: number,
+    input: UpdatePolicyInput,
+  ) {
     const policy = await this.assertBelongsToOrg(u.orgId, policyId);
     if (policy.status !== "DRAFT" && !u.isOrgOwner && !u.isPlatformAdmin) {
-      throw new BadRequestException("Only the org owner can update an active policy profile");
+      throw new BadRequestException(
+        "Only the org owner can update an active policy profile",
+      );
     }
 
     const values: Partial<typeof payrollPolicies.$inferInsert> = {};
     if (input.country !== undefined) values.country = input.country;
     if (input.state !== undefined) values.state = input.state ?? null;
-    if (input.legalEntityName !== undefined) values.legalEntityName = input.legalEntityName ?? null;
+    if (input.legalEntityName !== undefined)
+      values.legalEntityName = input.legalEntityName ?? null;
     if (input.currency !== undefined) values.currency = input.currency;
-    if (input.payFrequency !== undefined) values.payFrequency = input.payFrequency;
+    if (input.payFrequency !== undefined)
+      values.payFrequency = input.payFrequency;
     if (input.payDay !== undefined) values.payDay = input.payDay;
     if (input.startMonth !== undefined) values.startMonth = input.startMonth;
 
     if (input.fxRates !== undefined && policy.activeVersionId) {
-      const activeVersion = await this.db.query.payrollPolicyVersions.findFirst({
-        where: eq(payrollPolicyVersions.id, policy.activeVersionId),
-        columns: { config: true },
-      });
+      const activeVersion = await this.db.query.payrollPolicyVersions.findFirst(
+        {
+          where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+          columns: { config: true },
+        },
+      );
       const rawCurrentConfig = activeVersion?.config;
-      const currentConfig: PayrollPolicyConfig = rawCurrentConfig && typeof rawCurrentConfig === "object" ? (rawCurrentConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig);
+      const currentConfig: PayrollPolicyConfig =
+        rawCurrentConfig && typeof rawCurrentConfig === "object"
+          ? (rawCurrentConfig as PayrollPolicyConfig)
+          : ({} as PayrollPolicyConfig);
       const fxRates = Object.fromEntries(
-        Object.entries(input.fxRates).map(([code, rate]) => [code, String(rate)]),
+        Object.entries(input.fxRates).map(([code, rate]) => [
+          code,
+          String(rate),
+        ]),
       );
       const nextConfig = { ...currentConfig, fxRates };
       await this.db
@@ -341,7 +421,12 @@ export class PayrollPoliciesService {
     const [updated] = await this.db
       .update(payrollPolicies)
       .set(values)
-      .where(and(eq(payrollPolicies.id, policyId), eq(payrollPolicies.orgId, u.orgId)))
+      .where(
+        and(
+          eq(payrollPolicies.id, policyId),
+          eq(payrollPolicies.orgId, u.orgId),
+        ),
+      )
       .returning();
     return updated;
   }
@@ -351,7 +436,9 @@ export class PayrollPoliciesService {
     let baseToggles: PayrollToggles = { ...DEFAULT_PAYROLL_TOGGLES };
 
     if (input.templateKey) {
-      const seed = PAYROLL_TEMPLATE_SEEDS.find((s) => s.key === input.templateKey);
+      const seed = PAYROLL_TEMPLATE_SEEDS.find(
+        (s) => s.key === input.templateKey,
+      );
       if (seed) {
         components = seed.defaultComponents;
         baseToggles = seed.defaultToggles;
@@ -359,14 +446,23 @@ export class PayrollPoliciesService {
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(orgId, input.templateId);
       const rawPreviewComponents = tpl.defaultComponents;
-      components = Array.isArray(rawPreviewComponents) ? (rawPreviewComponents as TemplateComponentDef[]) : [];
+      components = Array.isArray(rawPreviewComponents)
+        ? (rawPreviewComponents as TemplateComponentDef[])
+        : [];
       const rawPreviewToggles = tpl.defaultToggles;
-      baseToggles = rawPreviewToggles && typeof rawPreviewToggles === "object"
-        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawPreviewToggles as Partial<PayrollToggles>) }
-        : { ...DEFAULT_PAYROLL_TOGGLES };
+      baseToggles =
+        rawPreviewToggles && typeof rawPreviewToggles === "object"
+          ? {
+              ...DEFAULT_PAYROLL_TOGGLES,
+              ...(rawPreviewToggles as Partial<PayrollToggles>),
+            }
+          : { ...DEFAULT_PAYROLL_TOGGLES };
     }
 
-    const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };
+    const toggles: PayrollToggles = {
+      ...baseToggles,
+      ...(input.toggleOverrides ?? {}),
+    };
     const approvalChain = buildApprovalChain(toggles);
 
     const calendarDefaults = DEFAULT_CALENDAR;
@@ -377,7 +473,13 @@ export class PayrollPoliciesService {
       columns: { payDay: true },
     });
     const payDay = input.payDay ?? policy?.payDay ?? 28;
-    const calendarPlan = calendarEventsForMonth(-1, orgId, startMonth, calendarDefaults, payDay);
+    const calendarPlan = calendarEventsForMonth(
+      -1,
+      orgId,
+      startMonth,
+      calendarDefaults,
+      payDay,
+    );
 
     const essOptions = {
       showSalaryStructure: toggles.essShowSalaryStructure,
@@ -410,10 +512,21 @@ export class PayrollPoliciesService {
       complianceChecklist: pack.complianceChecklist,
     };
 
-    return { toggles, components, approvalChain, calendarPlan, essOptions, statutoryPack };
+    return {
+      toggles,
+      components,
+      approvalChain,
+      calendarPlan,
+      essOptions,
+      statutoryPack,
+    };
   }
 
-  async activate(u: CurrentUserContext, policyId: number, input: ActivatePolicyInput) {
+  async activate(
+    u: CurrentUserContext,
+    policyId: number,
+    input: ActivatePolicyInput,
+  ) {
     const policy = await this.assertBelongsToOrg(u.orgId, policyId);
 
     let components: TemplateComponentDef[] = [];
@@ -422,7 +535,9 @@ export class PayrollPoliciesService {
     let templateSnapshot: Record<string, unknown> = {};
 
     if (input.templateKey) {
-      const seed = PAYROLL_TEMPLATE_SEEDS.find((s) => s.key === input.templateKey);
+      const seed = PAYROLL_TEMPLATE_SEEDS.find(
+        (s) => s.key === input.templateKey,
+      );
       if (seed) {
         components = seed.defaultComponents;
         baseToggles = seed.defaultToggles;
@@ -430,23 +545,42 @@ export class PayrollPoliciesService {
         templateSnapshot = seed as unknown as Record<string, unknown>;
       }
     } else if (input.templateId) {
-      const tpl = await this.templatesService.getById(u.orgId, input.templateId);
+      const tpl = await this.templatesService.getById(
+        u.orgId,
+        input.templateId,
+      );
       const rawActivateComponents = tpl.defaultComponents;
-      components = Array.isArray(rawActivateComponents) ? (rawActivateComponents as TemplateComponentDef[]) : [];
+      components = Array.isArray(rawActivateComponents)
+        ? (rawActivateComponents as TemplateComponentDef[])
+        : [];
       const rawActivateToggles = tpl.defaultToggles;
-      baseToggles = rawActivateToggles && typeof rawActivateToggles === "object"
-        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActivateToggles as Partial<PayrollToggles>) }
-        : { ...DEFAULT_PAYROLL_TOGGLES };
+      baseToggles =
+        rawActivateToggles && typeof rawActivateToggles === "object"
+          ? {
+              ...DEFAULT_PAYROLL_TOGGLES,
+              ...(rawActivateToggles as Partial<PayrollToggles>),
+            }
+          : { ...DEFAULT_PAYROLL_TOGGLES };
       templateKey = tpl.key ?? `custom-${tpl.id}`;
       templateSnapshot = tpl as unknown as Record<string, unknown>;
     }
 
-    const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };
-    const config = buildDefaultConfig(input, components, toggles, policy.country ?? "IN");
+    const toggles: PayrollToggles = {
+      ...baseToggles,
+      ...(input.toggleOverrides ?? {}),
+    };
+    const config = buildDefaultConfig(
+      input,
+      components,
+      toggles,
+      policy.country ?? "IN",
+    );
 
     const result = await this.db.transaction(async (tx) => {
       const versionsResult = await tx
-        .select({ maxVersion: sql<number>`COALESCE(MAX(${payrollPolicyVersions.version}), 0)` })
+        .select({
+          maxVersion: sql<number>`COALESCE(MAX(${payrollPolicyVersions.version}), 0)`,
+        })
         .from(payrollPolicyVersions)
         .where(eq(payrollPolicyVersions.policyId, policyId));
 
@@ -499,7 +633,9 @@ export class PayrollPoliciesService {
             sortOrder: comp.sortOrder,
             isActive: true,
           })
-          .onConflictDoNothing({ target: [salaryComponents.orgId, salaryComponents.code] });
+          .onConflictDoNothing({
+            target: [salaryComponents.orgId, salaryComponents.code],
+          });
       }
 
       const calendarInserts = calendarEventsForMonth(
@@ -530,28 +666,112 @@ export class PayrollPoliciesService {
       },
     });
 
-    const checklist: Array<{ key: string; label: string; done: boolean; href: string; detail: string | null }> = [
-      { key: "employees_verified", label: "Verify employee profiles", done: false, href: "/payroll/employees", detail: null },
-      { key: "invite_employees_configured", label: "Invite employees & configure self-service", done: false, href: "/settings/roles", detail: "Configure employee self-service options and invite your team" },
-      { key: "attendance_imported", label: "Import attendance data", done: false, href: "/payroll/attendance", detail: null },
-      { key: "reimbursements_approved", label: "Approve reimbursements", done: !toggles.reimbursements, href: "/payroll/reimbursements", detail: null },
-      { key: "variable_pay_approved", label: "Approve variable pay", done: !toggles.salesIncentives && !toggles.bonuses, href: "/payroll/variable", detail: null },
-      { key: "loans_applied", label: "Apply loan deductions", done: !toggles.loans, href: "/payroll/loans", detail: null },
-      { key: "tax_declarations_locked", label: "Lock tax declarations", done: !toggles.tds, href: "/payroll/tax", detail: null },
-      { key: "preview_generated", label: "Generate payroll preview", done: false, href: "/payroll/runs", detail: null },
-      { key: "exceptions_resolved", label: "Resolve exceptions", done: false, href: "/payroll/runs", detail: null },
-      { key: "payroll_approved", label: "Approve payroll run", done: !toggles.approvalWorkflow, href: "/payroll/runs", detail: null },
-      { key: "bank_file_generated", label: "Generate bank payout file", done: !toggles.bankPayoutFile, href: "/payroll/payout", detail: null },
-      { key: "payslips_published", label: "Publish payslips", done: !toggles.payslipPublishing, href: "/payroll/payslips", detail: null },
+    const checklist: Array<{
+      key: string;
+      label: string;
+      done: boolean;
+      href: string;
+      detail: string | null;
+    }> = [
+      {
+        key: "employees_verified",
+        label: "Verify employee profiles",
+        done: false,
+        href: "/payroll/employees",
+        detail: null,
+      },
+      {
+        key: "invite_employees_configured",
+        label: "Invite employees & configure self-service",
+        done: false,
+        href: "/settings/roles",
+        detail: "Configure employee self-service options and invite your team",
+      },
+      {
+        key: "attendance_imported",
+        label: "Import attendance data",
+        done: false,
+        href: "/payroll/attendance",
+        detail: null,
+      },
+      {
+        key: "reimbursements_approved",
+        label: "Approve reimbursements",
+        done: !toggles.reimbursements,
+        href: "/payroll/reimbursements",
+        detail: null,
+      },
+      {
+        key: "variable_pay_approved",
+        label: "Approve variable pay",
+        done: !toggles.salesIncentives && !toggles.bonuses,
+        href: "/payroll/variable",
+        detail: null,
+      },
+      {
+        key: "loans_applied",
+        label: "Apply loan deductions",
+        done: !toggles.loans,
+        href: "/payroll/loans",
+        detail: null,
+      },
+      {
+        key: "tax_declarations_locked",
+        label: "Lock tax declarations",
+        done: !toggles.tds,
+        href: "/payroll/tax",
+        detail: null,
+      },
+      {
+        key: "preview_generated",
+        label: "Generate payroll preview",
+        done: false,
+        href: "/payroll/runs",
+        detail: null,
+      },
+      {
+        key: "exceptions_resolved",
+        label: "Resolve exceptions",
+        done: false,
+        href: "/payroll/runs",
+        detail: null,
+      },
+      {
+        key: "payroll_approved",
+        label: "Approve payroll run",
+        done: !toggles.approvalWorkflow,
+        href: "/payroll/runs",
+        detail: null,
+      },
+      {
+        key: "bank_file_generated",
+        label: "Generate bank payout file",
+        done: !toggles.bankPayoutFile,
+        href: "/payroll/payout",
+        detail: null,
+      },
+      {
+        key: "payslips_published",
+        label: "Publish payslips",
+        done: !toggles.payslipPublishing,
+        href: "/payroll/payslips",
+        detail: null,
+      },
     ];
 
     return { ...result, checklist };
   }
 
-  async createVersion(u: CurrentUserContext, policyId: number, input: CreatePolicyVersionInput) {
+  async createVersion(
+    u: CurrentUserContext,
+    policyId: number,
+    input: CreatePolicyVersionInput,
+  ) {
     const policy = await this.assertBelongsToOrg(u.orgId, policyId);
     if (policy.status !== "ACTIVE") {
-      throw new BadRequestException("Policy must be ACTIVE before creating a new version");
+      throw new BadRequestException(
+        "Policy must be ACTIVE before creating a new version",
+      );
     }
 
     const activeVersion = policy.activeVersionId
@@ -566,25 +786,65 @@ export class PayrollPoliciesService {
     const rawActiveToggles = activeVersion?.toggles;
     const rawActiveConfig = activeVersion?.config;
     const newToggles: PayrollToggles = {
-      ...(rawActiveToggles && typeof rawActiveToggles === "object" ? (rawActiveToggles as PayrollToggles) : DEFAULT_PAYROLL_TOGGLES),
+      ...(rawActiveToggles && typeof rawActiveToggles === "object"
+        ? (rawActiveToggles as PayrollToggles)
+        : DEFAULT_PAYROLL_TOGGLES),
       ...(input.toggleOverrides ?? {}),
     };
+    let baseConfig: PayrollPolicyConfig;
+    if (rawActiveConfig && typeof rawActiveConfig === "object")
+      baseConfig = rawActiveConfig as PayrollPolicyConfig;
+    else
+      baseConfig = {
+        components: [],
+        rounding: { mode: "NEAREST", precision: 2 },
+        approvalChain: [],
+        payslipLayout: "CLASSIC",
+        calendar: {
+          attendanceCutoffDay: 20,
+          reimbursementCutoffDay: 20,
+          declarationCutoffDay: 15,
+          previewDay: 22,
+          approvalDeadlineDay: 25,
+          publishOffsetDays: 1,
+        },
+        statutory: {
+          pfEmployeePercent: "12",
+          pfEmployerPercent: "12",
+          pfWageCeiling: null,
+          esiEmployeePercent: "0.75",
+          esiEmployerPercent: "3.25",
+          esiWageCeiling: null,
+          professionalTaxMonthly: "200.00",
+          tdsMode: "DECLARATION",
+          tdsFlatPercent: null,
+        },
+        overtime: { multiplier: "1.50", basis: "BASIC" },
+        varianceThresholdPercent: 20,
+      };
+
     const newConfig: PayrollPolicyConfig = {
-      ...(rawActiveConfig && typeof rawActiveConfig === "object" ? (rawActiveConfig as PayrollPolicyConfig) : {}),
+      ...baseConfig,
       ...(input.config ?? {}),
     };
 
     const changedRiskyToggles = RISKY_TOGGLES;
     const hasRiskyChange = input.toggleOverrides
-      ? Object.keys(input.toggleOverrides).some((k) => changedRiskyToggles.has(k as PayrollToggleKey))
+      ? Object.keys(input.toggleOverrides).some((k) =>
+          changedRiskyToggles.has(k as PayrollToggleKey),
+        )
       : false;
 
     if (hasRiskyChange && !input.reason) {
-      throw new BadRequestException("A reason is required when changing statutory or workflow toggles");
+      throw new BadRequestException(
+        "A reason is required when changing statutory or workflow toggles",
+      );
     }
 
     const versionsResult = await this.db
-      .select({ maxVersion: sql<number>`COALESCE(MAX(${payrollPolicyVersions.version}), 0)` })
+      .select({
+        maxVersion: sql<number>`COALESCE(MAX(${payrollPolicyVersions.version}), 0)`,
+      })
       .from(payrollPolicyVersions)
       .where(eq(payrollPolicyVersions.policyId, policyId));
 
@@ -624,7 +884,12 @@ export class PayrollPoliciesService {
     const [row] = await this.db
       .select({ affectedCount: count() })
       .from(employeeSalaryProfiles)
-      .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.status, "ACTIVE")));
+      .where(
+        and(
+          eq(employeeSalaryProfiles.orgId, orgId),
+          eq(employeeSalaryProfiles.status, "ACTIVE"),
+        ),
+      );
 
     const affectedCount = row?.affectedCount ?? 0;
     const affectedCodes = TOGGLE_STATUTORY_CODES[input.toggle] ?? [];
@@ -638,7 +903,10 @@ export class PayrollPoliciesService {
 
   private async assertBelongsToOrg(orgId: string, policyId: number) {
     const policy = await this.db.query.payrollPolicies.findFirst({
-      where: and(eq(payrollPolicies.id, policyId), eq(payrollPolicies.orgId, orgId)),
+      where: and(
+        eq(payrollPolicies.id, policyId),
+        eq(payrollPolicies.orgId, orgId),
+      ),
     });
     if (!policy) throw new NotFoundException("Payroll policy not found");
     return policy;

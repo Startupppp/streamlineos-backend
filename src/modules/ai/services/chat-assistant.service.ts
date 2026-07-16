@@ -30,6 +30,8 @@ import { WorkspaceCopilotTools } from "../workspace-copilot-tools";
 import { OpsCopilotTools } from "../ops-copilot-tools";
 import { CrmCopilotTools } from "../crm-copilot-tools";
 import { CommsCopilotTools } from "../comms-copilot-tools";
+import { ProjectsCopilotTools } from "../projects-copilot-tools";
+import { CommsActionsTools } from "../comms-actions-tools";
 import { ToolAccessService } from "../tool-access.service";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
@@ -79,6 +81,8 @@ export class ChatAssistantService {
     private readonly opsCopilot: OpsCopilotTools,
     private readonly crmCopilot: CrmCopilotTools,
     private readonly commsCopilot: CommsCopilotTools,
+    private readonly projectsCopilot: ProjectsCopilotTools,
+    private readonly commsActions: CommsActionsTools,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
     private readonly usageSvc: AiUsageService,
@@ -185,14 +189,16 @@ ${context.topLeads.map((l) => `  - ${l.name} — ${l.status}${l.priority ? ` [${
 
 ## Capabilities
 1. **HR**: Attendance, leaves, payroll, employee management, headcount, attrition, mood, policies
-2. **Projects**: Tickets, sprints, burndown, time tracking, AI project analysis
+2. **Projects**: Tickets (read, create, update status, comment), sprints, burndown, time tracking, AI project analysis, calendar reminders from tickets
 3. **CRM**: Leads, deals, pipeline, client management
 4. **Calendar**: Schedule meetings and events, view your own schedule
 5. **Analytics**: Team performance, conversion rates, pipeline health
 6. **Knowledge Base**: Search wiki pages, uploaded documents, company policies, and notes
-7. **Messaging**: Send direct messages, search chat history
+7. **Messaging**: Send direct messages, post to channels, send email, search chat history
 8. **Inventory**: Look up product stock availability
 9. **People Directory**: Find org members and their ticket stats
+10. **Recognition**: Send kudos and recognition badges to team members
+11. **Bonus**: Draft bonus proposals for HR review (draft only)
 
 ## Available Actions
 You can take the following actions on behalf of the user when asked:
@@ -206,10 +212,28 @@ You can take the following actions on behalf of the user when asked:
 - **searchProjects**: Find projects by name (use before askProjectAI / getProjectSummary)
 - **askProjectAI**: Ask an AI question about a specific project
 - **getProjectSummary**: Get an AI health summary for a specific project
+- **readTicket**: Read a specific ticket by its numeric ID
+- **searchTickets**: Search tickets by title; optionally filter by project or status
+- **createTicket**: Create a new ticket (requires confirmation)
+- **updateTicketStatus**: Change a ticket's status (requires confirmation)
+- **addTicketComment**: Post a comment on a ticket (requires confirmation)
 
 **Calendar**
 - **scheduleEvent**: Schedule a calendar event. Always confirm details with user first.
 - **getMyCalendarEvents**: View your own upcoming calendar events (max 62-day range)
+- **createCalendarReminder**: Create a reminder event, optionally linked to a ticket (requires confirmation)
+
+**Email**
+- **sendEmail**: Send an email on behalf of the user (requires confirmation)
+
+**Channel Messages**
+- **postChannelMessage**: Post a message to a named channel (requires confirmation)
+
+**Recognition**
+- **grantRecognition**: Send a kudos/recognition badge to a team member (requires confirmation)
+
+**Bonus**
+- **grantBonus**: Grant a bonus to an employee — creates a PENDING bonus that a payroll admin approves before payout (requires confirmation)
 
 **Knowledge Base**
 - **searchKnowledgeBase**: Search org wiki, documents, and policies
@@ -242,6 +266,13 @@ You can take the following actions on behalf of the user when asked:
 - For questions about a specific person's work or tickets: ALWAYS call findPerson first, then getPersonTicketStats. Never answer from memory or training data.
 - When a tool returns \`{ denied: true, reason }\`: tell the user you don't have permission to access that data. Do not speculate or provide alternative data. Do not retry with different parameters.
 - Always confirm details before scheduling events or sending messages on the user's behalf.
+
+## Confirmation Protocol
+When you call a consequential write tool (createTicket, updateTicketStatus, addTicketComment, createCalendarReminder, sendEmail, postChannelMessage, grantRecognition, grantBonus) and the tool returns { requiresConfirmation: true, proposalId, token, action, summary, preview }, you MUST output EXACTLY this JSON on a line by itself (no markdown, no extra text before or after):
+
+CONFIRM_ACTION:{"requiresConfirmation":true,"proposalId":<id>,"token":"<token>","action":"<action>","summary":"<summary>","preview":<preview_object>}
+
+Do not add any explanation before or after this line. The UI will render a confirmation card for the user.
 
 Tone: Professional, concise, actionable.`;
   }
@@ -290,7 +321,7 @@ Tone: Professional, concise, actionable.`;
         messages: modelMessages,
         system: contextPrompt,
         temperature: 0.7,
-        stopWhen: stepCountIs(5),
+        stopWhen: stepCountIs(10),
         onFinish: async ({ text }) => {
           void this.ledger.settle(reservationId, { model: modelId }).catch(() => undefined);
           void this.usageSvc.track({ orgId, userId, feature: CHAT_FEATURE, model: modelId }).catch(() => undefined);
@@ -310,6 +341,8 @@ Tone: Professional, concise, actionable.`;
         ...this.opsCopilot.buildTools({ actor }),
         ...this.crmCopilot.buildTools({ actor }),
         ...this.commsCopilot.buildTools({ actor }),
+        ...this.projectsCopilot.buildTools({ actor }),
+        ...this.commsActions.buildTools({ actor }),
 
         searchProjects: tool({
           description: "Search for projects by name to get their IDs. Use before calling askProjectAI or getProjectSummary when you only have a project name.",

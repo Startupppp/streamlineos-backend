@@ -11,6 +11,7 @@ import { addDays } from "date-fns";
 import {
   signDocuments,
   signEnvelopes,
+  signEnvelopeStatusEnum,
   signFields,
   signRecipients,
   users,
@@ -160,7 +161,12 @@ export class SignEnvelopesService {
     const conditions = [eq(signEnvelopes.orgId, orgId)];
     if (!scope.viewAll)
       conditions.push(eq(signEnvelopes.senderUserId, scope.userId));
-    if (query.status) conditions.push(eq(signEnvelopes.status, query.status));
+    if (query.status) {
+      if (!(signEnvelopeStatusEnum.enumValues as readonly string[]).includes(query.status)) {
+        throw new BadRequestException(`Invalid envelope status: ${query.status}`);
+      }
+      conditions.push(eq(signEnvelopes.status, query.status as SignEnvelopeStatus));
+    }
     if (query.sourceModule)
       conditions.push(eq(signEnvelopes.sourceModule, query.sourceModule));
     if (query.sourceEntityType)

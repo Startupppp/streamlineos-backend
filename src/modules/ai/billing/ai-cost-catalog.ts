@@ -44,6 +44,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "chat.message": 1,
   "feedbucket.analyze": 5,
   "feedbucket.assist": 5,
+  "inv.insight-explain": 1,
 };
 
 export function getFeatureCost(feature: string): number {

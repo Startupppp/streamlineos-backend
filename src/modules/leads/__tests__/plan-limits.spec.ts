@@ -3,6 +3,16 @@ import { ForbiddenException } from "@nestjs/common";
 import { LeadsService } from "../leads.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { EmailService } from "../../email/email.service";
+import { AutomationService } from "../../automation/automation.service";
+import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
+import { CrmValidationService } from "../../crm-metadata/crm-validation.service";
+import { CrmAutomationBusService } from "../../crm-automation-studio/crm-automation-bus.service";
+import { CrmAttributionReportService } from "../../crm/crm-attribution-report.service";
+import { TerritoryMatchService } from "../../crm/territory-match.service";
+import { LeadsBoardService } from "../leads-board.service";
 
 const ORG = "org-limits-test";
 const USER = "user-1";
@@ -33,22 +43,22 @@ const makeDb = () => {
 describe("LeadsService plan-limit enforcement", () => {
   let svc: LeadsService;
 
-  const buildModule = async (db: Record<string, jest.Mock>, planLimitsMock: { assertWithinLimit: jest.Mock }) => {
+  const buildModule = async (db: Record<string, jest.Mock>, planLimitsMock: Pick<PlanLimitsService, "assertWithinLimit">) => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeadsService,
         { provide: DRIZZLE, useValue: { ...db, query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) }, leads: { findFirst: jest.fn().mockResolvedValue(null) } } } },
         { provide: PlanLimitsService, useValue: planLimitsMock },
-        { provide: "CacheService", useValue: { invalidatePattern: jest.fn() } },
-        { provide: "AuditService", useValue: { log: jest.fn() } },
-        { provide: "EmailService", useValue: { sendLeadAssignedEmail: jest.fn() } },
-        { provide: "AutomationService", useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "WebhooksDispatchService", useValue: { dispatch: jest.fn() } },
-        { provide: "CrmValidationService", useValue: { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } },
-        { provide: "CrmAutomationBusService", useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "CrmAttributionReportService", useValue: { recordTouch: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "TerritoryMatchService", useValue: {} },
-        { provide: "LeadsBoardService", useValue: { getBoard: jest.fn(), getStats: jest.fn() } },
+        { provide: CacheService, useValue: { invalidatePattern: jest.fn() } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: EmailService, useValue: { sendLeadAssignedEmail: jest.fn() } },
+        { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WebhooksDispatchService, useValue: { dispatch: jest.fn() } },
+        { provide: CrmValidationService, useValue: { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } },
+        { provide: CrmAutomationBusService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CrmAttributionReportService, useValue: { recordTouch: jest.fn().mockResolvedValue(undefined) } },
+        { provide: TerritoryMatchService, useValue: {} },
+        { provide: LeadsBoardService, useValue: { getBoard: jest.fn(), getStats: jest.fn() } },
       ],
     }).compile();
 

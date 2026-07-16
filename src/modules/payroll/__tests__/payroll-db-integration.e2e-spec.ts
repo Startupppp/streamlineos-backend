@@ -23,6 +23,7 @@ import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
 import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
+import type { PayrollPostingService } from '../payroll-posting.service';
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
@@ -281,7 +282,7 @@ d('Payroll DB Integration', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService();
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
 
       const idemKey = `${P}idem-key-001`;
 

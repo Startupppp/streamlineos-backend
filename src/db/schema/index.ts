@@ -41,3 +41,5 @@ export * from "./agent-tokens";
 export * from "./ai-jobs";
 export * from "./ai-feedback";
 export * from "./ai-confirmation";
+export * from "./workspace-search";
+export * from "./ai-summaries";

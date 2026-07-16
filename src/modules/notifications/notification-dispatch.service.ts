@@ -16,7 +16,7 @@ type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEA
 
 type RenderedTemplate = { subject: string | null; body: string };
 type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
-type RawTemplate = { channel: string; subject: string | null; body: string; locale: string };
+type RawTemplate = { channel: NotificationChannel; subject: string | null; body: string; locale: string };
 type OrgTemplateMap = Record<string, RawTemplate[]>;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {

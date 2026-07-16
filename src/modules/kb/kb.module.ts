@@ -119,6 +119,6 @@ import { KbSettingsService } from "./kb-settings.service";
     KbSourcesService,
     KbSettingsService,
   ],
-  exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService],
+  exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService, KbArticlesService],
 })
 export class KbModule {}

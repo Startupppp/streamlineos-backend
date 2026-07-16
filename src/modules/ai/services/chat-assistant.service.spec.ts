@@ -74,6 +74,8 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
     noop as never,
     noop as never,
     noop as never,
+    noop as never,
+    noop as never,
     toolAccess as never,
     moduleRef as never,
     usageSvc ?? makeUsageSvc(),

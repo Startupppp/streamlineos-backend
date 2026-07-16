@@ -19,17 +19,20 @@ export interface EmailTemplateProps {
 }
 
 function buildLogoLockup(): string {
-  const emailAssetsBase = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim();
-  if (emailAssetsBase) {
+  const r2Base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim().replace(/\/$/, "");
+  const logoSrc = r2Base ? `${r2Base}/email-assets/logo-v2.png` : null;
+
+  if (logoSrc) {
     return (
       `<td width="40" height="40" style="width:40px;height:40px;vertical-align:middle;">` +
-      `<img src="${emailAssetsBase}/email-assets/logo-v2.png" alt="StreamlineOS" width="40" height="40" style="display:block;border:0;width:40px;height:40px;border-radius:9px;">` +
+      `<img src="${logoSrc}" alt="StreamlineOS" width="40" height="40" style="display:block;border:0;width:40px;height:40px;border-radius:9px;">` +
       `</td>`
     );
   }
+
   return (
-    `<td width="36" height="36" align="center" valign="middle" bgcolor="#000000" style="width:36px;height:36px;border-radius:9px;background:#000000;">` +
-    `<span style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:18px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;">S</span>` +
+    `<td width="36" height="36" align="center" valign="middle" bgcolor="#0b1220" style="width:36px;height:36px;border-radius:9px;background:#0b1220;font-size:0;line-height:0;">` +
+    `<span style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;letter-spacing:-0.02em;">S</span>` +
     `</td>`
   );
 }
