@@ -3,6 +3,12 @@ jest.mock("ai", () => ({
   tool: jest.fn((def: unknown) => def),
   stepCountIs: jest.fn(() => () => false),
 }));
+jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
+jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
+jest.mock("../../integrations/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
+jest.mock("../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
 
 import { BadRequestException } from "@nestjs/common";
 import { streamText } from "ai";
@@ -44,16 +50,12 @@ function makeFakeStream(onFinishCb?: (opts: { text: string }) => Promise<void>) 
   };
 }
 
-function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocked<AiUsageService>) {
-  const db = {
-    select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ count: 0 }]) }) }),
-    query: {
-      attendance: { findFirst: jest.fn().mockResolvedValue(null) },
-      leaveRequests: { findMany: jest.fn().mockResolvedValue([]) },
-      payrolls: { findMany: jest.fn().mockResolvedValue([]) },
-    },
-  };
+const STUB_CONTEXT = {
+  projectCount: 0, ticketCount: 0, todayAttendance: null, pendingLeaves: 0,
+  recentPayrolls: [], myLeadsCount: 0, hotLeadsCount: 0, myOpenDealsCount: 0, topLeads: [],
+};
 
+function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocked<AiUsageService>) {
   const history = {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
@@ -61,11 +63,10 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
 
   const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
   const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-
   const noop = { buildTools: jest.fn().mockReturnValue({}) };
 
   const svc = new ChatAssistantService(
-    db as never,
+    {} as never,
     { ask: jest.fn(), summarize: jest.fn() } as never,
     history as never,
     noop as never,
@@ -78,6 +79,8 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
     usageSvc ?? makeUsageSvc(),
     ledger,
   );
+
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
 
   return { svc, history, ledger };
 }

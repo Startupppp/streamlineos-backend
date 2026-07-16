@@ -285,9 +285,7 @@ Tone: Professional, concise, actionable.`;
 
     const modelId = resolveChatModelId();
 
-    let stream: ReturnType<typeof streamText>;
-    try {
-      stream = streamText({
+    const buildStream = () => streamText({
         model: resolveChatModel(),
         messages: modelMessages,
         system: contextPrompt,
@@ -389,11 +387,12 @@ Tone: Professional, concise, actionable.`;
 
       },
     });
+
+    try {
+      return buildStream();
     } catch (error) {
       void this.ledger.release(reservationId, "stream_setup_error").catch(() => undefined);
       throw error;
     }
-
-    return stream;
   }
 }

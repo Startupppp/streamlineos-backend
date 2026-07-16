@@ -1,3 +1,4 @@
+jest.mock("../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 jest.mock("../projects/projects-tickets.service");
 
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
