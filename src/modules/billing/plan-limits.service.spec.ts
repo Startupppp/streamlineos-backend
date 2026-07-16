@@ -1,6 +1,7 @@
 ﻿import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { CacheService } from "../../common/cache/cache.service";
 import { PlanLimitsService } from "./plan-limits.service";
 
 function makeDb(overrides: Record<string, unknown> = {}) {
@@ -10,13 +11,27 @@ function makeDb(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeCache(): CacheService {
+  return {
+    cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+    set: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+    invalidatePattern: jest.fn().mockResolvedValue(undefined),
+  } as unknown as CacheService;
+}
+
 describe("PlanLimitsService", () => {
   let service: PlanLimitsService;
   let mockDb: ReturnType<typeof makeDb>;
 
   async function build(db: ReturnType<typeof makeDb>) {
     const module = await Test.createTestingModule({
-      providers: [PlanLimitsService, { provide: DRIZZLE, useValue: db }],
+      providers: [
+        PlanLimitsService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CacheService, useValue: makeCache() },
+      ],
     }).compile();
     return module.get(PlanLimitsService);
   }

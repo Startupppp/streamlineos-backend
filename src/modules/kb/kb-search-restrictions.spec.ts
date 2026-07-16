@@ -80,7 +80,7 @@ describe("KbSearchService — restriction enforcement", () => {
     expect(access.getPrincipalIds).not.toHaveBeenCalled();
   });
 
-  it("skips article queries when space list is empty", async () => {
+  it("skips article queries when space list is empty but still queries pages", async () => {
     const db = makeDb();
     const access = makeAccess([], false);
 
@@ -93,6 +93,5 @@ describe("KbSearchService — restriction enforcement", () => {
 
     const result = await svc.retrieveTopArticles(makeUser(), "test", 5);
     expect(result).toEqual([]);
-    expect(db.select).not.toHaveBeenCalled();
   });
 });

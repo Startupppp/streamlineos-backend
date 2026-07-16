@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { organizations, orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -76,19 +76,23 @@ export class EntitlementsService {
     }
   }
 
-  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
-    const key = `entitlements:module:${orgId}:${moduleKey}`;
+  async getModuleMap(orgId: string): Promise<Record<string, boolean>> {
+    const key = `entitlements:modules:${orgId}`;
     return this.cache.cached(key, async () => {
-      const row = await this.safeRead(
-        () =>
-          this.db.query.orgModules.findFirst({
-            where: and(eq(orgModules.orgId, orgId), eq(orgModules.moduleKey, moduleKey)),
-          }),
-        undefined,
+      const rows = await this.safeRead(
+        () => this.db.query.orgModules.findMany({ where: eq(orgModules.orgId, orgId) }),
+        [],
       );
-      if (row === undefined) return true;
-      return row?.enabled ?? true;
+      const map: Record<string, boolean> = {};
+      for (const row of rows) map[row.moduleKey] = row.enabled;
+      return map;
     }, 30);
+  }
+
+  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+    const map = await this.getModuleMap(orgId);
+    if (!(moduleKey in map)) return true;
+    return map[moduleKey] ?? true;
   }
 
   async setModuleEnabled(

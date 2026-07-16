@@ -6,6 +6,21 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+
+interface OrgContext {
+  orgId: string;
+  role: string;
+  isOwner: boolean;
+  enabledModules: string[];
+  plan: string | null;
+}
+
+interface OrgContextEntry {
+  value: OrgContext;
+  expiresAt: number;
+}
+
+const ORG_CTX_TTL_MS = 60_000;
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
@@ -55,6 +70,8 @@ function extractClaims(payload: JWTPayload): BackendClaims {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly orgCtxCache = new Map<string, OrgContextEntry>();
+
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
@@ -159,13 +176,24 @@ export class JwtAuthGuard implements CanActivate {
     throw new UnauthorizedException("Unauthorized");
   }
 
-  private async resolveOrgContext(userId: string): Promise<{
-    orgId: string;
-    role: string;
-    isOwner: boolean;
-    enabledModules: string[];
-    plan: string | null;
-  } | null> {
+  private async resolveOrgContext(userId: string): Promise<OrgContext | null> {
+    const cached = this.orgCtxCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const result = await this.fetchOrgContext(userId);
+    if (result !== null) {
+      this.orgCtxCache.set(userId, { value: result, expiresAt: Date.now() + ORG_CTX_TTL_MS });
+      if (this.orgCtxCache.size > 5000) {
+        const now = Date.now();
+        for (const [key, entry] of this.orgCtxCache) {
+          if (entry.expiresAt <= now) this.orgCtxCache.delete(key);
+        }
+      }
+    }
+    return result;
+  }
+
+  private async fetchOrgContext(userId: string): Promise<OrgContext | null> {
     const [user, rows] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, userId),

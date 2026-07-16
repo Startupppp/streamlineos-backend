@@ -3,6 +3,7 @@ import { setDefaultResultOrder } from "node:dns";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
+import compression from "compression";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
@@ -20,6 +21,7 @@ async function bootstrap(): Promise<void> {
   });
   app.useBodyParser("json", { limit: "3mb" });
   app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+  app.use(compression());
   app.use(helmet());
   const isLocalDevOrigin = (origin: string): boolean =>
     /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);

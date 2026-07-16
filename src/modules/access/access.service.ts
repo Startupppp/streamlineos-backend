@@ -24,6 +24,13 @@ import { EntitlementsService } from "./entitlements.service";
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
+interface VersionEntry {
+  version: number;
+  expiresAt: number;
+}
+
+const VERSION_CACHE_TTL_MS = 5_000;
+
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
@@ -54,6 +61,7 @@ function allCatalogScopes(): Record<string, DataScope> {
 @Injectable()
 export class AccessService {
   private missingAccessTablesLogged = false;
+  private readonly versionCache = new Map<string, VersionEntry>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -80,6 +88,9 @@ export class AccessService {
   }
 
   async getPermissionsVersion(orgId: string): Promise<number> {
+    const cached = this.versionCache.get(orgId);
+    if (cached && cached.expiresAt > Date.now()) return cached.version;
+
     const row = await this.safeAccessTableRead(
       () =>
         this.db.query.accessVersions.findFirst({
@@ -88,7 +99,15 @@ export class AccessService {
         }),
       undefined,
     );
-    return row?.permissionsVersion ?? 1;
+    const version = row?.permissionsVersion ?? 1;
+    this.versionCache.set(orgId, { version, expiresAt: Date.now() + VERSION_CACHE_TTL_MS });
+    if (this.versionCache.size > 2000) {
+      const now = Date.now();
+      for (const [key, entry] of this.versionCache) {
+        if (entry.expiresAt <= now) this.versionCache.delete(key);
+      }
+    }
+    return version;
   }
 
   async resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>> {
@@ -134,11 +153,10 @@ export class AccessService {
       permissions.push(key);
     }
 
+    const moduleMap = await this.entitlements.getModuleMap(orgId);
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      modules[moduleKey] = isInternalModule(moduleKey)
-        ? true
-        : await this.entitlements.isModuleEnabled(orgId, moduleKey);
+      modules[moduleKey] = isInternalModule(moduleKey) ? true : (moduleMap[moduleKey] ?? true);
     }
 
     return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };
