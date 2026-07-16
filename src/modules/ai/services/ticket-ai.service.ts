@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,28 +10,9 @@ import {
 } from "../dto/ticket-ai.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
-import type { AiInvokeResult } from "../gateway/ai-gateway.types";
+import { unwrapAiResult } from "./gateway-result.util";
 
 const TEXT_LIMIT = 2000;
-
-function assertNever(x: never): never {
-  throw new Error(`Unhandled kind: ${String(x)}`);
-}
-
-function unwrapOrThrow<T>(result: AiInvokeResult<T>): T {
-  if (result.ok) return result.data;
-  switch (result.kind) {
-    case "quota_exceeded":
-      throw new BadRequestException(result.message);
-    case "not_configured":
-    case "provider_unavailable":
-      throw new ServiceUnavailableException(result.message);
-    case "invalid_output":
-      throw new ServiceUnavailableException("AI returned an invalid response");
-    default:
-      return assertNever(result.kind);
-  }
-}
 
 @Injectable()
 export class TicketAiService {
@@ -93,7 +74,7 @@ Provide a summary, key points, and any blockers visible in the discussion.`;
       dedupe: true,
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.ticket.summarize", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
     return data;
   }
@@ -123,7 +104,7 @@ Produce an improved HTML description.`;
       charge: { credits: getFeatureCost("ticket.improve-description") },
     });
 
-    const description = unwrapOrThrow(result);
+    const description = unwrapAiResult(result);
     this.audit.log({ action: "ai.ticket.improve-description", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
     return { description: description.slice(0, 5000) };
   }
@@ -157,7 +138,7 @@ Suggest 3-7 subtask titles.`;
       charge: { credits: getFeatureCost("ticket.suggest-subtasks") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     const deduped = data.subtasks.filter(
       (s) => !existingTitles.some((t) => t.toLowerCase() === s.title.toLowerCase()),
     ).slice(0, 7);

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, lt, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -22,7 +22,7 @@ import {
 } from "../prompts/pm.prompts";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
-import type { AiInvokeResult } from "../gateway/ai-gateway.types";
+import { unwrapAiResult } from "./gateway-result.util";
 
 const NO_DATA = {
   noData: true,
@@ -30,25 +30,6 @@ const NO_DATA = {
 } as const;
 
 const TEXT_LIMIT = 2000;
-
-function assertNever(x: never): never {
-  throw new Error(`Unhandled kind: ${String(x)}`);
-}
-
-function unwrapOrThrow<T>(result: AiInvokeResult<T>): T {
-  if (result.ok) return result.data;
-  switch (result.kind) {
-    case "quota_exceeded":
-      throw new BadRequestException(result.message);
-    case "not_configured":
-    case "provider_unavailable":
-      throw new ServiceUnavailableException(result.message);
-    case "invalid_output":
-      throw new ServiceUnavailableException("AI returned an invalid response");
-    default:
-      return assertNever(result.kind);
-  }
-}
 
 @Injectable()
 export class ProjectsAiService {
@@ -150,7 +131,7 @@ export class ProjectsAiService {
       dedupe: true,
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.summary", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, evidence: { totalTasks, done, inProgress, blocked, overdue, sprintProgressPct } };
   }
@@ -196,7 +177,7 @@ export class ProjectsAiService {
       charge: { credits: getFeatureCost("pm.risks") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.risks", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, evidence: { totalTasks, done: doneTasks, inProgress: inProgressTasks, blocked: blockedTasks, overdue: overdueTasks } };
   }
@@ -232,7 +213,7 @@ export class ProjectsAiService {
       charge: { credits: getFeatureCost("pm.client-update") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.client-update", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return data;
   }
@@ -260,7 +241,7 @@ export class ProjectsAiService {
       charge: { credits: getFeatureCost("pm.plan") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.plan", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, suggestions: true };
   }
@@ -287,7 +268,7 @@ export class ProjectsAiService {
       charge: { credits: getFeatureCost("pm.extract-tasks") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.extract-tasks", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, suggestions: true };
   }
@@ -321,7 +302,7 @@ export class ProjectsAiService {
       charge: { credits: getFeatureCost("pm.ask") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.project.ask", userId, orgId, resourceType: "project", resourceId: String(projectId) });
     return { ...data, evidence: { totalTasks, done, inProgress, blocked, overdue } };
   }

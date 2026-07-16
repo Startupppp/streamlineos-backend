@@ -278,7 +278,9 @@ export class AiGatewayService {
         model,
         promptTokens: usage.promptTokens ?? undefined,
         completionTokens: usage.completionTokens ?? undefined,
-        metadata: { correlationId, latencyMs },
+        latencyMs,
+        correlationId,
+        outcome,
       })
       .catch(() => undefined);
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import {
   attendance,
@@ -31,26 +31,7 @@ import {
 import type { GenerateJdInput } from "../dto/request.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
-import type { AiInvokeResult } from "../gateway/ai-gateway.types";
-
-function assertNever(x: never): never {
-  throw new Error(`Unhandled kind: ${String(x)}`);
-}
-
-function unwrapOrThrow<T>(result: AiInvokeResult<T>): T {
-  if (result.ok) return result.data;
-  switch (result.kind) {
-    case "quota_exceeded":
-      throw new BadRequestException(result.message);
-    case "not_configured":
-    case "provider_unavailable":
-      throw new ServiceUnavailableException(result.message);
-    case "invalid_output":
-      throw new ServiceUnavailableException("AI returned an invalid response");
-    default:
-      return assertNever(result.kind);
-  }
-}
+import { unwrapAiResult } from "./gateway-result.util";
 
 @Injectable()
 export class HrAiService {
@@ -131,7 +112,7 @@ export class HrAiService {
       charge: { credits: getFeatureCost("hr.attrition-risk") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     data.attritionRiskScore = Math.max(0, Math.min(100, Math.round(data.attritionRiskScore)));
     return data;
   }
@@ -194,7 +175,7 @@ export class HrAiService {
       charge: { credits: getFeatureCost("hr.generate-review") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     data.overallRating = Math.max(1, Math.min(5, data.overallRating));
     data.ratings = data.ratings.map((r) => ({ ...r, score: Math.max(1, Math.min(5, r.score)) }));
     return data;
@@ -233,7 +214,7 @@ export class HrAiService {
       charge: { credits: getFeatureCost("hr.helpdesk-reply") },
     });
 
-    return unwrapOrThrow(result);
+    return unwrapAiResult(result);
   }
 
   async scoreCandidate(
@@ -281,7 +262,7 @@ export class HrAiService {
       charge: { credits: getFeatureCost("hr.score-candidate") },
     });
 
-    const data = unwrapOrThrow(result);
+    const data = unwrapAiResult(result);
     data.score = Math.max(0, Math.min(100, Math.round(data.score)));
 
     const ratingFiveScale = Math.round((data.score / 100) * 5);
@@ -320,7 +301,7 @@ Keep it concise, specific, and compelling. Do not use bold, headers, or markdown
       charge: { credits: getFeatureCost("hr.generate-jd") },
     });
 
-    const description = unwrapOrThrow(result);
+    const description = unwrapAiResult(result);
     return { description: description.trim() };
   }
 }

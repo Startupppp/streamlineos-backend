@@ -1,5 +1,5 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
-import type { AiInvokeFailure } from "../gateway/ai-gateway.types";
+import type { AiInvokeFailure, AiInvokeResult } from "../gateway/ai-gateway.types";
 
 function assertNever(x: never): never {
   throw new Error(`Unhandled AI failure kind: ${String(x)}`);
@@ -17,4 +17,9 @@ export function throwOnAiFailure(result: AiInvokeFailure): never {
     default:
       assertNever(result.kind);
   }
+}
+
+export function unwrapAiResult<T>(result: AiInvokeResult<T>): T {
+  if (result.ok) return result.data;
+  return throwOnAiFailure(result);
 }
