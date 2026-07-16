@@ -16,6 +16,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   invitations,
   magicLinkTokens,
@@ -42,6 +43,7 @@ export class InvitationsService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly email: EmailService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async invite(
@@ -64,6 +66,8 @@ export class InvitationsService {
       });
       if (existingMember) throw new ConflictException("User is already a member");
     }
+
+    await this.planLimits.assertWithinLimit(orgId, "members");
 
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),

@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SurveyVersionService } from "./survey-version.service";
 import { SurveyTemplateService } from "./survey-template.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CreateSurveyInput, ListSurveysInput, PatchSurveyInput } from "./dto/survey-forms.schemas";
 
 @Injectable()
@@ -13,6 +14,7 @@ export class SurveyFormsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly versions: SurveyVersionService,
     private readonly templates: SurveyTemplateService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async list(orgId: string, filters: ListSurveysInput) {
@@ -41,6 +43,8 @@ export class SurveyFormsService {
   }
 
   async create(orgId: string, userId: string, input: CreateSurveyInput) {
+    await this.planLimits.assertWithinLimit(orgId, "surveys");
+
     const [survey] = await this.db
       .insert(surveyForms)
       .values({
@@ -146,6 +150,8 @@ export class SurveyFormsService {
   }
 
   async duplicate(orgId: string, surveyId: number, userId: string) {
+    await this.planLimits.assertWithinLimit(orgId, "surveys");
+
     const source = await this.get(orgId, surveyId);
 
     const [copy] = await this.db

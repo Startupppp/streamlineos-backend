@@ -8,9 +8,10 @@ import { AccountingModule } from "../accounting/accounting.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
 import { FinanceControlsModule } from "../finance-controls/finance-controls.module";
+import { BillingModule } from "../billing/billing.module";
 
 @Module({
-  imports: [AccountingModule, NotificationsModule, CrmAutomationStudioModule, FinanceControlsModule],
+  imports: [AccountingModule, NotificationsModule, CrmAutomationStudioModule, FinanceControlsModule, BillingModule],
   controllers: [InvoicesController, InvoicesWriteController],
   providers: [InvoicesService, InvoicesWriteService, InvoicesLifecycleService],
   exports: [InvoicesWriteService],

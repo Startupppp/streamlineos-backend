@@ -11,12 +11,14 @@ import { type Db } from "../../db/drizzle.module";
 import { categoryForScore } from "./public.helpers";
 import type { LeadFormBody, NpsSubmitInput } from "./dto/public.schemas";
 import { CrmAutomationBusService } from "../crm-automation-studio/crm-automation-bus.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 
 @Injectable()
 export class CrmService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly bus: CrmAutomationBusService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async getSurvey(token: string) {
@@ -91,6 +93,8 @@ export class CrmService {
     if (!form || !form.isActive) {
       throw new NotFoundException("Form not found or inactive");
     }
+
+    await this.planLimits.assertWithinLimit(form.orgId, "crmLeads");
 
     for (const field of form.fields) {
       const val = body[field.name];

@@ -10,6 +10,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { RateResolverService } from "../finance-controls/rate-resolver.service";
 import { FxService } from "../finance-controls/fx.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreateInvoiceInput, RecordPaymentInput, UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
@@ -73,6 +74,7 @@ export class InvoicesWriteService {
     private readonly audit: AuditService,
     private readonly rateResolver: RateResolverService,
     private readonly fx: FxService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async resolveSupplierStateCode(orgId: string): Promise<string> {
@@ -95,6 +97,8 @@ export class InvoicesWriteService {
     userId: string,
     input: CreateInvoiceInput,
   ): Promise<{ invoice: InvoiceRow; posted: boolean }> {
+    await this.planLimits.assertWithinLimit(orgId, "acctInvoices");
+
     const status = input.status;
 
     const normalizedItems =

@@ -1,5 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../crm-automation-studio/crm-automation-studio.module";
+import { BillingModule } from "../billing/billing.module";
 import { CrmCampaignsController } from "./crm-campaigns.controller";
 import { CrmCampaignsService } from "./crm-campaigns.service";
 import { CrmAttributionReportService } from "./crm-attribution-report.service";
@@ -30,7 +31,7 @@ import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 
 @Module({
-  imports: [forwardRef(() => CrmAutomationStudioModule)],
+  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,

@@ -19,6 +19,7 @@ import { EmailService } from "../email/email.service";
 import { appUrl } from "../email/app-url";
 import { getLeadDistributionEmailTemplate } from "../email/templates/crm";
 import { CrmValidationService } from "../crm-metadata/crm-validation.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,
@@ -46,6 +47,7 @@ export class LeadsOpsService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly crmValidation: CrmValidationService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async sendDistributionEmails(
@@ -193,6 +195,8 @@ export class LeadsOpsService {
   }
 
   async importLeads(orgId: string, userId: string, input: ImportInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmLeads", input.leads.length);
+
     const CHUNK_SIZE = 100;
 
     const importEmails = input.leads

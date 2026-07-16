@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillingModule } from "../billing/billing.module";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { ChatMessagesController } from "./chat-messages.controller";
@@ -25,7 +26,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 
 @Module({
-  imports: [RealtimeModule],
+  imports: [BillingModule, RealtimeModule],
   controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController],
   providers: [
     ChatChannelsService,

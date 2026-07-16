@@ -12,6 +12,7 @@ import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignRecipientsService, type SignActorContext } from "./sign-recipients.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import {
   canTransitionEnvelope,
   computeEnvelopeStatusFromRecipients,
@@ -53,9 +54,12 @@ export class SignEnvelopesService {
     private readonly notifications: SignNotificationsService,
     private readonly recipients: SignRecipientsService,
     private readonly integrations: SignIntegrationsService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async create(orgId: string, userId: string, input: CreateEnvelopeInput) {
+    await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+
     const [envelope] = await this.db
       .insert(signEnvelopes)
       .values({
