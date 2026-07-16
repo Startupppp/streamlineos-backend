@@ -323,6 +323,7 @@ export class LeadsDetailService {
       event: "LEAD_ASSIGNED",
       defaultTitle: "Lead Assigned to You",
       defaultMessage: `You have been assigned lead: ${lead.name}`,
+      orgId,
       context: {
         leadName: lead.name,
         priority: lead.priority ?? undefined,

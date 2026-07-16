@@ -286,7 +286,7 @@ export class AiConfirmationService {
   }
 
   async sweepExpired(): Promise<number> {
-    const result = await this.db
+    const updated = await this.db
       .update(aiActionProposals)
       .set({ status: "EXPIRED", updatedAt: new Date() })
       .where(
@@ -294,8 +294,9 @@ export class AiConfirmationService {
           eq(aiActionProposals.status, "PROPOSED"),
           lt(aiActionProposals.expiresAt, new Date()),
         ),
-      );
+      )
+      .returning({ id: aiActionProposals.id });
 
-    return result.rowCount ?? 0;
+    return updated.length;
   }
 }

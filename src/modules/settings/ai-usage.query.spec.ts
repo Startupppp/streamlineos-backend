@@ -1,40 +1,41 @@
 import { queryAiUsage } from "./ai-usage.query";
 
-const makeMockDb = (overrides: Record<string, unknown[]> = {}) => {
-  const defaults: Record<string, unknown[]> = {
-    totals: [{ totalTokens: 100, promptTokens: 60, completionTokens: 40, estimatedCostUsd: "0.001", requestCount: 5 }],
-    byFeature: [],
-    daily: [],
-    latency: [{ avgLatencyMs: 250, p95LatencyMs: 800, errorRate: 0.05 }],
-    feedback: [{ feature: "kb-answer", up: 4, down: 1, total: 5 }],
-    suggestions: [{ accepted: 10, rejected: 2, pending: 3 }],
-    ...overrides,
-  };
-
-  let callIndex = 0;
-  const responses = [
-    defaults.totals,
-    defaults.byFeature,
-    defaults.daily,
-    defaults.latency,
-    defaults.feedback,
-    defaults.suggestions,
-  ];
-
-  const chain = {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    groupBy: jest.fn().mockImplementation(() => Promise.resolve(responses[callIndex++ % responses.length])),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockImplementation(() => Promise.resolve(responses[callIndex++ % responses.length])),
-  };
+function thenableChain(result: unknown[]) {
+  const p = Promise.resolve(result);
+  const chain: Record<string, unknown> = {};
+  const self = () => chain;
+  for (const m of ["select", "from", "where", "groupBy", "orderBy", "limit"]) {
+    chain[m] = jest.fn().mockReturnValue(chain);
+  }
+  chain["then"] = (res: Parameters<Promise<unknown>["then"]>[0], rej: Parameters<Promise<unknown>["then"]>[1]) => p.then(res, rej);
+  chain["catch"] = (rej: Parameters<Promise<unknown>["catch"]>[0]) => p.catch(rej);
   return chain;
-};
+}
+
+function buildDb(results: unknown[][]) {
+  let i = 0;
+  return {
+    select: jest.fn().mockImplementation(() => thenableChain(results[i++] ?? [])),
+  };
+}
 
 describe("queryAiUsage — additive shape", () => {
+  const totalsRow = { totalTokens: 100, promptTokens: 60, completionTokens: 40, estimatedCostUsd: "0.001", requestCount: 5 };
+  const latencyRow = { avgLatencyMs: 250, p95LatencyMs: 800, errorRate: 0.05 };
+  const feedbackRow = { feature: "kb-answer", up: 4, down: 1, total: 5 };
+  const suggestionsRow = { accepted: 10, rejected: 2, pending: 3 };
+
+  const defaultResults = () => [
+    [totalsRow],
+    [],
+    [],
+    [latencyRow],
+    [feedbackRow],
+    [suggestionsRow],
+  ];
+
   it("returns original shape fields intact", async () => {
-    const db = makeMockDb() as never;
+    const db = buildDb(defaultResults()) as never;
     const result = await queryAiUsage(db, "org-1");
     expect(result).toHaveProperty("totals");
     expect(result).toHaveProperty("byFeature");
@@ -42,7 +43,7 @@ describe("queryAiUsage — additive shape", () => {
   });
 
   it("includes additive performance keys", async () => {
-    const db = makeMockDb() as never;
+    const db = buildDb(defaultResults()) as never;
     const result = await queryAiUsage(db, "org-1");
     expect(result).toHaveProperty("performance");
     expect(result.performance).toHaveProperty("avgLatencyMs");
@@ -51,7 +52,7 @@ describe("queryAiUsage — additive shape", () => {
   });
 
   it("includes additive acceptance keys", async () => {
-    const db = makeMockDb() as never;
+    const db = buildDb(defaultResults()) as never;
     const result = await queryAiUsage(db, "org-1");
     expect(result).toHaveProperty("acceptance");
     expect(result.acceptance).toHaveProperty("feedbackByFeature");
@@ -62,7 +63,15 @@ describe("queryAiUsage — additive shape", () => {
   });
 
   it("gracefully returns null performance values when no latency data", async () => {
-    const db = makeMockDb({ latency: [] }) as never;
+    const noLatencyResults = [
+      [totalsRow],
+      [],
+      [],
+      [],
+      [feedbackRow],
+      [suggestionsRow],
+    ];
+    const db = buildDb(noLatencyResults) as never;
     const result = await queryAiUsage(db, "org-1");
     expect(result.performance.avgLatencyMs).toBeNull();
     expect(result.performance.p95LatencyMs).toBeNull();

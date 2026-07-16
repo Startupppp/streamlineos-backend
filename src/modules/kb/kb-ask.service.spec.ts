@@ -37,7 +37,18 @@ const mockSearch = {
   retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
 };
 
-const user = { orgId: "org1", userId: "user1" };
+const user = {
+  userId: "user1",
+  orgId: "org1",
+  branchId: null,
+  role: "member",
+  permissions: [],
+  enabledModules: [],
+  plan: null,
+  isPlatformAdmin: false,
+  isOrgOwner: false,
+  sessionId: "sess-1",
+};
 const input = { question: "How do I reset my password?" };
 
 describe("KbAskService", () => {

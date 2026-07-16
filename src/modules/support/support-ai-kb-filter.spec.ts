@@ -1,18 +1,19 @@
 import { SupportAiService } from "./support-ai.service";
-import { LlmService } from "../ai/providers/llm.service";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { EmbeddingsService } from "../ai/providers/embeddings.service";
-import { AiUsageService } from "../ai/services/ai-usage.service";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
 
 const EMBEDDING_DIM = 1536;
 
-const makeLlm = () => ({ isConfigured: jest.fn().mockReturnValue(false) });
+const makeGateway = () => ({
+  invokeStructured: jest.fn(),
+  invokeText: jest.fn(),
+});
 const makeEmbeddings = () => ({
   isConfigured: jest.fn().mockReturnValue(true),
   embedQuery: jest.fn().mockResolvedValue(new Array(EMBEDDING_DIM).fill(0.1)),
   toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
 });
-const makeAiUsage = () => ({ track: jest.fn().mockResolvedValue(undefined) });
 const makeOrgFeatures = () => ({ getFlags: jest.fn().mockResolvedValue({ supportAi: true }) });
 
 const makeChain = (finalValue: unknown[] = []) => {
@@ -40,9 +41,8 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
 
     const svc = new SupportAiService(
       db as never,
-      makeLlm() as never,
+      makeGateway() as never,
       makeEmbeddings() as never,
-      makeAiUsage() as never,
       makeOrgFeatures() as never,
     );
 
@@ -63,9 +63,8 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
 
     const svc = new SupportAiService(
       db as never,
-      makeLlm() as never,
+      makeGateway() as never,
       makeEmbeddings() as never,
-      makeAiUsage() as never,
       makeOrgFeatures() as never,
     );
 
@@ -88,9 +87,8 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
 
     const svc = new SupportAiService(
       db as never,
-      makeLlm() as never,
+      makeGateway() as never,
       embeddings as never,
-      makeAiUsage() as never,
       makeOrgFeatures() as never,
     );
 

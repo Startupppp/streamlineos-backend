@@ -32,7 +32,7 @@ import {
   buildBugDescription,
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
+import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;
 const PUBLIC_FEATURE_KEY = "feedbucket.assist" as const;
@@ -204,8 +204,8 @@ export class FeedbucketAiService {
     pageUrl?: string | null;
     imageDataUrls: string[];
     networkLogs?: FeedbucketNetworkEntry[] | null;
-    metadata?: unknown;
-    consoleLogs?: unknown;
+    metadata?: FeedbucketMetadata | null;
+    consoleLogs?: FeedbucketConsoleEntry[] | null;
   }): Promise<FeedbackAnalysis> {
     const system = buildSystemPrompt();
     const userContent = buildUserPrompt({

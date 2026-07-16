@@ -115,6 +115,8 @@ import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
+import { AiJobsModule } from "./modules/ai-jobs/ai-jobs.module";
+import { AiConfirmationModule } from "./modules/ai-confirmation";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
 import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
 import { ServiceAccountsModule } from "./modules/service-accounts/service-accounts.module";
@@ -271,6 +273,8 @@ import { MeService } from "./me/me.service";
     MfaModule,
     AuthModule,
     FeatureFlagsModule,
+    AiJobsModule,
+    AiConfirmationModule,
     OrgHierarchyModule,
     ApiTokensModule,
     ServiceAccountsModule,

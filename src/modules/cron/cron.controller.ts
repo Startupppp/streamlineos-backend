@@ -28,6 +28,7 @@ import { CronSupportService } from "./cron-support.service";
 import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
 
 @Public()
 @Controller("cron")
@@ -51,6 +52,7 @@ export class CronController {
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
+    private readonly aiJobsWorker: AiJobsWorkerService,
   ) {}
 
   @Get("trial-expiry")
@@ -754,6 +756,32 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Auto top-up flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("ai-jobs-flush")
+  getAiJobsFlush(@Headers("authorization") authorization?: string) {
+    return this.runAiJobsFlush(authorization);
+  }
+
+  @Post("ai-jobs-flush")
+  @HttpCode(200)
+  postAiJobsFlush(@Headers("authorization") authorization?: string) {
+    return this.runAiJobsFlush(authorization);
+  }
+
+  private async runAiJobsFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.aiJobsWorker.flush();
+      return {
+        success: true,
+        message: `AI jobs flush: ${result.claimed} claimed, ${result.completed} completed, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("AI jobs flush cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
