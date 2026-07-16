@@ -74,7 +74,10 @@ export class PayslipTemplatesService {
 
     if (!template) throw new NotFoundException("Template not found");
 
-    const existingConfig = template.config as PayslipTemplateConfig;
+    const rawConfig = template.config;
+    const existingConfig: PayslipTemplateConfig = rawConfig && typeof rawConfig === "object"
+      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawConfig as Partial<PayslipTemplateConfig>) }
+      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
     const mergedConfig: PayslipTemplateConfig | undefined =
       data.config !== undefined ? { ...existingConfig, ...data.config } : undefined;
 

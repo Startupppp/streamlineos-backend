@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PlatformOwnerGuard } from "../../common/auth/platform-owner.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -35,7 +36,7 @@ const listQuerySchema = z.object({
 type ListQuery = z.infer<typeof listQuerySchema>;
 
 @Controller("feature-flags")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlatformOwnerGuard)
 export class FeatureFlagsController {
   constructor(private readonly service: FeatureFlagsService) {}
 

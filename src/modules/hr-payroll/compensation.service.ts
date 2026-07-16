@@ -157,7 +157,7 @@ export class CompensationService {
   }
 
   async getCompensationAnalytics(orgId: string) {
-    const [overall, byDept, byRole] = await Promise.all([
+    const [overall, byDept, byRole, allDepts] = await Promise.all([
       this.db
         .select({
           avgSalary: sql<string>`COALESCE(AVG(${users.monthlySalary}::numeric), 0)`,
@@ -188,9 +188,9 @@ export class CompensationService {
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
         .groupBy(users.role),
+      this.db.query.departments.findMany({ where: eq(departments.orgId, orgId) }),
     ]);
 
-    const allDepts = await this.db.query.departments.findMany({ where: eq(departments.orgId, orgId) });
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
 
     return {

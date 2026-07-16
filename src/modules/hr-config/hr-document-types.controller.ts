@@ -62,6 +62,7 @@ export class HrDocumentTypesController {
   }
 
   @Get(":documentTypeId")
+  @RequirePermission("hr:documents:view")
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,

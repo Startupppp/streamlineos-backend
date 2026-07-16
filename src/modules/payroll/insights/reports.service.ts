@@ -405,9 +405,11 @@ export class ReportsService {
   }
 
   async getVariance(orgId: string, month: string, pagination: PaginationParams = {}) {
-    const currentRun = await findRunForMonth(this.db, orgId, month);
     const prevMonthStr = prevMonth(month);
-    const previousRun = await findRunForMonth(this.db, orgId, prevMonthStr);
+    const [currentRun, previousRun] = await Promise.all([
+      findRunForMonth(this.db, orgId, month),
+      findRunForMonth(this.db, orgId, prevMonthStr),
+    ]);
 
     const provisional = currentRun === null || !isLocked(currentRun.status);
 

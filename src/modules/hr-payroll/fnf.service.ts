@@ -128,7 +128,7 @@ export class FnfService {
 
     if (!existing) return { ok: false };
 
-    const currentStatus = existing.status as FnfStatus;
+    const currentStatus: FnfStatus = existing.status;
     const targetStatus = body.status;
     const allowedNext = VALID_FNF_TRANSITIONS[currentStatus] ?? [];
     if (!allowedNext.includes(targetStatus)) {

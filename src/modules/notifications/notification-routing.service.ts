@@ -74,11 +74,11 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
 
   let candidates: NotificationChannel[];
   if (orgPolicy?.eventOverride?.channels?.length) {
-    candidates = orgPolicy.eventOverride.channels as NotificationChannel[];
+    candidates = orgPolicy.eventOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
   } else if (orgPolicy?.categoryOverride?.channels?.length) {
-    candidates = orgPolicy.categoryOverride.channels as NotificationChannel[];
+    candidates = orgPolicy.categoryOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
   } else if (orgPolicy?.moduleOverride?.channels?.length) {
-    candidates = orgPolicy.moduleOverride.channels as NotificationChannel[];
+    candidates = orgPolicy.moduleOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
   } else if (orgPolicy?.defaultChannels?.length) {
     candidates = orgPolicy.defaultChannels;
   } else {
@@ -215,7 +215,7 @@ export class NotificationRoutingService {
           .select({ channel: notificationProviderAccounts.channel })
           .from(notificationProviderAccounts)
           .where(and(eq(notificationProviderAccounts.orgId, orgId), eq(notificationProviderAccounts.enabled, true)));
-        return rows.map((r) => r.channel as NotificationChannel);
+        return rows.map((r) => r.channel);
       },
       CACHE_TTL.MEDIUM,
     );
@@ -262,7 +262,7 @@ export class NotificationRoutingService {
         if (!row) return { policy: null };
         return {
           policy: {
-            defaultChannels: (row.defaultChannels ?? []) as NotificationChannel[],
+            defaultChannels: (row.defaultChannels ?? []).filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)),
             eventOverrides: row.eventOverrides,
             categoryOverrides: row.categoryOverrides,
             moduleOverrides: row.moduleOverrides,
@@ -310,7 +310,7 @@ export class NotificationRoutingService {
       ),
     });
     for (const r of rows) {
-      const channels = r.channel ? [r.channel as NotificationChannel] : ALL_CHANNELS;
+      const channels = r.channel ? [r.channel] : ALL_CHANNELS;
       const applyTo = r.userId ? [r.userId] : userIds;
       for (const u of applyTo) {
         const m = perUser.get(u);
@@ -345,7 +345,7 @@ export class NotificationRoutingService {
     for (const r of rows) {
       if (Number(r.count) < def.rateLimitMax) continue;
       const m = perUser.get(r.userId);
-      if (m && !m.has(r.channel as NotificationChannel)) m.set(r.channel as NotificationChannel, "RATE_LIMIT");
+      if (m && !m.has(r.channel)) m.set(r.channel, "RATE_LIMIT");
     }
   }
 

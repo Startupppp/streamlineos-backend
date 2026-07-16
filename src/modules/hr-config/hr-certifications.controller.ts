@@ -21,6 +21,7 @@ export class HrCertificationsController {
   constructor(private readonly competencies: HrCompetenciesService) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(certificationListQuerySchema)) query: CertificationListQuery,
     @CurrentUser() u: CurrentUserContext,

@@ -67,12 +67,17 @@ export class HrAiController {
   }
 
   @Post("generate-jd")
-  generateJd(@Body(new ZodValidationPipe(generateJdSchema)) body: GenerateJdInput) {
+  @RequirePermission("hr:interviews:manage")
+  generateJd(
+    @Body(new ZodValidationPipe(generateJdSchema)) body: GenerateJdInput,
+    @CurrentUser() _u: CurrentUserContext,
+  ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
     return this.hr.generateJd(body);
   }
 
   @Post("score-candidate")
+  @RequirePermission("hr:interviews:manage")
   async scoreCandidate(
     @Body(new ZodValidationPipe(scoreCandidateSchema)) body: ScoreCandidateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +90,7 @@ export class HrAiController {
   }
 
   @Post("helpdesk-reply")
+  @RequirePermission("hr:helpdesk:manage")
   async helpdeskReply(
     @Body(new ZodValidationPipe(helpdeskReplySchema)) body: HelpdeskReplyInput,
     @CurrentUser() u: CurrentUserContext,

@@ -14,7 +14,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -53,18 +52,17 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentSourcingController {
-  constructor(
-    private readonly sourcing: RecruitmentSourcingService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly sourcing: RecruitmentSourcingService) {}
 
   @Get("referrals")
+  @RequirePermission("hr:employees:view")
   listReferrals(@CurrentUser() u: CurrentUserContext) {
     return this.sourcing.listReferrals(u.orgId, u.userId, u.role);
   }
 
   @Post("referrals")
   @HttpCode(201)
+  @RequirePermission("hr:employees:view")
   createReferral(
     @Body(new ZodValidationPipe(createReferralSubmissionSchema)) body: CreateReferralSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +81,7 @@ export class RecruitmentSourcingController {
   }
 
   @Get("vendors")
+  @RequirePermission("hr:employees:view")
   listVendors(@CurrentUser() u: CurrentUserContext) {
     return this.sourcing.listVendors(u.orgId);
   }
@@ -118,10 +117,9 @@ export class RecruitmentSourcingController {
   }
 
   @Get("vendors/:vendorId/submissions")
-  async listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
-    const canViewFinancials =
-      u.isOrgOwner || u.isPlatformAdmin || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:employees:manage");
-    return this.sourcing.listSubmissions(u.orgId, vendorId, canViewFinancials);
+  @RequirePermission("hr:employees:view")
+  listSubmissions(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.sourcing.listSubmissions(u.orgId, vendorId, false);
   }
 
   @Post("vendors/:vendorId/submissions")
@@ -146,6 +144,7 @@ export class RecruitmentSourcingController {
   }
 
   @Get("headcount")
+  @RequirePermission("hr:employees:view")
   listHeadcount(
     @Query(new ZodValidationPipe(headcountListSchema)) query: HeadcountListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -155,6 +154,7 @@ export class RecruitmentSourcingController {
 
   @Post("headcount")
   @HttpCode(201)
+  @RequirePermission("hr:employees:view")
   createHeadcount(
     @Body(new ZodValidationPipe(createHeadcountSchema)) body: CreateHeadcountInput,
     @CurrentUser() u: CurrentUserContext,
@@ -163,6 +163,7 @@ export class RecruitmentSourcingController {
   }
 
   @Patch("headcount/:requestId")
+  @RequirePermission("hr:employees:view")
   updateHeadcount(
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(updateHeadcountSchema)) body: UpdateHeadcountInput,

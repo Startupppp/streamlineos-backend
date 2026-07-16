@@ -53,7 +53,9 @@ export class EssService {
     const version = await this.db.query.payrollPolicyVersions.findFirst({
       where: eq(payrollPolicyVersions.id, policy.activeVersionId),
     });
-    return (version?.toggles ?? DEFAULT_PAYROLL_TOGGLES) as PayrollToggles;
+    const stored = version?.toggles;
+    if (!stored || typeof stored !== "object") return { ...DEFAULT_PAYROLL_TOGGLES };
+    return { ...DEFAULT_PAYROLL_TOGGLES, ...(stored as Partial<PayrollToggles>) };
   }
 
   async getActiveWindow(orgId: string) {
@@ -63,32 +65,41 @@ export class EssService {
   }
 
   async getOverview(orgId: string, userId: string) {
-    const toggles = await this.getActiveToggles(orgId);
-
     const pubWhere = and(
       eq(payslipPublications.userId, userId),
       eq(payslipPublications.orgId, orgId),
       eq(payslipPublications.status, "PUBLISHED"),
     );
 
-    const [latestPub] = await this.db
-      .select({ id: payslipPublications.id, publishedAt: payslipPublications.publishedAt, month: payrollRuns.month, net: payrollRunEmployees.net })
-      .from(payslipPublications)
-      .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
-      .innerJoin(payrollRunEmployees, eq(payrollRunEmployees.id, payslipPublications.runEmployeeId))
-      .where(pubWhere)
-      .orderBy(desc(payslipPublications.publishedAt))
-      .limit(1);
-
     const now = new Date(), yr = now.getFullYear(), mo = now.getMonth() + 1;
     const fyStart = mo >= 4 ? `${yr}-04` : `${yr - 1}-04`;
     const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
 
-    const fyPubs = await this.db
-      .select({ runId: payslipPublications.runId })
-      .from(payslipPublications)
-      .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
-      .where(and(pubWhere, gte(payrollRuns.month, fyStart), lte(payrollRuns.month, fyEnd)));
+    const [toggles, [latestPub], fyPubs, activeLoans, [pendingRow], window] = await Promise.all([
+      this.getActiveToggles(orgId),
+      this.db
+        .select({ id: payslipPublications.id, publishedAt: payslipPublications.publishedAt, month: payrollRuns.month, net: payrollRunEmployees.net })
+        .from(payslipPublications)
+        .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
+        .innerJoin(payrollRunEmployees, eq(payrollRunEmployees.id, payslipPublications.runEmployeeId))
+        .where(pubWhere)
+        .orderBy(desc(payslipPublications.publishedAt))
+        .limit(1),
+      this.db
+        .select({ runId: payslipPublications.runId })
+        .from(payslipPublications)
+        .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
+        .where(and(pubWhere, gte(payrollRuns.month, fyStart), lte(payrollRuns.month, fyEnd))),
+      this.db.query.salaryLoans.findMany({
+        where: and(eq(salaryLoans.userId, userId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"])),
+        columns: { totalEmis: true, paidEmis: true, emiAmount: true },
+      }),
+      this.db
+        .select({ total: count() })
+        .from(reimbursements)
+        .where(and(eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
+      this.getActiveWindow(orgId),
+    ]);
 
     let ytdGross = "0.00", ytdNet = "0.00";
     if (fyPubs.length > 0) {
@@ -100,20 +111,10 @@ export class EssService {
       ytdNet = parseFloat(ytdRow?.net ?? "0").toFixed(2);
     }
 
-    const activeLoans = await this.db.query.salaryLoans.findMany({
-      where: and(eq(salaryLoans.userId, userId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"])),
-      columns: { totalEmis: true, paidEmis: true, emiAmount: true },
-    });
     const activeLoanBalance = activeLoans
       .reduce((acc, l) => acc + ((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0"), 0)
       .toFixed(2);
 
-    const [pendingRow] = await this.db
-      .select({ total: count() })
-      .from(reimbursements)
-      .where(and(eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING")));
-
-    const window = await this.getActiveWindow(orgId);
     let declarationStatus: string | null = null;
     if (window) {
       const declarations = await this.taxService.listMine(orgId, userId);

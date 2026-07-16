@@ -126,6 +126,7 @@ export class OrganizationController {
     return this.organization.switchOrg(u.userId, body.orgId);
   }
 
+  @RequirePermission("settings:view")
   @Get("members")
   listMembers(
     @Query(new ZodValidationPipe(listMembersSchema)) query: ListMembersInput,
@@ -144,6 +145,7 @@ export class OrganizationController {
     return this.invitations.invite(u.orgId, u.userId, body.email, body.role);
   }
 
+  @RequirePermission("settings:manage")
   @Patch("members/:memberId")
   updateMemberRole(
     @Param("memberId") memberId: string,
@@ -180,6 +182,7 @@ export class OrganizationController {
     return this.invitations.cancel(u.orgId, body.invitationId, u.userId);
   }
 
+  @RequirePermission("settings:view")
   @Get("settings")
   async getSettings(@CurrentUser() u: CurrentUserContext) {
     const result = await this.settings.getSettings(u.orgId);
@@ -216,6 +219,7 @@ export class OrganizationController {
     return this.invitations.accept(body);
   }
 
+  @RequirePermission("settings:view")
   @Get("custom-domains")
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listCustomDomains(u.orgId);
@@ -248,6 +252,7 @@ export class OrganizationController {
     return this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
   }
 
+  @RequirePermission("settings:view")
   @Get("holidays")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listHolidays(u.orgId);

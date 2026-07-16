@@ -5,7 +5,7 @@ import { notificationDeliveries, notificationQueue, notificationProviderAccounts
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
-import type { NotificationChannel, NotificationPriority } from "./notification.types";
+import type { NotificationChannel } from "./notification.types";
 
 const BATCH_SIZE = 50;
 const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
@@ -111,7 +111,7 @@ export class NotificationDeliveryWorker {
     sandbox: boolean,
     result: QueueRunResult,
   ): Promise<void> {
-    const channel = delivery.channel as NotificationChannel;
+    const channel = delivery.channel;
     const provider = this.registry.get(channel);
     if (!provider) {
       await this.markDead(jobId, delivery.id, "NO_PROVIDER", `No provider for ${channel}`);
@@ -132,7 +132,7 @@ export class NotificationDeliveryWorker {
       title: meta.title ?? "Notification",
       message: meta.message ?? "",
       link: meta.link ?? null,
-      priority: delivery.priority as NotificationPriority,
+      priority: delivery.priority,
       sandbox,
     });
 

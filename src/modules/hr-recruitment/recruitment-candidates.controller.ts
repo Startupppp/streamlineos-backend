@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -20,7 +19,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
-import { AccessService } from "../access/access.service";
 import {
   bgvStatusSchema,
   bulkImportSchema,
@@ -56,10 +54,10 @@ export class RecruitmentCandidatesController {
   constructor(
     private readonly candidates: RecruitmentCandidatesService,
     private readonly ops: RecruitmentCandidateOpsService,
-    private readonly access: AccessService,
   ) {}
 
   @Get()
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(candidateListSchema)) query: CandidateListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -79,14 +77,11 @@ export class RecruitmentCandidatesController {
 
   @Post("bulk-import")
   @HttpCode(201)
-  async bulkImport(
+  @RequirePermission("hr:employees:manage")
+  bulkImport(
     @Body(new ZodValidationPipe(bulkImportSchema)) body: BulkImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.ops.bulkImport(u.orgId, body);
   }
 
@@ -101,35 +96,31 @@ export class RecruitmentCandidatesController {
   }
 
   @Post("bulk-reject")
-  async bulkReject(
+  @RequirePermission("hr:employees:manage")
+  bulkReject(
     @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR/Admin role required");
-    }
     return this.ops.bulkReject(u.orgId, u.userId, body);
   }
 
   @Post("bulk-shortlist")
-  async bulkShortlist(
+  @RequirePermission("hr:employees:manage")
+  bulkShortlist(
     @Body(new ZodValidationPipe(bulkShortlistSchema)) body: BulkShortlistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR/Admin role required");
-    }
     return this.ops.bulkShortlist(u.orgId, u.userId, body);
   }
 
   @Get("duplicates")
+  @RequirePermission("hr:employees:view")
   findDuplicates(@CurrentUser() u: CurrentUserContext) {
     return this.candidates.findDuplicates(u.orgId);
   }
 
   @Get(":candidateId")
+  @RequirePermission("hr:employees:view")
   getOne(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -167,6 +158,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Get(":candidateId/sla")
+  @RequirePermission("hr:employees:view")
   getSla(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -215,15 +207,12 @@ export class RecruitmentCandidatesController {
   }
 
   @Patch(":candidateId/bgv-status")
-  async updateBgvStatus(
+  @RequirePermission("hr:employees:manage")
+  updateBgvStatus(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(bgvStatusSchema)) body: BgvStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR role required");
-    }
     return this.ops.updateBgvStatus(u.orgId, candidateId, body);
   }
 }
