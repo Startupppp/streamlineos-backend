@@ -37,24 +37,6 @@ export function getMagicLinkEmailTemplate(magicLinkUrl: string): string {
   });
 }
 
-export function getPasswordResetEmailTemplate(resetUrl: string): string {
-  const content = `
-    <h1 class="email-title">Reset your password</h1>
-    <p class="email-text">
-      A password reset was requested for your StreamlineOS account.
-    </p>
-    ${renderButton("Reset password", resetUrl)}
-    ${renderCallout("This link expires in 1 hour. If you did not request a password reset, you can safely ignore this email — your password remains unchanged.", "warning")}
-    ${renderFallbackLink(resetUrl)}
-  `;
-
-  return getEmailTemplate({
-    title: "Reset your password",
-    preheader: "A password reset was requested for your StreamlineOS account.",
-    content,
-  });
-}
-
 export function getWelcomeEmailTemplate(name: string, email: string, setupUrl: string): string {
   const sName = escapeHtml(name);
 
@@ -71,25 +53,6 @@ export function getWelcomeEmailTemplate(name: string, email: string, setupUrl: s
   return getEmailTemplate({
     title: "Your StreamlineOS account is ready",
     preheader: "Your StreamlineOS account is ready — set up your account to get started.",
-    content,
-  });
-}
-
-export function getPasswordChangeConfirmationEmailTemplate(userName: string): string {
-  const sName = escapeHtml(userName);
-
-  const content = `
-    <h1 class="email-title">Your password was changed</h1>
-    <p class="email-text">
-      Hi ${sName}, your StreamlineOS password was successfully changed.
-    </p>
-    ${renderCallout("If this was not you, reset your password immediately and contact support.", "danger")}
-    ${renderButton("Review account security", `${appUrl}/settings?tab=security`)}
-  `;
-
-  return getEmailTemplate({
-    title: "Your password was changed",
-    preheader: "Your StreamlineOS password was recently changed.",
     content,
   });
 }
@@ -150,8 +113,8 @@ export function getAccountLockedEmailTemplate(name: string): string {
     <p class="email-text">
       Hi ${sName}, your StreamlineOS account was locked after 5 failed sign-in attempts.
     </p>
-    ${renderCallout("Your account will unlock automatically in 15 minutes. To unlock now, reset your password.", "warning")}
-    ${renderButton("Reset password", `${appUrl}/forgot-password`)}
+    ${renderCallout("Your account will unlock automatically in 15 minutes. You can sign in again after the lockout period using a magic link or one-time code.", "warning")}
+    ${renderButton("Sign in to StreamlineOS", `${appUrl}/signin`)}
   `;
 
   return getEmailTemplate({

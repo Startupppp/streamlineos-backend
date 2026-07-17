@@ -1,5 +1,6 @@
 import { appUrl } from "../app-url";
 import { getBrandUrl, getSupportEmail } from "../email.constants";
+import { LOGO_CID } from "../email-logo";
 
 export { appUrl };
 
@@ -19,22 +20,9 @@ export interface EmailTemplateProps {
 }
 
 function buildLogoLockup(): string {
-  const r2Base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim().replace(
-    /\/$/,
-    "",
-  );
-  const logoSrc = r2Base ? `${r2Base}/email-assets/logo-v2.png` : null;
-
-  if (logoSrc)
-    return (
-      `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
-      `<img src="${logoSrc}" alt="StreamlineOS" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
-      `</td>`
-    );
-
   return (
-    `<td width="32" height="32" align="center" valign="middle" bgcolor="#0b1220" style="width:32px;height:32px;border-radius:8px;background:#0b1220;font-size:0;line-height:0;">` +
-    `<span style="font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;font-weight:700;color:#ffffff;line-height:32px;display:inline-block;letter-spacing:-0.02em;">S</span>` +
+    `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
+    `<img src="cid:${LOGO_CID}" alt="StreamlineOS" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
     `</td>`
   );
 }

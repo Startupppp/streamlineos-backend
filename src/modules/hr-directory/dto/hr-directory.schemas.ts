@@ -229,7 +229,6 @@ export const onboardEmployeeSchema = z.object({
   whatsappSameAsPhone: z.boolean().optional(),
   whatsappNumber: z.string().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
-  password: z.string().optional(),
   designation: z.string(),
   departmentId: z.number().optional(),
   role: z.string().optional(),

@@ -88,7 +88,7 @@ export class WorkspaceSearchRetrievalService {
     pool: number,
   ): Promise<{ entityType: string; entityId: number }[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${q})`;
-    const term = `%${q}%`;
+    const prefixTerm = `${q}%`;
     const rows = await this.db
       .select({
         entityType: workspaceSearchChunks.entityType,
@@ -99,7 +99,7 @@ export class WorkspaceSearchRetrievalService {
         and(
           eq(workspaceSearchChunks.orgId, orgId),
           inArray(workspaceSearchChunks.entityType, types),
-          sql`(${workspaceSearchChunks.fts} @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND (${workspaceSearchChunks.title} ILIKE ${term} OR ${workspaceSearchChunks.content} ILIKE ${term})))`,
+          sql`(${workspaceSearchChunks.fts} @@ ${tsquery} OR (numnode(${tsquery}) = 0 AND ${workspaceSearchChunks.title} ILIKE ${prefixTerm}))`,
         ),
       )
       .orderBy(

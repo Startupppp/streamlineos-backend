@@ -4,6 +4,7 @@ import { CrmCopilotService } from "./services/crm-copilot.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmBriefService } from "./services/crm-brief.service";
 import { CrmContentService } from "./services/crm-content.service";
+import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { AiJobsService } from "../ai-jobs/ai-jobs.service";
@@ -109,12 +110,17 @@ describe("CrmCopilotService Phase 2", () => {
     mockGateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
     mockAiJobs = { enqueue: jest.fn().mockResolvedValue({ jobId: 42 }) };
 
-    const mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction">> = {
+    const mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction" | "nextBestActionWithEvidence">> = {
       nextBestAction: jest.fn(),
+      nextBestActionWithEvidence: jest.fn(),
     };
     const mockContent: jest.Mocked<Pick<CrmContentService, "generateEmail" | "handleObjection">> = {
       generateEmail: jest.fn(),
       handleObjection: jest.fn(),
+    };
+    const mockPipeline: jest.Mocked<Pick<CrmPipelineService, "stalePipelineDigest" | "dataQualityCopilot">> = {
+      stalePipelineDigest: jest.fn(),
+      dataQualityCopilot: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -125,6 +131,7 @@ describe("CrmCopilotService Phase 2", () => {
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: CrmScoringService, useValue: mockScoring },
         { provide: CrmContentService, useValue: mockContent },
+        { provide: CrmPipelineService, useValue: mockPipeline },
         { provide: AiJobsService, useValue: mockAiJobs },
       ],
     }).compile();

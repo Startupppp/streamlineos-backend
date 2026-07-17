@@ -18,7 +18,7 @@ import {
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
-import { getAccountDeactivationEmailTemplate, getEmailOtpTemplate } from "./templates/auth";
+import { getAccountDeactivationEmailTemplate, getEmailOtpTemplate, getAccountLockedEmailTemplate } from "./templates/auth";
 import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
@@ -32,22 +32,6 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Verify your email address",
       html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
-    });
-  }
-
-  sendPasswordResetEmail(email: string, token: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Reset your password",
-      html: getPasswordResetEmailTemplate(`${appUrl}/reset-password?token=${token}`),
-    });
-  }
-
-  sendPasswordChangeConfirmationEmail(email: string, userName: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Your password was changed",
-      html: getPasswordChangeConfirmationEmailTemplate(userName),
     });
   }
 

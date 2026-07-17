@@ -4146,6 +4146,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:sales-orders:ship",
     "inventory:reports:read",
     "inventory:ai:propose",
+    "inventory:ai:manage",
     "inventory:valuation:read",
     "inventory:quality:read",
     "workflows:workflows:view",
@@ -4376,6 +4377,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:replenishment:manage",
     "inventory:reports:read",
     "inventory:ai:propose",
+    "inventory:ai:manage",
     "reports:view",
   ],
 

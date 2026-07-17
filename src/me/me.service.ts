@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, loginHistory, userSessions, passwordResetTokens, devices, accounts } from "../db/schema";
+import { users, loginHistory, userSessions, devices, accounts } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
@@ -19,7 +19,6 @@ export class MeService {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
-        password: false,
         totpSecret: false,
         googleRefreshToken: false,
       },
@@ -132,12 +131,7 @@ export class MeService {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { email: true },
-    });
-
-    const [loginsToday, failedLoginsLast7Days, activeSessions, passwordResetsLast7Days] = await Promise.all([
+    const [loginsToday, failedLoginsLast7Days, activeSessions] = await Promise.all([
       this.db.select({ count: count() }).from(loginHistory).where(
         and(
           eq(loginHistory.userId, userId),
@@ -155,21 +149,13 @@ export class MeService {
       this.db.select({ count: count() }).from(userSessions).where(
         and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
       ),
-      user
-        ? this.db.select({ count: count() }).from(passwordResetTokens).where(
-            and(
-              eq(passwordResetTokens.email, user.email),
-              gte(passwordResetTokens.createdAt, sevenDaysAgo),
-            ),
-          )
-        : Promise.resolve([{ count: 0 }]),
     ]);
 
     return {
       loginsToday: loginsToday[0]?.count ?? 0,
       failedLoginsLast7Days: failedLoginsLast7Days[0]?.count ?? 0,
       activeSessions: activeSessions[0]?.count ?? 0,
-      passwordResetsLast7Days: passwordResetsLast7Days[0]?.count ?? 0,
+      passwordResetsLast7Days: 0,
     };
   }
 }

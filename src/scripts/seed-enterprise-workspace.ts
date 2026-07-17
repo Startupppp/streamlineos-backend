@@ -1,6 +1,5 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
@@ -42,7 +41,6 @@ const ORG_ID = "e1000001-0000-4000-8000-000000000001";
 const ADMIN_ID = "e1000001-0000-4000-8000-000000000002";
 const ORG_SLUG = "enterprise-demo-workspace";
 const ADMIN_EMAIL = "admin@enterprise-demo.streamlineos.in";
-const PASSWORD = "Enterprise@2026!";
 
 const PEOPLE = [
   { id: "e1000001-0000-4000-8000-000000000003", email: "priya.mgr@enterprise-demo.in", first: "Priya", last: "Sharma", role: "ENGINEERING", emp: "EMP-MGR-01", worker: "FULL_TIME" as const, status: "ACTIVE" as const, designation: "Engineering Manager", dept: "Engineering", isManager: true },
@@ -109,9 +107,6 @@ async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole:
 async function seed(db: Db): Promise<Record<string, unknown>> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  const passwordHash = await bcrypt.hash(PASSWORD, 12);
-  const memberHash = await bcrypt.hash(PASSWORD, 10);
-
   await db.insert(organizations).values({
     id: ORG_ID,
     name: "Enterprise Demo Co",
@@ -130,7 +125,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     name: "Enterprise Admin",
     firstName: "Enterprise",
     lastName: "Admin",
-    password: passwordHash,
     emailVerified: now,
     isActive: true,
     hasDashboardAccess: true,
@@ -140,7 +134,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     activatedAt: now,
   }).onConflictDoUpdate({
     target: users.email,
-    set: { password: passwordHash, isActive: true, lastActiveOrgId: ORG_ID },
+    set: { isActive: true, lastActiveOrgId: ORG_ID },
   });
 
   await db.insert(organizationMembers).values({
@@ -166,7 +160,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       name: `${p.first} ${p.last}`,
       firstName: p.first,
       lastName: p.last,
-      password: memberHash,
       emailVerified: now,
       isActive: !("inactive" in p && p.inactive),
       hasDashboardAccess: true,
@@ -481,7 +474,6 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     orgId: ORG_ID,
     slug: ORG_SLUG,
     adminEmail: ADMIN_EMAIL,
-    password: PASSWORD,
     plan: "ENTERPRISE",
     employees: PEOPLE.length,
     departments: deptNames.length,

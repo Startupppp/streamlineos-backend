@@ -1,7 +1,8 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID, randomBytes } from "node:crypto";
-import { addDays } from "date-fns";
+import { addHours } from "date-fns";
+import { hashToken } from "../../common/security/token.util";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -9,8 +10,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { InvitationsService } from "../organization/invitations.service";
 import {
   invitations,
+  magicLinkTokens,
   organizationMembers,
-  passwordResetTokens,
   users,
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
@@ -210,18 +211,18 @@ export class UserOpsService {
     });
     if (!user) throw new NotFoundException("User not found");
 
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = addDays(new Date(), 1);
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenHash = hashToken(rawToken);
 
-    await this.db.insert(passwordResetTokens).values({
+    await this.db.insert(magicLinkTokens).values({
       id: randomUUID(),
-      email: user.email,
-      token,
-      expiresAt,
+      userId,
+      tokenHash,
+      expiresAt: addHours(new Date(), 24),
     });
 
     this.audit.log({
-      action: "user.password_reset_sent",
+      action: "user.signin_link_sent",
       userId: actorUserId,
       orgId,
       targetId: userId,

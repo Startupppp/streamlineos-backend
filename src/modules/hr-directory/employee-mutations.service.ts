@@ -437,7 +437,6 @@ export class EmployeeMutationsService {
       return { success: true, userId: linkedUser.id };
     }
 
-    const passwordHash = randomBytes(32).toString("hex");
     const userId = randomUUID();
 
     const newUser = await this.db.transaction(async (tx) => {
@@ -452,7 +451,6 @@ export class EmployeeMutationsService {
           phone: body.phone,
           whatsappNumber: body.whatsappSameAsPhone ? body.phone : body.whatsappNumber,
           gender: body.gender,
-          password: passwordHash,
           designation: body.designation,
           departmentId: body.departmentId,
           role,
@@ -466,7 +464,6 @@ export class EmployeeMutationsService {
             : undefined,
           isActive: true,
           hasDashboardAccess: true,
-          isPasswordChangeRequired: true,
         })
         .returning();
 

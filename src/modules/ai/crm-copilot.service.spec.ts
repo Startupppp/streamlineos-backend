@@ -5,6 +5,7 @@ import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
+import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { OrgFeatureFlags } from "./services/org-features.service";
 import type { AiInvokeResult } from "./gateway/ai-gateway.types";
@@ -62,8 +63,9 @@ describe("CrmCopilotService", () => {
   let service: CrmCopilotService;
   let mockOrgFeatures: jest.Mocked<Pick<OrgFeaturesService, "getFlags">>;
   let mockGateway: jest.Mocked<Pick<AiGatewayService, "invokeStructured" | "invokeText">>;
-  let mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction">>;
+  let mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction" | "nextBestActionWithEvidence">>;
   let mockContent: jest.Mocked<Pick<CrmContentService, "generateEmail" | "handleObjection">>;
+  let mockPipeline: jest.Mocked<Pick<CrmPipelineService, "stalePipelineDigest" | "dataQualityCopilot">>;
 
   async function buildService(queryResults: unknown[][] = []) {
     mockOrgFeatures = { getFlags: jest.fn() };
@@ -71,8 +73,9 @@ describe("CrmCopilotService", () => {
       invokeStructured: jest.fn(),
       invokeText: jest.fn(),
     };
-    mockScoring = { nextBestAction: jest.fn() };
+    mockScoring = { nextBestAction: jest.fn(), nextBestActionWithEvidence: jest.fn() };
     mockContent = { generateEmail: jest.fn(), handleObjection: jest.fn() };
+    mockPipeline = { stalePipelineDigest: jest.fn(), dataQualityCopilot: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,6 +85,7 @@ describe("CrmCopilotService", () => {
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: CrmScoringService, useValue: mockScoring },
         { provide: CrmContentService, useValue: mockContent },
+        { provide: CrmPipelineService, useValue: mockPipeline },
       ],
     }).compile();
 

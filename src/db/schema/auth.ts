@@ -21,7 +21,6 @@ export const organizations = pgTable("organizations", {
   address: jsonb("address").$type<{ line1?: string; line2?: string; city?: string; state?: string; country?: string; postalCode?: string }>(),
   mfaEnforced: boolean("mfa_enforced").default(false).notNull(),
   allowedEmailDomains: text("allowed_email_domains").array().default([]),
-  passwordExpiryDays: integer("password_expiry_days"),
   maxConcurrentSessions: integer("max_concurrent_sessions"),
   enabledModules: text("enabled_modules").array(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
@@ -85,7 +84,6 @@ export const users = pgTable("users", {
   name: text("name"),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("email_verified"),
-  password: text("password"),
   firstName: text("first_name"),
   lastName: text("last_name"),
   gender: genderEnum("gender"),
@@ -103,7 +101,6 @@ export const users = pgTable("users", {
   monthlySalary: decimal("monthly_salary", { precision: 15, scale: 2 }),
   employeeId: text("employee_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  isPasswordChangeRequired: boolean("is_password_change_required").default(false).notNull(),
   loginAttempts: integer("login_attempts").default(0).notNull(),
   lockedUntil: timestamp("locked_until"),
   isActive: boolean("is_active").default(true).notNull(),
@@ -124,7 +121,6 @@ export const users = pgTable("users", {
   }>(),
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
-  passwordChangedAt: timestamp("password_changed_at"),
   googleRefreshToken: text("google_refresh_token"),
   googleEmail: text("google_email"),
   isProfilePictureRequired: boolean("is_profile_picture_required").default(false).notNull(),
@@ -191,18 +187,6 @@ export const invitations = pgTable("invitations", {
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
 ]);
 
-export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: text("id").primaryKey(),
-  email: text("email").notNull(),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_password_reset_email").on(table.email),
-  index("idx_password_reset_expires").on(table.expiresAt),
-  index("idx_password_reset_email_expires").on(table.email, table.expiresAt),
-]);
-
 export const userSessions = pgTable("user_sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -244,15 +228,6 @@ export const mfaBackupCodes = pgTable("mfa_backup_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_mfa_backup_codes_user").on(table.userId),
-]);
-
-export const passwordHistory = pgTable("password_history", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  passwordHash: text("password_hash").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_password_history_user").on(table.userId, table.createdAt),
 ]);
 
 export const serviceAccounts = pgTable("service_accounts", {

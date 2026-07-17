@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import bcrypt from "bcryptjs";
 import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -47,15 +46,12 @@ export class UsersService {
     }
 
     const userId = randomUUID();
-    const tempPassword = randomBytes(16).toString("hex");
-    const hashedPassword = await bcrypt.hash(tempPassword, 12);
     const fullName = firstName && lastName ? `${firstName} ${lastName}`.trim() : firstName ?? lastName ?? null;
 
     await this.db.transaction(async (tx) => {
       await tx.insert(users).values({
         id: userId,
         email,
-        password: hashedPassword,
         name: fullName,
         firstName: firstName ?? null,
         lastName: lastName ?? null,

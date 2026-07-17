@@ -97,11 +97,9 @@ export class AuthService {
         name: input.lastName ? `${input.firstName} ${input.lastName}` : input.firstName,
         firstName: input.firstName,
         lastName: input.lastName ?? "",
-        password: null,
         role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
-        isPasswordChangeRequired: false,
         emailVerified: null,
         lastActiveOrgId: orgId,
       });
@@ -171,7 +169,6 @@ export class AuthService {
     role: string | null;
     isActive: boolean;
     hasDashboardAccess: boolean;
-    isPasswordChangeRequired: boolean;
     branchId: number | null;
     totpEnabled: boolean;
     orgId: string | null;
@@ -199,7 +196,6 @@ export class AuthService {
               role: true,
               isActive: true,
               hasDashboardAccess: true,
-              isPasswordChangeRequired: true,
               branchId: true,
               totpEnabled: true,
               onboardingCompletedAt: true,
@@ -254,7 +250,6 @@ export class AuthService {
           role: user.role ?? null,
           isActive: user.isActive,
           hasDashboardAccess: user.hasDashboardAccess,
-          isPasswordChangeRequired: false,
           branchId: user.branchId ?? null,
           totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,

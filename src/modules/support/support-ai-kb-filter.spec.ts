@@ -2,6 +2,9 @@ import { SupportAiService } from "./support-ai.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { EmbeddingsService } from "../ai/providers/embeddings.service";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
+import { SupportAiSettingsService } from "./support-ai-settings.service";
+import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
+import { SupportAiReportHelper } from "./support-ai-report.helper";
 
 const EMBEDDING_DIM = 1536;
 
@@ -15,6 +18,13 @@ const makeEmbeddings = () => ({
   toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
 });
 const makeOrgFeatures = () => ({ getFlags: jest.fn().mockResolvedValue({ supportAi: true }) });
+const makeAiSettings = (): Partial<SupportAiSettingsService> => ({ getSettings: jest.fn().mockResolvedValue({ confidenceThreshold: 0.7 }) });
+const makeEmbHelper = (): Partial<SupportAiEmbeddingsHelper> => ({
+  upsertAndSearchSimilar: jest.fn().mockResolvedValue([]),
+  getDuplicateThreshold: jest.fn().mockReturnValue(0.86),
+  getRootCauseThreshold: jest.fn().mockReturnValue(0.75),
+});
+const makeReportHelper = (): Partial<SupportAiReportHelper> => ({ getAiReport: jest.fn().mockResolvedValue({}) });
 
 const makeChain = (finalValue: unknown[] = []) => {
   const chain: Record<string, jest.Mock> = {};
@@ -44,6 +54,9 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeGateway() as never,
       makeEmbeddings() as never,
       makeOrgFeatures() as never,
+      makeAiSettings() as never,
+      makeEmbHelper() as never,
+      makeReportHelper() as never,
     );
 
     const result = await svc.suggestKbArticles("org-1", 1);
@@ -66,6 +79,9 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeGateway() as never,
       makeEmbeddings() as never,
       makeOrgFeatures() as never,
+      makeAiSettings() as never,
+      makeEmbHelper() as never,
+      makeReportHelper() as never,
     );
 
     await svc.suggestKbArticles("org-1", 1);
@@ -90,6 +106,9 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeGateway() as never,
       embeddings as never,
       makeOrgFeatures() as never,
+      makeAiSettings() as never,
+      makeEmbHelper() as never,
+      makeReportHelper() as never,
     );
 
     const result = await svc.suggestKbArticles("org-1", 1);

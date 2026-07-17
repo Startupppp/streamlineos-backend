@@ -391,7 +391,6 @@ export class AuthTokensService {
         role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
-        isPasswordChangeRequired: false,
         emailVerified: new Date(),
       });
 

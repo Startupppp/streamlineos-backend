@@ -496,7 +496,7 @@ const MOCK_VENDOR_PERFORMANCE = {
   totalSpend: "12000",
   fillRate: 0.87,
   onTimeRate: 0.72,
-  avgLeadDays: 9,
+  avgLeadTimeDays: 9,
 };
 
 describe("InvAiExplainService - getSupplierDelayBriefing", () => {
@@ -572,7 +572,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
     const result = await service.getSupplierDelayBriefing("org-1", "user-1");
 
     expect(result.vendors[0]!.performance["onTimeRate"]).toBe(0.72);
-    expect(result.vendors[0]!.performance["avgLeadDays"]).toBe(9);
+    expect(result.vendors[0]!.performance["avgLeadTimeDays"]).toBe(9);
     const invokeTextReturn = (invokeText.mock.results[0] as { value: Promise<{ ok: boolean; data: string }> }).value;
     await expect(invokeTextReturn).resolves.toMatchObject({ data: expect.stringContaining("narrative") });
   });

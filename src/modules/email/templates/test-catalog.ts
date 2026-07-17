@@ -1,9 +1,7 @@
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
-  getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
-  getPasswordChangeConfirmationEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
   getInvitationEmailTemplate,
@@ -83,24 +81,12 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
     subject: "Your sign-in link",
     generateHtml: () => getMagicLinkEmailTemplate(`${BASE_URL}/magic-link?token=test-token`),
   },
-  "auth.password_reset": {
-    category: "Auth",
-    name: "Password Reset",
-    subject: "Reset your password",
-    generateHtml: () => getPasswordResetEmailTemplate(`${BASE_URL}/reset-password?token=test-token`),
-  },
   "auth.welcome": {
     category: "Auth",
     name: "Welcome / Account Created",
     subject: "Your StreamlineOS account is ready",
     generateHtml: () =>
-      getWelcomeEmailTemplate("Priya Sharma", "priya@acme.in", `${BASE_URL}/setup-password?token=test-token`),
-  },
-  "auth.password_changed": {
-    category: "Auth",
-    name: "Password Changed Confirmation",
-    subject: "Your password was changed",
-    generateHtml: () => getPasswordChangeConfirmationEmailTemplate("Priya Sharma"),
+      getWelcomeEmailTemplate("Priya Sharma", "priya@acme.in", `${BASE_URL}/setup?token=test-token`),
   },
   "auth.account_deactivated": {
     category: "Auth",

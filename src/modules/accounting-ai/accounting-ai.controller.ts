@@ -23,7 +23,7 @@ export class AccountingAiController {
 
   @Post("variance-explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
-  @RequirePermission("accounting:reports:read")
+  @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
   explainVariance(
     @Body() body: unknown,
@@ -36,7 +36,7 @@ export class AccountingAiController {
 
   @Post("reconciliation-explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
-  @RequirePermission("accounting:reports:read")
+  @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
   explainReconciliation(
     @Body() body: unknown,
@@ -49,7 +49,7 @@ export class AccountingAiController {
 
   @Post("extract-document")
   @UseGuards(PermissionGuard, RateLimitGuard)
-  @RequirePermission("accounting:payables:read")
+  @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
   extractDocument(
     @Body() body: unknown,

@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import bcrypt from "bcryptjs";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { and, count, desc, eq, gt, isNull } from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
@@ -357,7 +356,6 @@ export class InvitationsService {
       return { ok: true, autoLoginToken };
     }
 
-    const hashedPassword = input.password ? await bcrypt.hash(input.password, 12) : null;
     const userId = randomUUID();
     const fullName =
       input.firstName && input.lastName
@@ -368,7 +366,6 @@ export class InvitationsService {
       await tx.insert(users).values({
         id: userId,
         email: invitation.email,
-        password: hashedPassword,
         name: fullName,
         firstName: input.firstName,
         lastName: input.lastName,
