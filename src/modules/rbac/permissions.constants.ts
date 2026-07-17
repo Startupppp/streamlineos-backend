@@ -1587,6 +1587,18 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     description: "View support reports and analytics",
   },
   {
+    name: "support:ai:view",
+    resource: "support:ai",
+    action: "view",
+    description: "View support AI reporting and insights",
+  },
+  {
+    name: "support:ai:invoke",
+    resource: "support:ai",
+    action: "invoke",
+    description: "Use support AI features (reply/macro improvement, translation)",
+  },
+  {
     name: "support:queues:manage",
     resource: "support:queues",
     action: "manage",
@@ -3795,6 +3807,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:tags:manage",
     "support:channels:manage",
     "support:reports:view",
+    "support:ai:view",
+    "support:ai:invoke",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",

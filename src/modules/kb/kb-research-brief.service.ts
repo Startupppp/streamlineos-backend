@@ -101,27 +101,35 @@ export class KbResearchBriefService {
   }
 
   async getById(user: CurrentUserContext, briefId: number): Promise<BriefDetail> {
-    const row = await this.db.query.kbResearchBriefs.findFirst({
-      where: and(
-        eq(kbResearchBriefs.id, briefId),
-        eq(kbResearchBriefs.orgId, user.orgId),
-        eq(kbResearchBriefs.userId, user.userId),
-      ),
-    });
+    const rows = await this.db
+      .select()
+      .from(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userId, user.userId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
     if (!row) throw new NotFoundException("Research brief not found");
     return row;
   }
 
   async rateBrief(user: CurrentUserContext, briefId: number, rating: "helpful" | "not_helpful"): Promise<void> {
-    const existing = await this.db.query.kbResearchBriefs.findFirst({
-      where: and(
-        eq(kbResearchBriefs.id, briefId),
-        eq(kbResearchBriefs.orgId, user.orgId),
-        eq(kbResearchBriefs.userId, user.userId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Research brief not found");
+    const existing = await this.db
+      .select({ id: kbResearchBriefs.id })
+      .from(kbResearchBriefs)
+      .where(
+        and(
+          eq(kbResearchBriefs.id, briefId),
+          eq(kbResearchBriefs.orgId, user.orgId),
+          eq(kbResearchBriefs.userId, user.userId),
+        ),
+      )
+      .limit(1);
+    if (existing.length === 0) throw new NotFoundException("Research brief not found");
     await this.db
       .update(kbResearchBriefs)
       .set({ rating })

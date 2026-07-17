@@ -6,10 +6,11 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, gte, sql } from "drizzle-orm";
-import { randomBytes, randomUUID } from "node:crypto";
+import { and, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import {
   accounts,
+  emailOtpCodes,
   loginHistory,
   magicLinkTokens,
   organizationMembers,
@@ -256,6 +257,86 @@ export class AuthTokensService {
     });
 
     await this.email.sendMagicLinkEmail(user.email, token);
+  }
+
+  async requestEmailOtp(email: string): Promise<void> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, email: true, emailVerified: true },
+    });
+
+    if (!user || !user.emailVerified) return;
+
+    const rawCode = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const codeHash = hashToken(rawCode);
+    const expiresAt = addMinutes(new Date(), 10);
+
+    await this.db
+      .update(emailOtpCodes)
+      .set({ usedAt: new Date() })
+      .where(and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt)));
+
+    await this.db.insert(emailOtpCodes).values({
+      userId: user.id,
+      codeHash,
+      expiresAt,
+    });
+
+    void this.email.sendEmailOtpEmail(user.email, rawCode).catch(() => {});
+  }
+
+  async verifyEmailOtp(email: string, code: string): Promise<{ autoLoginToken: string }> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true },
+    });
+
+    if (!user) throw new UnauthorizedException("Invalid or expired code");
+
+    const row = await this.db.query.emailOtpCodes.findFirst({
+      where: and(
+        eq(emailOtpCodes.userId, user.id),
+        isNull(emailOtpCodes.usedAt),
+        gt(emailOtpCodes.expiresAt, new Date()),
+      ),
+      orderBy: [desc(emailOtpCodes.createdAt)],
+    });
+
+    if (!row) throw new UnauthorizedException("Invalid or expired code");
+
+    await this.db
+      .update(emailOtpCodes)
+      .set({ attempts: sql`${emailOtpCodes.attempts} + 1` })
+      .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)));
+
+    if (row.attempts >= 5) throw new UnauthorizedException("Invalid or expired code");
+
+    const submittedHash = hashToken(code);
+    if (submittedHash !== row.codeHash) throw new UnauthorizedException("Invalid or expired code");
+
+    const [updated] = await this.db
+      .update(emailOtpCodes)
+      .set({ usedAt: new Date() })
+      .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)))
+      .returning({ id: emailOtpCodes.id });
+
+    if (!updated) throw new UnauthorizedException("Invalid or expired code");
+
+    const rawToken = generateToken();
+    const tokenHash = hashToken(rawToken);
+
+    await this.db.insert(magicLinkTokens).values({
+      id: randomUUID(),
+      userId: user.id,
+      tokenHash,
+      expiresAt: addMinutes(new Date(), 5),
+    });
+
+    return { autoLoginToken: rawToken };
   }
 
   async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {

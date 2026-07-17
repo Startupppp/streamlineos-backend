@@ -81,3 +81,15 @@ export const googleOAuthSchema = z.object({
 }).strict();
 
 export type GoogleOAuthInput = z.infer<typeof googleOAuthSchema>;
+
+export const requestEmailOtpSchema = z.object({
+  email: z.string().email(),
+}).strict();
+
+export const verifyEmailOtpSchema = z.object({
+  email: z.string().email(),
+  code: z.string().regex(/^\d{6}$/),
+}).strict();
+
+export type RequestEmailOtpInput = z.infer<typeof requestEmailOtpSchema>;
+export type VerifyEmailOtpInput = z.infer<typeof verifyEmailOtpSchema>;

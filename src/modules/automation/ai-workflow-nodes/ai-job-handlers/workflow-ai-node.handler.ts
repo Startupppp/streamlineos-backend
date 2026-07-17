@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import type { AiJobContext, AiJobHandler } from "../../../ai-jobs/ai-job-handler";
+import { Injectable, type OnModuleInit } from "@nestjs/common";
+import { AiJobHandlerRegistry, type AiJobContext, type AiJobHandler } from "../../../ai-jobs/ai-job-handler";
 import { AiJobsService } from "../../../ai-jobs/ai-jobs.service";
 import { AiNodeExecutorService } from "../ai-node-executor.service";
 import type { AiNodeType } from "../ai-node-types";
@@ -11,13 +11,18 @@ function isAiNodeType(value: unknown): value is AiNodeType {
 }
 
 @Injectable()
-export class WorkflowAiNodeHandler implements AiJobHandler {
+export class WorkflowAiNodeHandler implements AiJobHandler, OnModuleInit {
   readonly type = "workflow.ai_node";
 
   constructor(
     private readonly executor: AiNodeExecutorService,
     private readonly aiJobs: AiJobsService,
+    private readonly registry: AiJobHandlerRegistry,
   ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
 
   async handle(job: AiJobContext): Promise<Record<string, unknown>> {
     const { orgId, userId, payload } = job;
@@ -40,8 +45,9 @@ export class WorkflowAiNodeHandler implements AiJobHandler {
         nodeConfig,
         automationPayload,
       );
-      await this.aiJobs.complete(job.id, result as Record<string, unknown>);
-      return result as Record<string, unknown>;
+      const output: Record<string, unknown> = { ...result };
+      await this.aiJobs.complete(job.id, output);
+      return output;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Workflow AI node execution failed";
       await this.aiJobs.fail(job.id, message);

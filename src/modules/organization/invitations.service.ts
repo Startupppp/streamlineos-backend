@@ -357,9 +357,7 @@ export class InvitationsService {
       return { ok: true, autoLoginToken };
     }
 
-    if (!input.password) throw new BadRequestException("Password is required for new accounts");
-
-    const hashedPassword = await bcrypt.hash(input.password, 12);
+    const hashedPassword = input.password ? await bcrypt.hash(input.password, 12) : null;
     const userId = randomUUID();
     const fullName =
       input.firstName && input.lastName

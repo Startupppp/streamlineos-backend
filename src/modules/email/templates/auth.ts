@@ -121,6 +121,27 @@ export function getAccountDeactivationEmailTemplate(
   });
 }
 
+export function getEmailOtpTemplate(code: string): string {
+  const digits = code.split("").join("&thinsp;");
+
+  const content = `
+    <h1 class="email-title">Your sign-in code</h1>
+    <p class="email-text">
+      Use the code below to sign in to your StreamlineOS account.
+    </p>
+    <div style="text-align:center;margin:24px 0;">
+      <span style="font-family:'Courier New',Courier,monospace;font-size:36px;font-weight:700;letter-spacing:0.12em;color:#0b1220;background:#f8fafc;padding:14px 28px;border-radius:10px;border:1px solid #e2e8f0;display:inline-block;">${digits}</span>
+    </div>
+    ${renderCallout("This code expires in 10 minutes and can only be used once. If you did not request this, you can safely ignore this email.")}
+  `;
+
+  return getEmailTemplate({
+    title: "Your sign-in code",
+    preheader: "Your one-time sign-in code for StreamlineOS — expires in 10 minutes.",
+    content,
+  });
+}
+
 export function getAccountLockedEmailTemplate(name: string): string {
   const sName = escapeHtml(name);
 

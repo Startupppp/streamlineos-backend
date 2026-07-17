@@ -5,7 +5,6 @@ import { AiModule } from "../ai/ai.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 import { AiConfirmationModule } from "../ai-confirmation/ai-confirmation.module";
 import { FeatureFlagsModule } from "../feature-flags/feature-flags.module";
-import { AI_JOB_HANDLERS } from "../ai-jobs/ai-job-handler";
 import { AutomationController } from "./automation.controller";
 import { AutomationService } from "./automation.service";
 import { AutomationEmailService } from "./automation-email.service";
@@ -20,7 +19,6 @@ import { WorkflowAiNodeHandler } from "./ai-workflow-nodes/ai-job-handlers/workf
     AutomationEmailService,
     AiNodeExecutorService,
     WorkflowAiNodeHandler,
-    { provide: AI_JOB_HANDLERS, useExisting: WorkflowAiNodeHandler, multi: true },
   ],
   exports: [AutomationService, AutomationEmailService],
 })

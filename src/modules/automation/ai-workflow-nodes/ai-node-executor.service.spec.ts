@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiNodeExecutorService } from "./ai-node-executor.service";
 import { WorkflowAiNodeHandler } from "./ai-job-handlers/workflow-ai-node.handler";
@@ -7,6 +7,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { FeatureFlagsService } from "../../feature-flags/feature-flags.service";
 import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
 import { AiJobsService } from "../../ai-jobs/ai-jobs.service";
+import { AiJobHandlerRegistry } from "../../ai-jobs/ai-job-handler";
 import type { AiInvokeResult } from "../../ai/gateway/ai-gateway.types";
 import type { AiNodeType } from "./ai-node-types";
 
@@ -48,6 +49,7 @@ async function buildModule(): Promise<{ executor: AiNodeExecutorService; handler
       { provide: FeatureFlagsService, useValue: mockFlags },
       { provide: AiConfirmationService, useValue: mockConfirmation },
       { provide: AiJobsService, useValue: mockJobs },
+      { provide: AiJobHandlerRegistry, useValue: { register: jest.fn() } },
     ],
   }).compile();
 

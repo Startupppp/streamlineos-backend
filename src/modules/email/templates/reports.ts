@@ -157,9 +157,9 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
           </div>
         </td>
         <td width="50%" style="padding:0 0 0 6px;">
-          <div style="background:#faf5ff;border-radius:8px;padding:16px;text-align:center;">
+          <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;">
             <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.closedTickets}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tickets closed</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#475569;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tickets closed</p>
           </div>
         </td>
       </tr>

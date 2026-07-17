@@ -3,7 +3,6 @@ import { BillingModule } from "../billing/billing.module";
 import { AiModule } from "../ai/ai.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 import { NotificationsModule } from "../notifications/notifications.module";
-import { AI_JOB_HANDLERS } from "../ai-jobs/ai-job-handler";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
 import { KbEventsService } from "./kb-events.service";
@@ -130,11 +129,6 @@ import { KbResearchBriefHandler } from "./kb-research-brief.handler";
     KbAiFeedbackService,
     KbResearchBriefService,
     KbResearchBriefHandler,
-    {
-      provide: AI_JOB_HANDLERS,
-      useExisting: KbResearchBriefHandler,
-      multi: true,
-    },
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService, KbArticlesService],
 })

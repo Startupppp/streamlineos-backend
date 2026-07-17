@@ -281,6 +281,18 @@ export const magicLinkTokens = pgTable("magic_link_tokens", {
   uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
 ]);
 
+export const emailOtpCodes = pgTable("email_otp_codes", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_email_otp_codes_user_expires").on(table.userId, table.expiresAt),
+]);
+
 export const roles = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),

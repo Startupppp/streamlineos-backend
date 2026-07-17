@@ -29,7 +29,7 @@ const mockEvents = {
   record: jest.fn().mockResolvedValue(undefined),
 };
 
-const articleResult = { kind: "article" as const, id: 1, title: "Getting started", slug: "getting-started", spaceId: 1, contentText: "Some content" };
+const articleResult = { kind: "article" as const, id: 1, title: "Getting started", slug: "getting-started", spaceId: 1, contentText: "Some content", updatedAt: new Date("2024-01-01") };
 
 const mockSearch = {
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),

@@ -32,6 +32,8 @@ import {
   magicLinkRequestSchema,
   magicLinkVerifySchema,
   googleOAuthSchema,
+  requestEmailOtpSchema,
+  verifyEmailOtpSchema,
   type RegisterInput,
   type LoginInput,
   type ForgotPasswordInput,
@@ -41,6 +43,8 @@ import {
   type MagicLinkVerifyInput,
   type ForceChangePasswordInput,
   type GoogleOAuthInput,
+  type RequestEmailOtpInput,
+  type VerifyEmailOtpInput,
 } from "./dto/auth.schemas";
 
 @Controller("auth")
@@ -211,5 +215,28 @@ export class AuthController {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
     return this.authTokensService.googleOAuth(body);
+  }
+
+  @Post("email-otp")
+  @Public()
+  @HttpCode(200)
+  async requestEmailOtp(
+    @Body(new ZodValidationPipe(requestEmailOtpSchema)) body: RequestEmailOtpInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:email-otp", this.getIp(req));
+    await this.authTokensService.requestEmailOtp(body.email);
+    return { message: "If an account exists, a one-time code has been sent" };
+  }
+
+  @Post("email-otp/verify")
+  @Public()
+  @HttpCode(200)
+  async verifyEmailOtp(
+    @Body(new ZodValidationPipe(verifyEmailOtpSchema)) body: VerifyEmailOtpInput,
+    @Request() req: { ip?: string; headers: Record<string, string> },
+  ) {
+    await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));
+    return this.authTokensService.verifyEmailOtp(body.email, body.code);
   }
 }

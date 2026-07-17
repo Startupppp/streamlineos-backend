@@ -1,11 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { kbResearchBriefs, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
-import type { AiJobHandler, AiJobContext } from "../ai-jobs/ai-job-handler";
+import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../ai-jobs/ai-job-handler";
 import { KbSearchService } from "./kb-search.service";
 import { KbEventsService } from "./kb-events.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -18,7 +18,7 @@ const RESEARCH_BRIEF_SYSTEM_PROMPT =
 const MAX_CONTEXT_CHARS = 1500;
 
 @Injectable()
-export class KbResearchBriefHandler implements AiJobHandler {
+export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
   readonly type = "kb.research-brief";
 
   constructor(
@@ -26,7 +26,12 @@ export class KbResearchBriefHandler implements AiJobHandler {
     private readonly search: KbSearchService,
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
+    private readonly registry: AiJobHandlerRegistry,
   ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
 
   async handle(job: AiJobContext): Promise<Record<string, unknown>> {
     const briefId = Number(job.payload["briefId"]);

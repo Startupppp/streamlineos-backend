@@ -13,7 +13,7 @@ import {
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { extractAttachmentText } from "../kb/kb-attachment-extract.util";
-import type { VarianceExplainDto, ReconciliationExplainDto, ExtractDocumentDto } from "./dto/accounting-ai.dto";
+import type { VarianceExplainInput, ReconciliationExplainInput, ExtractDocumentInput } from "./dto/accounting-ai.dto";
 
 const FactorSchema = z.object({
   label: z.string(),
@@ -69,7 +69,7 @@ function buildVarianceSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildVarianceUserPrompt(body: VarianceExplainDto): string {
+function buildVarianceUserPrompt(body: VarianceExplainInput): string {
   const lines = [
     `Period: ${body.periodLabel}`,
     `Account: ${body.accountName} (${body.accountCode})`,
@@ -154,7 +154,7 @@ export class AccountingAiService {
     private readonly gateway: AiGatewayService,
   ) {}
 
-  async explainVariance(orgId: string, userId: string, body: VarianceExplainDto) {
+  async explainVariance(orgId: string, userId: string, body: VarianceExplainInput) {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: VARIANCE_FEATURE,
@@ -195,7 +195,7 @@ export class AccountingAiService {
     };
   }
 
-  async explainReconciliation(orgId: string, userId: string, body: ReconciliationExplainDto) {
+  async explainReconciliation(orgId: string, userId: string, body: ReconciliationExplainInput) {
     const match = await this.db.query.finReconciliationMatches.findFirst({
       where: and(
         eq(finReconciliationMatches.id, body.matchId),
@@ -309,7 +309,7 @@ export class AccountingAiService {
     };
   }
 
-  async extractDocument(orgId: string, userId: string, body: ExtractDocumentDto) {
+  async extractDocument(orgId: string, userId: string, body: ExtractDocumentInput) {
     const isImage = ["image/jpeg", "image/png", "image/webp"].includes(body.mimeType);
 
     let result;

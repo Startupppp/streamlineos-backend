@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, ilike, inArray, lte } from "drizzle-orm";
 import {
   clientAccountActivities,
@@ -363,7 +363,7 @@ Please generate a structured pre-meeting brief with:
 
   async meetingFollowUpDraft(orgId: string, input: MeetingFollowUpInput, userId?: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.aiLeadScoring) throw new NotFoundException("AI features are disabled for this organization");
+    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
     let attendeeName = "Unknown";
 

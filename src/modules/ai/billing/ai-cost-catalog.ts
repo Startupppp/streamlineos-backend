@@ -53,6 +53,19 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "meetings.prep": 2,
   "meetings.follow-up": 1,
   "exec.brief.generate": 5,
+  "pm.weekly-update": 1,
+  "pm.change-impact": 1,
+  "pm.extract-meeting-actions": 1,
+  "ticket.handoff": 1,
+  "crm.meeting-follow-up": 1,
+  "crm.stale-pipeline": 1,
+  "crm.data-quality": 1,
+  "hr.policy-qa": 1,
+  "hr.interview-kit": 2,
+  "hr.letter-draft": 1,
+  "hr.interview-notes-summary": 1,
+  "workspace.ask": 1,
+  "kb.research-brief": 2,
 };
 
 export function getFeatureCost(feature: string): number {

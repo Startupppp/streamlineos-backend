@@ -8,16 +8,18 @@ import {
 } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
+import { addDays } from "date-fns";
 import {
   employeeSkills,
+  magicLinkTokens,
   onboardingTasks,
   organizationMembers,
-  passwordResetTokens,
   payrollPolicies,
   payrollPolicyVersions,
   salaryStructures,
   users,
 } from "../../db/schema";
+import { hashToken } from "../../common/security/token.util";
 import { resolvePayrollDefaults } from "../hr-payroll/lib/payroll-defaults";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -46,9 +48,6 @@ function randomEmployeeCode(length: number): string {
   return out;
 }
 
-function randomToken(length: number): string {
-  return randomBytes(length).toString("base64url").slice(0, length);
-}
 
 function toBankDetails(input: BankDetailsInput): BankDetails {
   return {
@@ -532,17 +531,18 @@ export class EmployeeMutationsService {
 
     if (newUser.email) {
       try {
-        const setupToken = randomToken(48);
-        await this.db.insert(passwordResetTokens).values({
+        const rawToken = randomBytes(32).toString("hex");
+        const tokenHash = hashToken(rawToken);
+        await this.db.insert(magicLinkTokens).values({
           id: randomUUID(),
-          email: newUser.email,
-          token: setupToken,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          userId: newUser.id,
+          tokenHash,
+          expiresAt: addDays(new Date(), 7),
         });
-        const setupUrl = `${appUrl}/setup-password?token=${setupToken}`;
-        await this.email.sendWelcomeEmail(newUser.email, `${body.firstName} ${body.lastName}`, setupUrl);
+        const signInUrl = `${appUrl}/magic-link?token=${rawToken}`;
+        await this.email.sendWelcomeEmail(newUser.email, `${body.firstName} ${body.lastName}`, signInUrl);
       } catch (emailErr) {
-        logger.error("Failed to send setup email", { email: newUser.email, error: emailErr });
+        logger.error("Failed to send welcome email", { email: newUser.email, error: emailErr });
       }
     }
 

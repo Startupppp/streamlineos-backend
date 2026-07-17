@@ -1,48 +1,27 @@
-import { IsNumber, IsOptional, IsString } from "class-validator";
+import { z } from "zod";
 
-export class VarianceExplainDto {
-  @IsString()
-  periodLabel!: string;
+export const varianceExplainSchema = z.object({
+  periodLabel: z.string(),
+  accountName: z.string(),
+  accountCode: z.string(),
+  budgetAmount: z.number(),
+  actualAmount: z.number(),
+  varianceAmount: z.number(),
+  variancePct: z.number(),
+  priorPeriodAmount: z.number().optional(),
+  notes: z.string().optional(),
+});
 
-  @IsString()
-  accountName!: string;
+export const reconciliationExplainSchema = z.object({
+  matchId: z.number(),
+});
 
-  @IsString()
-  accountCode!: string;
+export const extractDocumentSchema = z.object({
+  fileBase64: z.string(),
+  mimeType: z.string(),
+  sourceDocumentName: z.string(),
+});
 
-  @IsNumber()
-  budgetAmount!: number;
-
-  @IsNumber()
-  actualAmount!: number;
-
-  @IsNumber()
-  varianceAmount!: number;
-
-  @IsNumber()
-  variancePct!: number;
-
-  @IsOptional()
-  @IsNumber()
-  priorPeriodAmount?: number;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-}
-
-export class ReconciliationExplainDto {
-  @IsNumber()
-  matchId!: number;
-}
-
-export class ExtractDocumentDto {
-  @IsString()
-  fileBase64!: string;
-
-  @IsString()
-  mimeType!: string;
-
-  @IsString()
-  sourceDocumentName!: string;
-}
+export type VarianceExplainInput = z.infer<typeof varianceExplainSchema>;
+export type ReconciliationExplainInput = z.infer<typeof reconciliationExplainSchema>;
+export type ExtractDocumentInput = z.infer<typeof extractDocumentSchema>;

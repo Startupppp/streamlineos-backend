@@ -21,7 +21,7 @@ import {
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
-import { getAccountDeactivationEmailTemplate } from "./templates/auth";
+import { getAccountDeactivationEmailTemplate, getEmailOtpTemplate } from "./templates/auth";
 import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
@@ -292,6 +292,14 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Your sign-in link",
       html: getMagicLinkEmailTemplate(magicLink),
+    });
+  }
+
+  sendEmailOtpEmail(email: string, code: string): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Your sign-in code",
+      html: getEmailOtpTemplate(code),
     });
   }
 
