@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -63,9 +64,7 @@ export class LoansController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!(await this.isLoanAdmin(u))) {
-      const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
-      if (!result.ok) throw new NotFoundException("Loan not found.");
-      return { success: true };
+      throw new ForbiddenException("Only admins can process loan status changes.");
     }
     const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
     if (!result.ok) throw new NotFoundException("Loan not found.");
