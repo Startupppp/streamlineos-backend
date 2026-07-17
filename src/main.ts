@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { setDefaultResultOrder } from "node:dns";
 import { NestFactory } from "@nestjs/core";
+import type { LogLevel } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import compression from "compression";
@@ -14,10 +15,15 @@ setDefaultResultOrder("ipv4first");
 
 async function bootstrap(): Promise<void> {
   const config = validateEnv();
+  const logLevels: LogLevel[] =
+    config.NODE_ENV === "development"
+      ? ["error", "warn", "log", "debug", "verbose"]
+      : ["fatal", "error", "warn"];
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: false,
     rawBody: true,
     bodyParser: false,
+    logger: logLevels,
   });
   app.useBodyParser("json", { limit: "3mb" });
   app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
