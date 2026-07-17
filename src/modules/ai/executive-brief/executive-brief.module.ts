@@ -2,10 +2,9 @@ import { Module } from "@nestjs/common";
 import { ExecutiveBriefController } from "./executive-brief.controller";
 import { ExecutiveBriefService } from "./executive-brief.service";
 import { AiSummariesModule } from "../../ai-summaries/ai-summaries.module";
-import { ProjectsModule } from "../../projects/projects.module";
 
 @Module({
-  imports: [AiSummariesModule, ProjectsModule],
+  imports: [AiSummariesModule],
   controllers: [ExecutiveBriefController],
   providers: [ExecutiveBriefService],
 })

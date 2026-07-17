@@ -3,6 +3,8 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { WorkspaceSearchService } from "./workspace-search.service";
 import { askBodySchema, searchQuerySchema } from "./dto/workspace-search.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -24,6 +26,8 @@ export class WorkspaceSearchController {
   }
 
   @Post("ask")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("ai:invoke")
   async ask(
     @Body() body: unknown,
     @Req() req: Request & { user: CurrentUserContext },

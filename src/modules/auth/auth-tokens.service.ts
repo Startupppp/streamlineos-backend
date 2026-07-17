@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -15,7 +14,6 @@ import {
   magicLinkTokens,
   organizationMembers,
   organizations,
-  passwordResetTokens,
   userSessions,
   users,
   verificationTokens,
@@ -26,26 +24,17 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { PasswordService } from "./password.service";
 import { SessionService } from "./session.service";
 import { hashToken } from "../../common/security/token.util";
 import { addHours, addMinutes, subDays } from "date-fns";
 import type {
-  ForgotPasswordInput,
   GoogleOAuthInput,
   MagicLinkRequestInput,
-  ResetPasswordInput,
   VerifyEmailInput,
 } from "./dto/auth.schemas";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
-}
-
-function assertPasswordNotEmail(password: string, email: string): void {
-  if (password.toLowerCase() === email.toLowerCase()) {
-    throw new BadRequestException("Password cannot be the same as your email address");
-  }
 }
 
 @Injectable()
@@ -55,7 +44,6 @@ export class AuthTokensService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly password: PasswordService,
     private readonly session: SessionService,
   ) {}
 
@@ -111,66 +99,6 @@ export class AuthTokensService {
         failureReason,
       })
       .catch(() => {});
-  }
-
-  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
-    const normalizedEmail = input.email.toLowerCase().trim();
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-    });
-
-    if (!user) return;
-
-    const token = generateToken();
-    const tokenHash = hashToken(token);
-
-    await this.db.delete(passwordResetTokens).where(eq(passwordResetTokens.email, normalizedEmail));
-
-    await this.db.insert(passwordResetTokens).values({
-      id: randomUUID(),
-      email: normalizedEmail,
-      token: tokenHash,
-      expiresAt: addHours(new Date(), 1),
-    });
-
-    this.audit.log({ action: "auth.password_reset_requested", userId: user.id });
-
-    void this.email.sendPasswordResetEmail(normalizedEmail, token).catch(() => {});
-  }
-
-  async resetPassword(input: ResetPasswordInput): Promise<void> {
-    const tokenHash = hashToken(input.token);
-
-    const record = await this.db.query.passwordResetTokens.findFirst({
-      where: eq(passwordResetTokens.token, tokenHash),
-    });
-    if (!record) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid reset token" });
-    }
-    if (new Date(record.expiresAt) <= new Date()) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Password reset token has expired" });
-    }
-
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${record.email.toLowerCase()}`,
-    });
-    if (!user) throw new NotFoundException("User not found");
-
-    assertPasswordNotEmail(input.newPassword, record.email);
-    await this.password.checkPasswordHistory(user.id, input.newPassword);
-
-    const newHash = await this.password.hash(input.newPassword);
-    await this.db
-      .update(users)
-      .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
-      .where(eq(users.id, user.id));
-    await this.password.recordPasswordHistory(user.id, newHash);
-
-    await this.db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, record.id));
-    await this.session.revokeAll(user.id);
-    await this.cache.invalidate(CACHE_KEYS.userSession(user.id));
-
-    this.audit.log({ action: "auth.password_reset_completed", userId: user.id });
   }
 
   async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
@@ -339,7 +267,7 @@ export class AuthTokensService {
     return { autoLoginToken: rawToken };
   }
 
-  async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string; forceChangePassword: boolean }> {
+  async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string }> {
     const tokenHash = hashToken(token);
 
     const row = await this.db.query.magicLinkTokens.findFirst({
@@ -360,7 +288,7 @@ export class AuthTokensService {
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
-      columns: { isPasswordChangeRequired: true, lastActiveOrgId: true },
+      columns: { lastActiveOrgId: true },
     });
 
     const membership = await this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null);
@@ -370,7 +298,6 @@ export class AuthTokensService {
     return {
       userId: row.userId,
       orgId: membership?.orgId ?? "",
-      forceChangePassword: user?.isPasswordChangeRequired ?? false,
     };
   }
 
@@ -385,7 +312,7 @@ export class AuthTokensService {
     startOfToday.setHours(0, 0, 0, 0);
     const sevenDaysAgo = subDays(now, 7);
 
-    const [loginsTodayResult, failedLoginsResult, activeSessionsResult, passwordResetsResult] =
+    const [loginsTodayResult, failedLoginsResult, activeSessionsResult] =
       await Promise.all([
         this.db
           .select({ count: sql<number>`count(*)::int` })
@@ -399,22 +326,13 @@ export class AuthTokensService {
           .select({ count: sql<number>`count(*)::int` })
           .from(userSessions)
           .where(and(eq(userSessions.isRevoked, false), gt(userSessions.expiresAt, now))),
-        this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(loginHistory)
-          .where(
-            and(
-              eq(loginHistory.event, "auth.password_reset_requested"),
-              gte(loginHistory.createdAt, sevenDaysAgo),
-            ),
-          ),
       ]);
 
     return {
       loginsToday: loginsTodayResult[0]?.count ?? 0,
       failedLoginsLast7Days: failedLoginsResult[0]?.count ?? 0,
       activeSessions: activeSessionsResult[0]?.count ?? 0,
-      passwordResetsLast7Days: passwordResetsResult[0]?.count ?? 0,
+      passwordResetsLast7Days: 0,
     };
   }
 

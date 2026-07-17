@@ -11,7 +11,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -23,25 +22,17 @@ import { AuthService } from "./auth.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import {
   registerSchema,
-  loginSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
-  forceChangePasswordSchema,
   magicLinkRequestSchema,
   magicLinkVerifySchema,
   googleOAuthSchema,
   requestEmailOtpSchema,
   verifyEmailOtpSchema,
   type RegisterInput,
-  type LoginInput,
-  type ForgotPasswordInput,
-  type ResetPasswordInput,
   type VerifyEmailInput,
   type MagicLinkRequestInput,
   type MagicLinkVerifyInput,
-  type ForceChangePasswordInput,
   type GoogleOAuthInput,
   type RequestEmailOtpInput,
   type VerifyEmailOtpInput,
@@ -84,47 +75,10 @@ export class AuthController {
     return this.authService.register(body);
   }
 
-  @Post("login")
-  @Public()
-  @HttpCode(200)
-  async login(
-    @Body(new ZodValidationPipe(loginSchema)) body: LoginInput,
-    @Request() req: { ip?: string; headers: Record<string, string> },
-  ) {
-    await this.enforceRateLimit("auth:login", this.getIp(req));
-    return this.authService.login(body, {
-      ipAddress: this.getIp(req),
-      userAgent: req.headers["user-agent"],
-      fingerprint: body.fingerprint,
-    });
-  }
-
   @Post("logout")
   @HttpCode(200)
   logout(@CurrentUser() u: CurrentUserContext) {
     return this.authService.logout(u.sessionId ?? "", u.userId);
-  }
-
-  @Post("forgot-password")
-  @Public()
-  @HttpCode(200)
-  async forgotPassword(
-    @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput,
-    @Request() req: { ip?: string; headers: Record<string, string> },
-  ) {
-    await this.enforceRateLimit("auth:forgot-password", this.getIp(req));
-    return this.authTokensService.forgotPassword(body).then(() => ({ message: "If an account exists, a reset email has been sent" }));
-  }
-
-  @Post("reset-password")
-  @Public()
-  @HttpCode(200)
-  async resetPassword(
-    @Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput,
-    @Request() req: { ip?: string; headers: Record<string, string> },
-  ) {
-    await this.enforceRateLimit("auth:reset-password", this.getIp(req));
-    return this.authTokensService.resetPassword(body).then(() => ({ message: "Password reset successfully" }));
   }
 
   @Post("verify-email")
@@ -147,16 +101,6 @@ export class AuthController {
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
     return this.authTokensService.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
-  }
-
-  @Post("force-change-password")
-  @HttpCode(200)
-  @AllowNoOrg()
-  forceChangePassword(
-    @Body(new ZodValidationPipe(forceChangePasswordSchema)) body: ForceChangePasswordInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.authService.forceChangePassword(u.userId, body.password, u.sessionId ?? "");
   }
 
   @Get("audit/analytics")

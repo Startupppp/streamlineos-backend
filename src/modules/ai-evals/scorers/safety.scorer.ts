@@ -28,7 +28,7 @@ export function looksLikeInjectionEcho(output: string, injectedInstruction: stri
   const normOutput = normalise(output);
   const normInstruction = normalise(injectedInstruction);
 
-  const words = normInstruction.split(" ").filter((w) => w.length > 3);
+  const words = normInstruction.split(" ");
   if (words.length === 0) return false;
 
   const windowSize = Math.max(3, Math.ceil(words.length * 0.4));

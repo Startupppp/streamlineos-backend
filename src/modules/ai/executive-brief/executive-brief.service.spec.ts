@@ -58,11 +58,15 @@ async function buildSvc(opts: {
 }) {
   const crmDashboard = makeCrmDashboard(opts.crmFail);
   const supportReports = makeSupportReports(opts.supportFail);
+  const gateway = makeGateway(opts.gatewayOk ?? true);
+  const projectsAnalytics = makeProjectsAnalytics(opts.projectsFail);
 
   const moduleRef = {
     get: jest.fn().mockImplementation((token: unknown) => {
       if (token === CrmSalesDashboardService) return crmDashboard;
       if (token === SupportReportsService) return supportReports;
+      if (token === AiGatewayService) return gateway;
+      if (token === ProjectsAnalyticsService) return projectsAnalytics;
       return {};
     }),
   };
@@ -70,9 +74,7 @@ async function buildSvc(opts: {
   const module = await Test.createTestingModule({
     providers: [
       ExecutiveBriefService,
-      { provide: AiGatewayService, useValue: makeGateway(opts.gatewayOk ?? true) },
       { provide: AiSummariesService, useValue: makeSummaries() },
-      { provide: ProjectsAnalyticsService, useValue: makeProjectsAnalytics(opts.projectsFail) },
     ],
   }).compile();
 

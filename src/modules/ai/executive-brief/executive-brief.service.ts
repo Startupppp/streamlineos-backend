@@ -28,9 +28,7 @@ export class ExecutiveBriefService {
 
   constructor(
     private readonly moduleRef: ModuleRef,
-    private readonly gateway: AiGatewayService,
     private readonly summaries: AiSummariesService,
-    private readonly projectsAnalytics: ProjectsAnalyticsService,
   ) {}
 
   private getSvc<T>(token: abstract new (...args: never[]) => T): T {
@@ -43,7 +41,7 @@ export class ExecutiveBriefService {
 
   async generate(orgId: string, userId: string): Promise<ExecutiveBriefResult> {
     const [projectsResult, crmResult, supportResult] = await Promise.allSettled([
-      this.projectsAnalytics.getOrgProjectHealthSummary(orgId),
+      this.getSvc(ProjectsAnalyticsService).getOrgProjectHealthSummary(orgId),
       this.getSvc(CrmSalesDashboardService).getSalesDashboard(orgId),
       this.getSvc(SupportReportsService).getOverview(orgId, {}),
     ]);
@@ -78,7 +76,7 @@ export class ExecutiveBriefService {
       support: { title: "Support Overview", href: "/support" },
     };
 
-    const invokeResult = await this.gateway.invokeText({
+    const invokeResult = await this.getSvc(AiGatewayService).invokeText({
       actor: { orgId, userId },
       feature: "exec.brief.generate",
       prompt: {

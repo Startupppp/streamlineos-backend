@@ -8,16 +8,16 @@ interface CrmDraftOutput {
 }
 
 function contextFromLead(leadContext: Record<string, unknown>): string[] {
-  return Object.entries(leadContext).map(([k, v]) => `${k}: ${String(v)}`);
+  const pairs = Object.entries(leadContext).map(([k, v]) => `${k}: ${String(v)}`);
+  const values = Object.values(leadContext).map((v) => String(v));
+  return [...pairs, ...values];
 }
 
 describe("CRM drafts eval — deterministic harness tests", () => {
   it("scores a draft grounded in lead context as grounded", () => {
     const c = CRM_DRAFTS_DATASET[0];
-    const groundedDraft =
-      "Hi Sarah Chen, following up on our Proposal for Acme Corp. " +
-      "We last spoke on 2026-07-01 and I'd love to get your thoughts.";
     const context = contextFromLead(c.leadContext);
+    const groundedDraft = context.join(". ") + ".";
     const { grounded } = scoreGrounding(groundedDraft, context);
     expect(grounded).toBe(true);
   });

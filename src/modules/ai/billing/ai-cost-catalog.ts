@@ -66,6 +66,8 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "hr.interview-notes-summary": 1,
   "workspace.ask": 1,
   "kb.research-brief": 2,
+  "support.kb-gap-draft": 3,
+  "inv.digest-narrate": 1,
 };
 
 export function getFeatureCost(feature: string): number {

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import {
   kbArticles,
@@ -19,6 +20,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { KbArticlesService } from "../kb/kb-articles.service";
 import { KbEventsService } from "../kb/kb-events.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -110,6 +112,11 @@ export class SupportKbGapService {
       actor: { orgId, userId: actorUserId },
       feature: GAP_DRAFT_FEATURE,
       tier: "standard",
+      maxTokens: 1024,
+      charge: {
+        credits: getFeatureCost(GAP_DRAFT_FEATURE),
+        idempotencyKey: `kb-gap-draft-${orgId}-${gapId}-${randomUUID()}`,
+      },
       schema: gapDraftSchema,
       prompt: {
         system:
