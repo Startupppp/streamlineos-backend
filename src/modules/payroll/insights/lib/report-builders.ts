@@ -10,7 +10,10 @@ import {
 } from "../../../../db/schema";
 
 export type RunRow = typeof payrollRuns.$inferSelect;
-export type LineItemRow = typeof payrollLineItems.$inferSelect;
+export type LineItemRow = Pick<
+  typeof payrollLineItems.$inferSelect,
+  "code" | "category" | "amount"
+>;
 
 export type RunEmployeeRow = Pick<
   typeof payrollRunEmployees.$inferSelect,
@@ -51,7 +54,11 @@ export async function getLineItemsForRun(
 ): Promise<EnrichedLineItem[]> {
   const rows = await db
     .select({
-      lineItem: payrollLineItems,
+      lineItem: {
+        code: payrollLineItems.code,
+        category: payrollLineItems.category,
+        amount: payrollLineItems.amount,
+      },
       runEmployee: {
         id: payrollRunEmployees.id,
         userId: payrollRunEmployees.userId,

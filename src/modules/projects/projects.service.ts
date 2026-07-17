@@ -377,17 +377,17 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project not found");
 
     await this.db.transaction(async (tx) => {
-      const subTickets = tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.projectId, projectId));
+      const subTickets = tx.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
       await tx.delete(ticketAssignees).where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
       await tx.delete(ticketComments).where(sql`${ticketComments.ticketId} IN (${subTickets})`);
       await tx.delete(ticketAttachments).where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
       await tx.delete(ticketLabelMappings).where(sql`${ticketLabelMappings.ticketId} IN (${subTickets})`);
       await tx.delete(timesheets).where(sql`${timesheets.ticketId} IN (${subTickets})`);
-      await tx.delete(tickets).where(eq(tickets.projectId, projectId));
-      await tx.delete(sprints).where(eq(sprints.projectId, projectId));
+      await tx.delete(tickets).where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      await tx.delete(sprints).where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
       await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
-      await tx.delete(projectStatuses).where(eq(projectStatuses.projectId, projectId));
-      await tx.delete(projects).where(eq(projects.id, projectId));
+      await tx.delete(projectStatuses).where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
+      await tx.delete(projects).where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
     });
 
     this.audit.log({

@@ -52,8 +52,7 @@ export class SprintsService {
         sprintId: tickets.sprintId,
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
-      .limit(500);
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)));
 
     const ticketsBySprintId = new Map<number, typeof ticketRows>();
     for (const ticket of ticketRows) {
@@ -99,7 +98,6 @@ export class SprintsService {
               columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
             },
           },
-          limit: 500,
         },
       },
     });

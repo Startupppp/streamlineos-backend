@@ -96,6 +96,7 @@ export class ProjectsMembersService {
           sql`${ticketAssignees.ticketId} IN (
             SELECT id FROM tickets
             WHERE project_id = ${projectId}
+            AND org_id = ${orgId}
             AND status NOT IN ('DONE', 'CANCELLED')
           )`,
         ),

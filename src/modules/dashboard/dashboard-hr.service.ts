@@ -313,7 +313,7 @@ export class DashboardHrService {
         this.db
           .select({ cnt: count() })
           .from(notifications)
-          .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false))),
+          .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId), eq(notifications.isRead, false))),
       ]);
 
     const hoursLogged = Number(timesheetRows[0]?.hours ?? 0);

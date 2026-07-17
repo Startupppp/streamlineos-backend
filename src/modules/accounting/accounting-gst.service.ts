@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, sum } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, sum } from "drizzle-orm";
 import { indianStates, invoices, invoiceItems, purchaseBills } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -300,98 +300,70 @@ export class AccountingGstService {
     const fromDate = new Date(`${from}T00:00:00.000Z`);
     const toDate = new Date(`${to}T23:59:59.999Z`);
 
-    const outwardAgg = await this.db
-      .select({
-        taxable: sum(invoices.subtotal),
-        cgst: sum(invoices.cgstAmount),
-        sgst: sum(invoices.sgstAmount),
-        igst: sum(invoices.igstAmount),
-        discount: sum(invoices.discount),
-      })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.orgId, orgId),
-          inArray(invoices.status, [...OUTWARD_STATUSES]),
-          gte(invoices.createdAt, fromDate),
-          lte(invoices.createdAt, toDate),
-        ),
-      );
+    const outwardWhere = and(
+      eq(invoices.orgId, orgId),
+      inArray(invoices.status, [...OUTWARD_STATUSES]),
+      gte(invoices.createdAt, fromDate),
+      lte(invoices.createdAt, toDate),
+    );
+    const inwardWhere = and(
+      eq(purchaseBills.orgId, orgId),
+      inArray(purchaseBills.status, [...INWARD_STATUSES]),
+      gte(purchaseBills.billDate, from),
+      lte(purchaseBills.billDate, to),
+    );
+
+    const [outwardAgg, outwardCountRows, reverseChargeAgg, inwardAgg, inwardCountRows] = await Promise.all([
+      this.db
+        .select({
+          taxable: sum(invoices.subtotal),
+          cgst: sum(invoices.cgstAmount),
+          sgst: sum(invoices.sgstAmount),
+          igst: sum(invoices.igstAmount),
+          discount: sum(invoices.discount),
+        })
+        .from(invoices)
+        .where(outwardWhere),
+      this.db.select({ c: count() }).from(invoices).where(outwardWhere),
+      this.db
+        .select({
+          taxable: sum(invoices.subtotal),
+          cgst: sum(invoices.cgstAmount),
+          sgst: sum(invoices.sgstAmount),
+          igst: sum(invoices.igstAmount),
+        })
+        .from(invoices)
+        .where(and(outwardWhere, eq(invoices.reverseCharge, true))),
+      this.db
+        .select({
+          taxable: sum(purchaseBills.subtotal),
+          cgst: sum(purchaseBills.cgstAmount),
+          sgst: sum(purchaseBills.sgstAmount),
+          igst: sum(purchaseBills.igstAmount),
+          discount: sum(purchaseBills.discount),
+        })
+        .from(purchaseBills)
+        .where(inwardWhere),
+      this.db.select({ c: count() }).from(purchaseBills).where(inwardWhere),
+    ]);
+
     const outwardRow = outwardAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0", discount: "0" };
     const outwardTaxable = Number(outwardRow.taxable ?? 0) - Number(outwardRow.discount ?? 0);
     const outwardCgst = Number(outwardRow.cgst ?? 0);
     const outwardSgst = Number(outwardRow.sgst ?? 0);
     const outwardIgst = Number(outwardRow.igst ?? 0);
 
-    const outwardCount = await this.db
-      .select({ id: invoices.id })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.orgId, orgId),
-          inArray(invoices.status, [...OUTWARD_STATUSES]),
-          gte(invoices.createdAt, fromDate),
-          lte(invoices.createdAt, toDate),
-        ),
-      );
-
-    const reverseChargeAgg = await this.db
-      .select({
-        taxable: sum(invoices.subtotal),
-        cgst: sum(invoices.cgstAmount),
-        sgst: sum(invoices.sgstAmount),
-        igst: sum(invoices.igstAmount),
-      })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.orgId, orgId),
-          inArray(invoices.status, [...OUTWARD_STATUSES]),
-          eq(invoices.reverseCharge, true),
-          gte(invoices.createdAt, fromDate),
-          lte(invoices.createdAt, toDate),
-        ),
-      );
     const rcRow = reverseChargeAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0" };
     const rcTaxable = Number(rcRow.taxable ?? 0);
     const rcCgst = Number(rcRow.cgst ?? 0);
     const rcSgst = Number(rcRow.sgst ?? 0);
     const rcIgst = Number(rcRow.igst ?? 0);
 
-    const inwardAgg = await this.db
-      .select({
-        taxable: sum(purchaseBills.subtotal),
-        cgst: sum(purchaseBills.cgstAmount),
-        sgst: sum(purchaseBills.sgstAmount),
-        igst: sum(purchaseBills.igstAmount),
-        discount: sum(purchaseBills.discount),
-      })
-      .from(purchaseBills)
-      .where(
-        and(
-          eq(purchaseBills.orgId, orgId),
-          inArray(purchaseBills.status, [...INWARD_STATUSES]),
-          gte(purchaseBills.billDate, from),
-          lte(purchaseBills.billDate, to),
-        ),
-      );
     const inwardRow = inwardAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0", discount: "0" };
     const itcTaxable = Number(inwardRow.taxable ?? 0) - Number(inwardRow.discount ?? 0);
     const itcCgst = Number(inwardRow.cgst ?? 0);
     const itcSgst = Number(inwardRow.sgst ?? 0);
     const itcIgst = Number(inwardRow.igst ?? 0);
-
-    const inwardCount = await this.db
-      .select({ id: purchaseBills.id })
-      .from(purchaseBills)
-      .where(
-        and(
-          eq(purchaseBills.orgId, orgId),
-          inArray(purchaseBills.status, [...INWARD_STATUSES]),
-          gte(purchaseBills.billDate, from),
-          lte(purchaseBills.billDate, to),
-        ),
-      );
 
     const netCgst = Math.max(0, outwardCgst - itcCgst);
     const netSgst = Math.max(0, outwardSgst - itcSgst);
@@ -418,8 +390,8 @@ export class AccountingGstService {
         igst: netIgst.toFixed(2),
         total: netTotal.toFixed(2),
       },
-      invoiceCount: outwardCount.length,
-      billCount: inwardCount.length,
+      invoiceCount: Number(outwardCountRows[0]?.c ?? 0),
+      billCount: Number(inwardCountRows[0]?.c ?? 0),
     };
   }
 }

@@ -68,6 +68,23 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "kb.research-brief": 2,
   "support.kb-gap-draft": 3,
   "inv.digest-narrate": 1,
+  "timesheets.period-summary": 1,
+  "sign.summarize-document": 2,
+  "kb.page-summarize": 1,
+  "kb.page-ask": 1,
+  "kb.page-improve": 2,
+  "kb.page-suggest-related": 1,
+  "kb.article-summarize": 1,
+  "kb.article-ask": 1,
+  "kb.article-improve": 2,
+  "kb.article-suggest-related": 1,
+  "blog.improve-writing": 1,
+  "blog.suggest-title": 1,
+  "blog.summarize": 1,
+  "survey.summarize-responses": 2,
+  "chat.summarize": 1,
+  "payroll.explain-payslip": 1,
+  "timesheets.summarize": 1,
 };
 
 export function getFeatureCost(feature: string): number {

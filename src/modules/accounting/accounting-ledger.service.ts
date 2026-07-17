@@ -64,14 +64,16 @@ export class AccountingLedgerService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const items = await this.db
-      .select()
-      .from(ledgerAccounts)
-      .where(where)
-      .orderBy(asc(ledgerAccounts.code))
-      .offset(offset)
-      .limit(limit);
-    const totalRows = await this.db.select({ c: count() }).from(ledgerAccounts).where(where);
+    const [items, totalRows] = await Promise.all([
+      this.db
+        .select()
+        .from(ledgerAccounts)
+        .where(where)
+        .orderBy(asc(ledgerAccounts.code))
+        .offset(offset)
+        .limit(limit),
+      this.db.select({ c: count() }).from(ledgerAccounts).where(where),
+    ]);
     return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
   }
 
@@ -113,14 +115,16 @@ export class AccountingLedgerService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const items = await this.db
-      .select()
-      .from(journalEntries)
-      .where(where)
-      .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
-      .offset(offset)
-      .limit(limit);
-    const totalRows = await this.db.select({ c: count() }).from(journalEntries).where(where);
+    const [items, totalRows] = await Promise.all([
+      this.db
+        .select()
+        .from(journalEntries)
+        .where(where)
+        .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
+        .offset(offset)
+        .limit(limit),
+      this.db.select({ c: count() }).from(journalEntries).where(where),
+    ]);
     return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
   }
 

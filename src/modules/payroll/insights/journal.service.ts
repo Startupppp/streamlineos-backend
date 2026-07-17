@@ -59,7 +59,14 @@ export class JournalService {
 
     const [lineItems, runEmployees, empCostCenters, mappings] = await Promise.all([
       this.db
-        .select()
+        .select({
+          runEmployeeId: payrollLineItems.runEmployeeId,
+          componentId: payrollLineItems.componentId,
+          code: payrollLineItems.code,
+          category: payrollLineItems.category,
+          name: payrollLineItems.name,
+          amount: payrollLineItems.amount,
+        })
         .from(payrollLineItems)
         .where(eq(payrollLineItems.runId, run.id)),
       this.db

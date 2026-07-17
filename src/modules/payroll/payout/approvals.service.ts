@@ -232,7 +232,12 @@ export class ApprovalsService {
     if (run.status !== "PENDING_APPROVAL") throw new ConflictException("Run is not pending approval");
 
     const allStages = await this.db
-      .select()
+      .select({
+        id: payrollApprovals.id,
+        status: payrollApprovals.status,
+        requiredPermission: payrollApprovals.requiredPermission,
+        stageName: payrollApprovals.stageName,
+      })
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
       .orderBy(asc(payrollApprovals.stage));
@@ -447,7 +452,10 @@ export class ApprovalsService {
     }
 
     const allStages = await this.db
-      .select()
+      .select({
+        id: payrollApprovals.id,
+        status: payrollApprovals.status,
+      })
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
       .orderBy(asc(payrollApprovals.stage));

@@ -66,14 +66,22 @@ export class CrmCustomer360SectionsService {
 
     if (leadIds.length === 0) return { items: [], total: 0 };
 
-    const items = await this.db
-      .select({ id: contacts.id, name: contacts.name, email: contacts.email, title: contacts.title, createdAt: contacts.createdAt })
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), inArray(contacts.leadId, leadIds), isNull(contacts.deletedAt)))
-      .orderBy(desc(contacts.createdAt))
-      .limit(SECTION_LIMIT);
+    const contactsWhere = and(eq(contacts.orgId, orgId), inArray(contacts.leadId, leadIds), isNull(contacts.deletedAt));
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: contacts.id, name: contacts.name, email: contacts.email, title: contacts.title, createdAt: contacts.createdAt })
+        .from(contacts)
+        .where(contactsWhere)
+        .orderBy(desc(contacts.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(contacts)
+        .where(contactsWhere)
+        .then((rows) => rows[0]),
+    ]);
 
-    return { items, total: items.length };
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchLeadsForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
@@ -95,13 +103,21 @@ export class CrmCustomer360SectionsService {
   }
 
   async fetchLeadsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const items = await this.db
-      .select({ id: leads.id, name: leads.name, status: leads.status, source: leads.source, createdAt: leads.createdAt })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), sql`client_id = ${clientId}`, isNull(leads.deletedAt)))
-      .orderBy(desc(leads.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = and(eq(leads.orgId, orgId), sql`client_id = ${clientId}`, isNull(leads.deletedAt));
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: leads.id, name: leads.name, status: leads.status, source: leads.source, createdAt: leads.createdAt })
+        .from(leads)
+        .where(where)
+        .orderBy(desc(leads.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(leads)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchDealsForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
@@ -141,34 +157,58 @@ export class CrmCustomer360SectionsService {
 
   async fetchQuotesForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
     const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
-    const items = await this.db
-      .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
-      .from(quotes)
-      .where(and(eq(quotes.orgId, orgId), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`))
-      .orderBy(desc(quotes.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = and(eq(quotes.orgId, orgId), sql`${quotes.subject} ILIKE ${"%" + safe + "%"}`);
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
+        .from(quotes)
+        .where(where)
+        .orderBy(desc(quotes.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(quotes)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchQuotesForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
-    const items = await this.db
-      .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
-      .from(quotes)
-      .where(and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId)))
-      .orderBy(desc(quotes.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = and(eq(quotes.orgId, orgId), eq(quotes.clientId, clientId));
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, subject: quotes.subject, status: quotes.status, createdAt: quotes.createdAt })
+        .from(quotes)
+        .where(where)
+        .orderBy(desc(quotes.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(quotes)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchInvoicesForOrg(orgId: string, orgName: string): Promise<Customer360Section<unknown>> {
     const safe = orgName.replaceAll("%", "\\%").replaceAll("_", "\\_");
-    const items = await this.db
-      .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber, status: invoices.status, total: invoices.total, createdAt: invoices.createdAt })
-      .from(invoices)
-      .where(and(eq(invoices.orgId, orgId), sql`${invoices.invoiceNumber} ILIKE ${"%" + safe + "%"}`))
-      .orderBy(desc(invoices.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = and(eq(invoices.orgId, orgId), sql`${invoices.invoiceNumber} ILIKE ${"%" + safe + "%"}`);
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber, status: invoices.status, total: invoices.total, createdAt: invoices.createdAt })
+        .from(invoices)
+        .where(where)
+        .orderBy(desc(invoices.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(invoices)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchInvoicesForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
@@ -189,13 +229,21 @@ export class CrmCustomer360SectionsService {
   }
 
   async fetchPaymentsForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
-    const items = await this.db
-      .select({ id: payments.id, amount: payments.amount, paymentDate: payments.paymentDate, paymentMethod: payments.paymentMethod, createdAt: payments.createdAt })
-      .from(payments)
-      .where(eq(payments.orgId, orgId))
-      .orderBy(desc(payments.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = eq(payments.orgId, orgId);
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: payments.id, amount: payments.amount, paymentDate: payments.paymentDate, paymentMethod: payments.paymentMethod, createdAt: payments.createdAt })
+        .from(payments)
+        .where(where)
+        .orderBy(desc(payments.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(payments)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchPaymentsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
@@ -207,23 +255,39 @@ export class CrmCustomer360SectionsService {
 
     if (clientInvoiceIds.length === 0) return { items: [], total: 0 };
 
-    const items = await this.db
-      .select({ id: payments.id, amount: payments.amount, paymentDate: payments.paymentDate, paymentMethod: payments.paymentMethod, createdAt: payments.createdAt })
-      .from(payments)
-      .where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, clientInvoiceIds)))
-      .orderBy(desc(payments.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const paymentsWhere = and(eq(payments.orgId, orgId), inArray(payments.invoiceId, clientInvoiceIds));
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: payments.id, amount: payments.amount, paymentDate: payments.paymentDate, paymentMethod: payments.paymentMethod, createdAt: payments.createdAt })
+        .from(payments)
+        .where(paymentsWhere)
+        .orderBy(desc(payments.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(payments)
+        .where(paymentsWhere)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchSupportTicketsForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
-    const items = await this.db
-      .select({ id: supportTickets.id, title: supportTickets.title, status: supportTickets.status, priority: supportTickets.priority, createdAt: supportTickets.createdAt })
-      .from(supportTickets)
-      .where(eq(supportTickets.orgId, orgId))
-      .orderBy(desc(supportTickets.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = eq(supportTickets.orgId, orgId);
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: supportTickets.id, title: supportTickets.title, status: supportTickets.status, priority: supportTickets.priority, createdAt: supportTickets.createdAt })
+        .from(supportTickets)
+        .where(where)
+        .orderBy(desc(supportTickets.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(supportTickets)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchSupportTicketsForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {
@@ -244,13 +308,21 @@ export class CrmCustomer360SectionsService {
   }
 
   async fetchSurveysForOrg(orgId: string, _orgName: string): Promise<Customer360Section<unknown>> {
-    const items = await this.db
-      .select({ id: csatSurveys.id, title: csatSurveys.title, status: csatSurveys.status, createdAt: csatSurveys.createdAt })
-      .from(csatSurveys)
-      .where(eq(csatSurveys.orgId, orgId))
-      .orderBy(desc(csatSurveys.createdAt))
-      .limit(SECTION_LIMIT);
-    return { items, total: items.length };
+    const where = eq(csatSurveys.orgId, orgId);
+    const [items, countRow] = await Promise.all([
+      this.db
+        .select({ id: csatSurveys.id, title: csatSurveys.title, status: csatSurveys.status, createdAt: csatSurveys.createdAt })
+        .from(csatSurveys)
+        .where(where)
+        .orderBy(desc(csatSurveys.createdAt))
+        .limit(SECTION_LIMIT),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(csatSurveys)
+        .where(where)
+        .then((rows) => rows[0]),
+    ]);
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async fetchSurveysForClient(orgId: string, clientId: number): Promise<Customer360Section<unknown>> {

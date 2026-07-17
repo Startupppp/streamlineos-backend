@@ -2518,6 +2518,12 @@ const BLOG_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage blog categories",
   },
+  {
+    name: "blog:ai:use",
+    resource: "blog:ai",
+    action: "use",
+    description: "Use AI assist on blog posts (improve, summarize, suggest title)",
+  },
 ];
 
 const SALES_PERMISSIONS: Permission[] = [
@@ -3100,6 +3106,12 @@ const SURVEYS_PERMISSIONS: Permission[] = [
     resource: "surveys:responses",
     action: "view",
     description: "View survey responses",
+  },
+  {
+    name: "surveys:ai:use",
+    resource: "surveys:ai",
+    action: "use",
+    description: "Use AI assist on surveys (summarize responses)",
   },
   {
     name: "surveys:responses:export",

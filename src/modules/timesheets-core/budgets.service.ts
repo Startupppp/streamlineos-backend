@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { timesheetBudgets, timesheets, projects } from "../../db/schema";
@@ -75,12 +75,39 @@ export class BudgetsService {
       .where(eq(timesheetBudgets.orgId, orgId))
       .orderBy(desc(timesheetBudgets.createdAt));
 
-    const out = [];
-    for (const r of rows) {
-      const consumed = await this.consumedFor(orgId, r.b);
-      out.push(this.shape(r.b, r.projectName, consumed));
+    if (rows.length === 0) return [];
+
+    const budgetIds = rows.map((r) => r.b.id);
+    const consumedRows = await this.db
+      .select({
+        budgetId: timesheetBudgets.id,
+        hours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
+        amount: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric * COALESCE(${timesheets.billRate}::numeric, 0)), 0)::text`,
+      })
+      .from(timesheets)
+      .innerJoin(
+        timesheetBudgets,
+        and(
+          eq(timesheetBudgets.orgId, orgId),
+          inArray(timesheetBudgets.id, budgetIds),
+          eq(timesheets.orgId, orgId),
+          isNull(timesheets.voidedAt),
+          sql`(${timesheetBudgets.projectId} IS NULL OR ${timesheets.projectId} = ${timesheetBudgets.projectId})`,
+          sql`(${timesheetBudgets.startsAt} IS NULL OR ${timesheets.date} >= ${timesheetBudgets.startsAt})`,
+          sql`(${timesheetBudgets.endsAt} IS NULL OR ${timesheets.date} <= ${timesheetBudgets.endsAt})`,
+        ),
+      )
+      .groupBy(timesheetBudgets.id);
+
+    const consumedMap = new Map<number, { hours: number; amount: number }>();
+    for (const c of consumedRows) {
+      consumedMap.set(c.budgetId, { hours: parseFloat(c.hours), amount: parseFloat(c.amount) });
     }
-    return out;
+
+    return rows.map((r) => {
+      const consumed = consumedMap.get(r.b.id) ?? { hours: 0, amount: 0 };
+      return this.shape(r.b, r.projectName, consumed);
+    });
   }
 
   private async getOne(orgId: string, budgetId: number) {

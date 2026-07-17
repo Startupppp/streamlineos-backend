@@ -4,18 +4,11 @@ import { kbResearchBriefs, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { AiJobHandlerRegistry, type AiJobHandler, type AiJobContext } from "../ai-jobs/ai-job-handler";
 import { KbSearchService } from "./kb-search.service";
 import { KbEventsService } from "./kb-events.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-
-const RESEARCH_BRIEF_SYSTEM_PROMPT =
-  "You are a research assistant. Synthesize a comprehensive, well-structured report in Markdown using ONLY the provided sources. " +
-  "Open with a one-sentence executive summary, then organize findings under clear headings. Use bullet points for key facts. " +
-  "Be thorough but concise. Do not invent facts not present in the sources.";
-
-const MAX_CONTEXT_CHARS = 1500;
+import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
 
 @Injectable()
 export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
@@ -45,53 +38,16 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
 
     try {
       const userCtx = await this.buildUserContext(job);
-      const articles = await this.search.retrieveTopArticles(userCtx, topic, 12, spaceId);
-      const sources = await this.search.retrieveTopSources(userCtx, topic, 6);
+      const actor = { orgId: job.orgId, userId: job.userId ?? "system" };
 
-      const contextParts: string[] = [
-        ...articles.map((a, i) => `Source ${i + 1} — ${a.title}\n${(a.contentText ?? "").slice(0, MAX_CONTEXT_CHARS)}`),
-        ...sources.map((s, i) => `Document ${articles.length + i + 1} — ${s.title}\n${s.snippet}`),
-      ];
-      const context = contextParts.join("\n\n---\n\n");
-
-      const gatewayResult = await this.aiGateway.invokeText({
-        actor: { orgId: job.orgId, userId: job.userId ?? "system" },
-        feature: "kb.research-brief",
-        tier: "standard",
-        maxTokens: 2048,
-        charge: { credits: getFeatureCost("kb.research-brief") },
-        prompt: {
-          system: RESEARCH_BRIEF_SYSTEM_PROMPT,
-          user: `Topic: ${topic}\n\nSources:\n${context}`,
-        },
-      });
-
-      if (!gatewayResult.ok) {
-        throw new Error(gatewayResult.message);
-      }
-
-      const citations = [
-        ...articles.map((a) => ({
-          kind: a.kind,
-          id: a.id,
-          title: a.title,
-          href: a.kind === "article" ? `/support/kb/${a.id}` : `/support/kb/pages/${a.id}`,
-          updatedAt: a.updatedAt.toISOString(),
-        })),
-        ...sources.map((s) => ({
-          kind: "source",
-          id: s.sourceId,
-          title: s.title,
-          href: null,
-          updatedAt: s.updatedAt.toISOString(),
-        })),
-      ];
+      const graph = buildResearchBriefGraph({ gateway: this.aiGateway, search: this.search });
+      const { report, citations } = await runResearchBrief(graph, { topic, spaceId, userCtx, actor });
 
       await this.db
         .update(kbResearchBriefs)
         .set({
           status: "completed",
-          report: gatewayResult.data,
+          report,
           citations,
           sourceCount: citations.length,
         })

@@ -464,7 +464,7 @@ export class DealsService {
     await this.db
       .update(deals)
       .set({ lastContactDate: new Date(), updatedAt: new Date() })
-      .where(eq(deals.id, dealId));
+      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)));
 
     return activity;
   }

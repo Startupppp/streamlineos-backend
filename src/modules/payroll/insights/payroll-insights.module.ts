@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { HrPayrollModule } from "../../hr-payroll/hr-payroll.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { AiModule } from "../../ai/ai.module";
 import { ReportsController } from "./reports.controller";
 import { ReportsService } from "./reports.service";
 import { JournalController } from "./journal.controller";
@@ -17,9 +18,11 @@ import { FnfInsightsService } from "./fnf.service";
 import { EssController } from "./ess.controller";
 import { EssService } from "./ess.service";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
+import { PayrollAiExplainController } from "./payroll-ai-explain.controller";
+import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 
 @Module({
-  imports: [HrPayrollModule, NotificationsModule],
+  imports: [HrPayrollModule, NotificationsModule, AiModule],
   controllers: [
     ReportsController,
     JournalController,
@@ -29,6 +32,7 @@ import { PayrollNotificationsService } from "./payroll-notifications.service";
     TaxAdminController,
     FnfController,
     EssController,
+    PayrollAiExplainController,
   ],
   providers: [
     ReportsService,
@@ -39,6 +43,7 @@ import { PayrollNotificationsService } from "./payroll-notifications.service";
     FnfInsightsService,
     EssService,
     PayrollNotificationsService,
+    PayrollAiExplainService,
   ],
   exports: [PayrollNotificationsService],
 })

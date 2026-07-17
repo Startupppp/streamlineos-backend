@@ -152,8 +152,7 @@ export class ProjectsAnalyticsService {
     const rows = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(eq(projects.orgId, orgId))
-      .limit(50);
+      .where(eq(projects.orgId, orgId));
 
     const results = await Promise.allSettled(rows.map((p) => this.getProjectAnalytics(orgId, p.id)));
 

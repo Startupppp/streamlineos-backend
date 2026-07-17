@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, ilike, inArray, not, or, sql } from "drizzle-orm";
+import { and, count, eq, desc, ilike, inArray, or, sql } from "drizzle-orm";
 import { crmOrganizations, contacts, deals, leads } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -295,20 +295,23 @@ export class CrmOrganizationsService {
     let totalDealValue = 0;
 
     if (orgNames.length > 0) {
-      const dealRows = await this.db
-        .select({ stage: deals.stage, value: deals.value })
+      const dealAgg = await this.db
+        .select({
+          totalDeals: count(),
+          openDeals: sql<number>`COUNT(*) FILTER (WHERE ${deals.stage} NOT IN ('CLOSED_WON', 'CLOSED_LOST'))::int`,
+          totalDealValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
+        })
         .from(deals)
         .where(
           and(
             eq(deals.orgId, orgId),
             or(...orgNames.map((n) => ilike(deals.name, `%${n.replaceAll("%", "\\%")}%`))),
           ),
-        )
-        .limit(200);
+        );
 
-      totalDeals = dealRows.length;
-      openDeals = dealRows.filter((d) => !["CLOSED_WON", "CLOSED_LOST"].includes(d.stage)).length;
-      totalDealValue = dealRows.reduce((sum, d) => sum + Number(d.value ?? 0), 0);
+      totalDeals = Number(dealAgg[0]?.totalDeals ?? 0);
+      openDeals = Number(dealAgg[0]?.openDeals ?? 0);
+      totalDealValue = Number(dealAgg[0]?.totalDealValue ?? 0);
     }
 
     const leadCountRows = await this.db

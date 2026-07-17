@@ -20,8 +20,12 @@ import { RatesController } from "./rates.controller";
 import { BudgetsService } from "./budgets.service";
 import { BudgetsController } from "./budgets.controller";
 import { AuditController } from "./audit.controller";
+import { TimesheetsAiController } from "./timesheets-ai.controller";
+import { TimesheetsAiService } from "./timesheets-ai.service";
+import { AiModule } from "../ai/ai.module";
 
 @Module({
+  imports: [AiModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -33,6 +37,7 @@ import { AuditController } from "./audit.controller";
     RatesController,
     BudgetsController,
     AuditController,
+    TimesheetsAiController,
   ],
   providers: [
     TimesheetsAuditService,
@@ -46,6 +51,7 @@ import { AuditController } from "./audit.controller";
     SettingsService,
     RatesService,
     BudgetsService,
+    TimesheetsAiService,
   ],
   exports: [EntriesService, SettingsService],
 })

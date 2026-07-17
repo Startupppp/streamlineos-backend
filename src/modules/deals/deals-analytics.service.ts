@@ -199,16 +199,17 @@ export class DealsAnalyticsService {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
 
         const allKeys = wonKeys.concat(lostKeys);
+        const wonKeysExpr = sql.join(wonKeys.map((k) => sql`${k}`), sql`, `);
         const [bucketRows, lostByReason] = await Promise.all([
           this.db
             .select({
-              bucket: sql<string>`CASE WHEN ${deals.stage} = ANY(${wonKeys}) THEN 'won' ELSE 'lost' END`,
+              bucket: sql<string>`CASE WHEN ${deals.stage} = ANY(ARRAY[${wonKeysExpr}]) THEN 'won' ELSE 'lost' END`,
               count: sql<number>`count(*)::int`,
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
             .where(and(eq(deals.orgId, orgId), inArray(deals.stage, allKeys)))
-            .groupBy(sql`CASE WHEN ${deals.stage} = ANY(${wonKeys}) THEN 'won' ELSE 'lost' END`),
+            .groupBy(sql`CASE WHEN ${deals.stage} = ANY(ARRAY[${wonKeysExpr}]) THEN 'won' ELSE 'lost' END`),
           this.db
             .select({
               reason: sql<string>`COALESCE(${deals.lostReason}, 'Not specified')`,

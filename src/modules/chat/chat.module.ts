@@ -11,6 +11,7 @@ import { ChatSavedController } from "./chat-saved.controller";
 import { ChatLinkPreviewController } from "./chat-link-preview.controller";
 import { ChatInviteLinksController } from "./chat-invite-links.controller";
 import { ChatOrgSettingsController } from "./chat-org-settings.controller";
+import { ChatSummarizeController } from "./chat-summarize.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatPresenceService } from "./chat-presence.service";
@@ -23,11 +24,12 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatSavedService } from "./chat-saved.service";
 import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
 
 @Module({
   imports: [BillingModule, RealtimeModule],
-  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController],
+  controllers: [ChatActionsController, ChatChannelsController, ChatMessagesController, ChatPresenceController, ChatPinsController, ChatHuddlesController, ChatSearchController, ChatSavedController, ChatLinkPreviewController, ChatInviteLinksController, ChatOrgSettingsController, ChatSummarizeController],
   providers: [
     ChatChannelsService,
     ChatMessagesService,
@@ -41,6 +43,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
     ChatSavedService,
     ChatInviteLinksService,
     ChatOrgSettingsService,
+    ChatSummarizeService,
   ],
   exports: [ChatReplyRemindersService, ChatChannelsService, ChatMessagesService, ChatSearchService],
 })

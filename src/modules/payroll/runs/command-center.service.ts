@@ -36,54 +36,60 @@ export class CommandCenterService {
 
     const run = runs[0] ?? null;
 
-    const toggles = run?.policyVersionId ? await this.loadToggles(orgId, run.policyVersionId) : null;
-    const packComplianceChecklist = await this.loadPackComplianceChecklist(orgId, run?.policyVersionId ?? null);
-    const checklist = run ? await buildRunChecklist(this.db, orgId, run, toggles) : [];
-
-    const exceptionCounts = run
-      ? await this.getExceptionCounts(orgId, run.id)
-      : { BLOCKER: 0, WARNING: 0, INFO: 0 };
-
-    const topExceptions = run
-      ? await this.db
-          .select({
-            id: payrollExceptions.id,
-            runEmployeeId: payrollExceptions.runEmployeeId,
-            userId: payrollExceptions.userId,
-            code: payrollExceptions.code,
-            severity: payrollExceptions.severity,
-            message: payrollExceptions.message,
-            status: payrollExceptions.status,
-          })
-          .from(payrollExceptions)
-          .where(and(eq(payrollExceptions.runId, run.id), eq(payrollExceptions.status, "OPEN")))
-          .orderBy(payrollExceptions.severity)
-          .limit(5)
-      : [];
-
-    const pendingApprovals = run
-      ? await this.db
-          .select()
-          .from(payrollApprovals)
-          .where(and(eq(payrollApprovals.runId, run.id), eq(payrollApprovals.status, "PENDING")))
-      : [];
-
     const in14Days = new Date(now);
     in14Days.setDate(in14Days.getDate() + 14);
     const todayStr = now.toISOString().slice(0, 10);
     const in14DaysStr = in14Days.toISOString().slice(0, 10);
 
-    const upcomingCalendarEvents = await this.db
-      .select()
-      .from(payrollCalendarEvents)
-      .where(
-        and(
-          eq(payrollCalendarEvents.orgId, orgId),
-          gte(payrollCalendarEvents.date, todayStr),
-          lte(payrollCalendarEvents.date, in14DaysStr),
-        ),
-      )
-      .orderBy(payrollCalendarEvents.date);
+    const [toggles, packComplianceChecklist, upcomingCalendarEvents] = await Promise.all([
+      run?.policyVersionId ? this.loadToggles(orgId, run.policyVersionId) : Promise.resolve(null),
+      this.loadPackComplianceChecklist(orgId, run?.policyVersionId ?? null),
+      this.db
+        .select()
+        .from(payrollCalendarEvents)
+        .where(
+          and(
+            eq(payrollCalendarEvents.orgId, orgId),
+            gte(payrollCalendarEvents.date, todayStr),
+            lte(payrollCalendarEvents.date, in14DaysStr),
+          ),
+        )
+        .orderBy(payrollCalendarEvents.date),
+    ]);
+
+    const checklist = run ? await buildRunChecklist(this.db, orgId, run, toggles) : [];
+
+    const [exceptionCounts, topExceptions, pendingApprovals] = await Promise.all([
+      run
+        ? this.getExceptionCounts(orgId, run.id)
+        : Promise.resolve({ BLOCKER: 0, WARNING: 0, INFO: 0 }),
+      run
+        ? this.db
+            .select({
+              id: payrollExceptions.id,
+              runEmployeeId: payrollExceptions.runEmployeeId,
+              userId: payrollExceptions.userId,
+              code: payrollExceptions.code,
+              severity: payrollExceptions.severity,
+              message: payrollExceptions.message,
+              status: payrollExceptions.status,
+            })
+            .from(payrollExceptions)
+            .where(and(eq(payrollExceptions.runId, run.id), eq(payrollExceptions.status, "OPEN")))
+            .orderBy(payrollExceptions.severity)
+            .limit(5)
+        : Promise.resolve([]),
+      run
+        ? this.db
+            .select({
+              id: payrollApprovals.id,
+              stage: payrollApprovals.stage,
+              status: payrollApprovals.status,
+            })
+            .from(payrollApprovals)
+            .where(and(eq(payrollApprovals.runId, run.id), eq(payrollApprovals.status, "PENDING")))
+        : Promise.resolve([]),
+    ]);
 
     const header = run
       ? {

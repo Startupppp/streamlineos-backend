@@ -6,7 +6,10 @@ import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { BillingModule } from "../billing/billing.module";
+import { AiModule } from "../ai/ai.module";
 import { SignAuditService } from "./sign-audit.service";
+import { SignAiService } from "./sign-ai.service";
+import { SignAiController } from "./sign-ai.controller";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignPdfService } from "./sign-pdf.service";
@@ -34,7 +37,7 @@ import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule],
+  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule, AiModule],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,
@@ -46,9 +49,11 @@ import { SignReportsController } from "./sign-reports.controller";
     SignBulkSendController,
     SignAdminController,
     SignReportsController,
+    SignAiController,
   ],
   providers: [
     SignAuditService,
+    SignAiService,
     SignIntegrationsService,
     SignTokensService,
     SignPdfService,
