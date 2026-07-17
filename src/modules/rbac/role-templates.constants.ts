@@ -33,6 +33,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     name: "HR Administrator",
     slug: "HR_ADMIN",
     permissions: [
+      "hr:employees:view",
       "hr:employees:read",
       "hr:employees:manage",
       "hr:leaves:read",
