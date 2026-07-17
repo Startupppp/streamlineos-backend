@@ -174,10 +174,11 @@ export class HrImportService {
             await this.commitService.markRowCommitted(tx, row.id, ref);
             committed++;
           }
-        } catch {
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Commit failed";
           await tx
             .update(hrImportRows)
-            .set({ status: "error", error: "Commit failed" })
+            .set({ status: "error", error: message })
             .where(eq(hrImportRows.id, row.id));
         }
       }
