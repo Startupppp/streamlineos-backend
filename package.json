@@ -46,7 +46,6 @@
     "@nestjs/swagger": "^11.4.4",
     "@openrouter/ai-sdk-provider": "^1.5.4",
     "@sendgrid/mail": "^8.1.6",
-    "@types/bcryptjs": "^3.0.0",
     "@upstash/redis": "^1.37.0",
     "ably": "^2.23.0",
     "ai": "^5.0.206",

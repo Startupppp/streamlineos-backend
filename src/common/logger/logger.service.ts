@@ -1,6 +1,6 @@
 type LogLevel = "debug" | "info" | "warn" | "error";
 const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
-const current: LogLevel = process.env.NODE_ENV === "production" ? "info" : "debug";
+const current: LogLevel = process.env.NODE_ENV === "production" ? "warn" : "debug";
 
 function emit(level: LogLevel, message: string, meta?: unknown): void {
   if (LEVELS[level] < LEVELS[current]) return;
