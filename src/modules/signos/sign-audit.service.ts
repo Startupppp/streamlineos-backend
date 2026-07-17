@@ -9,6 +9,7 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type SignAuditEventType =
   | "envelope_created"
   | "envelope_updated"
+  | "envelope_deleted"
   | "document_uploaded"
   | "recipient_added"
   | "recipient_updated"

@@ -617,7 +617,6 @@ export class EmployeeMutationsService {
         whatsappSameAsPhone: row.whatsappSameAsPhone ?? true,
         whatsappNumber: row.whatsappNumber,
         gender: row.gender,
-        password: row.password,
         designation: row.designation.trim(),
         departmentId,
         role: row.role || "ENGINEERING",
