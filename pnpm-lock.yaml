@@ -50,9 +50,6 @@ importers:
       '@sendgrid/mail':
         specifier: ^8.1.6
         version: 8.1.6
-      '@types/bcryptjs':
-        specifier: ^3.0.0
-        version: 3.0.0
       '@upstash/redis':
         specifier: ^1.37.0
         version: 1.38.0
@@ -144,6 +141,9 @@ importers:
       '@swc/core':
         specifier: ^1.15.43
         version: 1.15.43
+      '@types/bcryptjs':
+        specifier: ^3.0.0
+        version: 3.0.0
       '@types/compression':
         specifier: ^1.8.1
         version: 1.8.1
