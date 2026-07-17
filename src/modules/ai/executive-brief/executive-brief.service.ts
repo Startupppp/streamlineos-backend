@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { randomUUID } from "crypto";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../ai-summaries/ai-summaries.service";
 import { ProjectsAnalyticsService } from "../../projects/projects-analytics.service";
@@ -86,7 +87,10 @@ export class ExecutiveBriefService {
       },
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("exec.brief.generate") },
+      charge: {
+        credits: getFeatureCost("exec.brief.generate"),
+        idempotencyKey: `exec-brief-${orgId}-${randomUUID()}`,
+      },
     });
 
     let narrative = "";

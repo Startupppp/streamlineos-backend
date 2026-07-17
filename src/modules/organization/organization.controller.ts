@@ -93,13 +93,6 @@ export class OrganizationController {
     return this.invitations.validate(token);
   }
 
-  @Public()
-  @Get("setup-token/validate")
-  validateSetupToken(@Query("token") token: string) {
-    if (!token) throw new BadRequestException("Missing token");
-    return this.organization.validateSetupToken(token);
-  }
-
   @Get()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
     return this.organization.listUserOrganizations(u.userId);

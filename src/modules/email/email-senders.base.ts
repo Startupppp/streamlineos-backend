@@ -4,10 +4,7 @@ import { type EmailAttachment } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
-  getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
-  getPasswordChangeConfirmationEmailTemplate,
-  getAccountLockedEmailTemplate,
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,

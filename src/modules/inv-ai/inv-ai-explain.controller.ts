@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -8,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -18,6 +20,9 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { InvAiExplainService } from "./inv-ai-explain.service";
+
+const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
+const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
 
 @RequireModule("inventory")
 @Controller("inventory/ai")
@@ -52,10 +57,12 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   getReorderProposal(
-    @Body() body: { variantId: number; warehouseId?: number },
+    @Body() rawBody: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.explainService.getReorderProposal(u.orgId, u.userId, body.variantId, body.warehouseId);
+    const parsed = reorderProposalBodySchema.safeParse(rawBody);
+    if (!parsed.success) throw new BadRequestException("Invalid request body");
+    return this.explainService.getReorderProposal(u.orgId, u.userId, parsed.data.variantId, parsed.data.warehouseId);
   }
 
   @Post("reorder-proposal/confirm")
@@ -63,10 +70,12 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   confirmReorderProposal(
-    @Body() body: { proposalId: number; token: string },
+    @Body() rawBody: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.explainService.confirmReorderProposal(u.orgId, u.userId, body.proposalId, body.token);
+    const parsed = confirmProposalBodySchema.safeParse(rawBody);
+    if (!parsed.success) throw new BadRequestException("Invalid request body");
+    return this.explainService.confirmReorderProposal(u.orgId, u.userId, parsed.data.proposalId, parsed.data.token);
   }
 
   @Get("supplier-delay")

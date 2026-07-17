@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { WorkspaceSearchRetrievalService, type WorkspaceHit } from "./workspace-search-retrieval.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
@@ -49,7 +50,9 @@ export class WorkspaceSearchService {
       .join("\n\n");
 
     const featureCost = getFeatureCost("workspace.ask");
-    const charge = featureCost > 0 ? { credits: featureCost } : undefined;
+    const charge = featureCost > 0
+      ? { credits: featureCost, idempotencyKey: `workspace-ask-${user.orgId}-${randomUUID()}` }
+      : undefined;
 
     const result = await this.gateway.invokeText({
       actor: { orgId: user.orgId, userId: user.userId },

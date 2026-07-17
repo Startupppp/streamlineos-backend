@@ -2211,6 +2211,7 @@ const INVENTORY_PERMISSIONS: Permission[] = [
   { name: "inventory:3pl:manage", resource: "inventory:3pl", action: "manage", description: "Manage 3PL warehouse connections" },
   { name: "inventory:replenishment:manage", resource: "inventory:replenishment", action: "manage", description: "Manage reorder rules and replenishment" },
   { name: "inventory:ai:propose", resource: "inventory:ai", action: "propose", description: "Propose AI-generated reorder draft POs and confirm them" },
+  { name: "inventory:ai:manage", resource: "inventory:ai", action: "manage", description: "Dismiss or update AI-generated inventory insights" },
 ];
 
 const KB_PERMISSIONS: Permission[] = [
