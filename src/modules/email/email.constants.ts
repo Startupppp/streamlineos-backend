@@ -33,3 +33,6 @@ export function getSupportEmail(): string {
 export function getBrandUrl(): string {
   return (process.env.APP_URL?.trim() ?? "").replace(/\/$/, "");
 }
+
+export const EMAIL_LOGO_URL =
+  "https://pub-891e5f8831c54f9295d7dda0eac7ed65.r2.dev/email-assets/logo-v2.png";

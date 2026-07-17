@@ -1,6 +1,5 @@
 import { appUrl } from "../app-url";
-import { getBrandUrl, getSupportEmail } from "../email.constants";
-import { LOGO_CID } from "../email-logo";
+import { getBrandUrl, getSupportEmail, EMAIL_LOGO_URL } from "../email.constants";
 
 export { appUrl };
 
@@ -22,7 +21,7 @@ export interface EmailTemplateProps {
 function buildLogoLockup(): string {
   return (
     `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
-    `<img src="cid:${LOGO_CID}" alt="StreamlineOS" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
+    `<img src="${EMAIL_LOGO_URL}" alt="StreamlineOS" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
     `</td>`
   );
 }
