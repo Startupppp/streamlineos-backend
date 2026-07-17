@@ -8,12 +8,13 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
-  hrPeople,
-  hrEmployments,
   attendance,
   assets,
   leaveBalances,
   documents,
+  users,
+  organizationMembers,
+  departments,
 } from "../../db/schema";
 import { hrImportJobs, hrImportRows } from "../../db/schema/hr/import-jobs";
 import { HrAuditService } from "../hr-core/hr-audit.service";
@@ -259,9 +260,21 @@ export class HrImportService {
 
     if (entity === "employees") {
       return this.db
-        .select()
-        .from(hrPeople)
-        .where(and(eq(hrPeople.orgId, orgId)))
+        .select({
+          employeeId: users.employeeId,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          designation: users.designation,
+          department: departments.name,
+          role: users.role,
+          joiningDate: users.joiningDate,
+          isActive: users.isActive,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(departments, eq(departments.id, users.departmentId))
+        .where(eq(organizationMembers.orgId, orgId))
         .limit(limit)
         .offset(offset);
     }

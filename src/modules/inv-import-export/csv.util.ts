@@ -53,7 +53,10 @@ function parseRecords(text: string): string[][] {
 
 export function toCsv(headers: string[], rows: Record<string, unknown>[]): string {
   const escapeField = (v: unknown): string => {
-    const s = v == null ? "" : String(v);
+    let s = v == null ? "" : String(v);
+    // Prevent CSV/formula injection: neutralize leading =, +, -, @ before a
+    // spreadsheet app can interpret the cell as a formula.
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
     if (s.includes(",") || s.includes('"') || s.includes("\n")) {
       return '"' + s.replace(/"/g, '""') + '"';
     }
