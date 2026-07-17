@@ -80,6 +80,9 @@ export class EmployeesController {
       page: query.page,
       limit: query.limit,
       search,
+      dept: query.dept,
+      status: query.status,
+      role: query.role,
     }, scope);
   }
 

@@ -5,6 +5,9 @@ export const listEmployeesSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   search: z.string().optional(),
   q: z.string().optional(),
+  dept: z.string().optional(),
+  status: z.enum(["All", "Active", "Inactive"]).optional(),
+  role: z.string().optional(),
 });
 
 export const availabilitySchema = z.object({

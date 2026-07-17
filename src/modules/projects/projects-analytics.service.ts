@@ -149,36 +149,85 @@ export class ProjectsAnalyticsService {
     critical: number;
     avgScore: number;
   }> {
-    const rows = await this.db
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const [ticketStats, cycleStats] = await Promise.all([
+      this.db
+        .select({
+          projectId: tickets.projectId,
+          total: sql<number>`COUNT(*)::int`,
+          done: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} = 'DONE')::int`,
+          open: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} NOT IN ('DONE', 'CANCELLED'))::int`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${tickets.status} NOT IN ('DONE', 'CANCELLED') AND ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${todayStr})::int`,
+        })
+        .from(tickets)
+        .where(eq(tickets.orgId, orgId))
+        .groupBy(tickets.projectId),
+      this.db
+        .select({
+          projectId: cycles.projectId,
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`,
+        })
+        .from(cycles)
+        .leftJoin(tickets, eq(tickets.cycleId, cycles.id))
+        .where(eq(cycles.orgId, orgId))
+        .groupBy(cycles.projectId, cycles.id, cycles.startDate)
+        .orderBy(cycles.startDate),
+    ]);
+
+    const orgProjects = await this.db
       .select({ id: projects.id })
       .from(projects)
       .where(eq(projects.orgId, orgId));
 
-    const results = await Promise.allSettled(rows.map((p) => this.getProjectAnalytics(orgId, p.id)));
+    const ticketMap = new Map<number, (typeof ticketStats)[number]>();
+    for (const row of ticketStats) {
+      if (row.projectId !== null) ticketMap.set(row.projectId, row);
+    }
+
+    const cyclesByProject = new Map<number, number[]>();
+    for (const row of cycleStats) {
+      if (row.projectId === null) continue;
+      const pts = cyclesByProject.get(row.projectId) ?? [];
+      pts.push(Number(row.completedPoints));
+      cyclesByProject.set(row.projectId, pts);
+    }
 
     let healthy = 0;
     let atRisk = 0;
     let critical = 0;
     let totalScore = 0;
-    let counted = 0;
 
-    for (const r of results) {
-      if (r.status === "fulfilled") {
-        const { healthScore, healthStatus } = r.value;
-        totalScore += healthScore ?? 0;
-        counted++;
-        if (healthStatus === "EXCELLENT" || healthStatus === "GOOD") healthy++;
-        else if (healthStatus === "AT_RISK") atRisk++;
-        else if (healthStatus === "CRITICAL") critical++;
-      }
+    for (const p of orgProjects) {
+      const t = ticketMap.get(p.id);
+      const total = t ? Number(t.total) : 0;
+      const done = t ? Number(t.done) : 0;
+      const open = t ? Number(t.open) : 0;
+      const overdue = t ? Number(t.overdue) : 0;
+
+      const completionRate = total > 0 ? done / total : 0;
+      const onTimeRate = open > 0 ? 1 - overdue / open : 1;
+
+      const velocities = cyclesByProject.get(p.id) ?? [];
+      const avgVelocity = velocities.length > 0 ? velocities.reduce((a, b) => a + b, 0) / velocities.length : 0;
+      const latestVelocity = velocities.length > 0 ? velocities[velocities.length - 1] : 0;
+      const velocityScore = avgVelocity > 0 ? Math.min(1, latestVelocity / avgVelocity) : 1;
+
+      const healthScore = Math.round(completionRate * 50 + onTimeRate * 30 + velocityScore * 20);
+
+      totalScore += healthScore;
+      if (healthScore >= 60) healthy++;
+      else if (healthScore >= 40) atRisk++;
+      else critical++;
     }
 
+    const total = orgProjects.length;
     return {
-      total: rows.length,
+      total,
       healthy,
       atRisk,
       critical,
-      avgScore: counted > 0 ? Math.round(totalScore / counted) : 0,
+      avgScore: total > 0 ? Math.round(totalScore / total) : 0,
     };
   }
 
