@@ -362,6 +362,24 @@ export class EmployeeMutationsService {
     }
 
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
+
+    if (body.employeeId?.trim()) {
+      const [duplicate] = await this.db
+        .select({ userId: users.id })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(users.employeeId, resolvedEmployeeId),
+          ),
+        )
+        .limit(1);
+      if (duplicate && duplicate.userId !== existingUser?.id) {
+        throw new ConflictException(`Employee ID "${resolvedEmployeeId}" is already in use in your organization.`);
+      }
+    }
+
     const role = body.role || "ENGINEERING";
     const payrollDefaults = await this.resolveOrgPayrollDefaults(actor.orgId);
 
