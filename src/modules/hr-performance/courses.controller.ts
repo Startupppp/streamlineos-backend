@@ -1,11 +1,18 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CoursesService } from "./courses.service";
+
+const updateProgressSchema = z.object({
+  progressPct: z.number().min(0).max(100),
+});
+type UpdateProgressInput = z.infer<typeof updateProgressSchema>;
 
 @RequireModule("hr")
 @Controller("hr/courses")
@@ -64,8 +71,8 @@ export class CoursesController {
   updateProgress(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
-    @Body("progressPct") pct: number,
+    @Body(new ZodValidationPipe(updateProgressSchema)) body: UpdateProgressInput,
   ) {
-    return this.courses.updateProgress(courseId, u.userId, pct);
+    return this.courses.updateProgress(courseId, u.userId, body.progressPct);
   }
 }
