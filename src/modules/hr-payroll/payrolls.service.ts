@@ -14,6 +14,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import { decrypt } from "./lib/encryption";
 import type { GenerateSinglePayrollInput } from "./dto/payroll.schemas";
@@ -38,6 +39,7 @@ export class PayrollsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
 
   private async resolveDefaults(orgId: string) {
@@ -201,6 +203,7 @@ export class PayrollsService {
 
     if (newPayrolls.length > 0) {
       await this.db.insert(payrolls).values(newPayrolls);
+      void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
     }
 
     return { generated: newPayrolls.length, hadMembers: true };
@@ -352,6 +355,8 @@ export class PayrollsService {
         overtimeAmount: body.overtimeAmount?.toString(),
       })
       .returning();
+
+    void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
 
     this.audit.log({
       action: "hr.payroll_generated",

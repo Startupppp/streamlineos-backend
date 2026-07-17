@@ -55,6 +55,7 @@ export const leads = pgTable("leads", {
   foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
   index("idx_leads_org_status_created").on(table.orgId, table.status, table.createdAt),
   index("idx_leads_assigned_to").on(table.assignedToId),
+  index("idx_leads_org_assigned_status").on(table.orgId, table.assignedToId, table.status),
   index("idx_leads_source").on(table.source),
   index("idx_leads_score").on(table.score),
   index("idx_leads_deleted").on(table.deletedAt),

@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import sgMail, { type MailDataRequired } from "@sendgrid/mail";
 import { logger } from "../../common/logger/logger.service";
 import { getFromAddress } from "./email.constants";
+import { getEmailLogoAttachment, LOGO_CID, LOGO_MONOGRAM_TD } from "./email-logo";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
@@ -19,6 +20,8 @@ export interface EmailAttachment {
   filename: string;
   content: Buffer | string;
   type: string;
+  cid?: string;
+  disposition?: "inline" | "attachment";
 }
 
 export interface EmailOptions {
@@ -93,6 +96,7 @@ async function sendViaResend(options: EmailOptions): Promise<void> {
     filename: a.filename,
     content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content),
     contentType: a.type,
+    ...(a.cid ? { contentId: a.cid } : {}),
   }));
 
   const cc = options.cc ? normalizeRecipients(options.cc) : undefined;
@@ -126,7 +130,8 @@ async function sendViaSendgrid(options: EmailOptions): Promise<void> {
     content: Buffer.isBuffer(a.content) ? a.content.toString("base64") : a.content,
     filename: a.filename,
     type: a.type,
-    disposition: "attachment" as const,
+    disposition: (a.disposition ?? "attachment") as string,
+    ...(a.cid ? { contentId: a.cid } : {}),
   }));
 
   const sgCc = options.cc ? normalizeRecipients(options.cc) : undefined;
@@ -175,6 +180,43 @@ export async function sendEmailOnceDirect(options: EmailOptions): Promise<void> 
   await sendWithProvider(activeProvider, { ...options, to: recipients });
 }
 
+const CID_IMG_RE = new RegExp(`src="cid:${LOGO_CID}"`, "i");
+
+async function injectInlineLogo(options: EmailOptions): Promise<EmailOptions> {
+  if (!CID_IMG_RE.test(options.html)) return options;
+
+  const existing = options.attachments ?? [];
+  if (existing.some((a) => a.cid === LOGO_CID)) return options;
+
+  const logo = await getEmailLogoAttachment();
+
+  if (!logo) {
+    const monogramImg =
+      `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
+      `<img src="cid:${LOGO_CID}" alt="StreamlineOS" width="32" height="32" ` +
+      `style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
+      `</td>`;
+    return {
+      ...options,
+      html: options.html.replace(monogramImg, LOGO_MONOGRAM_TD),
+    };
+  }
+
+  return {
+    ...options,
+    attachments: [
+      ...existing,
+      {
+        filename: logo.filename,
+        content: logo.content,
+        type: logo.type,
+        cid: logo.cid,
+        disposition: "inline" as const,
+      },
+    ],
+  };
+}
+
 export async function dispatchEmail(options: EmailOptions): Promise<void> {
   const recipients = normalizeRecipients(options.to);
   if (recipients.length === 0) {
@@ -190,6 +232,8 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
     throw new Error("No email provider configured");
   }
 
+  const resolvedOptions = await injectInlineLogo(options);
+
   const fallbackProvider: Provider | null =
     activeProvider === "resend" && SENDGRID_API_KEY
       ? "sendgrid"
@@ -201,7 +245,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await sendWithProvider(activeProvider, options);
+      await sendWithProvider(activeProvider, resolvedOptions);
       return;
     } catch (error) {
       lastError = error;
@@ -216,18 +260,18 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
           primary: activeProvider,
           fallback: fallbackProvider,
           to: recipients,
-          subject: options.subject,
+          subject: resolvedOptions.subject,
           status,
         });
         try {
-          await sendWithProvider(fallbackProvider, options);
+          await sendWithProvider(fallbackProvider, resolvedOptions);
           return;
         } catch (fallbackError) {
           lastError = fallbackError;
           logger.error("Email fallback provider failed", {
             fallback: fallbackProvider,
             to: recipients,
-            subject: options.subject,
+            subject: resolvedOptions.subject,
             error: fallbackError,
           });
           throw fallbackError;
@@ -237,7 +281,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
         logger.error("Email send failed (non-retryable)", {
           provider: activeProvider,
           to: recipients,
-          subject: options.subject,
+          subject: resolvedOptions.subject,
           attempt,
           error,
         });
@@ -248,7 +292,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
         logger.warn(`Email retry ${attempt}/${MAX_RETRIES}`, {
           provider: activeProvider,
           to: recipients,
-          subject: options.subject,
+          subject: resolvedOptions.subject,
           nextRetryMs: backoff,
         });
         await delay(backoff);
@@ -258,8 +302,8 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
 
   logger.error("Email send failed after all retries", {
     provider: activeProvider,
-    to: options.to,
-    subject: options.subject,
+    to: resolvedOptions.to,
+    subject: resolvedOptions.subject,
     error: lastError,
   });
   throw lastError;

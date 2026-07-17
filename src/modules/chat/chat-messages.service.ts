@@ -15,6 +15,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
@@ -40,6 +41,7 @@ type PersistedMessage = {
 export class ChatMessagesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
     private readonly ably: AblyService,
     private readonly webPush: WebPushService,
     private readonly notifications: ChatNotificationsService,
@@ -169,6 +171,7 @@ export class ChatMessagesService {
       return created;
     });
 
+    void this.cache.invalidatePattern(`chat:unread:*:${orgId}`).catch(() => undefined);
     void this.replyReminders
       .scheduleForMessage(orgId, channelId, message.id, userId)
       .catch(() => undefined);

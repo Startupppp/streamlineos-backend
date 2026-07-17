@@ -1,10 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, gt, ilike, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import {
   organizationMembers,
   organizations,
-  passwordResetTokens,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -265,26 +264,6 @@ export class OrganizationService {
     });
 
     return { success: true };
-  }
-
-  async validateSetupToken(token: string): Promise<{ email: string; name: string }> {
-    const tokenRecord = await this.db.query.passwordResetTokens.findFirst({
-      where: and(
-        eq(passwordResetTokens.token, token),
-        gt(passwordResetTokens.expiresAt, new Date()),
-      ),
-    });
-    if (!tokenRecord) throw new BadRequestException("Invalid or expired setup link");
-
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.email, tokenRecord.email),
-      columns: { name: true, email: true },
-    });
-
-    return {
-      email: tokenRecord.email,
-      name: user?.name ?? "New Employee",
-    };
   }
 
   async archiveOrg(orgId: string, userId: string) {

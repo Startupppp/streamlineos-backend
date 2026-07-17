@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, ilike, inArray, lte } from "drizzle-orm";
 import {
   clientAccountActivities,
@@ -9,37 +9,66 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { LlmService } from "../providers/llm.service";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { NlSearchFilterSchema } from "../dto/output.schemas";
 import type { AccountSummaryInput, MeetingPrepInput, NlSearchInput } from "../dto/request.schemas";
+import { throwOnAiFailure } from "./gateway-result.util";
+import { OrgFeaturesService } from "./org-features.service";
+
+interface MeetingFollowUpInput {
+  meetingTitle: string;
+  attendeeType: "lead" | "client";
+  attendeeId: number;
+  outcome: string;
+  actionItems?: string[];
+  scheduledAt: string;
+  notes?: string;
+}
+
+interface CitationItem {
+  id: string;
+  title: string;
+  snippet: string;
+}
+
+const MAX_NOTES = 2000;
+
+function trunc(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
+}
 
 @Injectable()
 export class CrmBriefService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
+    private readonly orgFeatures: OrgFeaturesService,
   ) {}
 
-  async accountSummary(orgId: string, input: AccountSummaryInput) {
+  async accountSummary(orgId: string, input: AccountSummaryInput, userId?: string) {
     const account = await this.db.query.clientAccounts.findFirst({
       where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
     });
+
     if (!account) throw new NotFoundException("Client account not found");
 
-    const lead = account.leadId
-      ? await this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
-      : null;
-
-    const activities = await this.db
-      .select({
-        activityType: clientAccountActivities.activityType,
-        description: clientAccountActivities.description,
-        createdAt: clientAccountActivities.createdAt,
-      })
-      .from(clientAccountActivities)
-      .where(eq(clientAccountActivities.clientAccountId, input.clientId))
-      .orderBy(desc(clientAccountActivities.createdAt))
-      .limit(5);
+    const [resolvedLead, activities] = await Promise.all([
+      account.leadId
+        ? this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
+        : Promise.resolve(null),
+      this.db
+        .select({
+          activityType: clientAccountActivities.activityType,
+          description: clientAccountActivities.description,
+          createdAt: clientAccountActivities.createdAt,
+        })
+        .from(clientAccountActivities)
+        .where(eq(clientAccountActivities.clientAccountId, input.clientId))
+        .orderBy(desc(clientAccountActivities.createdAt))
+        .limit(20),
+    ]);
 
     const investmentAmount = account.investmentAmount
       ? `₹${Number(account.investmentAmount).toLocaleString("en-IN")}`
@@ -54,7 +83,7 @@ export class CrmBriefService {
         : activities
             .map((a) => {
               const date = a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-IN") : "Unknown date";
-              return `- [${date}] ${a.activityType}: ${a.description ?? "No description"}`;
+              return `- [${date}] ${a.activityType}: ${trunc(a.description)}`;
             })
             .join("\n");
 
@@ -71,14 +100,14 @@ CLIENT ACCOUNT DETAILS:
 - Investment Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}
 - Renewal Stage: ${account.renewalStage}
 - Renewal Date: ${account.renewalDate ?? "Not set"}
-- Conversion Notes: ${account.conversionNotes ?? "None"}
-- Renewal Notes: ${account.renewalNotes ?? "None"}
+- Conversion Notes: ${trunc(account.conversionNotes)}
+- Renewal Notes: ${trunc(account.renewalNotes)}
 - Account Created: ${new Date(account.createdAt).toLocaleDateString("en-IN")}
 
 LEAD CONTEXT:
-${lead ? `- Source: ${lead.source ?? "N/A"}, Priority: ${lead.priority ?? "N/A"}, City: ${lead.city ?? "N/A"}, Company: ${lead.company ?? "N/A"}` : "- No lead data available"}
+${resolvedLead ? `- Source: ${resolvedLead.source ?? "N/A"}, Priority: ${resolvedLead.priority ?? "N/A"}, City: ${resolvedLead.city ?? "N/A"}, Company: ${resolvedLead.company ?? "N/A"}` : "- No lead data available"}
 
-RECENT ACTIVITIES (Last 5):
+RECENT ACTIVITIES (Last 20):
 ${activitiesText}
 
 Please generate a comprehensive account summary with:
@@ -89,40 +118,50 @@ Please generate a comprehensive account summary with:
 5. Key Risks & Opportunities (any flags or upsell potential)
 6. Recommended Next Steps (2-3 specific actions for the account manager)`;
 
-    const summary = await this.llm.invokeText({
-      model: "standard",
-      system:
-        "You are an executive assistant preparing client briefing documents for an Indian investment firm. Generate concise, professional account summaries that help account managers and executives quickly understand the full picture of a client relationship. Be data-driven and specific.",
-      user: userPrompt,
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.account-summary",
+      prompt: {
+        system:
+          "You are an executive assistant preparing client briefing documents for an Indian investment firm. Generate concise, professional account summaries that help account managers and executives quickly understand the full picture of a client relationship. Be data-driven and specific.",
+        user: userPrompt,
+      },
+      tier: "standard",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("crm.account-summary") },
+      dedupe: true,
     });
 
-    return { summary, clientName: account.clientName, generatedAt: new Date().toISOString() };
+    if (!result.ok) throwOnAiFailure(result);
+    return { summary: result.data, clientName: account.clientName, generatedAt: new Date().toISOString() };
   }
 
-  async meetingPrep(orgId: string, input: MeetingPrepInput) {
+  async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
     const { meetingTitle, attendeeType, attendeeId, scheduledAt, notes } = input;
     let attendeeName = "Unknown";
     let contextString = "";
 
     if (attendeeType === "lead") {
-      const lead = await this.db.query.leads.findFirst({
-        where: and(eq(leads.id, attendeeId), eq(leads.orgId, orgId)),
-      });
+      const [lead, activities] = await Promise.all([
+        this.db.query.leads.findFirst({
+          where: and(eq(leads.id, attendeeId), eq(leads.orgId, orgId)),
+        }),
+        this.db
+          .select({
+            type: leadActivities.type,
+            date: leadActivities.date,
+            subject: leadActivities.subject,
+            notes: leadActivities.notes,
+            outcome: leadActivities.outcome,
+          })
+          .from(leadActivities)
+          .where(eq(leadActivities.leadId, attendeeId))
+          .orderBy(desc(leadActivities.date))
+          .limit(5),
+      ]);
+
       if (!lead) throw new NotFoundException("Lead not found");
       attendeeName = lead.name;
-
-      const activities = await this.db
-        .select({
-          type: leadActivities.type,
-          date: leadActivities.date,
-          subject: leadActivities.subject,
-          notes: leadActivities.notes,
-          outcome: leadActivities.outcome,
-        })
-        .from(leadActivities)
-        .where(eq(leadActivities.leadId, attendeeId))
-        .orderBy(desc(leadActivities.date))
-        .limit(5);
 
       const activitiesText =
         activities.length === 0
@@ -130,7 +169,7 @@ Please generate a comprehensive account summary with:
           : activities
               .map((a) => {
                 const date = a.date ? new Date(a.date).toLocaleDateString("en-IN") : "Unknown";
-                return `- [${date}] ${a.type}${a.subject ? `: ${a.subject}` : ""} — ${a.notes ?? "No notes"}${a.outcome ? ` | Outcome: ${a.outcome}` : ""}`;
+                return `- [${date}] ${a.type}${a.subject ? `: ${a.subject}` : ""} — ${trunc(a.notes)}${a.outcome ? ` | Outcome: ${a.outcome}` : ""}`;
               })
               .join("\n");
 
@@ -150,28 +189,30 @@ LEAD PROFILE:
 - Potential Value: ${lead.potentialValue ? `₹${Number(lead.potentialValue).toLocaleString("en-IN")}` : "Not specified"}
 - Investment Interest: ${lead.investmentInterest ? `₹${Number(lead.investmentInterest).toLocaleString("en-IN")}` : "Not specified"}
 - Tags: ${lead.tags?.join(", ") ?? "None"}
-- Notes: ${lead.notes ?? "None"}
-- Follow-up Notes: ${lead.followUpNotes ?? "None"}
+- Notes: ${trunc(lead.notes)}
+- Follow-up Notes: ${trunc(lead.followUpNotes)}
 
 PREVIOUS INTERACTIONS:
 ${activitiesText}`;
     } else {
-      const account = await this.db.query.clientAccounts.findFirst({
-        where: and(eq(clientAccounts.id, attendeeId), eq(clientAccounts.orgId, orgId)),
-      });
+      const [account, activities] = await Promise.all([
+        this.db.query.clientAccounts.findFirst({
+          where: and(eq(clientAccounts.id, attendeeId), eq(clientAccounts.orgId, orgId)),
+        }),
+        this.db
+          .select({
+            activityType: clientAccountActivities.activityType,
+            description: clientAccountActivities.description,
+            createdAt: clientAccountActivities.createdAt,
+          })
+          .from(clientAccountActivities)
+          .where(eq(clientAccountActivities.clientAccountId, attendeeId))
+          .orderBy(desc(clientAccountActivities.createdAt))
+          .limit(5),
+      ]);
+
       if (!account) throw new NotFoundException("Client account not found");
       attendeeName = account.clientName;
-
-      const activities = await this.db
-        .select({
-          activityType: clientAccountActivities.activityType,
-          description: clientAccountActivities.description,
-          createdAt: clientAccountActivities.createdAt,
-        })
-        .from(clientAccountActivities)
-        .where(eq(clientAccountActivities.clientAccountId, attendeeId))
-        .orderBy(desc(clientAccountActivities.createdAt))
-        .limit(5);
 
       const activitiesText =
         activities.length === 0
@@ -179,7 +220,7 @@ ${activitiesText}`;
           : activities
               .map((a) => {
                 const date = a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-IN") : "Unknown";
-                return `- [${date}] ${a.activityType}: ${a.description ?? "No description"}`;
+                return `- [${date}] ${a.activityType}: ${trunc(a.description)}`;
               })
               .join("\n");
 
@@ -195,8 +236,8 @@ CLIENT PROFILE:
 - Investment Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}
 - Renewal Stage: ${account.renewalStage}
 - Renewal Date: ${account.renewalDate ?? "Not set"}
-- Renewal Notes: ${account.renewalNotes ?? "None"}
-- Conversion Notes: ${account.conversionNotes ?? "None"}
+- Renewal Notes: ${trunc(account.renewalNotes)}
+- Conversion Notes: ${trunc(account.conversionNotes)}
 
 RECENT INTERACTIONS:
 ${activitiesText}`;
@@ -204,7 +245,7 @@ ${activitiesText}`;
 
     const userPrompt = `Meeting Title: ${meetingTitle}
 Scheduled: ${new Date(scheduledAt).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}
-${notes ? `Additional Notes from Organizer: ${notes}` : ""}
+${notes ? `Additional Notes from Organizer: ${trunc(notes)}` : ""}
 
 ${contextString}
 
@@ -217,31 +258,46 @@ Please generate a structured pre-meeting brief with:
 6. Suggested Questions to Ask (3-4 open-ended questions to drive the conversation)
 7. Preparation Checklist (materials or data to prepare before the meeting)`;
 
-    const brief = await this.llm.invokeText({
-      model: "standard",
-      system:
-        "You are an executive assistant preparing meeting briefs for an Indian investment firm sales team. Generate structured, concise pre-meeting briefs that help the team walk into every meeting fully prepared. Be specific, actionable, and tailor advice to the Indian B2B financial services context.",
-      user: userPrompt,
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.meeting-prep",
+      prompt: {
+        system:
+          "You are an executive assistant preparing meeting briefs for an Indian investment firm sales team. Generate structured, concise pre-meeting briefs that help the team walk into every meeting fully prepared. Be specific, actionable, and tailor advice to the Indian B2B financial services context.",
+        user: userPrompt,
+      },
+      tier: "standard",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("crm.meeting-prep") },
     });
 
-    return { brief, attendeeName, generatedAt: new Date().toISOString() };
+    if (!result.ok) throwOnAiFailure(result);
+    return { brief: result.data, attendeeName, generatedAt: new Date().toISOString() };
   }
 
-  async nlSearch(orgId: string, input: NlSearchInput) {
-    const parsedFilters = await this.llm.invokeStructured({
-      model: "fast",
+  async nlSearch(orgId: string, input: NlSearchInput, userId?: string) {
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.nl-search",
+      prompt: {
+        system:
+          "You are a CRM query parser. Convert natural language lead search queries into structured filter objects. " +
+          "For Indian context: '1L' = 100000, '5L' = 500000, '10L' = 1000000, '1Cr' = 10000000, '2Cr' = 20000000. " +
+          "Status values must be uppercase: NEW, CONTACTED, INTERESTED, QUALIFIED, CONVERTED, LOST. " +
+          "Priority values must be uppercase: HOT, WARM, COLD. " +
+          "Source values: referral, campaign, cold_call, website, social_media, walk_in, other. " +
+          "Extract city, company, name, and assignedToName from the query when mentioned. " +
+          "Only populate fields that are clearly mentioned in the query.",
+        user: input.query,
+      },
       schema: NlSearchFilterSchema,
-      schemaName: "lead_filters",
-      system:
-        "You are a CRM query parser. Convert natural language lead search queries into structured filter objects. " +
-        "For Indian context: '1L' = 100000, '5L' = 500000, '10L' = 1000000, '1Cr' = 10000000, '2Cr' = 20000000. " +
-        "Status values must be uppercase: NEW, CONTACTED, INTERESTED, QUALIFIED, CONVERTED, LOST. " +
-        "Priority values must be uppercase: HOT, WARM, COLD. " +
-        "Source values: referral, campaign, cold_call, website, social_media, walk_in, other. " +
-        "Extract city, company, name, and assignedToName from the query when mentioned. " +
-        "Only populate fields that are clearly mentioned in the query.",
-      user: input.query,
+      tier: "fast",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.nl-search") },
     });
+
+    if (!result.ok) throwOnAiFailure(result);
+    const parsedFilters = result.data;
 
     const conditions = [eq(leads.orgId, orgId)];
     if (parsedFilters.status?.length) conditions.push(inArray(leads.status, parsedFilters.status));
@@ -288,7 +344,7 @@ Please generate a structured pre-meeting brief with:
       });
     }
 
-    const result = filteredRows.map((r) => ({
+    const leadsResult = filteredRows.map((r) => ({
       id: r.id,
       name: r.name,
       email: r.email,
@@ -302,6 +358,120 @@ Please generate a structured pre-meeting brief with:
         `${r.assigneeFirstName ?? ""} ${r.assigneeLastName ?? ""}`.trim() || r.assigneeName || null,
     }));
 
-    return { query: input.query, parsedFilters, leads: result, total: result.length };
+    return { query: input.query, parsedFilters, leads: leadsResult, total: leadsResult.length };
+  }
+
+  async meetingFollowUpDraft(orgId: string, input: MeetingFollowUpInput, userId?: string) {
+    const flags = await this.orgFeatures.getFlags(orgId);
+    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
+
+    let attendeeName = "Unknown";
+
+    if (input.attendeeType === "lead") {
+      const lead = await this.db.query.leads.findFirst({
+        where: and(eq(leads.id, input.attendeeId), eq(leads.orgId, orgId)),
+      });
+      if (!lead) throw new NotFoundException("Lead not found");
+      attendeeName = lead.name;
+    } else {
+      const account = await this.db.query.clientAccounts.findFirst({
+        where: and(eq(clientAccounts.id, input.attendeeId), eq(clientAccounts.orgId, orgId)),
+      });
+      if (!account) throw new NotFoundException("Client account not found");
+      attendeeName = account.clientName;
+    }
+
+    const actionItemsText = (input.actionItems ?? []).length > 0
+      ? input.actionItems!.map((item, i) => `${i + 1}. ${item}`).join("\n")
+      : "No specific action items recorded.";
+
+    const userPrompt = `Draft a professional follow-up email for this meeting.
+
+Meeting: ${input.meetingTitle}
+Attendee: ${attendeeName}
+Scheduled: ${new Date(input.scheduledAt).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}
+Outcome: ${input.outcome}
+${input.notes ? `Additional Notes: ${trunc(input.notes)}` : ""}
+
+Agreed Action Items:
+${actionItemsText}
+
+Write a concise, professional follow-up email (subject + body) that:
+1. Thanks the attendee for their time
+2. Summarizes the key outcomes from the meeting
+3. Lists the agreed action items clearly
+4. Sets expectations for next steps
+Keep the tone professional but warm. Max 200 words for the body.`;
+
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId: userId ?? null },
+      feature: "crm.meeting-follow-up",
+      prompt: {
+        system: "You are an executive assistant drafting professional follow-up emails for an Indian investment firm. Write clear, concise, and actionable follow-up emails. Never auto-send; return draft text only.",
+        user: userPrompt,
+      },
+      tier: "standard",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("crm.meeting-follow-up") },
+    });
+
+    if (!result.ok) throwOnAiFailure(result);
+    return { draft: result.data, attendeeName, generatedAt: new Date().toISOString() };
+  }
+
+  async accountSummaryWithCitations(orgId: string, input: AccountSummaryInput, userId?: string) {
+    const account = await this.db.query.clientAccounts.findFirst({
+      where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
+    });
+
+    if (!account) throw new NotFoundException("Client account not found");
+
+    const [resolvedLead, activities] = await Promise.all([
+      account.leadId
+        ? this.db.query.leads.findFirst({ where: eq(leads.id, account.leadId) })
+        : Promise.resolve(null),
+      this.db
+        .select({
+          activityType: clientAccountActivities.activityType,
+          description: clientAccountActivities.description,
+          createdAt: clientAccountActivities.createdAt,
+        })
+        .from(clientAccountActivities)
+        .where(eq(clientAccountActivities.clientAccountId, input.clientId))
+        .orderBy(desc(clientAccountActivities.createdAt))
+        .limit(20),
+    ]);
+
+    const citations: CitationItem[] = [
+      {
+        id: `account-${account.id}`,
+        title: "Account Profile",
+        snippet: `${account.clientName} — Plan: ${account.planName ?? "N/A"}, Status: ${account.status}, Renewal Stage: ${account.renewalStage}`,
+      },
+    ];
+    if (account.investmentAmount) {
+      citations.push({
+        id: `account-investment-${account.id}`,
+        title: "Investment Details",
+        snippet: `Investment: ₹${Number(account.investmentAmount).toLocaleString("en-IN")}, Date: ${account.investmentDate ? new Date(account.investmentDate).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+    if (activities.length > 0) {
+      citations.push({
+        id: `account-activities-${account.id}`,
+        title: "Recent Activity Summary",
+        snippet: `${activities.length} activities recorded. Latest: ${activities[0]?.activityType ?? "N/A"} on ${activities[0]?.createdAt ? new Date(activities[0].createdAt).toLocaleDateString("en-IN") : "N/A"}`,
+      });
+    }
+    if (resolvedLead) {
+      citations.push({
+        id: `lead-${resolvedLead.id}`,
+        title: "Lead Context",
+        snippet: `Source: ${resolvedLead.source ?? "N/A"}, Priority: ${resolvedLead.priority ?? "N/A"}, City: ${resolvedLead.city ?? "N/A"}`,
+      });
+    }
+
+    const base = await this.accountSummary(orgId, input, userId);
+    return { ...base, citations };
   }
 }

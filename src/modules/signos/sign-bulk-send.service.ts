@@ -7,7 +7,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignTemplatesService, type TemplateSnapshot } from "./sign-templates.service";
+import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import type { CreateBulkSendJobInput } from "./dto/signos.schemas";
 
@@ -56,8 +56,8 @@ export class SignBulkSendService {
     const template = await this.templates.get(orgId, input.templateId);
     if (template.status !== "published") throw new BadRequestException("Only published templates can be used for bulk send");
 
-    const snapshot = template.templateJson as unknown as TemplateSnapshot;
-    const signingRoles = snapshot.roles?.filter((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType)) ?? [];
+    const snapshot = parseTemplateSnapshot(template.templateJson);
+    const signingRoles = snapshot.roles.filter((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
     if (signingRoles.length !== 1) {
       throw new BadRequestException("Bulk send requires a template with exactly one signer role (mail-merge style)");
     }

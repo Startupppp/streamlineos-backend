@@ -1,11 +1,11 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { and, eq, lte, lt, or, desc, inArray } from "drizzle-orm";
 import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
-import type { NotificationChannel, NotificationPriority } from "./notification.types";
+import type { NotificationChannel } from "./notification.types";
 
 const BATCH_SIZE = 50;
 const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
@@ -19,14 +19,44 @@ export interface QueueRunResult {
 }
 
 @Injectable()
-export class NotificationDeliveryWorker {
+export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationDeliveryWorker.name);
   private readonly workerId = `${process.pid}-${randomUUID().slice(0, 8)}`;
+  private drainTimer: NodeJS.Timeout | null = null;
+  private draining = false;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationProviderRegistry,
   ) {}
+
+  onModuleInit(): void {
+    if (process.env.NOTIFICATIONS_INPROCESS_WORKER === "false") return;
+    const intervalMs = Number(process.env.NOTIFICATIONS_WORKER_INTERVAL_MS) || 15_000;
+    this.drainTimer = setInterval(() => {
+      void this.drainTick();
+    }, intervalMs);
+    this.drainTimer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.drainTimer) clearInterval(this.drainTimer);
+    this.drainTimer = null;
+  }
+
+  private async drainTick(): Promise<void> {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      await this.processQueue();
+    } catch (error) {
+      this.logger.error(
+        `in-process delivery drain failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.draining = false;
+    }
+  }
 
   async processQueue(): Promise<QueueRunResult> {
     const now = new Date();
@@ -111,7 +141,7 @@ export class NotificationDeliveryWorker {
     sandbox: boolean,
     result: QueueRunResult,
   ): Promise<void> {
-    const channel = delivery.channel as NotificationChannel;
+    const channel = delivery.channel;
     const provider = this.registry.get(channel);
     if (!provider) {
       await this.markDead(jobId, delivery.id, "NO_PROVIDER", `No provider for ${channel}`);
@@ -132,7 +162,7 @@ export class NotificationDeliveryWorker {
       title: meta.title ?? "Notification",
       message: meta.message ?? "",
       link: meta.link ?? null,
-      priority: delivery.priority as NotificationPriority,
+      priority: delivery.priority,
       sandbox,
     });
 

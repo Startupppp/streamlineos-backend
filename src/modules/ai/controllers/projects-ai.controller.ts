@@ -10,6 +10,8 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
@@ -21,9 +23,11 @@ import {
   planBodySchema,
   extractBodySchema,
   askBodySchema,
+  weeklyUpdateBodySchema,
   type PlanBodyInput,
   type ExtractBodyInput,
   type AskBodyInput,
+  type WeeklyUpdateBodyInput,
 } from "../dto/pm.schemas";
 import {
   improveDescriptionBodySchema,
@@ -41,8 +45,9 @@ function parseProjectId(raw: string): number {
 }
 
 @Controller("ai")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("projects:ai:use")
+@UseRateLimit("ai:invoke")
 export class ProjectsAiController {
   constructor(
     private readonly llm: LlmService,
@@ -140,5 +145,48 @@ export class ProjectsAiController {
     requireFeature(u.plan, "ai.ticket-insights");
     this.ensureLlm();
     return this.ticketAi.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+  }
+
+  @Post("projects/:projectId/weekly-update")
+  async weeklyUpdate(
+    @Param("projectId") rawId: string,
+    @Body(new ZodValidationPipe(weeklyUpdateBodySchema)) body: WeeklyUpdateBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.project-manager");
+    this.ensureLlm();
+    return this.projectsAi.weeklyUpdate(u.orgId, parseProjectId(rawId), body.startDate, body.endDate, u.userId);
+  }
+
+  @Post("projects/:projectId/meetings/:meetingId/extract-actions")
+  async extractMeetingActions(
+    @Param("projectId") rawPid: string,
+    @Param("meetingId") rawMid: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.project-manager");
+    this.ensureLlm();
+    return this.ticketAi.extractMeetingActions(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawMid, "meetingId"));
+  }
+
+  @Post("projects/:projectId/change-impact")
+  async changeImpact(
+    @Param("projectId") rawId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.project-manager");
+    this.ensureLlm();
+    return this.projectsAi.changeImpact(u.orgId, parseProjectId(rawId), u.userId);
+  }
+
+  @Post("tickets/:projectId/:ticketId/handoff")
+  async ticketHandoff(
+    @Param("projectId") rawPid: string,
+    @Param("ticketId") rawTid: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.handoffSummary(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 }

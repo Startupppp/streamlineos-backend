@@ -95,17 +95,6 @@ export const crmTeamPerformance = pgTable("crm_team_performance", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const crmSupportTeamMembers = pgTable("crm_support_team_members", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  role: text("role").notNull(),
-  access: text("access").notNull(),
-  avatar: text("avatar").notNull(),
-  status: text("status").default("online").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
 export const crmEmailTemplates = pgTable("crm_email_templates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -161,22 +150,6 @@ export const crmViews = pgTable("crm_views", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_views_org").on(table.orgId),
-]);
-
-export const emailCampaignRecipients = pgTable("email_campaign_recipients", {
-  id: serial("id").primaryKey(),
-  campaignId: integer("campaign_id").notNull(),
-  leadId: integer("lead_id"),
-  email: text("email").notNull(),
-  name: text("name"),
-  status: text("status").default("pending").notNull(),
-  sentAt: timestamp("sent_at"),
-  openedAt: timestamp("opened_at"),
-  clickedAt: timestamp("clicked_at"),
-  errorMessage: text("error_message"),
-}, (table) => [
-  index("idx_ecr_campaign").on(table.campaignId, table.status),
-  index("idx_ecr_lead").on(table.leadId),
 ]);
 
 export const crmPeopleRelations = relations(crmPeople, ({ one, many }) => ({

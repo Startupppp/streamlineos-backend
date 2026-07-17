@@ -23,7 +23,7 @@ export class ReservationService {
     const settings = await this.settingsService.get(orgId);
 
     if (input.locationId) {
-      await (tx as Db).insert(invStockLevels).values({
+      await tx.insert(invStockLevels).values({
         orgId, productVariantId: input.productVariantId,
         locationId: input.locationId, lotId: input.lotId ?? null,
         serialId: input.serialId ?? null,
@@ -31,7 +31,7 @@ export class ReservationService {
         blockedQty: "0", qualityHoldQty: "0", outgoingQty: "0",
       }).onConflictDoNothing();
 
-      const [level] = await (tx as Db).execute<{
+      const [level] = await tx.execute<{
         id: number; on_hand: string; committed: string; blocked_qty: string; quality_hold_qty: string;
       }>(sql`
         SELECT id, on_hand, committed, blocked_qty, quality_hold_qty
@@ -51,12 +51,12 @@ export class ReservationService {
         throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
       }
 
-      await (tx as Db).update(invStockLevels)
+      await tx.update(invStockLevels)
         .set({ committed: sql`committed + ${input.qty}::numeric` })
         .where(eq(invStockLevels.id, level.id));
     }
 
-    await (tx as Db).insert(invStockTransactions).values({
+    await tx.insert(invStockTransactions).values({
       orgId, productVariantId: input.productVariantId,
       locationId: input.locationId ?? null,
       lotId: input.lotId ?? null, serialId: input.serialId ?? null,
@@ -69,7 +69,7 @@ export class ReservationService {
       createdBy: userId,
     });
 
-    const [reservation] = await (tx as Db).insert(invStockReservations).values({
+    const [reservation] = await tx.insert(invStockReservations).values({
       orgId,
       sourceType: input.sourceType, sourceId: input.sourceId,
       sourceLineId: input.sourceLineId ?? null,
@@ -86,7 +86,7 @@ export class ReservationService {
 
   async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
     return this.db.transaction(async (tx) => {
-      const [reservation] = await (tx as Db).execute<{
+      const [reservation] = await tx.execute<{
         id: number; location_id: number | null; product_variant_id: number;
         lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
       }>(sql`
@@ -98,12 +98,12 @@ export class ReservationService {
 
       if (!reservation || reservation.status !== "ACTIVE") return;
 
-      await (tx as Db).update(invStockReservations)
+      await tx.update(invStockReservations)
         .set({ status: "RELEASED" })
         .where(eq(invStockReservations.id, reservationId));
 
       if (reservation.location_id) {
-        await (tx as Db).update(invStockLevels)
+        await tx.update(invStockLevels)
           .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
           .where(and(
             eq(invStockLevels.orgId, orgId),
@@ -112,7 +112,7 @@ export class ReservationService {
           ));
       }
 
-      await (tx as Db).insert(invStockTransactions).values({
+      await tx.insert(invStockTransactions).values({
         orgId, productVariantId: reservation.product_variant_id,
         locationId: reservation.location_id,
         transactionType: "RESERVATION_RELEASE",
@@ -125,7 +125,7 @@ export class ReservationService {
 
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
     return this.db.transaction(async (tx) => {
-      const [reservation] = await (tx as Db).execute<{
+      const [reservation] = await tx.execute<{
         id: number; location_id: number | null; product_variant_id: number; reserved_qty: string; status: string;
       }>(sql`
         SELECT id, location_id, product_variant_id, reserved_qty, status
@@ -135,15 +135,15 @@ export class ReservationService {
 
       if (!reservation || reservation.status !== "ACTIVE") return;
 
-      await (tx as Db).update(invStockReservations).set({ status: "CONSUMED" }).where(eq(invStockReservations.id, reservationId));
+      await tx.update(invStockReservations).set({ status: "CONSUMED" }).where(eq(invStockReservations.id, reservationId));
 
       if (reservation.location_id) {
-        await (tx as Db).update(invStockLevels)
+        await tx.update(invStockLevels)
           .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
           .where(and(eq(invStockLevels.orgId, orgId), eq(invStockLevels.productVariantId, reservation.product_variant_id), eq(invStockLevels.locationId, reservation.location_id)));
       }
 
-      await (tx as Db).insert(invStockTransactions).values({
+      await tx.insert(invStockTransactions).values({
         orgId, productVariantId: reservation.product_variant_id,
         locationId: reservation.location_id, transactionType: "RESERVATION_CONSUME",
         quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
@@ -168,7 +168,7 @@ export class ReservationService {
 
     const activeIds = reservations.map((r) => r.id);
 
-    await (tx as Db).execute(sql`
+    await tx.execute(sql`
       UPDATE inv_stock_reservations
       SET status = 'CONSUMED', updated_at = NOW()
       WHERE id = ANY(ARRAY[${sql.join(activeIds.map((id) => sql`${id}`), sql`, `)}]::int[])
@@ -178,7 +178,7 @@ export class ReservationService {
 
     const withLocation = reservations.filter((r) => r.locationId !== null);
     for (const r of withLocation) {
-      await (tx as Db).update(invStockLevels)
+      await tx.update(invStockLevels)
         .set({ committed: sql`GREATEST(0, committed - ${r.reservedQty}::numeric)` })
         .where(and(
           eq(invStockLevels.orgId, orgId),
@@ -188,7 +188,7 @@ export class ReservationService {
     }
 
     if (withLocation.length > 0) {
-      await (tx as Db).insert(invStockTransactions).values(
+      await tx.insert(invStockTransactions).values(
         withLocation.map((r) => ({
           orgId,
           productVariantId: r.productVariantId,

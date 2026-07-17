@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { organizations, orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -51,9 +51,17 @@ function isMissingRelationError(error: unknown): boolean {
   return "message" in error && typeof error.message === "string" && error.message.includes("does not exist");
 }
 
+interface ModuleMapEntry {
+  map: Record<string, boolean>;
+  expiresAt: number;
+}
+
+const MODULE_MAP_LOCAL_TTL_MS = 15_000;
+
 @Injectable()
 export class EntitlementsService {
   private missingTableLogged = false;
+  private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -76,19 +84,28 @@ export class EntitlementsService {
     }
   }
 
-  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
-    const key = `entitlements:module:${orgId}:${moduleKey}`;
-    return this.cache.cached(key, async () => {
-      const row = await this.safeRead(
-        () =>
-          this.db.query.orgModules.findFirst({
-            where: and(eq(orgModules.orgId, orgId), eq(orgModules.moduleKey, moduleKey)),
-          }),
-        undefined,
+  async getModuleMap(orgId: string): Promise<Record<string, boolean>> {
+    const local = this.moduleMapCache.get(orgId);
+    if (local && local.expiresAt > Date.now()) return local.map;
+
+    const key = `entitlements:modules:${orgId}`;
+    const map = await this.cache.cached(key, async () => {
+      const rows = await this.safeRead(
+        () => this.db.query.orgModules.findMany({ where: eq(orgModules.orgId, orgId) }),
+        [],
       );
-      if (row === undefined) return true;
-      return row?.enabled ?? true;
+      const result: Record<string, boolean> = {};
+      for (const row of rows) result[row.moduleKey] = row.enabled;
+      return result;
     }, 30);
+    this.moduleMapCache.set(orgId, { map, expiresAt: Date.now() + MODULE_MAP_LOCAL_TTL_MS });
+    return map;
+  }
+
+  async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+    const map = await this.getModuleMap(orgId);
+    if (!(moduleKey in map)) return true;
+    return map[moduleKey] ?? true;
   }
 
   async setModuleEnabled(
@@ -133,6 +150,7 @@ export class EntitlementsService {
       }
     });
 
+    this.moduleMapCache.delete(orgId);
     await this.cache.invalidate(`entitlements:module:${orgId}:${moduleKey}`);
     await this.cache.invalidate(`entitlements:modules:${orgId}`);
     await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));

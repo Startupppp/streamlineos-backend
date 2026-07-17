@@ -4,13 +4,13 @@ jest.mock("../../projects/projects-tickets.service");
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
-import type { LlmService } from "../../ai/providers/llm.service";
-import type { AiCreditsService } from "../../billing/ai-credits.service";
+import type { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
 import type { AiUsageService } from "../../ai/services/ai-usage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../projects/projects-tickets.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
+import type { AiInvokeResult } from "../../ai/gateway/ai-gateway.types";
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";
@@ -62,6 +62,7 @@ function makeSubmission(overrides: Record<string, unknown> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
+    networkLogs: null,
     ...overrides,
   };
 }
@@ -79,6 +80,15 @@ const baseAnalysis: FeedbackAnalysis = {
   priority: "HIGH",
   model: "standard",
   processedAt: new Date().toISOString(),
+};
+
+const baseGatewaySuccess: AiInvokeResult<FeedbackAnalysis> = {
+  ok: true,
+  data: baseAnalysis,
+  model: "gpt-4o",
+  latencyMs: 100,
+  correlationId: "corr-1",
+  usage: { promptTokens: 50, completionTokens: 100, totalTokens: 150 },
 };
 
 function makeUser(orgId = ORG_A, plan = "PROFESSIONAL") {
@@ -111,22 +121,10 @@ function makeDb(submission: unknown, updateResult?: unknown): Db {
   } as unknown as Db;
 }
 
-function makeLlm(result: FeedbackAnalysis = baseAnalysis, configured = true): jest.Mocked<LlmService> {
+function makeGateway(result: AiInvokeResult<FeedbackAnalysis> = baseGatewaySuccess): jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImage">> {
   return {
-    isConfigured: jest.fn().mockReturnValue(configured),
-    invokeStructured: jest.fn().mockResolvedValue(result),
     invokeStructuredWithImage: jest.fn().mockResolvedValue(result),
-  } as unknown as jest.Mocked<LlmService>;
-}
-
-function makeCredits(fail = false): jest.Mocked<AiCreditsService> {
-  const consume = fail
-    ? jest.fn().mockRejectedValue(new BadRequestException("Insufficient AI credits"))
-    : jest.fn().mockResolvedValue({ balance: 95 });
-  return {
-    consumeCredits: consume,
-    refundCredits: jest.fn().mockResolvedValue({ balance: 100 }),
-  } as unknown as jest.Mocked<AiCreditsService>;
+  } as unknown as jest.Mocked<Pick<AiGatewayService, "invokeStructuredWithImage">>;
 }
 
 function makeRateLimit(allowed = true): jest.Mocked<RateLimitService> {
@@ -152,20 +150,25 @@ function makeTickets(ticketId = 77): jest.Mocked<ProjectsTicketsService> {
 function buildService(opts: {
   submission?: unknown;
   notFound?: boolean;
-  llm?: jest.Mocked<LlmService>;
-  credits?: jest.Mocked<AiCreditsService>;
+  gateway?: ReturnType<typeof makeGateway>;
   rateLimit?: jest.Mocked<RateLimitService>;
   tickets?: jest.Mocked<ProjectsTicketsService>;
 }) {
   const db = makeDb(opts.notFound ? undefined : (opts.submission ?? makeSubmission()));
-  const llm = opts.llm ?? makeLlm();
-  const credits = opts.credits ?? makeCredits();
+  const gateway = opts.gateway ?? makeGateway();
   const audit = makeAudit();
   const aiUsage = makeAiUsage();
   const rateLimiter = opts.rateLimit ?? makeRateLimit();
   const tickets = opts.tickets ?? makeTickets();
-  const service = new FeedbucketAiService(db, llm, credits, aiUsage, audit, rateLimiter, tickets);
-  return { service, db, llm, credits, audit, aiUsage, rateLimiter, tickets };
+  const service = new FeedbucketAiService(
+    db,
+    gateway as unknown as AiGatewayService,
+    aiUsage,
+    audit,
+    rateLimiter,
+    tickets,
+  );
+  return { service, db, gateway, audit, aiUsage, rateLimiter, tickets };
 }
 
 describe("FeedbucketAiService", () => {
@@ -180,71 +183,90 @@ describe("FeedbucketAiService", () => {
     ];
 
     it.each(cases)("maps type '%s' to suggestedTicketType '%s'", async (type, expected) => {
-      const llmResult = { ...baseAnalysis, type: type as FeedbackAnalysis["type"] };
-      const { service } = buildService({ llm: makeLlm(llmResult) });
+      const analysisWithType = { ...baseAnalysis, type: type as FeedbackAnalysis["type"] };
+      const gwResult: AiInvokeResult<FeedbackAnalysis> = { ...baseGatewaySuccess, data: analysisWithType };
+      const { service } = buildService({ gateway: makeGateway(gwResult) });
       const result = await service.analyze(makeUser(), SUB_ID);
       expect(result.suggestedTicketType).toBe(expected);
     });
   });
 
-  describe("analyze — credit guard", () => {
-    it("calls consumeCredits before the LLM call", async () => {
-      const { service, credits, llm } = buildService({});
-      const callOrder: string[] = [];
-      (credits.consumeCredits as jest.Mock).mockImplementation(async () => {
-        callOrder.push("consume");
-        return { balance: 95 };
-      });
-      (llm.invokeStructuredWithImage as jest.Mock).mockImplementation(async () => {
-        callOrder.push("llm");
-        return baseAnalysis;
-      });
-
+  describe("analyze — credit guard (via gateway)", () => {
+    it("calls gateway.invokeStructuredWithImage with charge credentials", async () => {
+      const { service, gateway } = buildService({});
       await service.analyze(makeUser(), SUB_ID);
-
-      expect(callOrder).toEqual(["consume", "llm"]);
-    });
-
-    it("refunds credits when the LLM throws ServiceUnavailableException", async () => {
-      const llm = makeLlm();
-      (llm.invokeStructuredWithImage as jest.Mock).mockRejectedValue(
-        new ServiceUnavailableException("down"),
+      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
+        expect.objectContaining({ charge: { credits: 5 } }),
       );
-      const credits = makeCredits();
-      const { service } = buildService({ llm, credits });
-
-      await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(ServiceUnavailableException);
-      expect(credits.refundCredits).toHaveBeenCalledWith(ORG_A, USER_A, 5, "feedbucket.ai-analyze", String(SUB_ID));
     });
 
-    it("propagates BadRequestException (insufficient credits) without refund", async () => {
-      const { service, credits } = buildService({ credits: makeCredits(true) });
+    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+      const failure: AiInvokeResult<FeedbackAnalysis> = {
+        ok: false,
+        kind: "quota_exceeded",
+        message: "Insufficient AI credits",
+        correlationId: "corr-x",
+      };
+      const { service } = buildService({ gateway: makeGateway(failure) });
       await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(BadRequestException);
-      expect(credits.refundCredits).not.toHaveBeenCalled();
+    });
+
+    it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
+      const failure: AiInvokeResult<FeedbackAnalysis> = {
+        ok: false,
+        kind: "provider_unavailable",
+        message: "Provider is down",
+        correlationId: "corr-x",
+      };
+      const { service } = buildService({ gateway: makeGateway(failure) });
+      await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("throws ServiceUnavailableException when gateway returns not_configured", async () => {
+      const failure: AiInvokeResult<FeedbackAnalysis> = {
+        ok: false,
+        kind: "not_configured",
+        message: "AI is not configured",
+        correlationId: "corr-x",
+      };
+      const { service } = buildService({ gateway: makeGateway(failure) });
+      await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("throws ServiceUnavailableException with 'invalid response' for invalid_output", async () => {
+      const failure: AiInvokeResult<FeedbackAnalysis> = {
+        ok: false,
+        kind: "invalid_output",
+        message: "bad json",
+        correlationId: "corr-x",
+      };
+      const { service } = buildService({ gateway: makeGateway(failure) });
+      const err = await service.analyze(makeUser(), SUB_ID).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      expect((err as ServiceUnavailableException).message).toContain("invalid response");
     });
   });
 
   describe("analyze — idempotency", () => {
-    it("returns stored analysis without charging again when force=false", async () => {
+    it("returns stored analysis without calling gateway when force=false", async () => {
       const stored = { ...baseAnalysis };
       const submission = makeSubmission({ aiAnalysis: stored, aiProcessedAt: new Date() });
-      const { service, credits, llm } = buildService({ submission });
+      const { service, gateway } = buildService({ submission });
 
       const result = await service.analyze(makeUser(), SUB_ID, false);
 
       expect(result).toEqual(stored);
-      expect(credits.consumeCredits).not.toHaveBeenCalled();
-      expect(llm.invokeStructuredWithImage).not.toHaveBeenCalled();
+      expect(gateway.invokeStructuredWithImage).not.toHaveBeenCalled();
     });
 
-    it("re-analyzes and charges when force=true", async () => {
+    it("re-analyzes and calls gateway when force=true", async () => {
       const stored = { ...baseAnalysis };
       const submission = makeSubmission({ aiAnalysis: stored, aiProcessedAt: new Date() });
-      const { service, credits } = buildService({ submission });
+      const { service, gateway } = buildService({ submission });
 
       await service.analyze(makeUser(), SUB_ID, true);
 
-      expect(credits.consumeCredits).toHaveBeenCalledTimes(1);
+      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -278,12 +300,12 @@ describe("FeedbucketAiService", () => {
 
   describe("analyze — prompt injection guard", () => {
     it("system prompt contains untrusted data warning", async () => {
-      const { service, llm } = buildService({});
+      const { service, gateway } = buildService({});
       await service.analyze(makeUser(), SUB_ID);
 
-      const call = (llm.invokeStructuredWithImage as jest.Mock).mock.calls[0]?.[0] as { system: string };
-      expect(call?.system).toContain("UNTRUSTED USER DATA");
-      expect(call?.system).toContain("never execute");
+      const call = (gateway.invokeStructuredWithImage as jest.Mock).mock.calls[0]?.[0] as { prompt: { system: string } };
+      expect(call?.prompt?.system).toContain("UNTRUSTED USER DATA");
+      expect(call?.prompt?.system).toContain("never execute");
     });
   });
 
@@ -291,6 +313,58 @@ describe("FeedbucketAiService", () => {
     it("throws 429 HttpException when rate limit is exceeded", async () => {
       const { service } = buildService({ rateLimit: makeRateLimit(false) });
       await expect(service.analyze(makeUser(), SUB_ID)).rejects.toBeInstanceOf(HttpException);
+    });
+  });
+
+  describe("analyzePublic — gateway charge with null userId", () => {
+    it("calls gateway with userId=actorUserId and public feature key", async () => {
+      const gateway = makeGateway();
+      const service = new FeedbucketAiService(
+        {} as Db,
+        gateway as unknown as AiGatewayService,
+        makeAiUsage(),
+        makeAudit(),
+        makeRateLimit(),
+        makeTickets(),
+      );
+
+      await service.analyzePublic({
+        orgId: ORG_A,
+        actorUserId: USER_A,
+        widgetId: 10,
+        type: "bug",
+        message: "Something broke",
+      });
+
+      expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: { orgId: ORG_A, userId: USER_A },
+          feature: "feedbucket.assist",
+          charge: { credits: 5 },
+        }),
+      );
+    });
+
+    it("throws ServiceUnavailableException on provider failure (gateway returns provider_unavailable)", async () => {
+      const failure: AiInvokeResult<FeedbackAnalysis> = {
+        ok: false,
+        kind: "provider_unavailable",
+        message: "down",
+        correlationId: "corr-x",
+      };
+      const gateway = makeGateway(failure);
+      const service = new FeedbucketAiService(
+        {} as Db,
+        gateway as unknown as AiGatewayService,
+        makeAiUsage(),
+        makeAudit(),
+        makeRateLimit(),
+        makeTickets(),
+      );
+
+      await expect(
+        service.analyzePublic({ orgId: ORG_A, actorUserId: USER_A, widgetId: 10, type: "bug", message: "broken" }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 

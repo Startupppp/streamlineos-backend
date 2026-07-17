@@ -46,21 +46,25 @@ import {
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
 
+  @RequirePermission("settings:view")
   @Get("permissions")
   getPermissions() {
     return this.settings.getPermissions();
   }
 
+  @RequirePermission("settings:manage")
   @Get("ai-usage")
   getAiUsage(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getAiUsage(u);
   }
 
+  @RequirePermission("settings:api-tokens:read")
   @Get("api-keys")
   listApiKeys(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listApiKeys(u);
   }
 
+  @RequirePermission("settings:api-tokens:write")
   @Post("api-keys")
   @HttpCode(201)
   createApiKey(
@@ -70,6 +74,7 @@ export class SettingsController {
     return this.settings.createApiKey(u, body);
   }
 
+  @RequirePermission("settings:api-tokens:write")
   @Delete("api-keys/:keyId")
   revokeApiKey(
     @Param("keyId") keyId: string,
@@ -174,11 +179,13 @@ export class SettingsController {
     return this.settings.deleteCustomField(u.orgId, fieldId);
   }
 
+  @RequirePermission("settings:view")
   @Get("feature-flags")
   getFeatureFlags(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getFeatureFlags(u.orgId);
   }
 
+  @RequirePermission("settings:manage")
   @Patch("feature-flags")
   updateFeatureFlag(
     @Body(new ZodValidationPipe(featureFlagSchema)) body: FeatureFlagInput,
@@ -224,6 +231,7 @@ export class SettingsController {
     return this.settings.deleteGitConnection(u.orgId, connectionId);
   }
 
+  @RequirePermission("settings:rbac:manage")
   @Post("users/:userId/role")
   updateUserRole(
     @Param("userId") userId: string,

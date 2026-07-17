@@ -2,26 +2,15 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { NotificationChannelProvider } from "./notification-provider.interface";
 import type { NotificationChannel, ProviderSendInput, ProviderSendResult, ProviderValidationResult } from "../notification.types";
 import { dispatchEmail, getEmailProvider, isTransientError } from "../../email/email.provider";
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+import { getEmailTemplate, escapeHtml } from "../../email/templates/base";
+import { renderButton } from "../../email/templates/components";
 
 function buildHtml(input: ProviderSendInput): string {
   const title = escapeHtml(input.title);
   const message = escapeHtml(input.message);
-  const cta = input.link
-    ? `<p style="margin:24px 0 0"><a href="${escapeHtml(input.link)}" style="background:#0b1220;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:14px">Open</a></p>`
-    : "";
-  return `<div style="font-family:ui-sans-serif,system-ui,sans-serif;max-width:560px;margin:0 auto;color:#0b1220">
-    <h2 style="font-size:18px;margin:0 0 8px">${title}</h2>
-    <p style="font-size:14px;line-height:1.6;color:#334155;margin:0">${message}</p>
-    ${cta}
-  </div>`;
+  const cta = input.link ? renderButton("Open", input.link) : "";
+  const content = `<h1 class="email-title">${title}</h1><p class="email-text">${message}</p>${cta}`;
+  return getEmailTemplate({ title: input.title, content });
 }
 
 @Injectable()

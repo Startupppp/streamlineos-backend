@@ -38,3 +38,8 @@ export * from "./feedbucket";
 export * from "./notifications-delivery";
 export * from "./signos";
 export * from "./agent-tokens";
+export * from "./ai-jobs";
+export * from "./ai-feedback";
+export * from "./ai-confirmation";
+export * from "./workspace-search";
+export * from "./ai-summaries";

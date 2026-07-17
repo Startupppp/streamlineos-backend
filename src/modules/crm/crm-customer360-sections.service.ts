@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   contacts,
   clients,
@@ -69,7 +69,7 @@ export class CrmCustomer360SectionsService {
     const items = await this.db
       .select({ id: contacts.id, name: contacts.name, email: contacts.email, title: contacts.title, createdAt: contacts.createdAt })
       .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), sql`${contacts.leadId} = ANY(ARRAY[${sql.join(leadIds.map((id) => sql`${id}`), sql`, `)}]::int[])`, isNull(contacts.deletedAt)))
+      .where(and(eq(contacts.orgId, orgId), inArray(contacts.leadId, leadIds), isNull(contacts.deletedAt)))
       .orderBy(desc(contacts.createdAt))
       .limit(SECTION_LIMIT);
 
@@ -210,7 +210,7 @@ export class CrmCustomer360SectionsService {
     const items = await this.db
       .select({ id: payments.id, amount: payments.amount, paymentDate: payments.paymentDate, paymentMethod: payments.paymentMethod, createdAt: payments.createdAt })
       .from(payments)
-      .where(and(eq(payments.orgId, orgId), sql`${payments.invoiceId} = ANY(ARRAY[${sql.join(clientInvoiceIds.map((id) => sql`${id}`), sql`, `)}]::int[])`))
+      .where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, clientInvoiceIds)))
       .orderBy(desc(payments.createdAt))
       .limit(SECTION_LIMIT);
     return { items, total: items.length };

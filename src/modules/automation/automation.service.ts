@@ -1,4 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
+import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { createHmac } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -49,6 +51,17 @@ export interface EvaluationResult {
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
+function assertNever(x: never): never {
+  throw new Error(`Unhandled action type: ${String(x)}`);
+}
+
+const AI_ACTION_NODE_MAP: Record<string, AiNodeType> = {
+  ai_classify: "classify",
+  ai_summarize: "summarize",
+  ai_extract: "extract",
+  ai_routing_suggestion: "routing_suggestion",
+};
+
 @Injectable()
 export class AutomationService {
   constructor(
@@ -56,6 +69,7 @@ export class AutomationService {
     private readonly notifications: NotificationsService,
     private readonly email: AutomationEmailService,
     private readonly planLimits: PlanLimitsService,
+    private readonly aiNodeExecutor: AiNodeExecutorService,
   ) {}
 
   private async notifyMembers(
@@ -243,8 +257,23 @@ export class AutomationService {
           });
           return { type: action.type, ok: true };
         }
+        case "ai_classify":
+        case "ai_summarize":
+        case "ai_extract":
+        case "ai_routing_suggestion": {
+          const nodeType = AI_ACTION_NODE_MAP[action.type];
+          if (!nodeType) return { type: action.type, ok: false, error: "Unknown AI node type" };
+          const result = await this.aiNodeExecutor.executeNode(
+            orgId,
+            "system",
+            nodeType,
+            action.config,
+            payload,
+          );
+          return { type: action.type, ok: result.ok, error: result.error };
+        }
         default:
-          return { type: "webhook", ok: false, error: "Unknown action type" };
+          return assertNever(action);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Action execution failed";

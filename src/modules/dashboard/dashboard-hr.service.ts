@@ -105,41 +105,55 @@ export class DashboardHrService {
     );
   }
 
-  async getRoleStats(orgId: string): Promise<Record<string, number>> {
-    const rows = await this.db
-      .select({ role: users.role, cnt: sql<number>`count(*)::int` })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-      .groupBy(users.role);
-    return Object.fromEntries(rows.map((r) => [r.role, r.cnt]));
+  getRoleStats(orgId: string): Promise<Record<string, number>> {
+    return this.cache.cached(
+      `dashboard:role-stats:${orgId}`,
+      async () => {
+        const rows = await this.db
+          .select({ role: users.role, cnt: sql<number>`count(*)::int` })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+          .groupBy(users.role);
+        return Object.fromEntries(rows.map((r) => [r.role, r.cnt]));
+      },
+      CACHE_TTL.MEDIUM,
+    );
   }
 
-  async getTeamAttendance(orgId: string) {
+  getTeamAttendance(orgId: string) {
     const today = getTodayString();
+    return this.cache.cached(
+      `dashboard:team-attendance:${orgId}:${today}`,
+      () => this.buildTeamAttendance(orgId, today),
+      CACHE_TTL.SHORT,
+    );
+  }
 
-    const totalMembers = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
-
-    const todayAttendance = await this.db
-      .select({
-        userId: attendance.userId,
-        userName: users.name,
-        userImage: users.image,
-        userDesignation: users.designation,
-        checkIn: attendance.checkIn,
-        checkOut: attendance.checkOut,
-        status: attendance.status,
-      })
-      .from(attendance)
-      .innerJoin(users, eq(attendance.userId, users.id))
-      .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today)));
+  private async buildTeamAttendance(orgId: string, today: string) {
+    const [totalMembersResult, todayAttendance] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+      this.db
+        .select({
+          userId: attendance.userId,
+          userName: users.name,
+          userImage: users.image,
+          userDesignation: users.designation,
+          checkIn: attendance.checkIn,
+          checkOut: attendance.checkOut,
+          status: attendance.status,
+        })
+        .from(attendance)
+        .innerJoin(users, eq(attendance.userId, users.id))
+        .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
+    ]);
 
     const clockedIn = todayAttendance.filter((a) => a.checkIn && !a.checkOut).length;
-    const total = totalMembers[0]?.count ?? 0;
+    const total = totalMembersResult[0]?.count ?? 0;
 
     return {
       total,
@@ -156,72 +170,79 @@ export class DashboardHrService {
   }
 
   private async buildBirthdays(orgId: string): Promise<BirthdayEntry[]> {
-    const members = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        designation: users.designation,
-        image: users.image,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
-      })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
-
     const today = new Date();
-    const upcoming: BirthdayEntry[] = [];
+    const windowDates = Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      return { str: d.toISOString().split("T")[0], mmdd: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` };
+    });
+    const mmddList = windowDates.map((w) => w.mmdd);
+    const mmddByDate = new Map(windowDates.map((w) => [w.mmdd, w.str]));
 
-    for (const member of members) {
-      for (let offset = 0; offset <= 7; offset++) {
-        const check = new Date(today);
-        check.setDate(today.getDate() + offset);
-        const cm = check.getMonth() + 1;
-        const cd = check.getDate();
+    const mmddValues = sql.join(mmddList.map((d) => sql`${d}`), sql`, `);
 
-        if (member.dateOfBirth) {
-          const dob = new Date(member.dateOfBirth);
-          if (dob.getMonth() + 1 === cm && dob.getDate() === cd) {
-            upcoming.push({
-              id: member.id,
-              name: member.name,
-              designation: member.designation,
-              image: member.image,
-              type: "birthday",
-              date: check.toISOString().split("T")[0],
-            });
-          }
-        }
+    const [bdayMembers, annivMembers] = await Promise.all([
+      this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          designation: users.designation,
+          image: users.image,
+          mmdd: sql<string>`to_char(${users.dateOfBirth}::date, 'MM-DD')`,
+        })
+        .from(users)
+        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.isActive, true),
+            sql`to_char(${users.dateOfBirth}::date, 'MM-DD') IN (${mmddValues})`,
+          ),
+        )
+        .limit(50),
 
-        if (member.joiningDate) {
-          const jd = new Date(member.joiningDate);
-          if (jd.getMonth() + 1 === cm && jd.getDate() === cd) {
-            const years = check.getFullYear() - jd.getFullYear();
-            if (years > 0) {
-              upcoming.push({
-                id: member.id,
-                name: member.name,
-                designation: member.designation,
-                image: member.image,
-                type: "anniversary",
-                date: check.toISOString().split("T")[0],
-                yearsCompleted: years,
-              });
-            }
-          }
-        }
-      }
+      this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          designation: users.designation,
+          image: users.image,
+          joiningDate: users.joiningDate,
+          mmdd: sql<string>`to_char(${users.joiningDate}::date, 'MM-DD')`,
+        })
+        .from(users)
+        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.isActive, true),
+            sql`to_char(${users.joiningDate}::date, 'MM-DD') IN (${mmddValues})`,
+            sql`EXTRACT(YEAR FROM age(${users.joiningDate}::date)) >= 1`,
+          ),
+        )
+        .limit(50),
+    ]);
+
+    const result: BirthdayEntry[] = [];
+    const seen = new Set<string>();
+
+    for (const m of bdayMembers) {
+      const key = `${m.id}-birthday`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push({ id: m.id, name: m.name, designation: m.designation, image: m.image, type: "birthday", date: mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0] });
     }
 
-    const seen = new Set<string>();
-    const deduped = upcoming.filter((u) => {
-      const dedupeKey = `${u.id}-${u.type}`;
-      if (seen.has(dedupeKey)) return false;
-      seen.add(dedupeKey);
-      return true;
-    });
+    for (const m of annivMembers) {
+      const key = `${m.id}-anniversary`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const dateStr = mmddByDate.get(m.mmdd) ?? today.toISOString().split("T")[0];
+      const years = m.joiningDate ? new Date(dateStr).getFullYear() - new Date(m.joiningDate).getFullYear() : 0;
+      result.push({ id: m.id, name: m.name, designation: m.designation, image: m.image, type: "anniversary", date: dateStr, yearsCompleted: years });
+    }
 
-    return deduped.slice(0, 20);
+    return result.slice(0, 20);
   }
 
   async getPersonalDashboard(orgId: string, userId: string) {

@@ -47,7 +47,6 @@ type OrgSettingsUpdate = {
 
 type SecuritySettingsUpdate = {
   mfaEnforced?: boolean;
-  passwordExpiryDays?: number | null;
   allowedEmailDomains?: string[];
   maxConcurrentSessions?: number | null;
 };
@@ -176,8 +175,6 @@ export class OrganizationSettingsService {
   ) {
     const updateData: SecuritySettingsUpdate = {};
     if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
-    if (input.passwordExpiryDays !== undefined)
-      updateData.passwordExpiryDays = input.passwordExpiryDays;
     if (input.allowedEmailDomains !== undefined)
       updateData.allowedEmailDomains = input.allowedEmailDomains;
     if (input.maxConcurrentSessions !== undefined)

@@ -25,35 +25,36 @@ export class IncentivesService {
       conditions.push(eq(incentives.status, params.status));
     }
 
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(incentives)
-      .where(and(...conditions));
+    const [[countResult], rows] = await Promise.all([
+      this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(incentives)
+        .where(and(...conditions)),
+      this.db
+        .select({
+          id: incentives.id,
+          orgId: incentives.orgId,
+          salesRepId: incentives.salesRepId,
+          clientAccountId: incentives.clientAccountId,
+          investmentAmount: incentives.investmentAmount,
+          incentiveRate: incentives.incentiveRate,
+          calculatedAmount: incentives.calculatedAmount,
+          approvedAmount: incentives.approvedAmount,
+          status: incentives.status,
+          notes: incentives.notes,
+          createdAt: incentives.createdAt,
+          salesRepName: users.name,
+          salesRepImage: users.image,
+        })
+        .from(incentives)
+        .innerJoin(users, eq(incentives.salesRepId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(incentives.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
 
-    const total = Number(countResult?.count || 0);
-
-    const rows = await this.db
-      .select({
-        id: incentives.id,
-        orgId: incentives.orgId,
-        salesRepId: incentives.salesRepId,
-        clientAccountId: incentives.clientAccountId,
-        investmentAmount: incentives.investmentAmount,
-        incentiveRate: incentives.incentiveRate,
-        calculatedAmount: incentives.calculatedAmount,
-        approvedAmount: incentives.approvedAmount,
-        status: incentives.status,
-        notes: incentives.notes,
-        createdAt: incentives.createdAt,
-        salesRepName: users.name,
-        salesRepImage: users.image,
-      })
-      .from(incentives)
-      .innerJoin(users, eq(incentives.salesRepId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(incentives.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const total = Number(countResult?.count ?? 0);
 
     return {
       incentives: rows.map((r) => ({

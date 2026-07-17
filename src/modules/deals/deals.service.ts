@@ -337,20 +337,18 @@ export class DealsService {
     });
 
     if (stageChanged && input.stage) {
-      const stageMap2 = await this.resolvePipelineStageMap(orgId, null);
-      const newStageInfo2 = stageMap2.get(input.stage);
-      if (newStageInfo2?.stageType === "won") {
+      const stageMapFinal = await this.resolvePipelineStageMap(orgId, null);
+      const newStageInfo = stageMapFinal.get(input.stage);
+      if (newStageInfo?.stageType === "won") {
         this.webhooksDispatch.dispatch(orgId, "deal.won", { id: updated.id, name: updated.name, value: updated.value, assignedToId: updated.assignedToId });
-      } else if (newStageInfo2?.stageType === "lost") {
+      } else if (newStageInfo?.stageType === "lost") {
         this.webhooksDispatch.dispatch(orgId, "deal.lost", { id: updated.id, name: updated.name, value: updated.value, lostReason: updated.lostReason });
       }
 
-      const stageMap3 = await this.resolvePipelineStageMap(orgId, null);
-      const stageInfoBus = stageMap3.get(input.stage);
       void this.bus.emit(orgId, "deal.stage_changed", { entityType: "deal", entityId: String(updated.id), data: { stage: updated.stage, previousStage: previousStage ?? undefined }, actorId: userId }).catch(() => undefined);
-      if (stageInfoBus?.stageType === "won") {
+      if (newStageInfo?.stageType === "won") {
         void this.bus.emit(orgId, "deal.won", { entityType: "deal", entityId: String(updated.id), data: { value: updated.value }, actorId: userId }).catch(() => undefined);
-      } else if (stageInfoBus?.stageType === "lost") {
+      } else if (newStageInfo?.stageType === "lost") {
         void this.bus.emit(orgId, "deal.lost", { entityType: "deal", entityId: String(updated.id), data: { lostReason: updated.lostReason ?? undefined }, actorId: userId }).catch(() => undefined);
       }
     }

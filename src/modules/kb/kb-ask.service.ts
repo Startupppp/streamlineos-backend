@@ -1,13 +1,11 @@
-import { Injectable } from "@nestjs/common";
-import { KbCreditsService } from "./kb-credits.service";
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
-import { LlmService } from "../ai/providers/llm.service";
-import { InsufficientCreditsException } from "./kb.errors";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
+import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
 
-const ASK_COST = 1;
 const MAX_CONTEXT_ARTICLES = 6;
 const MAX_CONTEXT_CHARS = 1500;
 
@@ -19,16 +17,17 @@ const ASK_SYSTEM_PROMPT =
   "Never invent facts that are not present in the context.";
 
 export type AskCitation =
-  | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null }
-  | { kind: "page"; pageId: number; title: string; spaceId: number | null }
-  | { kind: "source"; sourceId: number; title: string; spaceId: number | null };
+  | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null; updatedAt: Date }
+  | { kind: "page"; pageId: number; title: string; spaceId: number | null; updatedAt: Date }
+  | { kind: "source"; sourceId: number; title: string; spaceId: number | null; updatedAt: Date };
 
 @Injectable()
 export class KbAskService {
+  private readonly logger = new Logger(KbAskService.name);
+
   constructor(
-    private readonly credits: KbCreditsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
-    private readonly llm: LlmService,
     private readonly search: KbSearchService,
   ) {}
 
@@ -40,22 +39,20 @@ export class KbAskService {
     citations: AskCitation[];
     hasContext: boolean;
   }> {
-    if (!this.llm.isConfigured()) {
-      return { answer: "The AI assistant isn't available right now.", citations: [], hasContext: false };
-    }
-
-    if (!(await this.credits.hasCredits(user.orgId, ASK_COST))) {
-      throw new InsufficientCreditsException();
-    }
-
     const top = await this.search.retrieveTopArticles(
       user,
       input.question,
       MAX_CONTEXT_ARTICLES,
       input.spaceId,
     );
-    const sources = await this.search.retrieveTopSources(user.orgId, input.question, 4);
+    const sources = await this.search.retrieveTopSources(user, input.question, 4);
     if (top.length === 0 && sources.length === 0) {
+      this.events.record(user.orgId, "ai_answer_no_context", {
+        actorId: user.userId,
+        query: input.question,
+      }).catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+      });
       return {
         answer:
           "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
@@ -88,28 +85,26 @@ export class KbAskService {
       : context;
     if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
 
-    await this.credits.consume(user.orgId, ASK_COST, {
-      reason: "kb_ask",
-      feature: "ask",
-      actorId: user.userId,
-    });
-
-    let answer: string;
-    try {
-      answer = await this.llm.invokeText({
-        model: "fast",
-        temperature: 0.2,
+    const gatewayResult = await this.aiGateway.invokeText({
+      actor: { orgId: user.orgId, userId: user.userId },
+      feature: "kb.ask",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("kb.ask") },
+      prompt: {
         system: ASK_SYSTEM_PROMPT,
         user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
-      });
-    } catch (error) {
-      await this.credits.grant(user.orgId, ASK_COST, {
-        reason: "kb_ask_refund",
-        feature: "ask",
-        actorId: user.userId,
-      });
-      throw error;
+      },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") {
+        throw new BadRequestException(gatewayResult.message);
+      }
+      throw new ServiceUnavailableException("AI assistant is temporarily unavailable");
     }
+
+    const answer = gatewayResult.data;
 
     await this.events.record(user.orgId, "ai_answer", {
       actorId: user.userId,
@@ -120,11 +115,11 @@ export class KbAskService {
     const citations: AskCitation[] = [
       ...top.map((source): AskCitation => {
         if (source.kind === "article") {
-          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId };
+          return { kind: "article", articleId: source.id, title: source.title, slug: source.slug, spaceId: source.spaceId, updatedAt: source.updatedAt };
         }
-        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId };
+        return { kind: "page", pageId: source.id, title: source.title, spaceId: source.spaceId, updatedAt: source.updatedAt };
       }),
-      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId })),
+      ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt })),
     ];
 
     return { answer, citations, hasContext: true };

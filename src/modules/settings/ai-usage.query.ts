@@ -1,9 +1,11 @@
 import { desc, eq, sql, sum } from "drizzle-orm";
 import { aiUsageLogs } from "../../db/schema";
+import { aiFeedback } from "../../db/schema/ai-feedback";
+import { supportAiSuggestions } from "../../db/schema/support/support-ai";
 import { type Db } from "../../db/drizzle.module";
 
 export async function queryAiUsage(db: Db, orgId: string) {
-  const [totals, byFeature, daily] = await Promise.all([
+  const [totals, byFeature, daily, latencyStats, feedbackByFeature, suggestionCounts] = await Promise.all([
     db
       .select({
         totalTokens: sum(aiUsageLogs.totalTokens).mapWith(Number),
@@ -40,7 +42,39 @@ export async function queryAiUsage(db: Db, orgId: string) {
       .groupBy(sql`DATE(${aiUsageLogs.createdAt})`)
       .orderBy(desc(sql`DATE(${aiUsageLogs.createdAt})`))
       .limit(30),
+
+    db
+      .select({
+        avgLatencyMs: sql<number | null>`AVG(${aiUsageLogs.latencyMs})::float`,
+        p95LatencyMs: sql<number | null>`PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ${aiUsageLogs.latencyMs})::float`,
+        errorRate: sql<number>`(COUNT(*) FILTER (WHERE ${aiUsageLogs.outcome} != 'ok' AND ${aiUsageLogs.outcome} IS NOT NULL)::float / NULLIF(COUNT(*), 0))::float`,
+      })
+      .from(aiUsageLogs)
+      .where(eq(aiUsageLogs.orgId, orgId)),
+
+    db
+      .select({
+        feature: aiFeedback.feature,
+        up: sql<number>`COUNT(*) FILTER (WHERE ${aiFeedback.rating} = 'UP')::int`,
+        down: sql<number>`COUNT(*) FILTER (WHERE ${aiFeedback.rating} = 'DOWN')::int`,
+        total: sql<number>`COUNT(*)::int`,
+      })
+      .from(aiFeedback)
+      .where(eq(aiFeedback.orgId, orgId))
+      .groupBy(aiFeedback.feature),
+
+    db
+      .select({
+        accepted: sql<number>`COUNT(*) FILTER (WHERE ${supportAiSuggestions.status} = 'accepted')::int`,
+        rejected: sql<number>`COUNT(*) FILTER (WHERE ${supportAiSuggestions.status} = 'rejected')::int`,
+        pending: sql<number>`COUNT(*) FILTER (WHERE ${supportAiSuggestions.status} = 'pending')::int`,
+      })
+      .from(supportAiSuggestions)
+      .where(eq(supportAiSuggestions.orgId, orgId)),
   ]);
+
+  const latency = latencyStats[0] ?? { avgLatencyMs: null, p95LatencyMs: null, errorRate: 0 };
+  const suggestions = suggestionCounts[0] ?? { accepted: 0, rejected: 0, pending: 0 };
 
   return {
     totals: totals[0] ?? {
@@ -52,5 +86,24 @@ export async function queryAiUsage(db: Db, orgId: string) {
     },
     byFeature,
     daily,
+    performance: {
+      avgLatencyMs: latency.avgLatencyMs ?? null,
+      p95LatencyMs: latency.p95LatencyMs ?? null,
+      errorRate: latency.errorRate ?? 0,
+    },
+    acceptance: {
+      feedbackByFeature: feedbackByFeature.map((r) => ({
+        feature: r.feature,
+        up: r.up,
+        down: r.down,
+        total: r.total,
+        ratio: r.total > 0 ? Number((r.up / r.total).toFixed(4)) : null,
+      })),
+      supportSuggestions: {
+        accepted: suggestions.accepted,
+        rejected: suggestions.rejected,
+        pending: suggestions.pending,
+      },
+    },
   };
 }

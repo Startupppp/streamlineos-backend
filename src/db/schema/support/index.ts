@@ -13,3 +13,4 @@ export * from "./settings-audit";
 export * from "./agent-routing";
 export * from "./support-productivity";
 export * from "./support-integrations";
+export * from "./support-kb-gap";

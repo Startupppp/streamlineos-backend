@@ -28,6 +28,8 @@ import { CronSupportService } from "./cron-support.service";
 import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
+import { SupportKbGapService } from "../support-kb-gap/support-kb-gap.service";
 
 @Public()
 @Controller("cron")
@@ -51,6 +53,8 @@ export class CronController {
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
+    private readonly aiJobsWorker: AiJobsWorkerService,
+    private readonly supportKbGap: SupportKbGapService,
   ) {}
 
   @Get("trial-expiry")
@@ -706,6 +710,32 @@ export class CronController {
     }
   }
 
+  @Get("ai-reservations-sweep")
+  getAiReservationsSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiReservationsSweep(authorization);
+  }
+
+  @Post("ai-reservations-sweep")
+  @HttpCode(200)
+  postAiReservationsSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiReservationsSweep(authorization);
+  }
+
+  private async runAiReservationsSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.billing.sweepAiReservations();
+      return {
+        success: true,
+        message: `Released ${result.released} expired AI credit reservations`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("AI reservations sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   @Get("auto-topup-flush")
   getAutoTopUpFlush(@Headers("authorization") authorization?: string) {
     return this.runAutoTopUpFlush(authorization);
@@ -728,6 +758,58 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Auto top-up flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("ai-jobs-flush")
+  getAiJobsFlush(@Headers("authorization") authorization?: string) {
+    return this.runAiJobsFlush(authorization);
+  }
+
+  @Post("ai-jobs-flush")
+  @HttpCode(200)
+  postAiJobsFlush(@Headers("authorization") authorization?: string) {
+    return this.runAiJobsFlush(authorization);
+  }
+
+  private async runAiJobsFlush(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.aiJobsWorker.flush();
+      return {
+        success: true,
+        message: `AI jobs flush: ${result.claimed} claimed, ${result.completed} completed, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("AI jobs flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("support-kb-gap-detect")
+  getSupportKbGapDetect(@Headers("authorization") authorization?: string) {
+    return this.runSupportKbGapDetect(authorization);
+  }
+
+  @Post("support-kb-gap-detect")
+  @HttpCode(200)
+  postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
+    return this.runSupportKbGapDetect(authorization);
+  }
+
+  private async runSupportKbGapDetect(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.supportKbGap.runDetectAllOrgs();
+      return {
+        success: true,
+        message: `Support KB gap detect: processed ${result.processed} orgs, ${result.errors} errors`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Support KB gap detect cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

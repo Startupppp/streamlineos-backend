@@ -52,6 +52,7 @@ export class HrAnalyticsService {
       expenseTotalResult,
       headcountTrendResult,
       exitsByMonthResult,
+      allDepts,
     ] = await Promise.all([
       this.db.select({ count: count() }).from(organizationMembers).where(eq(organizationMembers.orgId, orgId)),
 
@@ -141,11 +142,10 @@ export class HrAnalyticsService {
         .where(and(eq(resignations.orgId, orgId), gte(resignations.createdAt, new Date(yearStart)), lte(resignations.createdAt, new Date(yearEnd))))
         .groupBy(sql`to_char(${resignations.createdAt}, 'Mon')`, sql`EXTRACT(MONTH FROM ${resignations.createdAt})`)
         .orderBy(sql`EXTRACT(MONTH FROM ${resignations.createdAt})`),
+
+      this.db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.orgId, orgId)),
     ]);
 
-    const allDepts = await this.db.query.departments.findMany({
-      where: eq(departments.orgId, orgId),
-    });
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
 
     const leavesByStatus: Record<string, number> = {};
@@ -199,16 +199,23 @@ export class HrAnalyticsService {
     };
   }
 
-  async attendance(orgId: string, yearInput?: number, monthInput?: number) {
+  attendance(orgId: string, yearInput?: number, monthInput?: number) {
     const year = yearInput || new Date().getFullYear();
     const month = monthInput || new Date().getMonth() + 1;
+    return this.cache.cached(
+      `hr:analytics:attendance:${orgId}:${year}:${month}`,
+      () => this.buildAttendance(orgId, year, month),
+      CACHE_TTL.SHORT,
+    );
+  }
 
+  private async buildAttendance(orgId: string, year: number, month: number) {
     const mm = String(month).padStart(2, "0");
     const startDate = `${year}-${mm}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const endDate = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
 
-    const [deptWise, dailySummary, totalPresent] = await Promise.all([
+    const [deptWise, dailySummary, totalPresent, allDepts] = await Promise.all([
       this.db
         .select({ departmentId: users.departmentId, count: count() })
         .from(attendance)
@@ -227,11 +234,10 @@ export class HrAnalyticsService {
         .select({ count: count() })
         .from(attendance)
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate))),
+
+      this.db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.orgId, orgId)),
     ]);
 
-    const allDepts = await this.db.query.departments.findMany({
-      where: eq(departments.orgId, orgId),
-    });
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
 
     return {
@@ -249,7 +255,12 @@ export class HrAnalyticsService {
     };
   }
 
-  async attrition(orgId: string) {
+  attrition(orgId: string) {
+    const year = new Date().getFullYear();
+    return this.cache.cached(`hr:analytics:attrition:${orgId}:${year}`, () => this.buildAttrition(orgId), CACHE_TTL.MEDIUM);
+  }
+
+  private async buildAttrition(orgId: string) {
     const now = new Date();
     const yearStart = `${now.getFullYear()}-01-01`;
 

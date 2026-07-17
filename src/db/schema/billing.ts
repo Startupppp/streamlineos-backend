@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   affiliateStatusEnum,
+  aiCreditReservationStatusEnum,
   aiCreditTxnTypeEnum,
   appInstallStatusEnum,
   commissionStatusEnum,
@@ -139,6 +140,31 @@ export const aiCreditTransactions = pgTable(
     index("ai_credit_txns_org_idx").on(t.orgId),
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
     uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
+  ],
+);
+
+export const aiCreditReservations = pgTable(
+  "ai_credit_reservations",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    feature: varchar("feature", { length: 100 }).notNull(),
+    credits: integer("credits").notNull(),
+    status: aiCreditReservationStatusEnum("status").notNull().default("RESERVED"),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }),
+    model: varchar("model", { length: 100 }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (t) => [
+    index("ai_credit_res_org_created_idx").on(t.orgId, t.createdAt),
+    index("ai_credit_res_status_expires_idx").on(t.status, t.expiresAt),
+    uniqueIndex("uq_ai_credit_res_org_idem_key")
+      .on(t.orgId, t.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
   ],
 );
 

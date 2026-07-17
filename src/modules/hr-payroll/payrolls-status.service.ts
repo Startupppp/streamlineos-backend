@@ -4,6 +4,7 @@ import { payrolls, users, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
 import { decrypt, decryptBankDetails } from "./lib/encryption";
@@ -37,6 +38,7 @@ export class PayrollStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
     private readonly email: EmailService,
   ) {}
 
@@ -50,6 +52,8 @@ export class PayrollStatusService {
       .update(payrolls)
       .set({ status: "APPROVED", approvedBy: userId })
       .where(eq(payrolls.id, payrollId));
+
+    void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
 
     this.audit.log({
       action: "hr.payroll_approved",
@@ -75,6 +79,8 @@ export class PayrollStatusService {
     if (existing.status !== "APPROVED") return { ok: false, reason: "not_approved" };
 
     await this.db.update(payrolls).set({ status: "PAID" }).where(eq(payrolls.id, payrollId));
+
+    void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
 
     this.audit.log({
       action: "hr.payroll_paid",

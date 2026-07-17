@@ -560,6 +560,31 @@ export const kbAskSchema = z.object({
 });
 export type KbAskInput = z.infer<typeof kbAskSchema>;
 
+export const improveReplySchema = z.object({
+  content: z.string().trim().min(1).max(10000),
+  macroId: z.number().int().positive().optional(),
+});
+export type ImproveReplyInput = z.infer<typeof improveReplySchema>;
+
+export const translateDraftSchema = z.object({
+  language: z.string().trim().min(2).max(50),
+  content: z.string().trim().max(10000).optional(),
+});
+export type TranslateDraftInput = z.infer<typeof translateDraftSchema>;
+
+export const supportAiReportFiltersSchema = z.object({
+  cursor: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+});
+export type SupportAiReportFiltersInput = z.infer<typeof supportAiReportFiltersSchema>;
+
+export const updateSupportAiSettingsSchema = z.object({
+  confidenceThreshold: z.number().min(0).max(1).optional(),
+});
+export type UpdateSupportAiSettingsInput = z.infer<typeof updateSupportAiSettingsSchema>;
+
 export const resolveAiSuggestionSchema = z.object({
   status: z.enum(["accepted", "rejected"]),
   feedback: z.enum(["helpful", "not_helpful"]).optional(),

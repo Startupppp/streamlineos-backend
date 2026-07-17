@@ -106,6 +106,9 @@ import { InvWebhooksModule } from "./modules/inv-webhooks/inv-webhooks.module";
 import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
 import { EmailModule } from "./modules/email/email.module";
 import { AiModule } from "./modules/ai/ai.module";
+import { AiSummariesModule } from "./modules/ai-summaries/ai-summaries.module";
+import { WorkspaceSearchModule } from "./modules/workspace-search/workspace-search.module";
+import { SupportKbGapModule } from "./modules/support-kb-gap";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
@@ -115,11 +118,12 @@ import { SessionsModule } from "./modules/sessions/sessions.module";
 import { MfaModule } from "./modules/mfa/mfa.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { FeatureFlagsModule } from "./modules/feature-flags/feature-flags.module";
+import { AiJobsModule } from "./modules/ai-jobs/ai-jobs.module";
+import { AiConfirmationModule } from "./modules/ai-confirmation";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
 import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
 import { ServiceAccountsModule } from "./modules/service-accounts/service-accounts.module";
 import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.module";
-import { ResourceGrantsModule } from "./modules/resource-grants/resource-grants.module";
 import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -146,6 +150,7 @@ import { FinanceTaxModule } from "./modules/finance-tax/finance-tax.module";
 import { FinancePlanningModule } from "./modules/finance-planning/finance-planning.module";
 import { FinanceAssetsModule } from "./modules/finance-assets/finance-assets.module";
 import { FinanceControlsModule } from "./modules/finance-controls/finance-controls.module";
+import { AccountingAiModule } from "./modules/accounting-ai/accounting-ai.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -262,6 +267,9 @@ import { MeService } from "./me/me.service";
     InvSettingsModule,
     EmailModule,
     AiModule,
+    AiSummariesModule,
+    WorkspaceSearchModule,
+    SupportKbGapModule,
     StorageModule,
     BillingModule,
     GoogleCalendarModule,
@@ -271,11 +279,12 @@ import { MeService } from "./me/me.service";
     MfaModule,
     AuthModule,
     FeatureFlagsModule,
+    AiJobsModule,
+    AiConfirmationModule,
     OrgHierarchyModule,
     ApiTokensModule,
     ServiceAccountsModule,
     UserApiTokensModule,
-    ResourceGrantsModule,
     TemporaryAccessModule,
     DelegationsModule,
     UsersModule,
@@ -297,6 +306,7 @@ import { MeService } from "./me/me.service";
     FinancePlanningModule,
     FinanceAssetsModule,
     FinanceControlsModule,
+    AccountingAiModule,
     AgentAccessModule,
   ],
   controllers: [HealthController, MeController],

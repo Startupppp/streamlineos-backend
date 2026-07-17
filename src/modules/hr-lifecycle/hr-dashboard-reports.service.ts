@@ -45,25 +45,43 @@ export class HrDashboardReportsService {
   private async buildHeadcountTrends(orgId: string) {
     const now = new Date();
 
-    const months: { label: string; start: string; end: string }[] = [];
+    const months: { label: string; end: string }[] = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = d.toISOString().slice(0, 10);
       const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
       const label = d.toLocaleString("en-US", { month: "short", year: "2-digit" });
-      months.push({ label, start, end });
+      months.push({ end, label });
     }
 
-    const results = await Promise.all(
-      months.map(async ({ label, end }) => {
-        const [row] = await this.db
-          .select({ count: sql<number>`count(*)` })
-          .from(organizationMembers)
-          .innerJoin(users, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), lte(users.joiningDate, end)));
-        return { month: label, count: Number(row?.count ?? 0) };
-      }),
-    );
+    const windowEnd = months[months.length - 1].end;
+
+    const joiningRows = await this.db
+      .select({ joiningDate: users.joiningDate })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.joiningDate), lte(users.joiningDate, windowEnd)));
+
+    const countByMonthEnd = new Map<string, number>();
+    for (const r of joiningRows) {
+      if (!r.joiningDate) continue;
+      const d = new Date(r.joiningDate);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+      countByMonthEnd.set(end, (countByMonthEnd.get(end) ?? 0) + 1);
+    }
+
+    let cumulative = 0;
+    const cumulativeByEnd = new Map<string, number>();
+    const sortedEnds = [...countByMonthEnd.keys()].sort();
+    for (const end of sortedEnds) {
+      cumulative += countByMonthEnd.get(end) ?? 0;
+      cumulativeByEnd.set(end, cumulative);
+    }
+
+    let lastKnown = 0;
+    const results = months.map(({ label, end }) => {
+      if (cumulativeByEnd.has(end)) lastKnown = cumulativeByEnd.get(end) ?? lastKnown;
+      return { month: label, count: lastKnown };
+    });
 
     return { trends: results };
   }

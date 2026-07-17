@@ -16,6 +16,8 @@ const TIERS: Record<string, Tier> = {
   "auth:resend-verification": { limit: 3, windowSecs: 60 },
   "auth:magic-link": { limit: 3, windowSecs: 60 },
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
+  "auth:email-otp": { limit: 3, windowSecs: 600 },
+  "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
   "whiteboard:public-view": { limit: 60, windowSecs: 60 },
@@ -41,6 +43,11 @@ const TIERS: Record<string, Tier> = {
   "sign:public-complete": { limit: 10, windowSecs: 60 },
   "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
+  "ai:invoke": { limit: 30, windowSecs: 60 },
+  "ai:chat": { limit: 20, windowSecs: 60 },
+  "ai:vision": { limit: 10, windowSecs: 60 },
+  "ai:public-kb-ask": { limit: 10, windowSecs: 60 },
+  "kb:ask": { limit: 20, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

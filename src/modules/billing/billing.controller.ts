@@ -59,6 +59,7 @@ export class BillingController {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
+  @RequirePermission("settings:view")
   @Get()
   getSubscription(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSubscription(u.orgId);
@@ -94,6 +95,7 @@ export class BillingController {
     return this.billing.purchaseAddon(u.orgId, u.userId, body.addonId, body.quantity);
   }
 
+  @RequirePermission("settings:view")
   @Get("summary")
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSummary(u.orgId);
@@ -117,6 +119,7 @@ export class BillingController {
     return this.billing.validateCoupon(code ?? "", u.orgId, parsedPlan.data as Plan);
   }
 
+  @RequirePermission("settings:view")
   @Get("razorpay")
   getRazorpaySubscription(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSubscription(u.orgId);
@@ -222,7 +225,7 @@ export class BillingController {
         body.signature ?? "",
       );
       if (!valid) throw new BadRequestException("Invalid payment signature");
-      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
+      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
     if (this.razorpay.isConfigured()) {
       return this.billing.purchaseAddon(u.orgId, u.userId, `ai_pack_${body.packId}`, 1);

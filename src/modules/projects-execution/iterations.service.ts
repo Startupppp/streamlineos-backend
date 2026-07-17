@@ -52,7 +52,8 @@ export class SprintsService {
         sprintId: tickets.sprintId,
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)));
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
+      .limit(500);
 
     const ticketsBySprintId = new Map<number, typeof ticketRows>();
     for (const ticket of ticketRows) {
@@ -91,7 +92,16 @@ export class SprintsService {
   async getSprint(orgId: string, sprintId: number) {
     const sprint = await this.db.query.sprints.findFirst({
       where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)),
-      with: { tickets: { with: { assignee: true } } },
+      with: {
+        tickets: {
+          with: {
+            assignee: {
+              columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
+            },
+          },
+          limit: 500,
+        },
+      },
     });
     if (!sprint) throw new NotFoundException("Sprint not found");
     return sprint;

@@ -302,10 +302,34 @@ export class SignFinalizationService {
     const events = await this.audit.listForEnvelope(orgId, envelopeId);
     const certificateNumber = `SGN-${envelopeId}-${randomBytes(4).toString("hex").toUpperCase()}-R`;
 
-    const certificateJson = {
-      ...(previous.certificateJson as Record<string, unknown>),
+    const prevJson = previous.certificateJson;
+    const certificateJson: CertificateData = {
       certificateNumber,
-      regeneratedFrom: previous.certificateNumber,
+      envelopeTitle: String(prevJson["envelopeTitle"] ?? ""),
+      tenantName: String(prevJson["tenantName"] ?? ""),
+      senderName: String(prevJson["senderName"] ?? ""),
+      senderEmail: String(prevJson["senderEmail"] ?? ""),
+      finalPdfHash: previous.finalPdfHash,
+      watermarked: Boolean(prevJson["watermarked"]),
+      completedAt: String(prevJson["completedAt"] ?? new Date().toISOString()),
+      documents: Array.isArray(prevJson["documents"]) ? prevJson["documents"].map((d: unknown) => {
+        const doc = typeof d === "object" && d !== null ? (d as Record<string, unknown>) : {};
+        return {
+          fileName: String(doc["fileName"] ?? ""),
+          sha256Hash: String(doc["sha256Hash"] ?? ""),
+          pageCount: typeof doc["pageCount"] === "number" ? doc["pageCount"] : null,
+        };
+      }) : [],
+      recipients: Array.isArray(prevJson["recipients"]) ? prevJson["recipients"].map((r: unknown) => {
+        const rec = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
+        return {
+          name: String(rec["name"] ?? ""),
+          email: rec["email"] != null ? String(rec["email"]) : null,
+          role: String(rec["role"] ?? ""),
+          authMethod: String(rec["authMethod"] ?? ""),
+          completedAt: rec["completedAt"] != null ? String(rec["completedAt"]) : null,
+        };
+      }) : [],
       events: events.map((e) => ({
         eventType: e.eventType,
         actorName: e.actorName,
@@ -313,8 +337,9 @@ export class SignFinalizationService {
         ipAddress: e.ipAddress,
       })),
     };
-    const certificatePdf = await this.pdf.generateCertificatePdf(certificateJson as unknown as CertificateData);
+    const certificatePdf = await this.pdf.generateCertificatePdf(certificateJson);
     const certUpload = await this.storage.uploadFile(certificatePdf, `signos/${orgId}/${envelopeId}`, "certificate.pdf", "application/pdf");
+    const storedJson: Record<string, unknown> = { ...certificateJson, regeneratedFrom: previous.certificateNumber };
 
     const [certificate] = await this.db
       .insert(signCertificates)
@@ -326,7 +351,7 @@ export class SignFinalizationService {
         finalPdfFileKey: previous.finalPdfFileKey,
         finalPdfHash: previous.finalPdfHash,
         watermarked: previous.watermarked,
-        certificateJson,
+        certificateJson: storedJson,
       })
       .returning();
 

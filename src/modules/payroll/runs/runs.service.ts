@@ -8,7 +8,6 @@ import {
   payrollLineItems,
   payrollPolicies,
   payrollPolicyVersions,
-  payrollExceptions,
 } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
@@ -328,17 +327,23 @@ export class RunsService {
   }
 
   async getRunEmployee(orgId: string, runId: number, runEmployeeId: number) {
-    const runCheck = await this.db
-      .select({ id: payrollRuns.id })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-      .limit(1);
-
-    if (!runCheck[0]) return null;
-
     const [emp] = await this.db
-      .select()
+      .select({
+        id: payrollRunEmployees.id,
+        userId: payrollRunEmployees.userId,
+        workerType: payrollRunEmployees.workerType,
+        currency: payrollRunEmployees.currency,
+        gross: payrollRunEmployees.gross,
+        totalDeductions: payrollRunEmployees.totalDeductions,
+        net: payrollRunEmployees.net,
+        status: payrollRunEmployees.status,
+        holdReason: payrollRunEmployees.holdReason,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        userName: users.name,
+        userEmail: users.email,
+      })
       .from(payrollRunEmployees)
+      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
       .where(
         and(
           eq(payrollRunEmployees.id, runEmployeeId),
@@ -350,18 +355,7 @@ export class RunsService {
 
     if (!emp) return null;
 
-    const [lineItems, exceptions] = await Promise.all([
-      this.db
-        .select()
-        .from(payrollLineItems)
-        .where(eq(payrollLineItems.runEmployeeId, runEmployeeId)),
-      this.db
-        .select()
-        .from(payrollExceptions)
-        .where(eq(payrollExceptions.runEmployeeId, runEmployeeId)),
-    ]);
-
-    return { ...emp, lineItems, exceptions };
+    return emp;
   }
 
   async getVariance(orgId: string, runId: number) {
@@ -409,29 +403,29 @@ export class RunsService {
     currentMonth: string,
     currentNetTotal: string | null,
   ): Promise<VarianceSummary | null> {
-    const [prevRun] = await this.db
-      .select({ id: payrollRuns.id, month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(
-        eq(payrollRuns.orgId, orgId),
-        lt(payrollRuns.month, currentMonth),
-        inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
-      ))
-      .orderBy(desc(payrollRuns.month))
-      .limit(1);
-
-    if (!prevRun) return null;
-
-    const [currentEmps, prevEmps] = await Promise.all([
+    const [[prevRun], currentEmps] = await Promise.all([
+      this.db
+        .select({ id: payrollRuns.id, month: payrollRuns.month, netTotal: payrollRuns.netTotal })
+        .from(payrollRuns)
+        .where(and(
+          eq(payrollRuns.orgId, orgId),
+          lt(payrollRuns.month, currentMonth),
+          inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
+        ))
+        .orderBy(desc(payrollRuns.month))
+        .limit(1),
       this.db
         .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
         .from(payrollRunEmployees)
         .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
-      this.db
-        .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
-        .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId))),
     ]);
+
+    if (!prevRun) return null;
+
+    const prevEmps = await this.db
+      .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)));
 
     const currentUserIds = new Set(currentEmps.map(e => e.userId));
     const prevNetMap = new Map(prevEmps.map(e => [e.userId, e.net]));

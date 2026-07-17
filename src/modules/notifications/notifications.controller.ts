@@ -15,8 +15,6 @@ import {
 import type { MessageEvent } from "@nestjs/common";
 import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { PermissionGuard } from "../access/permission.guard";
-import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -33,7 +31,7 @@ import {
 } from "./dto/notification.schemas";
 
 @Controller("notifications")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class NotificationsController {
   constructor(
     private readonly notifications: NotificationsService,

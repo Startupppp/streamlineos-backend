@@ -4,10 +4,7 @@ import { type EmailAttachment } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
-  getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
-  getPasswordChangeConfirmationEmailTemplate,
-  getAccountLockedEmailTemplate,
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
@@ -21,7 +18,7 @@ import {
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
-import { getAccountDeactivationEmailTemplate } from "./templates/auth";
+import { getAccountDeactivationEmailTemplate, getEmailOtpTemplate, getAccountLockedEmailTemplate } from "./templates/auth";
 import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
@@ -35,22 +32,6 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Verify your email address",
       html: getVerificationEmailTemplate(`${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
-    });
-  }
-
-  sendPasswordResetEmail(email: string, token: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Reset your password",
-      html: getPasswordResetEmailTemplate(`${appUrl}/reset-password?token=${token}`),
-    });
-  }
-
-  sendPasswordChangeConfirmationEmail(email: string, userName: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Your password was changed",
-      html: getPasswordChangeConfirmationEmailTemplate(userName),
     });
   }
 
@@ -292,6 +273,14 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Your sign-in link",
       html: getMagicLinkEmailTemplate(magicLink),
+    });
+  }
+
+  sendEmailOtpEmail(email: string, code: string): Promise<void> {
+    return this.sendEmail({
+      to: email,
+      subject: "Your sign-in code",
+      html: getEmailOtpTemplate(code),
     });
   }
 

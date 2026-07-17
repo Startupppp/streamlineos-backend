@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, ilike, inArray, or } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
@@ -230,6 +230,9 @@ export class ProjectsActivityService {
   async processCommentMentions(input: ProcessMentionsInput): Promise<void> {
     if (!input.content || !input.content.includes("@")) return;
 
+    const tokens = extractMentionTokens(input.content);
+    if (tokens.length === 0) return;
+
     const orgUsers = await this.db
       .select({
         id: users.id,
@@ -240,7 +243,16 @@ export class ProjectsActivityService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(organizationMembers.orgId, input.orgId));
+      .where(
+        and(
+          eq(organizationMembers.orgId, input.orgId),
+          or(
+            ...tokens.map((token) => ilike(users.email, `%${token}%`)),
+            ...tokens.map((token) => ilike(users.name, `%${token}%`)),
+          ),
+        ),
+      )
+      .limit(20);
 
     const mentioned = matchMentionedUsers(input.content, orgUsers).filter(
       (user) => user.id !== input.authorId,

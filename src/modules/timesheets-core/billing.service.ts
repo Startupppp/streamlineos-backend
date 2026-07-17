@@ -43,7 +43,16 @@ export class BillingService {
     if (query.projectId) conditions.push(eq(timesheets.projectId, query.projectId));
 
     const entries = await this.db
-      .select()
+      .select({
+        id: timesheets.id,
+        userId: timesheets.userId,
+        projectId: timesheets.projectId,
+        ticketId: timesheets.ticketId,
+        hours: timesheets.hours,
+        billRate: timesheets.billRate,
+        currency: timesheets.currency,
+        invoicingStatus: timesheets.invoicingStatus,
+      })
       .from(timesheets)
       .where(and(...conditions));
 
@@ -134,7 +143,24 @@ export class BillingService {
 
     if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
 
-    const entries = await this.db.select().from(timesheets).where(and(...conditions));
+    const entries = await this.db
+      .select({
+        id: timesheets.id,
+        orgId: timesheets.orgId,
+        userId: timesheets.userId,
+        projectId: timesheets.projectId,
+        ticketId: timesheets.ticketId,
+        date: timesheets.date,
+        hours: timesheets.hours,
+        description: timesheets.description,
+        isBillable: timesheets.isBillable,
+        billRate: timesheets.billRate,
+        currency: timesheets.currency,
+        invoicingStatus: timesheets.invoicingStatus,
+        status: timesheets.status,
+      })
+      .from(timesheets)
+      .where(and(...conditions));
 
     let totalHours = 0;
     let totalAmount = 0;
@@ -195,7 +221,24 @@ export class BillingService {
 
     if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
 
-    const entries = await this.db.select().from(timesheets).where(and(...conditions));
+    const entries = await this.db
+      .select({
+        id: timesheets.id,
+        orgId: timesheets.orgId,
+        userId: timesheets.userId,
+        projectId: timesheets.projectId,
+        ticketId: timesheets.ticketId,
+        date: timesheets.date,
+        hours: timesheets.hours,
+        description: timesheets.description,
+        isBillable: timesheets.isBillable,
+        billRate: timesheets.billRate,
+        currency: timesheets.currency,
+        invoicingStatus: timesheets.invoicingStatus,
+        status: timesheets.status,
+      })
+      .from(timesheets)
+      .where(and(...conditions));
 
     let totalAmount = 0;
     const snapshot = entries.map((e) => {

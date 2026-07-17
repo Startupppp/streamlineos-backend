@@ -1,13 +1,14 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { CrmCopilotService } from "./services/crm-copilot.service";
-import { LlmService } from "./providers/llm.service";
-import { AiUsageService } from "./services/ai-usage.service";
+import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
+import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { OrgFeatureFlags } from "./services/org-features.service";
+import type { AiInvokeResult } from "./gateway/ai-gateway.types";
 
 const ALL_FLAGS_ON: OrgFeatureFlags = {
   aiChat: true,
@@ -20,6 +21,14 @@ const ALL_FLAGS_ON: OrgFeatureFlags = {
 
 const AI_SCORING_OFF: OrgFeatureFlags = { ...ALL_FLAGS_ON, aiLeadScoring: false };
 const AI_EMAIL_OFF: OrgFeatureFlags = { ...ALL_FLAGS_ON, aiEmailDraft: false };
+
+function okResult<T>(data: T): AiInvokeResult<T> {
+  return { ok: true, data, model: "test-model", latencyMs: 10, correlationId: "corr-1", usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } };
+}
+
+function failResult(kind: "quota_exceeded" | "provider_unavailable" | "not_configured" | "invalid_output"): AiInvokeResult<never> {
+  return { ok: false, kind, message: `AI failure: ${kind}`, correlationId: "corr-err" };
+}
 
 function buildThenableChain(resolved: unknown[]) {
   const promise = Promise.resolve(resolved);
@@ -53,34 +62,30 @@ function makeMockDb(queryResults: unknown[][] = []) {
 describe("CrmCopilotService", () => {
   let service: CrmCopilotService;
   let mockOrgFeatures: jest.Mocked<Pick<OrgFeaturesService, "getFlags">>;
-  let mockLlm: jest.Mocked<
-    Pick<LlmService, "isConfigured" | "invokeJson" | "invokeText" | "invokeStructured">
-  >;
-  let mockUsage: jest.Mocked<Pick<AiUsageService, "track">>;
-  let mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction">>;
+  let mockGateway: jest.Mocked<Pick<AiGatewayService, "invokeStructured" | "invokeText">>;
+  let mockScoring: jest.Mocked<Pick<CrmScoringService, "nextBestAction" | "nextBestActionWithEvidence">>;
   let mockContent: jest.Mocked<Pick<CrmContentService, "generateEmail" | "handleObjection">>;
+  let mockPipeline: jest.Mocked<Pick<CrmPipelineService, "stalePipelineDigest" | "dataQualityCopilot">>;
 
   async function buildService(queryResults: unknown[][] = []) {
     mockOrgFeatures = { getFlags: jest.fn() };
-    mockLlm = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      invokeJson: jest.fn(),
-      invokeText: jest.fn(),
+    mockGateway = {
       invokeStructured: jest.fn(),
+      invokeText: jest.fn(),
     };
-    mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
-    mockScoring = { nextBestAction: jest.fn() };
+    mockScoring = { nextBestAction: jest.fn(), nextBestActionWithEvidence: jest.fn() };
     mockContent = { generateEmail: jest.fn(), handleObjection: jest.fn() };
+    mockPipeline = { stalePipelineDigest: jest.fn(), dataQualityCopilot: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CrmCopilotService,
         { provide: DRIZZLE, useValue: makeMockDb(queryResults) },
-        { provide: LlmService, useValue: mockLlm },
-        { provide: AiUsageService, useValue: mockUsage },
+        { provide: AiGatewayService, useValue: mockGateway },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: CrmScoringService, useValue: mockScoring },
         { provide: CrmContentService, useValue: mockContent },
+        { provide: CrmPipelineService, useValue: mockPipeline },
       ],
     }).compile();
 
@@ -114,16 +119,72 @@ describe("CrmCopilotService", () => {
       };
       service = await buildService([[fakeLead], []]);
       mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
-      mockLlm.invokeJson.mockResolvedValue({ summary: "Strong lead", nextBestActions: ["Call John"] });
+      mockGateway.invokeStructured.mockResolvedValue(
+        okResult({ summary: "Strong lead", nextBestActions: ["Call John"] }),
+      );
 
       const result = await service.leadSummary("org1", 1, "user1");
 
       expect(result.summary).toBe("Strong lead");
       expect(result.nextBestActions).toEqual(["Call John"]);
       expect(result.generatedAt).toBeDefined();
-      expect(mockUsage.track).toHaveBeenCalledWith(
-        expect.objectContaining({ feature: "crm.lead-summary" }),
+      expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
+        expect.objectContaining({ feature: "crm.copilot.summary" }),
       );
+    });
+
+    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+      const fakeLead = { id: 1, name: "John", email: null, company: null, status: "NEW", priority: null, score: null, potentialValue: null, notes: null };
+      service = await buildService([[fakeLead], []]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(failResult("quota_exceeded"));
+
+      await expect(service.leadSummary("org1", 1, "user1")).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws ServiceUnavailableException when gateway returns provider_unavailable", async () => {
+      const fakeLead = { id: 1, name: "John", email: null, company: null, status: "NEW", priority: null, score: null, potentialValue: null, notes: null };
+      service = await buildService([[fakeLead], []]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(failResult("provider_unavailable"));
+
+      await expect(service.leadSummary("org1", 1, "user1")).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe("dealSummary", () => {
+    it("throws ForbiddenException when aiLeadScoring is disabled", async () => {
+      service = await buildService();
+      mockOrgFeatures.getFlags.mockResolvedValue(AI_SCORING_OFF);
+      await expect(service.dealSummary("org1", 1, "user1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("throws NotFoundException when deal is not found", async () => {
+      service = await buildService([[], []]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      await expect(service.dealSummary("org1", 999, "user1")).rejects.toThrow(NotFoundException);
+    });
+
+    it("returns deal insights on success", async () => {
+      const fakeDeal = { id: 1, name: "Big Deal", value: "100000", stage: "PROPOSAL", probability: 60, contactPerson: "Jane", expectedCloseDate: null, notes: null };
+      service = await buildService([[fakeDeal], []]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(
+        okResult({ summary: "Deal is progressing", risks: ["Budget"], recommendedPlays: ["Demo"], stakeholdersGap: "None" }),
+      );
+
+      const result = await service.dealSummary("org1", 1, "user1");
+      expect(result.summary).toBe("Deal is progressing");
+      expect(result.stage).toBe("PROPOSAL");
+    });
+
+    it("throws ServiceUnavailableException when gateway returns not_configured", async () => {
+      const fakeDeal = { id: 1, name: "Big Deal", value: "100000", stage: "PROPOSAL", probability: 60, contactPerson: null, expectedCloseDate: null, notes: null };
+      service = await buildService([[fakeDeal], []]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(failResult("not_configured"));
+
+      await expect(service.dealSummary("org1", 1, "user1")).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
@@ -169,6 +230,22 @@ describe("CrmCopilotService", () => {
         service.summarizeNotes("org1", "user1", "some meeting notes here"),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+      service = await buildService();
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(failResult("quota_exceeded"));
+
+      await expect(service.summarizeNotes("org1", "user1", "meeting notes here for testing")).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws ServiceUnavailableException when gateway returns invalid_output", async () => {
+      service = await buildService();
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockGateway.invokeStructured.mockResolvedValue(failResult("invalid_output"));
+
+      await expect(service.summarizeNotes("org1", "user1", "meeting notes here for testing")).rejects.toThrow(ServiceUnavailableException);
+    });
   });
 
   describe("objectionHelp", () => {
@@ -179,6 +256,33 @@ describe("CrmCopilotService", () => {
       await expect(
         service.objectionHelp("org1", "user1", { objection: "price is too high" }),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("delegates to content.handleObjection with actor on success", async () => {
+      service = await buildService();
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      mockContent.handleObjection.mockResolvedValue({ counterArguments: ["Value is high"], talkingPoints: [], suggestedResponse: "..." });
+
+      await service.objectionHelp("org1", "user1", { objection: "price is too high" });
+
+      expect(mockContent.handleObjection).toHaveBeenCalledWith(
+        expect.objectContaining({ objection: "price is too high" }),
+        { orgId: "org1", userId: "user1" },
+      );
+    });
+  });
+
+  describe("duplicateSuggestionsForLead", () => {
+    it("throws ForbiddenException when aiLeadScoring is disabled", async () => {
+      service = await buildService();
+      mockOrgFeatures.getFlags.mockResolvedValue(AI_SCORING_OFF);
+      await expect(service.duplicateSuggestionsForLead("org1", 1, "user1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("throws NotFoundException when lead is not found", async () => {
+      service = await buildService([[]]);
+      mockOrgFeatures.getFlags.mockResolvedValue(ALL_FLAGS_ON);
+      await expect(service.duplicateSuggestionsForLead("org1", 999, "user1")).rejects.toThrow(NotFoundException);
     });
   });
 });

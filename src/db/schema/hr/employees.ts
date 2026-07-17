@@ -20,6 +20,7 @@ export const departmentMembers = pgTable("department_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_dept_members_dept_user").on(table.departmentId, table.userId),
+  index("idx_dept_members_user_id").on(table.userId),
 ]);
 
 export const departmentsRelations = relations(departments, ({ one, many }) => ({

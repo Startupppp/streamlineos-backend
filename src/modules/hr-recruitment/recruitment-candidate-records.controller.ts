@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -17,12 +16,13 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
-import { AccessService } from "../access/access.service";
 import {
   addVaultDocumentSchema,
   createCalibrationSchema,
@@ -47,54 +47,45 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentCandidateRecordsController {
   constructor(
     private readonly records: RecruitmentCandidateRecordsService,
     private readonly ai: RecruitmentCandidateAiService,
-    private readonly access: AccessService,
   ) {}
 
   @Post("ai-score")
-  async aiScore(
+  @RequirePermission("hr:employees:manage")
+  aiScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.ai.aiScore(u.orgId, candidateId);
   }
 
   @Post("composite-score")
-  async compositeScore(
+  @RequirePermission("hr:employees:manage")
+  compositeScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.ai.compositeScore(u.orgId, candidateId);
   }
 
   @Post("resume-parse")
+  @RequirePermission("hr:employees:manage")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
-  async resumeParse(
+  resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.ai.parseResume(u.orgId, candidateId, file, body);
   }
 
   @Get("rollout-documents")
+  @RequirePermission("hr:employees:view")
   listRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,19 +95,17 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("rollout-documents")
   @HttpCode(201)
-  async generateRolloutDocuments(
+  @RequirePermission("hr:employees:manage")
+  generateRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(rolloutDocumentsSchema)) body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden: HR/Admin role required");
-    }
     return this.records.generateRolloutDocuments(u.orgId, u.userId, candidateId, body);
   }
 
   @Get("calibration")
+  @RequirePermission("hr:employees:view")
   listCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -126,32 +115,27 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("calibration")
   @HttpCode(201)
-  async createCalibration(
+  @RequirePermission("hr:employees:manage")
+  createCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createCalibrationSchema)) body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.createCalibration(u.orgId, u.userId, candidateId, body);
   }
 
   @Patch("calibration")
-  async updateCalibration(
+  @RequirePermission("hr:employees:manage")
+  updateCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateCalibrationSchema)) body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.updateCalibration(u.orgId, candidateId, body);
   }
 
   @Get("referral")
+  @RequirePermission("hr:employees:view")
   listReferrals(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -161,32 +145,27 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("referral")
   @HttpCode(201)
-  async createReferral(
+  @RequirePermission("hr:employees:manage")
+  createReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createReferralSchema)) body: CreateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.createReferral(u.orgId, candidateId, body);
   }
 
   @Patch("referral")
-  async updateReferral(
+  @RequirePermission("hr:employees:manage")
+  updateReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(updateReferralSchema)) body: UpdateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.updateReferral(u.orgId, candidateId, body);
   }
 
   @Get("reference-checks")
+  @RequirePermission("hr:employees:view")
   listReferenceChecks(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -196,6 +175,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("reference-checks")
   @HttpCode(201)
+  @RequirePermission("hr:employees:manage")
   createReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(createReferenceCheckSchema)) body: CreateReferenceCheckInput,
@@ -205,6 +185,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Patch("reference-checks/:checkId")
+  @RequirePermission("hr:employees:manage")
   updateReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
@@ -215,6 +196,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Delete("reference-checks/:checkId")
+  @RequirePermission("hr:employees:manage")
   deleteReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
@@ -224,6 +206,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Get("documents")
+  @RequirePermission("hr:employees:view")
   listDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -233,6 +216,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("documents")
   @HttpCode(201)
+  @RequirePermission("hr:employees:manage")
   generateDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(generateDocumentSchema)) body: GenerateDocumentInput,
@@ -242,6 +226,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Get("documents/:documentId/view")
+  @RequirePermission("hr:employees:view")
   async viewDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -257,58 +242,47 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Get("vault")
-  async listVault(
+  @RequirePermission("hr:employees:manage")
+  listVault(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.listVault(u.orgId, candidateId);
   }
 
   @Post("vault")
   @HttpCode(201)
-  async addVaultDocument(
+  @RequirePermission("hr:employees:manage")
+  addVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Body(new ZodValidationPipe(addVaultDocumentSchema)) body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);
   }
 
   @Delete("vault/:documentId")
   @HttpCode(200)
-  async deleteVaultDocument(
+  @RequirePermission("hr:employees:manage")
+  deleteVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
   }
 
   @Get("vault/access-logs")
-  async listVaultAccessLogs(
+  @RequirePermission("hr:employees:manage")
+  listVaultAccessLogs(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Access denied — HR only");
-    }
     return this.records.listVaultAccessLogs(u.orgId, candidateId);
   }
 
   @Get("activity")
+  @RequirePermission("hr:employees:view")
   getActivity(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,

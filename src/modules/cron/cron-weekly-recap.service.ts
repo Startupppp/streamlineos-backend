@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
-import { LlmService } from "../ai/providers/llm.service";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getWeeklyRecapEmailTemplate } from "../email/templates/reports";
 import { logger } from "../../common/logger/logger.service";
 import { WEEKLY_RECAP_RECIPIENT_ROLES } from "../hr-lifecycle/hr-role-constants";
@@ -37,7 +37,7 @@ export class CronWeeklyRecapService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
   ) {}
 
   async sendWeeklyCeoRecaps(): Promise<{
@@ -153,7 +153,7 @@ export class CronWeeklyRecapService {
           pipelineSummary: pipelineRaw.map((r) => ({ status: r.status ?? "", count: r.count })),
         };
 
-        const aiNarrative = await this.generateNarrative(recapData, weekRange);
+        const aiNarrative = await this.generateNarrative(recapData, weekRange, org.id);
         const html = getWeeklyRecapEmailTemplate({
           orgName: recapData.orgName,
           weekRange,
@@ -188,9 +188,7 @@ export class CronWeeklyRecapService {
     return { results, generatedAt: new Date().toISOString() };
   }
 
-  private async generateNarrative(data: RecapData, weekRange: string): Promise<string> {
-    if (!this.llm.isConfigured()) return "";
-
+  private async generateNarrative(data: RecapData, weekRange: string, orgId: string): Promise<string> {
     const conversionRate =
       data.newLeads > 0 ? ((data.convertedLeads / data.newLeads) * 100).toFixed(1) : "0.0";
 
@@ -212,7 +210,16 @@ export class CronWeeklyRecapService {
     const user = `Write a weekly performance narrative for ${data.orgName} covering the week of ${weekRange}.\n\nKey metrics:\n- Total active employees: ${data.totalEmployees}\n- New leads this week: ${data.newLeads}\n- Leads converted this week: ${data.convertedLeads} (${conversionRate}% conversion rate)\n- Sales activities logged: ${data.totalActivities}\n- Open tickets: ${data.openTickets}\n- Tickets closed this week: ${data.closedTickets}\n- Pending leave requests: ${data.pendingLeaves}\n\nTop performers (by conversions): ${topPerformersList}\n\nLead pipeline breakdown: ${pipelineBreakdown}\n\nFocus on: overall business momentum, sales team effectiveness, operational health, and any areas requiring the CEO's immediate attention.`;
 
     try {
-      return await this.llm.invokeText({ model: "fast", system, user, temperature: 0.5 });
+      const result = await this.gateway.invokeText({
+        actor: { orgId, userId: null },
+        feature: "ceo.weekly-recap",
+        tier: "standard",
+        maxTokens: 1024,
+        prompt: { system, user },
+      });
+
+      if (!result.ok) return "";
+      return result.data;
     } catch {
       return "";
     }

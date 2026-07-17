@@ -6,6 +6,22 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+
+interface OrgContext {
+  orgId: string;
+  role: string;
+  isOwner: boolean;
+  enabledModules: string[];
+  plan: string | null;
+}
+
+interface OrgContextEntry {
+  value: OrgContext;
+  expiresAt: number;
+}
+
+const ORG_CTX_TTL_MS = 60_000;
+const REVOCATION_CACHE_TTL_MS = 5_000;
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
@@ -55,11 +71,18 @@ function extractClaims(payload: JWTPayload): BackendClaims {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly orgCtxCache = new Map<string, OrgContextEntry>();
+  private readonly revocationCache = new Map<string, number>();
+  private readonly jwtSecretKey: Uint8Array | null;
+
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
-  ) {}
+  ) {
+    const raw = process.env.BACKEND_JWT_SECRET;
+    this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
@@ -76,16 +99,13 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Unauthorized");
     }
     const token = header.slice("Bearer ".length).trim();
-    const secret = process.env.BACKEND_JWT_SECRET;
-    if (!secret) throw new UnauthorizedException("Unauthorized");
+    if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
 
     let claims: BackendClaims | null = null;
     try {
-      const { payload } = await jwtVerify(
-        token,
-        new TextEncoder().encode(secret),
-        { algorithms: ["HS256"] },
-      );
+      const { payload } = await jwtVerify(token, this.jwtSecretKey, {
+        algorithms: ["HS256"],
+      });
       claims = extractClaims(payload);
     } catch {
       // JWT verification failed — fall through to PAT check
@@ -97,11 +117,26 @@ export class JwtAuthGuard implements CanActivate {
       if (!claims.sessionId) throw new UnauthorizedException("Unauthorized");
 
       if (this.redis && !claims.sessionId.startsWith("pat:")) {
-        const revoked = await this.redis.get<boolean>(
-          `revoked:session:${claims.sessionId}`,
-        );
-        if (revoked)
-          throw new UnauthorizedException("Session has been revoked");
+        const cachedOk = this.revocationCache.get(claims.sessionId);
+        if (!(cachedOk && cachedOk > Date.now())) {
+          const revoked = await this.redis.get<boolean>(
+            `revoked:session:${claims.sessionId}`,
+          );
+          if (revoked) {
+            this.revocationCache.delete(claims.sessionId);
+            throw new UnauthorizedException("Session has been revoked");
+          }
+          this.revocationCache.set(
+            claims.sessionId,
+            Date.now() + REVOCATION_CACHE_TTL_MS,
+          );
+          if (this.revocationCache.size > 10000) {
+            const now = Date.now();
+            for (const [key, exp] of this.revocationCache) {
+              if (exp <= now) this.revocationCache.delete(key);
+            }
+          }
+        }
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
         ALLOW_NO_ORG_KEY,
@@ -159,13 +194,24 @@ export class JwtAuthGuard implements CanActivate {
     throw new UnauthorizedException("Unauthorized");
   }
 
-  private async resolveOrgContext(userId: string): Promise<{
-    orgId: string;
-    role: string;
-    isOwner: boolean;
-    enabledModules: string[];
-    plan: string | null;
-  } | null> {
+  private async resolveOrgContext(userId: string): Promise<OrgContext | null> {
+    const cached = this.orgCtxCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const result = await this.fetchOrgContext(userId);
+    if (result !== null) {
+      this.orgCtxCache.set(userId, { value: result, expiresAt: Date.now() + ORG_CTX_TTL_MS });
+      if (this.orgCtxCache.size > 5000) {
+        const now = Date.now();
+        for (const [key, entry] of this.orgCtxCache) {
+          if (entry.expiresAt <= now) this.orgCtxCache.delete(key);
+        }
+      }
+    }
+    return result;
+  }
+
+  private async fetchOrgContext(userId: string): Promise<OrgContext | null> {
     const [user, rows] = await Promise.all([
       this.db.query.users.findFirst({
         where: eq(users.id, userId),

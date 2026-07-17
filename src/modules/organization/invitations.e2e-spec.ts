@@ -80,14 +80,6 @@ describe("Invitations auth/routing (e2e)", () => {
     expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
   });
 
-  it("400 on POST /organization/invitations/accept when password fails complexity rules", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/organization/invitations/accept")
-      .send({ token: "valid-token", password: "short" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
-  });
-
   it("429 on POST /organization/invitations/accept after exhausting the 10-per-minute rate limit", async () => {
     const ip = "10.0.2.11";
     const body = { token: "test-rate-limit-token" };
@@ -111,7 +103,7 @@ describe("Invitations auth/routing (e2e)", () => {
   it("POST /organization/invitations/accept reachable without JWT for new user path (no 401)", async () => {
     const res = await request(app.getHttpServer())
       .post("/organization/invitations/accept")
-      .send({ token: "some-valid-looking-token", password: "NewPass@99!", firstName: "Jane", lastName: "Doe" });
+      .send({ token: "some-valid-looking-token", firstName: "Jane", lastName: "Doe" });
     expect(res.status).not.toBe(401);
   });
 });

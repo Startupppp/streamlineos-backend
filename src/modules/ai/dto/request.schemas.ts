@@ -156,6 +156,7 @@ export const chatRequestSchema = z.object({
     .min(1)
     .max(50),
   conversationId: z.number().int().positive().optional(),
+  persona: z.string().optional(),
 });
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
@@ -186,3 +187,32 @@ export const conversationMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 export type ConversationMessagesQueryInput = z.infer<typeof conversationMessagesQuerySchema>;
+
+export const policyQaSchema = z.object({
+  question: z.string().trim().min(3).max(1000),
+});
+export type PolicyQaInput = z.infer<typeof policyQaSchema>;
+
+export const interviewKitSchema = z.object({
+  jobPostingId: z.number().int().positive(),
+});
+export type InterviewKitInput = z.infer<typeof interviewKitSchema>;
+
+export const letterDraftSchema = z.object({
+  userId: z.string().min(1),
+  letterType: z.enum(["offer", "appointment", "appreciation", "warning", "promotion", "termination_notice", "experience"]),
+  details: z.string().max(2000).optional(),
+});
+export type LetterDraftInput = z.infer<typeof letterDraftSchema>;
+
+export const interviewNotesSummarySchema = z.object({
+  candidateId: z.number().int().positive(),
+  jobPostingId: z.number().int().positive().optional(),
+});
+export type InterviewNotesSummaryInput = z.infer<typeof interviewNotesSummarySchema>;
+
+export const acceptCandidateScoreSchema = z.object({
+  candidateId: z.number().int().positive(),
+  aiScore: z.number().int().min(0).max(100),
+});
+export type AcceptCandidateScoreInput = z.infer<typeof acceptCandidateScoreSchema>;

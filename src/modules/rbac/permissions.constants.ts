@@ -1428,6 +1428,12 @@ const SHARED_PERMISSIONS: Permission[] = [
     description: "Create and manage calendar events",
   },
   {
+    name: "calendar:ai:use",
+    resource: "calendar:ai",
+    action: "use",
+    description: "Use AI meeting preparation and follow-up features",
+  },
+  {
     name: "integrations:connections:view",
     resource: "integrations:connections",
     action: "view",
@@ -1581,6 +1587,18 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     description: "View support reports and analytics",
   },
   {
+    name: "support:ai:view",
+    resource: "support:ai",
+    action: "view",
+    description: "View support AI reporting and insights",
+  },
+  {
+    name: "support:ai:invoke",
+    resource: "support:ai",
+    action: "invoke",
+    description: "Use support AI features (reply/macro improvement, translation)",
+  },
+  {
     name: "support:queues:manage",
     resource: "support:queues",
     action: "manage",
@@ -1615,6 +1633,18 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     resource: "support:channels",
     action: "manage",
     description: "Configure support channels (email inbox, chat, WhatsApp, SMS)",
+  },
+  {
+    name: "support:knowledge-gaps:view",
+    resource: "support:knowledge-gaps",
+    action: "view",
+    description: "View knowledge gap analysis and clustered support questions",
+  },
+  {
+    name: "support:knowledge-gaps:manage",
+    resource: "support:knowledge-gaps",
+    action: "manage",
+    description: "Trigger gap detection, draft KB articles from gaps, and dismiss gaps",
   },
 ];
 
@@ -2019,6 +2049,12 @@ const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage recurring transaction templates",
   },
+  {
+    name: "accounting:ai:use",
+    resource: "accounting:ai",
+    action: "use",
+    description: "Use AI features in the accounting module (variance narration, reconciliation explanation, document extraction)",
+  },
 ];
 
 const INVENTORY_PERMISSIONS: Permission[] = [
@@ -2174,6 +2210,8 @@ const INVENTORY_PERMISSIONS: Permission[] = [
   { name: "inventory:channels:manage", resource: "inventory:channels", action: "manage", description: "Manage sales channel stock publications" },
   { name: "inventory:3pl:manage", resource: "inventory:3pl", action: "manage", description: "Manage 3PL warehouse connections" },
   { name: "inventory:replenishment:manage", resource: "inventory:replenishment", action: "manage", description: "Manage reorder rules and replenishment" },
+  { name: "inventory:ai:propose", resource: "inventory:ai", action: "propose", description: "Propose AI-generated reorder draft POs and confirm them" },
+  { name: "inventory:ai:manage", resource: "inventory:ai", action: "manage", description: "Dismiss or update AI-generated inventory insights" },
 ];
 
 const KB_PERMISSIONS: Permission[] = [
@@ -2527,6 +2565,48 @@ const CHAT_PERMISSIONS: Permission[] = [
     resource: "ai:chat",
     action: "use",
     description: "Use the AI chat assistant",
+  },
+  {
+    name: "ai:feedback:create",
+    resource: "ai:feedback",
+    action: "create",
+    description: "Submit thumbs-up/down feedback on AI responses",
+  },
+  {
+    name: "ai:search:use",
+    resource: "ai:search",
+    action: "use",
+    description: "Use AI-powered cited workspace search (Ask StreamlineOS)",
+  },
+];
+
+const AI_SUMMARIES_PERMISSIONS: Permission[] = [
+  {
+    name: "ai:summaries:view",
+    resource: "ai:summaries",
+    action: "view",
+    description: "View AI-generated summary snapshots and diffs",
+  },
+  {
+    name: "ai:summaries:create",
+    resource: "ai:summaries",
+    action: "create",
+    description: "Persist AI-generated summary snapshots",
+  },
+];
+
+const EXECUTIVE_BRIEF_PERMISSIONS: Permission[] = [
+  {
+    name: "ai:executive-brief:view",
+    resource: "ai:executive-brief",
+    action: "view",
+    description: "View the AI-generated cross-module executive brief",
+  },
+  {
+    name: "ai:executive-brief:generate",
+    resource: "ai:executive-brief",
+    action: "generate",
+    description: "Trigger generation of a new executive brief",
   },
 ];
 
@@ -3423,6 +3503,8 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_PORTFOLIO_PERMISSIONS,
   ...PROJECT_WORKFLOW_PERMISSIONS,
   ...FEEDBUCKET_PERMISSIONS,
+  ...AI_SUMMARIES_PERMISSIONS,
+  ...EXECUTIVE_BRIEF_PERMISSIONS,
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -3450,10 +3532,15 @@ const EMPLOYEE_SELF_SERVICE = [
   "chat:messages:read",
   "chat:messages:write",
   "ai:chat:use",
+  "ai:feedback:create",
+  "ai:search:use",
+  "ai:summaries:view",
+  "ai:summaries:create",
   "settings:api-tokens:read",
   "settings:api-tokens:write",
   "calendar:read",
   "calendar:write",
+  "calendar:ai:use",
   "integrations:connections:view",
   "integrations:connections:manage",
   "onboarding:module-checklists:view",
@@ -3708,6 +3795,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "dashboard:customer-executive:view",
     "support:kb:view",
     "support:kb:manage",
+    "support:knowledge-gaps:view",
+    "support:knowledge-gaps:manage",
     "support:macros:view",
     "support:macros:manage",
     "support:tickets:manage",
@@ -3719,6 +3808,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "support:tags:manage",
     "support:channels:manage",
     "support:reports:view",
+    "support:ai:view",
+    "support:ai:invoke",
     "kb:articles:view",
     "kb:articles:create",
     "kb:articles:update",
@@ -4036,6 +4127,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "settings:webhooks:manage",
     "dashboard:support:view",
     "support:kb:view",
+    "support:knowledge-gaps:view",
     "support:macros:view",
     "accounting:view",
     "accounting:report",
@@ -4053,6 +4145,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:sales-orders:confirm",
     "inventory:sales-orders:ship",
     "inventory:reports:read",
+    "inventory:ai:propose",
+    "inventory:ai:manage",
     "inventory:valuation:read",
     "inventory:quality:read",
     "workflows:workflows:view",
@@ -4282,6 +4376,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "inventory:3pl:manage",
     "inventory:replenishment:manage",
     "inventory:reports:read",
+    "inventory:ai:propose",
+    "inventory:ai:manage",
     "reports:view",
   ],
 
@@ -4358,6 +4454,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "accounting:audit:export",
     "accounting:recurring:read",
     "accounting:recurring:manage",
+    "accounting:ai:use",
     "reports:view",
     "reports:export",
     "reports:generate",

@@ -29,6 +29,9 @@ export interface TrackAiUsageParams {
   promptTokens?: number;
   completionTokens?: number;
   metadata?: Record<string, unknown>;
+  latencyMs?: number;
+  correlationId?: string;
+  outcome?: string;
 }
 
 @Injectable()
@@ -36,7 +39,7 @@ export class AiUsageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async track(params: TrackAiUsageParams): Promise<void> {
-    const { orgId, userId, feature, model, metadata } = params;
+    const { orgId, userId, feature, model, metadata, latencyMs, correlationId, outcome } = params;
     const promptTokens = params.promptTokens ?? 0;
     const completionTokens = params.completionTokens ?? 0;
     const totalTokens = promptTokens + completionTokens;
@@ -53,6 +56,9 @@ export class AiUsageService {
         totalTokens,
         estimatedCostUsd,
         metadata: metadata ?? null,
+        latencyMs: latencyMs ?? null,
+        correlationId: correlationId ?? null,
+        outcome: outcome ?? null,
       });
     } catch (error) {
       logger.error("Failed to track AI usage", { error, orgId, feature });

@@ -1,9 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   aiCreditPacks,
+  aiCreditReservations,
   aiCreditTransactions,
   orgAiCredits,
 } from "../../db/schema";
@@ -219,7 +220,13 @@ export class AiCreditsService {
     }
   }
 
-  async purchaseCreditsDirectly(orgId: string, userId: string | null, packId: number, automatic = false) {
+  async purchaseCreditsDirectly(
+    orgId: string,
+    userId: string | null,
+    packId: number,
+    automatic = false,
+    paymentReferenceId?: string,
+  ) {
     const [pack] = await this.db
       .select()
       .from(aiCreditPacks)
@@ -228,54 +235,77 @@ export class AiCreditsService {
     if (!pack) throw new NotFoundException("AI credit pack not found or inactive");
 
     const creditsAdded = pack.credits + pack.bonusCredits;
+    const referenceId = paymentReferenceId ?? String(packId);
 
-    const wallet = await this.db.transaction(async (tx) => {
-      const [locked] = await tx
-        .select()
-        .from(orgAiCredits)
-        .where(eq(orgAiCredits.orgId, orgId))
-        .for("update");
+    try {
+      const wallet = await this.db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select()
+          .from(orgAiCredits)
+          .where(eq(orgAiCredits.orgId, orgId))
+          .for("update");
 
-      let currentBalance = 0;
-      if (locked) {
-        currentBalance = locked.balance;
-      } else {
-        await tx.insert(orgAiCredits).values({ orgId });
-      }
+        let currentBalance = 0;
+        if (locked) {
+          currentBalance = locked.balance;
+        } else {
+          await tx.insert(orgAiCredits).values({ orgId });
+        }
 
-      const newBalance = currentBalance + creditsAdded;
-      const [updated] = await tx
-        .update(orgAiCredits)
-        .set({
-          balance: newBalance,
-          lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(orgAiCredits.orgId, orgId))
-        .returning();
+        const newBalance = currentBalance + creditsAdded;
+        const [updated] = await tx
+          .update(orgAiCredits)
+          .set({
+            balance: newBalance,
+            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(orgAiCredits.orgId, orgId))
+          .returning();
 
-      await tx.insert(aiCreditTransactions).values({
-        orgId,
-        userId,
-        type: "PURCHASE",
-        amount: creditsAdded,
-        balanceAfter: newBalance,
-        feature: "credit_purchase",
-        referenceId: String(packId),
-        metadata: automatic ? { automatic: true } : null,
+        await tx.insert(aiCreditTransactions).values({
+          orgId,
+          userId,
+          type: "PURCHASE",
+          amount: creditsAdded,
+          balanceAfter: newBalance,
+          feature: "credit_purchase",
+          referenceId,
+          metadata: automatic ? { automatic: true } : null,
+        });
+
+        return updated;
       });
 
-      return updated;
-    });
-
-    return { balance: wallet.balance, creditsAdded, pack };
+      return { balance: wallet.balance, creditsAdded, pack };
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "23505") {
+        const [wallet] = await this.db
+          .select()
+          .from(orgAiCredits)
+          .where(eq(orgAiCredits.orgId, orgId));
+        return { balance: wallet?.balance ?? 0, creditsAdded, pack };
+      }
+      throw err;
+    }
   }
 
   async listTransactions(orgId: string, page: number, limit: number) {
     const offset = (page - 1) * limit;
     const [items, [countRow]] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: aiCreditTransactions.id,
+          orgId: aiCreditTransactions.orgId,
+          userId: aiCreditTransactions.userId,
+          type: aiCreditTransactions.type,
+          amount: aiCreditTransactions.amount,
+          balanceAfter: aiCreditTransactions.balanceAfter,
+          feature: aiCreditTransactions.feature,
+          model: aiCreditTransactions.model,
+          referenceId: aiCreditTransactions.referenceId,
+          createdAt: aiCreditTransactions.createdAt,
+        })
         .from(aiCreditTransactions)
         .where(eq(aiCreditTransactions.orgId, orgId))
         .orderBy(desc(aiCreditTransactions.createdAt))
@@ -372,6 +402,281 @@ export class AiCreditsService {
       )
       .limit(1);
     return !!row;
+  }
+
+  async grantAiPackCreditsFromWebhook(orgId: string, packId: number, paymentId: string): Promise<void> {
+    const [pack] = await this.db
+      .select()
+      .from(aiCreditPacks)
+      .where(and(eq(aiCreditPacks.id, packId), eq(aiCreditPacks.isActive, true)));
+
+    if (!pack) return;
+
+    const creditsAdded = pack.credits + pack.bonusCredits;
+
+    try {
+      await this.db.transaction(async (tx) => {
+        let [wallet] = await tx
+          .select()
+          .from(orgAiCredits)
+          .where(eq(orgAiCredits.orgId, orgId))
+          .for("update");
+
+        let currentBalance = 0;
+        if (wallet) {
+          currentBalance = wallet.balance;
+        } else {
+          [wallet] = await tx.insert(orgAiCredits).values({ orgId }).returning();
+        }
+
+        const newBalance = currentBalance + creditsAdded;
+        await tx
+          .update(orgAiCredits)
+          .set({
+            balance: newBalance,
+            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(orgAiCredits.orgId, orgId));
+
+        await tx.insert(aiCreditTransactions).values({
+          orgId,
+          userId: null,
+          type: "PURCHASE",
+          amount: creditsAdded,
+          balanceAfter: newBalance,
+          feature: "credit_purchase",
+          referenceId: paymentId,
+          metadata: { source: "webhook" },
+        });
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "23505") {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async reserve(input: {
+    orgId: string;
+    userId: string | null;
+    feature: string;
+    credits: number;
+    idempotencyKey?: string;
+  }): Promise<{ reservationId: number }> {
+    const { orgId, userId, feature, credits, idempotencyKey } = input;
+
+    if (idempotencyKey) {
+      const [existing] = await this.db
+        .select({ id: aiCreditReservations.id })
+        .from(aiCreditReservations)
+        .where(
+          and(
+            eq(aiCreditReservations.orgId, orgId),
+            eq(aiCreditReservations.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (existing) return { reservationId: existing.id };
+    }
+
+    try {
+      return await this.db.transaction(async (tx) => {
+        let [wallet] = await tx
+          .select()
+          .from(orgAiCredits)
+          .where(eq(orgAiCredits.orgId, orgId))
+          .for("update");
+
+        if (!wallet) {
+          [wallet] = await tx
+            .insert(orgAiCredits)
+            .values({ orgId, balance: TRIAL_GRANT_AMOUNT, lifetimeGranted: TRIAL_GRANT_AMOUNT })
+            .returning();
+          await tx.insert(aiCreditTransactions).values({
+            orgId,
+            userId: null,
+            type: "PLAN_GRANT",
+            amount: TRIAL_GRANT_AMOUNT,
+            balanceAfter: TRIAL_GRANT_AMOUNT,
+            feature: "trial-grant",
+            referenceId: "trial-grant",
+          });
+        }
+
+        if (wallet.balance < credits) {
+          throw new BadRequestException("Insufficient AI credits");
+        }
+
+        const newBalance = wallet.balance - credits;
+        await tx
+          .update(orgAiCredits)
+          .set({ balance: newBalance, updatedAt: new Date() })
+          .where(eq(orgAiCredits.orgId, orgId));
+
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        const [reservation] = await tx
+          .insert(aiCreditReservations)
+          .values({
+            orgId,
+            userId,
+            feature,
+            credits,
+            status: "RESERVED",
+            idempotencyKey: idempotencyKey ?? null,
+            expiresAt,
+          })
+          .returning({ id: aiCreditReservations.id });
+
+        return { reservationId: reservation.id };
+      });
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "23505" && idempotencyKey) {
+        const [existing] = await this.db
+          .select({ id: aiCreditReservations.id })
+          .from(aiCreditReservations)
+          .where(
+            and(
+              eq(aiCreditReservations.orgId, orgId),
+              eq(aiCreditReservations.idempotencyKey, idempotencyKey),
+            ),
+          )
+          .limit(1);
+        if (existing) return { reservationId: existing.id };
+      }
+      throw err;
+    }
+  }
+
+  async settle(
+    reservationId: number,
+    input: { actualCredits?: number; model?: string; metadata?: Record<string, unknown> },
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [reservation] = await tx
+        .select()
+        .from(aiCreditReservations)
+        .where(eq(aiCreditReservations.id, reservationId))
+        .for("update");
+
+      if (!reservation) throw new NotFoundException("Reservation not found");
+      if (reservation.status === "SETTLED") return;
+      if (reservation.status !== "RESERVED") {
+        throw new ConflictException(`Cannot settle a reservation in status ${reservation.status}`);
+      }
+
+      const actual = Math.max(0, Math.min(input.actualCredits ?? reservation.credits, reservation.credits));
+      const refund = reservation.credits - actual;
+
+      let newBalance = 0;
+      if (actual > 0 || refund > 0) {
+        const [wallet] = await tx
+          .select()
+          .from(orgAiCredits)
+          .where(eq(orgAiCredits.orgId, reservation.orgId))
+          .for("update");
+
+        const currentBalance = wallet?.balance ?? 0;
+        newBalance = currentBalance + refund;
+
+        await tx
+          .update(orgAiCredits)
+          .set({
+            balance: newBalance,
+            lifetimeConsumed: sql`${orgAiCredits.lifetimeConsumed} + ${actual}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(orgAiCredits.orgId, reservation.orgId));
+      }
+
+      if (actual > 0) {
+        await tx.insert(aiCreditTransactions).values({
+          orgId: reservation.orgId,
+          userId: reservation.userId,
+          type: "USAGE",
+          amount: -actual,
+          balanceAfter: newBalance,
+          feature: reservation.feature,
+          model: input.model ?? null,
+          metadata: input.metadata ?? null,
+        });
+      }
+
+      await tx
+        .update(aiCreditReservations)
+        .set({
+          status: "SETTLED",
+          model: input.model ?? null,
+          metadata: input.metadata ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(aiCreditReservations.id, reservationId));
+    });
+  }
+
+  async release(reservationId: number, reason: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [reservation] = await tx
+        .select()
+        .from(aiCreditReservations)
+        .where(eq(aiCreditReservations.id, reservationId))
+        .for("update");
+
+      if (!reservation) throw new NotFoundException("Reservation not found");
+      if (reservation.status === "RELEASED") return;
+      if (reservation.status === "SETTLED") {
+        throw new ConflictException("Cannot release an already settled reservation");
+      }
+
+      const [wallet] = await tx
+        .select()
+        .from(orgAiCredits)
+        .where(eq(orgAiCredits.orgId, reservation.orgId))
+        .for("update");
+
+      const currentBalance = wallet?.balance ?? 0;
+      const newBalance = currentBalance + reservation.credits;
+
+      await tx
+        .update(orgAiCredits)
+        .set({ balance: newBalance, updatedAt: new Date() })
+        .where(eq(orgAiCredits.orgId, reservation.orgId));
+
+      await tx
+        .update(aiCreditReservations)
+        .set({
+          status: "RELEASED",
+          metadata: { reason },
+          updatedAt: new Date(),
+        })
+        .where(eq(aiCreditReservations.id, reservationId));
+    });
+  }
+
+  async sweepExpiredReservations(): Promise<number> {
+    const now = new Date();
+    const expired = await this.db
+      .select({ id: aiCreditReservations.id })
+      .from(aiCreditReservations)
+      .where(
+        and(
+          eq(aiCreditReservations.status, "RESERVED"),
+          lte(aiCreditReservations.expiresAt, now),
+        ),
+      )
+      .limit(500);
+
+    let count = 0;
+    for (const row of expired) {
+      try {
+        await this.release(row.id, "expired");
+        count++;
+      } catch {
+        // already released/settled by concurrent path; skip
+      }
+    }
+    return count;
   }
 
   async getMonthlyGrantedOrgIds(orgIds: string[]): Promise<Set<string>> {

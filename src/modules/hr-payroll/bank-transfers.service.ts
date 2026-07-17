@@ -9,7 +9,7 @@ type BankTransferInsert = typeof bankTransfers.$inferInsert;
 
 function generateNeftCsv(transfer: typeof bankTransfers.$inferSelect): string {
   const header = "SrNo,BeneficiaryName,AccountNumber,IFSCCode,Amount,Remarks";
-  const rows = (transfer.entries as BankTransferEntry[]).map((e, i) =>
+  const rows = transfer.entries.map((e, i) =>
     `${i + 1},"${e.employeeName}","${e.bankAccount}","${e.ifscCode}",${e.amount},"Salary ${transfer.month}"`
   );
   return [header, ...rows].join("\n");

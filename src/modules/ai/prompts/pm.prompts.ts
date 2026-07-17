@@ -116,3 +116,60 @@ Current project data:\n${ctx.evidence}
 Question: ${ctx.question}`,
   };
 }
+
+export interface WeeklyUpdatePromptContext {
+  projectName: string;
+  dateRange: string;
+  completedTasks: Array<{ title: string }>;
+  blockedTasks: Array<{ title: string }>;
+  openRisks: Array<{ title: string; probability: string; impact: string }>;
+  decisions: Array<{ title: string; status: string }>;
+}
+
+export function weeklyUpdatePrompt(ctx: WeeklyUpdatePromptContext) {
+  const completed = ctx.completedTasks.slice(0, 20).map((t) => `- ${t.title}`).join("\n") || "None";
+  const blocked = ctx.blockedTasks.slice(0, 10).map((t) => `- ${t.title}`).join("\n") || "None";
+  const risks = ctx.openRisks.slice(0, 5).map((r) => `- ${r.title} [${r.probability}/${r.impact}]`).join("\n") || "None";
+  const decisions = ctx.decisions.slice(0, 5).map((d) => `- ${d.title} (${d.status})`).join("\n") || "None";
+
+  return {
+    system: `You are a project communications assistant. Draft a concise, factual weekly project update. Cite only data provided. Mark lists as SUGGESTIONS for user review — do not state they will be auto-sent. Never fabricate metrics or people.`,
+    user: `Project: "${ctx.projectName}" — Week: ${ctx.dateRange}
+Completed this period:\n${completed}
+Blockers:\n${blocked}
+Open risks:\n${risks}
+Recent decisions:\n${decisions}
+
+Draft a weekly update citing real data only.`,
+  };
+}
+
+export interface ChangeImpactPromptContext {
+  projectName: string;
+  changeRequests: Array<{ title: string; status: string; timelineImpactDays?: number | null; budgetImpactCents?: number | null; impact?: string | null }>;
+  openRisks: Array<{ title: string; probability: string; impact: string }>;
+  pendingApprovals: Array<{ title: string; entityType: string }>;
+}
+
+export function changeImpactPrompt(ctx: ChangeImpactPromptContext) {
+  const crLines = ctx.changeRequests.slice(0, 10).map((cr) => {
+    const parts = [`- [${cr.status}] ${cr.title}`];
+    if (cr.timelineImpactDays) parts.push(`  Timeline: +${cr.timelineImpactDays}d`);
+    if (cr.budgetImpactCents) parts.push(`  Budget: +$${Math.round(cr.budgetImpactCents / 100)}`);
+    if (cr.impact) parts.push(`  Impact: ${cr.impact.slice(0, 200)}`);
+    return parts.join("\n");
+  }).join("\n") || "None";
+
+  const riskLines = ctx.openRisks.slice(0, 5).map((r) => `- ${r.title} [${r.probability}/${r.impact}]`).join("\n") || "None";
+  const approvalLines = ctx.pendingApprovals.slice(0, 5).map((a) => `- ${a.title} (${a.entityType})`).join("\n") || "None";
+
+  return {
+    system: `You are a project change management analyst. Produce a structured, factual change impact brief. Use only data provided. Do not fabricate numbers or people. Cite all referenced items.`,
+    user: `Project: "${ctx.projectName}"
+Change Requests:\n${crLines}
+Open Risks:\n${riskLines}
+Pending Approvals:\n${approvalLines}
+
+Produce a structured change impact analysis.`,
+  };
+}

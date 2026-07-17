@@ -8,7 +8,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
 import type { CreateProviderInput, UpdateProviderInput, TestProviderInput } from "./dto/provider.schemas";
-import type { NotificationChannel, NotificationPriority } from "./notification.types";
 
 type ProviderRow = typeof notificationProviderAccounts.$inferSelect;
 
@@ -117,7 +116,7 @@ export class NotificationProvidersService {
     });
     if (!account) throw new NotFoundException("Provider not found");
 
-    const channel = account.channel as NotificationChannel;
+    const channel = account.channel;
     const provider = this.registry.get(channel);
     if (!provider) throw new BadRequestException(`No provider implementation for ${channel}`);
 
@@ -135,7 +134,7 @@ export class NotificationProvidersService {
       title: "StreamlineOS test notification",
       message: "This is a test message confirming your notification provider is configured correctly.",
       link: null,
-      priority: "NORMAL" as NotificationPriority,
+      priority: "NORMAL",
       sandbox: account.sandboxMode,
     });
 

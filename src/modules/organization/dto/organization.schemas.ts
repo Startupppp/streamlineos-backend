@@ -81,7 +81,6 @@ export const updateOrgSettingsSchema = z.object({
 
 export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
-  passwordExpiryDays: z.number().int().min(30).max(365).nullable().optional(),
   allowedEmailDomains: z.array(z.string().min(1)).optional(),
   maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
 });
@@ -97,12 +96,6 @@ export const updateMemberRoleSchema = z.object({
 
 export const acceptInvitationSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8).max(128)
-    .regex(/[A-Z]/, "Must include an uppercase letter")
-    .regex(/[a-z]/, "Must include a lowercase letter")
-    .regex(/[0-9]/, "Must include a number")
-    .regex(/[^A-Za-z0-9]/, "Must include a special character")
-    .optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });

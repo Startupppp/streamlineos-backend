@@ -3,6 +3,12 @@ import { ForbiddenException } from "@nestjs/common";
 import { SignEnvelopesService } from "../sign-envelopes.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/plan-limits.service";
+import { SignAuditService } from "../sign-audit.service";
+import { SignTokensService } from "../sign-tokens.service";
+import { SignSettingsService } from "../sign-settings.service";
+import { SignNotificationsService } from "../sign-notifications.service";
+import { SignRecipientsService } from "../sign-recipients.service";
+import { SignIntegrationsService } from "../sign-integrations.service";
 
 const ORG = "org-sign-limits";
 const USER = "user-sign-1";
@@ -30,18 +36,18 @@ const makeDb = () => {
 };
 
 describe("SignEnvelopesService plan-limit enforcement", () => {
-  const buildModule = async (db: Record<string, jest.Mock>, planLimits: { assertWithinLimit: jest.Mock }) => {
+  const buildModule = async (db: Record<string, jest.Mock>, planLimits: Pick<PlanLimitsService, "assertWithinLimit">) => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SignEnvelopesService,
         { provide: DRIZZLE, useValue: { ...db, query: { signEnvelopes: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) } } } },
         { provide: PlanLimitsService, useValue: planLimits },
-        { provide: "SignAuditService", useValue: { record: jest.fn().mockResolvedValue(undefined) } },
-        { provide: "SignTokensService", useValue: { generateSigningToken: jest.fn().mockReturnValue("tok"), hash: jest.fn().mockReturnValue("hash"), buildSigningUrl: jest.fn().mockReturnValue("url") } },
-        { provide: "SignSettingsService", useValue: { getOrCreate: jest.fn().mockResolvedValue({ defaultExpirationDays: 30 }) } },
-        { provide: "SignNotificationsService", useValue: { sendInvitation: jest.fn(), sendCcNotice: jest.fn(), sendVoidedToRecipient: jest.fn(), sendReminder: jest.fn() } },
-        { provide: "SignRecipientsService", useValue: { listForEnvelope: jest.fn().mockResolvedValue([]), update: jest.fn() } },
-        { provide: "SignIntegrationsService", useValue: { emitEnvelopeEvent: jest.fn() } },
+        { provide: SignAuditService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        { provide: SignTokensService, useValue: { generateSigningToken: jest.fn().mockReturnValue("tok"), hash: jest.fn().mockReturnValue("hash"), buildSigningUrl: jest.fn().mockReturnValue("url") } },
+        { provide: SignSettingsService, useValue: { getOrCreate: jest.fn().mockResolvedValue({ defaultExpirationDays: 30 }) } },
+        { provide: SignNotificationsService, useValue: { sendInvitation: jest.fn(), sendCcNotice: jest.fn(), sendVoidedToRecipient: jest.fn(), sendReminder: jest.fn() } },
+        { provide: SignRecipientsService, useValue: { listForEnvelope: jest.fn().mockResolvedValue([]), update: jest.fn() } },
+        { provide: SignIntegrationsService, useValue: { emitEnvelopeEvent: jest.fn() } },
       ],
     }).compile();
 

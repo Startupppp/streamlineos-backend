@@ -22,15 +22,18 @@ export class InventoryAuditService {
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0] | Db,
     input: AuditInsertInput,
   ): Promise<void> {
-    await (tx as Db).insert(invAuditEvents).values({
+    const before = input.before != null && typeof input.before === "object" ? (input.before as Record<string, unknown>) : null;
+    const after = input.after != null && typeof input.after === "object" ? (input.after as Record<string, unknown>) : null;
+    const metadata = input.metadata != null && typeof input.metadata === "object" ? (input.metadata as Record<string, unknown>) : null;
+    await tx.insert(invAuditEvents).values({
       orgId: input.orgId,
       actorUserId: input.actorUserId ?? null,
       action: input.action,
       resourceType: input.resourceType,
       resourceId: input.resourceId,
-      before: input.before as Record<string, unknown> ?? null,
-      after: input.after as Record<string, unknown> ?? null,
-      metadata: input.metadata as Record<string, unknown> ?? null,
+      before,
+      after,
+      metadata,
     });
   }
 }

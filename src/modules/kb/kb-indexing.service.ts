@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { kbArticles, kbArticleAttachments, kbArticleChunks, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -29,6 +30,33 @@ export class KbIndexingService {
     private readonly embeddings: EmbeddingsService,
     private readonly storage: StorageService,
   ) {}
+
+  private sha256(text: string): string {
+    return createHash("sha256").update(text).digest("hex");
+  }
+
+  private async isContentUnchanged(
+    orgId: string,
+    filter: { articleId: number } | { pageId: number },
+    source: "article_body" | "page_body",
+    newText: string,
+  ): Promise<boolean> {
+    const idCondition = "articleId" in filter
+      ? eq(kbArticleChunks.articleId, filter.articleId)
+      : eq(kbArticleChunks.pageId, filter.pageId);
+
+    const existing = await this.db
+      .select({ content: kbArticleChunks.content })
+      .from(kbArticleChunks)
+      .where(and(eq(kbArticleChunks.orgId, orgId), idCondition, eq(kbArticleChunks.source, source)))
+      .orderBy(asc(kbArticleChunks.chunkIndex));
+
+    if (existing.length === 0) return false;
+
+    const existingHash = this.sha256(existing.map((r) => r.content).join(""));
+    const newHash = this.sha256(newText);
+    return existingHash === newHash;
+  }
 
   private chunkText(text: string): string[] {
     const chunkSize = 1500;
@@ -76,6 +104,9 @@ export class KbIndexingService {
       await this.removeArticleChunks(orgId, articleId);
       return;
     }
+
+    const unchanged = await this.isContentUnchanged(orgId, { articleId: articleId }, "article_body", article.contentText);
+    if (unchanged) return;
 
     const chunks = this.chunkText(article.contentText);
 
@@ -126,6 +157,9 @@ export class KbIndexingService {
       await this.removePageChunks(orgId, pageId);
       return;
     }
+
+    const unchanged = await this.isContentUnchanged(orgId, { pageId }, "page_body", page.contentText);
+    if (unchanged) return;
 
     const chunks = this.chunkText(page.contentText);
 

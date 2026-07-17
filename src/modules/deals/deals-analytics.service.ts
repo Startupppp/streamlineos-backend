@@ -198,44 +198,40 @@ export class DealsAnalyticsService {
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
 
-        const wonDeals = await this.db
-          .select({
-            count: sql<number>`count(*)::int`,
-            totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-          })
-          .from(deals)
-          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonKeys)));
+        const allKeys = wonKeys.concat(lostKeys);
+        const [bucketRows, lostByReason] = await Promise.all([
+          this.db
+            .select({
+              bucket: sql<string>`CASE WHEN ${deals.stage} = ANY(${wonKeys}) THEN 'won' ELSE 'lost' END`,
+              count: sql<number>`count(*)::int`,
+              totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
+            })
+            .from(deals)
+            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, allKeys)))
+            .groupBy(sql`CASE WHEN ${deals.stage} = ANY(${wonKeys}) THEN 'won' ELSE 'lost' END`),
+          this.db
+            .select({
+              reason: sql<string>`COALESCE(${deals.lostReason}, 'Not specified')`,
+              count: sql<number>`count(*)::int`,
+              totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
+            })
+            .from(deals)
+            .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)))
+            .groupBy(sql`COALESCE(${deals.lostReason}, 'Not specified')`)
+            .orderBy(sql`count(*) desc`),
+        ]);
 
-        const lostDeals = await this.db
-          .select({
-            count: sql<number>`count(*)::int`,
-            totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-          })
-          .from(deals)
-          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)));
-
-        const lostByReason = await this.db
-          .select({
-            reason: sql<string>`COALESCE(${deals.lostReason}, 'Not specified')`,
-            count: sql<number>`count(*)::int`,
-            totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-          })
-          .from(deals)
-          .where(and(eq(deals.orgId, orgId), inArray(deals.stage, lostKeys)))
-          .groupBy(sql`COALESCE(${deals.lostReason}, 'Not specified')`)
-          .orderBy(sql`count(*) desc`);
-
-        const won = wonDeals[0] ?? { count: 0, totalValue: 0 };
-        const lost = lostDeals[0] ?? { count: 0, totalValue: 0 };
-        const total = won.count + lost.count;
-        const winRate = total > 0 ? Math.round((won.count / total) * 100) : 0;
+        const wonRow = bucketRows.find((r) => r.bucket === "won") ?? { count: 0, totalValue: 0 };
+        const lostRow = bucketRows.find((r) => r.bucket === "lost") ?? { count: 0, totalValue: 0 };
+        const total = wonRow.count + lostRow.count;
+        const winRate = total > 0 ? Math.round((wonRow.count / total) * 100) : 0;
 
         return {
           summary: {
-            won: won.count,
-            wonValue: won.totalValue,
-            lost: lost.count,
-            lostValue: lost.totalValue,
+            won: wonRow.count,
+            wonValue: wonRow.totalValue,
+            lost: lostRow.count,
+            lostValue: lostRow.totalValue,
             total,
             winRate,
           },

@@ -41,8 +41,9 @@ export class ProjectsTemplatesService {
   listTemplates(orgId: string) {
     return this.db.query.projectTemplates.findMany({
       where: eq(projectTemplates.orgId, orgId),
-      with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)] } },
+      with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)], limit: 200 } },
       orderBy: (t, { desc }) => [desc(t.createdAt)],
+      limit: 50,
     });
   }
 
@@ -77,7 +78,7 @@ export class ProjectsTemplatesService {
 
     return this.db.query.projectTemplates.findFirst({
       where: eq(projectTemplates.id, template.id),
-      with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)] } },
+      with: { tickets: { orderBy: (t, { asc }) => [asc(t.order)], limit: 200 } },
     });
   }
 

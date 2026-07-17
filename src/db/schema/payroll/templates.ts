@@ -16,7 +16,7 @@ export const payrollTemplates = pgTable("payroll_templates", {
   badge: text("badge"),
   category: payrollTemplateCategoryEnum("category").notNull().default("CUSTOM"),
   defaultToggles: jsonb("default_toggles").$type<Record<string, boolean>>().notNull(),
-  defaultComponents: jsonb("default_components").$type<Record<string, unknown>[]>().notNull(),
+  defaultComponents: jsonb("default_components").$type<unknown[]>().notNull(),
   isSystem: boolean("is_system").notNull().default(false),
   isRecommended: boolean("is_recommended").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),

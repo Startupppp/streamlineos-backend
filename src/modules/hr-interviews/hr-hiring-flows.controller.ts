@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -13,11 +12,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
-import { AccessService } from "../access/access.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createHiringFlowSchema,
   createRoundSchema,
@@ -31,15 +32,14 @@ import {
   type UpdateRoundInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/hiring-flows")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrHiringFlowsController {
-  constructor(
-    private readonly flows: HrHiringFlowsService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly flows: HrHiringFlowsService) {}
 
   @Get()
+  @RequirePermission("hr:interviews:view")
   list(
     @Query(new ZodValidationPipe(hiringFlowListSchema)) query: HiringFlowListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -49,18 +49,16 @@ export class HrHiringFlowsController {
 
   @Post()
   @HttpCode(201)
-  async create(
+  @RequirePermission("hr:interviews:manage")
+  create(
     @Body(new ZodValidationPipe(createHiringFlowSchema)) body: CreateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.createFlow(u.orgId, u.userId, body);
   }
 
   @Get(":flowId")
+  @RequirePermission("hr:interviews:view")
   getOne(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -69,31 +67,26 @@ export class HrHiringFlowsController {
   }
 
   @Patch(":flowId")
-  async update(
+  @RequirePermission("hr:interviews:manage")
+  update(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(updateHiringFlowSchema)) body: UpdateHiringFlowInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.updateFlow(u.orgId, flowId, body);
   }
 
   @Delete(":flowId")
-  async remove(
+  @RequirePermission("hr:interviews:manage")
+  remove(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.deleteFlow(u.orgId, flowId);
   }
 
   @Get(":flowId/rounds")
+  @RequirePermission("hr:interviews:view")
   listRounds(
     @Param("flowId", ParseIntPipe) flowId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,42 +96,33 @@ export class HrHiringFlowsController {
 
   @Post(":flowId/rounds")
   @HttpCode(201)
-  async createRound(
+  @RequirePermission("hr:interviews:manage")
+  createRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Body(new ZodValidationPipe(createRoundSchema)) body: CreateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.createRound(u.orgId, flowId, body);
   }
 
   @Patch(":flowId/rounds/:roundId")
-  async updateRound(
+  @RequirePermission("hr:interviews:manage")
+  updateRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
     @Body(new ZodValidationPipe(updateRoundSchema)) body: UpdateRoundInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.updateRound(u.orgId, flowId, roundId, body);
   }
 
   @Delete(":flowId/rounds/:roundId")
-  async removeRound(
+  @RequirePermission("hr:interviews:manage")
+  removeRound(
     @Param("flowId", ParseIntPipe) flowId: number,
     @Param("roundId", ParseIntPipe) roundId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.flows.deleteRound(u.orgId, flowId, roundId);
   }
 }

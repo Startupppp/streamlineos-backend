@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
   users,
@@ -86,7 +86,14 @@ export class HrDashboardService {
         .where(and(eq(organizationMembers.orgId, orgId), gte(users.joiningDate, monthStart), lte(users.joiningDate, monthEnd))),
     ]);
 
-    const allMembersForBirthdays = await this.db
+    const windowDates = Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    });
+    const mmddValues = sql.join(windowDates.map((d) => sql`${d}`), sql`, `);
+
+    const bdayMembers = await this.db
       .select({
         id: users.id,
         name: users.name,
@@ -94,26 +101,33 @@ export class HrDashboardService {
         lastName: users.lastName,
         image: users.image,
         dateOfBirth: users.dateOfBirth,
+        mmdd: sql<string>`to_char(${users.dateOfBirth}::date, 'MM-DD')`,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(users.isActive, true),
+          isNotNull(users.dateOfBirth),
+          sql`to_char(${users.dateOfBirth}::date, 'MM-DD') IN (${mmddValues})`,
+        ),
+      )
+      .limit(50);
 
-    const today = new Date();
+    const mmddToOffset = new Map(windowDates.map((mmdd, i) => [mmdd, i]));
     const upcomingBirthdays: UpcomingBirthday[] = [];
-
-    for (const m of allMembersForBirthdays) {
+    for (const m of bdayMembers) {
       if (!m.dateOfBirth) continue;
-      const dob = new Date(m.dateOfBirth);
-      const nextBirthday = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
-      if (nextBirthday < today) {
-        nextBirthday.setFullYear(today.getFullYear() + 1);
-      }
-      const diffMs = nextBirthday.getTime() - today.getTime();
-      const daysUntil = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      if (daysUntil <= 7) {
-        upcomingBirthdays.push({ ...m, dateOfBirth: m.dateOfBirth, daysUntil });
-      }
+      upcomingBirthdays.push({
+        id: m.id,
+        name: m.name,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        image: m.image,
+        dateOfBirth: m.dateOfBirth,
+        daysUntil: mmddToOffset.get(m.mmdd) ?? 0,
+      });
     }
     upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
 
@@ -133,40 +147,67 @@ export class HrDashboardService {
   }
 
   private async buildCompliance(orgId: string) {
-    const members = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        taxId: users.taxId,
-        bankDetails: users.bankDetails,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
-        gender: users.gender,
-        firstName: users.firstName,
-        lastName: users.lastName,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(organizationMembers.orgId, orgId));
+    const [totalResult, bankResult, taxResult, dobResult, joiningResult, genderResult, allCompliantResult] =
+      await Promise.all([
+        this.db.select({ count: count() }).from(organizationMembers).where(eq(organizationMembers.orgId, orgId)),
 
-    const total = members.length;
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.bankDetails))),
+
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.taxId), sql`${users.taxId} <> ''`)),
+
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.dateOfBirth))),
+
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.joiningDate))),
+
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.gender))),
+
+        this.db
+          .select({ count: count() })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              isNotNull(users.bankDetails),
+              isNotNull(users.taxId),
+              sql`${users.taxId} <> ''`,
+              isNotNull(users.dateOfBirth),
+              isNotNull(users.joiningDate),
+              isNotNull(users.gender),
+            ),
+          ),
+      ]);
+
+    const total = Number(totalResult[0]?.count ?? 0);
+    const overallCompliant = Number(allCompliantResult[0]?.count ?? 0);
 
     const checks = [
-      { label: "Bank Details", key: "bankDetails", count: members.filter((m) => m.bankDetails !== null).length },
-      { label: "Tax ID (PAN/TAN)", key: "taxId", count: members.filter((m) => m.taxId !== null && m.taxId !== "").length },
-      { label: "Date of Birth", key: "dateOfBirth", count: members.filter((m) => m.dateOfBirth !== null).length },
-      { label: "Joining Date", key: "joiningDate", count: members.filter((m) => m.joiningDate !== null).length },
-      { label: "Gender / Profile", key: "gender", count: members.filter((m) => m.gender !== null).length },
+      { label: "Bank Details", compliant: Number(bankResult[0]?.count ?? 0) },
+      { label: "Tax ID (PAN/TAN)", compliant: Number(taxResult[0]?.count ?? 0) },
+      { label: "Date of Birth", compliant: Number(dobResult[0]?.count ?? 0) },
+      { label: "Joining Date", compliant: Number(joiningResult[0]?.count ?? 0) },
+      { label: "Gender / Profile", compliant: Number(genderResult[0]?.count ?? 0) },
     ];
-
-    const overallCompliant = members.filter(
-      (m) =>
-        m.bankDetails !== null &&
-        m.taxId !== null &&
-        m.taxId !== "" &&
-        m.dateOfBirth !== null &&
-        m.joiningDate !== null &&
-        m.gender !== null,
-    ).length;
 
     return {
       total,
@@ -174,9 +215,9 @@ export class HrDashboardService {
       overallPct: total > 0 ? Math.round((overallCompliant / total) * 100) : 0,
       checks: checks.map((c) => ({
         label: c.label,
-        compliant: c.count,
-        missing: total - c.count,
-        pct: total > 0 ? Math.round((c.count / total) * 100) : 0,
+        compliant: c.compliant,
+        missing: total - c.compliant,
+        pct: total > 0 ? Math.round((c.compliant / total) * 100) : 0,
       })),
     };
   }
@@ -186,46 +227,55 @@ export class HrDashboardService {
   }
 
   private async buildDiversity(orgId: string) {
-    const genderRows = await this.db
-      .select({ gender: users.gender, count: count() })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-      .groupBy(users.gender);
+    const [genderRows, ageRows] = await Promise.all([
+      this.db
+        .select({ gender: users.gender, count: count() })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .groupBy(users.gender),
+
+      this.db
+        .select({
+          range: sql<string>`
+            CASE
+              WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 25 THEN 'Under 25'
+              WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 35 THEN '25–34'
+              WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 45 THEN '35–44'
+              WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 55 THEN '45–54'
+              ELSE '55+'
+            END
+          `,
+          count: count(),
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.isActive, true),
+            isNotNull(users.dateOfBirth),
+          ),
+        )
+        .groupBy(sql`
+          CASE
+            WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 25 THEN 'Under 25'
+            WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 35 THEN '25–34'
+            WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 45 THEN '35–44'
+            WHEN EXTRACT(YEAR FROM age(${users.dateOfBirth}::date)) < 55 THEN '45–54'
+            ELSE '55+'
+          END
+        `),
+    ]);
 
     const genderBreakdown = genderRows.map((r) => ({
       gender: r.gender ?? "NOT_SPECIFIED",
       count: Number(r.count),
     }));
 
-    const membersForAge = await this.db
-      .select({ dateOfBirth: users.dateOfBirth })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true), sql`${users.dateOfBirth} IS NOT NULL`));
-
-    const ageBuckets: Record<string, number> = {
-      "Under 25": 0,
-      "25–34": 0,
-      "35–44": 0,
-      "45–54": 0,
-      "55+": 0,
-    };
-
-    const now = new Date();
-    for (const m of membersForAge) {
-      if (!m.dateOfBirth) continue;
-      const dob = new Date(m.dateOfBirth);
-      const age =
-        now.getFullYear() - dob.getFullYear() - (now < new Date(now.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0);
-      if (age < 25) ageBuckets["Under 25"]++;
-      else if (age < 35) ageBuckets["25–34"]++;
-      else if (age < 45) ageBuckets["35–44"]++;
-      else if (age < 55) ageBuckets["45–54"]++;
-      else ageBuckets["55+"]++;
-    }
-
-    const ageDistribution = Object.entries(ageBuckets).map(([range, value]) => ({ range, count: value }));
+    const ORDER = ["Under 25", "25–34", "35–44", "45–54", "55+"];
+    const ageMap = new Map(ageRows.map((r) => [r.range, Number(r.count)]));
+    const ageDistribution = ORDER.map((range) => ({ range, count: ageMap.get(range) ?? 0 }));
 
     return { genderBreakdown, ageDistribution };
   }

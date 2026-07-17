@@ -16,7 +16,7 @@ type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEA
 
 type RenderedTemplate = { subject: string | null; body: string };
 type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
-type RawTemplate = { channel: string; subject: string | null; body: string; locale: string };
+type RawTemplate = { channel: NotificationChannel; subject: string | null; body: string; locale: string };
 type OrgTemplateMap = Record<string, RawTemplate[]>;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
@@ -131,7 +131,7 @@ export class NotificationDispatchService {
 
     const byChannel = new Map<NotificationChannel, RawTemplate[]>();
     for (const row of rows) {
-      const ch = row.channel as NotificationChannel;
+      const ch = row.channel;
       const existing = byChannel.get(ch);
       if (!existing) {
         byChannel.set(ch, [row]);

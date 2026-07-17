@@ -21,7 +21,6 @@ export const organizations = pgTable("organizations", {
   address: jsonb("address").$type<{ line1?: string; line2?: string; city?: string; state?: string; country?: string; postalCode?: string }>(),
   mfaEnforced: boolean("mfa_enforced").default(false).notNull(),
   allowedEmailDomains: text("allowed_email_domains").array().default([]),
-  passwordExpiryDays: integer("password_expiry_days"),
   maxConcurrentSessions: integer("max_concurrent_sessions"),
   enabledModules: text("enabled_modules").array(),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
@@ -85,7 +84,6 @@ export const users = pgTable("users", {
   name: text("name"),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("email_verified"),
-  password: text("password"),
   firstName: text("first_name"),
   lastName: text("last_name"),
   gender: genderEnum("gender"),
@@ -103,7 +101,6 @@ export const users = pgTable("users", {
   monthlySalary: decimal("monthly_salary", { precision: 15, scale: 2 }),
   employeeId: text("employee_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  isPasswordChangeRequired: boolean("is_password_change_required").default(false).notNull(),
   loginAttempts: integer("login_attempts").default(0).notNull(),
   lockedUntil: timestamp("locked_until"),
   isActive: boolean("is_active").default(true).notNull(),
@@ -124,7 +121,6 @@ export const users = pgTable("users", {
   }>(),
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
-  passwordChangedAt: timestamp("password_changed_at"),
   googleRefreshToken: text("google_refresh_token"),
   googleEmail: text("google_email"),
   isProfilePictureRequired: boolean("is_profile_picture_required").default(false).notNull(),
@@ -191,18 +187,6 @@ export const invitations = pgTable("invitations", {
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
 ]);
 
-export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: text("id").primaryKey(),
-  email: text("email").notNull(),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_password_reset_email").on(table.email),
-  index("idx_password_reset_expires").on(table.expiresAt),
-  index("idx_password_reset_email_expires").on(table.email, table.expiresAt),
-]);
-
 export const userSessions = pgTable("user_sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -246,15 +230,6 @@ export const mfaBackupCodes = pgTable("mfa_backup_codes", {
   index("idx_mfa_backup_codes_user").on(table.userId),
 ]);
 
-export const passwordHistory = pgTable("password_history", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  passwordHash: text("password_hash").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_password_history_user").on(table.userId, table.createdAt),
-]);
-
 export const serviceAccounts = pgTable("service_accounts", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -279,6 +254,18 @@ export const magicLinkTokens = pgTable("magic_link_tokens", {
 }, (table) => [
   index("idx_magic_link_tokens_user").on(table.userId),
   uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
+]);
+
+export const emailOtpCodes = pgTable("email_otp_codes", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_email_otp_codes_user_expires").on(table.userId, table.expiresAt),
 ]);
 
 export const roles = pgTable("roles", {
@@ -501,32 +488,6 @@ export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
   user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
 }));
 
-export const userSeats = pgTable("user_seats", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  moduleKey: text("module_key").notNull(),
-  status: text("status").default("ACTIVE").notNull(),
-  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
-  assignedBy: text("assigned_by").references(() => users.id),
-}, (table) => [
-  uniqueIndex("uniq_user_seats_org_user_module").on(table.orgId, table.userId, table.moduleKey),
-  index("idx_user_seats_org_module").on(table.orgId, table.moduleKey),
-  index("idx_user_seats_user").on(table.userId),
-]);
-
-export const orgLimits = pgTable("org_limits", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  limitKey: text("limit_key").notNull(),
-  limitValue: integer("limit_value").notNull(),
-  usedValue: integer("used_value").default(0).notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_org_limits_org_key").on(table.orgId, table.limitKey),
-  index("idx_org_limits_org").on(table.orgId),
-]);
-
 export const userDelegations = pgTable("user_delegations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -544,15 +505,6 @@ export const userDelegations = pgTable("user_delegations", {
   index("idx_user_delegations_delegatee_status").on(table.delegateeId, table.status),
   index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
 ]);
-
-export const userSeatsRelations = relations(userSeats, ({ one }) => ({
-  org: one(organizations, { fields: [userSeats.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [userSeats.userId], references: [users.id] }),
-}));
-
-export const orgLimitsRelations = relations(orgLimits, ({ one }) => ({
-  org: one(organizations, { fields: [orgLimits.orgId], references: [organizations.id] }),
-}));
 
 export const userDelegationsRelations = relations(userDelegations, ({ one }) => ({
   org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),

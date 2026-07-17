@@ -40,11 +40,6 @@ export class CrmCampaignsService {
   }
 
   async update(orgId: string, campaignId: number, input: CampaignUpdateInput) {
-    const existing = await this.db.query.crmCampaigns.findFirst({
-      where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
-    });
-    if (!existing) throw new NotFoundException("Campaign not found");
-
     const [updated] = await this.db.update(crmCampaigns)
       .set({
         ...(input.name !== undefined && { name: input.name }),
@@ -59,33 +54,32 @@ export class CrmCampaignsService {
       })
       .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)))
       .returning();
+    if (!updated) throw new NotFoundException("Campaign not found");
     return updated;
   }
 
   async remove(orgId: string, campaignId: number) {
-    const existing = await this.db.query.crmCampaigns.findFirst({
-      where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
-    });
-    if (!existing) throw new NotFoundException("Campaign not found");
-
-    await this.db.delete(crmCampaigns)
-      .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)));
+    const [deleted] = await this.db.delete(crmCampaigns)
+      .where(and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)))
+      .returning({ id: crmCampaigns.id });
+    if (!deleted) throw new NotFoundException("Campaign not found");
     return { success: true };
   }
 
   async getCampaignRoi(orgId: string, campaignId: number) {
-    const campaign = await this.db.query.crmCampaigns.findFirst({
-      where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
-    });
+    const [campaign, statusOptions, wonStagesRows] = await Promise.all([
+      this.db.query.crmCampaigns.findFirst({
+        where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
+      }),
+      this.db.select().from(crmOptions)
+        .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
+      this.db.select({ key: crmPipelineStages.key }).from(crmPipelineStages)
+        .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.stageType, "won"))),
+    ]);
     if (!campaign) throw new NotFoundException("Campaign not found");
-
-    const statusOptions = await this.db.select().from(crmOptions)
-      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
     const semantics = resolveLeadStatusSemantics(statusOptions);
 
-    const wonStages = await this.db.select({ key: crmPipelineStages.key }).from(crmPipelineStages)
-      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.stageType, "won")));
-    const wonStageKeys = wonStages.length ? wonStages.map((s) => s.key) : ["WON", "Closed Won"];
+    const wonStageKeys = wonStagesRows.length ? wonStagesRows.map((s) => s.key) : ["WON", "Closed Won"];
 
     const [leadCounts, revenueResult] = await Promise.all([
       this.db.select({ status: leads.status, cnt: count() })
@@ -127,18 +121,34 @@ export class CrmCampaignsService {
   }
 
   async getCampaignLeads(orgId: string, campaignId: number, page: number, limit: number) {
-    const campaign = await this.db.query.crmCampaigns.findFirst({
-      where: and(eq(crmCampaigns.id, campaignId), eq(crmCampaigns.orgId, orgId)),
-    });
-    if (!campaign) throw new NotFoundException("Campaign not found");
-
     const safeLimit = Math.min(limit, 50);
     const offset = (page - 1) * safeLimit;
 
     const [items, [{ total }]] = await Promise.all([
-      this.db.select().from(leads)
+      this.db
+        .select({
+          id: leads.id,
+          orgId: leads.orgId,
+          name: leads.name,
+          email: leads.email,
+          phone: leads.phone,
+          source: leads.source,
+          campaignId: leads.campaignId,
+          status: leads.status,
+          priority: leads.priority,
+          potentialValue: leads.potentialValue,
+          assignedToId: leads.assignedToId,
+          company: leads.company,
+          score: leads.score,
+          followUpDate: leads.followUpDate,
+          convertedAt: leads.convertedAt,
+          createdAt: leads.createdAt,
+          updatedAt: leads.updatedAt,
+        })
+        .from(leads)
         .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId)))
-        .limit(safeLimit).offset(offset),
+        .limit(safeLimit)
+        .offset(offset),
       this.db.select({ total: count() }).from(leads)
         .where(and(eq(leads.orgId, orgId), eq(leads.campaignId, campaignId))),
     ]);

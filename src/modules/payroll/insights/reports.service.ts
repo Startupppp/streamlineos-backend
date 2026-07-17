@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -194,58 +194,35 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as DeptCostRow[] };
 
-    const empRows = await this.db
+    const whereClause = filters.workerType
+      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
+      : eq(payrollRunEmployees.runId, run.id);
+
+    const aggRows = await this.db
       .select({
-        userId: payrollRunEmployees.userId,
-        gross: payrollRunEmployees.gross,
-        net: payrollRunEmployees.net,
-        employerContributions: payrollRunEmployees.employerContributions,
-        workerType: payrollRunEmployees.workerType,
-        departmentId: users.departmentId,
+        department: departments.name,
+        _count: sql<number>`COUNT(*)::int`,
+        grossTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.gross}::numeric), 0)::text`,
+        netTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.net}::numeric), 0)::text`,
+        employerCostTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.employerContributions}::numeric), 0)::text`,
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .where(
-        filters.workerType
-          ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-          : eq(payrollRunEmployees.runId, run.id),
-      );
+      .leftJoin(departments, eq(departments.id, users.departmentId))
+      .where(whereClause)
+      .groupBy(departments.name);
 
-    const deptIds = [
-      ...new Set(empRows.map((r) => r.departmentId).filter((d): d is number => d !== null)),
-    ];
-    const deptMap = new Map<number, string>();
-    if (deptIds.length > 0) {
-      const deptRows = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(inArray(departments.id, deptIds));
-      for (const d of deptRows) deptMap.set(d.id, d.name);
-    }
+    const allRows: DeptCostRow[] = aggRows
+      .filter((r) => !filters.department || r.department === filters.department)
+      .map((r) => ({
+        department: r.department ?? null,
+        employeeCount: r._count,
+        grossTotal: r.grossTotal,
+        netTotal: r.netTotal,
+        employerCostTotal: r.employerCostTotal,
+      }));
 
-    const grouped = new Map<string | null, DeptCostRow>();
-    for (const r of empRows) {
-      const dept = r.departmentId !== null ? (deptMap.get(r.departmentId) ?? null) : null;
-      if (filters.department && dept !== filters.department) continue;
-      const key = dept ?? "__null__";
-      const existing = grouped.get(key);
-      if (!existing) {
-        grouped.set(key, {
-          department: dept,
-          employeeCount: 1,
-          grossTotal: r.gross,
-          netTotal: r.net,
-          employerCostTotal: r.employerContributions,
-        });
-      } else {
-        existing.employeeCount += 1;
-        existing.grossTotal = (parseFloat(existing.grossTotal) + parseFloat(r.gross)).toFixed(2);
-        existing.netTotal = (parseFloat(existing.netTotal) + parseFloat(r.net)).toFixed(2);
-        existing.employerCostTotal = (parseFloat(existing.employerCostTotal) + parseFloat(r.employerContributions)).toFixed(2);
-      }
-    }
-
-    return { provisional, rows: applyPage([...grouped.values()], pagination) };
+    return { provisional, rows: applyPage(allRows, pagination) };
   }
 
   async getCostCenter(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -253,50 +230,32 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as CostCenterRow[] };
 
-    const empRows = await this.db
+    const whereClause = filters.workerType
+      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
+      : eq(payrollRunEmployees.runId, run.id);
+
+    const aggRows = await this.db
       .select({
-        userId: payrollRunEmployees.userId,
-        gross: payrollRunEmployees.gross,
-        net: payrollRunEmployees.net,
-        workerType: payrollRunEmployees.workerType,
-        profileId: payrollRunEmployees.profileId,
+        costCenter: employeeSalaryProfiles.costCenter,
+        _count: sql<number>`COUNT(*)::int`,
+        grossTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.gross}::numeric), 0)::text`,
+        netTotal: sql<string>`COALESCE(SUM(${payrollRunEmployees.net}::numeric), 0)::text`,
       })
       .from(payrollRunEmployees)
-      .where(
-        filters.workerType
-          ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-          : eq(payrollRunEmployees.runId, run.id),
-      );
+      .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
+      .where(whereClause)
+      .groupBy(employeeSalaryProfiles.costCenter);
 
-    const profileIds = [
-      ...new Set(empRows.map((r) => r.profileId).filter((p): p is number => p !== null)),
-    ];
+    const allRows: CostCenterRow[] = aggRows
+      .filter((r) => !filters.costCenter || (r.costCenter ?? null) === filters.costCenter)
+      .map((r) => ({
+        costCenter: r.costCenter ?? null,
+        employeeCount: r._count,
+        grossTotal: r.grossTotal,
+        netTotal: r.netTotal,
+      }));
 
-    const ccMap = new Map<number, string | null>();
-    if (profileIds.length > 0) {
-      const profiles = await this.db
-        .select({ id: employeeSalaryProfiles.id, costCenter: employeeSalaryProfiles.costCenter })
-        .from(employeeSalaryProfiles)
-        .where(inArray(employeeSalaryProfiles.id, profileIds));
-      for (const p of profiles) ccMap.set(p.id, p.costCenter ?? null);
-    }
-
-    const grouped = new Map<string | null, CostCenterRow>();
-    for (const r of empRows) {
-      const cc = r.profileId !== null ? (ccMap.get(r.profileId) ?? null) : null;
-      if (filters.costCenter && cc !== filters.costCenter) continue;
-      const key = cc ?? "__null__";
-      const existing = grouped.get(key);
-      if (!existing) {
-        grouped.set(key, { costCenter: cc, employeeCount: 1, grossTotal: r.gross, netTotal: r.net });
-      } else {
-        existing.employeeCount += 1;
-        existing.grossTotal = (parseFloat(existing.grossTotal) + parseFloat(r.gross)).toFixed(2);
-        existing.netTotal = (parseFloat(existing.netTotal) + parseFloat(r.net)).toFixed(2);
-      }
-    }
-
-    return { provisional, rows: applyPage([...grouped.values()], pagination) };
+    return { provisional, rows: applyPage(allRows, pagination) };
   }
 
   async getEarnings(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -405,9 +364,11 @@ export class ReportsService {
   }
 
   async getVariance(orgId: string, month: string, pagination: PaginationParams = {}) {
-    const currentRun = await findRunForMonth(this.db, orgId, month);
     const prevMonthStr = prevMonth(month);
-    const previousRun = await findRunForMonth(this.db, orgId, prevMonthStr);
+    const [currentRun, previousRun] = await Promise.all([
+      findRunForMonth(this.db, orgId, month),
+      findRunForMonth(this.db, orgId, prevMonthStr),
+    ]);
 
     const provisional = currentRun === null || !isLocked(currentRun.status);
 

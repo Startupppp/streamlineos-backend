@@ -11,3 +11,4 @@ export * from "./governance";
 export * from "./sources";
 export * from "./chat";
 export * from "./settings";
+export * from "./research-briefs";

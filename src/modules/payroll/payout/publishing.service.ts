@@ -78,17 +78,20 @@ export class PublishingService {
       throw new BadRequestException(`Cannot publish payslips for run in status ${run.status} — run must be PAID`);
     }
 
-    const toggles = (run.policyVersion?.toggles ?? {}) as Partial<PayrollToggles>;
+    const storedToggles = run.policyVersion?.toggles;
+    const toggles: Partial<PayrollToggles> =
+      storedToggles && typeof storedToggles === "object" ? (storedToggles as Partial<PayrollToggles>) : {};
     const emailPayslips = toggles.emailPayslips === true;
 
-    const defaultTemplate = await this.db.query.payslipTemplates.findFirst({
-      where: and(eq(payslipTemplates.orgId, orgId), eq(payslipTemplates.isDefault, true)),
-    });
-
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-      columns: { name: true, address: true },
-    });
+    const [defaultTemplate, org] = await Promise.all([
+      this.db.query.payslipTemplates.findFirst({
+        where: and(eq(payslipTemplates.orgId, orgId), eq(payslipTemplates.isDefault, true)),
+      }),
+      this.db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { name: true, address: true },
+      }),
+    ]);
     const orgName = org?.name ?? "Organization";
     const orgAddress = org?.address
       ? [org.address.city, org.address.state, org.address.country].filter(Boolean).join(", ")
@@ -119,8 +122,11 @@ export class PublishingService {
     let published = 0;
     const total = employees.length;
 
-    const layout = (defaultTemplate?.layout ?? "CLASSIC") as "CLASSIC" | "MODERN" | "COMPLIANCE";
-    const config = (defaultTemplate?.config ?? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false }) as PayslipTemplateConfig;
+    const layout = defaultTemplate?.layout ?? "CLASSIC";
+    const rawTemplateConfig = defaultTemplate?.config;
+    const config: PayslipTemplateConfig = rawTemplateConfig && typeof rawTemplateConfig === "object"
+      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawTemplateConfig as Partial<PayslipTemplateConfig>) }
+      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
 
     for (const emp of employees) {
       if (!emp.calculationSnapshot) continue;
@@ -381,8 +387,11 @@ export class PublishingService {
       ? [orgRow.address.city, orgRow.address.state, orgRow.address.country].filter(Boolean).join(", ")
       : undefined;
 
-    const layout = (templateRow?.layout ?? "CLASSIC") as "CLASSIC" | "MODERN" | "COMPLIANCE";
-    const config = (templateRow?.config ?? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false }) as PayslipTemplateConfig;
+    const layout = templateRow?.layout ?? "CLASSIC";
+    const rawConfig = templateRow?.config;
+    const config: PayslipTemplateConfig = rawConfig && typeof rawConfig === "object"
+      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawConfig as Partial<PayslipTemplateConfig>) }
+      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
 
     const pdfData = buildPayslipPdfData({
       snapshot,

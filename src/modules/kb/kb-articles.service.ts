@@ -370,7 +370,7 @@ export class KbArticlesService {
   async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
     const orgId = user.orgId;
-    return this.db.transaction(async (tx) => {
+    const updated = await this.db.transaction(async (tx) => {
       const version = await tx.query.kbArticleVersions.findFirst({
         where: and(
           eq(kbArticleVersions.articleId, articleId),
@@ -380,7 +380,7 @@ export class KbArticlesService {
       });
       if (!version) throw new NotFoundException("Version not found");
 
-      const [updated] = await tx
+      const [result] = await tx
         .update(kbArticles)
         .set({
           title: version.title,
@@ -390,11 +390,19 @@ export class KbArticlesService {
         })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
-      if (!updated) throw new NotFoundException("Article not found");
+      if (!result) throw new NotFoundException("Article not found");
 
-      await this.snapshot(tx, orgId, updated, user.userId, `Restored v${versionNumber}`);
-      return updated;
+      await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`);
+      return result;
     });
+
+    if (updated.status === "published") {
+      this.indexing.indexArticle(orgId, articleId).catch((err: unknown) => {
+        this.logger.error(`Failed to re-index article ${articleId} after version restore: ${err}`);
+      });
+    }
+
+    return updated;
   }
 
   private extractPlainText(content: string): string {

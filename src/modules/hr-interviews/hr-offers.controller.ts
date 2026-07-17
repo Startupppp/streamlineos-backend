@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -12,11 +11,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { AccessService } from "../access/access.service";
 import { HrOffersService } from "./hr-offers.service";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createOfferTemplateSchema,
   generateOfferPdfSchema,
@@ -28,91 +29,65 @@ import {
   type UpdateOfferTemplateInput,
 } from "./dto/hr-interviews.schemas";
 
+@RequireModule("hr")
 @Controller("hr/recruitment")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrOffersController {
-  constructor(
-    private readonly offers: HrOffersService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly offers: HrOffersService) {}
 
   @Get("offer-templates")
+  @RequirePermission("hr:offers:view")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.offers.listTemplates(u.orgId);
   }
 
   @Post("offer-templates")
   @HttpCode(201)
-  async createTemplate(
+  @RequirePermission("hr:offers:manage")
+  createTemplate(
     @Body(new ZodValidationPipe(createOfferTemplateSchema)) body: CreateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     return this.offers.createTemplate(u.orgId, u.userId, body);
   }
 
   @Patch("offer-templates/:templateId")
-  async updateTemplate(
+  @RequirePermission("hr:offers:manage")
+  updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateOfferTemplateSchema)) body: UpdateOfferTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     return this.offers.updateTemplate(u.orgId, templateId, body);
   }
 
   @Delete("offer-templates/:templateId")
-  async deleteTemplate(
+  @RequirePermission("hr:offers:manage")
+  deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     return this.offers.deleteTemplate(u.orgId, templateId);
   }
 
   @Post("offer-templates/:templateId/generate-pdf")
   @HttpCode(200)
-  async generatePdf(
+  @RequirePermission("hr:offers:manage")
+  generatePdf(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(generateOfferPdfSchema)) body: GenerateOfferPdfInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
     return this.offers.generatePdf(u.orgId, templateId, body);
   }
 
   @Post("offer-letter")
   @HttpCode(201)
-  async generateOfferLetter(
+  @RequirePermission("hr:offers:manage")
+  generateOfferLetter(
     @Body(new ZodValidationPipe(offerLetterSchema)) body: OfferLetterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) {
-        throw new ForbiddenException("Only admins can generate offer letters.");
-      }
-    }
     return this.offers.generateOfferLetter(u.orgId, u.userId, body);
   }
 }

@@ -377,19 +377,13 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project not found");
 
     await this.db.transaction(async (tx) => {
-      const projectTickets = await tx
-        .select({ id: tickets.id })
-        .from(tickets)
-        .where(eq(tickets.projectId, projectId));
-      const ticketIds = projectTickets.map((t) => t.id);
-      if (ticketIds.length > 0) {
-        await tx.delete(ticketAssignees).where(inArray(ticketAssignees.ticketId, ticketIds));
-        await tx.delete(ticketComments).where(inArray(ticketComments.ticketId, ticketIds));
-        await tx.delete(ticketAttachments).where(inArray(ticketAttachments.ticketId, ticketIds));
-        await tx.delete(ticketLabelMappings).where(inArray(ticketLabelMappings.ticketId, ticketIds));
-        await tx.delete(timesheets).where(inArray(timesheets.ticketId, ticketIds));
-        await tx.delete(tickets).where(inArray(tickets.id, ticketIds));
-      }
+      const subTickets = tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.projectId, projectId));
+      await tx.delete(ticketAssignees).where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
+      await tx.delete(ticketComments).where(sql`${ticketComments.ticketId} IN (${subTickets})`);
+      await tx.delete(ticketAttachments).where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
+      await tx.delete(ticketLabelMappings).where(sql`${ticketLabelMappings.ticketId} IN (${subTickets})`);
+      await tx.delete(timesheets).where(sql`${timesheets.ticketId} IN (${subTickets})`);
+      await tx.delete(tickets).where(eq(tickets.projectId, projectId));
       await tx.delete(sprints).where(eq(sprints.projectId, projectId));
       await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
       await tx.delete(projectStatuses).where(eq(projectStatuses.projectId, projectId));

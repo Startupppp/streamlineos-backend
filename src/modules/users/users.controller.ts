@@ -3,6 +3,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -23,7 +25,7 @@ import {
 import { z } from "zod";
 
 @Controller("users")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class UsersController {
   constructor(
     private readonly users: UsersService,
@@ -34,6 +36,7 @@ export class UsersController {
 
   // ── Static GET routes (must be before any :userId parameterized routes) ──
 
+  @RequirePermission("hr:employees:view")
   @Get()
   listUsers(
     @Query(new ZodValidationPipe(listUsersSchema)) query: ListUsersInput,
@@ -42,11 +45,13 @@ export class UsersController {
     return this.users.listUsers(u.orgId, query);
   }
 
+  @RequirePermission("hr:employees:view")
   @Get("stats")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.userOps.getStats(u.orgId);
   }
 
+  @RequirePermission("hr:employees:export")
   @Get("export")
   async exportUsers(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const data = await this.userOps.exportUsers(u.orgId);
@@ -55,6 +60,7 @@ export class UsersController {
     res.send(data);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get("invitations")
   listInvitations(
     @Query() query: { page?: string; limit?: string; includeAccepted?: string },
@@ -67,6 +73,7 @@ export class UsersController {
     });
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get("audit")
   getOrgAuditLog(
     @Query(new ZodValidationPipe(listAuditSchema)) query: ListAuditInput,
@@ -77,6 +84,7 @@ export class UsersController {
 
   // ── Static POST routes ──
 
+  @RequirePermission("hr:employees:create")
   @Post()
   createUser(
     @Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput,
@@ -85,6 +93,7 @@ export class UsersController {
     return this.users.createUser(u.orgId, body, u.userId);
   }
 
+  @RequirePermission("hr:employees:create")
   @Post("invite")
   inviteUser(
     @Body(new ZodValidationPipe(inviteUserSchema)) body: InviteUserInput,
@@ -96,6 +105,7 @@ export class UsersController {
     });
   }
 
+  @RequirePermission("hr:employees:create")
   @Post("bulk-invite")
   bulkInvite(
     @Body(new ZodValidationPipe(bulkInviteSchema)) body: BulkInviteInput,
@@ -104,6 +114,7 @@ export class UsersController {
     return this.invitations.bulkInvite(u.orgId, u.userId, body.emails, body.role);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post("bulk-suspend")
   bulkSuspend(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -112,6 +123,7 @@ export class UsersController {
     return this.userOps.bulkSuspend(u.orgId, body.userIds, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post("bulk-archive")
   bulkArchive(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -120,6 +132,7 @@ export class UsersController {
     return this.userOps.bulkArchive(u.orgId, body.userIds, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post("bulk-restore")
   bulkRestore(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
@@ -128,6 +141,7 @@ export class UsersController {
     return this.userOps.bulkRestore(u.orgId, body.userIds, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post("bulk-update")
   bulkUpdate(
     @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
@@ -136,6 +150,7 @@ export class UsersController {
     return this.userOps.bulkUpdateUsers(u.orgId, body, u.userId);
   }
 
+  @RequirePermission("hr:employees:create")
   @Post("import")
   importUsers(
     @Body(new ZodValidationPipe(z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) })))
@@ -147,11 +162,13 @@ export class UsersController {
 
   // ── Invitation sub-routes (static prefix "invitations/") ──
 
+  @RequirePermission("hr:employees:create")
   @Post("invitations/:invitationId/resend")
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, u.userId);
   }
 
+  @RequirePermission("hr:employees:delete")
   @Delete("invitations/:invitationId")
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.cancel(u.orgId, invitationId, u.userId);
@@ -159,11 +176,13 @@ export class UsersController {
 
   // ── Parameterized :userId routes (must come after all static routes) ──
 
+  @RequirePermission("hr:employees:view")
   @Get(":userId")
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.getUser(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:update")
   @Patch(":userId")
   updateUser(
     @Param("userId") userId: string,
@@ -173,6 +192,7 @@ export class UsersController {
     return this.users.updateUser(u.orgId, userId, body, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Patch(":userId/status")
   updateStatus(
     @Param("userId") userId: string,
@@ -182,16 +202,19 @@ export class UsersController {
     return this.users.updateUserStatus(u.orgId, userId, body.status, u.userId, body.reason);
   }
 
+  @RequirePermission("hr:employees:delete")
   @Delete(":userId")
   deleteUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.users.deleteUser(u.orgId, userId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/sessions")
   getSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserSessions(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Delete(":userId/sessions/:sessionId")
   revokeSession(
     @Param("userId") userId: string,
@@ -201,16 +224,19 @@ export class UsersController {
     return this.userProfile.revokeSession(u.orgId, userId, sessionId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Delete(":userId/sessions")
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.revokeAllSessions(u.orgId, userId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/devices")
   getDevices(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserDevices(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Delete(":userId/devices/:deviceId")
   removeDevice(
     @Param("userId") userId: string,
@@ -220,16 +246,19 @@ export class UsersController {
     return this.userProfile.removeDevice(u.orgId, userId, deviceId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/activity")
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getUserActivity(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:view")
   @Get(":userId/preferences")
   getPreferences(@Param("userId") userId: string) {
     return this.userProfile.getPreferences(userId);
   }
 
+  @RequirePermission("hr:employees:update")
   @Patch(":userId/preferences")
   updatePreferences(
     @Param("userId") userId: string,
@@ -238,6 +267,7 @@ export class UsersController {
     return this.userProfile.updatePreferences(userId, body);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/login-history")
   getLoginHistory(
     @Param("userId") userId: string,
@@ -247,11 +277,13 @@ export class UsersController {
     return this.userProfile.getLoginHistory(u.orgId, userId, query);
   }
 
+  @RequirePermission("hr:employees:view")
   @Get(":userId/membership")
   getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userProfile.getMembership(u.orgId, userId);
   }
 
+  @RequirePermission("hr:employees:update")
   @Patch(":userId/membership")
   updateMembership(
     @Param("userId") userId: string,
@@ -261,11 +293,13 @@ export class UsersController {
     return this.userProfile.updateMembership(u.orgId, userId, body, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Post(":userId/reset-password")
   resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.resetPassword(u.orgId, userId, u.userId);
   }
 
+  @RequirePermission("hr:employees:manage")
   @Get(":userId/audit")
   getUserAuditLog(
     @Param("userId") userId: string,

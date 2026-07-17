@@ -15,10 +15,18 @@ export class ProjectsAutomationsService {
 
   listAutomations(orgId: string, projectId: number) {
     return this.db
-      .select()
+      .select({
+        id: projectAutomations.id,
+        name: projectAutomations.name,
+        triggerEvent: projectAutomations.triggerEvent,
+        isActive: projectAutomations.isActive,
+        createdAt: projectAutomations.createdAt,
+        updatedAt: projectAutomations.updatedAt,
+      })
       .from(projectAutomations)
       .where(and(eq(projectAutomations.orgId, orgId), eq(projectAutomations.projectId, projectId)))
-      .orderBy(desc(projectAutomations.createdAt));
+      .orderBy(desc(projectAutomations.createdAt))
+      .limit(100);
   }
 
   async createAutomation(orgId: string, projectId: number, createdBy: string, data: CreateAutomationInput) {

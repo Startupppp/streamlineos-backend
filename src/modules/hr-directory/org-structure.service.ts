@@ -8,6 +8,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { HeadcountInput } from "./dto/hr-directory.schemas";
 
 export interface HeadcountGroup {
@@ -25,9 +27,16 @@ function toTitleCase(str: string): string {
 
 @Injectable()
 export class OrgStructureService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async getDirectory(orgId: string) {
+    return this.cache.cached(`hr:directory:${orgId}`, () => this.buildDirectory(orgId), CACHE_TTL.MEDIUM);
+  }
+
+  private async buildDirectory(orgId: string) {
     const members = await this.db
       .select({
         id: users.id,
@@ -94,7 +103,11 @@ export class OrgStructureService {
     });
   }
 
-  async getOrgChart(orgId: string) {
+  getOrgChart(orgId: string) {
+    return this.cache.cached(`hr:org-chart:${orgId}`, () => this.buildOrgChart(orgId), CACHE_TTL.MEDIUM);
+  }
+
+  private async buildOrgChart(orgId: string) {
     const [members, deptRows] = await Promise.all([
       this.db.query.organizationMembers.findMany({
         where: eq(organizationMembers.orgId, orgId),
@@ -156,7 +169,15 @@ export class OrgStructureService {
     return result;
   }
 
-  async getHeadcount(orgId: string, query: HeadcountInput) {
+  getHeadcount(orgId: string, query: HeadcountInput) {
+    return this.cache.cached(
+      `hr:headcount:${orgId}:${query.groupBy}`,
+      () => this.buildHeadcount(orgId, query),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  private async buildHeadcount(orgId: string, query: HeadcountInput) {
     const { groupBy } = query;
     let groups: HeadcountGroup[] = [];
 
@@ -206,39 +227,36 @@ export class OrgStructureService {
   }
 
   async getTeam(orgId: string, teamId: number) {
-    const dept = await this.db.query.departments.findFirst({
-      where: and(eq(departments.id, teamId), eq(departments.orgId, orgId)),
-    });
+    const [dept, members] = await Promise.all([
+      this.db.query.departments.findFirst({
+        where: and(eq(departments.id, teamId), eq(departments.orgId, orgId)),
+      }),
+      this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          image: users.image,
+          designation: users.designation,
+          email: users.email,
+          role: users.role,
+        })
+        .from(users)
+        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.departmentId, teamId),
+            eq(users.isActive, true),
+          ),
+        )
+        .limit(500),
+    ]);
+
     if (!dept) throw new NotFoundException("Team not found");
 
-    const members = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        image: users.image,
-        designation: users.designation,
-        email: users.email,
-        role: users.role,
-      })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(users.departmentId, teamId),
-          eq(users.isActive, true),
-        ),
-      )
-      .limit(500);
-
-    let managerName: string | null = null;
-    if (dept.managerId) {
-      const mgr = await this.db.query.users.findFirst({
-        where: eq(users.id, dept.managerId),
-        columns: { name: true },
-      });
-      managerName = mgr?.name ?? null;
-    }
+    const managerName = dept.managerId
+      ? (members.find((m) => m.id === dept.managerId)?.name ?? null)
+      : null;
 
     return {
       id: dept.id,

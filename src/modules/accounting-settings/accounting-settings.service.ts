@@ -12,7 +12,7 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { SETTINGS_CACHE_KEY, COA_TREE_CACHE_KEY, PURPOSE_ALLOWED_TYPES, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
+import { SETTINGS_CACHE_KEY, COA_TREE_CACHE_KEY, SETUP_STATUS_CACHE_KEY, PURPOSE_ALLOWED_TYPES, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
 import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType, UpsertPaymentTermsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -65,7 +65,10 @@ export class AccountingSettingsService {
       .where(eq(accountingSettings.orgId, u.orgId))
       .returning();
 
-    await this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId));
+    await Promise.all([
+      this.cache.invalidate(SETTINGS_CACHE_KEY(u.orgId)),
+      this.cache.invalidate(SETUP_STATUS_CACHE_KEY(u.orgId)),
+    ]);
 
     this.audit.log({
       action: "accounting.settings.updated",
@@ -85,30 +88,33 @@ export class AccountingSettingsService {
   }
 
   async getSetupStatus(orgId: string) {
-    const settings = await this.getOrCreateSettings(orgId);
+    return this.cache.cached(SETUP_STATUS_CACHE_KEY(orgId), () => this.fetchSetupStatus(orgId), 60);
+  }
 
-    const [accountCount] = await this.db
-      .select({ total: count() })
-      .from(ledgerAccounts)
-      .where(eq(ledgerAccounts.orgId, orgId));
-
-    const [systemMappedCount] = await this.db
-      .select({ total: count() })
-      .from(accSystemAccountMap)
-      .where(eq(accSystemAccountMap.orgId, orgId));
-
-    const [openingBalanceEntry] = await this.db
-      .select({ id: journalEntries.id })
-      .from(journalEntries)
-      .where(and(eq(journalEntries.orgId, orgId), eq(journalEntries.sourceType, "OPENING_BALANCE")))
-      .limit(1);
-
-    const [periodCount] = await this.db
-      .select({ total: count() })
-      .from(accountingPeriods)
-      .where(eq(accountingPeriods.orgId, orgId));
-
+  private async fetchSetupStatus(orgId: string) {
     const TOTAL_PURPOSES = 16;
+
+    const [settings, [accountCount], [systemMappedCount], [openingBalanceEntry], [periodCount]] =
+      await Promise.all([
+        this.getOrCreateSettings(orgId),
+        this.db
+          .select({ total: count() })
+          .from(ledgerAccounts)
+          .where(eq(ledgerAccounts.orgId, orgId)),
+        this.db
+          .select({ total: count() })
+          .from(accSystemAccountMap)
+          .where(eq(accSystemAccountMap.orgId, orgId)),
+        this.db
+          .select({ id: journalEntries.id })
+          .from(journalEntries)
+          .where(and(eq(journalEntries.orgId, orgId), eq(journalEntries.sourceType, "OPENING_BALANCE")))
+          .limit(1),
+        this.db
+          .select({ total: count() })
+          .from(accountingPeriods)
+          .where(eq(accountingPeriods.orgId, orgId)),
+      ]);
 
     const steps = [
       {

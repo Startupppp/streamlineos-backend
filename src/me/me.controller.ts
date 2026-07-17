@@ -5,7 +5,7 @@ import { PermissionGuard } from "../modules/access/permission.guard";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
-import { MeService, changePasswordSchema, forceChangePasswordSchema, setupPasswordSchema, type ChangePasswordInput, type ForceChangePasswordInput, type SetupPasswordInput } from "./me.service";
+import { MeService } from "./me.service";
 import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
 
 @Controller("me")
@@ -37,30 +37,6 @@ export class MeController {
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
     return this.meService.updateProfile(user.userId, body);
-  }
-
-  @Patch("change-password")
-  changePassword(
-    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
-    @CurrentUser() user: CurrentUserContext,
-  ): Promise<{ success: true }> {
-    return this.meService.changePassword(user.userId, body);
-  }
-
-  @Patch("force-change-password")
-  forceChangePassword(
-    @Body(new ZodValidationPipe(forceChangePasswordSchema)) body: ForceChangePasswordInput,
-    @CurrentUser() user: CurrentUserContext,
-  ): Promise<{ success: true }> {
-    return this.meService.forceChangePassword(user.userId, body);
-  }
-
-  @Patch("setup-password")
-  setupPassword(
-    @Body(new ZodValidationPipe(setupPasswordSchema)) body: SetupPasswordInput,
-    @CurrentUser() user: CurrentUserContext,
-  ): Promise<{ success: true }> {
-    return this.meService.setupPassword(user.userId, body.password);
   }
 
   @Get("login-history")

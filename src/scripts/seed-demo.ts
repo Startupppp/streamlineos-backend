@@ -1,6 +1,5 @@
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import bcrypt from "bcryptjs";
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -161,8 +160,6 @@ async function seed(db: Db): Promise<SeedSummary> {
     .returning({ id: organizations.id });
   summary.orgCreated = orgRows.length > 0;
 
-  const passwordHash = await bcrypt.hash("Demo@2026!", 12);
-
   const demoUserRows = await db
     .insert(users)
     .values({
@@ -171,7 +168,6 @@ async function seed(db: Db): Promise<SeedSummary> {
       name: "Demo Owner",
       firstName: "Demo",
       lastName: "Owner",
-      password: passwordHash,
       emailVerified: now,
       isActive: true,
       hasDashboardAccess: true,
@@ -179,21 +175,18 @@ async function seed(db: Db): Promise<SeedSummary> {
       userStatus: "active",
       loginAttempts: 0,
       lockedUntil: null,
-      isPasswordChangeRequired: false,
       lastActiveOrgId: DEMO_ORG_ID,
       activatedAt: now,
     })
     .onConflictDoUpdate({
       target: users.email,
       set: {
-        password: passwordHash,
         loginAttempts: 0,
         lockedUntil: null,
         isActive: true,
         hasDashboardAccess: true,
         role: "OWNER",
         userStatus: "active",
-        isPasswordChangeRequired: false,
         emailVerified: now,
         lastActiveOrgId: DEMO_ORG_ID,
       },
@@ -213,7 +206,6 @@ async function seed(db: Db): Promise<SeedSummary> {
     })
     .onConflictDoNothing();
 
-  const memberPassword = await bcrypt.hash("DemoTeam@2026!", 10);
   for (const m of MEMBER_CONFIGS) {
     const memberRows = await db
       .insert(users)
@@ -223,14 +215,12 @@ async function seed(db: Db): Promise<SeedSummary> {
         name: `${m.firstName} ${m.lastName}`,
         firstName: m.firstName,
         lastName: m.lastName,
-        password: memberPassword,
         emailVerified: now,
         isActive: m.userStatus !== "suspended",
         hasDashboardAccess: true,
         role: m.role,
         userStatus: m.userStatus,
         loginAttempts: 0,
-        isPasswordChangeRequired: false,
         lastActiveOrgId: DEMO_ORG_ID,
         activatedAt: now,
         archivedAt: m.userStatus === "suspended" ? now : null,

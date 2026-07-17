@@ -169,6 +169,7 @@ const SUPPORT = [
   e("support.ticket.sla_breached", "support", "SUPPORT", "SLA breached", { defaultPriority: "CRITICAL", defaultType: "ERROR", defaultChannels: IA_EMAIL, quietHoursBehavior: "bypass_if_high" }),
   e("support.ticket.escalated", "support", "SUPPORT", "Ticket escalated", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL }),
   e("support.ticket.mention", "support", "SUPPORT", "Mentioned in an internal note", { defaultPriority: "HIGH", defaultChannels: IA_PUSH, dedupeWindowSeconds: 0 }),
+  e("support.kb.gap.routed", "support", "SUPPORT", "KB gap article needs review", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, description: "A draft KB article generated from a recurring support question needs human review before publishing" }),
 ];
 
 const SYSTEM = [

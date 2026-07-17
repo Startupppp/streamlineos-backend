@@ -81,7 +81,11 @@ export type AutomationAction =
   | { type: "support_assign_ticket"; config: { assigneeId: string } }
   | { type: "support_set_priority"; config: { priority: string } }
   | { type: "support_add_tag"; config: { tagId: number } }
-  | { type: "support_internal_note"; config: { body: string } };
+  | { type: "support_internal_note"; config: { body: string } }
+  | { type: "ai_classify"; config: Record<string, unknown> }
+  | { type: "ai_summarize"; config: Record<string, unknown> }
+  | { type: "ai_extract"; config: Record<string, unknown> }
+  | { type: "ai_routing_suggestion"; config: Record<string, unknown> };
 
 export const automationRules = pgTable("automation_rules", {
   id: serial("id").primaryKey(),

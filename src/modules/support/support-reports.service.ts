@@ -146,6 +146,7 @@ export class SupportReportsService {
     const rows = await this.db
       .select({
         queueId: supportTickets.queueId,
+        queueName: supportQueues.name,
         ticketsHandled: sql<number>`COUNT(*)::int`,
         openTickets: sql<number>`COUNT(*) FILTER (WHERE ${supportTickets.status} IN ('OPEN', 'IN_PROGRESS', 'WAITING'))::int`,
         avgResolutionMinutes: sql<number | null>`
@@ -153,17 +154,12 @@ export class SupportReportsService {
           FILTER (WHERE ${supportTickets.resolvedAt} IS NOT NULL)`,
       })
       .from(supportTickets)
+      .leftJoin(supportQueues, eq(supportQueues.id, supportTickets.queueId))
       .where(and(...conditions))
-      .groupBy(supportTickets.queueId)
+      .groupBy(supportTickets.queueId, supportQueues.name)
       .orderBy(sql`COUNT(*) DESC`);
 
-    const queues = await this.db.query.supportQueues.findMany({
-      where: eq(supportQueues.orgId, orgId),
-      columns: { id: true, name: true },
-    });
-    const nameById = new Map(queues.map((q) => [q.id, q.name]));
-
-    return rows.map((r) => ({ ...r, queueName: r.queueId ? (nameById.get(r.queueId) ?? "Unknown queue") : null }));
+    return rows.map((r) => ({ ...r, queueName: r.queueName ?? "Unknown queue" }));
   }
 
   async getChannelPerformance(orgId: string, filters: ScopedFilters) {
@@ -197,22 +193,18 @@ export class SupportReportsService {
     const rows = await this.db
       .select({
         ruleId: automationRuns.ruleId,
+        ruleName: automationRules.name,
         total: sql<number>`COUNT(*)::int`,
         succeeded: sql<number>`COUNT(*) FILTER (WHERE ${automationRuns.status} = 'success')::int`,
         failed: sql<number>`COUNT(*) FILTER (WHERE ${automationRuns.status} = 'failed')::int`,
         skipped: sql<number>`COUNT(*) FILTER (WHERE ${automationRuns.status} = 'skipped')::int`,
       })
       .from(automationRuns)
+      .leftJoin(automationRules, eq(automationRules.id, automationRuns.ruleId))
       .where(and(...conditions))
-      .groupBy(automationRuns.ruleId)
+      .groupBy(automationRuns.ruleId, automationRules.name)
       .orderBy(sql`COUNT(*) DESC`);
 
-    const rules = await this.db.query.automationRules.findMany({
-      where: and(eq(automationRules.orgId, orgId), sql`${automationRules.triggerEvent} LIKE ${`${TICKET_TRIGGER_PREFIX}%`}`),
-      columns: { id: true, name: true },
-    });
-    const nameById = new Map(rules.map((r) => [r.id, r.name]));
-
-    return rows.map((r) => ({ ...r, ruleName: nameById.get(r.ruleId) ?? "Deleted automation" }));
+    return rows.map((r) => ({ ...r, ruleName: r.ruleName ?? "Deleted automation" }));
   }
 }

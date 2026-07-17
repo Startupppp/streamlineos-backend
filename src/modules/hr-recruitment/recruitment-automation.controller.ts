@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -13,11 +12,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
-import { AccessService } from "../access/access.service";
 import {
   createAutomationSchema,
   createSequenceSchema,
@@ -38,57 +38,47 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentAutomationController {
-  constructor(
-    private readonly automation: RecruitmentAutomationService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly automation: RecruitmentAutomationService) {}
 
   @Get("automations")
+  @RequirePermission("hr:employees:view")
   listAutomations(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listAutomations(u.orgId);
   }
 
   @Post("automations")
   @HttpCode(201)
-  async createAutomation(
+  @RequirePermission("hr:employees:manage")
+  createAutomation(
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.createAutomation(u.orgId, u.userId, body);
   }
 
   @Patch("automations/:automationId")
-  async updateAutomation(
+  @RequirePermission("hr:employees:manage")
+  updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.updateAutomation(u.orgId, automationId, body);
   }
 
   @Delete("automations/:automationId")
-  async deleteAutomation(
+  @RequirePermission("hr:employees:manage")
+  deleteAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.deleteAutomation(u.orgId, automationId);
   }
 
   @Get("messages")
+  @RequirePermission("hr:employees:view")
   listMessages(
     @Query(new ZodValidationPipe(messageListSchema)) query: MessageListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +88,7 @@ export class RecruitmentAutomationController {
 
   @Post("messages")
   @HttpCode(201)
+  @RequirePermission("hr:employees:manage")
   sendMessage(
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
@@ -106,11 +97,13 @@ export class RecruitmentAutomationController {
   }
 
   @Get("messages/threads")
+  @RequirePermission("hr:employees:view")
   listMessageThreads(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listMessageThreads(u.orgId);
   }
 
   @Patch("messages/:messageId")
+  @RequirePermission("hr:employees:view")
   markMessageRead(
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -119,24 +112,23 @@ export class RecruitmentAutomationController {
   }
 
   @Get("email-sequences")
+  @RequirePermission("hr:employees:view")
   listSequences(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listSequences(u.orgId);
   }
 
   @Post("email-sequences")
   @HttpCode(201)
-  async createSequence(
+  @RequirePermission("hr:employees:manage")
+  createSequence(
     @Body(new ZodValidationPipe(createSequenceSchema)) body: CreateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.createSequence(u.orgId, u.userId, body);
   }
 
   @Get("email-sequences/:sequenceId")
+  @RequirePermission("hr:employees:view")
   getSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -145,40 +137,31 @@ export class RecruitmentAutomationController {
   }
 
   @Patch("email-sequences/:sequenceId")
-  async updateSequence(
+  @RequirePermission("hr:employees:manage")
+  updateSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.updateSequence(u.orgId, sequenceId, body);
   }
 
   @Delete("email-sequences/:sequenceId")
-  async deleteSequence(
+  @RequirePermission("hr:employees:manage")
+  deleteSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.deleteSequence(u.orgId, sequenceId);
   }
 
   @Post("email-sequences/:sequenceId/enroll")
-  async enrollSequence(
+  @RequirePermission("hr:employees:manage")
+  enrollSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @Body(new ZodValidationPipe(enrollSequenceSchema)) body: EnrollSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.automation.enrollSequence(u.orgId, sequenceId, body);
   }
 }

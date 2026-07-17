@@ -10,6 +10,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 
 function makeMockDb(): Db {
   const updateReturning = jest.fn().mockResolvedValue([
@@ -74,6 +75,7 @@ describe("DealsService – blueprint transition enforcement", () => {
       mockCrmMetadata as unknown as CrmMetadataService,
       { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm-metadata/crm-validation.service").CrmValidationService,
       { emit: jest.fn().mockResolvedValue(undefined) } as unknown as import("../crm-automation-studio/crm-automation-bus.service").CrmAutomationBusService,
+      { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as unknown as PlanLimitsService,
     );
   });
 

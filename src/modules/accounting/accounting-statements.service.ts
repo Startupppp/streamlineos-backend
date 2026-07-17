@@ -3,6 +3,8 @@ import { and, asc, eq, gte, inArray, lte, sum } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { ACCOUNT_CODES } from "./posting-rules";
 import type { AccountType, BalanceSheetRow } from "./accounting.types";
 import {
@@ -66,10 +68,18 @@ function sumRows(rows: BalanceSheetRow[]): number {
 
 @Injectable()
 export class AccountingStatementsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async trialBalance(orgId: string, query: TrialBalanceQuery) {
     const { asOf } = query;
+    const key = `acct:trial-balance:${orgId}:${asOf}`;
+    return this.cache.cached(key, () => this.computeTrialBalance(orgId, asOf), CACHE_TTL.MEDIUM);
+  }
+
+  private async computeTrialBalance(orgId: string, asOf: string) {
     const rows = await this.db
       .select({
         accountId: ledgerAccounts.id,
@@ -122,6 +132,13 @@ export class AccountingStatementsService {
   async profitLoss(orgId: string, query: ProfitLossQuery) {
     const { from, to } = query;
     if (!from || !to) throw new BadRequestException("from and to are required");
+    const fromStr = from.toISOString().slice(0, 10);
+    const toStr = to.toISOString().slice(0, 10);
+    const key = `acct:profit-loss:${orgId}:${fromStr}:${toStr}`;
+    return this.cache.cached(key, () => this.computeProfitLoss(orgId, from, to), CACHE_TTL.MEDIUM);
+  }
+
+  private async computeProfitLoss(orgId: string, from: Date, to: Date) {
     const fromStr = from.toISOString().slice(0, 10);
     const toStr = to.toISOString().slice(0, 10);
 
@@ -185,6 +202,11 @@ export class AccountingStatementsService {
 
   async balanceSheet(orgId: string, query: BalanceSheetQuery) {
     const { asOf } = query;
+    const key = `acct:balance-sheet:${orgId}:${asOf}`;
+    return this.cache.cached(key, () => this.computeBalanceSheet(orgId, asOf), CACHE_TTL.MEDIUM);
+  }
+
+  private async computeBalanceSheet(orgId: string, asOf: string) {
     const rows: AccountAggRow[] = await this.db
       .select({
         accountId: ledgerAccounts.id,
@@ -235,6 +257,13 @@ export class AccountingStatementsService {
   async cashFlow(orgId: string, query: ProfitLossQuery) {
     const { from, to } = query;
     if (!from || !to) throw new BadRequestException("from and to are required");
+    const fromStr = from.toISOString().slice(0, 10);
+    const toStr = to.toISOString().slice(0, 10);
+    const key = `acct:cash-flow:${orgId}:${fromStr}:${toStr}`;
+    return this.cache.cached(key, () => this.computeCashFlow(orgId, from, to), CACHE_TTL.MEDIUM);
+  }
+
+  private async computeCashFlow(orgId: string, from: Date, to: Date) {
     const fromStr = from.toISOString().slice(0, 10);
     const toStr = to.toISOString().slice(0, 10);
     const openingAsOf = previousDay(fromStr);

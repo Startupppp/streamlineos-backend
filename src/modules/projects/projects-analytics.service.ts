@@ -142,110 +142,158 @@ export class ProjectsAnalyticsService {
     };
   }
 
-  async resourceAllocation(orgId: string) {
-    const activeProjects = await this.db.query.projects.findMany({
-      where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE")),
-      columns: { id: true, name: true, key: true },
-    });
+  async getOrgProjectHealthSummary(orgId: string): Promise<{
+    total: number;
+    healthy: number;
+    atRisk: number;
+    critical: number;
+    avgScore: number;
+  }> {
+    const rows = await this.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.orgId, orgId))
+      .limit(50);
 
-    if (activeProjects.length === 0) return [];
+    const results = await Promise.allSettled(rows.map((p) => this.getProjectAnalytics(orgId, p.id)));
 
-    const projectIds = activeProjects.map((p) => p.id);
+    let healthy = 0;
+    let atRisk = 0;
+    let critical = 0;
+    let totalScore = 0;
+    let counted = 0;
 
-    const [primaryAllocation, multiAllocation] = await Promise.all([
-      this.db
-        .select({
-          assigneeId: tickets.assigneeId,
-          projectId: tickets.projectId,
-          open: count(tickets.id),
-        })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            inArray(tickets.projectId, projectIds),
-            sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
-          ),
-        )
-        .groupBy(tickets.assigneeId, tickets.projectId),
-      this.db
-        .select({
-          assigneeId: ticketAssignees.userId,
-          projectId: tickets.projectId,
-          open: count(tickets.id),
-        })
-        .from(ticketAssignees)
-        .innerJoin(tickets, eq(ticketAssignees.ticketId, tickets.id))
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            inArray(tickets.projectId, projectIds),
-            sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
-          ),
-        )
-        .groupBy(ticketAssignees.userId, tickets.projectId),
-    ]);
-
-    const allAssigneeIds = new Set<string>();
-    for (const r of primaryAllocation) {
-      if (r.assigneeId) allAssigneeIds.add(r.assigneeId);
-    }
-    for (const r of multiAllocation) {
-      if (r.assigneeId) allAssigneeIds.add(r.assigneeId);
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        const { healthScore, healthStatus } = r.value;
+        totalScore += healthScore ?? 0;
+        counted++;
+        if (healthStatus === "EXCELLENT" || healthStatus === "GOOD") healthy++;
+        else if (healthStatus === "AT_RISK") atRisk++;
+        else if (healthStatus === "CRITICAL") critical++;
+      }
     }
 
-    if (allAssigneeIds.size === 0) return [];
-
-    const members = await this.db.query.users.findMany({
-      where: inArray(users.id, [...allAssigneeIds]),
-      columns: { id: true, name: true, email: true, image: true },
-    });
-
-    const memberMap = new Map(members.map((m) => [m.id, m]));
-    const projectMap = new Map(activeProjects.map((p) => [p.id, p]));
-
-    const byMember = new Map<
-      string,
-      {
-        user: { id: string; name: string | null; email: string; image: string | null };
-        totalOpen: number;
-        byProject: { projectId: number; projectName: string; projectKey: string; open: number }[];
-      }
-    >();
-
-    const addAllocation = (assigneeId: string | null, projectId: number | null, openCount: number) => {
-      if (!assigneeId) return;
-      const user = memberMap.get(assigneeId);
-      if (!user) return;
-      const project = projectId ? projectMap.get(projectId) : undefined;
-      if (!project) return;
-
-      if (!byMember.has(assigneeId)) {
-        byMember.set(assigneeId, { user, totalOpen: 0, byProject: [] });
-      }
-      const entry = byMember.get(assigneeId);
-      if (!entry) return;
-      const existing = entry.byProject.find((p) => p.projectId === project.id);
-      if (existing) {
-        existing.open = Math.max(existing.open, openCount);
-      } else {
-        entry.byProject.push({
-          projectId: project.id,
-          projectName: project.name,
-          projectKey: project.key,
-          open: openCount,
-        });
-      }
-      entry.totalOpen = entry.byProject.reduce((s, p) => s + p.open, 0);
+    return {
+      total: rows.length,
+      healthy,
+      atRisk,
+      critical,
+      avgScore: counted > 0 ? Math.round(totalScore / counted) : 0,
     };
+  }
 
-    for (const row of primaryAllocation) {
-      addAllocation(row.assigneeId, row.projectId, Number(row.open));
-    }
-    for (const row of multiAllocation) {
-      addAllocation(row.assigneeId, row.projectId, Number(row.open));
-    }
+  async resourceAllocation(orgId: string) {
+    const key = `projects:resource-allocation:${orgId}`;
+    return this.cache.cached(
+      key,
+      async () => {
+        const activeProjects = await this.db.query.projects.findMany({
+          where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE")),
+          columns: { id: true, name: true, key: true },
+        });
 
-    return [...byMember.values()].sort((a, b) => b.totalOpen - a.totalOpen);
+        if (activeProjects.length === 0) return [];
+
+        const projectIds = activeProjects.map((p) => p.id);
+
+        const [primaryAllocation, multiAllocation] = await Promise.all([
+          this.db
+            .select({
+              assigneeId: tickets.assigneeId,
+              projectId: tickets.projectId,
+              open: count(tickets.id),
+            })
+            .from(tickets)
+            .where(
+              and(
+                eq(tickets.orgId, orgId),
+                inArray(tickets.projectId, projectIds),
+                sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
+              ),
+            )
+            .groupBy(tickets.assigneeId, tickets.projectId),
+          this.db
+            .select({
+              assigneeId: ticketAssignees.userId,
+              projectId: tickets.projectId,
+              open: count(tickets.id),
+            })
+            .from(ticketAssignees)
+            .innerJoin(tickets, eq(ticketAssignees.ticketId, tickets.id))
+            .where(
+              and(
+                eq(tickets.orgId, orgId),
+                inArray(tickets.projectId, projectIds),
+                sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
+              ),
+            )
+            .groupBy(ticketAssignees.userId, tickets.projectId),
+        ]);
+
+        const allAssigneeIds = new Set<string>();
+        for (const r of primaryAllocation) {
+          if (r.assigneeId) allAssigneeIds.add(r.assigneeId);
+        }
+        for (const r of multiAllocation) {
+          if (r.assigneeId) allAssigneeIds.add(r.assigneeId);
+        }
+
+        if (allAssigneeIds.size === 0) return [];
+
+        const members = await this.db.query.users.findMany({
+          where: inArray(users.id, [...allAssigneeIds]),
+          columns: { id: true, name: true, email: true, image: true },
+        });
+
+        const memberMap = new Map(members.map((m) => [m.id, m]));
+        const projectMap = new Map(activeProjects.map((p) => [p.id, p]));
+
+        const byMember = new Map<
+          string,
+          {
+            user: { id: string; name: string | null; email: string; image: string | null };
+            totalOpen: number;
+            byProject: { projectId: number; projectName: string; projectKey: string; open: number }[];
+          }
+        >();
+
+        const addAllocation = (assigneeId: string | null, projectId: number | null, openCount: number) => {
+          if (!assigneeId) return;
+          const user = memberMap.get(assigneeId);
+          if (!user) return;
+          const project = projectId ? projectMap.get(projectId) : undefined;
+          if (!project) return;
+
+          if (!byMember.has(assigneeId)) {
+            byMember.set(assigneeId, { user, totalOpen: 0, byProject: [] });
+          }
+          const entry = byMember.get(assigneeId);
+          if (!entry) return;
+          const existing = entry.byProject.find((p) => p.projectId === project.id);
+          if (existing) {
+            existing.open = Math.max(existing.open, openCount);
+          } else {
+            entry.byProject.push({
+              projectId: project.id,
+              projectName: project.name,
+              projectKey: project.key,
+              open: openCount,
+            });
+          }
+          entry.totalOpen = entry.byProject.reduce((s, p) => s + p.open, 0);
+        };
+
+        for (const row of primaryAllocation) {
+          addAllocation(row.assigneeId, row.projectId, Number(row.open));
+        }
+        for (const row of multiAllocation) {
+          addAllocation(row.assigneeId, row.projectId, Number(row.open));
+        }
+
+        return [...byMember.values()].sort((a, b) => b.totalOpen - a.totalOpen);
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 }

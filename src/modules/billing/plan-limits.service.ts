@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
 import {
   PLAN_LIMITS,
   PLAN_FEATURE_FLAGS,
@@ -30,11 +31,16 @@ interface TierCache {
 
 const TIER_CACHE_TTL_MS = 30_000;
 
+const ENTITLEMENTS_CACHE_TTL = 60;
+
 @Injectable()
 export class PlanLimitsService {
   private readonly tierCache = new Map<string, TierCache>();
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async resolveTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
     const cached = this.tierCache.get(orgId);
@@ -99,33 +105,27 @@ export class PlanLimitsService {
 
   async getEntitlements(orgId: string): Promise<EntitlementsDto> {
     const { tier, plan } = await this.resolveTier(orgId);
-    const catalog = PLAN_LIMITS;
-    const limitKeys = Object.keys(catalog) as LimitKey[];
+    const cacheKey = `billing:entitlements:${orgId}`;
+    return this.cache.cached(cacheKey, () => this.computeEntitlements(orgId, tier, plan), ENTITLEMENTS_CACHE_TTL);
+  }
 
-    const [usageCounts, negotiatedSeats] = await Promise.all([
-      Promise.all(
-        limitKeys.map(async (key) => {
-          try {
-            const count = await this.fetchCount(orgId, key);
-            return { key, count };
-          } catch {
-            return { key, count: 0 };
-          }
-        }),
-      ),
+  private async computeEntitlements(orgId: string, tier: PlanTier, plan: EffectivePlan): Promise<EntitlementsDto> {
+    const catalog = PLAN_LIMITS;
+
+    const [usageRow, negotiatedSeats] = await Promise.all([
+      this.fetchAllCounts(orgId),
       tier === "ENTERPRISE" ? this.fetchNegotiatedSeats(orgId) : Promise.resolve(null),
     ]);
 
     const baseMembersLimit = catalog.members[plan];
     const seatLimit = negotiatedSeats !== null ? negotiatedSeats : baseMembersLimit;
 
+    const limitKeys = Object.keys(catalog) as LimitKey[];
     const limits = {} as Record<LimitKey, { limit: number | null; used: number }>;
-    for (const { key, count } of usageCounts) {
+    for (const key of limitKeys) {
       let limit = catalog[key][plan];
-      if (key === "members" && negotiatedSeats !== null) {
-        limit = negotiatedSeats;
-      }
-      limits[key] = { limit, used: count };
+      if (key === "members" && negotiatedSeats !== null) limit = negotiatedSeats;
+      limits[key] = { limit, used: usageRow[key] };
     }
 
     return {
@@ -135,6 +135,52 @@ export class PlanLimitsService {
       lockedModules: PLAN_LOCKED_MODULES[tier],
       features: PLAN_FEATURE_FLAGS[tier],
       limits,
+    };
+  }
+
+  private async fetchAllCounts(orgId: string): Promise<Record<LimitKey, number>> {
+    try {
+      const rows = await this.db.execute(sql`
+        SELECT
+          (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId})                                                         AS members,
+          (SELECT COUNT(*)::int FROM projects WHERE org_id = ${orgId})                                                                    AS projects,
+          (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
+          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
+          (SELECT COUNT(*)::int FROM leads WHERE org_id = ${orgId} AND deleted_at IS NULL)                                                AS "crmLeads",
+          (SELECT COUNT(*)::int FROM contacts WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "crmContacts",
+          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                       AS "crmDeals",
+          (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
+          ((SELECT COUNT(*) FROM automation_rules WHERE org_id = ${orgId}) + (SELECT COUNT(*) FROM project_automations WHERE org_id = ${orgId}))::int AS automations,
+          (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
+          (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
+          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                    AS "acctInvoices"
+      `);
+      const row = rows[0];
+      if (!row) return this.zeroCounts();
+      return {
+        members:        Number(row["members"] ?? 0),
+        projects:       Number(row["projects"] ?? 0),
+        kbPages:        Number(row["kbPages"] ?? 0),
+        chatChannels:   Number(row["chatChannels"] ?? 0),
+        crmLeads:       Number(row["crmLeads"] ?? 0),
+        crmContacts:    Number(row["crmContacts"] ?? 0),
+        crmDeals:       Number(row["crmDeals"] ?? 0),
+        supportTickets: Number(row["supportTickets"] ?? 0),
+        automations:    Number(row["automations"] ?? 0),
+        signEnvelopes:  Number(row["signEnvelopes"] ?? 0),
+        surveys:        Number(row["surveys"] ?? 0),
+        acctInvoices:   Number(row["acctInvoices"] ?? 0),
+      };
+    } catch {
+      return this.zeroCounts();
+    }
+  }
+
+  private zeroCounts(): Record<LimitKey, number> {
+    return {
+      members: 0, projects: 0, kbPages: 0, chatChannels: 0,
+      crmLeads: 0, crmContacts: 0, crmDeals: 0, supportTickets: 0,
+      automations: 0, signEnvelopes: 0, surveys: 0, acctInvoices: 0,
     };
   }
 

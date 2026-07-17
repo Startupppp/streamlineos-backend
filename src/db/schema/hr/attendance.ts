@@ -22,6 +22,7 @@ export const attendance = pgTable("attendance", {
 }, (table) => [
   uniqueIndex("uniq_attendance_user_date").on(table.userId, table.date),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
+  index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
 ]);
 
 export const holidays = pgTable("holidays", {
@@ -49,6 +50,8 @@ export const wfhRequests = pgTable("wfh_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_wfh_requests_user_date").on(table.userId, table.date),
+  index("idx_wfh_requests_org_status").on(table.orgId, table.status),
+  index("idx_wfh_requests_org_user_status").on(table.orgId, table.userId, table.status),
 ]);
 
 export const helpdeskTickets = pgTable("helpdesk_tickets", {
@@ -70,6 +73,7 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
 }, (table) => [
   index("idx_helpdesk_tickets_org_status").on(table.orgId, table.status),
   index("idx_helpdesk_tickets_org_user").on(table.orgId, table.userId),
+  index("idx_helpdesk_tickets_org_assignee").on(table.orgId, table.assigneeId),
 ]);
 
 export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {

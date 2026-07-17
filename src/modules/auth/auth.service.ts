@@ -1,12 +1,10 @@
 import {
-  BadRequestException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -26,22 +24,11 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
-import { PasswordService } from "./password.service";
-import { DeviceService } from "./device.service";
 import { SessionService } from "./session.service";
 import { AuthTokensService } from "./auth-tokens.service";
-import { decryptTotpSecret, verifyTotpCode } from "./totp.util";
 import { hashToken } from "../../common/security/token.util";
-import { parseUserAgent } from "../../common/http/parse-user-agent";
 import { addDays, addHours } from "date-fns";
-import type {
-  LoginInput,
-  RegisterInput,
-  ChangePasswordInput,
-} from "./dto/auth.schemas";
-
-const LOCK_AFTER_ATTEMPTS = 5;
-const LOCK_DURATION_MINUTES = 15;
+import type { RegisterInput } from "./dto/auth.schemas";
 
 function slugify(name: string): string {
   return (
@@ -63,9 +50,7 @@ function generateToken(): string {
 export class AuthService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly passwordService: PasswordService,
     private readonly sessionService: SessionService,
-    private readonly deviceService: DeviceService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
@@ -73,12 +58,6 @@ export class AuthService {
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
-
-  private assertPasswordNotEmail(password: string, email: string): void {
-    if (password.toLowerCase() === email.toLowerCase()) {
-      throw new BadRequestException("Password cannot be the same as your email address");
-    }
-  }
 
   async register(input: RegisterInput): Promise<{ success: true }> {
     const normalizedEmail = input.email.toLowerCase().trim();
@@ -102,8 +81,6 @@ export class AuthService {
       return { success: true };
     }
 
-    this.assertPasswordNotEmail(input.password, normalizedEmail);
-    const passwordHash = await this.passwordService.hash(input.password);
     const userId = randomUUID();
     const orgId = randomUUID();
 
@@ -120,11 +97,9 @@ export class AuthService {
         name: input.lastName ? `${input.firstName} ${input.lastName}` : input.firstName,
         firstName: input.firstName,
         lastName: input.lastName ?? "",
-        password: passwordHash,
         role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
-        isPasswordChangeRequired: false,
         emailVerified: null,
         lastActiveOrgId: orgId,
       });
@@ -174,184 +149,6 @@ export class AuthService {
     return { success: true };
   }
 
-  async login(
-    input: LoginInput,
-    context: { ipAddress?: string; userAgent?: string; fingerprint?: string },
-  ): Promise<{
-    userId: string;
-    orgId: string;
-    sessionId?: string;
-    deviceId?: string;
-    isNewDevice?: boolean;
-    forceChangePassword?: boolean;
-    daysUntilExpiry?: number;
-    requiresMfa?: boolean;
-  }> {
-    const normalizedEmail = input.email.toLowerCase().trim();
-
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-    });
-
-    if (!user || !user.password) {
-      await this.authTokens.logLoginEvent(null, null, "login.failure", false, "INVALID_CREDENTIALS", context);
-      throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
-    }
-
-    if (!user.isActive) {
-      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_DEACTIVATED", context);
-      throw new UnauthorizedException("Account is deactivated");
-    }
-
-    if (!user.emailVerified) {
-      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "EMAIL_NOT_VERIFIED", context);
-      throw new UnauthorizedException({ code: "AUTH_EMAIL_NOT_VERIFIED", message: "Please verify your email before signing in" });
-    }
-
-    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-      const remainingSeconds = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 1000);
-      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "ACCOUNT_LOCKED", context);
-      throw new UnauthorizedException({ code: "AUTH_ACCOUNT_LOCKED", message: "Account locked. Try again later.", details: { retryAfterSeconds: remainingSeconds } });
-    }
-
-    const isValid = await this.passwordService.verify(input.password, user.password);
-    if (!isValid) {
-      const attempts = (user.loginAttempts ?? 0) + 1;
-      const update: Record<string, unknown> = { loginAttempts: attempts };
-      if (attempts >= LOCK_AFTER_ATTEMPTS) {
-        update.lockedUntil = addHours(new Date(), LOCK_DURATION_MINUTES / 60);
-        void this.email.sendAccountLockedEmail?.(user.email, user.name ?? user.email).catch(() => {});
-      }
-      await this.db.update(users).set(update).where(eq(users.id, user.id));
-      await this.authTokens.logLoginEvent(user.id, null, "login.failure", false, "INVALID_CREDENTIALS", context);
-      throw new UnauthorizedException({ code: "AUTH_INVALID_CREDENTIALS", message: "Invalid credentials" });
-    }
-
-    if (user.loginAttempts && user.loginAttempts > 0) {
-      await this.db.update(users).set({ loginAttempts: 0, lockedUntil: null }).where(eq(users.id, user.id));
-    }
-
-    const membership = await this.authTokens.resolveActiveMembership(user.id, user.lastActiveOrgId ?? null);
-    const orgId = membership?.orgId ?? "";
-
-    let daysUntilExpiry: number | undefined;
-    if (orgId) {
-      const sub = await this.db.query.subscriptions.findFirst({
-        where: eq(subscriptions.orgId, orgId),
-        columns: { status: true, trialEndsAt: true, currentPeriodEnd: true },
-      });
-      if (sub) {
-        const isExpired =
-          sub.status === "EXPIRED" ||
-          sub.status === "CANCELLED" ||
-          (sub.status === "TRIAL" && sub.trialEndsAt != null && new Date(sub.trialEndsAt) < new Date());
-
-        if (isExpired) {
-          await this.authTokens.logLoginEvent(user.id, orgId, "login.failure", false, "SUBSCRIPTION_INACTIVE", context);
-          throw new UnauthorizedException({ code: "AUTH_SUBSCRIPTION_INACTIVE", message: "Your subscription is inactive. Please renew to continue." });
-        }
-
-        const expiryDate = sub.status === "TRIAL" ? sub.trialEndsAt : sub.currentPeriodEnd;
-        if (expiryDate) {
-          const days = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / 86_400_000);
-          if (days < 14) daysUntilExpiry = Math.max(0, days);
-        }
-      }
-    }
-
-    let orgSecuritySettings: {
-      mfaEnforced: boolean;
-      maxConcurrentSessions: number | null;
-      passwordExpiryDays: number | null;
-    } | null = null;
-    if (orgId) {
-      const [org] = await this.db
-        .select({
-          mfaEnforced: organizations.mfaEnforced,
-          maxConcurrentSessions: organizations.maxConcurrentSessions,
-          passwordExpiryDays: organizations.passwordExpiryDays,
-        })
-        .from(organizations)
-        .where(eq(organizations.id, orgId));
-      orgSecuritySettings = org ?? null;
-    }
-
-    const mfaRequired = !!user.totpEnabled || !!(orgSecuritySettings?.mfaEnforced ?? false);
-
-    if (mfaRequired) {
-      if (!input.totpCode) {
-        return { userId: user.id, orgId, requiresMfa: true };
-      }
-      if (!user.totpSecret || !verifyTotpCode(input.totpCode, user.totpSecret)) {
-        await this.authTokens.logLoginEvent(user.id, orgId, "login.failure", false, "INVALID_MFA_CODE", context);
-        throw new UnauthorizedException({ code: "AUTH_INVALID_MFA_CODE", message: "Invalid MFA code" });
-      }
-    }
-
-    const clientInfo = parseUserAgent(context.userAgent);
-    const device = await this.deviceService.findOrCreate({
-      userId: user.id,
-      fingerprint: context.fingerprint ?? context.userAgent ?? "unknown",
-      browser: clientInfo.browser,
-      os: clientInfo.os,
-      platform: clientInfo.platform,
-    });
-
-    const expiresAt = input.rememberMe ? addDays(new Date(), 30) : addDays(new Date(), 1);
-    const sessionId = await this.sessionService.create({
-      userId: user.id,
-      userAgent: context.userAgent,
-      ipAddress: context.ipAddress,
-      deviceId: device.id,
-      expiresAt,
-    });
-
-    if (orgSecuritySettings?.maxConcurrentSessions) {
-      await this.sessionService.enforceMaxSessions(user.id, orgSecuritySettings.maxConcurrentSessions, sessionId);
-    }
-
-    await this.authTokens.logLoginEvent(user.id, orgId, "login.success", true, null, context);
-
-    this.audit.log({
-      action: "auth.login",
-      userId: user.id,
-      orgId,
-      ipAddress: context.ipAddress,
-      metadata: { userAgent: context.userAgent },
-    });
-
-    if (!device.trusted && orgId) {
-      void this.dispatch.emit({
-        eventKey: "security.login.new_device",
-        orgId,
-        actorUserId: user.id,
-        targetUserIds: [user.id],
-        entityType: "user",
-        entityId: user.id,
-        title: "New device sign-in",
-        message: "Your account was accessed from a new or unrecognized device.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(user.id));
-
-    const baseline = user.passwordChangedAt ?? user.createdAt;
-    const passwordExpired =
-      !!orgSecuritySettings?.passwordExpiryDays &&
-      addDays(new Date(baseline), orgSecuritySettings.passwordExpiryDays) < new Date();
-
-    return {
-      userId: user.id,
-      orgId,
-      sessionId,
-      deviceId: device.id,
-      isNewDevice: !device.trusted,
-      forceChangePassword: (user.isPasswordChangeRequired ?? false) || passwordExpired,
-      ...(daysUntilExpiry !== undefined && { daysUntilExpiry }),
-    };
-  }
-
   async logout(sessionId: string, userId: string): Promise<void> {
     await this.sessionService.revoke(sessionId, userId);
     this.audit.log({ action: "auth.logout", userId });
@@ -360,85 +157,6 @@ export class AuthService {
   async logoutAll(userId: string, exceptSessionId?: string): Promise<void> {
     await this.sessionService.revokeAll(userId, exceptSessionId);
     this.audit.log({ action: "auth.logout_all", userId });
-  }
-
-  async changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
-    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user || !user.password) throw new NotFoundException("User not found");
-
-    const isValid = await this.passwordService.verify(input.currentPassword, user.password);
-    if (!isValid) throw new BadRequestException("Current password is incorrect");
-
-    this.assertPasswordNotEmail(input.newPassword, user.email);
-    await this.passwordService.checkPasswordHistory(userId, input.newPassword);
-
-    const newHash = await this.passwordService.hash(input.newPassword);
-    await this.db
-      .update(users)
-      .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
-      .where(eq(users.id, userId));
-    await this.passwordService.recordPasswordHistory(userId, newHash);
-
-    await this.sessionService.revokeAll(userId);
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-
-    this.audit.log({ action: "auth.password_changed", userId });
-
-    void this.email
-      .sendPasswordChangeConfirmationEmail?.(user.email, user.name ?? user.email)
-      .catch(() => {});
-
-    const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
-    if (membership) {
-      void this.dispatch.emit({
-        eventKey: "security.password.changed",
-        orgId: membership.orgId,
-        actorUserId: userId,
-        targetUserIds: [userId],
-        entityType: "user",
-        entityId: userId,
-        title: "Your password was changed",
-        message: "Your account password was successfully changed. If you did not do this, contact support immediately.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
-  }
-
-  async forceChangePassword(userId: string, password: string, sessionId: string): Promise<{ success: true }> {
-    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
-    if (!user) throw new NotFoundException("User not found");
-
-    this.assertPasswordNotEmail(password, user.email);
-    await this.passwordService.checkPasswordHistory(userId, password);
-
-    const newHash = await this.passwordService.hash(password);
-    await this.db
-      .update(users)
-      .set({ password: newHash, passwordChangedAt: new Date(), isPasswordChangeRequired: false })
-      .where(eq(users.id, userId));
-    await this.passwordService.recordPasswordHistory(userId, newHash);
-
-    await this.sessionService.revokeAll(userId, sessionId);
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-
-    this.audit.log({ action: "auth.password_changed", userId, metadata: { forced: true } });
-
-    const membership = await this.authTokens.resolveActiveMembership(userId, user.lastActiveOrgId ?? null);
-    if (membership) {
-      void this.dispatch.emit({
-        eventKey: "security.password.changed",
-        orgId: membership.orgId,
-        actorUserId: userId,
-        targetUserIds: [userId],
-        entityType: "user",
-        entityId: userId,
-        title: "Your password was changed",
-        message: "Your account password was successfully changed. If you did not do this, contact support immediately.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
-
-    return { success: true };
   }
 
   async getSessionData(userId: string): Promise<{
@@ -451,7 +169,6 @@ export class AuthService {
     role: string | null;
     isActive: boolean;
     hasDashboardAccess: boolean;
-    isPasswordChangeRequired: boolean;
     branchId: number | null;
     totpEnabled: boolean;
     orgId: string | null;
@@ -479,7 +196,6 @@ export class AuthService {
               role: true,
               isActive: true,
               hasDashboardAccess: true,
-              isPasswordChangeRequired: true,
               branchId: true,
               totpEnabled: true,
               onboardingCompletedAt: true,
@@ -534,7 +250,6 @@ export class AuthService {
           role: user.role ?? null,
           isActive: user.isActive,
           hasDashboardAccess: user.hasDashboardAccess,
-          isPasswordChangeRequired: user.isPasswordChangeRequired,
           branchId: user.branchId ?? null,
           totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,

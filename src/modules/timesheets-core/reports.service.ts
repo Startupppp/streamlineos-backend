@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { timesheets, timesheetPeriods, projects } from "../../db/schema";
@@ -35,52 +35,6 @@ export class ReportsService {
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
 
-    const entries = await this.db
-      .select({
-        userId: timesheets.userId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        isBillable: timesheets.isBillable,
-        status: timesheets.status,
-        projectId: timesheets.projectId,
-      })
-      .from(timesheets)
-      .where(and(...conditions));
-
-    let totalHours = 0;
-    let billableHours = 0;
-    let nonBillableHours = 0;
-    let approvedHours = 0;
-    let pendingApprovalHours = 0;
-    const activeUsers = new Set<string>();
-    const byDay = new Map<string, number>();
-    const byProject = new Map<number, number>();
-
-    for (const e of entries) {
-      const h = parseFloat(e.hours);
-      totalHours += h;
-      if (e.isBillable) billableHours += h;
-      else nonBillableHours += h;
-      if (e.status === "APPROVED") approvedHours += h;
-      if (e.status === "PENDING") pendingApprovalHours += h;
-      activeUsers.add(e.userId);
-
-      byDay.set(e.date, round2((byDay.get(e.date) ?? 0) + h));
-      if (e.projectId !== null) {
-        byProject.set(e.projectId, round2((byProject.get(e.projectId) ?? 0) + h));
-      }
-    }
-
-    const projectIds = [...byProject.keys()];
-    let projectNames = new Map<number, string>();
-    if (projectIds.length > 0) {
-      const projRows = await this.db
-        .select({ id: projects.id, name: projects.name })
-        .from(projects)
-        .where(eq(projects.orgId, u.orgId));
-      projectNames = new Map(projRows.map((p) => [p.id, p.name]));
-    }
-
     const periodConditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, "SUBMITTED"),
@@ -89,28 +43,75 @@ export class ReportsService {
     if (query.startDate) periodConditions.push(gte(timesheetPeriods.periodStart, query.startDate));
     if (query.endDate) periodConditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
 
-    const [pendingResult] = await this.db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(timesheetPeriods)
-      .where(and(...periodConditions));
+    const [aggResult, byDayRows, byProjectRows, pendingResult] = await Promise.all([
+      this.db
+        .select({
+          totalHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
+          billableHours: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.isBillable} THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
+          nonBillableHours: sql<string>`COALESCE(SUM(CASE WHEN NOT ${timesheets.isBillable} THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
+          approvedHours: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.status} = 'APPROVED' THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
+          pendingApprovalHours: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.status} = 'PENDING' THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
+          activeUsers: sql<number>`COUNT(DISTINCT ${timesheets.userId})::int`,
+        })
+        .from(timesheets)
+        .where(and(...conditions)),
+      this.db
+        .select({
+          date: timesheets.date,
+          hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
+        })
+        .from(timesheets)
+        .where(and(...conditions))
+        .groupBy(timesheets.date)
+        .orderBy(timesheets.date),
+      this.db
+        .select({
+          projectId: timesheets.projectId,
+          hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
+        })
+        .from(timesheets)
+        .where(and(...conditions, sql`${timesheets.projectId} IS NOT NULL`))
+        .groupBy(timesheets.projectId),
+      this.db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(timesheetPeriods)
+        .where(and(...periodConditions)),
+    ]);
+
+    const agg = aggResult[0];
+    const totalHours = round2(Number(agg?.totalHours ?? 0));
+    const billableHours = round2(Number(agg?.billableHours ?? 0));
+
+    const projectIds = byProjectRows
+      .map((r) => r.projectId)
+      .filter((id): id is number => id !== null);
+
+    let projectNames = new Map<number, string>();
+    if (projectIds.length > 0) {
+      const projRows = await this.db
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(inArray(projects.id, projectIds));
+      projectNames = new Map(projRows.map((p) => [p.id, p.name]));
+    }
 
     return {
-      totalHours: round2(totalHours),
-      billableHours: round2(billableHours),
-      nonBillableHours: round2(nonBillableHours),
+      totalHours,
+      billableHours,
+      nonBillableHours: round2(Number(agg?.nonBillableHours ?? 0)),
       billableRatio: totalHours > 0 ? round2(billableHours / totalHours) : 0,
-      approvedHours: round2(approvedHours),
-      pendingApprovalHours: round2(pendingApprovalHours),
-      pendingPeriods: Number(pendingResult?.count ?? 0),
-      activeUsers: activeUsers.size,
-      byDay: [...byDay.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, hours]) => ({ date, hours })),
-      byProject: [...byProject.entries()].map(([projectId, hours]) => ({
-        projectId,
-        projectName: projectNames.get(projectId) ?? "Unknown",
-        hours,
-      })),
+      approvedHours: round2(Number(agg?.approvedHours ?? 0)),
+      pendingApprovalHours: round2(Number(agg?.pendingApprovalHours ?? 0)),
+      pendingPeriods: Number(pendingResult[0]?.count ?? 0),
+      activeUsers: Number(agg?.activeUsers ?? 0),
+      byDay: byDayRows.map((r) => ({ date: r.date, hours: round2(Number(r.hours)) })),
+      byProject: byProjectRows
+        .filter((r) => r.projectId !== null)
+        .map((r) => ({
+          projectId: r.projectId as number,
+          projectName: projectNames.get(r.projectId as number) ?? "Unknown",
+          hours: round2(Number(r.hours)),
+        })),
     };
   }
 }

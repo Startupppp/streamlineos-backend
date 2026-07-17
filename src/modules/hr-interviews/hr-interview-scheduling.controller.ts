@@ -30,7 +30,9 @@ import {
   type SubmitScorecardInput,
   type UpdateInterviewInput,
 } from "./dto/interview-scheduling.schemas";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 
+@RequireModule("hr")
 @Controller("hr/recruitment/interviews")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class HrInterviewSchedulingController {

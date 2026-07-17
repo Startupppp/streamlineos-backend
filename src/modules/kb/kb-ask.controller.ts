@@ -14,6 +14,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { logger } from "../../common/logger/logger.service";
@@ -39,6 +41,8 @@ export class KbAskController {
   @Post("ask")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("kb:ask")
   async askQuestion(@Body() body: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const parsed = askSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");

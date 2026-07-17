@@ -1,9 +1,7 @@
 export {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
-  getPasswordResetEmailTemplate,
   getWelcomeEmailTemplate,
-  getPasswordChangeConfirmationEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
 } from "./auth";

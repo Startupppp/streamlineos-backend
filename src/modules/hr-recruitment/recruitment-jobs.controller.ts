@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -19,7 +18,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RecruitmentJobsService } from "./recruitment-jobs.service";
-import { AccessService } from "../access/access.service";
 import {
   assignRecruiterSchema,
   createJobSchema,
@@ -40,12 +38,10 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 @Controller("hr/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentJobsController {
-  constructor(
-    private readonly jobs: RecruitmentJobsService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly jobs: RecruitmentJobsService) {}
 
   @Get("jobs")
+  @RequirePermission("hr:employees:view")
   list(
     @Query(new ZodValidationPipe(jobListSchema)) query: JobListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -64,6 +60,7 @@ export class RecruitmentJobsController {
   }
 
   @Get("jobs/:jobId")
+  @RequirePermission("hr:employees:view")
   getOne(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -91,19 +88,17 @@ export class RecruitmentJobsController {
   }
 
   @Post("jobs/:jobId/publish")
-  async publish(
+  @RequirePermission("hr:employees:manage")
+  publish(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(publishJobSchema)) body: PublishJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.jobs.publish(u.orgId, jobId, body);
   }
 
   @Get("jobs/:jobId/recruiters")
+  @RequirePermission("hr:employees:view")
   listRecruiters(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,32 +108,27 @@ export class RecruitmentJobsController {
 
   @Post("jobs/:jobId/recruiters")
   @HttpCode(201)
-  async assignRecruiter(
+  @RequirePermission("hr:employees:manage")
+  assignRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.jobs.assignRecruiter(u.orgId, u.userId, jobId, body);
   }
 
   @Delete("jobs/:jobId/recruiters")
-  async removeRecruiter(
+  @RequirePermission("hr:employees:manage")
+  removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner && !u.isPlatformAdmin) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:employees:manage")) throw new ForbiddenException("Forbidden");
-    }
     return this.jobs.removeRecruiter(jobId, body);
   }
 
   @Get("jobs/:jobId/share")
+  @RequirePermission("hr:employees:view")
   share(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -147,12 +137,14 @@ export class RecruitmentJobsController {
   }
 
   @Get("internal-jobs")
+  @RequirePermission("hr:employees:view")
   listInternalJobs(@CurrentUser() u: CurrentUserContext) {
     return this.jobs.listInternalJobs(u.orgId);
   }
 
   @Post("internal-jobs/:jobId/apply")
   @HttpCode(201)
+  @RequirePermission("hr:employees:view")
   internalApply(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(internalApplySchema)) body: InternalApplyInput,

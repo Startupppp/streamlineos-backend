@@ -3,6 +3,8 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { leaveRequests, leaveTypes, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { addYears, differenceInDays, formatDateOnly, formatMonthDay, startOfDay } from "./date.helpers";
 
 export interface FeedItem {
@@ -25,9 +27,17 @@ export interface AvailabilityEntry {
 
 @Injectable()
 export class CelebrationsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
-  async getAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
+  getAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.cache.cached(`hr:anniversary-feed:${orgId}:${today}`, () => this.buildAnniversaryFeed(orgId), CACHE_TTL.MEDIUM);
+  }
+
+  private async buildAnniversaryFeed(orgId: string): Promise<FeedItem[]> {
     const members = await this.db
       .select({
         userId: organizationMembers.userId,
@@ -91,7 +101,12 @@ export class CelebrationsService {
     return items;
   }
 
-  async getCelebrations(orgId: string) {
+  getCelebrations(orgId: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.cache.cached(`hr:celebrations:${orgId}:${today}`, () => this.buildCelebrations(orgId), CACHE_TTL.MEDIUM);
+  }
+
+  private async buildCelebrations(orgId: string) {
     const now = new Date();
     const month = now.getMonth() + 1;
     const day = now.getDate();

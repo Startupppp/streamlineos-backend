@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbEvents, kbPageComments, kbPageVersions, kbPageVisits, kbPages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -29,10 +29,18 @@ type OverviewResult = {
   noResults: number;
   searchSuccessRate: number;
   aiAnswers: number;
+  aiNoContext: number;
   views: number;
   verifiedPublished: number;
   trustScore: number;
   topArticles: TopArticle[];
+};
+
+type ContentGapRow = {
+  query: string | null;
+  count: number;
+  lastOccurredAt: Date;
+  gapKind: "search" | "ai_no_context";
 };
 
 type NoResultsRow = { query: string | null; count: number };
@@ -81,6 +89,7 @@ export class KbAnalyticsService {
         searches: sql<number>`(count(*) filter (where ${kbEvents.eventType} in ('search', 'search_no_results')))::int`,
         noResults: sql<number>`(count(*) filter (where ${kbEvents.eventType} = 'search_no_results'))::int`,
         aiAnswers: sql<number>`(count(*) filter (where ${kbEvents.eventType} = 'ai_answer'))::int`,
+        aiNoContext: sql<number>`(count(*) filter (where ${kbEvents.eventType} = 'ai_answer_no_context'))::int`,
         views: sql<number>`(count(*) filter (where ${kbEvents.eventType} = 'view'))::int`,
       })
       .from(kbEvents)
@@ -112,6 +121,7 @@ export class KbAnalyticsService {
     const searches = eventStats?.searches ?? 0;
     const noResults = eventStats?.noResults ?? 0;
     const aiAnswers = eventStats?.aiAnswers ?? 0;
+    const aiNoContext = eventStats?.aiNoContext ?? 0;
     const views = eventStats?.views ?? 0;
 
     const helpfulRatio = helpfulUp + helpfulDown > 0 ? helpfulUp / (helpfulUp + helpfulDown) : 0;
@@ -130,6 +140,7 @@ export class KbAnalyticsService {
       noResults,
       searchSuccessRate,
       aiAnswers,
+      aiNoContext,
       views,
       verifiedPublished,
       trustScore,
@@ -204,6 +215,35 @@ export class KbAnalyticsService {
       .groupBy(kbEvents.query)
       .orderBy(desc(sql`count(*)`))
       .limit(20);
+  }
+
+  async contentGaps(orgId: string, range: RangeInput): Promise<ContentGapRow[]> {
+    const conditions: SQL[] = [
+      eq(kbEvents.orgId, orgId),
+      inArray(kbEvents.eventType, ["search_no_results", "ai_answer_no_context"]),
+    ];
+    if (range.from) conditions.push(gte(kbEvents.occurredAt, new Date(range.from)));
+    if (range.to) conditions.push(lte(kbEvents.occurredAt, new Date(range.to)));
+
+    const rows = await this.db
+      .select({
+        query: kbEvents.query,
+        eventType: kbEvents.eventType,
+        count: sql<number>`count(*)::int`,
+        lastOccurredAt: sql<Date>`max(${kbEvents.occurredAt})`,
+      })
+      .from(kbEvents)
+      .where(and(...conditions))
+      .groupBy(kbEvents.query, kbEvents.eventType)
+      .orderBy(desc(sql`count(*)`))
+      .limit(100);
+
+    return rows.map((row) => ({
+      query: row.query,
+      count: row.count,
+      lastOccurredAt: row.lastOccurredAt,
+      gapKind: row.eventType === "ai_answer_no_context" ? ("ai_no_context" as const) : ("search" as const),
+    }));
   }
 
 }

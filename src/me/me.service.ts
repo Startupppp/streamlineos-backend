@@ -1,10 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
-import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, passwordHistory, loginHistory, userSessions, passwordResetTokens, devices, accounts } from "../db/schema";
+import { users, loginHistory, userSessions, devices, accounts } from "../db/schema";
 import {
   decrypt,
   decryptBankDetails,
@@ -13,130 +11,14 @@ import {
 import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo, withDeviceClientInfo } from "../common/http/parse-user-agent";
 
-const SPECIAL_CHARS = "@$!%*?&#^_+=\\-";
-const PASSWORD_HISTORY_LIMIT = 5;
-
-const passwordRules = z.string()
-  .min(8, "Password must be at least 8 characters")
-  .max(128, "Password must not exceed 128 characters")
-  .regex(/[a-z]/, "At least one lowercase letter required")
-  .regex(/[A-Z]/, "At least one uppercase letter required")
-  .regex(/\d/, "At least one number required")
-  .regex(new RegExp(`[${SPECIAL_CHARS.replace(/[-\\]/g, "\\$&")}]`), "At least one special character required");
-
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: passwordRules,
-});
-
-export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
-
-export const forceChangePasswordSchema = z.object({
-  newPassword: passwordRules,
-});
-
-export type ForceChangePasswordInput = z.infer<typeof forceChangePasswordSchema>;
-
-export const setupPasswordSchema = z.object({
-  password: passwordRules,
-});
-
-export type SetupPasswordInput = z.infer<typeof setupPasswordSchema>;
-
 @Injectable()
 export class MeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  async changePassword(userId: string, input: ChangePasswordInput): Promise<{ success: true }> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { id: true, password: true },
-    });
-
-    if (!user?.password) throw new NotFoundException("User not found");
-
-    const isCurrentValid = await bcrypt.compare(input.currentPassword, user.password);
-    if (!isCurrentValid) throw new BadRequestException("Current password is incorrect");
-
-    const history = await this.db.query.passwordHistory.findMany({
-      where: eq(passwordHistory.userId, userId),
-      orderBy: [desc(passwordHistory.createdAt)],
-      limit: PASSWORD_HISTORY_LIMIT,
-    });
-
-    for (const entry of history) {
-      const isReused = await bcrypt.compare(input.newPassword, entry.passwordHash);
-      if (isReused) {
-        throw new BadRequestException(
-          `Cannot reuse one of your last ${PASSWORD_HISTORY_LIMIT} passwords`,
-        );
-      }
-    }
-
-    const newHash = await bcrypt.hash(input.newPassword, 12);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(users)
-        .set({
-          password: newHash,
-          isPasswordChangeRequired: false,
-          passwordChangedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-
-      await tx.insert(passwordHistory).values({ userId, passwordHash: newHash });
-
-      const allHistory = await tx.query.passwordHistory.findMany({
-        where: eq(passwordHistory.userId, userId),
-        orderBy: [desc(passwordHistory.createdAt)],
-        columns: { id: true },
-      });
-
-      if (allHistory.length > PASSWORD_HISTORY_LIMIT) {
-        const toDelete = allHistory.slice(PASSWORD_HISTORY_LIMIT);
-        for (const entry of toDelete) {
-          await tx.delete(passwordHistory).where(eq(passwordHistory.id, entry.id));
-        }
-      }
-    });
-
-    return { success: true };
-  }
-
-  async forceChangePassword(userId: string, input: ForceChangePasswordInput): Promise<{ success: true }> {
-    const newHash = await bcrypt.hash(input.newPassword, 12);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(users)
-        .set({ password: newHash, isPasswordChangeRequired: false, passwordChangedAt: new Date() })
-        .where(eq(users.id, userId));
-
-      await tx.insert(passwordHistory).values({ userId, passwordHash: newHash });
-
-      const allHistory = await tx.query.passwordHistory.findMany({
-        where: eq(passwordHistory.userId, userId),
-        orderBy: [desc(passwordHistory.createdAt)],
-        columns: { id: true },
-      });
-
-      if (allHistory.length > PASSWORD_HISTORY_LIMIT) {
-        const toDelete = allHistory.slice(PASSWORD_HISTORY_LIMIT);
-        for (const entry of toDelete) {
-          await tx.delete(passwordHistory).where(eq(passwordHistory.id, entry.id));
-        }
-      }
-    });
-
-    return { success: true };
-  }
 
   async getProfile(userId: string) {
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: {
-        password: false,
         totpSecret: false,
         googleRefreshToken: false,
       },
@@ -170,10 +52,6 @@ export class MeService {
     await this.db.update(users).set(setFields).where(eq(users.id, userId));
 
     return { success: true };
-  }
-
-  async setupPassword(userId: string, password: string): Promise<{ success: true }> {
-    return this.forceChangePassword(userId, { newPassword: password });
   }
 
   async getLoginHistory(userId: string, page: number, limit: number, success?: boolean) {
@@ -253,12 +131,7 @@ export class MeService {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { email: true },
-    });
-
-    const [loginsToday, failedLoginsLast7Days, activeSessions, passwordResetsLast7Days] = await Promise.all([
+    const [loginsToday, failedLoginsLast7Days, activeSessions] = await Promise.all([
       this.db.select({ count: count() }).from(loginHistory).where(
         and(
           eq(loginHistory.userId, userId),
@@ -276,21 +149,13 @@ export class MeService {
       this.db.select({ count: count() }).from(userSessions).where(
         and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
       ),
-      user
-        ? this.db.select({ count: count() }).from(passwordResetTokens).where(
-            and(
-              eq(passwordResetTokens.email, user.email),
-              gte(passwordResetTokens.createdAt, sevenDaysAgo),
-            ),
-          )
-        : Promise.resolve([{ count: 0 }]),
     ]);
 
     return {
       loginsToday: loginsToday[0]?.count ?? 0,
       failedLoginsLast7Days: failedLoginsLast7Days[0]?.count ?? 0,
       activeSessions: activeSessions[0]?.count ?? 0,
-      passwordResetsLast7Days: passwordResetsLast7Days[0]?.count ?? 0,
+      passwordResetsLast7Days: 0,
     };
   }
 }

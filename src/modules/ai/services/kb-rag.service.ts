@@ -1,19 +1,19 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import {
   kbArticleAttachments,
   kbArticleChunks,
   kbArticles,
+  kbEvents,
   kbSpaces,
-  tenantAiCredits,
-  tenantAiCreditTransactions,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { EmbeddingsService } from "../providers/embeddings.service";
-import { LlmService } from "../providers/llm.service";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { getFeatureCost } from "../billing/ai-cost-catalog";
 
 const DEFAULT_TOP_K = 6;
 const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
@@ -55,10 +55,12 @@ interface AnswerOptions {
 
 @Injectable()
 export class KbRagService {
+  private readonly logger = new Logger(KbRagService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly embeddings: EmbeddingsService,
-    private readonly llm: LlmService,
+    private readonly aiGateway: AiGatewayService,
   ) {}
 
   isEmbeddingConfigured(): boolean {
@@ -126,22 +128,6 @@ export class KbRagService {
     return sources;
   }
 
-  private async generateAnswer(system: string, user: string): Promise<string> {
-    if (this.llm.isConfigured()) {
-      return this.llm.invokeText({ model: "fast", system, user, temperature: 0.2 });
-    }
-    if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      const { text } = await generateText({
-        model: google("gemini-2.0-flash"),
-        system,
-        prompt: user,
-        temperature: 0.2,
-      });
-      return text;
-    }
-    throw new Error("No AI provider configured");
-  }
-
   private async hasPublishedPublicArticles(orgId: string): Promise<boolean> {
     const [row] = await this.db
       .select({ id: kbArticles.id })
@@ -160,47 +146,25 @@ export class KbRagService {
     return Boolean(row);
   }
 
-  private async consumeCredit(orgId: string): Promise<boolean> {
-    return this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(tenantAiCredits)
-        .set({ balance: sql`${tenantAiCredits.balance} - 1` })
-        .where(and(eq(tenantAiCredits.orgId, orgId), gte(tenantAiCredits.balance, 1)))
-        .returning({ balance: tenantAiCredits.balance });
-      if (!row) return false;
-      await tx.insert(tenantAiCreditTransactions).values({
+  private recordNoContext(orgId: string, question: string, actorId?: string): void {
+    this.db
+      .insert(kbEvents)
+      .values({
         orgId,
-        delta: -1,
-        balanceAfter: row.balance,
-        reason: "public_kb_ask",
-        feature: "kb_rag_public",
+        eventType: "ai_answer_no_context",
+        actorId: actorId ?? null,
+        query: question,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
       });
-      return true;
-    });
-  }
-
-  private async refundCredit(orgId: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(tenantAiCredits)
-        .set({ balance: sql`${tenantAiCredits.balance} + 1` })
-        .where(eq(tenantAiCredits.orgId, orgId))
-        .returning({ balance: tenantAiCredits.balance });
-      if (!row) return;
-      await tx.insert(tenantAiCreditTransactions).values({
-        orgId,
-        delta: 1,
-        balanceAfter: row.balance,
-        reason: "public_kb_ask_refund",
-        feature: "kb_rag_public",
-      });
-    });
   }
 
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
     const results = await this.searchChunks(opts);
 
     if (results.length === 0) {
+      this.recordNoContext(opts.orgId, opts.question);
       return {
         answer: "I couldn't find anything related to that in the knowledge base yet.",
         sources: [],
@@ -223,10 +187,37 @@ export class KbRagService {
 
     const user = `Context excerpts:\n\n${context}\n\nQuestion: ${opts.question}`;
 
-    const answer = await this.generateAnswer(system, user);
+    const gatewayResult = await this.aiGateway.invokeText({
+      actor: { orgId: opts.orgId, userId: null },
+      feature: "kb.public-ask",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: { credits: getFeatureCost("kb.public-ask") },
+      prompt: { system, user },
+    });
+
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded") {
+        throw new BadRequestException(gatewayResult.message);
+      }
+      if (gatewayResult.kind === "not_configured" && process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+        const { text } = await generateText({
+          model: google("gemini-2.0-flash"),
+          system,
+          prompt: user,
+          temperature: 0.2,
+        });
+        return {
+          answer: text.trim(),
+          sources: this.dedupeSources(results),
+          hasContext: true,
+        };
+      }
+      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+    }
 
     return {
-      answer: answer.trim(),
+      answer: gatewayResult.data.trim(),
       sources: this.dedupeSources(results),
       hasContext: true,
     };
@@ -237,6 +228,7 @@ export class KbRagService {
 
     const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
+      this.recordNoContext(opts.orgId, opts.question);
       return {
         answer: "I couldn't find anything related to that in the knowledge base yet.",
         sources: [],
@@ -244,20 +236,6 @@ export class KbRagService {
       };
     }
 
-    const consumed = await this.consumeCredit(opts.orgId);
-    if (!consumed) {
-      return {
-        answer: "The AI assistant isn't available right now. Please try again later.",
-        sources: [],
-        hasContext: false,
-      };
-    }
-
-    try {
-      return await this.runAnswer(opts);
-    } catch (err) {
-      await this.refundCredit(opts.orgId);
-      throw err;
-    }
+    return this.runAnswer(opts);
   }
 }

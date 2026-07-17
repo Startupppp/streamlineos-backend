@@ -111,6 +111,11 @@ export class CronBillingService {
     return { granted, skipped };
   }
 
+  async sweepAiReservations(): Promise<{ released: number }> {
+    const released = await this.aiCredits.sweepExpiredReservations();
+    return { released };
+  }
+
   async processAutoTopUps(): Promise<{ topped: number; skipped: number; failed: number }> {
     const wallets = await this.aiCredits.getWalletsEligibleForAutoTopUp();
 

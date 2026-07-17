@@ -22,13 +22,12 @@ describe("Auth controller (e2e)", () => {
 
   const publicPostRoutes: ReadonlyArray<string> = [
     "/auth/register",
-    "/auth/login",
-    "/auth/forgot-password",
-    "/auth/reset-password",
     "/auth/verify-email",
     "/auth/resend-verification",
     "/auth/magic-link",
     "/auth/magic-link/verify",
+    "/auth/email-otp",
+    "/auth/email-otp/verify",
   ];
 
   it.each(publicPostRoutes)("POST %s is reachable without a JWT (not 401)", async (path) => {
@@ -36,7 +35,7 @@ describe("Auth controller (e2e)", () => {
     expect(res.status).not.toBe(401);
   });
 
-  const protectedPostRoutes: ReadonlyArray<string> = ["/auth/force-change-password", "/auth/logout"];
+  const protectedPostRoutes: ReadonlyArray<string> = ["/auth/logout"];
 
   it.each(protectedPostRoutes)("401 on POST %s without a token", async (path) => {
     const res = await request(app.getHttpServer()).post(path).send({});
@@ -58,34 +57,10 @@ describe("Auth controller (e2e)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("400 on POST /auth/register when password is shorter than 8 characters", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com", password: "Aa1!", companyName: "Co" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
-  });
-
-  it("400 on POST /auth/register when password has no uppercase letter", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com", password: "test@1234", companyName: "Co" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
-  });
-
-  it("400 on POST /auth/register when password has no special character", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com", password: "TestAbcd1", companyName: "Co" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
-  });
-
   it("400 on POST /auth/register with an invalid email address", async () => {
     const res = await request(app.getHttpServer())
       .post("/auth/register")
-      .send({ firstName: "A", email: "not-an-email", password: "Test@1234", companyName: "Co" });
+      .send({ firstName: "A", email: "not-an-email", companyName: "Co" });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
   });
@@ -93,15 +68,7 @@ describe("Auth controller (e2e)", () => {
   it("400 on POST /auth/register when companyName is missing", async () => {
     const res = await request(app.getHttpServer())
       .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com", password: "Test@1234" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
-  });
-
-  it("400 on POST /auth/register when password has no number", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com", password: "Test@abcd", companyName: "Co" });
+      .send({ firstName: "A", email: "test@example.com" });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: expect.stringContaining("Validation failed") });
   });
@@ -130,12 +97,7 @@ describe("Auth controller (e2e)", () => {
 
   it("429 on POST /auth/register after exhausting the 3-per-minute rate limit", async () => {
     const ip = "10.0.1.11";
-    const body = {
-      firstName: "R",
-      email: "rl-register@example.com",
-      password: "Test@1234!",
-      companyName: "Co",
-    };
+    const body = { firstName: "R", email: "rl-register@example.com", companyName: "Co" };
     for (let i = 0; i < 3; i++) {
       await request(app.getHttpServer())
         .post("/auth/register")
@@ -144,26 +106,6 @@ describe("Auth controller (e2e)", () => {
     }
     const res = await request(app.getHttpServer())
       .post("/auth/register")
-      .set("X-Forwarded-For", ip)
-      .send(body);
-    expect(res.status).toBe(429);
-    expect(res.body).toMatchObject({
-      code: "AUTH_RATE_LIMITED",
-      details: { retryAfterSeconds: expect.any(Number) },
-    });
-  });
-
-  it("429 on POST /auth/login after exhausting the 5-per-minute rate limit", async () => {
-    const ip = "10.0.1.12";
-    const body = { email: "rl-login@example.com", password: "anyPassword" };
-    for (let i = 0; i < 5; i++) {
-      await request(app.getHttpServer())
-        .post("/auth/login")
-        .set("X-Forwarded-For", ip)
-        .send(body);
-    }
-    const res = await request(app.getHttpServer())
-      .post("/auth/login")
       .set("X-Forwarded-For", ip)
       .send(body);
     expect(res.status).toBe(429);

@@ -45,4 +45,13 @@ export class KbAnalyticsController {
   ): Promise<unknown> {
     return await this.analytics.gaps(u.orgId, query);
   }
+
+  @Get("analytics/content-gaps")
+  @RequirePermission("kb:analytics:view")
+  async contentGaps(
+    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return await this.analytics.contentGaps(u.orgId, query);
+  }
 }

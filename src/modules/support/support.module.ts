@@ -27,6 +27,9 @@ import { SupportPortalService } from "./support-portal.service";
 import { SupportChannelsService } from "./support-channels.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
+import { SupportAiSettingsService } from "./support-ai-settings.service";
+import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
+import { SupportAiReportHelper } from "./support-ai-report.helper";
 import { SupportReportsService } from "./support-reports.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
@@ -63,6 +66,9 @@ import { SupportIntegrationsService } from "./support-integrations.service";
     SupportChannelsService,
     SupportCsatService,
     SupportAiService,
+    SupportAiSettingsService,
+    SupportAiEmbeddingsHelper,
+    SupportAiReportHelper,
     SupportReportsService,
     SupportCustomFieldsService,
     SupportSettingsAuditService,

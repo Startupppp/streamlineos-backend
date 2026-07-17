@@ -6,7 +6,6 @@ import {
   customStates,
   cycles,
   modules,
-  moduleLinks,
   projectTemplates,
   projectTemplateTickets,
 } from "./core";
@@ -73,12 +72,6 @@ export const modulesRelations = relations(modules, ({ one, many }) => ({
   lead: one(users, { fields: [modules.leadId], references: [users.id], relationName: "moduleLead" }),
   creator: one(users, { fields: [modules.createdBy], references: [users.id], relationName: "moduleCreator" }),
   tickets: many(tickets),
-  links: many(moduleLinks),
-}));
-
-export const moduleLinksRelations = relations(moduleLinks, ({ one }) => ({
-  module: one(modules, { fields: [moduleLinks.moduleId], references: [modules.id] }),
-  linkedModule: one(modules, { fields: [moduleLinks.linkedModuleId], references: [modules.id] }),
 }));
 
 export const projectTemplatesRelations = relations(projectTemplates, ({ one, many }) => ({

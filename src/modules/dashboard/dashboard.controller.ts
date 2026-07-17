@@ -64,7 +64,7 @@ export class DashboardController {
 
   @Post("announcements")
   @HttpCode(201)
-  @RequirePermission("dashboard:announcements:write")
+  @RequirePermission("settings:manage")
   async createAnnouncement(
     @Body(new ZodValidationPipe(createAnnouncementSchema)) body: CreateAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
@@ -80,7 +80,7 @@ export class DashboardController {
   }
 
   @Delete("announcements")
-  @RequirePermission("dashboard:announcements:write")
+  @RequirePermission("settings:manage")
   async deleteAnnouncement(
     @Query(new ZodValidationPipe(deleteAnnouncementSchema)) query: DeleteAnnouncementInput,
     @CurrentUser() u: CurrentUserContext,
@@ -124,7 +124,7 @@ export class DashboardController {
     @Query(new ZodValidationPipe(myIssuesSchema)) query: MyIssuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.project.getMyIssues(u.orgId, query.userId);
+    return this.project.getMyIssues(u.orgId, u.userId);
   }
 
   @Get("my-leave-balance")
