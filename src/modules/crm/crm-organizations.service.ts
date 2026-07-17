@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, inArray, not, or, sql } from "drizzle-orm";
 import { crmOrganizations, contacts, deals, leads } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -179,6 +179,13 @@ export class CrmOrganizationsService {
   async wouldCreateCycle(orgId: string, accountId: number, candidateParentId: number): Promise<boolean> {
     if (candidateParentId === accountId) return true;
 
+    const allOrgs = await this.db
+      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
+      .from(crmOrganizations)
+      .where(eq(crmOrganizations.orgId, orgId));
+
+    const parentMap = new Map(allOrgs.map((o) => [o.id, o.parentId]));
+
     let currentId: number | null = candidateParentId;
     const visited = new Set<number>();
 
@@ -186,40 +193,35 @@ export class CrmOrganizationsService {
       if (visited.has(currentId)) return false;
       visited.add(currentId);
       if (currentId === accountId) return true;
-
-      const rows: { parentId: number | null }[] = await this.db
-        .select({ parentId: crmOrganizations.parentId })
-        .from(crmOrganizations)
-        .where(and(eq(crmOrganizations.id, currentId), eq(crmOrganizations.orgId, orgId)))
-        .limit(1);
-      const row: { parentId: number | null } | null = rows[0] ?? null;
-      if (!row) break;
-      currentId = row.parentId;
+      currentId = parentMap.get(currentId) ?? null;
     }
 
     return false;
   }
 
   private async getAllDescendantIds(orgId: string, accountId: number): Promise<number[]> {
+    const allOrgs = await this.db
+      .select({ id: crmOrganizations.id, parentId: crmOrganizations.parentId })
+      .from(crmOrganizations)
+      .where(eq(crmOrganizations.orgId, orgId));
+
+    const childrenMap = new Map<number, number[]>();
+    for (const o of allOrgs) {
+      if (o.parentId !== null) {
+        const arr = childrenMap.get(o.parentId) ?? [];
+        arr.push(o.id);
+        childrenMap.set(o.parentId, arr);
+      }
+    }
+
     const allIds: number[] = [accountId];
     const queue: number[] = [accountId];
-
     while (queue.length > 0) {
-      const batch = queue.splice(0, 50);
-      const children = await this.db
-        .select({ id: crmOrganizations.id })
-        .from(crmOrganizations)
-        .where(
-          and(
-            eq(crmOrganizations.orgId, orgId),
-            sql`${crmOrganizations.parentId} = ANY(ARRAY[${sql.join(batch.map((b) => sql`${b}`), sql`, `)}]::int[])`,
-          ),
-        );
-
-      for (const child of children) {
-        if (!allIds.includes(child.id)) {
-          allIds.push(child.id);
-          queue.push(child.id);
+      const cur = queue.shift()!;
+      for (const childId of childrenMap.get(cur) ?? []) {
+        if (!allIds.includes(childId)) {
+          allIds.push(childId);
+          queue.push(childId);
         }
       }
     }
@@ -258,7 +260,15 @@ export class CrmOrganizationsService {
     return root;
   }
 
-  async getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
+  getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
+    return this.cache.cached(
+      `crm:org-rollup:${orgId}:${accountId}`,
+      () => this.queryAccountRollup(orgId, accountId),
+      CACHE_TTL.SHORT,
+    );
+  }
+
+  private async queryAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
     const ids = await this.getAllDescendantIds(orgId, accountId);
 
     const contactCountRows = await this.db
@@ -293,7 +303,8 @@ export class CrmOrganizationsService {
             eq(deals.orgId, orgId),
             or(...orgNames.map((n) => ilike(deals.name, `%${n.replaceAll("%", "\\%")}%`))),
           ),
-        );
+        )
+        .limit(200);
 
       totalDeals = dealRows.length;
       openDeals = dealRows.filter((d) => !["CLOSED_WON", "CLOSED_LOST"].includes(d.stage)).length;
@@ -317,7 +328,15 @@ export class CrmOrganizationsService {
     return { totalContacts, totalDeals, openDeals, totalDealValue, totalLeads };
   }
 
-  async getAccountTimeline(orgId: string, accountId: number, limit = 20): Promise<OrgTimelineEvent[]> {
+  getAccountTimeline(orgId: string, accountId: number, limit = 20): Promise<OrgTimelineEvent[]> {
+    return this.cache.cached(
+      `crm:org-timeline:${orgId}:${accountId}:${limit}`,
+      () => this.queryAccountTimeline(orgId, accountId, limit),
+      CACHE_TTL.SHORT,
+    );
+  }
+
+  private async queryAccountTimeline(orgId: string, accountId: number, limit: number): Promise<OrgTimelineEvent[]> {
     const orgRow = await this.db
       .select({ name: crmOrganizations.name, notes: crmOrganizations.notes })
       .from(crmOrganizations)
@@ -327,14 +346,30 @@ export class CrmOrganizationsService {
 
     if (!orgRow) return [];
 
-    const events: OrgTimelineEvent[] = [];
+    const safeName = orgRow.name.replaceAll("%", "\\%");
 
-    const contactRows = await this.db
-      .select({ id: contacts.id, name: contacts.name, createdAt: contacts.createdAt })
-      .from(contacts)
-      .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, accountId)))
-      .orderBy(sql`${contacts.createdAt} desc`)
-      .limit(limit);
+    const [contactRows, dealRows, leadRows] = await Promise.all([
+      this.db
+        .select({ id: contacts.id, name: contacts.name, createdAt: contacts.createdAt })
+        .from(contacts)
+        .where(and(eq(contacts.orgId, orgId), eq(contacts.organizationId, accountId)))
+        .orderBy(sql`${contacts.createdAt} desc`)
+        .limit(limit),
+      this.db
+        .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
+        .from(deals)
+        .where(and(eq(deals.orgId, orgId), ilike(deals.name, `%${safeName}%`)))
+        .orderBy(sql`${deals.createdAt} desc`)
+        .limit(limit),
+      this.db
+        .select({ id: leads.id, name: leads.name, createdAt: leads.createdAt })
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), ilike(leads.company, `%${safeName}%`)))
+        .orderBy(sql`${leads.createdAt} desc`)
+        .limit(limit),
+    ]);
+
+    const events: OrgTimelineEvent[] = [];
 
     for (const c of contactRows) {
       events.push({
@@ -346,13 +381,6 @@ export class CrmOrganizationsService {
       });
     }
 
-    const dealRows = await this.db
-      .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
-      .from(deals)
-      .where(and(eq(deals.orgId, orgId), ilike(deals.name, `%${orgRow.name.replaceAll("%", "\\%")}%`)))
-      .orderBy(sql`${deals.createdAt} desc`)
-      .limit(limit);
-
     for (const d of dealRows) {
       events.push({
         id: `deal-${d.id}`,
@@ -362,13 +390,6 @@ export class CrmOrganizationsService {
         entityId: d.id,
       });
     }
-
-    const leadRows = await this.db
-      .select({ id: leads.id, name: leads.name, createdAt: leads.createdAt })
-      .from(leads)
-      .where(and(eq(leads.orgId, orgId), ilike(leads.company, `%${orgRow.name.replaceAll("%", "\\%")}%`)))
-      .orderBy(sql`${leads.createdAt} desc`)
-      .limit(limit);
 
     for (const l of leadRows) {
       events.push({

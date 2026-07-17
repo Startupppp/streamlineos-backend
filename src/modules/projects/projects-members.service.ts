@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -88,23 +88,18 @@ export class ProjectsMembersService {
         ),
       );
 
-    const projectTicketIds = await this.db
-      .select({ id: tickets.id })
-      .from(tickets)
+    await this.db
+      .delete(ticketAssignees)
       .where(
         and(
-          eq(tickets.projectId, projectId),
-          ne(tickets.status, "DONE"),
-          ne(tickets.status, "CANCELLED"),
+          eq(ticketAssignees.userId, userId),
+          sql`${ticketAssignees.ticketId} IN (
+            SELECT id FROM tickets
+            WHERE project_id = ${projectId}
+            AND status NOT IN ('DONE', 'CANCELLED')
+          )`,
         ),
       );
-
-    if (projectTicketIds.length > 0) {
-      const ids = projectTicketIds.map((t) => t.id);
-      await this.db
-        .delete(ticketAssignees)
-        .where(and(eq(ticketAssignees.userId, userId), inArray(ticketAssignees.ticketId, ids)));
-    }
 
     this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
       id: projectId,

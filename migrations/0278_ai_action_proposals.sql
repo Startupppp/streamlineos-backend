@@ -1,4 +1,4 @@
-﻿-- AI confirmation infrastructure: server-enforced confirmation tokens for consequential AI writes.
+-- AI confirmation infrastructure: server-enforced confirmation tokens for consequential AI writes.
 -- DO NOT APPLY automatically; run manually in a TTY session.
 
 CREATE TYPE ai_proposal_status AS ENUM ('PROPOSED', 'CONFIRMED', 'EXECUTED', 'EXPIRED', 'CANCELLED');

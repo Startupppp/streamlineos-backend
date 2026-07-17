@@ -64,7 +64,12 @@ export class TimesheetsService {
       orderBy: [desc(timesheets.date)],
       limit,
       offset,
-      with: { ticket: { with: { project: true } } },
+      with: {
+        ticket: {
+          columns: { id: true, title: true, projectId: true },
+          with: { project: { columns: { id: true, name: true, key: true } } },
+        },
+      },
     });
 
     return query.projectId
@@ -206,9 +211,13 @@ export class TimesheetsService {
     return this.db.query.timesheets.findMany({
       where: and(...conditions),
       orderBy: [desc(timesheets.date)],
+      limit: 500,
       with: {
         user: { columns: { id: true, firstName: true, lastName: true, email: true, image: true } },
-        ticket: { with: { project: true } },
+        ticket: {
+          columns: { id: true, title: true, projectId: true },
+          with: { project: { columns: { id: true, name: true, key: true } } },
+        },
       },
     });
   }
@@ -250,7 +259,13 @@ export class TimesheetsService {
     return this.db.query.timesheets.findMany({
       where: and(eq(timesheets.ticketId, ticketId), eq(timesheets.orgId, orgId)),
       orderBy: [desc(timesheets.date)],
-      with: { ticket: { with: { project: true } } },
+      limit: 200,
+      with: {
+        ticket: {
+          columns: { id: true, title: true, projectId: true },
+          with: { project: { columns: { id: true, name: true, key: true } } },
+        },
+      },
     });
   }
 

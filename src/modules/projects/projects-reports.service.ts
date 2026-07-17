@@ -6,6 +6,8 @@ import { type Db } from "../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "./projects.date-utils";
 import type { BurnupQuery, CfdQuery } from "./dto/projects.schemas";
 import { buildEdges, computeCriticalPath } from "./projects-critical-path.util";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 
 const STATE_GROUPS = ["backlog", "unstarted", "started", "completed", "cancelled"] as const;
 type StateGroup = (typeof STATE_GROUPS)[number];
@@ -29,7 +31,10 @@ export interface VelocitySprint {
 
 @Injectable()
 export class ProjectsReportsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   private async requireProject(orgId: string, projectId: number): Promise<void> {
     const project = await this.db.query.projects.findFirst({
@@ -63,39 +68,56 @@ export class ProjectsReportsService {
 
     if (!sprint) return [];
 
-    const sprintTickets = await this.db
-      .select({
-        storyPoints: tickets.storyPoints,
-        status: tickets.status,
-        updatedAt: tickets.updatedAt,
-        group: customStates.group,
-      })
-      .from(tickets)
-      .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprint.id)))
-      .orderBy(asc(tickets.updatedAt));
+    const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}`;
+    return this.cache.cached(
+      cacheKey,
+      async () => {
+        const [scopeRow] = await this.db
+          .select({
+            totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+          })
+          .from(tickets)
+          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
+          .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprint.id)));
 
-    const totalScope = sprintTickets.reduce((sum, t) => sum + (t.storyPoints ?? 0), 0);
+        const totalScope = scopeRow?.totalScope ?? 0;
 
-    const completedByDate = new Map<string, number>();
-    for (const t of sprintTickets) {
-      const group = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
-      if (group !== "completed") continue;
-      const dateKey = formatDateOnly(t.updatedAt);
-      completedByDate.set(dateKey, (completedByDate.get(dateKey) ?? 0) + (t.storyPoints ?? 0));
-    }
+        const completedDayRows = await this.db
+          .select({
+            day: sql<string>`to_char(date_trunc('day', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+            pts: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+          })
+          .from(tickets)
+          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.sprintId, sprint.id),
+              sql`(${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))`,
+            ),
+          )
+          .groupBy(sql`date_trunc('day', ${tickets.updatedAt})`)
+          .orderBy(sql`date_trunc('day', ${tickets.updatedAt})`);
 
-    const startDate = new Date(sprint.startDate);
-    const endDate = new Date(sprint.endDate);
-    const days = Math.max(differenceInCalendarDays(endDate, startDate) + 1, 1);
+        const completedByDate = new Map<string, number>();
+        for (const row of completedDayRows) {
+          completedByDate.set(row.day, row.pts);
+        }
 
-    let cumulativeCompleted = 0;
-    return Array.from({ length: days }).map((_, i) => {
-      const day = addDays(startDate, i);
-      const dateKey = formatDateOnly(day);
-      cumulativeCompleted += completedByDate.get(dateKey) ?? 0;
-      return { date: dateKey, scope: totalScope, completed: Math.min(cumulativeCompleted, totalScope) };
-    });
+        const startDate = new Date(sprint.startDate);
+        const endDate = new Date(sprint.endDate);
+        const days = Math.max(differenceInCalendarDays(endDate, startDate) + 1, 1);
+
+        let cumulativeCompleted = 0;
+        return Array.from({ length: days }).map((_, i) => {
+          const day = addDays(startDate, i);
+          const dateKey = formatDateOnly(day);
+          cumulativeCompleted += completedByDate.get(dateKey) ?? 0;
+          return { date: dateKey, scope: totalScope, completed: Math.min(cumulativeCompleted, totalScope) };
+        });
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 
   async cfd(orgId: string, projectId: number, query: CfdQuery) {
@@ -144,101 +166,90 @@ export class ProjectsReportsService {
   async velocity(orgId: string, projectId: number): Promise<VelocitySprint[]> {
     await this.requireProject(orgId, projectId);
 
-    const projectSprints = await this.db
-      .select({
-        id: sprints.id,
-        name: sprints.name,
-        startDate: sprints.startDate,
-        endDate: sprints.endDate,
-        status: sprints.status,
-      })
-      .from(sprints)
-      .where(
-        and(
-          eq(sprints.projectId, projectId),
-          eq(sprints.orgId, orgId),
-          inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
-        ),
-      )
-      .orderBy(asc(sprints.startDate));
+    const cacheKey = `projects:velocity:${orgId}:${projectId}`;
+    return this.cache.cached(
+      cacheKey,
+      async () => {
+        const projectSprints = await this.db
+          .select({
+            id: sprints.id,
+            name: sprints.name,
+            startDate: sprints.startDate,
+            endDate: sprints.endDate,
+            status: sprints.status,
+          })
+          .from(sprints)
+          .where(
+            and(
+              eq(sprints.projectId, projectId),
+              eq(sprints.orgId, orgId),
+              inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
+            ),
+          )
+          .orderBy(asc(sprints.startDate));
 
-    if (projectSprints.length === 0) return [];
+        if (projectSprints.length === 0) return [];
 
-    const sprintIds = projectSprints.map((s) => s.id);
+        const sprintIds = projectSprints.map((s) => s.id);
 
-    const sprintTickets = await this.db
-      .select({
-        sprintId: tickets.sprintId,
-        storyPoints: tickets.storyPoints,
-        status: tickets.status,
-        group: customStates.group,
-      })
-      .from(tickets)
-      .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)));
+        const statsRows = await this.db
+          .select({
+            sprintId: tickets.sprintId,
+            committedCount: sql<number>`COUNT(*)::int`,
+            committedPoints: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE'))::int`,
+            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${customStates.group} = 'completed' OR (${customStates.id} IS NULL AND ${tickets.status} = 'DONE') THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
+          })
+          .from(tickets)
+          .leftJoin(customStates, eq(tickets.stateId, customStates.id))
+          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds)))
+          .groupBy(tickets.sprintId);
 
-    const bySprint = new Map<
-      number,
-      { committedPoints: number; completedPoints: number; committedCount: number; completedCount: number }
-    >();
-    for (const id of sprintIds) {
-      bySprint.set(id, { committedPoints: 0, completedPoints: 0, committedCount: 0, completedCount: 0 });
-    }
+        const statsMap = new Map(statsRows.map((r) => [r.sprintId, r]));
 
-    for (const t of sprintTickets) {
-      if (t.sprintId === null) continue;
-      const bucket = bySprint.get(t.sprintId);
-      if (!bucket) continue;
-      const pts = t.storyPoints ?? 0;
-      bucket.committedPoints += pts;
-      bucket.committedCount += 1;
-      const group = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
-      if (group === "completed") {
-        bucket.completedPoints += pts;
-        bucket.completedCount += 1;
-      }
-    }
-
-    return projectSprints.map((s) => {
-      const bucket = bySprint.get(s.id) ?? {
-        committedPoints: 0,
-        completedPoints: 0,
-        committedCount: 0,
-        completedCount: 0,
-      };
-      return {
-        sprintId: s.id,
-        name: s.name,
-        startDate: s.startDate.toISOString(),
-        endDate: s.endDate.toISOString(),
-        committedPoints: bucket.committedPoints,
-        completedPoints: bucket.completedPoints,
-        committedCount: bucket.committedCount,
-        completedCount: bucket.completedCount,
-      };
-    });
+        return projectSprints.map((s) => {
+          const stats = statsMap.get(s.id);
+          return {
+            sprintId: s.id,
+            name: s.name,
+            startDate: s.startDate.toISOString(),
+            endDate: s.endDate.toISOString(),
+            committedPoints: stats?.committedPoints ?? 0,
+            completedPoints: stats?.completedPoints ?? 0,
+            committedCount: stats?.committedCount ?? 0,
+            completedCount: stats?.completedCount ?? 0,
+          };
+        });
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 
   async snapshot(orgId: string, projectId: number) {
     await this.requireProject(orgId, projectId);
 
-    const projectTickets = await this.db
-      .select({ storyPoints: tickets.storyPoints, status: tickets.status, group: customStates.group })
+    const statsRows = await this.db
+      .select({
+        group: sql<string>`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`,
+        count: sql<number>`COUNT(*)::int`,
+        points: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
+      })
       .from(tickets)
       .leftJoin(customStates, eq(tickets.stateId, customStates.id))
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)));
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId)))
+      .groupBy(sql`COALESCE(${customStates.group}, CASE WHEN ${tickets.status} = 'DONE' THEN 'completed' ELSE 'backlog' END)`);
 
     const totals = new Map<StateGroup, { count: number; points: number }>();
     for (const group of STATE_GROUPS) {
       totals.set(group, { count: 0, points: 0 });
     }
 
-    for (const t of projectTickets) {
-      const group: StateGroup = t.group ?? (t.status === "DONE" ? "completed" : "backlog");
-      const bucket = totals.get(group);
+    for (const row of statsRows) {
+      const g = row.group as StateGroup;
+      const bucket = totals.get(g);
       if (!bucket) continue;
-      bucket.count += 1;
-      bucket.points += t.storyPoints ?? 0;
+      bucket.count += row.count;
+      bucket.points += row.points;
     }
 
     const snapshotDate = formatDateOnly(new Date());
@@ -268,92 +279,111 @@ export class ProjectsReportsService {
   async getCycleTimeReport(orgId: string, projectId: number) {
     await this.requireProject(orgId, projectId);
 
-    return this.db
-      .select({
-        week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
-        avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(tickets)
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          eq(tickets.projectId, projectId),
-          eq(tickets.status, "DONE"),
-          gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
-        ),
-      )
-      .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
-      .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`);
+    const cacheKey = `projects:cycle-time:${orgId}:${projectId}`;
+    return this.cache.cached(
+      cacheKey,
+      () =>
+        this.db
+          .select({
+            week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+            avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.projectId, projectId),
+              eq(tickets.status, "DONE"),
+              gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
+            ),
+          )
+          .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
+          .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   async getLeadTimeReport(orgId: string, projectId: number) {
     await this.requireProject(orgId, projectId);
 
-    return this.db
-      .select({
-        week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
-        avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
-        p50Days: sql<number>`ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
-        p90Days: sql<number>`ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(tickets)
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          eq(tickets.projectId, projectId),
-          eq(tickets.status, "DONE"),
-          gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
-        ),
-      )
-      .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
-      .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`);
+    const cacheKey = `projects:lead-time:${orgId}:${projectId}`;
+    return this.cache.cached(
+      cacheKey,
+      () =>
+        this.db
+          .select({
+            week: sql<string>`to_char(date_trunc('week', ${tickets.updatedAt}), 'YYYY-MM-DD')`,
+            avgDays: sql<number>`ROUND(AVG(EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+            p50Days: sql<number>`ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+            p90Days: sql<number>`ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (${tickets.updatedAt} - ${tickets.createdAt})) / 86400)::numeric, 1)`,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.orgId, orgId),
+              eq(tickets.projectId, projectId),
+              eq(tickets.status, "DONE"),
+              gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
+            ),
+          )
+          .groupBy(sql`date_trunc('week', ${tickets.updatedAt})`)
+          .orderBy(sql`date_trunc('week', ${tickets.updatedAt})`),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   async criticalPath(orgId: string, projectId: number) {
     await this.requireProject(orgId, projectId);
 
-    const ticketRows = await this.db
-      .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
-      .from(tickets)
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+    const cacheKey = `projects:critical-path:${orgId}:${projectId}`;
+    return this.cache.cached(
+      cacheKey,
+      async () => {
+        const ticketRows = await this.db
+          .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
+          .from(tickets)
+          .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
 
-    const ticketIds = ticketRows.map((t) => t.id);
-    const validIds = new Set(ticketIds);
+        const ticketIds = ticketRows.map((t) => t.id);
+        const validIds = new Set(ticketIds);
 
-    if (ticketIds.length === 0) {
-      return { criticalPath: [], totalDuration: 0, nodeCount: 0, edgeCount: 0, hasCycle: false };
-    }
+        if (ticketIds.length === 0) {
+          return { criticalPath: [], totalDuration: 0, nodeCount: 0, edgeCount: 0, hasCycle: false };
+        }
 
-    const relations = await this.db
-      .select({
-        workItemId: workItemRelations.workItemId,
-        relatedWorkItemId: workItemRelations.relatedWorkItemId,
-        relationType: workItemRelations.relationType,
-      })
-      .from(workItemRelations)
-      .where(
-        and(
-          inArray(workItemRelations.workItemId, ticketIds),
-          inArray(workItemRelations.relatedWorkItemId, ticketIds),
-        ),
-      );
+        const relations = await this.db
+          .select({
+            workItemId: workItemRelations.workItemId,
+            relatedWorkItemId: workItemRelations.relatedWorkItemId,
+            relationType: workItemRelations.relationType,
+          })
+          .from(workItemRelations)
+          .where(
+            and(
+              inArray(workItemRelations.workItemId, ticketIds),
+              inArray(workItemRelations.relatedWorkItemId, ticketIds),
+            ),
+          );
 
-    const edges = buildEdges(relations, validIds);
+        const edges = buildEdges(relations, validIds);
 
-    if (edges.length === 0) {
-      return { criticalPath: [], totalDuration: 0, nodeCount: ticketIds.length, edgeCount: 0, hasCycle: false };
-    }
+        if (edges.length === 0) {
+          return { criticalPath: [], totalDuration: 0, nodeCount: ticketIds.length, edgeCount: 0, hasCycle: false };
+        }
 
-    const { criticalPath, totalDuration, hasCycle } = computeCriticalPath(ticketRows, edges);
+        const { criticalPath, totalDuration, hasCycle } = computeCriticalPath(ticketRows, edges);
 
-    return {
-      criticalPath,
-      totalDuration,
-      nodeCount: ticketIds.length,
-      edgeCount: edges.length,
-      hasCycle,
-    };
+        return {
+          criticalPath,
+          totalDuration,
+          nodeCount: ticketIds.length,
+          edgeCount: edges.length,
+          hasCycle,
+        };
+      },
+      CACHE_TTL.MEDIUM,
+    );
   }
 }

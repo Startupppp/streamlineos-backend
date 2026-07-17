@@ -63,6 +63,8 @@ import { KbAiFeedbackController } from "./kb-ai-feedback.controller";
 import { KbResearchBriefService } from "./kb-research-brief.service";
 import { KbResearchBriefController } from "./kb-research-brief.controller";
 import { KbResearchBriefHandler } from "./kb-research-brief.handler";
+import { KbPageAiService } from "./kb-page-ai.service";
+import { KbPageAiController } from "./kb-page-ai.controller";
 
 @Module({
   imports: [BillingModule, AiModule, AiJobsModule, NotificationsModule],
@@ -95,6 +97,7 @@ import { KbResearchBriefHandler } from "./kb-research-brief.handler";
     KbSettingsController,
     KbAiFeedbackController,
     KbResearchBriefController,
+    KbPageAiController,
   ],
   providers: [
     KbCreditsService,
@@ -129,6 +132,7 @@ import { KbResearchBriefHandler } from "./kb-research-brief.handler";
     KbAiFeedbackService,
     KbResearchBriefService,
     KbResearchBriefHandler,
+    KbPageAiService,
   ],
   exports: [KbCreditsService, KbAccessService, KbEventsService, KbAskService, KbIndexingService, KbPageTreeService, KbSettingsService, KbArticlesService],
 })

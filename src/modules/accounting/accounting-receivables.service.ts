@@ -120,44 +120,47 @@ export class AccountingReceivablesService {
   }
 
   async customerLedger(orgId: string, clientId: number, query: ListCustomerLedgerQuery): Promise<CustomerLedger> {
-    const clientRows = await this.db
-      .select({ id: clients.id, name: clients.name, state: clients.state, gstin: clients.gstin })
-      .from(clients)
-      .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)))
-      .limit(1);
+    const [clientRows, arAccount, invoiceRows] = await Promise.all([
+      this.db
+        .select({ id: clients.id, name: clients.name, state: clients.state, gstin: clients.gstin })
+        .from(clients)
+        .where(and(eq(clients.id, clientId), eq(clients.orgId, orgId)))
+        .limit(1),
+      this.db
+        .select({ id: ledgerAccounts.id })
+        .from(ledgerAccounts)
+        .where(and(eq(ledgerAccounts.orgId, orgId), eq(ledgerAccounts.code, ACCOUNT_CODES.accountsReceivable)))
+        .limit(1),
+      this.db
+        .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber })
+        .from(invoices)
+        .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId))),
+    ]);
+
     const client = clientRows[0];
     if (!client) throw new NotFoundException("Client not found");
-
-    const arAccount = await this.db
-      .select({ id: ledgerAccounts.id })
-      .from(ledgerAccounts)
-      .where(and(eq(ledgerAccounts.orgId, orgId), eq(ledgerAccounts.code, ACCOUNT_CODES.accountsReceivable)))
-      .limit(1);
     const arAccountId = arAccount[0]?.id ?? null;
-
-    const invoiceRows = await this.db
-      .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber })
-      .from(invoices)
-      .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId)));
     const invoiceIds = invoiceRows.map((r) => r.id);
 
-    const paymentRows = invoiceIds.length
-      ? await this.db
-          .select({ id: payments.id, invoiceId: payments.invoiceId })
-          .from(payments)
-          .where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, invoiceIds)))
-      : [];
-    const paymentIds = paymentRows.map((r) => r.id);
+    const [paymentRows, invoiceTotalsRows, paymentTotalsRows] = await Promise.all([
+      invoiceIds.length
+        ? this.db
+            .select({ id: payments.id, invoiceId: payments.invoiceId })
+            .from(payments)
+            .where(and(eq(payments.orgId, orgId), inArray(payments.invoiceId, invoiceIds)))
+        : Promise.resolve<{ id: number; invoiceId: number }[]>([]),
+      this.db
+        .select({ total: sql<string>`COALESCE(SUM(${invoices.total}), 0)` })
+        .from(invoices)
+        .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId))),
+      this.db
+        .select({ total: sql<string>`COALESCE(SUM(${payments.amount}), 0)` })
+        .from(payments)
+        .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+        .where(and(eq(payments.orgId, orgId), eq(invoices.clientId, clientId))),
+    ]);
 
-    const invoiceTotalsRows = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(${invoices.total}), 0)` })
-      .from(invoices)
-      .where(and(eq(invoices.orgId, orgId), eq(invoices.clientId, clientId)));
-    const paymentTotalsRows = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(${payments.amount}), 0)` })
-      .from(payments)
-      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
-      .where(and(eq(payments.orgId, orgId), eq(invoices.clientId, clientId)));
+    const paymentIds = paymentRows.map((r) => r.id);
     const totalInvoiced = Number(invoiceTotalsRows[0]?.total ?? 0);
     const totalPaid = Number(paymentTotalsRows[0]?.total ?? 0);
 

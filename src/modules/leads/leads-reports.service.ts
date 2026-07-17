@@ -60,86 +60,119 @@ export class LeadsReportsService {
     if (filters.dateTo)
       f.push(lte(leads.createdAt, new Date(filters.dateTo + "T23:59:59")));
 
-    const [allLeadsData, statusOptions] = await Promise.all([
-      this.db.query.leads.findMany({
-        where: and(...f),
-        columns: {
-          id: true,
-          status: true,
-          source: true,
-          assignedToId: true,
-          createdAt: true,
-          potentialValue: true,
-        },
-      }),
-      this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
-    ]);
-    const semantics = resolveLeadStatusSemantics(statusOptions);
-
-    const totalLeads = allLeadsData.length;
-    const converted = allLeadsData.filter(
-      (l) => semantics.convertedKeys.includes(l.status),
-    ).length;
-    const conversionRate =
-      totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
-
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-    const prevPeriodLeads = await this.db.query.leads.findMany({
-      where: and(
-        eq(leads.orgId, orgId),
-        gte(leads.createdAt, sixtyDaysAgo),
-        lte(leads.createdAt, thirtyDaysAgo),
-      ),
-      columns: { id: true, status: true },
-    });
-    const prevTotal = prevPeriodLeads.length;
-    const prevConverted = prevPeriodLeads.filter(
-      (l) => semantics.convertedKeys.includes(l.status),
-    ).length;
+    const statusOptions = await this.db
+      .select()
+      .from(crmOptions)
+      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
+    const semantics = resolveLeadStatusSemantics(statusOptions);
+
+    const convertedExpr =
+      semantics.convertedKeys.length > 0
+        ? sql`${leads.status} = ANY(ARRAY[${sql.join(
+            semantics.convertedKeys.map((k) => sql`${k}`),
+            sql`, `,
+          )}])`
+        : sql`false`;
+
+    const [totalsRows, prevPeriodRows, wonStages, sourceRows, assignRows, salesUsers] =
+      await Promise.all([
+        this.db
+          .select({
+            total: sql<number>`COUNT(*)::int`,
+            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
+          })
+          .from(leads)
+          .where(and(...f)),
+        this.db
+          .select({
+            total: sql<number>`COUNT(*)::int`,
+            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.orgId, orgId),
+              gte(leads.createdAt, sixtyDaysAgo),
+              lte(leads.createdAt, thirtyDaysAgo),
+            ),
+          ),
+        this.db
+          .select({ key: crmPipelineStages.key })
+          .from(crmPipelineStages)
+          .where(
+            and(
+              eq(crmPipelineStages.orgId, orgId),
+              eq(crmPipelineStages.stageType, "won"),
+            ),
+          ),
+        this.db
+          .select({
+            source: sql<string>`COALESCE(${leads.source}::text, 'other')`,
+            total: sql<number>`COUNT(*)::int`,
+            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
+          })
+          .from(leads)
+          .where(and(...f))
+          .groupBy(sql`COALESCE(${leads.source}::text, 'other')`),
+        this.db
+          .select({
+            assignedToId: leads.assignedToId,
+            cnt: sql<number>`COUNT(*)::int`,
+          })
+          .from(leads)
+          .where(and(...f, isNotNull(leads.assignedToId)))
+          .groupBy(leads.assignedToId),
+        this.db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
+          .where(and(eq(organizationMembers.orgId, orgId), eq(users.role, "SALES"))),
+      ]);
+
+    const totalLeads = totalsRows[0]?.total ?? 0;
+    const converted = totalsRows[0]?.converted ?? 0;
+    const conversionRate =
+      totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
+
+    const prevTotal = prevPeriodRows[0]?.total ?? 0;
+    const prevConverted = prevPeriodRows[0]?.converted ?? 0;
     const prevConversionRate =
       prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
 
-    const wonStages = await this.db.select({ key: crmPipelineStages.key }).from(crmPipelineStages)
-      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.stageType, "won")));
     const wonStageKeys = wonStages.length ? wonStages.map((s) => s.key) : ["WON"];
 
-    const wonDeals = await this.db.query.deals.findMany({
-      where: and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys)),
-      columns: { value: true, createdAt: true },
-    });
-    const totalRevenue = wonDeals.reduce(
-      (sum, d) => sum + Number(d.value ?? 0),
-      0,
-    );
+    const [revenueRow, wonDeals] = await Promise.all([
+      this.db
+        .select({
+          totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
+        })
+        .from(deals)
+        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys)))
+        .then((r) => r[0]),
+      this.db
+        .select({ value: deals.value, createdAt: deals.createdAt })
+        .from(deals)
+        .where(and(eq(deals.orgId, orgId), inArray(deals.stage, wonStageKeys))),
+    ]);
+
+    const totalRevenue = revenueRow?.totalRevenue ?? 0;
 
     const conversionBySource: {
       source: string;
       total: number;
       converted: number;
       rate: number;
-    }[] = [];
-    const sourceMap = new Map<string, { total: number; converted: number }>();
-    for (const l of allLeadsData) {
-      const src = l.source ?? "other";
-      const entry = sourceMap.get(src) || { total: 0, converted: 0 };
-      entry.total++;
-      if (semantics.convertedKeys.includes(l.status)) entry.converted++;
-      sourceMap.set(src, entry);
-    }
-    for (const [source, data] of sourceMap) {
-      conversionBySource.push({
-        source: source.replace(/_/g, " "),
-        total: data.total,
-        converted: data.converted,
-        rate:
-          data.total > 0 ? Math.round((data.converted / data.total) * 100) : 0,
-      });
-    }
+    }[] = sourceRows.map((r) => ({
+      source: r.source.replace(/_/g, " "),
+      total: r.total,
+      converted: r.converted,
+      rate: r.total > 0 ? Math.round((r.converted / r.total) * 100) : 0,
+    }));
 
-    const monthlyRevenue: { month: string; revenue: number }[] = [];
     const monthMap = new Map<string, number>();
     for (const d of wonDeals) {
       const date = d.createdAt;
@@ -148,24 +181,14 @@ export class LeadsReportsService {
       const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
       monthMap.set(key, (monthMap.get(key) ?? 0) + Number(d.value ?? 0));
     }
-    const sortedMonths = [...monthMap.entries()]
+    const monthlyRevenue = [...monthMap.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-6);
-    for (const [month, revenue] of sortedMonths) {
-      monthlyRevenue.push({ month, revenue });
-    }
+      .slice(-6)
+      .map(([month, revenue]) => ({ month, revenue }));
 
-    const orgMembers = await this.db.query.organizationMembers.findMany({
-      where: eq(organizationMembers.orgId, orgId),
-      with: { user: { columns: { id: true, name: true, role: true } } },
-    });
-    const salesUsers = orgMembers
-      .filter((m) => m.user.role === "SALES")
-      .map((m) => m.user);
     const assignMap = new Map<string, number>();
-    for (const l of allLeadsData) {
-      if (l.assignedToId)
-        assignMap.set(l.assignedToId, (assignMap.get(l.assignedToId) ?? 0) + 1);
+    for (const row of assignRows) {
+      if (row.assignedToId) assignMap.set(row.assignedToId, row.cnt);
     }
     const assignmentDistribution = salesUsers.map((u) => ({
       userId: u.id,
@@ -185,64 +208,80 @@ export class LeadsReportsService {
     };
   }
 
-  async getDashboardMetrics(orgId: string) {
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  getDashboardMetrics(orgId: string) {
+    return this.cache.cached(
+      `leads:dashboard-metrics:${orgId}`,
+      async () => {
+        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
-    const statusOptions = await this.db.select().from(crmOptions)
-      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
-    const semantics = resolveLeadStatusSemantics(statusOptions);
-    const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
+        const statusOptions = await this.db
+          .select()
+          .from(crmOptions)
+          .where(
+            and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")),
+          );
+        const semantics = resolveLeadStatusSemantics(statusOptions);
+        const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
 
-    const [leadCounts, activityCounts, followUpCount] = await Promise.all([
-      this.db
-        .select({ status: leads.status, cnt: count() })
-        .from(leads)
-        .where(eq(leads.orgId, orgId))
-        .groupBy(leads.status),
-      this.db
-        .select({ type: leadActivities.type, cnt: count() })
-        .from(leadActivities)
-        .where(
-          and(
-            eq(leadActivities.orgId, orgId),
-            inArray(leadActivities.type, ["call", "meeting", "site_visit"]),
-          ),
-        )
-        .groupBy(leadActivities.type),
-      this.db
-        .select({ cnt: count() })
-        .from(leads)
-        .where(
-          and(
-            eq(leads.orgId, orgId),
-            notInArray(leads.status, terminalKeys),
-            lt(leads.updatedAt, threeDaysAgo),
-          ),
-        )
-        .then((r) => r[0]?.cnt ?? 0),
-    ]);
+        const [leadCounts, activityCounts, followUpCount] = await Promise.all([
+          this.db
+            .select({ status: leads.status, cnt: count() })
+            .from(leads)
+            .where(eq(leads.orgId, orgId))
+            .groupBy(leads.status),
+          this.db
+            .select({ type: leadActivities.type, cnt: count() })
+            .from(leadActivities)
+            .where(
+              and(
+                eq(leadActivities.orgId, orgId),
+                inArray(leadActivities.type, ["call", "meeting", "site_visit"]),
+              ),
+            )
+            .groupBy(leadActivities.type),
+          this.db
+            .select({ cnt: count() })
+            .from(leads)
+            .where(
+              and(
+                eq(leads.orgId, orgId),
+                notInArray(leads.status, terminalKeys),
+                lt(leads.updatedAt, threeDaysAgo),
+              ),
+            )
+            .then((r) => r[0]?.cnt ?? 0),
+        ]);
 
-    const byStatus: Record<string, number> = {};
-    for (const r of leadCounts) byStatus[r.status] = r.cnt;
-    const byType: Record<string, number> = {};
-    for (const r of activityCounts) byType[r.type] = r.cnt;
+        const byStatus: Record<string, number> = {};
+        for (const r of leadCounts) byStatus[r.status] = r.cnt;
+        const byType: Record<string, number> = {};
+        for (const r of activityCounts) byType[r.type] = r.cnt;
 
-    const activeClients = semantics.convertedKeys.reduce((s, k) => s + (byStatus[k] ?? 0), 0);
-    const inactiveClients = semantics.lostKeys.reduce((s, k) => s + (byStatus[k] ?? 0), 0);
-    const totalLeads = Object.values(byStatus).reduce((s, n) => s + n, 0);
+        const activeClients = semantics.convertedKeys.reduce(
+          (s, k) => s + (byStatus[k] ?? 0),
+          0,
+        );
+        const inactiveClients = semantics.lostKeys.reduce(
+          (s, k) => s + (byStatus[k] ?? 0),
+          0,
+        );
+        const totalLeads = Object.values(byStatus).reduce((s, n) => s + n, 0);
 
-    return {
-      activeClients,
-      inactiveClients,
-      totalCalls: byType["call"] ?? 0,
-      inPersonMeetings: (byType["meeting"] ?? 0) + (byType["site_visit"] ?? 0),
-      followUpDue: followUpCount,
-      totalLeads,
-      conversionRate:
-        totalLeads > 0
-          ? Math.round((activeClients / totalLeads) * 1000) / 10
-          : 0,
-    };
+        return {
+          activeClients,
+          inactiveClients,
+          totalCalls: byType["call"] ?? 0,
+          inPersonMeetings: (byType["meeting"] ?? 0) + (byType["site_visit"] ?? 0),
+          followUpDue: followUpCount,
+          totalLeads,
+          conversionRate:
+            totalLeads > 0
+              ? Math.round((activeClients / totalLeads) * 1000) / 10
+              : 0,
+        };
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 
   getSourceReport(orgId: string) {
@@ -299,34 +338,41 @@ export class LeadsReportsService {
   }
 
   async getFollowUps(orgId: string, query: FollowUpsQuery) {
-    const maxResults = query.limit ?? 20;
+    const maxResults = Math.min(query.limit ?? 20, 100);
 
     const conditions = [eq(leads.orgId, orgId), isNotNull(leads.followUpDate)];
     if (query.overdue === "true") {
       conditions.push(lte(leads.followUpDate, new Date()));
     }
 
-    const results = await this.db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        email: leads.email,
-        phone: leads.phone,
-        company: leads.company,
-        status: leads.status,
-        priority: leads.priority,
-        followUpDate: leads.followUpDate,
-        followUpNotes: leads.followUpNotes,
-        assignedToId: leads.assignedToId,
-        assigneeName: users.name,
-      })
-      .from(leads)
-      .leftJoin(users, eq(leads.assignedToId, users.id))
-      .where(and(...conditions))
-      .orderBy(asc(leads.followUpDate))
-      .limit(maxResults);
+    const [results, totalRow] = await Promise.all([
+      this.db
+        .select({
+          id: leads.id,
+          name: leads.name,
+          email: leads.email,
+          phone: leads.phone,
+          company: leads.company,
+          status: leads.status,
+          priority: leads.priority,
+          followUpDate: leads.followUpDate,
+          followUpNotes: leads.followUpNotes,
+          assignedToId: leads.assignedToId,
+          assigneeName: users.name,
+        })
+        .from(leads)
+        .leftJoin(users, eq(leads.assignedToId, users.id))
+        .where(and(...conditions))
+        .orderBy(asc(leads.followUpDate))
+        .limit(maxResults),
+      this.db
+        .select({ cnt: count() })
+        .from(leads)
+        .where(and(...conditions))
+        .then((r) => r[0]?.cnt ?? 0),
+    ]);
 
-    return { items: results, total: results.length };
+    return { items: results, total: totalRow };
   }
 
   async getUnverifiedLeads(orgId: string) {

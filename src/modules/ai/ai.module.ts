@@ -44,10 +44,14 @@ import { MeetingsAiController } from "./controllers/meetings-ai.controller";
 import { MeetingsPrepService } from "./services/meetings-prep.service";
 import { ExecutiveBriefModule } from "./executive-brief/executive-brief.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
+import { BlogAiController } from "./controllers/blog-ai.controller";
+import { BlogAiService } from "./services/blog-ai.service";
+import { SurveyAiController } from "./controllers/survey-ai.controller";
+import { SurveyAiService } from "./services/survey-ai.service";
 
 @Module({
   imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule],
-  controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController],
+  controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
     LlmService,
     EmbeddingsService,
@@ -76,6 +80,8 @@ import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
     AiGatewayService,
     AiFeedbackService,
     MeetingsPrepService,
+    BlogAiService,
+    SurveyAiService,
     { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
   exports: [LlmService, EmbeddingsService, AiUsageService, OrgFeaturesService, AiGatewayService],

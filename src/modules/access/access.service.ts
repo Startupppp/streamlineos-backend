@@ -29,7 +29,13 @@ interface VersionEntry {
   expiresAt: number;
 }
 
+interface PermsEntry {
+  perms: Record<string, DataScope>;
+  expiresAt: number;
+}
+
 const VERSION_CACHE_TTL_MS = 5_000;
+const PERMS_CACHE_TTL_MS = 30_000;
 
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -62,6 +68,7 @@ function allCatalogScopes(): Record<string, DataScope> {
 export class AccessService {
   private missingAccessTablesLogged = false;
   private readonly versionCache = new Map<string, VersionEntry>();
+  private readonly permsCache = new Map<string, PermsEntry>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -112,11 +119,22 @@ export class AccessService {
 
   async resolveUserPermissions(orgId: string, userId: string): Promise<Map<string, DataScope>> {
     const version = await this.getPermissionsVersion(orgId);
+    const permsKey = `${orgId}:${userId}:${version}`;
+    const local = this.permsCache.get(permsKey);
+    if (local && local.expiresAt > Date.now()) return new Map(Object.entries(local.perms));
+
     const resolved = await this.cache.cached<Record<string, DataScope>>(
       CACHE_KEYS.accessPerms(orgId, userId, version),
       () => this.computeUserPermissions(orgId, userId),
       CACHE_TTL.LONG,
     );
+    this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
+    if (this.permsCache.size > 5000) {
+      const now = Date.now();
+      for (const [key, entry] of this.permsCache) {
+        if (entry.expiresAt <= now) this.permsCache.delete(key);
+      }
+    }
     return new Map(Object.entries(resolved));
   }
 

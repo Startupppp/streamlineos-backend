@@ -1,9 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
-import { attendance, hrAttendanceRegularizations, orgHolidays, organizationMembers, users } from "../../db/schema";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, rosterEntries, shiftTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AttendancePolicyService } from "./attendance-policy.service";
+
+interface ShiftInfo {
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  gracePeriodMinutes: number;
+}
 
 export interface EmployeeAttendanceSummary {
   userId: string;
@@ -133,18 +140,69 @@ export class AttendanceSummaryService {
       regularizationsByUser.set(reg.userId, (regularizationsByUser.get(reg.userId) ?? 0) + 1);
     }
 
-    const results: EmployeeAttendanceSummary[] = await Promise.all(
-      members.map(async (member) => {
+    const [rosterRows, shiftAssignmentRows] = await Promise.all([
+      this.db
+        .select({
+          userId: rosterEntries.userId,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+          breakMinutes: shiftTemplates.breakMinutes,
+          gracePeriodMinutes: shiftTemplates.gracePeriodMinutes,
+        })
+        .from(rosterEntries)
+        .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
+        .where(and(inArray(rosterEntries.userId, userIds), eq(rosterEntries.date, periodStart))),
+
+      this.db
+        .select({
+          userId: employeeShiftAssignments.userId,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+          breakMinutes: shiftTemplates.breakMinutes,
+          gracePeriodMinutes: shiftTemplates.gracePeriodMinutes,
+        })
+        .from(employeeShiftAssignments)
+        .innerJoin(shiftTemplates, eq(shiftTemplates.id, employeeShiftAssignments.shiftId))
+        .where(
+          and(
+            inArray(employeeShiftAssignments.userId, userIds),
+            eq(employeeShiftAssignments.orgId, orgId),
+            eq(employeeShiftAssignments.isActive, true),
+            lte(employeeShiftAssignments.effectiveFrom, periodStart),
+            or(isNull(employeeShiftAssignments.effectiveTo), gte(employeeShiftAssignments.effectiveTo, periodStart)),
+          ),
+        ),
+    ]);
+
+    const rosterShiftByUser = new Map<string, ShiftInfo>();
+    for (const r of rosterRows) {
+      if (!rosterShiftByUser.has(r.userId)) rosterShiftByUser.set(r.userId, r);
+    }
+    const assignedShiftByUser = new Map<string, ShiftInfo>();
+    for (const r of shiftAssignmentRows) {
+      if (!assignedShiftByUser.has(r.userId)) assignedShiftByUser.set(r.userId, r);
+    }
+
+    const representativeUserId = userIds[0] ?? "";
+    const [orgAttendanceRules, orgOvertimeRules] = representativeUserId
+      ? await Promise.all([
+          this.policyService.getAttendanceRules(orgId, representativeUserId, periodStart),
+          this.policyService.getOvertimeRules(orgId, representativeUserId, periodStart),
+        ])
+      : [
+          { graceMinutes: 15, autoCheckoutTime: "19:00", lateArrivalPenalty: "none", halfDayThresholdMinutes: 240, absentThresholdMinutes: 0, enforceGeofence: false, minReclockInMinutes: 2 },
+          { dailyThresholdMinutes: 480 },
+        ] as const;
+
+    const results: EmployeeAttendanceSummary[] = members.map((member) => {
         const userId = member.userId;
         const rows = attendanceByUser.get(userId) ?? [];
-        const referenceDate = periodStart;
 
-        const [shiftInfo, policyRules, overtimeRules, shiftDef] = await Promise.all([
-          this.policyService.getEffectiveShiftStartWithGrace(orgId, userId, referenceDate),
-          this.policyService.getAttendanceRules(orgId, userId, referenceDate),
-          this.policyService.getOvertimeRules(orgId, userId, referenceDate),
-          this.policyService.getEffectiveShift(orgId, userId, referenceDate),
-        ]);
+        const shiftDef = rosterShiftByUser.get(userId) ?? assignedShiftByUser.get(userId) ?? null;
+
+        const shiftInfo = shiftDef
+          ? { shiftStartMinutes: (() => { const [h, m] = shiftDef.startTime.split(":"); return Number(h) * 60 + Number(m); })(), graceMinutes: shiftDef.gracePeriodMinutes }
+          : { shiftStartMinutes: 9 * 60, graceMinutes: orgAttendanceRules.graceMinutes };
 
         const shiftEndMinutes = shiftDef
           ? (() => {
@@ -177,7 +235,7 @@ export class AttendanceSummaryService {
 
           if (row.isOvertime) {
             const wh = Number(row.workHours ?? 0);
-            const thresholdHours = overtimeRules.dailyThresholdMinutes / 60;
+            const thresholdHours = orgOvertimeRules.dailyThresholdMinutes / 60;
             if (wh > thresholdHours) {
               overtimeMinutes += Math.round((wh - thresholdHours) * 60);
             }
@@ -189,7 +247,7 @@ export class AttendanceSummaryService {
           if (holidaySet.has(row.date)) holidayWorkDays++;
         }
 
-        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, policyRules.lateArrivalPenalty, presentDays);
+        const latePenaltyDays = this.calculateLatePenaltyDays(lateCount, orgAttendanceRules.lateArrivalPenalty, presentDays);
         const absentDays = Math.max(0, workingDaysInPeriod - presentDays);
         const payableDays = Math.max(0, presentDays - latePenaltyDays);
         const approvedRegularizations = regularizationsByUser.get(userId) ?? 0;
@@ -213,8 +271,7 @@ export class AttendanceSummaryService {
           weekendWorkDays,
           holidayWorkDays,
         };
-      }),
-    );
+      });
 
     return { data: results, page: params.page ?? 1, limit: responseLimit };
   }

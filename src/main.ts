@@ -21,8 +21,8 @@ async function bootstrap(): Promise<void> {
   });
   app.useBodyParser("json", { limit: "3mb" });
   app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
-  app.use(compression());
   app.use(helmet());
+  app.use(compression());
   const isLocalDevOrigin = (origin: string): boolean =>
     /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
   app.enableCors({

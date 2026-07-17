@@ -7,6 +7,8 @@ import { pushBranchAssigneeFilter, type BranchContext } from "./branch-filter";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 
 export type BoardOpts = { userId?: string; branch?: BranchContext; limitPerStatus?: number; scope?: DataScope };
 export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; branch?: BranchContext; scope?: DataScope };
@@ -27,107 +29,122 @@ function pushLeadsViewScope(
 
 @Injectable()
 export class LeadsBoardService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   private async resolveLeadStatusKeys(orgId: string): Promise<string[]> {
-    const defaultLeadPipeline = await this.db
-      .select({ id: crmPipelines.id })
-      .from(crmPipelines)
-      .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
-      .limit(1)
-      .then((r) => r[0]);
+    return this.cache.cached(`leads:status-keys:${orgId}`, async () => {
+      const defaultLeadPipeline = await this.db
+        .select({ id: crmPipelines.id })
+        .from(crmPipelines)
+        .where(and(eq(crmPipelines.orgId, orgId), eq(crmPipelines.type, "lead"), eq(crmPipelines.isDefault, true), eq(crmPipelines.isActive, true)))
+        .limit(1)
+        .then((r) => r[0]);
 
-    if (defaultLeadPipeline) {
-      const stages = await this.db
-        .select({ key: crmPipelineStages.key })
-        .from(crmPipelineStages)
-        .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, defaultLeadPipeline.id), eq(crmPipelineStages.isActive, true)))
-        .orderBy(asc(crmPipelineStages.sortOrder));
-      if (stages.length > 0) return stages.map((s) => s.key);
-    }
+      if (defaultLeadPipeline) {
+        const stages = await this.db
+          .select({ key: crmPipelineStages.key })
+          .from(crmPipelineStages)
+          .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.pipelineId, defaultLeadPipeline.id), eq(crmPipelineStages.isActive, true)))
+          .orderBy(asc(crmPipelineStages.sortOrder));
+        if (stages.length > 0) return stages.map((s) => s.key);
+      }
 
-    const options = await this.db
-      .select({ key: crmOptions.key })
-      .from(crmOptions)
-      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"), eq(crmOptions.isActive, true)))
-      .orderBy(asc(crmOptions.sortOrder));
-    if (options.length > 0) return options.map((o) => o.key);
+      const options = await this.db
+        .select({ key: crmOptions.key })
+        .from(crmOptions)
+        .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"), eq(crmOptions.isActive, true)))
+        .orderBy(asc(crmOptions.sortOrder));
+      if (options.length > 0) return options.map((o) => o.key);
 
-    const existing = await this.db
-      .selectDistinct({ status: leads.status })
-      .from(leads)
-      .where(eq(leads.orgId, orgId));
-    return existing.map((r) => r.status);
+      const existing = await this.db
+        .select({ status: leads.status })
+        .from(leads)
+        .where(eq(leads.orgId, orgId))
+        .groupBy(leads.status);
+      return existing.map((r) => r.status);
+    }, CACHE_TTL.MEDIUM);
   }
 
   async getBoard(orgId: string, opts?: BoardOpts) {
-    const baseFilters = [eq(leads.orgId, orgId)];
+    const hash = Buffer.from(JSON.stringify(opts ?? {})).toString("base64");
 
-    if (opts?.branch) {
-      await pushBranchAssigneeFilter(this.db, baseFilters, leads.assignedToId, opts.branch);
-    }
+    return this.cache.cached(CACHE_KEYS.leadBoard(orgId, hash), async () => {
+      const baseFilters = [eq(leads.orgId, orgId)];
 
-    pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
+      if (opts?.branch) {
+        await pushBranchAssigneeFilter(this.db, baseFilters, leads.assignedToId, opts.branch);
+      }
 
-    const statusKeys = await this.resolveLeadStatusKeys(orgId);
-    const limitPerStatus = opts?.limitPerStatus ?? 50;
+      pushLeadsViewScope(baseFilters, opts?.scope, opts?.userId);
 
-    const columns = {
-      id: leads.id,
-      name: leads.name,
-      email: leads.email,
-      phone: leads.phone,
-      company: leads.company,
-      source: leads.source,
-      priority: leads.priority,
-      status: leads.status,
-      score: leads.score,
-      potentialValue: leads.potentialValue,
-      slaDeadline: leads.slaDeadline,
-      assignedToId: leads.assignedToId,
-      createdAt: leads.createdAt,
-    } as const;
+      const statusKeys = await this.resolveLeadStatusKeys(orgId);
+      const limitPerStatus = opts?.limitPerStatus ?? 50;
 
-    const columnResults = await Promise.all(
-      statusKeys.map(async (status) => {
-        const statusFilter = [...baseFilters, eq(leads.status, status)];
-        const [rows, countResult] = await Promise.all([
-          this.db
-            .select(columns)
-            .from(leads)
-            .where(and(...statusFilter))
-            .orderBy(desc(leads.createdAt))
-            .limit(limitPerStatus),
-          this.db.select({ total: count() }).from(leads).where(and(...statusFilter)),
-        ]);
+      const columns = {
+        id: leads.id,
+        name: leads.name,
+        email: leads.email,
+        phone: leads.phone,
+        company: leads.company,
+        source: leads.source,
+        priority: leads.priority,
+        status: leads.status,
+        score: leads.score,
+        potentialValue: leads.potentialValue,
+        slaDeadline: leads.slaDeadline,
+        assignedToId: leads.assignedToId,
+        createdAt: leads.createdAt,
+      } as const;
 
-        const assigneeIds = [...new Set(rows.map((r) => r.assignedToId).filter((id): id is string => !!id))];
-        const assigneeMap = new Map<string, { id: string; name: string | null; image: string | null }>();
-        if (assigneeIds.length > 0) {
-          const assignees = await this.db
-            .select({ id: users.id, name: users.name, image: users.image })
-            .from(users)
-            .where(inArray(users.id, assigneeIds));
-          for (const a of assignees) assigneeMap.set(a.id, a);
-        }
+      const perStatusResults = await Promise.all(
+        statusKeys.map(async (status) => {
+          const statusFilter = [...baseFilters, eq(leads.status, status)];
+          const [rows, countResult] = await Promise.all([
+            this.db
+              .select(columns)
+              .from(leads)
+              .where(and(...statusFilter))
+              .orderBy(desc(leads.createdAt))
+              .limit(limitPerStatus),
+            this.db.select({ total: count() }).from(leads).where(and(...statusFilter)),
+          ]);
+          return { status, rows, total: countResult[0]?.total ?? 0 };
+        }),
+      );
 
-        return {
-          status,
-          total: countResult[0]?.total ?? 0,
-          leads: rows.map((r) => ({
+      const allAssigneeIds = [
+        ...new Set(
+          perStatusResults.flatMap((col) =>
+            col.rows.map((r) => r.assignedToId).filter((id): id is string => !!id),
+          ),
+        ),
+      ];
+
+      const assigneeMap = new Map<string, { id: string; name: string | null; image: string | null }>();
+      if (allAssigneeIds.length > 0) {
+        const assignees = await this.db
+          .select({ id: users.id, name: users.name, image: users.image })
+          .from(users)
+          .where(inArray(users.id, allAssigneeIds));
+        for (const a of assignees) assigneeMap.set(a.id, a);
+      }
+
+      const board: Record<string, { leads: Array<Omit<(typeof perStatusResults)[0]["rows"][0], "assignedToId"> & { assignedTo: { id: string; name: string | null; image: string | null } | null }>; total: number }> = {};
+      for (const col of perStatusResults) {
+        board[col.status] = {
+          total: col.total,
+          leads: col.rows.map((r) => ({
             ...r,
             assignedTo: r.assignedToId ? (assigneeMap.get(r.assignedToId) ?? null) : null,
           })),
         };
-      }),
-    );
+      }
 
-    const board: Record<string, { leads: (typeof columnResults)[0]["leads"]; total: number }> = {};
-    for (const col of columnResults) {
-      board[col.status] = { leads: col.leads, total: col.total };
-    }
-
-    return board;
+      return board;
+    }, CACHE_TTL.SHORT);
   }
 
   async getStats(orgId: string, filters?: StatsFilters) {

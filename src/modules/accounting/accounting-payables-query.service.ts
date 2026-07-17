@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, sql } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyScope } from "../access/apply-scope";
 import {
@@ -90,15 +90,17 @@ export class AccountingPayablesQueryService {
 
     const where = and(...conds);
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const items = await this.db
-      .select(BILL_COLUMNS)
-      .from(purchaseBills)
-      .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-      .where(where)
-      .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
-      .offset(offset)
-      .limit(limit);
-    const totalRows = await this.db.select({ c: count() }).from(purchaseBills).where(where);
+    const [items, totalRows] = await Promise.all([
+      this.db
+        .select(BILL_COLUMNS)
+        .from(purchaseBills)
+        .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
+        .where(where)
+        .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
+        .offset(offset)
+        .limit(limit),
+      this.db.select({ c: count() }).from(purchaseBills).where(where),
+    ]);
     return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
   }
 
@@ -142,40 +144,61 @@ export class AccountingPayablesQueryService {
     if (q) conds.push(ilike(clients.name, `%${escapeLike(q)}%`));
 
     const where = and(...conds);
+    const billStatusIn = sql`${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')`;
+    const totalBilledExpr = sql<string>`COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
+    const totalPaidExpr = sql<string>`COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
+    const outstandingExpr = sql<string>`(COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0) - COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0))::text`;
+
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const rows = await this.db
+
+    let listQuery = this.db
       .select({
         vendorId: clients.id,
         vendorName: clients.name,
         state: clients.state,
         gstin: clients.gstin,
-        billCount: sql<number>`COALESCE((SELECT count(*)::int FROM ${purchaseBills} WHERE ${purchaseBills.vendorId} = ${clients.id} AND ${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')), 0)`,
-        totalBilled: sql<string>`COALESCE((SELECT sum(${purchaseBills.total}::numeric) FROM ${purchaseBills} WHERE ${purchaseBills.vendorId} = ${clients.id} AND ${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')), 0)::text`,
-        totalPaid: sql<string>`COALESCE((SELECT sum(${purchaseBills.amountPaid}::numeric) FROM ${purchaseBills} WHERE ${purchaseBills.vendorId} = ${clients.id} AND ${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')), 0)::text`,
+        billCount: sql<number>`COUNT(${purchaseBills.id}) FILTER (WHERE ${billStatusIn})::int`,
+        totalBilled: totalBilledExpr,
+        totalPaid: totalPaidExpr,
       })
       .from(clients)
+      .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
       .where(where)
-      .offset(offset)
-      .limit(limit);
+      .groupBy(clients.id, clients.name, clients.state, clients.gstin)
+      .$dynamic();
+    if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
-    const items = rows
-      .map((r) => ({
-        vendorId: r.vendorId,
-        vendorName: r.vendorName,
-        state: r.state,
-        gstin: r.gstin,
-        billCount: Number(r.billCount ?? 0),
-        outstanding: (Number(r.totalBilled ?? 0) - Number(r.totalPaid ?? 0)).toFixed(2),
-      }))
-      .filter((r) => !onlyOutstanding || Number(r.outstanding) > 0.005);
+    const [rows, totalRows] = await Promise.all([
+      listQuery.offset(offset).limit(limit),
+      onlyOutstanding
+        ? this.db.select({ c: count() }).from(
+            this.db
+              .select({ id: clients.id })
+              .from(clients)
+              .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
+              .where(where)
+              .groupBy(clients.id)
+              .having(gt(outstandingExpr, "0"))
+              .as("filtered_vendors"),
+          )
+        : this.db.select({ c: count() }).from(clients).where(where),
+    ]);
 
-    const totalRows = await this.db.select({ c: count() }).from(clients).where(where);
+    const items = rows.map((r) => ({
+      vendorId: r.vendorId,
+      vendorName: r.vendorName,
+      state: r.state,
+      gstin: r.gstin,
+      billCount: Number(r.billCount ?? 0),
+      outstanding: (Number(r.totalBilled ?? 0) - Number(r.totalPaid ?? 0)).toFixed(2),
+    }));
+
     return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
   }
 
   async vendorLedger(orgId: string, vendorId: number) {
     const vendorRows = await this.db
-      .select()
+      .select({ id: clients.id, name: clients.name, state: clients.state, gstin: clients.gstin })
       .from(clients)
       .where(and(eq(clients.id, vendorId), eq(clients.orgId, orgId)))
       .limit(1);
