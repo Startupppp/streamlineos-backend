@@ -13,8 +13,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { FnfInsightsService } from "./fnf.service";
-import type { PatchFnfInput } from "../../hr-payroll/dto/payroll.schemas";
+import { patchFnfSchema, type PatchFnfInput } from "../../hr-payroll/dto/payroll.schemas";
 
 @Controller("payroll/fnf")
 @UseGuards(JwtAuthGuard)
@@ -44,7 +45,7 @@ export class FnfController {
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,
-    @Body() body: PatchFnfInput,
+    @Body(new ZodValidationPipe(patchFnfSchema)) body: PatchFnfInput,
   ) {
     return this.fnfService.approve(u.orgId, settlementId, u.userId, body);
   }
