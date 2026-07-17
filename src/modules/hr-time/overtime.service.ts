@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { compOffBalances, hrLeaveLedger, leaveTypes, overtimeRequests } from "../../db/schema";
@@ -54,6 +54,19 @@ export class OvertimeService {
     userId: string,
     data: { date: string; hours: string; reason?: string; convertToCompOff?: boolean },
   ) {
+    const duplicate = await this.db.query.overtimeRequests.findFirst({
+      where: and(
+        eq(overtimeRequests.orgId, orgId),
+        eq(overtimeRequests.userId, userId),
+        eq(overtimeRequests.date, data.date),
+        sql`${overtimeRequests.status} != 'REJECTED'`,
+      ),
+      columns: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException("An overtime request already exists for this date.");
+    }
+
     const [req] = await this.db
       .insert(overtimeRequests)
       .values({ orgId, userId, ...data })
@@ -65,6 +78,15 @@ export class OvertimeService {
   }
 
   async approveRequest(orgId: string, id: number, approverId: string) {
+    const existing = await this.db.query.overtimeRequests.findFirst({
+      where: and(eq(overtimeRequests.id, id), eq(overtimeRequests.orgId, orgId)),
+      columns: { userId: true },
+    });
+    if (!existing) throw new NotFoundException("Request not found");
+    if (existing.userId === approverId) {
+      throw new ForbiddenException("You cannot approve your own overtime request.");
+    }
+
     const [req] = await this.db
       .update(overtimeRequests)
       .set({ status: "APPROVED", approverId, updatedAt: new Date() })
