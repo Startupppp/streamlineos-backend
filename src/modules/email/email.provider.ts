@@ -146,6 +146,10 @@ async function sendViaSendgrid(options: EmailOptions): Promise<void> {
     ...(sgCc?.length ? { cc: sgCc.length === 1 ? sgCc[0] : sgCc } : {}),
     ...(sgBcc?.length ? { bcc: sgBcc.length === 1 ? sgBcc[0] : sgBcc } : {}),
     ...(attachments?.length ? { attachments } : {}),
+    trackingSettings: {
+      clickTracking: { enable: false, enableText: false },
+      openTracking: { enable: false },
+    },
   };
 
   await sgMail.send(msg);
