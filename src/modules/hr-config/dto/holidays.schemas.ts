@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 export const holidayCalendarQuerySchema = z.object({
-  year: z.coerce.number().int().catch(0),
-  month: z.coerce.number().int().catch(0),
+  year: z.coerce.number().int(),
+  month: z.coerce.number().int(),
 });
 
 export const holidayListQuerySchema = z.object({
-  year: z.coerce.number().int().catch(0),
+  year: z.coerce.number().int(),
 });
 
 export const updateHolidaySchema = z.object({
