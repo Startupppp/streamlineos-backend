@@ -149,7 +149,15 @@ export class PerformanceGoalsService {
     return kr;
   }
 
-  async updateKeyResult(input: UpdateKeyResultInput) {
+  async updateKeyResult(orgId: string, input: UpdateKeyResultInput) {
+    const owned = await this.db
+      .select({ id: keyResults.id })
+      .from(keyResults)
+      .innerJoin(goals, eq(goals.id, keyResults.goalId))
+      .where(and(eq(keyResults.id, input.id), eq(goals.orgId, orgId)))
+      .limit(1);
+    if (!owned[0]) throw new NotFoundException("Key result not found.");
+
     await this.db
       .update(keyResults)
       .set({

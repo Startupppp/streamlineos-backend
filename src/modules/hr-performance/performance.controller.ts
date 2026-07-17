@@ -129,11 +129,12 @@ export class PerformanceController {
   }
 
   @Patch("key-results")
-  @RequirePermission("hr:performance:view")
+  @RequirePermission("hr:performance:manage")
   updateKeyResult(
     @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goalsService.updateKeyResult(body);
+    return this.goalsService.updateKeyResult(u.orgId, body);
   }
 
   @Get("one-on-ones")
