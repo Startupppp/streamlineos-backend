@@ -35,6 +35,6 @@ export const updateRequisitionSchema = createRequisitionSchema.partial();
 export type UpdateRequisitionInput = z.infer<typeof updateRequisitionSchema>;
 
 export const rejectRequisitionSchema = z.object({
-  reason: z.string().max(2000).optional(),
+  reason: z.string().min(1, "Rejection reason is required").max(2000),
 });
 export type RejectRequisitionInput = z.infer<typeof rejectRequisitionSchema>;
