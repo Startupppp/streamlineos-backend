@@ -34,7 +34,7 @@ import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
-import { differenceInDays, formatDateOnly, formatDayMonthYear } from "./date.helpers";
+import { differenceInDays, formatDateOnly } from "./date.helpers";
 import { userCan } from "./ability.helpers";
 import type {
   BulkOnboardEmployeeRow,
@@ -158,11 +158,9 @@ export class EmployeeMutationsService {
     }
 
     if (body.isActive === false) {
-      if (!canManageEmployees) throw new ForbiddenException("Only HR or CEO can terminate employees.");
-      if (isSelf) throw new BadRequestException("You cannot terminate your own account.");
-      if (targetMember.role === "CEO" || targetMember.isOwner) {
-        throw new BadRequestException("CEO cannot be terminated through this workflow.");
-      }
+      throw new BadRequestException(
+        "Employees can only be terminated through the dedicated termination workflow, which requires CEO approval and creates the required settlement and asset-return records.",
+      );
     }
 
     if (body.reportingTo !== undefined && body.reportingTo !== null) {
@@ -183,11 +181,6 @@ export class EmployeeMutationsService {
         cursor = mgr?.reportingTo ?? null;
       }
     }
-
-    const targetUser =
-      body.isActive === false
-        ? await this.db.query.users.findFirst({ where: eq(users.id, targetUserId) })
-        : null;
 
     const updateData: Partial<typeof users.$inferInsert> = {};
     if (body.name !== undefined) updateData.name = body.name;
@@ -282,36 +275,13 @@ export class EmployeeMutationsService {
       }
     });
 
-    if (body.isActive === false) {
-      await this.cache.invalidate(`user:session:${targetUserId}`);
-      if (targetUser?.email) {
-        const actorUser = await this.db.query.users.findFirst({
-          where: eq(users.id, actor.userId),
-          columns: { name: true },
-        });
-        void this.email
-          .sendTerminationEmail(
-            targetUser.email,
-            targetUser.name ?? "Employee",
-            targetUser.designation ?? "N/A",
-            formatDayMonthYear(new Date()),
-            actorUser?.name ?? "HR",
-            "Termination as per company policy.",
-          )
-          .catch(() => undefined);
-        void this.email
-          .sendAccountDeactivationEmail(targetUser.email, targetUser.name ?? "Employee", actorUser?.name ?? "HR")
-          .catch(() => undefined);
-      }
-    }
-
     this.audit.log({
-      action: body.isActive === false ? "hr.employee_terminated" : "hr.employee_updated",
+      action: "hr.employee_updated",
       userId: actor.userId,
       orgId: actor.orgId,
       targetId: targetUserId,
       targetType: "employee",
-      metadata: { changedFields: Object.keys(updateData), isTermination: body.isActive === false },
+      metadata: { changedFields: Object.keys(updateData) },
     });
 
     void this.hrAutomation
