@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, count } from "drizzle-orm";
+import { and, asc, desc, eq, count, or, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -135,20 +135,26 @@ export class HrBenefitsPlansService {
     return updated;
   }
 
-  async checkEnrollmentWindowOpen(orgId: string, planId: number) {
+  /**
+   * Enrollment windows are opt-in: a plan/org with none configured has no restriction (the
+   * feature was never set up for it). Only enforced once at least one window row exists in
+   * scope for this plan (plan-specific, or org-wide via a null planId).
+   */
+  async checkEnrollmentWindowOpen(orgId: string, planId: number): Promise<boolean> {
     const now = new Date();
-    const [window] = await this.db
+    const windows = await this.db
       .select()
       .from(hrBenefitEnrollmentWindows)
       .where(
         and(
           eq(hrBenefitEnrollmentWindows.orgId, orgId),
-          eq(hrBenefitEnrollmentWindows.status, "open"),
+          or(eq(hrBenefitEnrollmentWindows.planId, planId), isNull(hrBenefitEnrollmentWindows.planId)),
         ),
-      )
-      .limit(1);
+      );
 
-    if (!window) return false;
-    return window.opensAt <= now && window.closesAt >= now;
+    if (windows.length === 0) return true;
+    return windows.some(
+      (window) => window.status === "open" && window.opensAt <= now && window.closesAt >= now,
+    );
   }
 }
