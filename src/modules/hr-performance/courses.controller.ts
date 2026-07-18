@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { ConflictException, Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -59,11 +59,13 @@ export class CoursesController {
 
   @Post(":courseId/enroll")
   @RequirePermission("hr:learning:view")
-  enroll(
+  async enroll(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
   ) {
-    return this.courses.enrollUser(courseId, u.userId);
+    const enrollment = await this.courses.enrollUser(courseId, u.userId);
+    if (!enrollment) throw new ConflictException("You are already enrolled in this course");
+    return enrollment;
   }
 
   @Patch(":courseId/progress")
