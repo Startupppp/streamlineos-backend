@@ -63,7 +63,7 @@ export class ExpensesWriteService {
     private readonly automation: AutomationService,
   ) {}
 
-  async create(orgId: string, userId: string, isAdmin: boolean, body: CreateExpenseInput) {
+  async create(orgId: string, userId: string, _isAdmin: boolean, body: CreateExpenseInput) {
     const [expense] = await this.db
       .insert(expenses)
       .values({
@@ -79,9 +79,9 @@ export class ExpensesWriteService {
         paymentMethod: body.paymentMethod,
         projectId: body.projectId,
         expenseDate: formatDateOnly(body.expenseDate),
-        status: isAdmin ? "APPROVED" : "PENDING",
-        approverId: isAdmin ? userId : null,
-        approvedAt: isAdmin ? new Date() : null,
+        status: "PENDING",
+        approverId: null,
+        approvedAt: null,
       })
       .returning();
 
@@ -98,9 +98,7 @@ export class ExpensesWriteService {
       metadata: { category: body.category, amount: body.amount },
     });
 
-    if (!isAdmin) {
-      void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
-    }
+    void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
 
     await this.cache.invalidatePattern(`hr:expenses:${orgId}:*`);
 
@@ -174,6 +172,7 @@ export class ExpensesWriteService {
         .set({
           status: body.status,
           approverId: u.userId,
+          approvedAt: body.status === "APPROVED" || body.status === "PAID" ? new Date() : null,
           rejectionReason: body.rejectionReason ?? null,
         })
         .where(eq(expenses.id, expenseId));

@@ -83,15 +83,66 @@ const AMOUNT = z
   .positive("Amount must be greater than 0")
   .max(999_999_999.99, "Amount cannot exceed 999,999,999.99");
 
+const EXPENSE_LABEL_RE = /^[\p{L}\p{N}\s'.-]+$/u;
+const CONSECUTIVE_SPECIAL_RE = /[^\p{L}\p{N}\s]{2,}/u;
+
+function isValidExpenseLabel(v: string): boolean {
+  return (
+    /[a-zA-Z]/.test(v) &&
+    EXPENSE_LABEL_RE.test(v) &&
+    !CONSECUTIVE_SPECIAL_RE.test(v)
+  );
+}
+
+const expenseLabelSchema = z
+  .string()
+  .trim()
+  .min(1, "Required")
+  .max(100)
+  .refine(isValidExpenseLabel, {
+    message:
+      "Can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+  });
+
+/** Empty string / whitespace → undefined so optional selects stay valid. */
+const optionalExpenseLabelSchema = z
+  .string()
+  .optional()
+  .transform((v) => {
+    const t = v?.trim();
+    return t ? t : undefined;
+  })
+  .refine((v) => v === undefined || (v.length <= 100 && isValidExpenseLabel(v)), {
+    message:
+      "Can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+  });
+
+const optionalMerchantSchema = z
+  .string()
+  .optional()
+  .transform((v) => {
+    const t = v?.trim();
+    return t ? t : undefined;
+  })
+  .refine(
+    (v) =>
+      v === undefined ||
+      (v.length <= 200 && EXPENSE_LABEL_RE.test(v) && !CONSECUTIVE_SPECIAL_RE.test(v)),
+    {
+      message:
+        "Merchant can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+    },
+  );
+
 export const createExpenseSchema = z.object({
-  category: z.string(),
+  category: expenseLabelSchema,
   categoryId: z.number().int().optional(),
   amount: AMOUNT,
-  description: z.string().optional(),
+  description: z.string().max(1000).optional(),
   receiptUrl: z.string().optional(),
   receiptFileName: z.string().optional(),
-  merchant: z.string().optional(),
-  paymentMethod: z.string().optional(),
+  merchant: optionalMerchantSchema,
+  paymentMethod: optionalExpenseLabelSchema,
   projectId: z.number().int().optional(),
   expenseDate: z.string(),
 });
@@ -102,11 +153,11 @@ export const updateExpenseStatusSchema = z.object({
 });
 
 export const updateExpenseDetailsSchema = z.object({
-  category: z.string().optional(),
+  category: expenseLabelSchema.optional(),
   amount: AMOUNT.optional(),
-  description: z.string().optional(),
-  merchant: z.string().optional(),
-  paymentMethod: z.string().optional(),
+  description: z.string().max(1000).optional(),
+  merchant: optionalMerchantSchema,
+  paymentMethod: optionalExpenseLabelSchema,
   expenseDate: z.string().optional(),
   receiptUrl: z.string().optional(),
   receiptFileName: z.string().optional(),
