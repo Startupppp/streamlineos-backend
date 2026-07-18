@@ -21,8 +21,8 @@ export const updateHolidaySchema = z.object({
         .max(100, "Name must be at most 100 characters")
         .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
         .refine(
-          (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
-          "Name cannot have consecutive special characters",
+          (v) => /^[\p{L}\p{N}\s'.-]+$/u.test(v),
+          "Name can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
         ),
     ),
   date: z.string().min(1, "Date is required"),
@@ -41,8 +41,8 @@ export const createHolidaySchema = z.object({
         .max(100, "Holiday name must be at most 100 characters")
         .refine((v) => /[a-zA-Z]/.test(v), "Holiday name must contain at least one letter")
         .refine(
-          (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
-          "Holiday name cannot have consecutive special characters",
+          (v) => /^[\p{L}\p{N}\s'.-]+$/u.test(v),
+          "Holiday name can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
         ),
     ),
   date: z
