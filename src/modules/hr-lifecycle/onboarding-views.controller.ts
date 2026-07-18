@@ -40,7 +40,7 @@ export class OnboardingViewsController {
   }
 
   @Get()
-  @RequirePermission("hr:onboarding:manage")
+  @RequirePermission("self:onboarding-docs")
   list(
     @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -51,7 +51,7 @@ export class OnboardingViewsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:onboarding:manage")
+  @RequirePermission("self:onboarding-docs")
   create(
     @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
     @CurrentUser() u: CurrentUserContext,

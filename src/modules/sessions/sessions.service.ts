@@ -64,6 +64,30 @@ export class SessionsService {
     return { success: true };
   }
 
+  async revokeAllForUser(userId: string) {
+    const active = await this.db.query.userSessions.findMany({
+      where: and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+      columns: { id: true },
+    });
+
+    if (active.length === 0) return { revokedCount: 0 };
+
+    if (this.redis) {
+      await Promise.all(
+        active.map((s) =>
+          this.redis!.set(`revoked:session:${s.id}`, true, { ex: SESSION_TTL_SECONDS }),
+        ),
+      );
+    }
+
+    await this.db
+      .update(userSessions)
+      .set({ isRevoked: true })
+      .where(eq(userSessions.userId, userId));
+
+    return { revokedCount: active.length };
+  }
+
   async revokeAllOthers(userId: string, currentSessionId: string) {
     const others = await this.db.query.userSessions.findMany({
       where: and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),

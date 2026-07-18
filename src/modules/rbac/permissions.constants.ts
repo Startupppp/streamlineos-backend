@@ -1495,6 +1495,12 @@ const SHARED_PERMISSIONS: Permission[] = [
       "Access the ESS payroll portal (salary breakdown, declarations, loan requests, bank details)",
   },
   {
+    name: "self:onboarding-docs",
+    resource: "self",
+    action: "onboarding-docs",
+    description: "Upload and view own onboarding documents",
+  },
+  {
     name: "branch:create",
     resource: "branch",
     action: "create",
@@ -3533,6 +3539,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:expenses",
   "self:payslips",
   "self:payroll",
+  "self:onboarding-docs",
   "hr:leaves:create",
   "hr:expenses:create",
   "hr:expenses:view",

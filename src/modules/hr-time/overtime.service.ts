@@ -1,8 +1,8 @@
-import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { compOffBalances, hrLeaveLedger, leaveTypes, overtimeRequests } from "../../db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 
@@ -16,13 +16,37 @@ export class OvertimeService {
     @Optional() private readonly workflowEngine: HrWorkflowEngineService,
   ) {}
 
-  async listRequests(orgId: string) {
-    return this.db
-      .select()
-      .from(overtimeRequests)
-      .where(eq(overtimeRequests.orgId, orgId))
-      .orderBy(desc(overtimeRequests.createdAt))
-      .limit(100);
+  async listRequests(
+    orgId: string,
+    params: { page?: number; pageSize?: number } = {},
+  ) {
+    const page = Math.max(1, params.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
+    const offset = (page - 1) * pageSize;
+
+    const [items, totalRow] = await Promise.all([
+      this.db
+        .select()
+        .from(overtimeRequests)
+        .where(eq(overtimeRequests.orgId, orgId))
+        .orderBy(desc(overtimeRequests.createdAt))
+        .limit(pageSize)
+        .offset(offset),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(overtimeRequests)
+        .where(eq(overtimeRequests.orgId, orgId))
+        .then((rows) => rows[0] ?? { total: 0 }),
+    ]);
+
+    const total = Number(totalRow.total);
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+    };
   }
 
   async createRequest(
@@ -30,6 +54,19 @@ export class OvertimeService {
     userId: string,
     data: { date: string; hours: string; reason?: string; convertToCompOff?: boolean },
   ) {
+    const duplicate = await this.db.query.overtimeRequests.findFirst({
+      where: and(
+        eq(overtimeRequests.orgId, orgId),
+        eq(overtimeRequests.userId, userId),
+        eq(overtimeRequests.date, data.date),
+        sql`${overtimeRequests.status} != 'REJECTED'`,
+      ),
+      columns: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException("An overtime request already exists for this date.");
+    }
+
     const [req] = await this.db
       .insert(overtimeRequests)
       .values({ orgId, userId, ...data })
@@ -41,6 +78,15 @@ export class OvertimeService {
   }
 
   async approveRequest(orgId: string, id: number, approverId: string) {
+    const existing = await this.db.query.overtimeRequests.findFirst({
+      where: and(eq(overtimeRequests.id, id), eq(overtimeRequests.orgId, orgId)),
+      columns: { userId: true },
+    });
+    if (!existing) throw new NotFoundException("Request not found");
+    if (existing.userId === approverId) {
+      throw new ForbiddenException("You cannot approve your own overtime request.");
+    }
+
     const [req] = await this.db
       .update(overtimeRequests)
       .set({ status: "APPROVED", approverId, updatedAt: new Date() })

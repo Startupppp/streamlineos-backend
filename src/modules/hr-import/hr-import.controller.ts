@@ -6,8 +6,10 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -15,6 +17,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { toCsv } from "../inv-import-export/csv.util";
 import { HrImportService } from "./hr-import.service";
 import {
   createImportJobSchema,
@@ -88,13 +91,22 @@ export class HrImportController {
   @Get("hr/export/:entity")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:export:manage")
-  exportEntity(
+  async exportEntity(
     @Param("entity") entity: string,
     @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQueryInput,
     @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
   ) {
     const parsed = entityParamSchema.safeParse(entity);
     if (!parsed.success) throw new BadRequestException(`Invalid entity '${entity}'`);
-    return this.importService.exportEntity(u.orgId, parsed.data, query);
+    const rows = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const headers = Object.keys(rows[0] ?? {});
+    const csv = toCsv(headers, rows);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${parsed.data}-export-${new Date().toISOString().split("T")[0]}.csv"`,
+    );
+    res.send(csv);
   }
 }

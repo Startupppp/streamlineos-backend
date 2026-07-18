@@ -111,7 +111,7 @@ export class LeavesWriteService {
       }),
     ]);
 
-    if (overlapping && overlapping.status !== "REJECTED") {
+    if (overlapping && overlapping.status !== "REJECTED" && overlapping.status !== "CANCELLED") {
       throw new BadRequestException("You already have a leave request for overlapping dates.");
     }
 

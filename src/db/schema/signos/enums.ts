@@ -88,6 +88,7 @@ export const signActorTypeEnum = pgEnum("sign_actor_type", ["internal_user", "ex
 export const signAuditEventTypeEnum = pgEnum("sign_audit_event_type", [
   "envelope_created",
   "envelope_updated",
+  "envelope_deleted",
   "document_uploaded",
   "recipient_added",
   "recipient_updated",

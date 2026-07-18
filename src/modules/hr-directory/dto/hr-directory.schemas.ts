@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 export const listEmployeesSchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
   search: z.string().optional(),
   q: z.string().optional(),
-  dept: z.string().optional(),
-  status: z.enum(["All", "Active", "Inactive"]).optional(),
-  role: z.string().optional(),
+  departmentId: z.coerce.number().int().positive().optional(),
+  /** "true" | "false" | "all" — default active-only for directory */
+  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
 });
 
 export const availabilitySchema = z.object({
@@ -60,22 +60,16 @@ export const createDeviceSchema = z.object({
   deviceType: z.string().min(1, "Device type is required"),
   deviceName: z
     .string()
-    .min(2, "Device name must be at least 2 characters")
-    .max(100, "Device name is too long")
-    .refine((v) => v === v.trim(), "Device name must not have leading or trailing spaces")
-    .refine((v) => !/\s{2,}/.test(v), "Device name cannot have consecutive spaces")
-    .refine((v) => /[a-zA-Z]/.test(v), "Device name must contain at least one letter"),
+    .trim()
+    .min(1, "Device name is required")
+    .max(100, "Device name is too long"),
   serialNumber: z
     .string()
-    .min(3, "Serial number must be at least 3 characters")
-    .max(100, "Serial number is too long")
-    .refine((v) => /[a-zA-Z0-9]/.test(v.trim()), "Serial number must contain alphanumeric characters"),
-  brand: z
-    .string()
-    .min(1, "Brand is required")
-    .max(100, "Brand is too long")
-    .refine((v) => /[a-zA-Z]/.test(v.trim()), "Brand must contain at least one letter"),
-  model: z.string().min(1, "Model is required").max(100, "Model is too long"),
+    .trim()
+    .min(1, "Serial number is required")
+    .max(100, "Serial number is too long"),
+  brand: z.string().trim().min(1, "Brand is required").max(100, "Brand is too long"),
+  model: z.string().trim().min(1, "Model is required").max(100, "Model is too long"),
   notes: z.string().max(500).optional(),
   assignedDate: z.string().optional(),
 });
@@ -93,30 +87,11 @@ export const patchDeviceSchema = z.object({
 });
 
 export const createAssetSchema = z.object({
-  name: z
-    .string()
-    .min(2, "Asset name must be at least 2 characters")
-    .max(100, "Asset name is too long")
-    .refine((v) => v === v.trim(), "Asset name must not have leading or trailing spaces")
-    .refine((v) => !/\s{2,}/.test(v), "Asset name cannot have consecutive spaces")
-    .refine((v) => /[a-zA-Z]/.test(v), "Asset name must contain at least one letter")
-    .refine((v) => !/^[\d\s]+$/.test(v), "Asset name cannot be numeric only")
-    .refine(
-      (v) => !/[!@#$%^&*()\-_=+\[\]{};:'",.<>?/\\|`~]{2,}/.test(v),
-      "Asset name cannot contain multiple consecutive special characters",
-    ),
+  name: z.string().trim().min(1, "Asset name is required").max(100, "Asset name is too long"),
   type: z.string().min(1, "Type is required"),
-  brand: z
-    .string()
-    .min(1, "Brand is required")
-    .max(100, "Brand is too long")
-    .refine((v) => /[a-zA-Z]/.test(v.trim()), "Brand must contain at least one letter"),
-  model: z.string().min(1, "Model is required").max(100, "Model is too long"),
-  serialNumber: z
-    .string()
-    .min(3, "Serial number must be at least 3 characters")
-    .max(100, "Serial number is too long")
-    .refine((v) => /[a-zA-Z0-9]/.test(v.trim()), "Serial number must contain alphanumeric characters"),
+  brand: z.string().trim().min(1, "Brand is required").max(100, "Brand is too long"),
+  model: z.string().trim().min(1, "Model is required").max(100, "Model is too long"),
+  serialNumber: z.string().trim().min(1, "Serial number is required").max(100, "Serial number is too long"),
   purchaseDate: z.string().optional(),
   purchaseCost: z.number().optional(),
   location: z.string().optional(),
@@ -275,8 +250,34 @@ export const patchAccessRequestSchema = z.object({
   grantedBy: z.string().optional(),
 });
 
+/** Row shape for spreadsheet bulk onboard — department can be name or numeric id. */
+export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
+  .omit({ departmentId: true })
+  .extend({
+    departmentId: z.coerce.number().int().positive().optional(),
+    department: z.string().trim().min(1).optional(),
+  })
+  .superRefine((row, ctx) => {
+    if (row.departmentId == null && !row.department) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "department or departmentId is required",
+        path: ["department"],
+      });
+    }
+  });
+
+export const bulkOnboardEmployeesSchema = z.object({
+  employees: z
+    .array(bulkOnboardEmployeeRowSchema)
+    .min(1, "At least one employee is required")
+    .max(100, "You can onboard at most 100 employees per upload"),
+});
+
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
+export type BulkOnboardEmployeeRow = z.infer<typeof bulkOnboardEmployeeRowSchema>;
+export type BulkOnboardEmployeesInput = z.infer<typeof bulkOnboardEmployeesSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;

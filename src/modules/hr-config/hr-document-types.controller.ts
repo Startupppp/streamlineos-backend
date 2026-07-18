@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -40,13 +41,15 @@ export class HrDocumentTypesController {
   ) {}
 
   @Get()
-  @RequirePermission("hr:documents:view")
   async list(
     @Query(new ZodValidationPipe(listDocumentTypesSchema)) query: ListDocumentTypesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
+    if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
+      throw new ForbiddenException("Permission denied");
+    }
     return this.documentTypes.list(u.orgId, isAdmin, query);
   }
 
@@ -62,11 +65,15 @@ export class HrDocumentTypesController {
   }
 
   @Get(":documentTypeId")
-  @RequirePermission("hr:documents:view")
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    const isAdmin = u.isOrgOwner || u.isPlatformAdmin || perms.has("hr:documents:manage");
+    if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
+      throw new ForbiddenException("Permission denied");
+    }
     const row = await this.documentTypes.getById(u.orgId, documentTypeId);
     if (!row) throw new NotFoundException("Document type not found.");
     return row;

@@ -20,6 +20,31 @@ import { formatDateOnly, subDays } from "./date.helpers";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 
+const EMPLOYEE_USER_COLUMNS = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  role: true,
+  designation: true,
+  employeeId: true,
+  departmentId: true,
+  image: true,
+  isActive: true,
+  joiningDate: true,
+  hasDashboardAccess: true,
+  reportingTo: true,
+  monthlySalary: true,
+  bio: true,
+  linkedinUrl: true,
+  twitterUrl: true,
+  githubUrl: true,
+  websiteUrl: true,
+  phone: true,
+  branchId: true,
+} as const;
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -30,19 +55,92 @@ export class EmployeesService {
   listEmployees(
     orgId: string,
     branch: BranchContext,
-    opts: { page?: number; limit?: number; search?: string; dept?: string; status?: "All" | "Active" | "Inactive"; role?: string },
+    opts: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      departmentId?: number;
+      isActive?: "true" | "false" | "all";
+    },
     scope: DataScope,
   ) {
     const branchKey = `${branch.role}:${branch.branchId ?? ""}:${branch.userId}`;
-    const { search, dept, status, role } = opts;
+    const search = opts.search;
     const pageN = opts.page ?? 1;
-    const limitN = opts.limit ?? 25;
-    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${dept ?? ""}:${status ?? ""}:${role ?? ""}`;
+    const limitN = opts.limit ?? 20;
+    const isActive = opts.isActive ?? "true";
+    const departmentId = opts.departmentId;
+
+    // Always paginate the directory listing so large orgs don't load unbounded lists.
+    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}`;
     return this.cache.cached(
       key,
-      () => this.getEmployeesPaginated(orgId, pageN, limitN, search, dept, status, role, branch, scope),
+      () =>
+        this.getEmployeesPaginated(
+          orgId,
+          pageN,
+          limitN,
+          search,
+          branch,
+          scope,
+          departmentId,
+          isActive,
+        ),
       CACHE_TTL.SHORT,
     );
+  }
+
+  private async getEmployeesAll(orgId: string, branch: BranchContext, scope: DataScope) {
+    const members = await this.db.query.organizationMembers.findMany({
+      where: eq(organizationMembers.orgId, orgId),
+      with: {
+        user: {
+          columns: EMPLOYEE_USER_COLUMNS,
+          with: { department: { columns: { id: true, name: true } } },
+        },
+      },
+      limit: 1000,
+    });
+
+    return members
+      .map((m) => ({ member: m, user: m.user }))
+      .filter(({ member, user }) => {
+        if (user.isActive === false) return false;
+        if (scope === "none") return false;
+        if (scope === "own" && member.userId !== branch.userId) return false;
+        if (
+          branch.branchId !== null &&
+          branch.branchId !== undefined &&
+          ["BRANCH_MANAGER", "BRANCH_HR"].includes(branch.role)
+        ) {
+          return user.branchId === branch.branchId;
+        }
+        return true;
+      })
+      .map(({ user: u }) => ({
+        id: u.id,
+        name: u.name,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        role: u.role ?? "EMPLOYEE",
+        designation: u.designation,
+        employeeId: u.employeeId,
+        departmentId: u.departmentId,
+        department: u.department ? { id: u.department.id, name: u.department.name } : null,
+        image: u.image,
+        isActive: u.isActive ?? true,
+        joiningDate: u.joiningDate,
+        hasDashboardAccess: u.hasDashboardAccess ?? false,
+        reportingTo: u.reportingTo,
+        monthlySalary: u.monthlySalary,
+        bio: u.bio ?? null,
+        linkedinUrl: u.linkedinUrl ?? null,
+        twitterUrl: u.twitterUrl ?? null,
+        githubUrl: u.githubUrl ?? null,
+        websiteUrl: u.websiteUrl ?? null,
+        phone: u.phone ?? null,
+      }));
   }
 
   private async getEmployeesPaginated(
@@ -50,11 +148,10 @@ export class EmployeesService {
     page: number,
     limit: number,
     search: string | undefined,
-    dept: string | undefined,
-    status: "All" | "Active" | "Inactive" | undefined,
-    role: string | undefined,
     branch: BranchContext,
     scope: DataScope,
+    departmentId?: number,
+    isActive: "true" | "false" | "all" = "true",
   ) {
     const offset = (page - 1) * limit;
 
@@ -62,33 +159,25 @@ export class EmployeesService {
       eq(organizationMembers.orgId, orgId),
       applyScope(scope, branch.userId, { ownerColumn: organizationMembers.userId }),
     ];
-
-    if (!status || status === "Active") {
-      baseConditions.push(eq(users.isActive, true));
-    } else if (status === "Inactive") {
-      baseConditions.push(eq(users.isActive, false));
-    }
+    if (isActive === "true") baseConditions.push(eq(users.isActive, true));
+    else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
+    if (departmentId != null) baseConditions.push(eq(users.departmentId, departmentId));
 
     const branchCond = branchIdFilter(users.branchId, branch);
     if (branchCond) baseConditions.push(branchCond);
 
-    if (role && role !== "All") {
-      baseConditions.push(eq(users.role, role));
-    }
-
     const searchCondition = search
       ? or(
-          ilike(users.name, `${search}%`),
-          ilike(users.email, `${search}%`),
-          ilike(users.employeeId, `${search}%`),
-          ilike(users.designation, `${search}%`),
+          ilike(users.name, `%${search}%`),
+          ilike(users.email, `%${search}%`),
+          ilike(users.employeeId, `%${search}%`),
+          ilike(users.designation, `%${search}%`),
+          ilike(users.firstName, `%${search}%`),
+          ilike(users.lastName, `%${search}%`),
         )
       : undefined;
 
-    const needsDeptFilter = !!(dept && dept !== "All");
-    const deptConditions = needsDeptFilter
-      ? and(searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions), eq(departments.name, dept!))
-      : (searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions));
+    const where = searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions);
 
     const [dataResult, countResult] = await Promise.all([
       this.db
@@ -102,18 +191,19 @@ export class EmployeesService {
           designation: users.designation,
           employeeId: users.employeeId,
           departmentId: users.departmentId,
+          departmentIdJoin: departments.id,
+          departmentName: departments.name,
           image: users.image,
           isActive: users.isActive,
           joiningDate: users.joiningDate,
           hasDashboardAccess: users.hasDashboardAccess,
           reportingTo: users.reportingTo,
           monthlySalary: users.monthlySalary,
-          departmentName: departments.name,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .leftJoin(departments, eq(users.departmentId, departments.id))
-        .where(deptConditions)
+        .where(where)
         .orderBy(users.name)
         .limit(limit)
         .offset(offset),
@@ -121,32 +211,32 @@ export class EmployeesService {
         .select({ total: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(departments, eq(users.departmentId, departments.id))
-        .where(deptConditions),
+        .where(where),
     ]);
 
     const total = countResult[0]?.total ?? 0;
 
     return {
-      data: dataResult.map((r) => ({
-        id: r.id,
-        name: r.name,
-        firstName: r.firstName,
-        lastName: r.lastName,
-        email: r.email,
-        role: r.role,
-        designation: r.designation,
-        employeeId: r.employeeId,
-        departmentId: r.departmentId,
-        department: r.departmentId != null && r.departmentName != null
-          ? { id: r.departmentId, name: r.departmentName }
-          : null,
-        image: r.image,
-        isActive: r.isActive ?? true,
-        joiningDate: r.joiningDate,
-        hasDashboardAccess: r.hasDashboardAccess ?? false,
-        reportingTo: r.reportingTo,
-        monthlySalary: r.monthlySalary,
+      data: dataResult.map((row) => ({
+        id: row.id,
+        name: row.name,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        email: row.email,
+        role: row.role,
+        designation: row.designation,
+        employeeId: row.employeeId,
+        departmentId: row.departmentId,
+        department:
+          row.departmentIdJoin != null && row.departmentName
+            ? { id: row.departmentIdJoin, name: row.departmentName }
+            : null,
+        image: row.image,
+        isActive: row.isActive,
+        joiningDate: row.joiningDate,
+        hasDashboardAccess: row.hasDashboardAccess,
+        reportingTo: row.reportingTo,
+        monthlySalary: row.monthlySalary,
       })),
       pagination: {
         page,

@@ -54,15 +54,17 @@ export const attendanceEmailReportSchema = z.object({
 
 const holidayNameSchema = z
   .string()
-  .transform((v) => v.trim())
+  .transform((v) => v.trim().replace(/\s+/g, " "))
   .pipe(
     z
       .string()
-      .min(3, "Holiday name must be at least 3 characters")
+      .min(2, "Holiday name must be at least 2 characters")
       .max(100, "Holiday name must be at most 100 characters")
       .refine((v) => /[a-zA-Z]/.test(v), "Holiday name must contain at least one letter")
-      .refine((v) => /[a-zA-Z]{3}/.test(v), "Holiday name must contain at least 3 letters")
-      .refine((v) => !/\s{2,}/.test(v), "Holiday name cannot have consecutive spaces"),
+      .refine(
+        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+        "Holiday name cannot have consecutive special characters",
+      ),
   );
 
 export const createOrgHolidaySchema = z.object({

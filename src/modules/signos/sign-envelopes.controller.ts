@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -68,6 +68,12 @@ export class SignEnvelopesController {
     @Req() req: Request,
   ) {
     return this.envelopes.update(u.orgId, id, body, actorFrom(u, req));
+  }
+
+  @Delete(":id")
+  @RequirePermission("sign:envelope:create")
+  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.delete(u.orgId, id, actorFrom(u, req));
   }
 
   @Post(":id/validate")

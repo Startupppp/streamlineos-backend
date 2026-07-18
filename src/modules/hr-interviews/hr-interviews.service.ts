@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, lt, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, lte, or } from "drizzle-orm";
+import { buildListResponse } from "../../common/pagination/pagination";
 import {
   candidateSlaTracking,
   candidates,
@@ -23,7 +24,7 @@ interface MonthStage {
 export class HrInterviewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, query: InterviewListInput) {
+  async list(orgId: string, query: InterviewListInput) {
     const conditions = [eq(interviews.orgId, orgId)];
     if (query.candidateId) conditions.push(eq(interviews.candidateId, query.candidateId));
     if (query.upcoming === "true") conditions.push(gte(interviews.scheduledAt, new Date()));
@@ -40,18 +41,32 @@ export class HrInterviewsService {
       if (relevanceFilter) conditions.push(relevanceFilter);
     }
 
-    return this.db.query.interviews.findMany({
-      where: and(...conditions),
-      with: { candidate: true, interviewer: true, panelMembers: { columns: { userId: true } } },
-      orderBy: [desc(interviews.scheduledAt)],
-      limit: query.limit,
-      offset: query.offset,
-    }).then((rows) =>
-      rows.map(({ panelMembers, ...iv }) => ({
-        ...iv,
-        panelInterviewerIds: panelMembers.map((m) => m.userId),
-      })),
-    );
+    const where = and(...conditions);
+
+    const [rows, totalRow] = await Promise.all([
+      this.db.query.interviews.findMany({
+        where,
+        with: { candidate: true, interviewer: true, panelMembers: { columns: { userId: true } } },
+        orderBy: [desc(interviews.scheduledAt)],
+        limit: query.limit,
+        offset: query.offset,
+      }),
+      this.db
+        .select({ total: count() })
+        .from(interviews)
+        .where(where)
+        .then((r) => r[0] ?? { total: 0 }),
+    ]);
+
+    const items = rows.map(({ panelMembers, ...iv }) => ({
+      ...iv,
+      panelInterviewerIds: panelMembers.map((m) => m.userId),
+    }));
+
+    return buildListResponse(items, Number(totalRow.total), {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
   }
 
   listSlas(orgId: string) {

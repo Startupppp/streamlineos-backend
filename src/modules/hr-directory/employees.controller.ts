@@ -29,11 +29,13 @@ import { resolveEmployeesScope } from "./employees-scope";
 import { buildEmployeeProfileHtml } from "./profile-pdf.html";
 import {
   availabilitySchema,
+  bulkOnboardEmployeesSchema,
   findExpertSchema,
   listEmployeesSchema,
   onboardEmployeeSchema,
   updateEmployeeSchema,
   type AvailabilityInput,
+  type BulkOnboardEmployeesInput,
   type FindExpertInput,
   type ListEmployeesInput,
   type OnboardEmployeeInput,
@@ -63,6 +65,16 @@ export class EmployeesController {
     return this.mutations.onboardEmployee(u, body);
   }
 
+  @Post("onboard/bulk")
+  @RequirePermission("hr:employees:manage")
+  @HttpCode(200)
+  onboardBulk(
+    @Body(new ZodValidationPipe(bulkOnboardEmployeesSchema)) body: BulkOnboardEmployeesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.mutations.onboardEmployeesBulk(u, body.employees);
+  }
+
   @Get()
   @RequirePermission("hr:employees:read")
   async listEmployees(
@@ -80,9 +92,8 @@ export class EmployeesController {
       page: query.page,
       limit: query.limit,
       search,
-      dept: query.dept,
-      status: query.status,
-      role: query.role,
+      departmentId: query.departmentId,
+      isActive: query.isActive,
     }, scope);
   }
 

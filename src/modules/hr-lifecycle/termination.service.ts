@@ -24,6 +24,7 @@ import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
+import { SessionsService } from "../sessions/sessions.service";
 import { getTerminationEmailTemplate } from "../email/templates/hr";
 import { formatDdMmmYyyy } from "./date.helpers";
 import type { TerminationCreateInput, TerminationReviewInput } from "./dto/hr-lifecycle.schemas";
@@ -38,6 +39,7 @@ export class TerminationService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly templateRender: HrTemplateRenderService,
+    private readonly sessions: SessionsService,
   ) {}
 
   list(orgId: string) {
@@ -406,6 +408,7 @@ export class TerminationService {
       return found;
     });
 
+    await this.sessions.revokeAllForUser(existing.userId);
     await this.invalidateHrDashboardCache(orgId);
 
     this.dispatchEmployeeTerminated(

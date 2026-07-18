@@ -1,3 +1,5 @@
+import { escapeHtml, sanitizeHtml } from "../hr-templates/html-sanitizer";
+
 const TOKEN_REGEX = /\{\{([^}]+)\}\}/g;
 
 export function substituteVariables(
@@ -12,7 +14,7 @@ export function substituteVariables(
       missing.push(trimmed);
       return match;
     }
-    return val;
+    return escapeHtml(val);
   });
-  return { result, missing };
+  return { result: sanitizeHtml(result), missing };
 }

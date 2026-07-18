@@ -10,6 +10,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
+  departments,
   employeeSkills,
   magicLinkTokens,
   onboardingTasks,
@@ -35,7 +36,11 @@ import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
 import { differenceInDays, formatDateOnly, formatDayMonthYear } from "./date.helpers";
 import { userCan } from "./ability.helpers";
-import type { OnboardEmployeeInput, UpdateEmployeeInput } from "./dto/hr-directory.schemas";
+import type {
+  BulkOnboardEmployeeRow,
+  OnboardEmployeeInput,
+  UpdateEmployeeInput,
+} from "./dto/hr-directory.schemas";
 
 type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & { pfUanNumber?: string };
 
@@ -357,6 +362,24 @@ export class EmployeeMutationsService {
     }
 
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
+
+    if (body.employeeId?.trim()) {
+      const [duplicate] = await this.db
+        .select({ userId: users.id })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(users.employeeId, resolvedEmployeeId),
+          ),
+        )
+        .limit(1);
+      if (duplicate && duplicate.userId !== existingUser?.id) {
+        throw new ConflictException(`Employee ID "${resolvedEmployeeId}" is already in use in your organization.`);
+      }
+    }
+
     const role = body.role || "ENGINEERING";
     const payrollDefaults = await this.resolveOrgPayrollDefaults(actor.orgId);
 
@@ -544,6 +567,116 @@ export class EmployeeMutationsService {
     }
 
     return { success: true, userId: newUser.id };
+  }
+
+  /**
+   * Bulk onboard from spreadsheet rows. Continues past individual failures so
+   * partial success is reported with per-row errors (row numbers are 1-based data rows).
+   */
+  async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
+    const deptRows = await this.db.query.departments.findMany({
+      where: eq(departments.orgId, actor.orgId),
+      columns: { id: true, name: true },
+    });
+    const deptByName = new Map(
+      deptRows.map((d) => [d.name.trim().toLowerCase(), d.id] as const),
+    );
+
+    // Detect duplicate emails within the same upload
+    const seenEmails = new Set<string>();
+    const results: Array<{
+      row: number;
+      email: string;
+      success: boolean;
+      userId?: string;
+      error?: string;
+    }> = [];
+
+    let created = 0;
+    let failed = 0;
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i]!;
+      const rowNum = i + 1;
+      const email = row.email.trim().toLowerCase();
+
+      if (seenEmails.has(email)) {
+        failed += 1;
+        results.push({
+          row: rowNum,
+          email,
+          success: false,
+          error: "Duplicate email in this upload",
+        });
+        continue;
+      }
+      seenEmails.add(email);
+
+      let departmentId = row.departmentId;
+      if (departmentId == null && row.department) {
+        departmentId = deptByName.get(row.department.trim().toLowerCase());
+        if (departmentId == null) {
+          failed += 1;
+          results.push({
+            row: rowNum,
+            email,
+            success: false,
+            error: `Unknown department "${row.department}". Create it first or use an existing name.`,
+          });
+          continue;
+        }
+      }
+
+      const payload: OnboardEmployeeInput = {
+        firstName: row.firstName.trim(),
+        lastName: row.lastName.trim(),
+        email,
+        phone: row.phone,
+        whatsappSameAsPhone: row.whatsappSameAsPhone ?? true,
+        whatsappNumber: row.whatsappNumber,
+        gender: row.gender,
+        designation: row.designation.trim(),
+        departmentId,
+        role: row.role || "ENGINEERING",
+        employeeId: row.employeeId,
+        joiningDate: row.joiningDate,
+        dateOfBirth: row.dateOfBirth,
+        taxId: row.taxId,
+        monthlySalary: row.monthlySalary,
+        bankDetails: row.bankDetails,
+      };
+
+      try {
+        const res = await this.onboardEmployee(actor, payload);
+        created += 1;
+        results.push({
+          row: rowNum,
+          email,
+          success: true,
+          userId: res.userId,
+        });
+      } catch (err) {
+        failed += 1;
+        const message =
+          err instanceof Error ? err.message : "Failed to onboard employee";
+        results.push({ row: rowNum, email, success: false, error: message });
+      }
+    }
+
+    this.audit.log({
+      action: "hr.employees_bulk_onboarded",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetType: "employee",
+      metadata: { total: rows.length, created, failed },
+    });
+
+    return {
+      total: rows.length,
+      created,
+      failed,
+      results,
+    };
   }
 
   private async invalidateHrDashboardCache(orgId: string): Promise<void> {

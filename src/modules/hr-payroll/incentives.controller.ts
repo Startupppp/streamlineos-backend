@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -65,7 +66,7 @@ export class IncentivesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!(await this.canApproveIncentives(u))) {
-      return;
+      throw new ForbiddenException("Only admins can manage incentives.");
     }
     return this.incentives.createConfig(u.orgId, u.userId, body.incentiveRate);
   }
@@ -84,7 +85,7 @@ export class IncentivesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!(await this.canApproveIncentives(u))) {
-      return;
+      throw new ForbiddenException("Only admins can manage incentives.");
     }
     const result = await this.incentives.approveIncentive(u.orgId, u.userId, incentiveId, body);
     if (!result.ok) throw new NotFoundException("Incentive not found.");
@@ -98,7 +99,7 @@ export class IncentivesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!(await this.canApproveIncentives(u))) {
-      return;
+      throw new ForbiddenException("Only admins can manage incentives.");
     }
     const result = await this.incentives.rejectIncentive(u.orgId, incentiveId);
     if (!result.ok) throw new NotFoundException("Incentive not found.");

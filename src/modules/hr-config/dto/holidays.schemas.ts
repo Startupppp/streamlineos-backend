@@ -1,21 +1,30 @@
 import { z } from "zod";
 
 export const holidayCalendarQuerySchema = z.object({
-  year: z.coerce.number().int().catch(0),
-  month: z.coerce.number().int().catch(0),
+  year: z.coerce.number().int(),
+  month: z.coerce.number().int(),
 });
 
 export const holidayListQuerySchema = z.object({
-  year: z.coerce.number().int().catch(0),
+  year: z.coerce.number().int(),
 });
 
 export const updateHolidaySchema = z.object({
   name: z
     .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(100, "Name must be at most 100 characters")
-    .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
-    .refine((v) => !/\s{2,}/.test(v), "Name cannot have consecutive spaces"),
+    .trim()
+    .transform((v) => v.replace(/\s+/g, " "))
+    .pipe(
+      z
+        .string()
+        .min(2, "Name must be at least 2 characters")
+        .max(100, "Name must be at most 100 characters")
+        .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
+        .refine(
+          (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+          "Name cannot have consecutive special characters",
+        ),
+    ),
   date: z.string().min(1, "Date is required"),
   message: z.string().optional(),
 });
@@ -23,10 +32,19 @@ export const updateHolidaySchema = z.object({
 export const createHolidaySchema = z.object({
   name: z
     .string()
-    .min(2, "Holiday name must be at least 2 characters")
-    .max(100, "Holiday name must be at most 100 characters")
-    .refine((v) => /[a-zA-Z]/.test(v.trim()), "Holiday name must contain at least one letter")
-    .refine((v) => !/\s{2,}/.test(v), "Holiday name cannot have consecutive spaces"),
+    .trim()
+    .transform((v) => v.replace(/\s+/g, " "))
+    .pipe(
+      z
+        .string()
+        .min(2, "Holiday name must be at least 2 characters")
+        .max(100, "Holiday name must be at most 100 characters")
+        .refine((v) => /[a-zA-Z]/.test(v), "Holiday name must contain at least one letter")
+        .refine(
+          (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+          "Holiday name cannot have consecutive special characters",
+        ),
+    ),
   date: z
     .string()
     .min(1, "Date is required")
