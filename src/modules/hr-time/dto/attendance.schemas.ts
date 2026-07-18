@@ -62,8 +62,8 @@ const holidayNameSchema = z
       .max(100, "Holiday name must be at most 100 characters")
       .refine((v) => /[a-zA-Z]/.test(v), "Holiday name must contain at least one letter")
       .refine(
-        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
-        "Holiday name cannot have consecutive special characters",
+        (v) => /^[\p{L}\p{N}\s'.-]+$/u.test(v),
+        "Holiday name can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
       ),
   );
 
