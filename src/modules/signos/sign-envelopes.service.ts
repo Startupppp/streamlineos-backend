@@ -447,6 +447,7 @@ export class SignEnvelopesService {
       .set({ tokenRevokedAt: new Date() })
       .where(
         and(
+          eq(signRecipients.orgId, orgId),
           eq(signRecipients.envelopeId, envelopeId),
           isNull(signRecipients.completedAt),
         ),
@@ -610,6 +611,7 @@ export class SignEnvelopesService {
       .set({ tokenExpiresAt: newExpiresAt })
       .where(
         and(
+          eq(signRecipients.orgId, orgId),
           eq(signRecipients.envelopeId, envelopeId),
           isNull(signRecipients.completedAt),
         ),

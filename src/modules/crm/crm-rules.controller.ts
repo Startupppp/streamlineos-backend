@@ -91,12 +91,13 @@ export class CrmRulesController {
   }
 
   @Delete("assignment-rules/:ruleId")
+  @HttpCode(204)
   @RequirePermission("crm:assignment-rules:manage")
-  deleteAssignmentRule(
+  async deleteAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.rules.deleteAssignmentRule(u.orgId, ruleId);
+    await this.rules.deleteAssignmentRule(u.orgId, ruleId);
   }
 
   @Get("scoring-rules")
@@ -128,12 +129,13 @@ export class CrmRulesController {
   }
 
   @Delete("scoring-rules/:ruleId")
+  @HttpCode(204)
   @RequirePermission("crm:scoring-rules:manage")
-  deleteScoringRule(
+  async deleteScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.rules.deleteScoringRule(u.orgId, ruleId);
+    await this.rules.deleteScoringRule(u.orgId, ruleId);
   }
 
   @Get("email-templates")
@@ -165,11 +167,12 @@ export class CrmRulesController {
   }
 
   @Delete("email-templates/:templateId")
+  @HttpCode(204)
   @RequirePermission("crm:email-templates:manage")
-  deleteEmailTemplate(
+  async deleteEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.rules.deleteEmailTemplate(u.orgId, templateId);
+    await this.rules.deleteEmailTemplate(u.orgId, templateId);
   }
 }

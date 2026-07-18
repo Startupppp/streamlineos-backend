@@ -61,12 +61,13 @@ export class CrmSlaController {
   }
 
   @Delete("policies/:policyId")
+  @HttpCode(204)
   @RequirePermission("crm:sla:manage")
-  deletePolicy(
+  async deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sla.deletePolicy(u.orgId, policyId);
+    await this.sla.deletePolicy(u.orgId, policyId);
   }
 
   @Get("breached")

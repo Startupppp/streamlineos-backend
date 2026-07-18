@@ -77,7 +77,7 @@ export class ClientOnboardingService {
     const [updated] = await this.db
       .update(clientOnboardingItems)
       .set(updates)
-      .where(eq(clientOnboardingItems.id, itemId))
+      .where(and(eq(clientOnboardingItems.id, itemId), eq(clientOnboardingItems.orgId, orgId)))
       .returning();
 
     return updated;

@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -66,14 +66,16 @@ export class ProjectsCustomFieldsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    for (const { fieldId, value } of data.values) {
-      await this.db.insert(ticketCustomFieldValues)
-        .values({ ticketId, fieldId, value: value ?? null })
-        .onConflictDoUpdate({
-          target: [ticketCustomFieldValues.ticketId, ticketCustomFieldValues.fieldId],
-          set: { value: value ?? null },
-        });
-    }
+    if (data.values.length === 0) return { success: true };
+
+    await this.db
+      .insert(ticketCustomFieldValues)
+      .values(data.values.map(({ fieldId, value }) => ({ ticketId, fieldId, value: value ?? null })))
+      .onConflictDoUpdate({
+        target: [ticketCustomFieldValues.ticketId, ticketCustomFieldValues.fieldId],
+        set: { value: sql`excluded.value` },
+      });
+
     return { success: true };
   }
 }

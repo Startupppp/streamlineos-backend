@@ -64,6 +64,7 @@ export class HrSafetyController {
   }
 
   @Post("incidents")
+  @HttpCode(201)
   @RequirePermission("hr:safety:manage")
   createIncident(
     @CurrentUser() user: CurrentUserContext,

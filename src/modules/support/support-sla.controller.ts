@@ -129,9 +129,11 @@ export class SupportSlaController {
   @RequirePermission("support:settings:manage")
   listSettingsAuditLog(
     @Query("entityType") entityType: string | undefined,
+    @Query("limit") limit: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audit.list(u.orgId, entityType as SettingsAuditEntityType | undefined);
+    const parsedLimit = Math.min(Number(limit) || 50, 100);
+    return this.audit.list(u.orgId, entityType as SettingsAuditEntityType | undefined, parsedLimit);
   }
 
   @Get(":supportTicketId/risk")

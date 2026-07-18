@@ -59,6 +59,7 @@ export class SalaryStructureTemplatesController {
   }
 
   @Delete(":templateId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   remove(

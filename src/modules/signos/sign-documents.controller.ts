@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -39,6 +40,7 @@ export class SignDocumentsController {
   constructor(private readonly documents: SignDocumentsService) {}
 
   @Post("documents/upload")
+  @HttpCode(201)
   @RequirePermission("sign:documents:upload")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   async upload(

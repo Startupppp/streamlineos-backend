@@ -91,6 +91,7 @@ export class RunsController {
   }
 
   @Post(":runId/generate")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async generate(
     @Param("runId", ParseIntPipe) runId: number,
@@ -106,6 +107,7 @@ export class RunsController {
   }
 
   @Post(":runId/recalculate")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async recalculate(
     @Param("runId", ParseIntPipe) runId: number,
@@ -146,6 +148,7 @@ export class RunsController {
   }
 
   @Post(":runId/employees/:runEmployeeId/adjustments")
+  @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
   async addAdjustment(
     @Param("runId", ParseIntPipe) runId: number,
@@ -162,6 +165,7 @@ export class RunsController {
   }
 
   @Post(":runId/employees/:runEmployeeId/hold")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async setEmployeeHold(
     @Param("runId", ParseIntPipe) runId: number,

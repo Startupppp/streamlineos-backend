@@ -104,6 +104,7 @@ export class WorkflowsController {
   }
 
   @Post("secrets")
+  @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
   createGlobalSecret(
     @Body(new ZodValidationPipe(CreateSecretSchema)) body: CreateSecretDto,
@@ -239,6 +240,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/schedules")
+  @HttpCode(201)
   @RequirePermission("workflows:schedules:manage")
   createSchedule(
     @Param("workflowId") workflowId: string,
@@ -277,6 +279,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/secrets")
+  @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
   createSecret(
     @Param("workflowId") workflowId: string,

@@ -48,6 +48,7 @@ export class KbPageReviewsController {
 
   @Post("pages/:pageId/reviews")
   @RequirePermission("kb:reviews:manage")
+  @HttpCode(201)
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createPageReviewSchema)) body: CreatePageReviewInput,

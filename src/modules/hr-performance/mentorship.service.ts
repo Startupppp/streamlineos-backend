@@ -42,7 +42,7 @@ export class MentorshipService {
     const [updated] = await this.db
       .update(hrMentorships)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(hrMentorships.id, id))
+      .where(and(eq(hrMentorships.id, id), eq(hrMentorships.orgId, orgId)))
       .returning();
     return updated;
   }

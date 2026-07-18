@@ -55,13 +55,14 @@ export class DealsStakeholdersController {
   }
 
   @Delete(":stakeholderId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
-  deleteStakeholder(
+  async deleteStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stakeholders.deleteStakeholder(u.orgId, dealId, stakeholderId);
+    await this.stakeholders.deleteStakeholder(u.orgId, dealId, stakeholderId);
   }
 }

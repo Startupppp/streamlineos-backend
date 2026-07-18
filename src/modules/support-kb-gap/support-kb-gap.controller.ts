@@ -19,14 +19,17 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
 import { AiJobsService } from "../ai-jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
 
 const patchSchema = z.object({ action: z.literal("dismiss") });
 type PatchInput = z.infer<typeof patchSchema>;
 
+@RequireModule("support")
 @Controller("support/knowledge-gaps")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportKbGapController {
   constructor(
     private readonly service: SupportKbGapService,

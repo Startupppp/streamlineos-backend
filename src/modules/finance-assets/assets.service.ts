@@ -89,7 +89,7 @@ export class AssetsService {
       const [bill] = await this.db
         .select({ id: purchaseBills.id })
         .from(purchaseBills)
-        .where(eq(purchaseBills.id, input.billId))
+        .where(and(eq(purchaseBills.id, input.billId), eq(purchaseBills.orgId, u.orgId)))
         .limit(1);
       if (!bill) throw new NotFoundException(`Purchase bill ${input.billId} not found`);
     }

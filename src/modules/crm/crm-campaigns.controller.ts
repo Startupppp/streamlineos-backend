@@ -105,11 +105,12 @@ export class CrmCampaignsController {
   }
 
   @Delete(":campaignId")
+  @HttpCode(204)
   @RequirePermission("crm:campaigns:manage")
-  remove(
+  async remove(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.campaigns.remove(u.orgId, campaignId);
+    await this.campaigns.remove(u.orgId, campaignId);
   }
 }

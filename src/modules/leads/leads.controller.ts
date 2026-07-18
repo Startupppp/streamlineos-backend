@@ -119,8 +119,9 @@ export class LeadsController {
   }
 
   @Delete(":leadId")
+  @HttpCode(204)
   @RequirePermission("crm:leads:delete")
-  remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.leads.remove(u.orgId, u.userId, leadId);
+  async remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.leads.remove(u.orgId, u.userId, leadId);
   }
 }

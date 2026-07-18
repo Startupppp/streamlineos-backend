@@ -145,12 +145,13 @@ export class DealsController {
   }
 
   @Delete(":dealId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
-  deleteDeal(
+  async deleteDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.deals.deleteDeal(u.orgId, u.userId, dealId);
+    await this.deals.deleteDeal(u.orgId, u.userId, dealId);
   }
 }

@@ -50,6 +50,7 @@ export class PayrollTemplatesController {
   }
 
   @Post(":templateId/duplicate")
+  @HttpCode(201)
   @RequirePermission("payroll:templates:manage")
   async duplicate(
     @Param("templateId", ParseIntPipe) templateId: number,

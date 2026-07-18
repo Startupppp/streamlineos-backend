@@ -42,6 +42,7 @@ export class CalendarController {
   }
 
   @Post("generate")
+  @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   generate(@CurrentUser() u: CurrentUserContext, @Query("month") month: string) {

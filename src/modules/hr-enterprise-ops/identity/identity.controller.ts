@@ -51,6 +51,7 @@ export class IdentityController {
   }
 
   @Post("provisioning")
+  @HttpCode(201)
   @RequirePermission("hr:identity:manage")
   createProvisioning(
     @CurrentUser() user: CurrentUserContext,
@@ -60,6 +61,7 @@ export class IdentityController {
   }
 
   @Post("provisioning/generate")
+  @HttpCode(201)
   @RequirePermission("hr:identity:manage")
   generateProvisioning(
     @CurrentUser() user: CurrentUserContext,
@@ -85,6 +87,7 @@ export class IdentityController {
   }
 
   @Post("templates")
+  @HttpCode(201)
   @RequirePermission("hr:identity:manage")
   createTemplate(
     @CurrentUser() user: CurrentUserContext,

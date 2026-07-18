@@ -42,6 +42,7 @@ export class PayrollComponentsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("payroll:components:manage")
   async create(
     @Body(new ZodValidationPipe(createComponentSchema)) body: CreateComponentInput,

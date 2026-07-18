@@ -122,13 +122,13 @@ export class HrAutomationsController {
   }
 
   @Delete(":ruleId")
-  @HttpCode(200)
+  @HttpCode(204)
   @RequirePermission("hr:automations:manage")
-  remove(
+  async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.engine.deleteRule(u.orgId, ruleId);
+    await this.engine.deleteRule(u.orgId, ruleId);
   }
 
   @Post(":ruleId/test")

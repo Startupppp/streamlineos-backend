@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -24,6 +24,7 @@ export class SignFieldsController {
   constructor(private readonly fields: SignFieldsService) {}
 
   @Post("envelopes/:envelopeId/fields")
+  @HttpCode(201)
   @RequirePermission("sign:envelope:create")
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,

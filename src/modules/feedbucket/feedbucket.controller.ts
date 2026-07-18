@@ -91,6 +91,7 @@ export class FeedbucketController {
 
   @Post("widgets/:widgetId/rotate-key")
   @RequirePermission("feedbucket:widgets:manage")
+  @HttpCode(200)
   rotateKey(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -139,6 +140,7 @@ export class FeedbucketController {
 
   @Post("submissions/:submissionId/convert-to-ticket")
   @RequirePermission("feedbucket:submissions:manage")
+  @HttpCode(201)
   convertToTicket(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -148,6 +150,7 @@ export class FeedbucketController {
 
   @Post("submissions/:submissionId/ai-analyze")
   @RequirePermission("feedbucket:submissions:ai")
+  @HttpCode(200)
   analyzeSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -158,6 +161,7 @@ export class FeedbucketController {
 
   @Post("submissions/:submissionId/ai-create-ticket")
   @RequirePermission("feedbucket:submissions:manage")
+  @HttpCode(201)
   createTicketFromAnalysis(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,

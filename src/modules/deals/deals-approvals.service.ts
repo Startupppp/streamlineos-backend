@@ -110,7 +110,7 @@ export class DealsApprovalsService {
       await this.db
         .update(deals)
         .set({ stage: input.requestedStage, updatedAt: new Date() })
-        .where(eq(deals.id, input.dealId));
+        .where(and(eq(deals.id, input.dealId), eq(deals.orgId, orgId)));
       return { created: false as const, body: { approved: true as const, directUpdate: true as const } };
     }
 

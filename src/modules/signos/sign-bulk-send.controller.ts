@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -17,6 +17,7 @@ export class SignBulkSendController {
   constructor(private readonly bulkSend: SignBulkSendService) {}
 
   @Post("jobs")
+  @HttpCode(201)
   @RequirePermission("sign:bulk_send:run")
   create(@Body(new ZodValidationPipe(createBulkSendJobSchema)) body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.createJob(u.orgId, u.userId, body);

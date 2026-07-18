@@ -246,7 +246,7 @@ export class SignTemplatesService {
     const [updated] = await this.db
       .update(signTemplates)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(signTemplates.id, templateId))
+      .where(and(eq(signTemplates.id, templateId), eq(signTemplates.orgId, orgId)))
       .returning();
 
     if (input.status === "published" && template.status !== "published") {

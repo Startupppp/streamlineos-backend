@@ -78,6 +78,7 @@ export class BugsController {
 
   @Delete(":bugId")
   @RequirePermission("projects:bugs:delete")
+  @HttpCode(204)
   deleteBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("bugId", ParseIntPipe) bugId: number,

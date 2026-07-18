@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -39,6 +40,7 @@ export class KbPageRecordLinksController {
 
   @Post("pages/:pageId/record-links")
   @RequirePermission("kb:pages:update")
+  @HttpCode(201)
   add(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createRecordLinkSchema)) dto: CreateRecordLinkDto,

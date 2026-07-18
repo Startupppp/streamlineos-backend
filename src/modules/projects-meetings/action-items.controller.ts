@@ -56,6 +56,7 @@ export class ActionItemsController {
 
   @Delete(":itemId")
   @RequirePermission("projects:meetings:manage")
+  @HttpCode(204)
   deleteItem(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

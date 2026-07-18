@@ -58,6 +58,7 @@ export class EmergencyController {
   }
 
   @Post("events")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
   createEvent(

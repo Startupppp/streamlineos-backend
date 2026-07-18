@@ -63,12 +63,13 @@ export class DealsCompetitorsController {
   }
 
   @Delete(":dealId/competitors/:competitorId")
+  @HttpCode(204)
   @RequirePermission("crm:deals:update")
-  remove(
+  async remove(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("competitorId") competitorId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.competitors.remove(u.orgId, dealId, competitorId);
+    await this.competitors.remove(u.orgId, dealId, competitorId);
   }
 }

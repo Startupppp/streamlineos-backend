@@ -20,6 +20,7 @@ export class PayrollAiExplainController {
   constructor(private readonly explainService: PayrollAiExplainService) {}
 
   @Post(":publicationId/ai/explain")
+  @HttpCode(200)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("self:payslips")

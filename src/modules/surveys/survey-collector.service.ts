@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { surveyCollectors } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -55,11 +55,9 @@ export class SurveyCollectorService {
   }
 
   async incrementCounter(collectorId: number, field: "opens" | "starts" | "completions") {
-    const collector = await this.db.query.surveyCollectors.findFirst({ where: eq(surveyCollectors.id, collectorId) });
-    if (!collector) return;
     await this.db
       .update(surveyCollectors)
-      .set({ [field]: (collector[field] ?? 0) + 1 })
+      .set({ [field]: sql`COALESCE(${surveyCollectors[field]}, 0) + 1` })
       .where(eq(surveyCollectors.id, collectorId));
   }
 }

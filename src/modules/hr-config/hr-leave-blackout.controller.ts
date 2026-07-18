@@ -55,6 +55,7 @@ export class HrLeaveBlackoutController {
   }
 
   @Delete(":blackoutId")
+  @HttpCode(204)
   async remove(
     @Param("blackoutId", ParseIntPipe) blackoutId: number,
     @CurrentUser() u: CurrentUserContext,

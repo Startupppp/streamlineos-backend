@@ -73,6 +73,7 @@ export class HrCasesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   async create(
     @CurrentUser() user: CurrentUserContext,
@@ -83,6 +84,7 @@ export class HrCasesController {
   }
 
   @Post("anonymous")
+  @HttpCode(201)
   @RequirePermission("hr:cases:view")
   async createAnonymous(
     @Body(new ZodValidationPipe(anonymousReportSchema)) body: AnonymousReportInput,
@@ -136,6 +138,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/notes")
+  @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   async addNote(
     @CurrentUser() user: CurrentUserContext,
@@ -158,6 +161,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/documents")
+  @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   async addDocument(
     @CurrentUser() user: CurrentUserContext,

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Patch,
   Post,
   Body,
@@ -60,6 +61,7 @@ export class InputsController {
   }
 
   @Post("reimport")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:update")
   async reimport(
     @Param("runId", ParseIntPipe) runId: number,

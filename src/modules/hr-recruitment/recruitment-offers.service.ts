@@ -118,7 +118,7 @@ export class RecruitmentOffersService {
     await this.db
       .update(candidateOffers)
       .set({ offerStatus: "PENDING_APPROVAL", updatedAt: new Date() })
-      .where(eq(candidateOffers.id, offerId));
+      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_SUBMITTED_FOR_APPROVAL",
       userId,

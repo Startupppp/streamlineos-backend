@@ -2,10 +2,21 @@ import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseG
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbackService } from "./feedback.service";
+import {
+  createCycleSchema,
+  updateCycleStatusSchema,
+  submitResponseSchema,
+  type CreateCycleInput,
+  type UpdateCycleStatusInput,
+  type SubmitResponseInput,
+} from "./dto/feedback.schemas";
 
+@RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/feedback")
 export class FeedbackController {
@@ -18,10 +29,11 @@ export class FeedbackController {
   }
 
   @Post("cycles")
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
   createCycle(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: Parameters<FeedbackService["createCycle"]>[2],
+    @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
@@ -37,7 +49,7 @@ export class FeedbackController {
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body() body: { status: string },
+    @Body(new ZodValidationPipe(updateCycleStatusSchema)) body: UpdateCycleStatusInput,
   ) {
     return this.service.updateCycleStatus(u.orgId, cycleId, body.status);
   }
@@ -49,11 +61,12 @@ export class FeedbackController {
   }
 
   @Post("requests/:requestId/respond")
+  @HttpCode(200)
   @RequirePermission("hr:performance:view")
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body() body: Parameters<FeedbackService["submitResponse"]>[2],
+    @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,
   ) {
     return this.service.submitResponse(u.userId, requestId, body);
   }

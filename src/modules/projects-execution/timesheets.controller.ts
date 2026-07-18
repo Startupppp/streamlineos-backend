@@ -105,7 +105,7 @@ export class BillingSummaryController {
   constructor(private readonly timesheets: TimesheetsService) {}
 
   @Get()
-  @RequirePermission("projects:view")
+  @RequirePermission("projects:timesheets:view")
   billingSummary(
     @Query(new ZodValidationPipe(billingSummaryQuerySchema)) query: BillingSummaryQuery,
     @CurrentUser() u: CurrentUserContext,

@@ -164,7 +164,19 @@ export class CyclesService {
     if (query.status) conditions.push(eq(cycles.status, query.status));
 
     const cycleList = await this.db
-      .select()
+      .select({
+        id: cycles.id,
+        orgId: cycles.orgId,
+        projectId: cycles.projectId,
+        name: cycles.name,
+        description: cycles.description,
+        startDate: cycles.startDate,
+        endDate: cycles.endDate,
+        status: cycles.status,
+        createdBy: cycles.createdBy,
+        createdAt: cycles.createdAt,
+        updatedAt: cycles.updatedAt,
+      })
       .from(cycles)
       .where(and(...conditions))
       .orderBy(cycles.startDate)
@@ -261,7 +273,7 @@ export class CyclesService {
   }
 
   async deleteCycle(orgId: string, cycleId: number) {
-    await this.db.update(tickets).set({ cycleId: null }).where(eq(tickets.cycleId, cycleId));
+    await this.db.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
     await this.db.delete(cycles).where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)));
     return { success: true };
   }
@@ -356,7 +368,7 @@ export class ModulesService {
   }
 
   async deleteModule(orgId: string, moduleId: number) {
-    await this.db.update(tickets).set({ moduleId: null }).where(eq(tickets.moduleId, moduleId));
+    await this.db.update(tickets).set({ moduleId: null }).where(and(eq(tickets.moduleId, moduleId), eq(tickets.orgId, orgId)));
     await this.db.delete(modules).where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)));
     return { success: true };
   }
@@ -441,7 +453,7 @@ export class EpicsService {
       columns: { id: true },
     });
     if (!epic) throw new NotFoundException("Epic not found");
-    await this.db.update(tickets).set({ epicId: null }).where(eq(tickets.epicId, epicId));
+    await this.db.update(tickets).set({ epicId: null }).where(and(eq(tickets.epicId, epicId), eq(tickets.orgId, orgId)));
     await this.db.delete(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId)));
     return { success: true };
   }

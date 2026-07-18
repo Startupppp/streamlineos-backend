@@ -86,6 +86,7 @@ export class HrHolidaysController {
   }
 
   @Delete(":holidayId")
+  @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,

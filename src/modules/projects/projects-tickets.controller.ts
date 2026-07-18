@@ -21,7 +21,9 @@ import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import {
   addLabelSchema,
+  addReactionSchema,
   addRelationSchema,
+  removeRelationQuerySchema,
   addWatcherSchema,
   allWorkQuerySchema,
   attachmentSchema,
@@ -38,7 +40,9 @@ import {
   updateRelatedLinkSchema,
   updateTicketSchema,
   type AddLabelInput,
+  type AddReactionInput,
   type AddRelatedLinkInput,
+  type RemoveRelationQuery,
   type AddRelationInput,
   type AddWatcherInput,
   type AllWorkQuery,
@@ -259,10 +263,10 @@ export class ProjectsTicketsController {
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Query("relatedId") relatedId: string,
+    @Query(new ZodValidationPipe(removeRelationQuerySchema)) query: RemoveRelationQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeRelation(u, projectId, ticketId, Number(relatedId));
+    return this.subresources.removeRelation(u, projectId, ticketId, query.relatedId);
   }
 
   @Get(":projectId/tickets/:ticketId/watchers")
@@ -443,10 +447,10 @@ export class ProjectsTicketsController {
 
   @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")
   @RequirePermission("projects:tickets:update")
-  @HttpCode(200)
+  @HttpCode(201)
   addReaction(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body() body: { emoji: string },
+    @Body(new ZodValidationPipe(addReactionSchema)) body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji);

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -41,6 +41,7 @@ export class SignEnvelopesController {
   constructor(private readonly envelopes: SignEnvelopesService) {}
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("sign:envelope:create")
   create(@Body(new ZodValidationPipe(createEnvelopeSchema)) body: CreateEnvelopeInput, @CurrentUser() u: CurrentUserContext) {
     return this.envelopes.create(u.orgId, u.userId, body);

@@ -63,12 +63,13 @@ export class DealsMeetingsController {
   }
 
   @Delete(":dealId/meetings/:meetingId")
+  @HttpCode(204)
   @RequirePermission("crm:deals:update")
-  deleteMeeting(
+  async deleteMeeting(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.meetings.deleteMeeting(u.orgId, dealId, meetingId);
+    await this.meetings.deleteMeeting(u.orgId, dealId, meetingId);
   }
 }

@@ -67,6 +67,7 @@ export class HrInterviewQuestionsController {
   }
 
   @Delete(":questionId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   async remove(
     @Param("questionId", ParseIntPipe) questionId: number,

@@ -52,6 +52,7 @@ export class HrDisciplinaryController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   create(
     @CurrentUser() user: CurrentUserContext,

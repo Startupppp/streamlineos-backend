@@ -103,13 +103,14 @@ export class DocumentsController {
   }
 
   @Delete("documents/:documentId")
+  @HttpCode(204)
   @RequirePermission("hr:documents:manage")
-  deleteDocument(
+  async deleteDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const isAdmin = u.isOrgOwner || u.isPlatformAdmin;
-    return this.documents.deleteDocument(u.orgId, u.userId, isAdmin, documentId);
+    await this.documents.deleteDocument(u.orgId, u.userId, isAdmin, documentId);
   }
 
   @Get("document-expiry")
@@ -199,12 +200,13 @@ export class DocumentsController {
   }
 
   @Delete("rich-documents/:documentId")
+  @HttpCode(204)
   @RequirePermission("hr:documents:manage")
-  deleteRichDocument(
+  async deleteRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.richDocuments.remove(u.orgId, documentId);
+    await this.richDocuments.remove(u.orgId, documentId);
   }
 
   @Get("documents/letters")

@@ -265,12 +265,12 @@ export class DepreciationRunsService {
       const scheduleRows = await tx
         .select({ assetId: accDepreciationSchedules.assetId, amount: accDepreciationSchedules.amount })
         .from(accDepreciationSchedules)
-        .where(eq(accDepreciationSchedules.runId, runId));
+        .where(and(eq(accDepreciationSchedules.runId, runId), eq(accDepreciationSchedules.orgId, u.orgId)));
 
       await tx
         .update(accDepreciationSchedules)
         .set({ status: "SCHEDULED", runId: null, journalEntryId: null })
-        .where(eq(accDepreciationSchedules.runId, runId));
+        .where(and(eq(accDepreciationSchedules.runId, runId), eq(accDepreciationSchedules.orgId, u.orgId)));
 
       const assetAmounts = new Map<number, number>();
       for (const row of scheduleRows) {
@@ -282,7 +282,7 @@ export class DepreciationRunsService {
         const [asset] = await tx
           .select()
           .from(accFixedAssets)
-          .where(eq(accFixedAssets.id, assetId))
+          .where(and(eq(accFixedAssets.id, assetId), eq(accFixedAssets.orgId, u.orgId)))
           .limit(1);
         if (!asset) continue;
         const newAccum = Math.max(
@@ -334,7 +334,12 @@ export class DepreciationRunsService {
     const postedRuns = await this.db
       .select({ orgId: accDepreciationRuns.orgId, periodKey: accDepreciationRuns.periodKey })
       .from(accDepreciationRuns)
-      .where(eq(accDepreciationRuns.status, "POSTED"));
+      .where(
+        and(
+          orgId ? eq(accDepreciationRuns.orgId, orgId) : undefined,
+          eq(accDepreciationRuns.status, "POSTED"),
+        ),
+      );
     const postedSet = new Set(postedRuns.map((r) => `${r.orgId}:${r.periodKey}`));
 
     const toRun = duePeriods.filter((p) => !postedSet.has(`${p.orgId}:${p.periodKey}`));

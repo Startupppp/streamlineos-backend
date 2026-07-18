@@ -106,6 +106,7 @@ export class KbAskController {
 
   @Post("ask/conversations")
   @RequirePermission("kb:pages:view")
+  @HttpCode(201)
   async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = kbConversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");

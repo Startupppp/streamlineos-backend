@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -46,6 +46,7 @@ export class NotificationPreferencesController {
   }
 
   @Post("reset")
+  @HttpCode(200)
   reset(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.reset(u.orgId, u.userId);
   }

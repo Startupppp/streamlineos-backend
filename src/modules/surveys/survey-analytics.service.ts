@@ -1,10 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, eq } from "drizzle-orm";
+import { and, avg, count, eq, inArray } from "drizzle-orm";
 import {
   surveyResponseSessions,
   surveyAnswers,
   surveyQuestions,
-  surveyQuestionChoices,
   surveyParticipants,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -49,11 +48,22 @@ export class SurveyAnalyticsService {
       with: { choices: true },
     });
 
-    const results = [];
-    for (const question of questions) {
-      const answers = await this.db.query.surveyAnswers.findMany({
-        where: and(eq(surveyAnswers.orgId, orgId), eq(surveyAnswers.questionId, question.id)),
-      });
+    if (questions.length === 0) return [];
+
+    const questionIds = questions.map((q) => q.id);
+    const allAnswers = await this.db.query.surveyAnswers.findMany({
+      where: and(eq(surveyAnswers.orgId, orgId), inArray(surveyAnswers.questionId, questionIds)),
+    });
+
+    const answersByQuestion = new Map<number, typeof allAnswers>();
+    for (const answer of allAnswers) {
+      const list = answersByQuestion.get(answer.questionId) ?? [];
+      list.push(answer);
+      answersByQuestion.set(answer.questionId, list);
+    }
+
+    return questions.map((question) => {
+      const answers = answersByQuestion.get(question.id) ?? [];
 
       const choiceDistribution: Record<number, number> = {};
       for (const answer of answers) {
@@ -67,7 +77,7 @@ export class SurveyAnalyticsService {
         .filter((v): v is number => v !== null);
       const average = numericAnswers.length ? numericAnswers.reduce((s, v) => s + v, 0) / numericAnswers.length : null;
 
-      results.push({
+      return {
         questionId: question.id,
         type: question.type,
         title: question.title,
@@ -79,9 +89,7 @@ export class SurveyAnalyticsService {
           count: choiceDistribution[choice.id] ?? 0,
         })),
         textResponses: question.type === "short_text" || question.type === "long_text" ? answers.map((a) => a.answerText).filter(Boolean) : undefined,
-      });
-    }
-
-    return results;
+      };
+    });
   }
 }

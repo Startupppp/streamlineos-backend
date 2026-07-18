@@ -65,6 +65,25 @@ export class CrmOrganizationsController {
     return this.orgs.create(u.orgId, body);
   }
 
+  @Get("duplicates")
+  @RequirePermission("crm:organizations:view")
+  getDuplicates(
+    @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgMerge.getDuplicateOrgs(u.orgId, query);
+  }
+
+  @Post("merge")
+  @HttpCode(200)
+  @RequirePermission("crm:organizations:merge")
+  mergeOrganizations(
+    @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.orgMerge.mergeOrganizations(u.orgId, body, u.userId);
+  }
+
   @Get(":organizationId")
   @RequirePermission("crm:organizations:view")
   async getOne(
@@ -99,6 +118,7 @@ export class CrmOrganizationsController {
   }
 
   @Delete(":organizationId")
+  @HttpCode(204)
   @RequirePermission("crm:organizations:manage")
   async remove(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -106,7 +126,6 @@ export class CrmOrganizationsController {
   ) {
     const removed = await this.orgs.remove(u.orgId, organizationId);
     if (!removed) throw new NotFoundException("Organization not found");
-    return { success: true };
   }
 
   @Get(":organizationId/hierarchy")
@@ -147,24 +166,5 @@ export class CrmOrganizationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.getAccountTimeline(u.orgId, organizationId);
-  }
-
-  @Get("duplicates")
-  @RequirePermission("crm:organizations:view")
-  getDuplicates(
-    @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.orgMerge.getDuplicateOrgs(u.orgId, query);
-  }
-
-  @Post("merge")
-  @HttpCode(200)
-  @RequirePermission("crm:organizations:merge")
-  mergeOrganizations(
-    @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.orgMerge.mergeOrganizations(u.orgId, body, u.userId);
   }
 }

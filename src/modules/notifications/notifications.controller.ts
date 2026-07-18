@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -52,6 +53,7 @@ export class NotificationsController {
   }
 
   @Post("events/token")
+  @HttpCode(200)
   generateStreamToken(@CurrentUser() u: CurrentUserContext) {
     const token = this.notifEvents.generateToken(u.userId, u.orgId);
     return { token };
@@ -77,6 +79,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/read")
+  @HttpCode(200)
   bulkMarkRead(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +88,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/archive")
+  @HttpCode(200)
   bulkArchive(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +97,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/delete")
+  @HttpCode(200)
   bulkDelete(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -158,6 +163,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/approve")
+  @HttpCode(200)
   approve(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -166,6 +172,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/reject")
+  @HttpCode(200)
   reject(
     @Param("notificationId", ParseIntPipe) notificationId: number,
     @CurrentUser() u: CurrentUserContext,

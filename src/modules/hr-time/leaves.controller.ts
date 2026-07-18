@@ -91,7 +91,7 @@ export class LeavesController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:leaves:view")
+  @RequirePermission("hr:leaves:create")
   create(
     @Body(new ZodValidationPipe(createLeaveSchema)) body: CreateLeaveInput,
     @CurrentUser() u: CurrentUserContext,
@@ -101,7 +101,7 @@ export class LeavesController {
 
   @Post("comp-off")
   @HttpCode(201)
-  @RequirePermission("hr:leaves:view")
+  @RequirePermission("hr:leaves:create")
   compOff(
     @Body(new ZodValidationPipe(compOffSchema)) body: CompOffInput,
     @CurrentUser() u: CurrentUserContext,
@@ -110,7 +110,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId/cancel")
-  @RequirePermission("hr:leaves:view")
+  @RequirePermission("hr:leaves:create")
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,7 +143,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId")
-  @RequirePermission("hr:leaves:view")
+  @RequirePermission("hr:leaves:create")
   async update(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,

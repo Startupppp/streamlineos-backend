@@ -434,7 +434,7 @@ export class RecruitmentCandidateRecordsService {
         await this.db
           .update(candidateDocuments)
           .set({ status: "SENT", sentAt: new Date() })
-          .where(inArray(candidateDocuments.id, docIds));
+          .where(and(inArray(candidateDocuments.id, docIds), eq(candidateDocuments.orgId, orgId)));
         for (const doc of generatedDocs) {
           doc.status = "SENT";
           doc.sentAt = new Date();
@@ -525,7 +525,7 @@ export class RecruitmentCandidateRecordsService {
       .from(vaultAccessLogs)
       .innerJoin(candidateDocumentsVault, eq(vaultAccessLogs.vaultDocumentId, candidateDocumentsVault.id))
       .leftJoin(users, eq(vaultAccessLogs.accessedBy, users.id))
-      .where(eq(candidateDocumentsVault.candidateId, candidateId))
+      .where(and(eq(candidateDocumentsVault.candidateId, candidateId), eq(candidateDocumentsVault.orgId, orgId)))
       .orderBy(desc(vaultAccessLogs.accessedAt))
       .limit(100);
 
@@ -566,7 +566,7 @@ export class RecruitmentCandidateRecordsService {
         orderBy: (t, { desc: d }) => [d(t.sentAt)],
       }),
       this.db.query.candidateDocuments.findMany({
-        where: eq(candidateDocuments.candidateId, candidateId),
+        where: and(eq(candidateDocuments.candidateId, candidateId), eq(candidateDocuments.orgId, orgId)),
         columns: { id: true, title: true, status: true, createdAt: true, sentAt: true },
         orderBy: (t, { desc: d }) => [d(t.createdAt)],
       }),

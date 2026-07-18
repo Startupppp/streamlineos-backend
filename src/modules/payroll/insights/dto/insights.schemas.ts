@@ -56,6 +56,43 @@ export const essBankSchema = z.object({
   }
 });
 
+export const essCreateReimbursementSchema = z.object({
+  category: z.string().min(1).max(100),
+  amount: z.number().positive().max(999999),
+  description: z.string().max(1000).optional(),
+  receiptUrl: z.string().url().optional().or(z.literal("")).optional(),
+  payrollMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+});
+export type EssCreateReimbursement = z.infer<typeof essCreateReimbursementSchema>;
+
+export const essCreateLoanSchema = z.object({
+  amount: z.number().min(1000).max(10000000),
+  reason: z.string().min(1).max(500),
+  totalEmis: z.number().int().min(1).max(360),
+});
+export type EssCreateLoan = z.infer<typeof essCreateLoanSchema>;
+
+export const essSubmitTaxDeclarationSchema = z.object({
+  financialYear: z.string().min(1).max(20),
+  regime: z.enum(["OLD", "NEW"]),
+  hra: z.number().nonnegative().optional(),
+  lta: z.number().nonnegative().optional(),
+  section80c: z.number().nonnegative().optional(),
+  section80d: z.number().nonnegative().optional(),
+  section80g: z.number().nonnegative().optional(),
+  homeLoanInterest: z.number().nonnegative().optional(),
+});
+export type EssSubmitTaxDeclaration = z.infer<typeof essSubmitTaxDeclarationSchema>;
+
+export const essAddTaxProofSchema = z.object({
+  declarationId: z.number().int().positive(),
+  category: z.string().min(1).max(100),
+  amount: z.number().nonnegative(),
+  description: z.string().max(500).optional(),
+  proofUrl: z.string().url().optional(),
+});
+export type EssAddTaxProof = z.infer<typeof essAddTaxProofSchema>;
+
 export type CreateCalendarEvent = z.infer<typeof createCalendarEventSchema>;
 export type PatchCalendarEvent = z.infer<typeof patchCalendarEventSchema>;
 export type AccountingMappingCreate = z.infer<typeof accountingMappingCreateSchema>;

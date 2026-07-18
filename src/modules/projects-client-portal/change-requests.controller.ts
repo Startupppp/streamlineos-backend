@@ -44,14 +44,14 @@ export class ChangeRequestsController {
     return this.svc.listChangeRequests(u.orgId, projectId, query);
   }
 
-  @Get(":crId")
+  @Get(":changeRequestId")
   @RequirePermission("projects:changerequests:view")
   getChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Param("crId", ParseIntPipe) crId: number,
+    @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getChangeRequest(u.orgId, projectId, crId);
+    return this.svc.getChangeRequest(u.orgId, projectId, changeRequestId);
   }
 
   @Post()
@@ -65,24 +65,25 @@ export class ChangeRequestsController {
     return this.svc.createChangeRequest(u.orgId, u.userId, projectId, body);
   }
 
-  @Patch(":crId")
+  @Patch(":changeRequestId")
   @RequirePermission("projects:changerequests:manage")
   updateChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Param("crId", ParseIntPipe) crId: number,
+    @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
     @Body(new ZodValidationPipe(updateChangeRequestSchema)) body: UpdateChangeRequestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateChangeRequest(u.orgId, u.userId, projectId, crId, body);
+    return this.svc.updateChangeRequest(u.orgId, u.userId, projectId, changeRequestId, body);
   }
 
-  @Delete(":crId")
+  @Delete(":changeRequestId")
   @RequirePermission("projects:changerequests:manage")
+  @HttpCode(204)
   deleteChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Param("crId", ParseIntPipe) crId: number,
+    @Param("changeRequestId", ParseIntPipe) changeRequestId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteChangeRequest(u.orgId, projectId, crId);
+    return this.svc.deleteChangeRequest(u.orgId, projectId, changeRequestId);
   }
 }

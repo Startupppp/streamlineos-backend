@@ -99,12 +99,13 @@ export class PerformanceController {
   }
 
   @Delete("goals/:goalId")
+  @HttpCode(204)
   @RequirePermission("hr:performance:manage")
-  deleteGoal(
+  async deleteGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goalsService.deleteGoal(u.orgId, goalId);
+    await this.goalsService.deleteGoal(u.orgId, goalId);
   }
 
   @Get("key-results")
@@ -167,12 +168,13 @@ export class PerformanceController {
   }
 
   @Delete("one-on-ones/:meetingId")
+  @HttpCode(204)
   @RequirePermission("hr:performance:view")
-  deleteOneOnOne(
+  async deleteOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reviewsService.deleteOneOnOne(u.orgId, meetingId);
+    await this.reviewsService.deleteOneOnOne(u.orgId, meetingId);
   }
 
   @Get("pip")
@@ -212,11 +214,13 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
+    const rawLimit = limit !== undefined ? Number(limit) : undefined;
+    const cappedLimit = rawLimit !== undefined ? Math.min(Math.max(rawLimit, 1), 100) : undefined;
     return this.reviewsService.listReviews(u.orgId, u.userId, scope, {
       userId,
       cycleId: cycleId ? Number(cycleId) : undefined,
-      limit: limit !== undefined ? Number(limit) : undefined,
-      offset: offset !== undefined ? Number(offset) : undefined,
+      limit: cappedLimit,
+      offset: offset !== undefined ? Math.max(Number(offset), 0) : undefined,
     });
   }
 
@@ -240,12 +244,13 @@ export class PerformanceController {
   }
 
   @Delete("reviews/:reviewId")
+  @HttpCode(204)
   @RequirePermission("hr:performance:manage")
-  deleteReview(
+  async deleteReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reviewsService.deleteReview(u.orgId, reviewId);
+    await this.reviewsService.deleteReview(u.orgId, reviewId);
   }
 
   @Patch("reviews/:reviewId")
@@ -294,11 +299,12 @@ export class PerformanceController {
   }
 
   @Delete("cycles/:cycleId")
+  @HttpCode(204)
   @RequirePermission("hr:performance:manage")
-  deleteCycle(
+  async deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reviewsService.deleteCycle(u.orgId, cycleId);
+    await this.reviewsService.deleteCycle(u.orgId, cycleId);
   }
 }

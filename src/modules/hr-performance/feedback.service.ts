@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { feedbackCycles, feedbackCycleRequests, feedbackCycleResponses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -129,15 +129,11 @@ export class FeedbackService {
     if (requests.length === 0) return { subjectId, requests: [], responses: [] };
 
     const requestIds = requests.map((r) => r.id);
-    const responses = await Promise.all(
-      requestIds.map((rid) =>
-        this.db
-          .select()
-          .from(feedbackCycleResponses)
-          .where(eq(feedbackCycleResponses.requestId, rid)),
-      ),
-    );
+    const responses = await this.db
+      .select()
+      .from(feedbackCycleResponses)
+      .where(inArray(feedbackCycleResponses.requestId, requestIds));
 
-    return { subjectId, requests, responses: responses.flat() };
+    return { subjectId, requests, responses };
   }
 }

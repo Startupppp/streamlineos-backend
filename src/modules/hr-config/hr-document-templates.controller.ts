@@ -115,6 +115,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Delete(":templateId")
+  @HttpCode(204)
   @RequirePermission("hr:documents:manage")
   async remove(
     @Param("templateId", ParseIntPipe) templateId: number,

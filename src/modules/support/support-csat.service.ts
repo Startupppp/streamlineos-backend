@@ -38,7 +38,7 @@ export class SupportCsatService {
     const [updated] = await this.db
       .update(supportCsatRequests)
       .set({ score: input.score, comment: input.comment ?? null, respondedAt: new Date() })
-      .where(eq(supportCsatRequests.id, request.id))
+      .where(and(eq(supportCsatRequests.id, request.id), eq(supportCsatRequests.orgId, request.orgId)))
       .returning();
     return { success: true, score: updated.score };
   }

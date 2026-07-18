@@ -168,6 +168,7 @@ export class ClientsController {
   }
 
   @Delete("opportunities/:oppId")
+  @HttpCode(204)
   @RequirePermission("crm:clients:update")
   async deleteOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
@@ -175,7 +176,6 @@ export class ClientsController {
   ) {
     const result = await this.opportunities.remove(u.orgId, oppId);
     if (!result) throw new NotFoundException("Opportunity not found");
-    return result;
   }
 
   @Get("onboarding/items")
@@ -210,6 +210,7 @@ export class ClientsController {
   }
 
   @Delete("onboarding/items/:itemId")
+  @HttpCode(204)
   @RequirePermission("crm:clients:update")
   async deleteOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -217,7 +218,6 @@ export class ClientsController {
   ) {
     const result = await this.onboarding.deleteItem(u.orgId, itemId);
     if (!result) throw new NotFoundException("Not found");
-    return result;
   }
 
   @Get("onboarding/templates")

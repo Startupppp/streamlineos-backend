@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   HttpException,
   HttpStatus,
   Param,
@@ -58,6 +59,7 @@ export class WhiteboardSharingController {
 
   @Post("sharing/rotate-token")
   @RequirePermission("projects:whiteboards:manage")
+  @HttpCode(200)
   rotateShareToken(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -77,12 +79,13 @@ export class WhiteboardSharingController {
     return this.sharing.setShares(u, projectId, whiteboardId, body);
   }
 
-  @Delete("shares/:userId")
+  @Delete("shares/:targetUserId")
   @RequirePermission("projects:whiteboards:manage")
+  @HttpCode(204)
   removeShare(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
-    @Param("userId") targetUserId: string,
+    @Param("targetUserId") targetUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sharing.removeShare(u, projectId, whiteboardId, targetUserId);

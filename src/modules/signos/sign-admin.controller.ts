@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -52,6 +52,7 @@ export class SignAdminController {
   }
 
   @Post("watermark-policies")
+  @HttpCode(201)
   @RequirePermission("sign:admin:manage")
   createWatermarkPolicy(@Body(new ZodValidationPipe(watermarkPolicyInputSchema)) body: WatermarkPolicyInput, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.create(u.orgId, u.userId, body);

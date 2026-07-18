@@ -62,6 +62,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @HttpCode(200)
   @RequirePermission("notifications:broadcasts:manage")
   publish(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
@@ -71,6 +72,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/cancel")
+  @HttpCode(200)
   @RequirePermission("notifications:broadcasts:manage")
   cancel(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,

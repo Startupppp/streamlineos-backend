@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
-import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
+import { projectMembers, projects, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -29,7 +29,7 @@ export class ProjectsMembersService {
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
   ) {}
 
-  listMembers(projectId: number) {
+  listMembers(orgId: string, projectId: number) {
     return this.db
       .select({
         id: users.id,
@@ -43,6 +43,7 @@ export class ProjectsMembersService {
       })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
+      .innerJoin(projects, and(eq(projects.id, projectMembers.projectId), eq(projects.orgId, orgId)))
       .where(eq(projectMembers.projectId, projectId))
       .orderBy(asc(projectMembers.joinedAt))
       .limit(200);

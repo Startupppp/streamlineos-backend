@@ -90,6 +90,7 @@ export class HrEmploymentsController {
   }
 
   @Delete(":employmentId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   remove(

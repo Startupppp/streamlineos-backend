@@ -123,6 +123,7 @@ export class HrOrgCatalogController {
   }
 
   @Delete("locations/:locationId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteLocation(
@@ -150,25 +151,26 @@ export class HrOrgCatalogController {
     return this.catalog.createJobRole(u.orgId, body);
   }
 
-  @Patch("roles/:id")
+  @Patch("roles/:roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateJobRole(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("roleId", ParseIntPipe) roleId: number,
     @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.updateJobRole(u.orgId, id, body);
+    return this.catalog.updateJobRole(u.orgId, roleId, body);
   }
 
-  @Delete("roles/:id")
+  @Delete("roles/:roleId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteJobRole(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("roleId", ParseIntPipe) roleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.deleteJobRole(u.orgId, id);
+    return this.catalog.deleteJobRole(u.orgId, roleId);
   }
 
   @Get("levels")
@@ -189,25 +191,26 @@ export class HrOrgCatalogController {
     return this.catalog.createJobLevel(u.orgId, body);
   }
 
-  @Patch("levels/:id")
+  @Patch("levels/:levelId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateJobLevel(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("levelId", ParseIntPipe) levelId: number,
     @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.updateJobLevel(u.orgId, id, body);
+    return this.catalog.updateJobLevel(u.orgId, levelId, body);
   }
 
-  @Delete("levels/:id")
+  @Delete("levels/:levelId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteJobLevel(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("levelId", ParseIntPipe) levelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.deleteJobLevel(u.orgId, id);
+    return this.catalog.deleteJobLevel(u.orgId, levelId);
   }
 
   @Get("teams")
@@ -228,25 +231,26 @@ export class HrOrgCatalogController {
     return this.catalog.createTeam(u.orgId, body);
   }
 
-  @Patch("teams/:id")
+  @Patch("teams/:teamId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateTeam(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("teamId", ParseIntPipe) teamId: number,
     @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.updateTeam(u.orgId, id, body);
+    return this.catalog.updateTeam(u.orgId, teamId, body);
   }
 
-  @Delete("teams/:id")
+  @Delete("teams/:teamId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteTeam(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.deleteTeam(u.orgId, id);
+    return this.catalog.deleteTeam(u.orgId, teamId);
   }
 
   @Get("headcount")

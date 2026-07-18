@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -36,6 +37,7 @@ export class KbTagsController {
 
   @Post("tags")
   @RequirePermission("kb:articles:manage")
+  @HttpCode(201)
   async create(
     @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,

@@ -66,12 +66,13 @@ export class CrmAutomationsController {
   }
 
   @Delete("automations/:ruleId")
+  @HttpCode(204)
   @RequirePermission("crm:automations:manage")
-  remove(
+  async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.remove(u.orgId, ruleId);
+    await this.automations.remove(u.orgId, ruleId);
   }
 
   @Get("automation/events")

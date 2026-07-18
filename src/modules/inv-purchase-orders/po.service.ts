@@ -237,7 +237,7 @@ export class PoService {
 
     const [sent] = await this.db.update(invPurchaseOrders)
       .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-      .where(eq(invPurchaseOrders.id, poId))
+      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));

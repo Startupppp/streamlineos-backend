@@ -71,6 +71,7 @@ export class AccommodationsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
   async create(
     @CurrentUser() user: CurrentUserContext,
@@ -123,6 +124,7 @@ export class AccommodationsController {
   }
 
   @Post(":accommodationId/tasks")
+  @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
   async createTask(
     @CurrentUser() user: CurrentUserContext,

@@ -131,14 +131,14 @@ export const forecastSnapshotsQuerySchema = z.object({
 export const createStakeholderSchema = z.object({
   contactId: z.number().int().positive(),
   roleKey: z.string().max(100).nullable().optional(),
-  influence: z.enum(["low", "medium", "high", "blocker"]).nullable().optional(),
+  influence: z.string().max(50).nullable().optional(),
   isPrimary: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
 });
 
 export const updateStakeholderSchema = z.object({
   roleKey: z.string().max(100).nullable().optional(),
-  influence: z.enum(["low", "medium", "high", "blocker"]).nullable().optional(),
+  influence: z.string().max(50).nullable().optional(),
   isPrimary: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
 });

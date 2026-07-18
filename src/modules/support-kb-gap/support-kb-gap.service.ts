@@ -172,7 +172,7 @@ export class SupportKbGapService {
         status: SupportKnowledgeGapStatus.ROUTED,
         updatedAt: new Date(),
       })
-      .where(eq(supportKnowledgeGaps.id, gapId))
+      .where(and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)))
       .returning();
 
     if (kbOwnerIds.length > 0) {
@@ -427,7 +427,7 @@ export class SupportKbGapService {
           evidence: data.evidence,
           updatedAt: new Date(),
         })
-        .where(eq(supportKnowledgeGaps.id, existing.id));
+        .where(and(eq(supportKnowledgeGaps.id, existing.id), eq(supportKnowledgeGaps.orgId, orgId)));
       return "updated";
     }
 

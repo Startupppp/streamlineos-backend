@@ -83,6 +83,7 @@ export class MeetingsController {
 
   @Delete(":meetingId")
   @RequirePermission("projects:meetings:manage")
+  @HttpCode(204)
   deleteMeeting(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
@@ -103,19 +104,20 @@ export class MeetingsController {
     return this.svc.addAttendee(u.orgId, u.userId, projectId, meetingId, body);
   }
 
-  @Delete(":meetingId/attendees/:userId")
+  @Delete(":meetingId/attendees/:attendeeUserId")
   @RequirePermission("projects:meetings:manage")
+  @HttpCode(204)
   removeAttendee(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Param("userId") attendeeUserId: string,
+    @Param("attendeeUserId") attendeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.removeAttendee(u.orgId, u.userId, projectId, meetingId, attendeeUserId);
   }
 
   @Put(":meetingId/standup")
-  @RequirePermission("projects:meetings:view")
+  @RequirePermission("projects:meetings:manage")
   upsertStandup(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

@@ -101,7 +101,7 @@ export class AssetsService {
         notes: body.notes ?? existing.notes,
         returnedAt: new Date(),
       })
-      .where(eq(assetReturns.id, returnId))
+      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
       .returning();
 
     return updated;
@@ -219,7 +219,7 @@ export class AssetsService {
         ...(body.status !== undefined && { status: body.status }),
         ...(body.returnDate !== undefined && { returnDate: formatDateOnly(new Date(body.returnDate)) }),
       })
-      .where(eq(employeeDevices.id, deviceId));
+      .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
 
     return { success: true };
   }
