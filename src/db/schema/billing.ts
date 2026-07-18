@@ -94,16 +94,20 @@ export const appInstallations = pgTable(
   ],
 );
 
-export const aiCreditPacks = pgTable("ai_credit_packs", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  credits: integer("credits").notNull(),
-  bonusCredits: integer("bonus_credits").default(0).notNull(),
-  priceInPaise: integer("price_in_paise").notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const aiCreditPacks = pgTable(
+  "ai_credit_packs",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 100 }).notNull(),
+    credits: integer("credits").notNull(),
+    bonusCredits: integer("bonus_credits").default(0).notNull(),
+    priceInPaise: integer("price_in_paise").notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uniq_ai_credit_packs_name").on(t.name)],
+);
 
 export const orgAiCredits = pgTable(
   "org_ai_credits",

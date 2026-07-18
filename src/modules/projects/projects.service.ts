@@ -265,16 +265,19 @@ export class ProjectsService {
 
   async updateProject(u: CurrentUserContext, projectId: number, body: UpdateProjectInput) {
     const orgId = u.orgId;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isOwnerOrAdmin = perms.has("projects:manage");
 
-    if (!isOwnerOrAdmin) {
-      const project = await this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-        columns: { managerId: true },
-      });
-      if (!project || project.managerId !== u.userId) {
-        throw new ForbiddenException("Only project managers or admins can update project settings.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      const hasManage = perms.has("projects:manage");
+
+      if (!hasManage) {
+        const project = await this.db.query.projects.findFirst({
+          where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+          columns: { managerId: true },
+        });
+        if (!project || project.managerId !== u.userId) {
+          throw new ForbiddenException("Only project managers or admins can update project settings.");
+        }
       }
     }
 

@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../schema";
 import { aiCreditPacks } from "../schema";
+import { DEFAULT_AI_CREDIT_PACKS } from "../../modules/billing/ai-credit-packs.constants";
 
 function normalizeDatabaseUrl(url: string): string {
   if (!/\.neon\.tech/i.test(url)) return url;
@@ -13,13 +14,6 @@ function normalizeDatabaseUrl(url: string): string {
     return url.replace(/[&?]channel_binding=[^&]*/g, "").replace(/\?&/, "?");
   }
 }
-
-const PACKS = [
-  { name: "Starter Pack", credits: 500, bonusCredits: 0, priceInPaise: 49900, sortOrder: 1 },
-  { name: "Growth Pack", credits: 2000, bonusCredits: 200, priceInPaise: 149900, sortOrder: 2 },
-  { name: "Scale Pack", credits: 5000, bonusCredits: 750, priceInPaise: 299900, sortOrder: 3 },
-  { name: "Enterprise Pack", credits: 15000, bonusCredits: 3000, priceInPaise: 699900, sortOrder: 4 },
-];
 
 async function seedAiCreditPacks(): Promise<void> {
   const raw = process.env.DATABASE_URL;
@@ -36,8 +30,28 @@ async function seedAiCreditPacks(): Promise<void> {
   const db = drizzle(client, { schema });
   try {
     process.stdout.write("Seeding AI credit packs...\n");
-    for (const pack of PACKS) {
-      await db.insert(aiCreditPacks).values(pack).onConflictDoNothing();
+    await client`CREATE UNIQUE INDEX IF NOT EXISTS uniq_ai_credit_packs_name ON ai_credit_packs (name)`;
+    for (const pack of DEFAULT_AI_CREDIT_PACKS) {
+      await db
+        .insert(aiCreditPacks)
+        .values({
+          name: pack.name,
+          credits: pack.credits,
+          bonusCredits: pack.bonusCredits,
+          priceInPaise: pack.priceInPaise,
+          sortOrder: pack.sortOrder,
+          isActive: true,
+        })
+        .onConflictDoUpdate({
+          target: aiCreditPacks.name,
+          set: {
+            credits: pack.credits,
+            bonusCredits: pack.bonusCredits,
+            priceInPaise: pack.priceInPaise,
+            sortOrder: pack.sortOrder,
+            isActive: true,
+          },
+        });
     }
     process.stdout.write("Done.\n");
   } finally {

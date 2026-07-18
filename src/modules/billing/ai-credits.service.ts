@@ -8,6 +8,7 @@ import {
   aiCreditTransactions,
   orgAiCredits,
 } from "../../db/schema";
+import { DEFAULT_AI_CREDIT_PACKS } from "./ai-credit-packs.constants";
 
 const TRIAL_GRANT_AMOUNT = 100;
 
@@ -60,11 +61,38 @@ export class AiCreditsService {
   }
 
   async listPacks() {
-    return this.db
+    let packs = await this.db
       .select()
       .from(aiCreditPacks)
       .where(eq(aiCreditPacks.isActive, true))
       .orderBy(aiCreditPacks.sortOrder);
+
+    if (packs.length === 0) {
+      await this.ensureDefaultPacks();
+      packs = await this.db
+        .select()
+        .from(aiCreditPacks)
+        .where(eq(aiCreditPacks.isActive, true))
+        .orderBy(aiCreditPacks.sortOrder);
+    }
+
+    return packs;
+  }
+
+  private async ensureDefaultPacks() {
+    for (const pack of DEFAULT_AI_CREDIT_PACKS) {
+      await this.db
+        .insert(aiCreditPacks)
+        .values({
+          name: pack.name,
+          credits: pack.credits,
+          bonusCredits: pack.bonusCredits,
+          priceInPaise: pack.priceInPaise,
+          sortOrder: pack.sortOrder,
+          isActive: true,
+        })
+        .onConflictDoNothing({ target: aiCreditPacks.name });
+    }
   }
 
   async consumeCredits(

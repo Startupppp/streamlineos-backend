@@ -26,7 +26,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { SessionService } from "./session.service";
 import { hashToken } from "../../common/security/token.util";
-import { addHours, addMinutes, subDays } from "date-fns";
+import { addDays, addHours, addMinutes, subDays } from "date-fns";
 import type {
   GoogleOAuthInput,
   MagicLinkRequestInput,
@@ -267,7 +267,22 @@ export class AuthTokensService {
     return { autoLoginToken: rawToken };
   }
 
-  async verifyMagicLink(token: string): Promise<{ userId: string; orgId: string }> {
+  private async createLoginSession(
+    userId: string,
+    context: { userAgent?: string; ipAddress?: string },
+  ): Promise<string> {
+    return this.session.create({
+      userId,
+      userAgent: context.userAgent,
+      ipAddress: context.ipAddress,
+      expiresAt: addDays(new Date(), 30),
+    });
+  }
+
+  async verifyMagicLink(
+    token: string,
+    context: { userAgent?: string; ipAddress?: string },
+  ): Promise<{ userId: string; orgId: string; sessionId: string }> {
     const tokenHash = hashToken(token);
 
     const row = await this.db.query.magicLinkTokens.findFirst({
@@ -291,13 +306,20 @@ export class AuthTokensService {
       columns: { lastActiveOrgId: true },
     });
 
-    const membership = await this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null);
+    const [membership, sessionId] = await Promise.all([
+      this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null),
+      this.createLoginSession(row.userId, context),
+    ]);
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(row.userId));
+    await Promise.all([
+      this.cache.invalidate(CACHE_KEYS.userSession(row.userId)),
+      this.logLoginEvent(row.userId, membership?.orgId ?? null, "magic_link.verify", true, null, context),
+    ]);
 
     return {
       userId: row.userId,
       orgId: membership?.orgId ?? "",
+      sessionId,
     };
   }
 
@@ -336,7 +358,10 @@ export class AuthTokensService {
     };
   }
 
-  async googleOAuth(input: GoogleOAuthInput): Promise<{ userId: string; isNewUser: boolean }> {
+  async googleOAuth(
+    input: GoogleOAuthInput,
+    context: { userAgent?: string; ipAddress?: string },
+  ): Promise<{ userId: string; isNewUser: boolean; sessionId: string }> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
     const existingAccount = await this.db.query.accounts.findFirst({
@@ -348,7 +373,9 @@ export class AuthTokensService {
     });
 
     if (existingAccount) {
-      return { userId: existingAccount.userId, isNewUser: false };
+      const sessionId = await this.createLoginSession(existingAccount.userId, context);
+      void this.logLoginEvent(existingAccount.userId, null, "google_oauth.login", true, null, context);
+      return { userId: existingAccount.userId, isNewUser: false, sessionId };
     }
 
     const existingUser = await this.db.query.users.findFirst({
@@ -371,7 +398,9 @@ export class AuthTokensService {
         await this.db.update(users).set({ emailVerified: new Date() }).where(eq(users.id, existingUser.id));
       }
 
-      return { userId: existingUser.id, isNewUser: false };
+      const sessionId = await this.createLoginSession(existingUser.id, context);
+      void this.logLoginEvent(existingUser.id, null, "google_oauth.login", true, null, context);
+      return { userId: existingUser.id, isNewUser: false, sessionId };
     }
 
     const userId = randomUUID();
@@ -404,6 +433,8 @@ export class AuthTokensService {
 
     this.audit.log({ action: "user.registered", userId, metadata: { email: normalizedEmail, provider: "google" } });
 
-    return { userId, isNewUser: true };
+    const sessionId = await this.createLoginSession(userId, context);
+    void this.logLoginEvent(userId, null, "google_oauth.register", true, null, context);
+    return { userId, isNewUser: true, sessionId };
   }
 }
