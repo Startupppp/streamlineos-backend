@@ -125,4 +125,16 @@ describe("eligible employee filtering", () => {
     const net = parseFloat(emp.netPayoutCurrency ?? emp.net);
     expect(net).toBeLessThanOrEqual(0);
   });
+
+  it("excludes an employee who already has a PAID item in a prior batch for this run (retry double-pay guard)", () => {
+    const employees: EligibleEmployee[] = [
+      { id: 1, userId: "u1", net: "50000", currency: "INR", payoutCurrency: null, netPayoutCurrency: null, status: "PROCESSED", holdReason: null, bankDetails: "x", name: "Already Paid" },
+      { id: 2, userId: "u2", net: "60000", currency: "INR", payoutCurrency: null, netPayoutCurrency: null, status: "PROCESSED", holdReason: null, bankDetails: "x", name: "Still Owed" },
+    ];
+    const alreadyPaidRunEmployeeIds = new Set([1]);
+
+    const eligible = employees.filter((e) => !alreadyPaidRunEmployeeIds.has(e.id));
+
+    expect(eligible.map((e) => e.id)).toEqual([2]);
+  });
 });

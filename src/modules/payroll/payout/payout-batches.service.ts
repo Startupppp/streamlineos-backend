@@ -112,7 +112,21 @@ export class PayoutBatchesService {
       .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
+    const alreadyPaidRows = await this.db
+      .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
+      .from(payrollBankBatchItems)
+      .innerJoin(payrollBankBatches, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
+      .where(
+        and(
+          eq(payrollBankBatches.runId, runId),
+          eq(payrollBankBatches.orgId, orgId),
+          eq(payrollBankBatchItems.status, "PAID"),
+        ),
+      );
+    const alreadyPaidRunEmployeeIds = new Set(alreadyPaidRows.map((r) => r.runEmployeeId));
+
     const eligible = employees.filter(e => {
+      if (alreadyPaidRunEmployeeIds.has(e.id)) return false;
       if (e.status === "HELD" || e.holdReason) return false;
       const bank = decryptBankDetails(e.bankDetails ?? null);
       if (!bank?.accountNumber) return false;
