@@ -4,6 +4,13 @@ import { SupportChannelsService } from "./support-channels.service";
 import { SupportTicketsService } from "./support-tickets.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
+const mockSelectChain = {
+  from: jest.fn(),
+  innerJoin: jest.fn(),
+  where: jest.fn(),
+  limit: jest.fn().mockResolvedValue([]),
+};
+
 const mockDb = {
   query: {
     supportChannels: { findFirst: jest.fn(), findMany: jest.fn() },
@@ -11,6 +18,7 @@ const mockDb = {
     supportTickets: { findFirst: jest.fn() },
     users: { findFirst: jest.fn() },
   },
+  select: jest.fn(),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1 }]),
@@ -39,6 +47,13 @@ describe("SupportChannelsService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    mockSelectChain.from.mockReturnValue(mockSelectChain);
+    mockSelectChain.innerJoin.mockReturnValue(mockSelectChain);
+    mockSelectChain.where.mockReturnValue(mockSelectChain);
+    mockSelectChain.limit.mockResolvedValue([]);
+    mockDb.select.mockReturnValue(mockSelectChain);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportChannelsService,
@@ -75,7 +90,7 @@ describe("SupportChannelsService", () => {
 
   describe("ingestInboundEmail — idempotency", () => {
     it("returns the existing ticket/message without creating anything new on a duplicate messageId", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce({ id: 5, ticketId: 42 });
+      mockSelectChain.limit.mockResolvedValueOnce([{ id: 5, ticketId: 42 }]);
 
       const result = await service.ingestInboundEmail("org1", { id: 1, config: {} } as never, baseInput as never);
 
@@ -87,7 +102,7 @@ describe("SupportChannelsService", () => {
 
   describe("ingestInboundEmail — thread matching", () => {
     it("appends to the existing ticket when inReplyTo matches a known sourceMessageId", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 42 });
 
       const result = await service.ingestInboundEmail(
@@ -115,7 +130,7 @@ describe("SupportChannelsService", () => {
 
   describe("ingestInboundEmail — new ticket creation", () => {
     it("throws BadRequestException when the channel has no configured owner", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
 
       await expect(
         service.ingestInboundEmail("org1", { id: 1, config: {} } as never, baseInput as never),
@@ -124,7 +139,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("throws BadRequestException when the configured owner isn't a real user", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.users.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(
@@ -137,7 +152,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("creates a new ticket attributed to the channel owner, tagging the real requester separately", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "owner-1" });
 
       const result = await service.ingestInboundEmail(
@@ -165,7 +180,7 @@ describe("SupportChannelsService", () => {
     const waInput = { messageId: "wamid.abc123", from: "+15551234567", fromName: "Jane", bodyText: "Still broken" };
 
     it("threads onto the ticket matching inReplyTo when provided", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 42 });
 
       const result = await service.ingestInboundWhatsApp(
@@ -179,7 +194,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("falls back to the sender's most recent open ticket on this channel when there's no inReplyTo", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 99 });
 
       const result = await service.ingestInboundWhatsApp("org1", { id: 1, config: {} } as never, waInput as never);
@@ -195,7 +210,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("creates a new ticket attributed to the channel owner when no open ticket exists for this sender", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
       mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "owner-1" });
 
@@ -215,7 +230,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("dedupes by messageId, same as email", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce({ id: 5, ticketId: 42 });
+      mockSelectChain.limit.mockResolvedValueOnce([{ id: 5, ticketId: 42 }]);
 
       const result = await service.ingestInboundWhatsApp("org1", { id: 1, config: {} } as never, waInput as never);
 
@@ -229,7 +244,7 @@ describe("SupportChannelsService", () => {
     const smsInput = { messageId: "SM123", from: "+15559876543", bodyText: "call me back" };
 
     it("has no reply-context concept — always threads onto the sender's most recent open ticket", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 77 });
 
       const result = await service.ingestInboundSms("org1", { id: 1, config: {} } as never, smsInput as never);
@@ -245,7 +260,7 @@ describe("SupportChannelsService", () => {
     });
 
     it("creates a new ticket when the sender has no open ticket yet", async () => {
-      mockDb.query.supportTicketMessages.findFirst.mockResolvedValueOnce(undefined);
+      mockSelectChain.limit.mockResolvedValueOnce([]);
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
       mockDb.query.users.findFirst.mockResolvedValueOnce({ id: "owner-1" });
 

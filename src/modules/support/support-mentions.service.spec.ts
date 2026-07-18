@@ -1,20 +1,23 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { SupportMentionsService } from "./support-mentions.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+
+const mockDbChain = {
+  from: jest.fn(),
+  innerJoin: jest.fn(),
+  where: jest.fn().mockResolvedValue([]),
+};
 
 const mockDb = {
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  innerJoin: jest.fn().mockReturnThis(),
-  where: jest.fn().mockResolvedValue([]),
+  select: jest.fn(),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
 };
 
-const mockNotifications = {
-  create: jest.fn().mockResolvedValue(undefined),
+const mockDispatch = {
+  emit: jest.fn().mockResolvedValue(undefined),
 };
 
 const ORG_USERS = [
@@ -28,13 +31,20 @@ describe("SupportMentionsService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockDb.where.mockResolvedValue(ORG_USERS);
+
+    mockDbChain.from.mockReturnValue(mockDbChain);
+    mockDbChain.innerJoin.mockReturnValue(mockDbChain);
+    mockDbChain.where.mockResolvedValue(ORG_USERS);
+    mockDb.select.mockReturnValue(mockDbChain);
+    mockDb.insert.mockReturnValue(mockDb);
+    mockDb.values.mockReturnValue(mockDb);
+    mockDb.onConflictDoNothing.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportMentionsService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: NotificationsService, useValue: mockNotifications },
+        { provide: NotificationDispatchService, useValue: mockDispatch },
       ],
     }).compile();
     service = module.get(SupportMentionsService);
@@ -52,7 +62,7 @@ describe("SupportMentionsService", () => {
     });
 
     expect(mockDb.insert).not.toHaveBeenCalled();
-    expect(mockNotifications.create).not.toHaveBeenCalled();
+    expect(mockDispatch.emit).not.toHaveBeenCalled();
   });
 
   it("matches a mention by first name and notifies that user", async () => {
@@ -70,8 +80,8 @@ describe("SupportMentionsService", () => {
     expect(mockDb.values).toHaveBeenCalledWith([
       { orgId: "org1", messageId: 5, mentionedUserId: "user-jane" },
     ]);
-    expect(mockNotifications.create).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: "org1", userId: "user-jane", title: "You were mentioned" }),
+    expect(mockDispatch.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org1", targetUserIds: ["user-jane"], title: "You were mentioned" }),
     );
   });
 
@@ -86,8 +96,8 @@ describe("SupportMentionsService", () => {
       authorName: "Author Person",
     });
 
-    expect(mockNotifications.create).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "user-bob" }),
+    expect(mockDispatch.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ targetUserIds: ["user-bob"] }),
     );
   });
 
@@ -103,7 +113,7 @@ describe("SupportMentionsService", () => {
     });
 
     expect(mockDb.insert).not.toHaveBeenCalled();
-    expect(mockNotifications.create).not.toHaveBeenCalled();
+    expect(mockDispatch.emit).not.toHaveBeenCalled();
   });
 
   it("does nothing when the '@' token matches no org member", async () => {
@@ -118,6 +128,6 @@ describe("SupportMentionsService", () => {
     });
 
     expect(mockDb.insert).not.toHaveBeenCalled();
-    expect(mockNotifications.create).not.toHaveBeenCalled();
+    expect(mockDispatch.emit).not.toHaveBeenCalled();
   });
 });

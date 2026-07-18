@@ -50,7 +50,7 @@ describe("ContactRolesService – mergeContacts", () => {
   });
 
   it("throws NotFoundException when primary contact is not in the org", async () => {
-    db.where.mockResolvedValueOnce([]);
+    db.where.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await expect(
       svc.mergeContacts(ORG_A, { primaryId: 1, duplicateId: 2 }, "user-1"),

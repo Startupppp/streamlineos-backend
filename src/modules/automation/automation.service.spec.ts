@@ -4,6 +4,7 @@ import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
+import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const mockDb = {
@@ -26,6 +27,7 @@ const mockDb = {
 const mockNotifications = { create: jest.fn() };
 const mockEmail = { send: jest.fn() };
 const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+const mockAiNodeExecutor = { executeNode: jest.fn().mockResolvedValue({ ok: true }) };
 
 describe("AutomationService — support_* actions", () => {
   let service: AutomationService;
@@ -44,6 +46,7 @@ describe("AutomationService — support_* actions", () => {
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
+        { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
     }).compile();
     service = module.get(AutomationService);
@@ -146,6 +149,7 @@ describe("AutomationService — rule CRUD", () => {
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
+        { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
     }).compile();
     service = module.get(AutomationService);

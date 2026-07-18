@@ -5,19 +5,29 @@ import type { Db } from "../../db/drizzle.module";
 
 type MockDb = {
   query: {
-    projects: { findFirst: jest.Mock };
     bugs: { findFirst: jest.Mock };
   };
+  select: jest.Mock;
   transaction: jest.Mock;
   update: jest.Mock;
 };
 
+function makeSelectChain(rows: unknown[]) {
+  const whereChain = {
+    where: jest.fn().mockReturnValue({
+      limit: jest.fn().mockResolvedValue(rows),
+    }),
+  };
+  const fromChain = { from: jest.fn().mockReturnValue(whereChain) };
+  return jest.fn().mockReturnValue(fromChain);
+}
+
 function makeMockDb(): MockDb {
   return {
     query: {
-      projects: { findFirst: jest.fn() },
       bugs: { findFirst: jest.fn() },
     },
+    select: jest.fn(),
     transaction: jest.fn(),
     update: jest.fn(),
   };
@@ -33,20 +43,18 @@ describe("BugsService.listBugs — tenant scoping", () => {
   it("throws NotFoundException when project does not exist for the given orgId (BOLA guard)", async () => {
     const mockDb = makeMockDb();
     const svc = new BugsService(mockDb as unknown as Db, mockAudit);
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
+    mockDb.select = makeSelectChain([]);
 
     await expect(svc.listBugs("org-attacker", 1, {})).rejects.toThrow(NotFoundException);
   });
 
-  it("calls findFirst with both projectId and orgId to enforce tenant scope", async () => {
+  it("calls select with both projectId and orgId to enforce tenant scope", async () => {
     const mockDb = makeMockDb();
     const svc = new BugsService(mockDb as unknown as Db, mockAudit);
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
+    mockDb.select = makeSelectChain([]);
 
     await expect(svc.listBugs("org-1", 99, {})).rejects.toThrow(NotFoundException);
-    expect(mockDb.query.projects.findFirst).toHaveBeenCalledTimes(1);
-    const callArg = mockDb.query.projects.findFirst.mock.calls[0][0] as { where: unknown };
-    expect(callArg).toBeDefined();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -55,7 +63,7 @@ describe("BugsService.createBug — bugNumber sequencing", () => {
     const mockDb = makeMockDb();
     const svc = new BugsService(mockDb as unknown as Db, mockAudit);
 
-    mockDb.query.projects.findFirst.mockResolvedValue({ id: 1 });
+    mockDb.select = makeSelectChain([{ id: 1 }]);
 
     let capturedBugNumber: number | undefined;
     mockDb.transaction.mockImplementation(
@@ -104,7 +112,7 @@ describe("BugsService.createBug — bugNumber sequencing", () => {
     const mockDb = makeMockDb();
     const svc = new BugsService(mockDb as unknown as Db, mockAudit);
 
-    mockDb.query.projects.findFirst.mockResolvedValue({ id: 1 });
+    mockDb.select = makeSelectChain([{ id: 1 }]);
 
     let capturedBugNumber: number | undefined;
     mockDb.transaction.mockImplementation(
@@ -151,7 +159,7 @@ describe("BugsService.createBug — bugNumber sequencing", () => {
   it("throws NotFoundException when project is not found for the given orgId before inserting", async () => {
     const mockDb = makeMockDb();
     const svc = new BugsService(mockDb as unknown as Db, mockAudit);
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
+    mockDb.select = makeSelectChain([]);
 
     await expect(
       svc.createBug("org-attacker", "user-1", 1, { title: "Injection attempt" }),

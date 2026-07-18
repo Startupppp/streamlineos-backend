@@ -41,8 +41,9 @@ describe("ClientPortalService — client isolation (assertClientProject)", () =>
     const crRow = { id: 1, crNumber: 1, title: "Add OAuth", status: "submitted", createdAt: new Date() };
     const crChain = {
       from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnValue(Promise.resolve([crRow])),
-      orderBy: jest.fn().mockReturnValue(Promise.resolve([crRow])),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([crRow]),
+      orderBy: jest.fn().mockResolvedValue([crRow]),
     };
     const mockDb = {
       query: {
@@ -110,9 +111,10 @@ describe("ClientPortalService.getProjectOverview — client isolation + field sa
     const emptyPromise = Promise.resolve([]);
     const parallelChain = {
       from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnValue(emptyPromise),
+      where: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnValue(emptyPromise),
     };
 
     const selectMock = jest.fn()
@@ -141,7 +143,8 @@ describe("ClientPortalService.listPortalProjects — SELECT field safety", () =>
     const projectRow = { id: 1, name: "P", key: "P1", status: "active", startDate: null, targetEndDate: null };
     const chain = {
       from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnValue(Promise.resolve([projectRow])),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([projectRow]),
     };
     const selectMock = jest.fn().mockReturnValue(chain);
     const mockDb = { select: selectMock } as unknown as Db;

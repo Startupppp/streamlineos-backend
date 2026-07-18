@@ -7,6 +7,7 @@ import { WebPushService } from "../realtime/web-push.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { CacheService } from "../../common/cache/cache.service";
 
 const mockDb = {
   query: {
@@ -25,6 +26,14 @@ const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
+};
+
+const mockCache = {
+  cached: jest.fn().mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
+  invalidate: jest.fn().mockResolvedValue(undefined),
+  invalidatePattern: jest.fn().mockResolvedValue(undefined),
+  set: jest.fn().mockResolvedValue(undefined),
+  get: jest.fn().mockResolvedValue(null),
 };
 
 const mockAbly = { publishChatEvent: jest.fn().mockResolvedValue(undefined) };
@@ -48,6 +57,7 @@ describe("ChatMessagesService", () => {
       providers: [
         ChatMessagesService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: CacheService, useValue: mockCache },
         { provide: AblyService, useValue: mockAbly },
         { provide: WebPushService, useValue: mockWebPush },
         { provide: ChatNotificationsService, useValue: mockNotifications },
