@@ -25,21 +25,21 @@ export class LeavePoliciesController {
     return this.service.create(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":policyId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("policyId", ParseIntPipe) policyId: number,
     @Body() body: UpdateLeavePolicyInput,
   ) {
-    return this.service.update(u.orgId, id, body);
+    return this.service.update(u.orgId, policyId, body);
   }
 
-  @Delete(":id")
+  @Delete(":policyId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
-  remove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.remove(u.orgId, id);
+  remove(@CurrentUser() u: CurrentUserContext, @Param("policyId", ParseIntPipe) policyId: number) {
+    return this.service.remove(u.orgId, policyId);
   }
 }

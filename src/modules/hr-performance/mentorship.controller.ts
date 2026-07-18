@@ -29,13 +29,13 @@ export class MentorshipController {
     return this.mentorshipService.create(user.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":mentorshipId")
   @RequirePermission("hr:learning:manage")
   update(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("mentorshipId", ParseIntPipe) mentorshipId: number,
     @Body() body: Partial<{ status: string; endedAt: string; goal: string }>,
   ) {
-    return this.mentorshipService.update(user.orgId, id, body);
+    return this.mentorshipService.update(user.orgId, mentorshipId, body);
   }
 }

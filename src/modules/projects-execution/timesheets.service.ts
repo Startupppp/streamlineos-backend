@@ -47,7 +47,7 @@ export class TimesheetsService {
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
+    const limit = query.limit;
     const offset = (page - 1) * limit;
 
     const scope = await resolveTimesheetsScope(this.access, user);

@@ -87,6 +87,7 @@ export class SprintsController {
 
   @Delete(":sprintId")
   @RequirePermission("projects:sprints:manage")
+  @HttpCode(204)
   deleteSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("sprintId", ParseIntPipe) sprintId: number,

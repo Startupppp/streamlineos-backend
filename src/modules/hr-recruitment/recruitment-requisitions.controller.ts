@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -34,6 +34,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:requisitions:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -42,41 +43,42 @@ export class RecruitmentRequisitionsController {
     return this.service.create(u.orgId, u.userId, body);
   }
 
-  @Patch(":id/submit")
+  @Patch(":requisitionId/submit")
   @RequirePermission("hr:requisitions:manage")
-  submit(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.submit(u.orgId, id);
+  submit(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
+    return this.service.submit(u.orgId, requisitionId);
   }
 
-  @Patch(":id/approve")
+  @Patch(":requisitionId/approve")
   @RequirePermission("hr:requisitions:manage")
-  approve(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.approve(u.orgId, id, u.userId);
+  approve(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
+    return this.service.approve(u.orgId, requisitionId, u.userId);
   }
 
-  @Patch(":id/reject")
+  @Patch(":requisitionId/reject")
   @RequirePermission("hr:requisitions:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("requisitionId", ParseIntPipe) requisitionId: number,
     @Body(new ZodValidationPipe(rejectRequisitionSchema)) body: RejectRequisitionInput,
   ) {
-    return this.service.reject(u.orgId, id, u.userId, body.reason ?? "");
+    return this.service.reject(u.orgId, requisitionId, u.userId, body.reason ?? "");
   }
 
-  @Post(":id/create-job")
+  @Post(":requisitionId/create-job")
+  @HttpCode(201)
   @RequirePermission("hr:requisitions:manage")
-  createJob(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.createJobFromRequisition(u.orgId, u.userId, id);
+  createJob(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
+    return this.service.createJobFromRequisition(u.orgId, u.userId, requisitionId);
   }
 
-  @Patch(":id")
+  @Patch(":requisitionId")
   @RequirePermission("hr:requisitions:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("requisitionId", ParseIntPipe) requisitionId: number,
     @Body(new ZodValidationPipe(updateRequisitionSchema)) body: UpdateRequisitionInput,
   ) {
-    return this.service.update(u.orgId, id, body);
+    return this.service.update(u.orgId, requisitionId, body);
   }
 }

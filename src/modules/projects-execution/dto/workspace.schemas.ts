@@ -32,8 +32,8 @@ export const updateIntakeSchema = z.object({
 
 export const intakeListQuerySchema = z.object({
   status: z.enum(["pending", "accepted", "declined", "duplicate"]).optional(),
-  limit: z.coerce.number().int().positive().optional(),
-  offset: z.coerce.number().int().nonnegative().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
 });
 
 const MAX_DISPLAY_OPTIONS_BYTES = 8192;

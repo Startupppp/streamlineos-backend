@@ -26,20 +26,20 @@ export class FeedbackController {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
 
-  @Get("cycles/:id")
+  @Get("cycles/:cycleId")
   @RequirePermission("hr:performance:view")
-  getCycle(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.getCycle(u.orgId, id);
+  getCycle(@CurrentUser() u: CurrentUserContext, @Param("cycleId", ParseIntPipe) cycleId: number) {
+    return this.service.getCycle(u.orgId, cycleId);
   }
 
-  @Patch("cycles/:id")
+  @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body() body: { status: string },
   ) {
-    return this.service.updateCycleStatus(u.orgId, id, body.status);
+    return this.service.updateCycleStatus(u.orgId, cycleId, body.status);
   }
 
   @Get("my-reviews")

@@ -83,6 +83,7 @@ export class MilestonesController {
 
   @Delete(":milestoneId")
   @RequirePermission("projects:workspace:manage")
+  @HttpCode(204)
   deleteMilestone(
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -167,6 +168,7 @@ export class ViewsController {
 
   @Delete(":viewId")
   @RequirePermission("projects:workspace:manage")
+  @HttpCode(204)
   deleteView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +211,7 @@ export class WorkspaceViewsController {
 
   @Delete(":viewId")
   @RequirePermission("projects:workspace:manage")
+  @HttpCode(204)
   deleteWorkspaceView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -279,6 +282,7 @@ export class WhiteboardsController {
 
   @Delete(":whiteboardId")
   @RequirePermission("projects:whiteboards:manage")
+  @HttpCode(204)
   deleteWhiteboard(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,

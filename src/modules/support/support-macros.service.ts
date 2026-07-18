@@ -55,7 +55,7 @@ export class SupportMacrosService {
     return this.db.query.supportMacros.findMany({
       where: and(...conditions),
       orderBy: [asc(supportMacros.title)],
-      limit: 200,
+      limit: 100,
     });
   }
 

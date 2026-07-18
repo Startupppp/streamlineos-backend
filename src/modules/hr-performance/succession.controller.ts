@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { SuccessionService } from "./succession.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -20,6 +20,7 @@ export class SuccessionController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:succession:manage")
   create(
     @CurrentUser() user: CurrentUserContext,
@@ -36,11 +37,11 @@ export class SuccessionController {
     return this.successionService.create(user.orgId, user.userId, body);
   }
 
-  @Patch(":id")
+  @Patch(":successionId")
   @RequirePermission("hr:succession:manage")
   update(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("successionId", ParseIntPipe) successionId: number,
     @Body()
     body: Partial<{
       roleName: string;
@@ -51,12 +52,12 @@ export class SuccessionController {
       note: string;
     }>,
   ) {
-    return this.successionService.update(user.orgId, id, body);
+    return this.successionService.update(user.orgId, successionId, body);
   }
 
-  @Delete(":id")
+  @Delete(":successionId")
   @RequirePermission("hr:succession:manage")
-  remove(@CurrentUser() user: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.successionService.remove(user.orgId, id);
+  remove(@CurrentUser() user: CurrentUserContext, @Param("successionId", ParseIntPipe) successionId: number) {
+    return this.successionService.remove(user.orgId, successionId);
   }
 }

@@ -60,14 +60,14 @@ export class AccommodationsController {
     return this.svc.list(user.orgId, query, sensitive);
   }
 
-  @Get(":id")
+  @Get(":accommodationId")
   @RequirePermission("hr:accommodations:view")
   async getById(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
   ) {
     const sensitive = await this.hasSensitive(user);
-    return this.svc.getById(user.orgId, id, sensitive);
+    return this.svc.getById(user.orgId, accommodationId, sensitive);
   }
 
   @Post()
@@ -80,77 +80,77 @@ export class AccommodationsController {
     return this.svc.create(user.orgId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
-  @Patch(":id")
+  @Patch(":accommodationId")
   @RequirePermission("hr:accommodations:manage")
   async update(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Body(new ZodValidationPipe(updateAccommodationSchema)) body: UpdateAccommodationInput,
     @Req() req: Request,
   ) {
-    return this.svc.update(user.orgId, id, user.userId, body, req.ip, req.headers["user-agent"]);
+    return this.svc.update(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
-  @Delete(":id")
+  @Delete(":accommodationId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
   async remove(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Req() req: Request,
   ) {
-    await this.svc.softDelete(user.orgId, id, user.userId, req.ip, req.headers["user-agent"]);
+    await this.svc.softDelete(user.orgId, accommodationId, user.userId, req.ip, req.headers["user-agent"]);
   }
 
-  @Post(":id/approve")
+  @Post(":accommodationId/approve")
   @RequirePermission("hr:accommodations:manage")
   async approve(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Body(new ZodValidationPipe(approveAccommodationSchema)) body: ApproveAccommodationInput,
     @Req() req: Request,
   ) {
-    return this.svc.approve(user.orgId, id, user.userId, body, req.ip, req.headers["user-agent"]);
+    return this.svc.approve(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
-  @Get(":id/tasks")
+  @Get(":accommodationId/tasks")
   @RequirePermission("hr:accommodations:view")
   async listTasks(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
   ) {
-    return this.svc.listTasks(user.orgId, id);
+    return this.svc.listTasks(user.orgId, accommodationId);
   }
 
-  @Post(":id/tasks")
+  @Post(":accommodationId/tasks")
   @RequirePermission("hr:accommodations:manage")
   async createTask(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Body(new ZodValidationPipe(createAccommodationTaskSchema)) body: CreateAccommodationTaskInput,
   ) {
-    return this.svc.createTask(user.orgId, id, body);
+    return this.svc.createTask(user.orgId, accommodationId, body);
   }
 
-  @Patch(":id/tasks/:taskId")
+  @Patch(":accommodationId/tasks/:taskId")
   @RequirePermission("hr:accommodations:manage")
   async updateTask(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Param("taskId") taskId: string,
     @Body(new ZodValidationPipe(updateAccommodationTaskSchema)) body: UpdateAccommodationTaskInput,
   ) {
-    return this.svc.updateTask(user.orgId, id, taskId, body);
+    return this.svc.updateTask(user.orgId, accommodationId, taskId, body);
   }
 
-  @Delete(":id/tasks/:taskId")
+  @Delete(":accommodationId/tasks/:taskId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
   async deleteTask(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("accommodationId") accommodationId: string,
     @Param("taskId") taskId: string,
   ) {
-    await this.svc.deleteTask(user.orgId, id, taskId);
+    await this.svc.deleteTask(user.orgId, accommodationId, taskId);
   }
 }

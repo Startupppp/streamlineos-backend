@@ -136,6 +136,7 @@ export class ProjectsController {
 
   @Delete(":projectId/members")
   @RequirePermission("projects:manage")
+  @HttpCode(204)
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
@@ -224,6 +225,7 @@ export class ProjectsController {
 
   @Delete(":projectId")
   @RequirePermission("projects:delete")
+  @HttpCode(204)
   deleteProject(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

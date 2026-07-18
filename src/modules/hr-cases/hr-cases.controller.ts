@@ -62,14 +62,14 @@ export class HrCasesController {
     return this.cases.countByStatus(user.orgId);
   }
 
-  @Get(":id")
+  @Get(":caseId")
   @RequirePermission("hr:cases:view")
   async getById(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.getById(user.orgId, id, user.userId, hasConfidential);
+    return this.cases.getById(user.orgId, caseId, user.userId, hasConfidential);
   }
 
   @Post()
@@ -91,82 +91,82 @@ export class HrCasesController {
     return this.cases.createAnonymous(user.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":caseId")
   @RequirePermission("hr:cases:manage")
   async update(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
     @Body(new ZodValidationPipe(updateCaseSchema)) body: UpdateCaseInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.update(user.orgId, id, user.userId, hasConfidential, body, req.ip);
+    return this.cases.update(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
   }
 
-  @Delete(":id")
+  @Delete(":caseId")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   async delete(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    await this.cases.softDelete(user.orgId, id, user.userId, hasConfidential);
+    await this.cases.softDelete(user.orgId, caseId, user.userId, hasConfidential);
   }
 
-  @Post(":id/investigate")
+  @Post(":caseId/investigate")
   @RequirePermission("hr:cases:manage")
   async startInvestigation(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.startInvestigation(user.orgId, id, user.userId, hasConfidential, req.ip);
+    return this.cases.startInvestigation(user.orgId, caseId, user.userId, hasConfidential, req.ip);
   }
 
-  @Get(":id/notes")
+  @Get(":caseId/notes")
   @RequirePermission("hr:cases:view")
   async listNotes(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.listNotes(user.orgId, id, user.userId, hasConfidential);
+    return this.cases.listNotes(user.orgId, caseId, user.userId, hasConfidential);
   }
 
-  @Post(":id/notes")
+  @Post(":caseId/notes")
   @RequirePermission("hr:cases:manage")
   async addNote(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
     @Body(new ZodValidationPipe(createNoteSchema)) body: CreateNoteInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.addNote(user.orgId, id, user.userId, hasConfidential, body, req.ip);
+    return this.cases.addNote(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
   }
 
-  @Get(":id/documents")
+  @Get(":caseId/documents")
   @RequirePermission("hr:cases:view")
   async listDocuments(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.listDocuments(user.orgId, id, user.userId, hasConfidential);
+    return this.cases.listDocuments(user.orgId, caseId, user.userId, hasConfidential);
   }
 
-  @Post(":id/documents")
+  @Post(":caseId/documents")
   @RequirePermission("hr:cases:manage")
   async addDocument(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("caseId", ParseIntPipe) caseId: number,
     @Body(new ZodValidationPipe(addDocumentSchema)) body: AddDocumentInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.addDocument(user.orgId, id, user.userId, hasConfidential, body, req.ip);
+    return this.cases.addDocument(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
   }
 
   private async canConfidential(user: CurrentUserContext): Promise<boolean> {

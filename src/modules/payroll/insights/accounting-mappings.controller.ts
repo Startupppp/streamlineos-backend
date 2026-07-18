@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Patch,
   Delete,
@@ -35,6 +36,7 @@ export class AccountingMappingsController {
   }
 
   @Post()
+  @HttpCode(201)
   async create(
     @Body(new ZodValidationPipe(accountingMappingCreateSchema)) body: AccountingMappingCreate,
     @CurrentUser() u: CurrentUserContext,
@@ -42,20 +44,20 @@ export class AccountingMappingsController {
     return this.accountingMappingsService.create(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":mappingId")
   async update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("mappingId", ParseIntPipe) mappingId: number,
     @Body(new ZodValidationPipe(accountingMappingUpdateSchema)) body: AccountingMappingUpdate,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.accountingMappingsService.update(u.orgId, id, body);
+    return this.accountingMappingsService.update(u.orgId, mappingId, body);
   }
 
-  @Delete(":id")
+  @Delete(":mappingId")
   async remove(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("mappingId", ParseIntPipe) mappingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.accountingMappingsService.remove(u.orgId, id);
+    return this.accountingMappingsService.remove(u.orgId, mappingId);
   }
 }

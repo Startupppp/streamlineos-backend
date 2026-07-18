@@ -89,6 +89,7 @@ export class TimeEntriesController {
 
   @Delete(":entryId")
   @RequirePermission("projects:timesheets:create")
+  @HttpCode(204)
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

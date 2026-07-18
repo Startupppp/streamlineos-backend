@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Query,
   UseGuards,
@@ -37,6 +38,7 @@ export class TransfersController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("accounting:banking:manage")
   create(
     @Body(new ZodValidationPipe(createBankTransferSchema)) body: CreateBankTransferInput,

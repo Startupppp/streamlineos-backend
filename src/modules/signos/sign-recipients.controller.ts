@@ -45,21 +45,21 @@ export class SignRecipientsController {
     return this.recipients.listForEnvelope(u.orgId, envelopeId);
   }
 
-  @Patch("recipients/:id")
+  @Patch("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("recipientId", ParseIntPipe) recipientId: number,
     @Body(new ZodValidationPipe(updateRecipientSchema)) body: UpdateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.update(u.orgId, id, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
   }
 
-  @Delete("recipients/:id")
+  @Delete("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
-  async remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.recipients.remove(u.orgId, id, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+  async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
     return { success: true };
   }
 }

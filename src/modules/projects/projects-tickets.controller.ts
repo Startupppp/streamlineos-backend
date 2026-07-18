@@ -255,6 +255,7 @@ export class ProjectsTicketsController {
 
   @Delete(":projectId/tickets/:ticketId/relations")
   @RequirePermission("projects:tickets:update")
+  @HttpCode(204)
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -286,6 +287,7 @@ export class ProjectsTicketsController {
 
   @Delete(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("projects:tickets:update")
+  @HttpCode(204)
   removeWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -306,6 +308,7 @@ export class ProjectsTicketsController {
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
   @RequirePermission("projects:tickets:update")
+  @HttpCode(204)
   removeLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -429,6 +432,7 @@ export class ProjectsTicketsController {
 
   @Delete(":projectId/tickets/:ticketId")
   @RequirePermission("projects:tickets:delete")
+  @HttpCode(204)
   deleteTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Query("force") force: string,
@@ -471,6 +475,7 @@ export class ProjectsTicketsController {
 
   @Post(":projectId/tickets/:ticketId/related-links")
   @RequirePermission("projects:tickets:update")
+  @HttpCode(201)
   addRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

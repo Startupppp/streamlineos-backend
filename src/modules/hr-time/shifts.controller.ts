@@ -35,20 +35,20 @@ export class ShiftsController {
     return this.service.createShift(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":shiftId")
   @RequirePermission("hr:attendance:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("shiftId", ParseIntPipe) shiftId: number,
     @Body(new ZodValidationPipe(updateShiftSchema)) body: UpdateShiftInput,
   ) {
-    return this.service.updateShift(u.orgId, id, body);
+    return this.service.updateShift(u.orgId, shiftId, body);
   }
 
-  @Delete(":id")
+  @Delete(":shiftId")
   @RequirePermission("hr:attendance:manage")
-  remove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.deleteShift(u.orgId, id);
+  remove(@CurrentUser() u: CurrentUserContext, @Param("shiftId", ParseIntPipe) shiftId: number) {
+    return this.service.deleteShift(u.orgId, shiftId);
   }
 
   @Get("assignments")
@@ -75,9 +75,9 @@ export class ShiftsController {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
-  @Patch("swaps/:id")
+  @Patch("swaps/:swapId")
   @RequirePermission("hr:attendance:manage")
-  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: { status: string }) {
-    return this.service.updateSwapStatus(u.orgId, id, body.status, u.userId);
+  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("swapId", ParseIntPipe) swapId: number, @Body() body: { status: string }) {
+    return this.service.updateSwapStatus(u.orgId, swapId, body.status, u.userId);
   }
 }

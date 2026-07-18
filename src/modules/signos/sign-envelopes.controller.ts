@@ -53,83 +53,83 @@ export class SignEnvelopesController {
     return this.envelopes.list(u.orgId, query, { userId: u.userId, viewAll });
   }
 
-  @Get(":id")
+  @Get(":envelopeId")
   @RequirePermission("sign:envelope:view")
-  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.envelopes.getFull(u.orgId, id);
+  get(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.envelopes.getFull(u.orgId, envelopeId);
   }
 
-  @Patch(":id")
+  @Patch(":envelopeId")
   @RequirePermission("sign:envelope:create")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body(new ZodValidationPipe(updateEnvelopeSchema)) body: UpdateEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.envelopes.update(u.orgId, id, body, actorFrom(u, req));
+    return this.envelopes.update(u.orgId, envelopeId, body, actorFrom(u, req));
   }
 
-  @Delete(":id")
+  @Delete(":envelopeId")
   @RequirePermission("sign:envelope:create")
-  remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.envelopes.delete(u.orgId, id, actorFrom(u, req));
+  remove(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.delete(u.orgId, envelopeId, actorFrom(u, req));
   }
 
-  @Post(":id/validate")
+  @Post(":envelopeId/validate")
   @RequirePermission("sign:envelope:create")
-  validate(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.envelopes.validate(u.orgId, id);
+  validate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.envelopes.validate(u.orgId, envelopeId);
   }
 
-  @Post(":id/send")
+  @Post(":envelopeId/send")
   @RequirePermission("sign:envelope:send")
-  send(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.envelopes.send(u.orgId, id, actorFrom(u, req));
+  send(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.send(u.orgId, envelopeId, actorFrom(u, req));
   }
 
-  @Post(":id/void")
+  @Post(":envelopeId/void")
   @RequirePermission("sign:envelope:void")
   voidEnvelope(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body(new ZodValidationPipe(voidEnvelopeSchema)) body: VoidEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.envelopes.voidEnvelope(u.orgId, id, body, actorFrom(u, req));
+    return this.envelopes.voidEnvelope(u.orgId, envelopeId, body, actorFrom(u, req));
   }
 
-  @Post(":id/correct")
+  @Post(":envelopeId/correct")
   @RequirePermission("sign:envelope:correct")
   correct(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body(new ZodValidationPipe(correctEnvelopeSchema)) body: CorrectEnvelopeInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.envelopes.correct(u.orgId, id, body, actorFrom(u, req));
+    return this.envelopes.correct(u.orgId, envelopeId, body, actorFrom(u, req));
   }
 
-  @Post(":id/resend")
+  @Post(":envelopeId/resend")
   @RequirePermission("sign:envelope:send")
-  resend(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.envelopes.resend(u.orgId, id, actorFrom(u, req));
+  resend(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.resend(u.orgId, envelopeId, actorFrom(u, req));
   }
 
-  @Post(":id/send-reminder")
+  @Post(":envelopeId/send-reminder")
   @RequirePermission("sign:envelope:send")
-  sendReminder(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.envelopes.sendManualReminder(u.orgId, id, actorFrom(u, req));
+  sendReminder(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.envelopes.sendManualReminder(u.orgId, envelopeId, actorFrom(u, req));
   }
 
-  @Post(":id/extend-expiration")
+  @Post(":envelopeId/extend-expiration")
   @RequirePermission("sign:envelope:correct")
   extendExpiration(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body(new ZodValidationPipe(extendExpirationSchema)) body: ExtendExpirationInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.envelopes.extendExpiration(u.orgId, id, body, actorFrom(u, req));
+    return this.envelopes.extendExpiration(u.orgId, envelopeId, body, actorFrom(u, req));
   }
 }

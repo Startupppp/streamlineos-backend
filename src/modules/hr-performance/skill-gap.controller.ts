@@ -41,9 +41,9 @@ export class SkillGapController {
     return this.skillGapService.addRequirement(user.orgId, body);
   }
 
-  @Delete("requirements/:id")
+  @Delete("requirements/:requirementId")
   @RequirePermission("hr:performance:manage")
-  removeRequirement(@CurrentUser() user: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.skillGapService.removeRequirement(user.orgId, id);
+  removeRequirement(@CurrentUser() user: CurrentUserContext, @Param("requirementId", ParseIntPipe) requirementId: number) {
+    return this.skillGapService.removeRequirement(user.orgId, requirementId);
   }
 }

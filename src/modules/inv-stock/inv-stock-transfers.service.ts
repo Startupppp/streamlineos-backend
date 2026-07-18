@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { invStockTransfers, invStockTransferLines } from "../../db/schema";
@@ -27,11 +27,11 @@ export class InvStockTransfersService {
 
     const { status, warehouseId, fromWarehouseId, toWarehouseId, fromDate, toDate, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invStockTransfers.orgId, orgId)];
+    const conditions: SQL[] = [eq(invStockTransfers.orgId, orgId)];
     if (status) conditions.push(eq(invStockTransfers.status, status));
-    if (warehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, warehouseId) as ReturnType<typeof eq>);
-    if (fromWarehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, fromWarehouseId) as ReturnType<typeof eq>);
-    if (toWarehouseId) conditions.push(eq(invStockTransfers.toWarehouseId, toWarehouseId) as ReturnType<typeof eq>);
+    if (warehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, warehouseId));
+    if (fromWarehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, fromWarehouseId));
+    if (toWarehouseId) conditions.push(eq(invStockTransfers.toWarehouseId, toWarehouseId));
     if (fromDate) conditions.push(gte(invStockTransfers.createdAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(invStockTransfers.createdAt, new Date(toDate)));
     if (search) {

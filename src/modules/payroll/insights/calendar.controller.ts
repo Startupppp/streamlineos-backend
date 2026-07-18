@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -48,6 +49,7 @@ export class CalendarController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   create(

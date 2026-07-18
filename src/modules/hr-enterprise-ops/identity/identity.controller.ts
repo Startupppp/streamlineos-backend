@@ -68,14 +68,14 @@ export class IdentityController {
     return this.svc.generateProvisioning(user.orgId, body);
   }
 
-  @Patch("provisioning/:id")
+  @Patch("provisioning/:provisioningId")
   @RequirePermission("hr:identity:manage")
   updateProvisioning(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("provisioningId") provisioningId: string,
     @Body(new ZodValidationPipe(updateProvisioningSchema)) body: UpdateProvisioningInput,
   ) {
-    return this.svc.updateProvisioning(user.orgId, id, body);
+    return this.svc.updateProvisioning(user.orgId, provisioningId, body);
   }
 
   @Get("templates")
@@ -93,24 +93,24 @@ export class IdentityController {
     return this.svc.createTemplate(user.orgId, body);
   }
 
-  @Patch("templates/:id")
+  @Patch("templates/:templateId")
   @RequirePermission("hr:identity:manage")
   updateTemplate(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("templateId") templateId: string,
     @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
   ) {
-    return this.svc.updateTemplate(user.orgId, id, body);
+    return this.svc.updateTemplate(user.orgId, templateId, body);
   }
 
-  @Delete("templates/:id")
+  @Delete("templates/:templateId")
   @HttpCode(204)
   @RequirePermission("hr:identity:manage")
   async deleteTemplate(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("templateId") templateId: string,
   ) {
-    await this.svc.deleteTemplate(user.orgId, id);
+    await this.svc.deleteTemplate(user.orgId, templateId);
   }
 
   @Get("exit-verification")

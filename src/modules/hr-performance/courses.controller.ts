@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -39,6 +39,7 @@ export class CoursesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:learning:manage")
   createCourse(
     @CurrentUser() u: CurrentUserContext,

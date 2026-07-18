@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -34,6 +35,7 @@ export class TaxWindowsController {
   }
 
   @Post()
+  @HttpCode(201)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body(new ZodValidationPipe(createTaxWindowBodySchema)) body: CreateTaxWindowBody,
@@ -41,12 +43,12 @@ export class TaxWindowsController {
     return this.taxWindowsService.create(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":windowId")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("windowId", ParseIntPipe) windowId: number,
     @Body(new ZodValidationPipe(patchTaxWindowBodySchema)) body: PatchTaxWindowBody,
   ) {
-    return this.taxWindowsService.update(u.orgId, id, body, u.userId);
+    return this.taxWindowsService.update(u.orgId, windowId, body, u.userId);
   }
 }

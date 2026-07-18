@@ -217,13 +217,13 @@ export class CreditNotesService {
       await tx
         .update(invoices)
         .set({ amountPaid: newInvPaid.toFixed(4), status: newInvStatus, updatedAt: new Date() })
-        .where(eq(invoices.id, input.invoiceId));
+        .where(and(eq(invoices.id, input.invoiceId), eq(invoices.orgId, orgId)));
 
       const newCnStatus = newApplied >= cnTotal - 0.01 ? "APPLIED" : "POSTED";
       await tx
         .update(creditNotes)
         .set({ appliedAmount: newApplied.toFixed(4), status: newCnStatus, updatedAt: new Date() })
-        .where(eq(creditNotes.id, id));
+        .where(and(eq(creditNotes.id, id), eq(creditNotes.orgId, orgId)));
     });
 
     this.audit.log({ action: "credit_note.apply", userId, orgId, resourceType: "credit_note", resourceId: String(id), metadata: { invoiceId: input.invoiceId, amount: input.amount } });

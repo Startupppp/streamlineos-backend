@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -90,6 +91,7 @@ export class ReconciliationController {
   }
 
   @Post("rules")
+  @HttpCode(201)
   @RequirePermission("accounting:banking:reconcile")
   createRule(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -30,6 +30,7 @@ export class ImportsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("accounting:banking:import")
   create(
     @Body(new ZodValidationPipe(createBankImportSchema)) body: CreateBankImportInput,

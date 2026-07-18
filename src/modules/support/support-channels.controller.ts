@@ -71,25 +71,25 @@ export class SupportChannelsController {
     return result;
   }
 
-  @Patch("channels/:id")
+  @Patch("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
   async updateChannel(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("channelId", ParseIntPipe) channelId: number,
     @Body(new ZodValidationPipe(updateSupportChannelSchema)) body: UpdateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.channels.updateChannel(u.orgId, id, body);
-    await this.audit.record(u.orgId, u.userId, "channel", id, "updated", { ...body, config: undefined });
+    const result = await this.channels.updateChannel(u.orgId, channelId, body);
+    await this.audit.record(u.orgId, u.userId, "channel", channelId, "updated", { ...body, config: undefined });
     return result;
   }
 
-  @Delete("channels/:id")
+  @Delete("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
-  async deleteChannel(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.channels.deleteChannel(u.orgId, id);
-    await this.audit.record(u.orgId, u.userId, "channel", id, "deleted");
+  async deleteChannel(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.channels.deleteChannel(u.orgId, channelId);
+    await this.audit.record(u.orgId, u.userId, "channel", channelId, "deleted");
     return result;
   }
 

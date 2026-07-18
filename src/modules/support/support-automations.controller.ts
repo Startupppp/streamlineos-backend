@@ -63,35 +63,35 @@ export class SupportAutomationsController {
     return result;
   }
 
-  @Patch("automations/:id")
+  @Patch("automations/:automationId")
   @RequirePermission("support:settings:manage")
   async updateAutomation(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.automations.updateRule(u.orgId, id, body);
-    await this.audit.record(u.orgId, u.userId, "automation", id, "updated", body);
+    const result = await this.automations.updateRule(u.orgId, automationId, body);
+    await this.audit.record(u.orgId, u.userId, "automation", automationId, "updated", body);
     return result;
   }
 
-  @Delete("automations/:id")
+  @Delete("automations/:automationId")
   @RequirePermission("support:settings:manage")
-  async deleteAutomation(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.automations.deleteRule(u.orgId, id);
-    await this.audit.record(u.orgId, u.userId, "automation", id, "deleted");
+  async deleteAutomation(@Param("automationId", ParseIntPipe) automationId: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.automations.deleteRule(u.orgId, automationId);
+    await this.audit.record(u.orgId, u.userId, "automation", automationId, "deleted");
     return result;
   }
 
-  @Post("automations/:id/test")
+  @Post("automations/:automationId/test")
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
   testAutomation(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(testAutomationSchema)) body: TestAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.testRule(u.orgId, id, body.payload);
+    return this.automations.testRule(u.orgId, automationId, body.payload);
   }
 
   @Get("automation-runs")

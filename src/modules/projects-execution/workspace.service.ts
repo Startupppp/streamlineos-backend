@@ -81,8 +81,8 @@ export class IntakeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
-    const limit = query.limit ?? 50;
-    const offset = query.offset ?? 0;
+    const limit = query.limit;
+    const offset = query.offset;
 
     const conditions = [eq(intakeItems.projectId, projectId), eq(intakeItems.orgId, orgId)];
     if (query.status) conditions.push(eq(intakeItems.status, query.status));

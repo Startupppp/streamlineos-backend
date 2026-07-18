@@ -45,10 +45,10 @@ export class SignAdminController {
     return this.watermark.list(u.orgId);
   }
 
-  @Get("watermark-policies/:id")
+  @Get("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
-  getWatermarkPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.watermark.get(u.orgId, id);
+  getWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.watermark.get(u.orgId, policyId);
   }
 
   @Post("watermark-policies")
@@ -57,20 +57,20 @@ export class SignAdminController {
     return this.watermark.create(u.orgId, u.userId, body);
   }
 
-  @Patch("watermark-policies/:id")
+  @Patch("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
   updateWatermarkPolicy(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(watermarkPolicyInputSchema.partial())) body: Partial<WatermarkPolicyInput>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.watermark.update(u.orgId, id, u.userId, body);
+    return this.watermark.update(u.orgId, policyId, u.userId, body);
   }
 
-  @Delete("watermark-policies/:id")
+  @Delete("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
-  async removeWatermarkPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    await this.watermark.remove(u.orgId, id, u.userId);
+  async removeWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.watermark.remove(u.orgId, policyId, u.userId);
     return { success: true };
   }
 

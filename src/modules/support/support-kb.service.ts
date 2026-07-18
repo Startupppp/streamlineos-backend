@@ -147,7 +147,7 @@ export class SupportKbService {
       .from(kbArticles)
       .where(and(...conditions))
       .orderBy(desc(kbArticles.updatedAt))
-      .limit(200);
+      .limit(100);
   }
 
   async createArticle(orgId: string, userId: string, input: CreateKbArticleInput) {

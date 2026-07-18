@@ -101,8 +101,8 @@ export class HrPeopleService {
         dateOfBirth: input.dateOfBirth ?? null,
         gender: input.gender ?? null,
         nationality: input.nationality ?? null,
-        address: (input.address as never) ?? null,
-        emergencyContact: (input.emergencyContact as never) ?? null,
+        address: input.address ?? null,
+        emergencyContact: input.emergencyContact ?? null,
         avatarUrl: input.avatarUrl ?? null,
       })
       .returning();
@@ -152,8 +152,8 @@ export class HrPeopleService {
         ...(input.dateOfBirth !== undefined && { dateOfBirth: input.dateOfBirth }),
         ...(input.gender !== undefined && { gender: input.gender }),
         ...(input.nationality !== undefined && { nationality: input.nationality }),
-        ...(input.address !== undefined && { address: input.address as never }),
-        ...(input.emergencyContact !== undefined && { emergencyContact: input.emergencyContact as never }),
+        ...(input.address !== undefined && { address: input.address }),
+        ...(input.emergencyContact !== undefined && { emergencyContact: input.emergencyContact }),
         ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
       })
       .where(and(eq(hrPeople.id, personId), eq(hrPeople.orgId, orgId)))

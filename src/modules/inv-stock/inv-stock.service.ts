@@ -1,9 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import {
-  invStockLevels, invStockTransactions, invLocations,
-  invPurchaseOrders, invPoLines, invSalesOrders, invSoLines,
-  invProducts, invProductVariants,
+  invStockLevels, invStockTransactions,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -26,31 +24,6 @@ export class InvStockService {
     const hash = `${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cached(CACHE_KEYS.invStockLevels(orgId, hash), async () => {
-      const conditions: ReturnType<typeof eq>[] = [eq(invStockLevels.orgId, orgId)];
-
-      if (locationId) conditions.push(eq(invStockLevels.locationId, locationId));
-      if (variantId) conditions.push(eq(invStockLevels.productVariantId, variantId));
-      if (lotId) conditions.push(eq(invStockLevels.lotId, lotId) as ReturnType<typeof eq>);
-      if (serialId) conditions.push(eq(invStockLevels.serialId, serialId) as ReturnType<typeof eq>);
-      if (negative) conditions.push(lt(invStockLevels.onHand, "0") as unknown as ReturnType<typeof eq>);
-
-      const warehouseFilter = warehouseId
-        ? sql`${invStockLevels.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`
-        : undefined;
-
-      const productFilter = productId
-        ? sql`${invStockLevels.productVariantId} IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})`
-        : undefined;
-
-      const searchFilter = search
-        ? sql`${invStockLevels.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))`
-        : undefined;
-
-      const lowStockFilter = lowStock
-        ? sql`${invStockLevels.onHand}::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = ${invStockLevels.productVariantId}), 0)`
-        : undefined;
-
-      const extraConditions = [warehouseFilter, productFilter, searchFilter, lowStockFilter].filter(Boolean);
 
       const rows = await this.db.execute<{
         id: number; org_id: string; product_variant_id: number; location_id: number;
@@ -98,19 +71,19 @@ export class InvStockService {
   async listTransactions(orgId: string, filters: ListTransactionsInput) {
     const { productVariantId, warehouseId, locationId, transactionType, direction, search, fromDate, toDate, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invStockTransactions.orgId, orgId)];
+    const conditions: SQL[] = [eq(invStockTransactions.orgId, orgId)];
     if (productVariantId) conditions.push(eq(invStockTransactions.productVariantId, productVariantId));
     if (locationId) conditions.push(eq(invStockTransactions.locationId, locationId));
     if (transactionType) conditions.push(eq(invStockTransactions.transactionType, transactionType));
     if (fromDate) conditions.push(gte(invStockTransactions.createdAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(invStockTransactions.createdAt, new Date(toDate)));
-    if (direction === "in") conditions.push(sql`${invStockTransactions.quantityChange}::numeric > 0` as unknown as ReturnType<typeof eq>);
-    if (direction === "out") conditions.push(sql`${invStockTransactions.quantityChange}::numeric < 0` as unknown as ReturnType<typeof eq>);
+    if (direction === "in") conditions.push(sql`${invStockTransactions.quantityChange}::numeric > 0`);
+    if (direction === "out") conditions.push(sql`${invStockTransactions.quantityChange}::numeric < 0`);
     if (warehouseId) conditions.push(
-      sql`${invStockTransactions.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` as unknown as ReturnType<typeof eq>,
+      sql`${invStockTransactions.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`,
     );
     if (search) conditions.push(
-      sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))` as unknown as ReturnType<typeof eq>,
+      sql`${invStockTransactions.productVariantId} IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"} OR v.barcode ILIKE ${"%" + search + "%"}))`,
     );
 
     const where = and(...conditions);

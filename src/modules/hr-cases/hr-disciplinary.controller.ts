@@ -42,13 +42,13 @@ export class HrDisciplinaryController {
     return this.disciplinary.list(user.orgId, query);
   }
 
-  @Get(":id")
+  @Get(":actionId")
   @RequirePermission("hr:cases:view")
   getById(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("actionId", ParseIntPipe) actionId: number,
   ) {
-    return this.disciplinary.getById(user.orgId, id);
+    return this.disciplinary.getById(user.orgId, actionId);
   }
 
   @Post()
@@ -61,13 +61,13 @@ export class HrDisciplinaryController {
     return this.disciplinary.create(user.orgId, user.userId, body, req.ip);
   }
 
-  @Delete(":id")
+  @Delete(":actionId")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   async delete(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("actionId", ParseIntPipe) actionId: number,
   ) {
-    await this.disciplinary.delete(user.orgId, id, user.userId);
+    await this.disciplinary.delete(user.orgId, actionId, user.userId);
   }
 }

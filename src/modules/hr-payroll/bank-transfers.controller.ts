@@ -23,19 +23,19 @@ export class BankTransfersController {
     return this.service.create(u.orgId, u.userId, body as Parameters<BankTransfersService["create"]>[2]);
   }
 
-  @Patch(":id")
+  @Patch(":transferId")
   @RequirePermission("hr:payroll:approve")
   updateStatus(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("transferId", ParseIntPipe) transferId: number,
     @Body() body: { status: string; referenceNo?: string },
   ) {
-    return this.service.updateStatus(u.orgId, id, body);
+    return this.service.updateStatus(u.orgId, transferId, body);
   }
 
-  @Get(":id/file")
+  @Get(":transferId/file")
   @RequirePermission("hr:payroll:approve")
-  generateFile(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.generateFile(u.orgId, id);
+  generateFile(@CurrentUser() u: CurrentUserContext, @Param("transferId", ParseIntPipe) transferId: number) {
+    return this.service.generateFile(u.orgId, transferId);
   }
 }
