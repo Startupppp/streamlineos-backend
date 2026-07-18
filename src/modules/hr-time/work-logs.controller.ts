@@ -41,7 +41,7 @@ export class WorkLogsController {
     @Body(new ZodValidationPipe(postWorkLogSchema)) body: PostWorkLogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.workLogs.create(u.orgId, u.userId, body);
+    return this.workLogs.create(u.orgId, u.userId, body, u);
   }
 
   @Patch("status")

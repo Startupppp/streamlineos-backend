@@ -14,7 +14,7 @@ import type {
   PatchWorkLogStatusInput,
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
-import { resolveWorkLogsScope } from "./worklogs-scope";
+import { resolveWorkLogsScope, WORKLOGS_PERMISSION } from "./worklogs-scope";
 
 @Injectable()
 export class WorkLogsService {
@@ -91,11 +91,40 @@ export class WorkLogsService {
       });
   }
 
-  async create(orgId: string, userId: string, body: PostWorkLogInput) {
+  async create(orgId: string, userId: string, body: PostWorkLogInput, actor?: CurrentUserContext) {
     const dateStr = formatDateOnly(body.date);
     const todayStr = getTodayString();
     if (dateStr !== todayStr) {
       throw new ForbiddenException("Work logs can only be created or updated for today.");
+    }
+
+    const existing = await this.db.query.timesheets.findFirst({
+      where: and(
+        eq(timesheets.orgId, orgId),
+        eq(timesheets.userId, userId),
+        eq(timesheets.date, dateStr),
+        isNull(timesheets.ticketId),
+      ),
+    });
+
+    const alreadySaved = Boolean(
+      existing?.description?.trim() || existing?.workLink?.trim(),
+    );
+
+    if (alreadySaved) {
+      const canManage =
+        actor?.isPlatformAdmin ||
+        actor?.isOrgOwner ||
+        (actor
+          ? ((await this.access.resolveUserPermissions(orgId, actor.userId)).get(
+              WORKLOGS_PERMISSION,
+            ) ?? "none") !== "none"
+          : false);
+      if (!canManage) {
+        throw new ForbiddenException(
+          "Saved work logs are locked. Ask HR or a manager with attendance access to edit.",
+        );
+      }
     }
 
     const normalizedDescription = body.description
