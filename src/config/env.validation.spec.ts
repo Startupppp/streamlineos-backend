@@ -22,8 +22,9 @@ describe("validateEnv", () => {
   });
 
   it("throws when DATABASE_URL is missing", () => {
-    const { DATABASE_URL, ...rest } = base;
-    expect(() => validateEnv(rest)).toThrow(/DATABASE_URL/);
+    expect(() => validateEnv({ ...base, DATABASE_URL: undefined })).toThrow(
+      /DATABASE_URL/,
+    );
   });
 
   it.each(["CRON_SECRET", "INTERNAL_API_SECRET"] as const)(
