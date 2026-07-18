@@ -10,8 +10,14 @@ import { ShiftsService } from "./shifts.service";
 import {
   createShiftSchema,
   updateShiftSchema,
+  assignShiftSchema,
+  createSwapRequestSchema,
+  updateSwapStatusSchema,
   type CreateShiftInput,
   type UpdateShiftInput,
+  type AssignShiftInput,
+  type CreateSwapRequestInput,
+  type UpdateSwapStatusInput,
 } from "./dto/shifts.schemas";
 
 @RequireModule("hr")
@@ -59,7 +65,7 @@ export class ShiftsController {
 
   @Post("assignments")
   @RequirePermission("hr:attendance:manage")
-  assign(@CurrentUser() u: CurrentUserContext, @Body() body: { userId: string; shiftId: number; effectiveFrom: string; effectiveTo?: string }) {
+  assign(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(assignShiftSchema)) body: AssignShiftInput) {
     return this.service.assignShift(u.orgId, body);
   }
 
@@ -71,13 +77,13 @@ export class ShiftsController {
 
   @Post("swaps")
   @RequirePermission("hr:attendance:view")
-  createSwap(@CurrentUser() u: CurrentUserContext, @Body() body: { targetUserId: string; requestDate: string; targetDate: string; reason?: string }) {
+  createSwap(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createSwapRequestSchema)) body: CreateSwapRequestInput) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
   @Patch("swaps/:id")
   @RequirePermission("hr:attendance:manage")
-  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: { status: string }) {
+  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateSwapStatusSchema)) body: UpdateSwapStatusInput) {
     return this.service.updateSwapStatus(u.orgId, id, body.status, u.userId);
   }
 }

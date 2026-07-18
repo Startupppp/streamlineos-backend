@@ -5,7 +5,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BiometricService } from "./biometric.service";
+import {
+  createBiometricDeviceSchema,
+  updateBiometricDeviceSchema,
+  type CreateBiometricDeviceInput,
+  type UpdateBiometricDeviceInput,
+} from "./dto/biometric.schemas";
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -23,14 +30,14 @@ export class BiometricController {
   @Post("devices")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  createDevice(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; ipAddress: string; port?: number; vendor?: string; location?: string }) {
+  createDevice(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createBiometricDeviceSchema)) body: CreateBiometricDeviceInput) {
     return this.service.createDevice(u.orgId, body);
   }
 
   @Patch("devices/:id")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  updateDevice(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Partial<Parameters<BiometricService["updateDevice"]>[2]>) {
+  updateDevice(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateBiometricDeviceSchema)) body: UpdateBiometricDeviceInput) {
     return this.service.updateDevice(u.orgId, id, body);
   }
 

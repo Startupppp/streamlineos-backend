@@ -5,7 +5,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RostersService } from "./rosters.service";
+import {
+  createRosterSchema,
+  upsertRosterEntrySchema,
+  type CreateRosterInput,
+  type UpsertRosterEntryInput,
+} from "./dto/rosters.schemas";
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -23,7 +30,7 @@ export class RostersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; weekStart: string; weekEnd: string }) {
+  create(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createRosterSchema)) body: CreateRosterInput) {
     return this.service.createRoster(u.orgId, u.userId, body);
   }
 
@@ -37,7 +44,7 @@ export class RostersController {
   @Post(":id/entries")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  upsertEntry(@Param("id", ParseIntPipe) id: number, @Body() body: { userId: string; shiftId?: number; date: string; isDayOff?: boolean; notes?: string }) {
+  upsertEntry(@Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(upsertRosterEntrySchema)) body: UpsertRosterEntryInput) {
     return this.service.upsertRosterEntry({ rosterId: id, ...body });
   }
 

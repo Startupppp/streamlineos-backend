@@ -5,7 +5,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { GeofencingService } from "./geofencing.service";
+import {
+  createGeofenceSchema,
+  updateGeofenceSchema,
+  type CreateGeofenceInput,
+  type UpdateGeofenceInput,
+} from "./dto/geofencing.schemas";
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -23,14 +30,14 @@ export class GeofencingController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; lat: string; lng: string; radiusMeters?: number }) {
+  create(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createGeofenceSchema)) body: CreateGeofenceInput) {
     return this.service.create(u.orgId, body);
   }
 
   @Patch(":id")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  update(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Partial<Parameters<GeofencingService["update"]>[2]>) {
+  update(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateGeofenceSchema)) body: UpdateGeofenceInput) {
     return this.service.update(u.orgId, id, body);
   }
 
