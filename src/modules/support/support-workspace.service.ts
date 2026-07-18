@@ -142,7 +142,7 @@ export class SupportWorkspaceService {
     return this.db.query.supportTags.findMany({
       where: eq(supportTags.orgId, orgId),
       orderBy: [asc(supportTags.name)],
-      limit: 500,
+      limit: 100,
     });
   }
 

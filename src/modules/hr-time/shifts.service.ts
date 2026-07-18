@@ -48,7 +48,7 @@ export class ShiftsService {
     return this.db.select().from(employeeShiftAssignments)
       .where(and(eq(employeeShiftAssignments.orgId, orgId), eq(employeeShiftAssignments.isActive, true)))
       .orderBy(desc(employeeShiftAssignments.createdAt))
-      .limit(200);
+      .limit(100);
   }
 
   async assignShift(orgId: string, data: { userId: string; shiftId: number; effectiveFrom: string; effectiveTo?: string }) {

@@ -47,8 +47,8 @@ export async function seedPayrollTemplates(db: Db): Promise<{ seeded: number; sk
       category: seed.category,
       isSystem: true,
       isRecommended: seed.isRecommended,
-      defaultToggles: seed.defaultToggles as unknown as Record<string, boolean>,
-      defaultComponents: seed.defaultComponents as unknown as Record<string, unknown>[],
+      defaultToggles: seed.defaultToggles,
+      defaultComponents: seed.defaultComponents,
     });
     seeded += 1;
   }

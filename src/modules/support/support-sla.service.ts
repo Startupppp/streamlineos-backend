@@ -67,7 +67,7 @@ export class SupportSlaService {
         orgId,
         name: input.name,
         timezone: input.timezone,
-        weeklySchedule: input.weeklySchedule as WeeklySchedule,
+        weeklySchedule: input.weeklySchedule,
         holidays: input.holidays,
         is24x7: input.is24x7,
         isDefault: input.isDefault,

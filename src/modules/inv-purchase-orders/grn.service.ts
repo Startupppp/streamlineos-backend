@@ -259,7 +259,7 @@ export class GrnService {
           .set({
             quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}`,
           })
-          .where(eq(invPoLines.id, line.poLineId));
+          .where(and(eq(invPoLines.id, line.poLineId), eq(invPoLines.poId, poId)));
       }
 
       const allLines = await tx.query.invPoLines.findMany({
@@ -274,7 +274,7 @@ export class GrnService {
           status: allReceived ? "RECEIVED" : "PARTIAL",
           updatedAt: new Date(),
         })
-        .where(eq(invPurchaseOrders.id, poId));
+        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)));
 
       return grn.id;
     });
@@ -513,7 +513,7 @@ export class GrnService {
           .set({
             quantityReceived: sql`GREATEST(0, ${invPoLines.quantityReceived} - ${grnLine.quantityReceived})`,
           })
-          .where(eq(invPoLines.id, grnLine.poLineId));
+          .where(and(eq(invPoLines.id, grnLine.poLineId), eq(invPoLines.poId, po.id)));
       }
 
       const updatedLines = await this.db.query.invPoLines.findMany({
@@ -527,7 +527,7 @@ export class GrnService {
       await this.db
         .update(invPurchaseOrders)
         .set({ status: newStatus, updatedAt: new Date() })
-        .where(eq(invPurchaseOrders.id, po.id));
+        .where(and(eq(invPurchaseOrders.id, po.id), eq(invPurchaseOrders.orgId, orgId)));
     }
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, grn.poId));

@@ -51,7 +51,8 @@ export class ReferralService {
       .select()
       .from(referrals)
       .where(eq(referrals.referrerOrgId, orgId))
-      .orderBy(referrals.createdAt);
+      .orderBy(referrals.createdAt)
+      .limit(100);
   }
 
   async processSignup(referralCode: string, newOrgId: number) {

@@ -19,7 +19,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
-import type { SettingsAuditEntityType } from "../../db/schema";
+import { SETTINGS_AUDIT_ENTITY_TYPES, type SettingsAuditEntityType } from "../../db/schema";
 import {
   createBusinessHoursSchema,
   createSlaPolicySchema,
@@ -133,7 +133,10 @@ export class SupportSlaController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const parsedLimit = Math.min(Number(limit) || 50, 100);
-    return this.audit.list(u.orgId, entityType as SettingsAuditEntityType | undefined, parsedLimit);
+    const typedEntityType = SETTINGS_AUDIT_ENTITY_TYPES.includes(entityType as SettingsAuditEntityType)
+      ? (entityType as SettingsAuditEntityType)
+      : undefined;
+    return this.audit.list(u.orgId, typedEntityType, parsedLimit);
   }
 
   @Get(":supportTicketId/risk")

@@ -192,7 +192,7 @@ export class CustomerReturnsService {
 
       await tx.update(invCustomerReturns)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-        .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.status, "DRAFT")));
+        .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.status, "DRAFT")));
     });
 
     await Promise.all([

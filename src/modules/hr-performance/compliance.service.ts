@@ -192,7 +192,7 @@ export class ComplianceService {
             lte(documents.expiryDate, toStr),
           ),
         )
-        .limit(200),
+        .limit(100),
 
       this.db
         .select({ id: certifications.id, name: certifications.name, expiryDate: certifications.expiryDate })
@@ -205,7 +205,7 @@ export class ComplianceService {
             lte(certifications.expiryDate, toStr),
           ),
         )
-        .limit(200),
+        .limit(100),
     ]);
 
     const events: CalendarEvent[] = [

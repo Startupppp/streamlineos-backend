@@ -68,7 +68,7 @@ export class FeedbackController {
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,
   ) {
-    return this.service.submitResponse(u.userId, requestId, body);
+    return this.service.submitResponse(u.orgId, u.userId, requestId, body);
   }
 
   @Get("results/:subjectId")

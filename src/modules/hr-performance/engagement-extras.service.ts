@@ -71,7 +71,7 @@ export class EngagementExtrasService {
       .from(hrMoodCheckins)
       .where(eq(hrMoodCheckins.orgId, orgId))
       .orderBy(desc(hrMoodCheckins.createdAt))
-      .limit(1000);
+      .limit(100);
 
     const byDate = new Map<string, number[]>();
     for (const r of rows) {

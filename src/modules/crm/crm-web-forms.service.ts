@@ -15,7 +15,8 @@ export class CrmWebFormsService {
       .select()
       .from(webLeadForms)
       .where(eq(webLeadForms.orgId, orgId))
-      .orderBy(webLeadForms.createdAt);
+      .orderBy(webLeadForms.createdAt)
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, input: WebFormCreateInput) {

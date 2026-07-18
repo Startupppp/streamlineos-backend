@@ -255,7 +255,7 @@ export class AccountingLedgerService {
       })
       .from(journalLines)
       .innerJoin(ledgerAccounts, eq(journalLines.accountId, ledgerAccounts.id))
-      .where(eq(journalLines.entryId, entryId))
+      .where(and(eq(journalLines.entryId, entryId), eq(journalLines.orgId, orgId)))
       .orderBy(asc(journalLines.lineOrder));
 
     return { ...header, lines };
@@ -326,7 +326,7 @@ export class AccountingLedgerService {
       })
       .from(journalLines)
       .innerJoin(ledgerAccounts, eq(journalLines.accountId, ledgerAccounts.id))
-      .where(eq(journalLines.entryId, original.id))
+      .where(and(eq(journalLines.entryId, original.id), eq(journalLines.orgId, orgId)))
       .orderBy(asc(journalLines.lineOrder));
     if (lineRows.length === 0) throw new ConflictException("Original entry has no lines");
 

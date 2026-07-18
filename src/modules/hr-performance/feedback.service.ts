@@ -89,6 +89,7 @@ export class FeedbackService {
   }
 
   async submitResponse(
+    orgId: string,
     userId: string,
     requestId: number,
     data: {
@@ -97,17 +98,21 @@ export class FeedbackService {
     },
   ) {
     const request = await this.db
-      .select()
+      .select({ id: feedbackCycleRequests.id, cycleId: feedbackCycleRequests.cycleId })
       .from(feedbackCycleRequests)
+      .innerJoin(feedbackCycles, eq(feedbackCycleRequests.cycleId, feedbackCycles.id))
       .where(
         and(
           eq(feedbackCycleRequests.id, requestId),
           eq(feedbackCycleRequests.reviewerId, userId),
+          eq(feedbackCycles.orgId, orgId),
         ),
       )
       .limit(1);
 
     if (request.length === 0) throw new NotFoundException("Feedback request not found.");
+
+    const cycleId = request[0].cycleId;
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -117,7 +122,7 @@ export class FeedbackService {
       await tx
         .update(feedbackCycleRequests)
         .set({ status: "COMPLETED", submittedAt: new Date() })
-        .where(eq(feedbackCycleRequests.id, requestId));
+        .where(and(eq(feedbackCycleRequests.id, requestId), eq(feedbackCycleRequests.cycleId, cycleId)));
     });
 
     return { success: true };

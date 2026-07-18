@@ -16,16 +16,16 @@ import { projects } from "./projects/core";
 import { tickets } from "./projects/tasks";
 
 export interface FeedbucketAiAnalysis {
-  type: string;
+  type: "bug" | "feature" | "improvement" | "question" | "praise" | "other";
   confidence: number;
-  suggestedTicketType: string;
+  suggestedTicketType: "EPIC" | "BUG" | "STORY" | "TASK";
   title: string;
   summary: string;
   description: string;
   reproductionSteps: string[];
   suggestions: string[];
   acceptanceCriteria: string[];
-  priority: string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   model: string;
   processedAt: string;
 }

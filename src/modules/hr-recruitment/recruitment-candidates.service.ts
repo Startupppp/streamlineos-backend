@@ -166,7 +166,7 @@ export class RecruitmentCandidatesService {
     ]);
     if (!existing || !target) throw new NotFoundException("Candidate not found.");
 
-    await this.db.update(candidates).set({ duplicateOfId, updatedAt: new Date() }).where(eq(candidates.id, candidateId));
+    await this.db.update(candidates).set({ duplicateOfId, updatedAt: new Date() }).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
     return { success: true };
   }
@@ -175,7 +175,7 @@ export class RecruitmentCandidatesService {
     const existing = await this.db.query.candidates.findFirst({ where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)), columns: { id: true } });
     if (!existing) throw new NotFoundException("Candidate not found.");
 
-    await this.db.update(candidates).set({ duplicateOfId: null, updatedAt: new Date() }).where(eq(candidates.id, candidateId));
+    await this.db.update(candidates).set({ duplicateOfId: null, updatedAt: new Date() }).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     await this.cache.invalidatePattern(`hr:candidates:list:${orgId}:*`);
     return { success: true };
   }

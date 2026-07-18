@@ -15,7 +15,7 @@ export const payrollTemplates = pgTable("payroll_templates", {
   complexity: text("complexity"),
   badge: text("badge"),
   category: payrollTemplateCategoryEnum("category").notNull().default("CUSTOM"),
-  defaultToggles: jsonb("default_toggles").$type<Record<string, boolean>>().notNull(),
+  defaultToggles: jsonb("default_toggles").$type<object>().notNull(),
   defaultComponents: jsonb("default_components").$type<unknown[]>().notNull(),
   isSystem: boolean("is_system").notNull().default(false),
   isRecommended: boolean("is_recommended").notNull().default(false),

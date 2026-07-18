@@ -62,7 +62,7 @@ export class RecruitmentRequisitionsService {
 
       await tx.update(jobRequisitions)
         .set({ linkedJobId: created.id, updatedAt: new Date() })
-        .where(eq(jobRequisitions.id, id));
+        .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)));
 
       return created;
     });

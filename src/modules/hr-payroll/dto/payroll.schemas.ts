@@ -173,7 +173,7 @@ const bankTransferEntrySchema = z.object({
   bankAccount: z.string().min(1).max(50),
   ifscCode: z.string().min(1).max(20),
   employeeName: z.string().min(1).max(200),
-  status: z.enum(["PENDING", "COMPLETED", "FAILED"]).optional(),
+  status: z.enum(["PENDING", "COMPLETED", "FAILED"]).default("PENDING"),
 });
 
 export const createBankTransferSchema = z.object({
@@ -206,23 +206,29 @@ export type CreateAllowanceInput = z.infer<typeof createAllowanceSchema>;
 export const updateAllowanceSchema = createAllowanceSchema.partial();
 export type UpdateAllowanceInput = z.infer<typeof updateAllowanceSchema>;
 
+const decimalNonNegativeStringSchema = z
+  .number()
+  .nonnegative()
+  .optional()
+  .transform((n) => (n === undefined ? undefined : n.toFixed(2)));
+
 export const hrTaxCreateOrUpdateSchema = z.object({
   financialYear: z.string().min(1).max(20),
   regime: z.enum(["OLD", "NEW"]).optional(),
-  hra: z.number().nonnegative().optional(),
-  lta: z.number().nonnegative().optional(),
-  section80c: z.number().nonnegative().optional(),
-  section80d: z.number().nonnegative().optional(),
-  section80g: z.number().nonnegative().optional(),
-  homeLoanInterest: z.number().nonnegative().optional(),
-  previousEmploymentIncome: z.number().nonnegative().optional(),
-  previousEmployerTds: z.number().nonnegative().optional(),
+  hra: decimalNonNegativeStringSchema,
+  lta: decimalNonNegativeStringSchema,
+  section80c: decimalNonNegativeStringSchema,
+  section80d: decimalNonNegativeStringSchema,
+  section80g: decimalNonNegativeStringSchema,
+  homeLoanInterest: decimalNonNegativeStringSchema,
+  previousEmploymentIncome: decimalNonNegativeStringSchema,
+  previousEmployerTds: decimalNonNegativeStringSchema,
 });
 export type HrTaxCreateOrUpdateInput = z.infer<typeof hrTaxCreateOrUpdateSchema>;
 
 export const hrTaxAddProofSchema = z.object({
   category: z.string().min(1).max(100),
-  amount: z.number().nonnegative(),
+  amount: z.number().nonnegative().transform((n) => n.toFixed(2)),
   description: z.string().max(500).optional(),
   proofUrl: z.string().url().optional(),
   financialYear: z.string().min(1).max(20).optional(),

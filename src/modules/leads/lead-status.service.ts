@@ -184,7 +184,7 @@ export class LeadStatusService {
                 }
               : {}),
           })
-          .where(eq(leads.id, lead.id));
+          .where(and(eq(leads.id, lead.id), eq(leads.orgId, orgId)));
       }
     });
   }

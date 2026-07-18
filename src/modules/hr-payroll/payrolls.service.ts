@@ -64,6 +64,7 @@ export class PayrollsService {
     return this.db.query.payrolls.findMany({
       where: and(eq(payrolls.userId, userId), eq(payrolls.orgId, orgId)),
       orderBy: [desc(payrolls.createdAt)],
+      limit: 100,
     });
   }
 
@@ -257,7 +258,7 @@ export class PayrollsService {
       .leftJoin(approverUser, eq(payrolls.approvedBy, approverUser.id))
       .where(and(...conditions))
       .orderBy(desc(payrolls.createdAt))
-      .limit(1000);
+      .limit(100);
 
     return rows.map((r) => ({
       id: r.id,
@@ -407,7 +408,7 @@ export class PayrollsService {
       .from(payrolls)
       .where(and(eq(payrolls.orgId, orgId), eq(payrolls.userId, userId)))
       .orderBy(desc(payrolls.month))
-      .limit(120);
+      .limit(100);
   }
 
   async getPayrollReports(orgId: string, year: number, reportType: string) {
@@ -431,7 +432,7 @@ export class PayrollsService {
         .innerJoin(users, eq(payrolls.userId, users.id))
         .where(and(eq(payrolls.orgId, orgId), gte(payrolls.month, yearStart), lte(payrolls.month, yearEnd)))
         .groupBy(payrolls.userId, users.firstName, users.lastName, users.email, users.taxId)
-        .limit(1000);
+        .limit(100);
 
       return {
         type: "form16",

@@ -17,6 +17,7 @@ export class NotificationPolicyService {
   list(orgId: string) {
     return this.db.query.notificationPolicyDefaults.findMany({
       where: eq(notificationPolicyDefaults.orgId, orgId),
+      limit: 100,
     });
   }
 

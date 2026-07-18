@@ -366,7 +366,7 @@ export class RecruitmentSourcingService {
     if (existing.requestedBy !== userId) throw new ForbiddenException("Forbidden");
     if (existing.status !== "DRAFT") throw new BadRequestException("Cannot delete non-draft requests");
 
-    await this.db.delete(headcountRequests).where(eq(headcountRequests.id, requestId));
+    await this.db.delete(headcountRequests).where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)));
     return { success: true };
   }
 

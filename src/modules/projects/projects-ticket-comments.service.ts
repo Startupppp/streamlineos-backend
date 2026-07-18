@@ -186,7 +186,7 @@ export class ProjectsTicketCommentsService {
     await this.db
       .update(ticketComments)
       .set({ content, updatedAt: new Date() })
-      .where(eq(ticketComments.id, commentId));
+      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_updated");
@@ -217,7 +217,7 @@ export class ProjectsTicketCommentsService {
       throw new ForbiddenException("Only the comment author or a project manager can delete this comment");
     }
 
-    await this.db.delete(ticketComments).where(eq(ticketComments.id, commentId));
+    await this.db.delete(ticketComments).where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_deleted");

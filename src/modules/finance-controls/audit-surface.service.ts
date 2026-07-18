@@ -62,7 +62,7 @@ export class AuditSurfaceService {
         ),
       )
       .orderBy(desc(auditLogs.createdAt))
-      .limit(500);
+      .limit(100);
   }
 
   async exportCsv(orgId: string, userId: string, query: ListAuditQuery): Promise<string> {

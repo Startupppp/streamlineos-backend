@@ -256,7 +256,7 @@ export class PoService {
 
     const [closed] = await this.db.update(invPurchaseOrders)
       .set({ status: "CLOSED", updatedAt: new Date() })
-      .where(eq(invPurchaseOrders.id, poId))
+      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
@@ -283,7 +283,7 @@ export class PoService {
 
     const [cancelled] = await this.db.update(invPurchaseOrders)
       .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(eq(invPurchaseOrders.id, poId))
+      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
       .returning();
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));

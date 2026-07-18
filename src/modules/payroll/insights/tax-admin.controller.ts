@@ -149,7 +149,7 @@ export class TaxAdminController {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(whereClause)
-      .limit(1000);
+      .limit(100);
 
     const headers = [
       "ID",

@@ -253,7 +253,7 @@ export async function runResearchBrief(
   const finalState = await graph.invoke(initialState);
 
   return {
-    report: finalState.report as string,
-    citations: finalState.citations as BriefCitation[],
+    report: finalState.report ?? "",
+    citations: finalState.citations ?? [],
   };
 }

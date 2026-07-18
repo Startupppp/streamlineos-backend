@@ -295,7 +295,7 @@ export class RecruitmentJobsService {
         applicationDeadline: true,
         createdAt: true,
       },
-      limit: 200,
+      limit: 100,
     });
   }
 

@@ -576,7 +576,7 @@ export class AttendanceService {
       .from(orgHolidays)
       .where(eq(orgHolidays.orgId, orgId))
       .orderBy(asc(orgHolidays.date))
-      .limit(200);
+      .limit(100);
   }
 
   async createHoliday(orgId: string, createdBy: string, data: { name: string; date: string; recurring?: boolean }) {

@@ -438,7 +438,7 @@ export class RecruitmentOffersService {
     });
     if (!existing) throw new NotFoundException("Offer not found");
 
-    await this.db.delete(candidateOffers).where(eq(candidateOffers.id, offerId));
+    await this.db.delete(candidateOffers).where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_DELETED",
       userId,

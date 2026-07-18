@@ -22,18 +22,21 @@ export class SimulatorService {
     private readonly policyEval: HrPolicyEvaluationService,
   ) {}
 
-  private async persist(
+  private async persist<
+    I extends Record<string, unknown>,
+    R extends Record<string, unknown>,
+  >(
     orgId: string,
     createdBy: string,
     type: "policy" | "leave" | "attendance" | "approval" | "payroll",
-    input: unknown,
-    result: unknown,
+    input: I,
+    result: R,
   ) {
     await this.db.insert(hrSimulations).values({
       orgId,
       type,
-      input: input as unknown,
-      result: result as unknown,
+      input,
+      result,
       createdBy,
     });
   }

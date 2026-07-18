@@ -412,7 +412,7 @@ export class PayrollPoliciesService {
       const nextConfig = { ...currentConfig, fxRates };
       await this.db
         .update(payrollPolicyVersions)
-        .set({ config: nextConfig as unknown as Record<string, unknown> })
+        .set({ config: nextConfig })
         .where(eq(payrollPolicyVersions.id, policy.activeVersionId));
     }
 
@@ -532,7 +532,7 @@ export class PayrollPoliciesService {
     let components: TemplateComponentDef[] = [];
     let baseToggles: PayrollToggles = { ...DEFAULT_PAYROLL_TOGGLES };
     let templateKey: string | null = null;
-    let templateSnapshot: Record<string, unknown> = {};
+    let templateSnapshot: object = {};
 
     if (input.templateKey) {
       const seed = PAYROLL_TEMPLATE_SEEDS.find(
@@ -542,7 +542,7 @@ export class PayrollPoliciesService {
         components = seed.defaultComponents;
         baseToggles = seed.defaultToggles;
         templateKey = seed.key;
-        templateSnapshot = seed as unknown as Record<string, unknown>;
+        templateSnapshot = seed;
       }
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(
@@ -562,7 +562,7 @@ export class PayrollPoliciesService {
             }
           : { ...DEFAULT_PAYROLL_TOGGLES };
       templateKey = tpl.key ?? `custom-${tpl.id}`;
-      templateSnapshot = tpl as unknown as Record<string, unknown>;
+      templateSnapshot = tpl;
     }
 
     const toggles: PayrollToggles = {
@@ -594,8 +594,8 @@ export class PayrollPoliciesService {
           policyId,
           version: nextVersion,
           templateKey: templateKey ?? undefined,
-          toggles: toggles as unknown as Record<string, unknown>,
-          config: config as unknown as Record<string, unknown>,
+          toggles: toggles,
+          config: config,
           status: "ACTIVE",
           effectiveFrom,
           reason: input.reason ?? "Initial activation",
@@ -857,8 +857,8 @@ export class PayrollPoliciesService {
         policyId,
         version: nextVersion,
         templateKey: activeVersion?.templateKey ?? undefined,
-        toggles: newToggles as unknown as Record<string, unknown>,
-        config: newConfig as unknown as Record<string, unknown>,
+        toggles: newToggles,
+        config: newConfig,
         status: "DRAFT",
         effectiveFrom: input.effectiveFrom,
         reason: input.reason,

@@ -75,26 +75,27 @@ export class IdentityService {
       .from(hrAccessProvisioningTemplates)
       .where(eq(hrAccessProvisioningTemplates.orgId, orgId))
       .orderBy(hrAccessProvisioningTemplates.name)
-      .limit(200);
+      .limit(100);
   }
 
   async createTemplate(orgId: string, input: CreateTemplateInput) {
     const [row] = await this.db
       .insert(hrAccessProvisioningTemplates)
-      .values({ orgId, ...input, systemsConfig: input.systemsConfig as unknown })
+      .values({ orgId, ...input })
       .returning();
     return row;
   }
 
   async updateTemplate(orgId: string, id: string, input: UpdateTemplateInput) {
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.name !== undefined) patch["name"] = input.name;
-    if (input.triggeredBy !== undefined) patch["triggeredBy"] = input.triggeredBy;
-    if (input.systemsConfig !== undefined) patch["systemsConfig"] = input.systemsConfig;
+    type TemplatePatch = Partial<typeof hrAccessProvisioningTemplates.$inferInsert>;
+    const patch: TemplatePatch = { updatedAt: new Date() };
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.triggeredBy !== undefined) patch.triggeredBy = input.triggeredBy;
+    if (input.systemsConfig !== undefined) patch.systemsConfig = input.systemsConfig;
 
     const [row] = await this.db
       .update(hrAccessProvisioningTemplates)
-      .set(patch as typeof hrAccessProvisioningTemplates.$inferInsert)
+      .set(patch)
       .where(and(eq(hrAccessProvisioningTemplates.orgId, orgId), eq(hrAccessProvisioningTemplates.id, id)))
       .returning();
     if (!row) throw new NotFoundException("Template not found");
@@ -156,7 +157,7 @@ export class IdentityService {
             eq(hrAccessProvisioning.triggeredBy, "leaver"),
           ),
         )
-        .limit(200),
+        .limit(100),
       this.db
         .select()
         .from(hrAccessProvisioning)
@@ -169,7 +170,7 @@ export class IdentityService {
             notInArray(hrAccessProvisioning.status, ["verified", "completed"]),
           ),
         )
-        .limit(200),
+        .limit(100),
     ]);
 
     return {

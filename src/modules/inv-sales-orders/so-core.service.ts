@@ -200,7 +200,7 @@ export class SoCoreService {
     if (Object.keys(patch).length > 0) {
       await this.db.update(invSalesOrders)
         .set({ ...patch, updatedAt: new Date() })
-        .where(eq(invSalesOrders.id, soId));
+        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
     }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
@@ -220,7 +220,7 @@ export class SoCoreService {
 
     await this.db.update(invSalesOrders)
       .set({ status: "CONFIRMED", confirmedAt: new Date(), updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     if (settings.autoReserveOnConfirm) {
       try {
@@ -267,7 +267,7 @@ export class SoCoreService {
     const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
     await this.db.update(invSalesOrders)
       .set({ status: newStatus, updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
   }
 
   async findAvailableLotForLine(
@@ -358,7 +358,7 @@ export class SoCoreService {
 
     await this.db.update(invSalesOrders)
       .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -410,7 +410,7 @@ export class SoCoreService {
 
     await this.db.update(invSalesOrders)
       .set({ status: "INVOICED", invoiceId: invoice.id, updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.journalPosting.persistJournalEntry({
       orgId,

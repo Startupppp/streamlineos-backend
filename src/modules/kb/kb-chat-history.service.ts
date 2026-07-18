@@ -197,7 +197,7 @@ export class KbChatHistoryService {
     await this.db
       .update(kbChatConversations)
       .set({ title, updatedAt: now })
-      .where(eq(kbChatConversations.id, id));
+      .where(and(eq(kbChatConversations.id, id), eq(kbChatConversations.orgId, orgId)));
 
     return {
       id: existing.id,
@@ -222,7 +222,7 @@ export class KbChatHistoryService {
 
     if (!existing) throw new NotFoundException("Conversation not found");
 
-    await this.db.delete(kbChatConversations).where(eq(kbChatConversations.id, id));
+    await this.db.delete(kbChatConversations).where(and(eq(kbChatConversations.id, id), eq(kbChatConversations.orgId, orgId)));
   }
 
   async listMessages(
@@ -307,19 +307,19 @@ export class KbChatHistoryService {
     const [conv] = await this.db
       .select({ title: kbChatConversations.title })
       .from(kbChatConversations)
-      .where(eq(kbChatConversations.id, conversationId))
+      .where(and(eq(kbChatConversations.id, conversationId), eq(kbChatConversations.orgId, orgId)))
       .limit(1);
 
     if (conv && conv.title === null && role === "user") {
       await this.db
         .update(kbChatConversations)
         .set({ title: trimmed.substring(0, 60).trim(), updatedAt: now })
-        .where(eq(kbChatConversations.id, conversationId));
+        .where(and(eq(kbChatConversations.id, conversationId), eq(kbChatConversations.orgId, orgId)));
     } else {
       await this.db
         .update(kbChatConversations)
         .set({ updatedAt: now })
-        .where(eq(kbChatConversations.id, conversationId));
+        .where(and(eq(kbChatConversations.id, conversationId), eq(kbChatConversations.orgId, orgId)));
     }
   }
 }

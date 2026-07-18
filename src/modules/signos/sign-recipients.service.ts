@@ -156,6 +156,7 @@ export class SignRecipientsService {
     return this.db.query.signRecipients.findMany({
       where: and(eq(signRecipients.orgId, orgId), eq(signRecipients.envelopeId, envelopeId)),
       orderBy: (r, { asc }) => [asc(r.routingOrder), asc(r.id)],
+      limit: 100,
     });
   }
 }

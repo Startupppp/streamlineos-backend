@@ -277,7 +277,7 @@ export class SignTemplatesService {
   }
 
   async list(orgId: string) {
-    return this.db.query.signTemplates.findMany({ where: eq(signTemplates.orgId, orgId), orderBy: (t, { desc }) => [desc(t.updatedAt)] });
+    return this.db.query.signTemplates.findMany({ where: eq(signTemplates.orgId, orgId), orderBy: (t, { desc }) => [desc(t.updatedAt)], limit: 100 });
   }
 
   async get(orgId: string, templateId: number) {

@@ -136,7 +136,8 @@ export class NotificationPreferencesService {
       })
       .from(notificationSuppressionRules)
       .where(and(eq(notificationSuppressionRules.orgId, orgId), eq(notificationSuppressionRules.userId, userId)))
-      .orderBy(desc(notificationSuppressionRules.createdAt));
+      .orderBy(desc(notificationSuppressionRules.createdAt))
+      .limit(100);
   }
 
   async createSuppression(orgId: string, userId: string, dto: CreateSuppressionInput) {

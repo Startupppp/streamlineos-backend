@@ -21,6 +21,7 @@ export class ChatPinsService {
     return this.db.query.chatPinnedMessages.findMany({
       where: eq(chatPinnedMessages.channelId, channelId),
       orderBy: [desc(chatPinnedMessages.pinnedAt)],
+      limit: 100,
       with: {
         message: {
           with: {

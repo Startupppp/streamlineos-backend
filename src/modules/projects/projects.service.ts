@@ -318,6 +318,7 @@ export class ProjectsService {
             .from(tickets)
             .where(
               and(
+                eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 inArray(tickets.assigneeId, removedMembers),
                 ne(tickets.status, "DONE"),
@@ -332,7 +333,7 @@ export class ProjectsService {
             byNewAssignee.set(newAssignee, ids);
           }
           for (const [newAssignee, ids] of byNewAssignee) {
-            await tx.update(tickets).set({ assigneeId: newAssignee }).where(inArray(tickets.id, ids));
+            await tx.update(tickets).set({ assigneeId: newAssignee }).where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
           }
         } else if (removedMembers.length > 0) {
           await tx
@@ -340,6 +341,7 @@ export class ProjectsService {
             .set({ assigneeId: null })
             .where(
               and(
+                eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 inArray(tickets.assigneeId, removedMembers),
                 ne(tickets.status, "DONE"),

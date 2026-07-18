@@ -286,7 +286,7 @@ export class FeedbucketAiService {
     this.assertProjectAccess(submission, u.orgId);
 
     if (submission.aiProcessedAt && !force) {
-      const stored = submission.aiAnalysis as FeedbackAnalysis | null;
+      const stored = submission.aiAnalysis;
       if (stored) return stored;
     }
 
@@ -352,7 +352,7 @@ export class FeedbucketAiService {
       throw new ConflictException("Submission is already linked to a ticket");
     }
 
-    let analysis = submission.aiAnalysis as FeedbackAnalysis | null;
+    let analysis = submission.aiAnalysis;
     if (!analysis) {
       analysis = await this.analyze(u, submissionId);
     }

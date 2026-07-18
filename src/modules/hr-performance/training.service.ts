@@ -44,7 +44,7 @@ export class TrainingService {
     return this.db.select().from(trainingAttendance)
       .where(eq(trainingAttendance.programId, programId))
       .orderBy(trainingAttendance.createdAt)
-      .limit(200);
+      .limit(100);
   }
 
   async enrollUser(orgId: string, programId: number, userId: string) {

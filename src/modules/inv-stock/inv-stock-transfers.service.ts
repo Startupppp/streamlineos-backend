@@ -238,7 +238,7 @@ export class InvStockTransfersService {
       if (!line) continue;
       await this.db.update(invStockTransferLines)
         .set({ quantityReceived: completion.quantityReceived.toString() })
-        .where(eq(invStockTransferLines.id, completion.transferLineId));
+        .where(and(eq(invStockTransferLines.id, completion.transferLineId), eq(invStockTransferLines.transferId, transferId)));
     }
 
     await this.db.update(invStockTransfers)

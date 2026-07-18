@@ -66,7 +66,8 @@ export class AgentAccessService {
           fileSize: ticketAttachments.fileSize,
         })
         .from(ticketAttachments)
-        .where(and(eq(ticketAttachments.ticketId, ticketId), eq(ticketAttachments.orgId, orgId))),
+        .where(and(eq(ticketAttachments.ticketId, ticketId), eq(ticketAttachments.orgId, orgId)))
+        .limit(50),
     ]);
 
     const pid = ticket.projectId;

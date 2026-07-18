@@ -199,7 +199,7 @@ export class EssService {
   async createReimbursement(
     orgId: string,
     userId: string,
-    body: { category: string; amount: number; description: string; receiptUrl?: string; payrollMonth?: string },
+    body: { category: string; amount: number; description?: string; receiptUrl?: string; payrollMonth?: string },
   ) {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");

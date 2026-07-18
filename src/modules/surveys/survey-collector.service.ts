@@ -14,6 +14,7 @@ export class SurveyCollectorService {
     return this.db.query.surveyCollectors.findMany({
       where: and(eq(surveyCollectors.orgId, orgId), eq(surveyCollectors.surveyId, surveyId)),
       orderBy: [desc(surveyCollectors.createdAt)],
+      limit: 100,
     });
   }
 

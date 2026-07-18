@@ -678,6 +678,7 @@ export class CalendarService {
 
     return this.db.query.eventAttendees.findMany({
       where: eq(eventAttendees.eventId, id),
+      limit: 100,
       with: {
         user: { columns: { id: true, name: true, email: true, image: true } },
       },
@@ -692,6 +693,7 @@ export class CalendarService {
         lte(calendarEvents.startDate, to),
       ),
       orderBy: (t, { asc }) => [asc(t.startDate)],
+      limit: 100,
     });
   }
 }

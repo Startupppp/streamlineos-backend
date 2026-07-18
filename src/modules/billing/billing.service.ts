@@ -434,6 +434,7 @@ export class BillingService {
     const all = await this.db.query.coupons.findMany({
       orderBy: (c, { desc: d }) => [d(c.createdAt)],
       with: { redemptions: true },
+      limit: 100,
     });
     return all;
   }

@@ -33,8 +33,10 @@ export class SurveyLiveSessionService {
     return session;
   }
 
-  async get(sessionId: number) {
-    const session = await this.db.query.surveyLiveSessions.findFirst({ where: eq(surveyLiveSessions.id, sessionId) });
+  async get(orgId: string, sessionId: number) {
+    const session = await this.db.query.surveyLiveSessions.findFirst({
+      where: and(eq(surveyLiveSessions.id, sessionId), eq(surveyLiveSessions.orgId, orgId)),
+    });
     if (!session) throw new NotFoundException("Live session not found");
     return session;
   }
@@ -54,8 +56,8 @@ export class SurveyLiveSessionService {
     return question ?? null;
   }
 
-  async start(sessionId: number) {
-    const session = await this.get(sessionId);
+  async start(orgId: string, sessionId: number) {
+    const session = await this.get(orgId, sessionId);
     const firstQuestion = await this.db.query.surveyQuestions.findFirst({
       where: and(eq(surveyQuestions.orgId, session.orgId), eq(surveyQuestions.versionId, session.versionId)),
       orderBy: [asc(surveySections.sortOrder), asc(surveyQuestions.sortOrder)],
@@ -63,13 +65,13 @@ export class SurveyLiveSessionService {
     const [updated] = await this.db
       .update(surveyLiveSessions)
       .set({ status: "active", startedAt: new Date(), currentQuestionId: firstQuestion?.id ?? null })
-      .where(eq(surveyLiveSessions.id, sessionId))
+      .where(and(eq(surveyLiveSessions.id, sessionId), eq(surveyLiveSessions.orgId, orgId)))
       .returning();
     return updated;
   }
 
-  async next(sessionId: number) {
-    const session = await this.get(sessionId);
+  async next(orgId: string, sessionId: number) {
+    const session = await this.get(orgId, sessionId);
     const questions = await this.db.query.surveyQuestions.findMany({
       where: and(eq(surveyQuestions.orgId, session.orgId), eq(surveyQuestions.versionId, session.versionId)),
       orderBy: [asc(surveyQuestions.sortOrder)],
@@ -81,23 +83,27 @@ export class SurveyLiveSessionService {
     const [updated] = await this.db
       .update(surveyLiveSessions)
       .set({ currentQuestionId: nextQuestion?.id ?? null, settings })
-      .where(eq(surveyLiveSessions.id, sessionId))
+      .where(and(eq(surveyLiveSessions.id, sessionId), eq(surveyLiveSessions.orgId, orgId)))
       .returning();
     return updated;
   }
 
-  async reveal(sessionId: number) {
-    const session = await this.get(sessionId);
+  async reveal(orgId: string, sessionId: number) {
+    const session = await this.get(orgId, sessionId);
     const settings = { ...(session.settings ?? {}), revealed: true };
-    const [updated] = await this.db.update(surveyLiveSessions).set({ settings }).where(eq(surveyLiveSessions.id, sessionId)).returning();
+    const [updated] = await this.db
+      .update(surveyLiveSessions)
+      .set({ settings })
+      .where(and(eq(surveyLiveSessions.id, sessionId), eq(surveyLiveSessions.orgId, orgId)))
+      .returning();
     return updated;
   }
 
-  async end(sessionId: number) {
+  async end(orgId: string, sessionId: number) {
     const [updated] = await this.db
       .update(surveyLiveSessions)
       .set({ status: "ended", endedAt: new Date() })
-      .where(eq(surveyLiveSessions.id, sessionId))
+      .where(and(eq(surveyLiveSessions.id, sessionId), eq(surveyLiveSessions.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Live session not found");
     return updated;

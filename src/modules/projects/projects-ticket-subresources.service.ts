@@ -168,7 +168,7 @@ export class ProjectsTicketSubresourcesService {
         workItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
         relatedWorkItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
       },
-      limit: 200,
+      limit: 100,
     });
 
     return relations.map((r) => {
@@ -230,7 +230,7 @@ export class ProjectsTicketSubresourcesService {
           columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
         },
       },
-      limit: 200,
+      limit: 100,
     });
   }
 

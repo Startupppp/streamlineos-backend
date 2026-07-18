@@ -189,7 +189,7 @@ export class SupportMacrosService {
     return this.db.query.supportRoutingRules.findMany({
       where: eq(supportRoutingRules.orgId, orgId),
       orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-      limit: 200,
+      limit: 100,
     });
   }
 

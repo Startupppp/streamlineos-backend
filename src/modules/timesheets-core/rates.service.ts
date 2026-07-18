@@ -46,7 +46,7 @@ export class RatesService {
       entityType: "rate",
       entityId: rate!.id.toString(),
       action: "rate.created",
-      after: input as unknown as Record<string, unknown>,
+      after: input,
     });
 
     return rate!;
@@ -80,7 +80,7 @@ export class RatesService {
         entityType: "rate",
         entityId: rateId.toString(),
         action: "rate.updated",
-        before: existing as unknown as Record<string, unknown>,
+        before: existing,
         after: updateData,
       });
     });
@@ -112,7 +112,7 @@ export class RatesService {
         entityType: "rate",
         entityId: rateId.toString(),
         action: "rate.deleted",
-        before: existing as unknown as Record<string, unknown>,
+        before: existing,
       });
     });
 

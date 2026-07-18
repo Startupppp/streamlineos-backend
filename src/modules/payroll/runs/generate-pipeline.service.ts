@@ -388,8 +388,8 @@ export class GeneratePipelineService {
           totalDeductions: snapshot.totals.deductions,
           employerContributions: snapshot.totals.employerContributions,
           net: snapshot.totals.net,
-          inputsSnapshot: inputs as unknown as Record<string, unknown>,
-          calculationSnapshot: snapshot as unknown as Record<string, unknown>,
+          inputsSnapshot: inputs,
+          calculationSnapshot: snapshot,
         })
         .where(eq(payrollRunEmployees.id, existing[0].id));
 
@@ -416,8 +416,8 @@ export class GeneratePipelineService {
         totalDeductions: snapshot.totals.deductions,
         employerContributions: snapshot.totals.employerContributions,
         net: snapshot.totals.net,
-        inputsSnapshot: inputs as unknown as Record<string, unknown>,
-        calculationSnapshot: snapshot as unknown as Record<string, unknown>,
+        inputsSnapshot: inputs,
+        calculationSnapshot: snapshot,
       })
       .returning({ id: payrollRunEmployees.id });
 
@@ -439,7 +439,7 @@ export class GeneratePipelineService {
         category: line.category,
         amount: line.amount,
         calcMethod: line.calcMethod,
-        calcExplain: line.explain as unknown as Record<string, unknown>,
+        calcExplain: line.explain,
         taxable: line.taxable,
         sortOrder: line.sortOrder,
       })),

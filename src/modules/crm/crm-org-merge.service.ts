@@ -91,7 +91,7 @@ export class CrmOrgMergeService {
         await tx
           .update(crmOrganizations)
           .set({ ...scalarPatch, updatedAt: new Date() })
-          .where(eq(crmOrganizations.id, input.primaryId));
+          .where(and(eq(crmOrganizations.id, input.primaryId), eq(crmOrganizations.orgId, orgId)));
       }
 
       await tx
@@ -107,7 +107,7 @@ export class CrmOrgMergeService {
       await tx
         .update(crmOrganizations)
         .set({ deletedAt: new Date(), mergedIntoId: input.primaryId, updatedAt: new Date() })
-        .where(eq(crmOrganizations.id, input.duplicateId));
+        .where(and(eq(crmOrganizations.id, input.duplicateId), eq(crmOrganizations.orgId, orgId)));
     });
 
     this.audit.log({

@@ -44,7 +44,7 @@ export class AssetsService {
       .leftJoin(users, eq(assetReturns.userId, users.id))
       .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
       .orderBy(desc(assetReturns.createdAt))
-      .limit(500);
+      .limit(100);
 
     return rows.map((r) => {
       const name = `${r.userFirstName ?? ""} ${r.userLastName ?? ""}`.trim();
@@ -131,7 +131,7 @@ export class AssetsService {
       .innerJoin(users, eq(employeeDevices.userId, users.id))
       .where(eq(employeeDevices.orgId, orgId))
       .orderBy(desc(employeeDevices.createdAt))
-      .limit(500);
+      .limit(100);
 
     return rows.map((r) => ({
       id: r.id,

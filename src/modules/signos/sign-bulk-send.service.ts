@@ -185,7 +185,7 @@ export class SignBulkSendService {
   async getJob(orgId: string, jobId: number) {
     const job = await this.db.query.signBulkSendJobs.findFirst({ where: and(eq(signBulkSendJobs.id, jobId), eq(signBulkSendJobs.orgId, orgId)) });
     if (!job) throw new NotFoundException("Bulk send job not found");
-    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)] });
+    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)], limit: 100 });
     return { job, rows };
   }
 

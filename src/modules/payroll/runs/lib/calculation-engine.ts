@@ -370,7 +370,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
           explain: {
             method: comp.calcMethod,
             formula: comp.formula,
-            inputs: buildDeductionScope() as unknown as Record<string, number>,
+            inputs: buildDeductionScope(),
             steps: [`Error: ${result.error}`],
             note: result.error,
           },
@@ -389,7 +389,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         explain: {
           method: comp.calcMethod,
           formula: comp.formula,
-          inputs: buildDeductionScope() as unknown as Record<string, number>,
+          inputs: buildDeductionScope(),
           steps: [`${comp.name} = formula result = ₹${(paise / 100).toFixed(2)}`],
         },
       });
@@ -425,7 +425,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
           explain: {
             method: comp.calcMethod,
             formula: comp.formula,
-            inputs: buildDeductionScope() as unknown as Record<string, number>,
+            inputs: buildDeductionScope(),
             steps: [`Error: ${result.error}`],
             note: result.error,
           },

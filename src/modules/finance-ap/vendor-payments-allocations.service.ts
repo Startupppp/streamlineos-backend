@@ -39,7 +39,7 @@ export class VendorPaymentsAllocationsService {
     const existingAllocations = await this.db
       .select({ total: sql<string>`COALESCE(sum(${finVendorPaymentAllocations.amount}::numeric), 0)::text` })
       .from(finVendorPaymentAllocations)
-      .where(eq(finVendorPaymentAllocations.vendorPaymentId, input.vendorPaymentId));
+      .where(and(eq(finVendorPaymentAllocations.vendorPaymentId, input.vendorPaymentId), eq(finVendorPaymentAllocations.orgId, orgId)));
 
     const alreadyAllocated = Number(existingAllocations[0]?.total ?? 0);
     const paymentAmount = Number(payment.amount);

@@ -154,7 +154,7 @@ export class VendorReturnsService {
 
       await tx.update(invVendorReturns)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.status, "DRAFT")));
+        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId), eq(invVendorReturns.status, "DRAFT")));
     });
 
     await Promise.all([

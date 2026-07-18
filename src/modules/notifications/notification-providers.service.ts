@@ -38,6 +38,7 @@ export class NotificationProvidersService {
     const rows = await this.db.query.notificationProviderAccounts.findMany({
       where: eq(notificationProviderAccounts.orgId, orgId),
       orderBy: [desc(notificationProviderAccounts.createdAt)],
+      limit: 100,
     });
     return rows.map((r) => this.sanitize(r));
   }

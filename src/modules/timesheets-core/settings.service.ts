@@ -61,7 +61,7 @@ export class SettingsService {
         entityType: "settings",
         entityId: u.orgId,
         action: "settings.updated",
-        before: before as unknown as Record<string, unknown>,
+        before: before,
         after: updateData,
       });
     });

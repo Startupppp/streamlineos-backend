@@ -169,7 +169,7 @@ export const hrAccessProvisioningTemplates = pgTable("hr_access_provisioning_tem
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   triggeredBy: hrAccessProvisioningTriggerEnum("triggered_by").notNull(),
-  systemsConfig: jsonb("systems_config").notNull(),
+  systemsConfig: jsonb("systems_config").notNull().$type<{ systemName: string; action: "grant" | "revoke" | "review" }[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
@@ -180,8 +180,8 @@ export const hrSimulations = pgTable("hr_simulations", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   type: hrSimulationTypeEnum("type").notNull(),
-  input: jsonb("input").notNull(),
-  result: jsonb("result").notNull(),
+  input: jsonb("input").notNull().$type<Record<string, unknown>>(),
+  result: jsonb("result").notNull().$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
@@ -195,7 +195,7 @@ export const hrEventStream = pgTable("hr_event_stream", {
   eventType: text("event_type").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
-  payload: jsonb("payload").notNull(),
+  payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   occurredAt: timestamp("occurred_at").defaultNow().notNull(),
 }, (t) => [

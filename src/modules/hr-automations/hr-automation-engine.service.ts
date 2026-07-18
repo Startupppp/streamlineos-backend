@@ -199,7 +199,7 @@ export class HrAutomationEngineService {
 
     await this.db.update(hrAutomationRules)
       .set({ runCount: sql`${hrAutomationRules.runCount} + 1`, lastRunAt: new Date() })
-      .where(eq(hrAutomationRules.id, rule.id));
+      .where(and(eq(hrAutomationRules.id, rule.id), eq(hrAutomationRules.orgId, orgId)));
 
     await this.db.insert(hrAutomationRuns).values({
       orgId,

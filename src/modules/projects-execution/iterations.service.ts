@@ -192,7 +192,12 @@ export class CyclesService {
         completed: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
       })
       .from(tickets)
-      .where(sql`${tickets.cycleId} IN (${sql.join(cycleIds.map((cid) => sql`${cid}`), sql`, `)})`)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          sql`${tickets.cycleId} IN (${sql.join(cycleIds.map((cid) => sql`${cid}`), sql`, `)})`,
+        ),
+      )
       .groupBy(tickets.cycleId);
 
     const statsMap = new Map(statsRows.map((s) => [s.cycleId, s]));
@@ -314,7 +319,12 @@ export class ModulesService {
         completed: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
       })
       .from(tickets)
-      .where(sql`${tickets.moduleId} IN (${sql.join(moduleIds.map((mid) => sql`${mid}`), sql`, `)})`)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          sql`${tickets.moduleId} IN (${sql.join(moduleIds.map((mid) => sql`${mid}`), sql`, `)})`,
+        ),
+      )
       .groupBy(tickets.moduleId);
 
     const statsMap = new Map(statsRows.map((s) => [s.moduleId, s]));

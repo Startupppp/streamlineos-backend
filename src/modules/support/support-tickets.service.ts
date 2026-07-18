@@ -286,7 +286,8 @@ export class SupportTicketsService {
       throw new SupportTicketStaleException();
     }
 
-    const updateData: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
+    const ticketUpdatedAt = new Date();
+    const updateData: Partial<typeof supportTickets.$inferInsert> = { updatedAt: ticketUpdatedAt };
     if (input.status) {
       updateData.status = input.status;
       if (input.status === "RESOLVED") updateData.resolvedAt = new Date();
@@ -328,7 +329,7 @@ export class SupportTicketsService {
 
     await this.invalidateTicketCaches(orgId);
 
-    void this.realtime.publishTicketUpdated(orgId, ticketId, updateData.updatedAt as Date).catch(() => undefined);
+    void this.realtime.publishTicketUpdated(orgId, ticketId, ticketUpdatedAt).catch(() => undefined);
 
     const updatedTicketForPayload = {
       id: ticketId,
