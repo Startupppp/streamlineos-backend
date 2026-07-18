@@ -31,6 +31,7 @@ import {
   patchDependentSchema,
   submitClaimSchema,
   reviewClaimSchema,
+  setPayoutRouteSchema,
   benefitPlansQuerySchema,
   claimsQuerySchema,
   type CreateBenefitPlanInput,
@@ -42,6 +43,7 @@ import {
   type PatchDependentInput,
   type SubmitClaimInput,
   type ReviewClaimInput,
+  type SetPayoutRouteInput,
   type BenefitPlansQuery,
   type ClaimsQuery,
 } from "./dto/benefits.schemas";
@@ -271,8 +273,8 @@ export class HrBenefitsController {
   setPayoutRoute(
     @CurrentUser() u: CurrentUserContext,
     @Param("claimId", ParseIntPipe) claimId: number,
-    @Body("payoutRoute") payoutRoute: "payroll_payable" | "finance_payable" | "already_paid",
+    @Body(new ZodValidationPipe(setPayoutRouteSchema)) body: SetPayoutRouteInput,
   ) {
-    return this.claims.setPayoutRoute(u.orgId, claimId, payoutRoute);
+    return this.claims.setPayoutRoute(u.orgId, claimId, body.payoutRoute);
   }
 }
