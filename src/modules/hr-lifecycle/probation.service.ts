@@ -210,12 +210,17 @@ export class ProbationService {
         personId: hrProbationReviews.personId,
         employmentId: hrProbationReviews.employmentId,
         reviewNotes: hrProbationReviews.reviewNotes,
+        status: hrProbationReviews.status,
       })
       .from(hrProbationReviews)
       .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)));
 
     if (!review) {
       throw new NotFoundException("Probation review not found");
+    }
+
+    if (review.status === "confirmed") {
+      throw new BadRequestException("This probation review has already been confirmed.");
     }
 
     const confirmedAt = input.confirmedAt ? new Date(input.confirmedAt) : new Date();
