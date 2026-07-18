@@ -377,13 +377,26 @@ export class PerformanceReviewsService {
     });
     if (!existing) throw new NotFoundException("Review not found.");
 
-    if (
-      existing.status === "COMPLETED" &&
-      (input.periodStart !== undefined ||
+    if (existing.status === "COMPLETED") {
+      if (
+        input.periodStart !== undefined ||
         input.periodEnd !== undefined ||
-        input.cycleId !== undefined)
-    ) {
-      throw new ConflictException("Cannot edit period or cycle for a completed review.");
+        input.cycleId !== undefined
+      ) {
+        throw new ConflictException("Cannot edit period or cycle for a completed review.");
+      }
+      if (
+        input.ratings !== undefined ||
+        input.strengths !== undefined ||
+        input.improvements !== undefined ||
+        input.overallRating !== undefined ||
+        input.comments !== undefined
+      ) {
+        throw new ConflictException("Cannot edit ratings, strengths, improvements, or comments on a completed review.");
+      }
+      if (input.status !== undefined && input.status !== "ARCHIVED") {
+        throw new ConflictException("A completed review can only transition to ARCHIVED.");
+      }
     }
 
     await this.db
