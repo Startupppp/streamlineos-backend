@@ -21,25 +21,63 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { z } from "zod";
 
+const catalogNameSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must be at most 100 characters")
+      .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
+      .refine(
+        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+        "Name cannot have consecutive special characters",
+      ),
+  );
+
+const catalogCodeSchema = z
+  .union([
+    z.literal("").transform(() => undefined),
+    z
+      .string()
+      .trim()
+      .transform((v) => v.toUpperCase())
+      .pipe(
+        z
+          .string()
+          .min(1, "Code must be at least 1 character")
+          .max(20, "Code must be at most 20 characters")
+          .regex(
+            /^[A-Z0-9][A-Z0-9_-]*$/,
+            "Code can only use letters, numbers, hyphens, and underscores",
+          ),
+      ),
+  ])
+  .optional();
+
 const createCatalogSchema = z.object({
-  name: z.string().min(1).max(200),
-  code: z.string().max(50).optional(),
-  description: z.string().max(500).optional(),
+  name: catalogNameSchema,
+  code: catalogCodeSchema,
+  description: z.string().trim().max(500).optional(),
 });
 
 const updateCatalogSchema = createCatalogSchema.partial();
 
 const createLocationSchema = createCatalogSchema.extend({
   type: z.string().optional(),
-  address: z.object({
-    line1: z.string().optional(),
-    line2: z.string().optional(),
-    city: z.string().optional(),
-    state: z.string().optional(),
-    country: z.string().optional(),
-    postalCode: z.string().optional(),
-    timezone: z.string().optional(),
-  }).optional(),
+  address: z
+    .object({
+      line1: z.string().optional(),
+      line2: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      postalCode: z.string().optional(),
+      timezone: z.string().optional(),
+    })
+    .optional(),
 });
 
 const updateLocationSchema = createLocationSchema.partial();
