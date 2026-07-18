@@ -1,9 +1,14 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { moduleSetupChecklistItems, moduleSetupChecklists } from "../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
+import { HrChecklistReconciliationService } from "./hr-checklist-reconciliation.service";
+
+type ChecklistWithItems = typeof moduleSetupChecklists.$inferSelect & {
+  items: (typeof moduleSetupChecklistItems.$inferSelect)[];
+};
 
 interface ChecklistItemSeed {
   itemKey: string;
@@ -21,11 +26,95 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
     { itemKey: "invite_sales_team", title: "Invite sales team", actionHref: "/users", required: false },
     { itemKey: "connect_email", title: "Connect email", actionHref: "/settings/integrations", required: false },
   ],
+  // HR setup checklist — PRD "HR-only guided setup tour". Item status is auto-derived from
+  // real HR data by HrChecklistReconciliationService (see getChecklist/listChecklists below),
+  // not by manual complete-click alone; itemKey values are load-bearing (matched by that
+  // service and by the frontend's step-detail copy) — do not rename without updating both.
   HR: [
-    { itemKey: "add_departments", title: "Add departments", actionHref: "/organization/departments", required: true },
-    { itemKey: "invite_employees", title: "Invite employees", actionHref: "/users", required: false },
-    { itemKey: "configure_leave_policy", title: "Configure leave policy", actionHref: "/hr/leave-policies", required: false },
-    { itemKey: "create_onboarding_plan", title: "Create onboarding plan", actionHref: "/hr/onboarding", required: false },
+    {
+      itemKey: "org_profile",
+      title: "Organization profile",
+      description: "Confirm your company name, country, and timezone are set.",
+      actionHref: "/settings/organization",
+      required: true,
+    },
+    {
+      itemKey: "locations_departments",
+      title: "Locations & departments",
+      description: "Add at least one location and one department — required for employees, leave, payroll, and reporting.",
+      actionHref: "/hr/departments",
+      required: true,
+    },
+    {
+      itemKey: "roles_positions",
+      title: "Job roles, levels & positions",
+      description: "Create at least one role/designation and one position or headcount record.",
+      actionHref: "/hr/org",
+      required: true,
+    },
+    {
+      itemKey: "leave_policies",
+      title: "Leave policies",
+      description: "Activate at least one leave policy (annual, sick, casual, etc.) with an accrual rule.",
+      actionHref: "/hr/leave-policies",
+      required: true,
+    },
+    {
+      itemKey: "holiday_calendar",
+      title: "Holiday calendar",
+      description: "Add your organization's holidays so they appear in the calendar and affect leave calculations.",
+      actionHref: "/hr/holidays",
+      required: true,
+    },
+    {
+      itemKey: "attendance_schedule",
+      title: "Attendance & work schedule",
+      description: "Configure working hours and at least one shift.",
+      actionHref: "/hr/shifts",
+      required: true,
+    },
+    {
+      itemKey: "onboarding_template",
+      title: "Employee onboarding template",
+      description: "Create an onboarding template covering personal details, documents, and manager assignment.",
+      actionHref: "/hr/onboarding",
+      required: true,
+    },
+    {
+      itemKey: "document_types",
+      title: "Document types & compliance",
+      description: "Define the document types employees must submit before onboarding is considered complete.",
+      actionHref: "/hr/document-types",
+      required: true,
+    },
+    {
+      itemKey: "approval_workflows",
+      title: "Approval workflows",
+      description: "Set up who approves leave, expenses, attendance regularization, requisitions, and payroll.",
+      actionHref: "/hr/settings/workflows",
+      required: true,
+    },
+    {
+      itemKey: "payroll_setup",
+      title: "Payroll setup",
+      description: "Configure salary components and an active payroll policy/calendar.",
+      actionHref: "/payroll/settings",
+      required: true,
+    },
+    {
+      itemKey: "recruitment_setup",
+      title: "Recruitment setup",
+      description: "Configure interview stages, scorecards, or offer templates. Skip if you're not hiring right now.",
+      actionHref: "/hr/recruitment/settings",
+      required: false,
+    },
+    {
+      itemKey: "first_employees",
+      title: "Add or invite your first employees",
+      description: "Onboard a single employee or bulk-import your team.",
+      actionHref: "/hr/onboarding",
+      required: true,
+    },
   ],
   INVENTORY: [
     { itemKey: "create_warehouse", title: "Create warehouse", actionHref: "/inventory/warehouses", required: true },
@@ -69,6 +158,7 @@ export class ModuleChecklistService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly analytics: OnboardingAnalyticsService,
+    private readonly hrReconciliation: HrChecklistReconciliationService,
   ) {}
 
   /** Idempotently creates a checklist + seeded items for each module key. Safe to call repeatedly. */
@@ -104,12 +194,16 @@ export class ModuleChecklistService {
     }
   }
 
-  async listChecklists(orgId: string, visibleModuleKeys: string[]) {
+  /** `includeHr` is resolved by the controller from the caller's HR permissions — the HR entry is silently omitted (not an error) for callers without them, since this is a bulk multi-module listing. */
+  async listChecklists(orgId: string, visibleModuleKeys: string[], includeHr: boolean) {
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
       where: eq(moduleSetupChecklists.orgId, orgId),
       with: { items: true },
     });
-    return checklists.filter((c) => visibleModuleKeys.includes(c.moduleKey));
+    const visible = checklists.filter(
+      (c) => visibleModuleKeys.includes(c.moduleKey) && (c.moduleKey !== "HR" || includeHr),
+    );
+    return Promise.all(visible.map((c) => (c.moduleKey === "HR" ? this.reconcileAndReload(orgId, c) : c)));
   }
 
   async getChecklist(orgId: string, moduleKey: string, visibleModuleKeys: string[]) {
@@ -121,7 +215,24 @@ export class ModuleChecklistService {
       with: { items: true },
     });
     if (!checklist) throw new NotFoundException(`Module setup checklist not found: ${moduleKey}`);
+    if (moduleKey === "HR") return this.reconcileAndReload(orgId, checklist);
     return checklist;
+  }
+
+  /**
+   * HR is the only module whose checklist completion is derived from real HR data rather than
+   * manual complete-clicks (task requirement). Re-derives todo/done for every non-skipped item
+   * on every read, then reloads so callers always see a state consistent with live data.
+   */
+  private async reconcileAndReload(orgId: string, checklist: ChecklistWithItems): Promise<ChecklistWithItems> {
+    const changed = await this.hrReconciliation.reconcile(orgId, checklist.items);
+    if (!changed) return checklist;
+    await this.recomputeProgress(checklist.id, orgId);
+    const reloaded = await this.db.query.moduleSetupChecklists.findFirst({
+      where: eq(moduleSetupChecklists.id, checklist.id),
+      with: { items: true },
+    });
+    return reloaded ?? checklist;
   }
 
   private async recomputeProgress(checklistId: number, orgId: string) {
@@ -177,14 +288,13 @@ export class ModuleChecklistService {
     return this.recomputeProgress(checklist.id, orgId);
   }
 
+  /**
+   * Dismissal means "stop showing me this proactively" (Skip / Remind later / Finish setup
+   * later), not "attest everything is done" — real completion is independently tracked via
+   * status/progress, so this intentionally does not require required items to be complete.
+   */
   async dismissChecklist(orgId: string, moduleKey: string, userId: string, visibleModuleKeys: string[]) {
     const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
-    const hasRequiredIncomplete = checklist.items.some(
-      (i) => i.required && i.status !== "done" && i.status !== "skipped",
-    );
-    if (hasRequiredIncomplete) {
-      throw new BadRequestException("Checklist has required items still incomplete and cannot be dismissed");
-    }
 
     const [updated] = await this.db
       .update(moduleSetupChecklists)
@@ -194,5 +304,30 @@ export class ModuleChecklistService {
 
     await this.analytics.track(orgId, userId, "module_checklist_dismissed", { moduleKey });
     return updated;
+  }
+
+  /**
+   * Reopens a dismissed checklist and gives the user a fresh look at anything they previously
+   * skipped. Items already "done" are left as-is — real-data-backed completion is never lost —
+   * and will self-correct on the next read if the underlying record is later removed.
+   */
+  async restartChecklist(orgId: string, moduleKey: string, userId: string, visibleModuleKeys: string[]) {
+    const checklist = await this.getChecklist(orgId, moduleKey, visibleModuleKeys);
+
+    await this.db
+      .update(moduleSetupChecklists)
+      .set({ dismissedAt: null })
+      .where(eq(moduleSetupChecklists.id, checklist.id));
+
+    const skippedItemIds = checklist.items.filter((i) => i.status === "skipped").map((i) => i.id);
+    if (skippedItemIds.length > 0) {
+      await this.db
+        .update(moduleSetupChecklistItems)
+        .set({ status: "todo", skippedAt: null })
+        .where(inArray(moduleSetupChecklistItems.id, skippedItemIds));
+    }
+
+    await this.analytics.track(orgId, userId, "module_checklist_restarted", { moduleKey });
+    return this.recomputeProgress(checklist.id, orgId);
   }
 }

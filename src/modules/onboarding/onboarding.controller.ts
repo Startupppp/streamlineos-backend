@@ -2,6 +2,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -19,6 +20,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -63,10 +65,32 @@ export class OnboardingController {
     private readonly checklists: ModuleChecklistService,
     private readonly tours: GuidedTourService,
     private readonly sessions: OnboardingSessionService,
+    private readonly access: AccessService,
   ) {}
 
   // NOTE: every static route below must stay ABOVE `getUserTasks` (`GET /onboarding/:userId`,
   // near the bottom of this class) — it's a catch-all that would otherwise shadow these paths.
+
+  /**
+   * The generic onboarding:module-checklists:* permission is granted to every role (baseline
+   * self-service bundle) so every module's checklist works out of the box.
+   * The HR module checklist is the one exception — it must be HR-only (task requirement) — so
+   * we layer an additional, existing-permission check on top for moduleKey === "HR" only,
+   * matching the manual-OR-check idiom already used in hr-config/hr-document-types.controller.ts.
+   */
+  private async assertHrChecklistAccess(u: CurrentUserContext, mode: "view" | "manage") {
+    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("hr:employees:manage")) return;
+    if (mode === "view" && perms.has("hr:employees:view")) return;
+    throw new ForbiddenException("HR setup checklist requires HR permissions");
+  }
+
+  private async hasHrChecklistAccess(u: CurrentUserContext): Promise<boolean> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    return perms.has("hr:employees:view") || perms.has("hr:employees:manage");
+  }
 
   @Get("session")
   @UseGuards(PermissionGuard)
@@ -97,45 +121,58 @@ export class OnboardingController {
   @Get("module-checklists")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
-  listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
-    return this.checklists.listChecklists(u.orgId, u.enabledModules);
+  async listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
+    const includeHr = await this.hasHrChecklistAccess(u);
+    return this.checklists.listChecklists(u.orgId, u.enabledModules, includeHr);
   }
 
   @Get("module-checklists/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
-  getModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+  async getModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "view");
     return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
-  completeChecklistItem(
+  async completeChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.completeItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules);
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
-  skipChecklistItem(
+  async skipChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
     @Body(new ZodValidationPipe(checklistItemSkipSchema)) body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.skipItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules, body.reason);
   }
 
   @Post("module-checklists/:moduleKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
-  dismissModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+  async dismissModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.dismissChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
+  }
+
+  @Post("module-checklists/:moduleKey/restart")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("onboarding:module-checklists:manage")
+  async restartModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+    if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
+    return this.checklists.restartChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
   }
 
   @Get("tours")
