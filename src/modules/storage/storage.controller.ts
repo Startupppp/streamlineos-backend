@@ -24,7 +24,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { documents, organizationMembers } from "../../db/schema";
+import { documents, organizationMembers, onboardingDocuments, expenses, reimbursements, handbookVersions } from "../../db/schema";
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 
@@ -125,10 +125,8 @@ export class StorageController {
     });
     const orgId = member?.orgId ?? u.orgId;
 
-    const fileRecord = await this.db.query.documents.findFirst({
-      where: ilike(documents.fileUrl, `%${fileKey}%`),
-    });
-    if (fileRecord && fileRecord.orgId !== orgId) {
+    const fileOwnerOrgId = await this.resolveFileOwnerOrgId(fileKey);
+    if (fileOwnerOrgId !== null && fileOwnerOrgId !== orgId) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -172,6 +170,27 @@ export class StorageController {
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     this.pipe(stream.body, res);
+  }
+
+  /**
+   * The `documents` table doesn't track every file type — onboarding documents, expense/
+   * reimbursement receipts, and handbook attachments live in their own tables with no
+   * central registry. Storage keys aren't org-namespaced, so this is the only place cross-org
+   * ownership can be checked; silently skipping a table here reopens the isolation gap for
+   * that file type. Returns the owning orgId, or null if the key isn't tracked anywhere.
+   */
+  private async resolveFileOwnerOrgId(fileKey: string): Promise<string | null> {
+    const like = `%${fileKey}%`;
+    const [doc, onboardingDoc, expense, reimbursement, handbookVersion] = await Promise.all([
+      this.db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),
+      this.db.query.onboardingDocuments.findFirst({ where: ilike(onboardingDocuments.fileUrl, like) }),
+      this.db.query.expenses.findFirst({ where: ilike(expenses.receiptUrl, like) }),
+      this.db.query.reimbursements.findFirst({ where: ilike(reimbursements.receiptUrl, like) }),
+      this.db.query.handbookVersions.findFirst({ where: ilike(handbookVersions.documentUrl, like) }),
+    ]);
+    return (
+      doc?.orgId ?? onboardingDoc?.orgId ?? expense?.orgId ?? reimbursement?.orgId ?? handbookVersion?.orgId ?? null
+    );
   }
 
   private async openStream(key: string, notFoundMessage: string): Promise<FileStreamResult> {
