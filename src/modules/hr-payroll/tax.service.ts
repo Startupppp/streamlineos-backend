@@ -96,7 +96,7 @@ export class TaxService {
     return this.db
       .select()
       .from(investmentProofs)
-      .where(eq(investmentProofs.declarationId, declarationId))
+      .where(and(eq(investmentProofs.declarationId, declarationId), eq(investmentProofs.orgId, orgId)))
       .orderBy(desc(investmentProofs.createdAt));
   }
 }

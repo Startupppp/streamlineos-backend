@@ -339,7 +339,7 @@ export class PublishingService {
     }
 
     const runEmployee = await this.db.query.payrollRunEmployees.findFirst({
-      where: eq(payrollRunEmployees.id, publication.runEmployeeId),
+      where: and(eq(payrollRunEmployees.id, publication.runEmployeeId), eq(payrollRunEmployees.orgId, publication.orgId)),
       columns: {
         calculationSnapshot: true,
         workerType: true,
@@ -358,7 +358,7 @@ export class PublishingService {
     }
 
     const run = await this.db.query.payrollRuns.findFirst({
-      where: eq(payrollRuns.id, publication.runId),
+      where: and(eq(payrollRuns.id, publication.runId), eq(payrollRuns.orgId, publication.orgId)),
       columns: { month: true, orgId: true },
     });
     if (!run) throw new NotFoundException("Payroll run not found");
