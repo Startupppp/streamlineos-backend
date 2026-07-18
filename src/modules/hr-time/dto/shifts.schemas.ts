@@ -4,15 +4,24 @@ const SHIFT_TYPES = ["FIXED", "ROTATIONAL", "NIGHT", "FLEXIBLE"] as const;
 
 const shiftNameSchema = z
   .string()
-  .transform((v) => v.trim())
+  .transform((v) => v.trim().replace(/\s+/g, " "))
   .pipe(
     z
       .string()
       .min(3, "Shift name must be at least 3 characters")
       .max(100, "Shift name must be at most 100 characters")
-      .refine((v) => /[a-zA-Z]/.test(v), "Shift name must contain at least one letter")
-      .refine((v) => /[a-zA-Z]{3}/.test(v), "Shift name must contain at least 3 letters")
-      .refine((v) => !/\s{2,}/.test(v), "Shift name cannot have consecutive spaces"),
+      .refine(
+        (v) => /^[\p{L}\p{N}\s'.-]+$/u.test(v),
+        "Shift name can only use letters, numbers, spaces, apostrophes, periods, and hyphens",
+      )
+      .refine(
+        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+        "Shift name cannot have consecutive special characters",
+      )
+      .refine(
+        (v) => (v.match(/[a-zA-Z]/g) ?? []).length >= 3,
+        "Shift name must contain at least 3 letters",
+      ),
   );
 
 export const createShiftSchema = z.object({

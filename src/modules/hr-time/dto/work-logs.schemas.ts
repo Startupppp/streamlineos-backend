@@ -13,7 +13,26 @@ export const postWorkLogSchema = z.object({
   date: z.string(),
   hours: z.number().optional(),
   description: z.string().optional(),
-  workLink: z.string().url().optional().or(z.literal("")),
+  workLink: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => {
+      if (!v?.trim()) return true;
+      const links = v
+        .split(/\n+/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (links.length > 10) return false;
+      return links.every((l) => {
+        try {
+          new URL(l);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+    }, "Each work link must be a valid URL (max 10)"),
 });
 
 export const exportWorkLogsQuerySchema = z.object({
