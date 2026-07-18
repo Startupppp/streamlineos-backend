@@ -8,6 +8,8 @@ import {
   payrollLineItems,
   payrollPolicies,
   payrollPolicyVersions,
+  payrollBankBatches,
+  payrollBankBatchItems,
 } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
@@ -218,7 +220,12 @@ export class RunsService {
   async getRunById(
     orgId: string,
     runId: number,
-  ): Promise<{ run: typeof payrollRuns.$inferSelect; checklist: PayrollChecklistItem[]; varianceSummary: VarianceSummary | null } | null> {
+  ): Promise<{
+    run: typeof payrollRuns.$inferSelect;
+    checklist: PayrollChecklistItem[];
+    varianceSummary: VarianceSummary | null;
+    payoutHealth: { failedCount: number; heldCount: number } | null;
+  } | null> {
     const run = await this.db
       .select()
       .from(payrollRuns)
@@ -227,14 +234,40 @@ export class RunsService {
 
     if (!run[0]) return null;
 
-    const [toggles, varianceSummary] = await Promise.all([
+    const [toggles, varianceSummary, payoutHealth] = await Promise.all([
       this.getTogglesForRun(orgId, run[0].policyVersionId),
       this.buildVarianceSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
+      this.getPayoutHealth(orgId, run[0].id, run[0].status),
     ]);
 
     const checklist = await buildRunChecklist(this.db, orgId, run[0], toggles);
 
-    return { run: run[0], checklist, varianceSummary };
+    return { run: run[0], checklist, varianceSummary, payoutHealth };
+  }
+
+  /**
+   * A run auto-flips to PAID once every batch item reaches a terminal state (paid, failed, or
+   * held) — so "run is PAID" does not mean everyone was actually paid. Surfaces the failed/held
+   * count so the UI can warn rather than let a misleadingly-green PAID badge hide the gap.
+   */
+  private async getPayoutHealth(
+    orgId: string,
+    runId: number,
+    runStatus: string,
+  ): Promise<{ failedCount: number; heldCount: number } | null> {
+    if (runStatus !== "PAID" && runStatus !== "PAYSLIPS_PUBLISHED" && runStatus !== "CLOSED") return null;
+
+    const rows = await this.db
+      .select({ status: payrollBankBatchItems.status, total: count() })
+      .from(payrollBankBatchItems)
+      .innerJoin(payrollBankBatches, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
+      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)))
+      .groupBy(payrollBankBatchItems.status);
+
+    const failedCount = rows.find((r) => r.status === "FAILED")?.total ?? 0;
+    const heldCount = rows.find((r) => r.status === "HELD")?.total ?? 0;
+    if (failedCount === 0 && heldCount === 0) return null;
+    return { failedCount, heldCount };
   }
 
   async getCurrentRun(orgId: string) {
