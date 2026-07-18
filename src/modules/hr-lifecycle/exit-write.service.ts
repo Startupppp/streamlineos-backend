@@ -322,6 +322,13 @@ export class ExitWriteService {
     this.resignationJobs.notifyCeoDecision(orgId, record.userId, approved);
 
     if (approved) {
+      await this.db
+        .insert(fnfSettlements)
+        .values({ orgId, userId: record.userId, resignationId, status: "DRAFT" })
+        .onConflictDoNothing();
+
+      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId, actorUserId).catch(() => undefined);
+
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
     }
 
