@@ -6,6 +6,8 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { upsertCalibrationEntrySchema, type UpsertCalibrationEntryInput } from "./dto/calibration.schemas";
 
 @RequireModule("hr")
 @Controller("hr/performance/calibration")
@@ -27,7 +29,7 @@ export class CalibrationController {
   upsertEntry(
     @CurrentUser() user: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body() body: { employeeId: string; preRating?: string; postRating?: string; note?: string },
+    @Body(new ZodValidationPipe(upsertCalibrationEntrySchema)) body: UpsertCalibrationEntryInput,
   ) {
     return this.calibrationService.upsertEntry(
       user.orgId,

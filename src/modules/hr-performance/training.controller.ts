@@ -15,46 +15,16 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TrainingService } from "./training.service";
-
-interface CreateProgramBody {
-  name: string;
-  description?: string;
-  type?: string;
-  format?: string;
-  startDate: string;
-  endDate?: string;
-  venue?: string;
-  virtualLink?: string;
-  maxCapacity?: number;
-  instructorId?: string;
-  externalInstructor?: string;
-  isMandatory?: boolean;
-  status?: string;
-}
-
-interface UpdateProgramBody {
-  name?: string;
-  description?: string;
-  type?: string;
-  format?: string;
-  startDate?: string;
-  endDate?: string;
-  venue?: string;
-  virtualLink?: string;
-  maxCapacity?: number;
-  instructorId?: string;
-  externalInstructor?: string;
-  isMandatory?: boolean;
-  status?: string;
-}
-
-interface MarkAttendanceBody {
-  status?: string;
-  feedbackRating?: number;
-  feedbackText?: string;
-  certificateUrl?: string;
-}
+import {
+  createTrainingProgramSchema,
+  updateTrainingProgramSchema,
+  markAttendanceSchema,
+  type CreateTrainingProgramInput,
+  type UpdateTrainingProgramInput,
+  type MarkAttendanceInput,
+} from "./dto/training.schemas";
 
 @RequireModule("hr")
 @Controller("hr/training")
@@ -72,7 +42,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   @HttpCode(201)
   createProgram(
-    @Body() body: CreateProgramBody,
+    @Body(new ZodValidationPipe(createTrainingProgramSchema)) body: CreateTrainingProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.createProgram(u.orgId, body);
@@ -82,7 +52,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body() body: UpdateProgramBody,
+    @Body(new ZodValidationPipe(updateTrainingProgramSchema)) body: UpdateTrainingProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.updateProgram(u.orgId, programId, body);
@@ -109,7 +79,7 @@ export class TrainingController {
   markAttendance(
     @Param("programId", ParseIntPipe) programId: number,
     @Param("userId") userId: string,
-    @Body() body: MarkAttendanceBody,
+    @Body(new ZodValidationPipe(markAttendanceSchema)) body: MarkAttendanceInput,
   ) {
     return this.trainingService.markAttendance(programId, userId, body);
   }

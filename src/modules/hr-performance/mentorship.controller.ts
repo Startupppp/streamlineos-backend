@@ -6,6 +6,13 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import {
+  createMentorshipSchema,
+  updateMentorshipSchema,
+  type CreateMentorshipInput,
+  type UpdateMentorshipInput,
+} from "./dto/mentorship.schemas";
 
 @RequireModule("hr")
 @Controller("hr/mentorships")
@@ -24,7 +31,7 @@ export class MentorshipController {
   @RequirePermission("hr:learning:manage")
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body() body: { mentorId: string; menteeId: string; goal?: string; startedAt?: string },
+    @Body(new ZodValidationPipe(createMentorshipSchema)) body: CreateMentorshipInput,
   ) {
     return this.mentorshipService.create(user.orgId, body);
   }
@@ -34,7 +41,7 @@ export class MentorshipController {
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,
-    @Body() body: Partial<{ status: string; endedAt: string; goal: string }>,
+    @Body(new ZodValidationPipe(updateMentorshipSchema)) body: UpdateMentorshipInput,
   ) {
     return this.mentorshipService.update(user.orgId, id, body);
   }

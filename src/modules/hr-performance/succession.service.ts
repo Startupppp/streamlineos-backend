@@ -17,11 +17,11 @@ export class SuccessionService {
     createdBy: string,
     data: {
       roleName: string;
-      jobRoleId?: number;
-      incumbentId?: string;
+      jobRoleId?: number | null;
+      incumbentId?: string | null;
       successorId: string;
       readiness: "ready_now" | "1_2_years" | "3_plus";
-      note?: string;
+      note?: string | null;
     },
   ) {
     const [created] = await this.db
@@ -36,11 +36,11 @@ export class SuccessionService {
     id: number,
     data: Partial<{
       roleName: string;
-      jobRoleId: number;
-      incumbentId: string;
+      jobRoleId: number | null;
+      incumbentId: string | null;
       successorId: string;
       readiness: "ready_now" | "1_2_years" | "3_plus";
-      note: string;
+      note: string | null;
     }>,
   ) {
     const existing = await this.db

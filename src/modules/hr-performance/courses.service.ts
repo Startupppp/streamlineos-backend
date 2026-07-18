@@ -19,12 +19,12 @@ export class CoursesService {
       .limit(100);
   }
 
-  async createCourse(orgId: string, data: typeof courses.$inferInsert) {
+  async createCourse(orgId: string, data: Omit<typeof courses.$inferInsert, "orgId">) {
     const [course] = await this.db.insert(courses).values({ ...data, orgId }).returning();
     return course;
   }
 
-  async updateCourse(orgId: string, id: number, data: Partial<typeof courses.$inferInsert>) {
+  async updateCourse(orgId: string, id: number, data: Partial<Omit<typeof courses.$inferInsert, "orgId">>) {
     const [course] = await this.db.update(courses).set({ ...data, updatedAt: new Date() })
       .where(and(eq(courses.id, id), eq(courses.orgId, orgId))).returning();
     if (!course) throw new NotFoundException("Course not found");

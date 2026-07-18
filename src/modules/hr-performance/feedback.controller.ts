@@ -4,7 +4,14 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbackService } from "./feedback.service";
+import {
+  createFeedbackCycleSchema,
+  updateCycleStatusSchema,
+  type CreateFeedbackCycleInput,
+  type UpdateCycleStatusInput,
+} from "./dto/feedback.schemas";
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/feedback")
@@ -21,7 +28,7 @@ export class FeedbackController {
   @RequirePermission("hr:performance:manage")
   createCycle(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: Parameters<FeedbackService["createCycle"]>[2],
+    @Body(new ZodValidationPipe(createFeedbackCycleSchema)) body: CreateFeedbackCycleInput,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
@@ -37,7 +44,7 @@ export class FeedbackController {
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,
-    @Body() body: { status: string },
+    @Body(new ZodValidationPipe(updateCycleStatusSchema)) body: UpdateCycleStatusInput,
   ) {
     return this.service.updateCycleStatus(u.orgId, id, body.status);
   }

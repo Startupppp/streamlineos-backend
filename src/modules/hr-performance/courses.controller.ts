@@ -8,6 +8,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CoursesService } from "./courses.service";
+import {
+  createCourseSchema,
+  updateCourseSchema,
+  type CreateCourseInput,
+  type UpdateCourseInput,
+} from "./dto/courses.schemas";
 
 const updateProgressSchema = z.object({
   progressPct: z.number().min(0).max(100),
@@ -42,9 +48,9 @@ export class CoursesController {
   @RequirePermission("hr:learning:manage")
   createCourse(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: Record<string, unknown>,
+    @Body(new ZodValidationPipe(createCourseSchema)) body: CreateCourseInput,
   ) {
-    return this.courses.createCourse(u.orgId, body as Parameters<CoursesService["createCourse"]>[1]);
+    return this.courses.createCourse(u.orgId, body);
   }
 
   @Patch(":courseId")
@@ -52,9 +58,9 @@ export class CoursesController {
   updateCourse(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
-    @Body() body: Record<string, unknown>,
+    @Body(new ZodValidationPipe(updateCourseSchema)) body: UpdateCourseInput,
   ) {
-    return this.courses.updateCourse(u.orgId, courseId, body as Parameters<CoursesService["updateCourse"]>[2]);
+    return this.courses.updateCourse(u.orgId, courseId, body);
   }
 
   @Post(":courseId/enroll")
