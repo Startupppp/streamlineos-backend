@@ -53,6 +53,8 @@ describe("validateEnv", () => {
         NODE_ENV: "production",
         CRON_SECRET: "x".repeat(32),
         INTERNAL_API_SECRET: "x".repeat(32),
+        ADMIN_NOTIFICATION_EMAIL: "admin@example.com",
+        OWNER_EMAIL: "owner@example.com",
       }),
     ).toThrow(/CONTACT_NOTIFICATION_EMAIL/);
   });

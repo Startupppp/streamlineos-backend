@@ -41,26 +41,10 @@ const TOPIC_LABEL: Record<string, string> = {
   other: "Something else",
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function parseEmailList(value: string | undefined): string[] {
-  if (!value) return [];
-  return value
-    .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s !== "" && EMAIL_RE.test(s));
+function getContactRecipients(): string[] {
+  const recipient = process.env.CONTACT_NOTIFICATION_EMAIL?.trim();
+  return recipient ? [recipient] : [BRAND_SUPPORT_EMAIL];
 }
-
-function getAdminRecipients(): string[] {
-  const candidates = [
-    ...parseEmailList(process.env.ADMIN_NOTIFICATION_EMAILS),
-    ...parseEmailList(process.env.ADMIN_NOTIFICATION_EMAIL),
-    ...parseEmailList(process.env.OWNER_EMAIL),
-  ];
-  const deduped = Array.from(new Set(candidates));
-  return deduped.length > 0 ? deduped : [BRAND_SUPPORT_EMAIL];
-}
-
 
 @Injectable()
 export class PlatformService {
@@ -83,7 +67,7 @@ export class PlatformService {
       status: "NEW",
     });
 
-    const adminRecipients = getAdminRecipients();
+    const adminRecipients = getContactRecipients();
     const topicLabel = TOPIC_LABEL[input.topic ?? "other"] ?? "Something else";
     const receivedAt = new Date().toLocaleDateString("en-GB", {
       weekday: "short",

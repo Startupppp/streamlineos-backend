@@ -8,13 +8,13 @@ import { mint, req, check, report } from "./harness.mjs";
 //   3. POST /settings/email-templates/test     JwtAuthGuard + AbilityGuard  CheckAbility("manage","settings:email-templates")
 //
 // SAFETY: external email provider resolves to Resend (RESEND_API_KEY set). We send
-// AT MOST ONE real email — the [TEST] template to ADMIN_NOTIFICATION_EMAIL via the
+// AT MOST ONE real email — the [TEST] template to CONTACT_NOTIFICATION_EMAIL via the
 // intended /settings/email-templates/test endpoint. Every other route is exercised
 // on a NO-OP / not-found / validation / RBAC path that triggers zero external sends.
 // Twilio (SMS/WhatsApp) is only probed via no-phone no-op paths — no real Twilio call.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ADMIN_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL;
+const CONTACT_EMAIL = process.env.CONTACT_NOTIFICATION_EMAIL;
 
 const owner = await mint("owner");                                   // isOrgOwner -> manage:all, role OWNER
 const member = await mint("member");                                 // no perms, role MEMBER
@@ -114,15 +114,15 @@ check("R3 owner unknown templateId -> 404 (no send)", await req("POST", "/settin
 // RBAC-positive (non-owner) with correct specific ability lands on 404 not 403, still no send.
 check("R3 templates-perm unknown templateId -> 404 (ability passes, no send)", await req("POST", "/settings/email-templates/test", { token: templatesPerm, body: { templateId: "does.not.exist", testEmail: "a@b.com" } }), 404);
 
-// ── THE ONE REAL EXTERNAL CALL: send a single [TEST] template to ADMIN_NOTIFICATION_EMAIL ──
-if (ADMIN_EMAIL) {
-  realCalls.push(`Resend email send (provider=resend) -> [TEST] auth.welcome to ${ADMIN_EMAIL} via POST /settings/email-templates/test`);
-  const real = await req("POST", "/settings/email-templates/test", { token: owner, body: { templateId: "auth.welcome", testEmail: ADMIN_EMAIL } });
+// ── THE ONE REAL EXTERNAL CALL: send a single [TEST] template to CONTACT_NOTIFICATION_EMAIL ──
+if (CONTACT_EMAIL) {
+  realCalls.push(`Resend email send (provider=resend) -> [TEST] auth.welcome to ${CONTACT_EMAIL} via POST /settings/email-templates/test`);
+  const real = await req("POST", "/settings/email-templates/test", { token: owner, body: { templateId: "auth.welcome", testEmail: CONTACT_EMAIL } });
   check("R3 owner REAL send auth.welcome -> 200 (no 500 on happy path)", real, 200);
-  const ok = real.body?.sent === true && real.body?.to === ADMIN_EMAIL && real.body?.templateId === "auth.welcome";
+  const ok = real.body?.sent === true && real.body?.to === CONTACT_EMAIL && real.body?.templateId === "auth.welcome";
   check("R3 real-send response shape {sent:true, to, templateId}", { status: ok ? 200 : 599, body: real.body }, 200);
 } else {
-  console.log("  SKIP real send: ADMIN_NOTIFICATION_EMAIL not in env");
+  console.log("  SKIP real send: CONTACT_NOTIFICATION_EMAIL not in env");
 }
 
 console.log("\nREAL EXTERNAL CALLS TRIGGERED:");
