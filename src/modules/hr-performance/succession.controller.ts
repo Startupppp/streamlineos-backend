@@ -6,6 +6,13 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import {
+  createSuccessionSchema,
+  updateSuccessionSchema,
+  type CreateSuccessionInput,
+  type UpdateSuccessionInput,
+} from "./dto/succession.schemas";
 
 @RequireModule("hr")
 @Controller("hr/succession")
@@ -24,15 +31,7 @@ export class SuccessionController {
   @RequirePermission("hr:succession:manage")
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body()
-    body: {
-      roleName: string;
-      jobRoleId?: number;
-      incumbentId?: string;
-      successorId: string;
-      readiness: "ready_now" | "1_2_years" | "3_plus";
-      note?: string;
-    },
+    @Body(new ZodValidationPipe(createSuccessionSchema)) body: CreateSuccessionInput,
   ) {
     return this.successionService.create(user.orgId, user.userId, body);
   }
@@ -42,22 +41,15 @@ export class SuccessionController {
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("successionId", ParseIntPipe) successionId: number,
-    @Body()
-    body: Partial<{
-      roleName: string;
-      jobRoleId: number;
-      incumbentId: string;
-      successorId: string;
-      readiness: "ready_now" | "1_2_years" | "3_plus";
-      note: string;
-    }>,
+    @Body(new ZodValidationPipe(updateSuccessionSchema)) body: UpdateSuccessionInput,
   ) {
     return this.successionService.update(user.orgId, successionId, body);
   }
 
   @Delete(":successionId")
+  @HttpCode(204)
   @RequirePermission("hr:succession:manage")
-  remove(@CurrentUser() user: CurrentUserContext, @Param("successionId", ParseIntPipe) successionId: number) {
-    return this.successionService.remove(user.orgId, successionId);
+  async remove(@CurrentUser() user: CurrentUserContext, @Param("successionId", ParseIntPipe) successionId: number) {
+    await this.successionService.remove(user.orgId, successionId);
   }
 }

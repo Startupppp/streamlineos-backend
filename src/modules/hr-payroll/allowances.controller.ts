@@ -19,6 +19,7 @@ export class AllowancesController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   create(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {

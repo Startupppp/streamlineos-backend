@@ -1,11 +1,26 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BiometricService } from "./biometric.service";
+
+const createDeviceSchema = z.object({
+  name: z.string().min(1).max(100),
+  ipAddress: z.string().min(1).max(45),
+  port: z.number().int().positive().optional(),
+  vendor: z.string().max(100).optional(),
+  location: z.string().max(200).optional(),
+});
+
+const updateDeviceSchema = createDeviceSchema.partial();
+
+type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
+type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -21,17 +36,25 @@ export class BiometricController {
   }
 
   @Post("devices")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  createDevice(@CurrentUser() u: CurrentUserContext, @Body() body: { name: string; ipAddress: string; port?: number; vendor?: string; location?: string }) {
+  createDevice(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createDeviceSchema)) body: CreateDeviceInput,
+  ) {
     return this.service.createDevice(u.orgId, body);
   }
 
-  @Patch("devices/:id")
+  @Patch("devices/:deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  updateDevice(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body() body: Partial<Parameters<BiometricService["updateDevice"]>[2]>) {
-    return this.service.updateDevice(u.orgId, id, body);
+  updateDevice(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("deviceId", ParseIntPipe) deviceId: number,
+    @Body(new ZodValidationPipe(updateDeviceSchema)) body: UpdateDeviceInput,
+  ) {
+    return this.service.updateDevice(u.orgId, deviceId, body);
   }
 
   @Get("logs")

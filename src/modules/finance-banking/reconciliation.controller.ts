@@ -51,6 +51,7 @@ export class ReconciliationController {
   }
 
   @Post("match")
+  @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   confirmMatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
@@ -61,6 +62,7 @@ export class ReconciliationController {
   }
 
   @Post("unmatch")
+  @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   unmatch(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
@@ -71,6 +73,7 @@ export class ReconciliationController {
   }
 
   @Post("ignore")
+  @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   ignore(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,

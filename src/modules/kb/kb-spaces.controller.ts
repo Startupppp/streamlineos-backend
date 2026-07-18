@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -42,6 +43,7 @@ export class KbSpacesController {
 
   @Post()
   @RequirePermission("kb:spaces:manage")
+  @HttpCode(201)
   async create(
     @Body(new ZodValidationPipe(createSpaceSchema)) body: CreateSpaceInput,
     @CurrentUser() u: CurrentUserContext,

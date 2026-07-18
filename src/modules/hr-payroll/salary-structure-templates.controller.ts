@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Patch,
   Delete,
@@ -36,6 +37,7 @@ export class SalaryStructureTemplatesController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   create(

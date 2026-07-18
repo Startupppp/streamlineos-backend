@@ -84,7 +84,7 @@ export const statusSchema = z.object({
 
 export const listMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 export const pollQuerySchema = z.object({
@@ -94,7 +94,7 @@ export const pollQuerySchema = z.object({
 export const searchQuerySchema = z.object({
   query: z.string().default(""),
   channelId: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 export const pinMessageSchema = z.object({

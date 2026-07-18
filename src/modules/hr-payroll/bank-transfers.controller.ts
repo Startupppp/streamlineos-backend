@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -18,6 +18,7 @@ export class BankTransfersController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:payroll:approve")
   create(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
     return this.service.create(u.orgId, u.userId, body as Parameters<BankTransfersService["create"]>[2]);

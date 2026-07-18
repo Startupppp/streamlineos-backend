@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -52,6 +53,7 @@ export class KbArticlesController {
   }
 
   @Post("articles")
+  @HttpCode(HttpStatus.CREATED)
   @RequirePermission("kb:articles:create")
   async create(
     @Body(new ZodValidationPipe(createArticleSchema)) body: CreateArticleInput,

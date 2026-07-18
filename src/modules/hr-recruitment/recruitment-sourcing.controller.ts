@@ -108,9 +108,10 @@ export class RecruitmentSourcingController {
   }
 
   @Delete("vendors/:vendorId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  deleteVendor(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.deleteVendor(u.orgId, vendorId);
+  async deleteVendor(@Param("vendorId", ParseIntPipe) vendorId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.sourcing.deleteVendor(u.orgId, vendorId);
   }
 
   @Post("vendors/:vendorId/portal-link")

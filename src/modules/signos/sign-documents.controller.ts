@@ -63,16 +63,16 @@ export class SignDocumentsController {
     return this.documents.list(u.orgId, envelopeId);
   }
 
-  @Get("documents/:id/preview")
+  @Get("documents/:documentId/preview")
   @RequirePermission("sign:documents:view")
-  preview(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.documents.getPreviewUrl(u.orgId, id);
+  preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.documents.getPreviewUrl(u.orgId, documentId);
   }
 
-  @Delete("documents/:id")
+  @Delete("documents/:documentId")
   @RequirePermission("sign:documents:upload")
-  async remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.documents.delete(u.orgId, id, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+  async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.documents.delete(u.orgId, documentId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
     return { success: true };
   }
 }

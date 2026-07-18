@@ -128,6 +128,26 @@ export const forecastSnapshotsQuerySchema = z.object({
   offset: z.coerce.number().min(0).optional(),
 });
 
+export const createStakeholderSchema = z.object({
+  contactId: z.number().int().positive(),
+  roleKey: z.string().max(100).nullable().optional(),
+  influence: z.enum(["low", "medium", "high", "blocker"]).nullable().optional(),
+  isPrimary: z.boolean().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+export const updateStakeholderSchema = z.object({
+  roleKey: z.string().max(100).nullable().optional(),
+  influence: z.enum(["low", "medium", "high", "blocker"]).nullable().optional(),
+  isPrimary: z.boolean().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+export const overrideForecastSnapshotSchema = z.object({
+  overrideAmount: z.number().min(0).optional(),
+  overrideNote: z.string().max(1000).optional(),
+});
+
 export type ListDealsInput = z.infer<typeof listDealsSchema>;
 export type CreateDealInput = z.infer<typeof createDealSchema>;
 export type UpdateDealInput = z.infer<typeof updateDealSchema>;
@@ -147,3 +167,6 @@ export type PatchNextStepInput = z.infer<typeof patchNextStepSchema>;
 export type CreateForecastSnapshotInput = z.infer<typeof createForecastSnapshotSchema>;
 export type CompareForecastSnapshotsInput = z.infer<typeof compareForecastSnapshotsSchema>;
 export type ForecastSnapshotsQueryInput = z.infer<typeof forecastSnapshotsQuerySchema>;
+export type CreateStakeholderInput = z.infer<typeof createStakeholderSchema>;
+export type UpdateStakeholderInput = z.infer<typeof updateStakeholderSchema>;
+export type OverrideForecastSnapshotInput = z.infer<typeof overrideForecastSnapshotSchema>;

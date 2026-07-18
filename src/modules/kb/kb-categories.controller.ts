@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -39,6 +40,7 @@ export class KbCategoriesController {
 
   @Post("spaces/:spaceId/categories")
   @RequirePermission("kb:categories:manage")
+  @HttpCode(201)
   async create(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body(new ZodValidationPipe(createCategorySchema)) body: CreateCategoryInput,

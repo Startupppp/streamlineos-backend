@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param,
+  BadRequestException, Controller, Get, Post, Patch, Body, Param,
   ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -20,7 +20,7 @@ import {
 } from "./dto/inv-purchase-orders.schemas";
 
 function requireIdempotencyKey(key: string | undefined): string {
-  if (!key) throw Object.assign(new Error("Idempotency-Key header is required"), { status: 400 });
+  if (!key) throw new BadRequestException("Idempotency-Key header is required");
   return key;
 }
 

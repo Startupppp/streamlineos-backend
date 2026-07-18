@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -52,6 +53,7 @@ export class FeedbucketController {
 
   @Post("widgets")
   @RequirePermission("feedbucket:widgets:create")
+  @HttpCode(201)
   createWidget(
     @CurrentUser() user: CurrentUserContext,
     @Body(new ZodValidationPipe(createWidgetSchema)) dto: CreateWidgetInput,

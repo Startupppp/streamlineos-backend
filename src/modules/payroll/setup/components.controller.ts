@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -60,6 +61,7 @@ export class PayrollComponentsController {
   }
 
   @Delete(":componentId")
+  @HttpCode(204)
   @RequirePermission("payroll:components:manage")
   async remove(
     @Param("componentId", ParseIntPipe) componentId: number,

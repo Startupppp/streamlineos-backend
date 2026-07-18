@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   BadRequestException,
   Param,
@@ -56,6 +57,7 @@ export class LeadsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("crm:leads:create")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,

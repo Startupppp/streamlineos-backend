@@ -71,6 +71,7 @@ export class CalendarController {
   }
 
   @Delete(":eventId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   remove(

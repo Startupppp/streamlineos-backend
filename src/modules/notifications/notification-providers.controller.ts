@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -27,6 +27,7 @@ export class NotificationProvidersController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("notifications:providers:manage")
   create(
     @Body(new ZodValidationPipe(createProviderSchema)) body: CreateProviderInput,

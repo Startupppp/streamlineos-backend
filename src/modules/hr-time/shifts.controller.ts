@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -14,6 +15,28 @@ import {
   type UpdateShiftInput,
 } from "./dto/shifts.schemas";
 
+const assignShiftSchema = z.object({
+  userId: z.string().min(1),
+  shiftId: z.number().int().positive(),
+  effectiveFrom: z.string().min(1),
+  effectiveTo: z.string().optional(),
+});
+
+const createSwapSchema = z.object({
+  targetUserId: z.string().min(1),
+  requestDate: z.string().min(1),
+  targetDate: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+const updateSwapStatusSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED"]),
+});
+
+type AssignShiftInput = z.infer<typeof assignShiftSchema>;
+type CreateSwapInput = z.infer<typeof createSwapSchema>;
+type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;
+
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/shifts")
@@ -27,6 +50,7 @@ export class ShiftsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -46,6 +70,7 @@ export class ShiftsController {
   }
 
   @Delete(":shiftId")
+  @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
   remove(@CurrentUser() u: CurrentUserContext, @Param("shiftId", ParseIntPipe) shiftId: number) {
     return this.service.deleteShift(u.orgId, shiftId);
@@ -58,8 +83,12 @@ export class ShiftsController {
   }
 
   @Post("assignments")
+  @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
-  assign(@CurrentUser() u: CurrentUserContext, @Body() body: { userId: string; shiftId: number; effectiveFrom: string; effectiveTo?: string }) {
+  assign(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(assignShiftSchema)) body: AssignShiftInput,
+  ) {
     return this.service.assignShift(u.orgId, body);
   }
 
@@ -70,14 +99,22 @@ export class ShiftsController {
   }
 
   @Post("swaps")
+  @HttpCode(201)
   @RequirePermission("hr:attendance:view")
-  createSwap(@CurrentUser() u: CurrentUserContext, @Body() body: { targetUserId: string; requestDate: string; targetDate: string; reason?: string }) {
+  createSwap(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createSwapSchema)) body: CreateSwapInput,
+  ) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
   @Patch("swaps/:swapId")
   @RequirePermission("hr:attendance:manage")
-  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("swapId", ParseIntPipe) swapId: number, @Body() body: { status: string }) {
+  updateSwap(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("swapId", ParseIntPipe) swapId: number,
+    @Body(new ZodValidationPipe(updateSwapStatusSchema)) body: UpdateSwapStatusInput,
+  ) {
     return this.service.updateSwapStatus(u.orgId, swapId, body.status, u.userId);
   }
 }

@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   Patch,
@@ -56,6 +57,7 @@ export class RolesController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   create(
@@ -104,6 +106,7 @@ export class RolesController {
   }
 
   @Post("templates")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   cloneTemplate(
@@ -164,6 +167,7 @@ export class RolesController {
   }
 
   @Post(":roleId/members")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   addMember(

@@ -114,6 +114,7 @@ export class AttendanceController {
   }
 
   @Post("holidays")
+  @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
   createHoliday(
     @CurrentUser() u: CurrentUserContext,
@@ -122,19 +123,20 @@ export class AttendanceController {
     return this.attendance.createHoliday(u.orgId, u.userId, body);
   }
 
-  @Patch("holidays/:id")
+  @Patch("holidays/:holidayId")
   @RequirePermission("hr:attendance:manage")
   updateHoliday(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id") id: string,
+    @Param("holidayId") holidayId: string,
     @Body(new ZodValidationPipe(updateOrgHolidaySchema)) body: UpdateOrgHolidayInput,
   ) {
-    return this.attendance.updateHoliday(u.orgId, id, body);
+    return this.attendance.updateHoliday(u.orgId, holidayId, body);
   }
 
-  @Delete("holidays/:id")
+  @Delete("holidays/:holidayId")
+  @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
-  deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("id") id: string) {
-    return this.attendance.deleteHoliday(u.orgId, id);
+  deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("holidayId") holidayId: string) {
+    return this.attendance.deleteHoliday(u.orgId, holidayId);
   }
 }

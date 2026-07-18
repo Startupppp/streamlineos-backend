@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -49,6 +50,7 @@ export class ContactsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,

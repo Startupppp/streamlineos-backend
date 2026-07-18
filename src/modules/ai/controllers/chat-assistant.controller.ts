@@ -5,6 +5,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpCode,
   Inject,
   InternalServerErrorException,
   Param,
@@ -139,6 +140,7 @@ export class ChatAssistantController {
   }
 
   @Post("conversations")
+  @HttpCode(201)
   @RequirePermission("ai:chat:use")
   async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);

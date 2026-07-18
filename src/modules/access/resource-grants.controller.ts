@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -51,6 +51,7 @@ export class ResourceGrantsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("settings:rbac:manage")
   grant(
     @CurrentUser() u: CurrentUserContext,

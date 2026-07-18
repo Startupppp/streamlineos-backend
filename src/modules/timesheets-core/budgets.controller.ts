@@ -56,7 +56,7 @@ export class BudgetsController {
   }
 
   @Delete(":budgetId")
-  @HttpCode(200)
+  @HttpCode(204)
   @RequirePermission("timesheets:budgets:manage")
   remove(
     @Param("budgetId", ParseIntPipe) budgetId: number,

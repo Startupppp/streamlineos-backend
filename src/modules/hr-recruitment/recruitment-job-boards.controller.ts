@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -27,6 +27,7 @@ export class RecruitmentJobBoardsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -48,6 +49,7 @@ export class RecruitmentJobBoardsController {
   }
 
   @Delete(":postingId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   remove(
     @CurrentUser() u: CurrentUserContext,

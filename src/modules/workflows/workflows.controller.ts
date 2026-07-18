@@ -44,6 +44,7 @@ export class WorkflowsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("workflows:workflows:create")
   createWorkflow(
     @Body(new ZodValidationPipe(CreateWorkflowSchema)) body: CreateWorkflowDto,

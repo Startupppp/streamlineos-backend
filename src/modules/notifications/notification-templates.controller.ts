@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -45,6 +46,7 @@ export class NotificationTemplatesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("notifications:templates:manage")
   create(
     @Body(new ZodValidationPipe(createTemplateSchema)) dto: CreateTemplateInput,

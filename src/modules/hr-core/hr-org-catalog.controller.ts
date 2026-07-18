@@ -111,25 +111,25 @@ export class HrOrgCatalogController {
     return this.catalog.createLocation(u.orgId, body);
   }
 
-  @Patch("locations/:id")
+  @Patch("locations/:locationId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   updateLocation(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("locationId", ParseIntPipe) locationId: number,
     @Body(new ZodValidationPipe(updateLocationSchema)) body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.updateLocation(u.orgId, id, body);
+    return this.catalog.updateLocation(u.orgId, locationId, body);
   }
 
-  @Delete("locations/:id")
+  @Delete("locations/:locationId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   deleteLocation(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("locationId", ParseIntPipe) locationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.catalog.deleteLocation(u.orgId, id);
+    return this.catalog.deleteLocation(u.orgId, locationId);
   }
 
   @Get("roles")

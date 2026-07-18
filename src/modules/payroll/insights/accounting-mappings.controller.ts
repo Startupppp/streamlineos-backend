@@ -54,6 +54,7 @@ export class AccountingMappingsController {
   }
 
   @Delete(":mappingId")
+  @HttpCode(204)
   async remove(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @CurrentUser() u: CurrentUserContext,

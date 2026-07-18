@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -69,6 +70,7 @@ export class PayrollTemplatesController {
   }
 
   @Delete(":templateId")
+  @HttpCode(204)
   @RequirePermission("payroll:templates:manage")
   async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
