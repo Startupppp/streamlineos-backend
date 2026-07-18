@@ -17,7 +17,7 @@ import {
 } from "./dto/rbac.schemas";
 
 @Controller("rbac")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class RbacController {
   constructor(
     private readonly rbac: RbacService,
@@ -30,6 +30,7 @@ export class RbacController {
   }
 
   @Get("role-permissions")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getRolePermissions(
     @Query(new ZodValidationPipe(rolePermissionsQuerySchema)) query: RolePermissionsQuery,
@@ -40,6 +41,7 @@ export class RbacController {
 
   @Post("role-permissions")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   assignRolePermission(
     @Body(new ZodValidationPipe(assignRolePermissionSchema)) body: AssignRolePermissionInput,
@@ -50,6 +52,7 @@ export class RbacController {
 
   @Delete("role-permissions")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   revokeRolePermission(
     @Body(new ZodValidationPipe(revokeRolePermissionSchema)) body: RevokeRolePermissionInput,

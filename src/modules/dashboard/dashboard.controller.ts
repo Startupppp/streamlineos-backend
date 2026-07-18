@@ -31,7 +31,7 @@ import {
 } from "./dto/dashboard.schemas";
 
 @Controller("dashboard")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class DashboardController {
   constructor(
     private readonly hr: DashboardHrService,
@@ -64,6 +64,7 @@ export class DashboardController {
 
   @Post("announcements")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   async createAnnouncement(
     @Body(new ZodValidationPipe(createAnnouncementSchema)) body: CreateAnnouncementInput,
@@ -80,6 +81,7 @@ export class DashboardController {
   }
 
   @Delete("announcements")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   async deleteAnnouncement(
     @Query(new ZodValidationPipe(deleteAnnouncementSchema)) query: DeleteAnnouncementInput,

@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from "@nestjs/common";
+import { Controller, Get, Inject, ServiceUnavailableException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
@@ -15,12 +15,12 @@ export class HealthController {
   }
 
   @Get("ready")
-  async ready(): Promise<{ status: "ready" | "degraded" }> {
+  async ready(): Promise<{ status: "ready" }> {
     try {
       await this.db.execute(sql`select 1`);
       return { status: "ready" };
     } catch {
-      return { status: "degraded" };
+      throw new ServiceUnavailableException("Database is not ready");
     }
   }
 }

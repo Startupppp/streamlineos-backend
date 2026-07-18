@@ -55,7 +55,7 @@ import {
 } from "./dto/organization.schemas";
 
 @Controller("organization")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class OrganizationController {
   constructor(
     private readonly organization: OrganizationService,
@@ -119,6 +119,7 @@ export class OrganizationController {
     return this.organization.switchOrg(u.userId, body.orgId);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("members")
   listMembers(
@@ -130,6 +131,7 @@ export class OrganizationController {
 
   @Post("members")
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   inviteMember(
     @Body(new ZodValidationPipe(inviteMemberSchema)) body: InviteMemberInput,
@@ -138,6 +140,7 @@ export class OrganizationController {
     return this.invitations.invite(u.orgId, u.userId, body.email, body.role);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Patch("members/:memberId")
   updateMemberRole(
@@ -152,6 +155,7 @@ export class OrganizationController {
   }
 
   @Delete("members/:memberId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
     if (memberId === u.userId) {
@@ -161,12 +165,14 @@ export class OrganizationController {
   }
 
   @Get("invitations")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   listInvitations(@CurrentUser() u: CurrentUserContext) {
     return this.invitations.listPending(u.orgId);
   }
 
   @Delete("invitations")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   cancelInvitation(
     @Body(new ZodValidationPipe(cancelInvitationSchema)) body: CancelInvitationInput,
@@ -175,6 +181,7 @@ export class OrganizationController {
     return this.invitations.cancel(u.orgId, body.invitationId, u.userId);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("settings")
   async getSettings(@CurrentUser() u: CurrentUserContext) {
@@ -184,6 +191,7 @@ export class OrganizationController {
   }
 
   @Patch("settings")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   updateSettings(
     @Body(new ZodValidationPipe(updateOrgSettingsSchema)) body: UpdateOrgSettingsInput,
@@ -193,6 +201,7 @@ export class OrganizationController {
   }
 
   @Patch("security")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   updateSecuritySettings(
     @Body(new ZodValidationPipe(securitySettingsSchema)) body: SecuritySettingsInput,
@@ -212,6 +221,7 @@ export class OrganizationController {
     return this.invitations.accept(body);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("custom-domains")
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
@@ -219,6 +229,7 @@ export class OrganizationController {
   }
 
   @Post("custom-domains")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   addCustomDomain(
     @Body(new ZodValidationPipe(addCustomDomainSchema)) body: AddCustomDomainInput,
@@ -228,6 +239,7 @@ export class OrganizationController {
   }
 
   @Post("custom-domains/:domainId/verify")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   verifyCustomDomain(
     @Param("domainId") domainId: string,
@@ -237,6 +249,7 @@ export class OrganizationController {
   }
 
   @Delete("custom-domains/:domainId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   removeCustomDomain(
     @Param("domainId") domainId: string,
@@ -245,6 +258,7 @@ export class OrganizationController {
     return this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("holidays")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
@@ -252,6 +266,7 @@ export class OrganizationController {
   }
 
   @Post("holidays")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   createHoliday(
     @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
@@ -261,12 +276,14 @@ export class OrganizationController {
   }
 
   @Delete("holidays/:holidayId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext) {
     return this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
   }
 
   @Post("archive")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
@@ -274,6 +291,7 @@ export class OrganizationController {
   }
 
   @Post("restore")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   restoreOrg(@CurrentUser() u: CurrentUserContext) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
@@ -281,6 +299,7 @@ export class OrganizationController {
   }
 
   @Post("transfer-ownership")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   transferOwnership(
     @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,

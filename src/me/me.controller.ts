@@ -1,7 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
-import { PermissionGuard } from "../modules/access/permission.guard";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
@@ -9,7 +8,6 @@ import { MeService } from "./me.service";
 import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
 
 @Controller("me")
-@UseGuards(PermissionGuard)
 export class MeController {
   constructor(
     private readonly access: AccessService,

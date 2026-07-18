@@ -10,10 +10,13 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { RecruitmentService } from "./recruitment.service";
 import { RoadmapService } from "./roadmap.service";
 import { KbService } from "./kb.service";
@@ -21,8 +24,10 @@ import { CrmService } from "./crm.service";
 import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
+import { ContactService } from "./contact.service";
 import {
   applySchema,
+  contactSubmitSchema,
   externalReferralSubmitSchema,
   externalReferrerRegisterSchema,
   intakeSchema,
@@ -37,6 +42,7 @@ import {
   roadmapQuerySchema,
   roadmapVoteSchema,
   type ApplyInput,
+  type ContactSubmitInput,
   type ExternalReferralSubmitInput,
   type ExternalReferrerRegisterInput,
   type IntakeInput,
@@ -70,7 +76,19 @@ export class PublicController {
     private readonly intake: IntakeService,
     private readonly org: OrgService,
     private readonly publicForms: PublicFormsService,
+    private readonly contact: ContactService,
   ) {}
+
+  @Post("contact")
+  @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:contact")
+  submitContact(
+    @Body(new ZodValidationPipe(contactSubmitSchema)) body: ContactSubmitInput,
+    @Req() req: Request,
+  ) {
+    return this.contact.submit(body, clientIp(req));
+  }
 
   @Get("application-status/:token")
   applicationStatus(@Param("token") token: string) {

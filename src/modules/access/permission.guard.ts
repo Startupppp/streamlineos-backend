@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContex
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { IS_PUBLIC } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { AccessService } from "./access.service";
 import { authorize } from "./authorize";
@@ -16,11 +17,17 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const permissionKey = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!permissionKey) return true;
+    if (!permissionKey) throw new ForbiddenException("Permission denied");
 
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
 

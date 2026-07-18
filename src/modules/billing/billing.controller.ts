@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -45,7 +45,7 @@ import {
 } from "./dto/enterprise-quotes.schemas";
 
 @Controller("billing")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class BillingController {
   constructor(
     private readonly billing: BillingService,
@@ -59,6 +59,7 @@ export class BillingController {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get()
   getSubscription(@CurrentUser() u: CurrentUserContext) {
@@ -77,6 +78,7 @@ export class BillingController {
 
   @Post("checkout")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   checkout(
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
@@ -87,6 +89,7 @@ export class BillingController {
 
   @Post("addons/purchase")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   purchaseAddon(
     @Body(new ZodValidationPipe(purchaseAddonSchema)) body: PurchaseAddonInput,
@@ -95,6 +98,7 @@ export class BillingController {
     return this.billing.purchaseAddon(u.orgId, u.userId, body.addonId, body.quantity);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("summary")
   getSummary(@CurrentUser() u: CurrentUserContext) {
@@ -119,6 +123,7 @@ export class BillingController {
     return this.billing.validateCoupon(code ?? "", u.orgId, parsedPlan.data as Plan);
   }
 
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("razorpay")
   getRazorpaySubscription(@CurrentUser() u: CurrentUserContext) {
@@ -127,6 +132,7 @@ export class BillingController {
 
   @Post("razorpay")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   createOrder(
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
@@ -136,6 +142,7 @@ export class BillingController {
   }
 
   @Patch("razorpay")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   verifyPayment(
     @Body(new ZodValidationPipe(verifyPaymentSchema)) body: VerifyPaymentInput,
@@ -145,12 +152,14 @@ export class BillingController {
   }
 
   @Get("marketplace/apps")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:view")
   listApps(@CurrentUser() u: CurrentUserContext) {
     return this.marketplace.listApps(parseInt(u.orgId, 10));
   }
 
   @Post("marketplace/:appId/install")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   installApp(
     @Param("appId", ParseIntPipe) appId: number,
@@ -160,6 +169,7 @@ export class BillingController {
   }
 
   @Delete("marketplace/:appId/install")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   uninstallApp(
     @Param("appId", ParseIntPipe) appId: number,
@@ -169,6 +179,7 @@ export class BillingController {
   }
 
   @Post("marketplace/:appId/trial")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   startTrial(
     @Param("appId", ParseIntPipe) appId: number,
@@ -178,6 +189,7 @@ export class BillingController {
   }
 
   @Get("ai-credits")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
   async getAiCredits(@CurrentUser() u: CurrentUserContext) {
     const [wallet, packs] = await Promise.all([
@@ -188,6 +200,7 @@ export class BillingController {
   }
 
   @Get("ai-credits/transactions")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
   listAiCreditTransactions(
     @Query(new ZodValidationPipe(listTransactionsSchema)) query: ReturnType<typeof listTransactionsSchema.parse>,
@@ -198,6 +211,7 @@ export class BillingController {
 
   @Post("ai-credits/auto-topup")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
   async configureAutoTopUp(
     @Body(new ZodValidationPipe(autoTopUpSchema)) body: ReturnType<typeof autoTopUpSchema.parse>,
@@ -213,6 +227,7 @@ export class BillingController {
 
   @Post("ai-credits/purchase")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
   async purchaseAiCredits(
     @Body(new ZodValidationPipe(purchaseAiPackSchema)) body: PurchaseAiPackInput,
@@ -234,12 +249,14 @@ export class BillingController {
   }
 
   @Get("profile")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   getBillingProfile(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getBillingProfile(u.orgId);
   }
 
   @Patch("profile")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:update")
   updateBillingProfile(
     @Body(new ZodValidationPipe(updateBillingProfileSchema)) body: UpdateBillingProfileInput,
@@ -249,18 +266,21 @@ export class BillingController {
   }
 
   @Get("seats")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSeatInfo(u.orgId);
   }
 
   @Post("affiliate/register")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   registerAffiliate(@CurrentUser() u: CurrentUserContext) {
     return this.affiliate.register(parseInt(u.userId, 10), parseInt(u.orgId, 10));
   }
 
   @Get("affiliate")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
     return this.affiliate.getDashboard(parseInt(u.userId, 10));
@@ -268,12 +288,14 @@ export class BillingController {
 
   @Post("affiliate/payout-request")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
     return this.billing.requestAffiliatePayoutRequest(u.orgId);
   }
 
   @Post("referrals")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   async createReferral(
     @Body(new ZodValidationPipe(createReferralSchema)) body: ReturnType<typeof createReferralSchema.parse>,
@@ -283,12 +305,14 @@ export class BillingController {
   }
 
   @Get("referrals")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   listReferrals(@CurrentUser() u: CurrentUserContext) {
     return this.referral.listReferrals(parseInt(u.orgId, 10));
   }
 
   @Get("analytics")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:analytics:view")
   async getAnalytics(@Query(new ZodValidationPipe(analyticsQuerySchema)) query: ReturnType<typeof analyticsQuerySchema.parse>) {
     const [metrics, timeSeries] = await Promise.all([
@@ -299,6 +323,7 @@ export class BillingController {
   }
 
   @Get("enterprise-quotes")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   listEnterpriseQuotes(
     @CurrentUser() u: CurrentUserContext,
@@ -309,6 +334,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
   createEnterpriseQuote(
     @Body(new ZodValidationPipe(createEnterpriseQuoteSchema)) body: CreateEnterpriseQuoteInput,
@@ -318,6 +344,7 @@ export class BillingController {
   }
 
   @Get("enterprise-quotes/:quoteId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   getEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -328,6 +355,7 @@ export class BillingController {
 
   @Post("enterprise-quotes/:quoteId/submit")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
   submitEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -338,6 +366,7 @@ export class BillingController {
 
   @Post("enterprise-quotes/:quoteId/approve")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   approveEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -349,6 +378,7 @@ export class BillingController {
 
   @Post("enterprise-quotes/:quoteId/reject")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   rejectEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -360,6 +390,7 @@ export class BillingController {
 
   @Post("enterprise-quotes/:quoteId/send")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   sendEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -370,6 +401,7 @@ export class BillingController {
 
   @Post("enterprise-quotes/:quoteId/accept")
   @HttpCode(200)
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   acceptEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
@@ -379,24 +411,28 @@ export class BillingController {
   }
 
   @Get("addons")
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:view")
   listAddons() {
     return this.billing.listAddons();
   }
 
   @Get("coupons")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   listCoupons(@CurrentUser() u: CurrentUserContext) {
     return this.billing.listCoupons(u.orgId);
   }
 
   @Post("coupons")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   createCoupon(@Body(new ZodValidationPipe(createCouponSchema)) body: CreateCouponInput) {
     return this.billing.createCoupon(body);
   }
 
   @Patch("coupons/:couponId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
@@ -406,6 +442,7 @@ export class BillingController {
   }
 
   @Delete("coupons/:couponId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
     return this.billing.deleteCoupon(couponId);

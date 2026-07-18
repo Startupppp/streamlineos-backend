@@ -1,24 +1,57 @@
 import { z } from "zod";
 
-const schema = z.object({
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  PORT: z.coerce.number().int().positive().default(1500),
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  BACKEND_JWT_SECRET: z
-    .string()
-    .min(44, "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)"),
-  CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
-  APP_URL: z.string().url("APP_URL must be a valid URL"),
-  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
-  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
-  COMPOSIO_API_KEY: z.string().optional(),
-  COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
-  COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
-});
+const deploymentSecret = z.string().min(32).optional();
+const optionalEmail = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().email().optional(),
+);
+
+const schema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "production", "test"])
+      .default("development"),
+    PORT: z.coerce.number().int().positive().default(1500),
+    DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+    BACKEND_JWT_SECRET: z
+      .string()
+      .min(
+        44,
+        "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
+      ),
+    CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
+    APP_URL: z.string().url("APP_URL must be a valid URL"),
+    CRON_SECRET: deploymentSecret,
+    INTERNAL_API_SECRET: deploymentSecret,
+    CONTACT_NOTIFICATION_EMAIL: optionalEmail,
+    UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+    UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+    COMPOSIO_API_KEY: z.string().optional(),
+    COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
+    COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
+  })
+  .superRefine((config, context) => {
+    if (config.NODE_ENV !== "production") return;
+    for (const variableName of [
+      "CRON_SECRET",
+      "INTERNAL_API_SECRET",
+      "CONTACT_NOTIFICATION_EMAIL",
+    ] as const) {
+      if (config[variableName]) continue;
+      context.addIssue({
+        code: "custom",
+        path: [variableName],
+        message: `${variableName} is required in production`,
+      });
+    }
+  });
 
 export type AppConfig = z.infer<typeof schema> & { corsOrigins: string[] };
 
-export function validateEnv(source: Record<string, unknown> = process.env): AppConfig {
+export function validateEnv(
+  source: Record<string, unknown> = process.env,
+): AppConfig {
   const result = schema.safeParse(source);
   if (!result.success) {
     const issues = result.error.issues

@@ -32,17 +32,19 @@ import {
 } from "./dto/blog.schemas";
 
 @Controller("blog")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class BlogController {
   constructor(private readonly blog: BlogService) {}
 
   @Get("posts")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:posts:manage")
   listPosts() {
     return this.blog.listAdminPosts();
   }
 
   @Post("posts")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:posts:manage")
   @HttpCode(201)
   createPost(
@@ -52,6 +54,7 @@ export class BlogController {
   }
 
   @Get("posts/:postId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:posts:manage")
   async getPost(@Param("postId") postId: string) {
     const post = await this.blog.getAdminPostById(postId);
@@ -60,6 +63,7 @@ export class BlogController {
   }
 
   @Patch("posts/:postId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:posts:manage")
   async updatePost(
     @Param("postId") postId: string,
@@ -71,6 +75,7 @@ export class BlogController {
   }
 
   @Delete("posts/:postId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:posts:manage")
   async deletePost(@Param("postId") postId: string) {
     const deleted = await this.blog.deletePost(postId);
@@ -99,6 +104,7 @@ export class BlogController {
   }
 
   @Post("categories")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:categories:manage")
   @HttpCode(201)
   async createCategory(
@@ -112,6 +118,7 @@ export class BlogController {
   }
 
   @Patch("categories/:categoryId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:categories:manage")
   async updateCategory(
     @Param("categoryId") categoryId: string,
@@ -123,6 +130,7 @@ export class BlogController {
   }
 
   @Delete("categories/:categoryId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("blog:categories:manage")
   async deleteCategory(@Param("categoryId") categoryId: string) {
     const deleted = await this.blog.deleteCategory(categoryId);

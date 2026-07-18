@@ -9,6 +9,7 @@ import { CrmService } from "./crm.service";
 import { IntakeService } from "./intake.service";
 import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
+import { ContactService } from "./contact.service";
 
 @Module({
   imports: [CrmAutomationStudioModule, BillingModule],
@@ -21,6 +22,7 @@ import { PublicFormsService } from "./public-forms.service";
     IntakeService,
     OrgService,
     PublicFormsService,
+    ContactService,
   ],
 })
 export class PublicModule {}

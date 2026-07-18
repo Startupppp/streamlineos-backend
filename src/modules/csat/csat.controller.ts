@@ -39,7 +39,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("support")
 @Controller("csat")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class CsatController {
   constructor(private readonly csat: CsatService) {}
 
@@ -50,6 +50,7 @@ export class CsatController {
 
   @Post()
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("csat:write")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -69,6 +70,7 @@ export class CsatController {
   }
 
   @Patch(":surveyId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("csat:write")
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
@@ -81,6 +83,7 @@ export class CsatController {
   }
 
   @Delete(":surveyId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("csat:write")
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,

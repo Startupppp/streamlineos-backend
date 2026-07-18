@@ -41,7 +41,7 @@ interface SimulateAccessResponse {
 }
 
 @Controller("roles")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class RolesController {
   constructor(
     private readonly roles: RolesService,
@@ -49,12 +49,14 @@ export class RolesController {
   ) {}
 
   @Get()
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.roles.getRoles(u.orgId);
   }
 
   @Post()
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   create(
     @Body(new ZodValidationPipe(createRoleSchema)) body: CreateRoleInput,
@@ -64,18 +66,21 @@ export class RolesController {
   }
 
   @Get("analytics")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getAnalytics(@CurrentUser() u: CurrentUserContext) {
     return this.roles.getRoleAnalytics(u.orgId);
   }
 
   @Get("permissions/matrix")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getPermissionsMatrix(@CurrentUser() u: CurrentUserContext) {
     return this.roles.getPermissionsMatrix(u.orgId);
   }
 
   @Get("simulate/:targetUserId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   async simulateAccess(
     @Param("targetUserId") targetUserId: string,
@@ -99,6 +104,7 @@ export class RolesController {
   }
 
   @Post("templates")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   cloneTemplate(
     @Body(new ZodValidationPipe(cloneTemplateSchema)) body: CloneTemplateInput,
@@ -108,12 +114,14 @@ export class RolesController {
   }
 
   @Get(":roleId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   get(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));
   }
 
   @Patch(":roleId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   update(
     @Param("roleId") roleId: string,
@@ -124,18 +132,21 @@ export class RolesController {
   }
 
   @Delete(":roleId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   remove(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.deleteRole(u, this.parseRoleId(roleId));
   }
 
   @Get(":roleId/permissions")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getPermissions(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRolePermissions(u.orgId, this.parseRoleId(roleId));
   }
 
   @Put(":roleId/permissions")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   setPermissions(
     @Param("roleId") roleId: string,
@@ -146,12 +157,14 @@ export class RolesController {
   }
 
   @Get(":roleId/members")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getMembers(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRoleMembers(u.orgId, this.parseRoleId(roleId));
   }
 
   @Post(":roleId/members")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   addMember(
     @Param("roleId") roleId: string,
@@ -162,6 +175,7 @@ export class RolesController {
   }
 
   @Delete(":roleId/members")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   removeMember(
     @Param("roleId") roleId: string,

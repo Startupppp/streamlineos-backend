@@ -91,6 +91,18 @@ export const externalReferralSubmitSchema = z.object({
   jobPostingId: z.number().int().positive().optional(),
 });
 
+export const contactSubmitSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    email: z.string().trim().email().max(320).toLowerCase(),
+    company: z.string().trim().max(200),
+    phone: z.string().trim().max(50),
+    topic: z.enum(["sales", "support", "partnership", "press", "other"]),
+    message: z.string().trim().min(1).max(5000),
+    cfTurnstileToken: z.string().trim().min(1).max(2048).optional(),
+  })
+  .strict();
+
 export type ApplyInput = z.infer<typeof applySchema>;
 export type OfferRespondInput = z.infer<typeof offerRespondSchema>;
 export type RoadmapQueryInput = z.infer<typeof roadmapQuerySchema>;
@@ -105,3 +117,4 @@ export type IntakeInput = z.infer<typeof intakeSchema>;
 export type PublicFormSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 export type ExternalReferrerRegisterInput = z.infer<typeof externalReferrerRegisterSchema>;
 export type ExternalReferralSubmitInput = z.infer<typeof externalReferralSubmitSchema>;
+export type ContactSubmitInput = z.infer<typeof contactSubmitSchema>;

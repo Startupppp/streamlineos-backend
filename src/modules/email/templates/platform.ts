@@ -10,12 +10,12 @@ export interface ContactAdminEmailParams {
   receivedAt: string;
   company?: string;
   phone?: string;
-  inboxUrl: string;
+  inboxUrl?: string;
 }
 
 export function getContactAdminNotificationEmail(params: ContactAdminEmailParams): { subject: string; html: string } {
   const { name, email, topic, message, reference, receivedAt, company, phone, inboxUrl } = params;
-  const subject = `New ${topic} message from ${name}`;
+  const subject = `New ${topic} contact message`;
 
   const rows: Array<{ label: string; value: string }> = [
     { label: "Reference", value: reference },
@@ -33,7 +33,7 @@ export function getContactAdminNotificationEmail(params: ContactAdminEmailParams
 <h1 class="email-title">${escapeHtml(subject)}</h1>
 ${renderKeyValueRows(rows)}
 ${renderCallout(escapedMessage, "info")}
-${renderButton("Open inbox", inboxUrl)}
+${inboxUrl ? renderButton("Open inbox", inboxUrl) : ""}
 `;
   return {
     subject,

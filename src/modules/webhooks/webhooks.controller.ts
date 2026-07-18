@@ -29,7 +29,7 @@ import {
 } from "./dto/webhook.schemas";
 
 @Controller("webhooks")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 
@@ -43,6 +43,7 @@ export class WebhooksController {
 
   @Post()
   @HttpCode(201)
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -62,6 +63,7 @@ export class WebhooksController {
   }
 
   @Patch(":webhookId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   async update(
     @Param("webhookId", ParseIntPipe) webhookId: number,
@@ -74,6 +76,7 @@ export class WebhooksController {
   }
 
   @Delete(":webhookId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   async remove(
     @Param("webhookId", ParseIntPipe) webhookId: number,
