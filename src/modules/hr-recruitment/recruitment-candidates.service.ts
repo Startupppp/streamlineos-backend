@@ -324,9 +324,9 @@ export class RecruitmentCandidatesService {
     if (!existing) throw new NotFoundException("Candidate not found.");
 
     await this.db.transaction(async (tx) => {
-      await tx.delete(candidateSlaTracking).where(eq(candidateSlaTracking.candidateId, candidateId));
-      await tx.delete(interviews).where(eq(interviews.candidateId, candidateId));
-      await tx.delete(candidateApplications).where(eq(candidateApplications.candidateId, candidateId));
+      await tx.delete(candidateSlaTracking).where(and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)));
+      await tx.delete(interviews).where(and(eq(interviews.candidateId, candidateId), eq(interviews.orgId, orgId)));
+      await tx.delete(candidateApplications).where(and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.orgId, orgId)));
       await tx.delete(candidates).where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
     });
 

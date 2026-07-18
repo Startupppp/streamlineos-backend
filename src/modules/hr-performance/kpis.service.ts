@@ -123,14 +123,21 @@ export class KpisService {
       .returning();
   }
 
-  listCompetencies(frameworkId: number) {
+  async listCompetencies(orgId: string, frameworkId: number) {
+    const framework = await this.db
+      .select({ id: competencyFrameworks.id })
+      .from(competencyFrameworks)
+      .where(and(eq(competencyFrameworks.id, frameworkId), eq(competencyFrameworks.orgId, orgId)))
+      .limit(1);
+    if (framework.length === 0) throw new NotFoundException("Framework not found.");
     return this.db
       .select()
       .from(competencies)
       .where(eq(competencies.frameworkId, frameworkId));
   }
 
-  createCompetency(
+  async createCompetency(
+    orgId: string,
     frameworkId: number,
     data: {
       name: string;
@@ -139,6 +146,12 @@ export class KpisService {
       weight?: string;
     },
   ) {
+    const framework = await this.db
+      .select({ id: competencyFrameworks.id })
+      .from(competencyFrameworks)
+      .where(and(eq(competencyFrameworks.id, frameworkId), eq(competencyFrameworks.orgId, orgId)))
+      .limit(1);
+    if (framework.length === 0) throw new NotFoundException("Framework not found.");
     return this.db
       .insert(competencies)
       .values({ frameworkId, ...data })

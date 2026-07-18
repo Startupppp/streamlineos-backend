@@ -87,8 +87,8 @@ export class KpisController {
 
   @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
-  listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number) {
-    return this.service.listCompetencies(frameworkId);
+  listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.service.listCompetencies(u.orgId, frameworkId);
   }
 
   @Post("frameworks/:frameworkId/competencies")
@@ -97,7 +97,8 @@ export class KpisController {
   createCompetency(
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
     @Body(new ZodValidationPipe(createCompetencySchema)) body: CreateCompetencyInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.createCompetency(frameworkId, body);
+    return this.service.createCompetency(u.orgId, frameworkId, body);
   }
 }

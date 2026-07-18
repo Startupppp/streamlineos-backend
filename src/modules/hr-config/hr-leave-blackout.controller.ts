@@ -62,6 +62,6 @@ export class HrLeaveBlackoutController {
   ) {
     const existing = await this.blackout.getById(u.orgId, blackoutId);
     if (!existing) throw new NotFoundException("Blackout date not found");
-    return this.blackout.remove(blackoutId);
+    return this.blackout.remove(u.orgId, blackoutId);
   }
 }

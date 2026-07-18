@@ -376,26 +376,28 @@ export class EngagementExtrasService {
   }
 
   async createCommunity(orgId: string, userId: string, input: CreateCommunityInput) {
-    const [community] = await this.db
-      .insert(hrCommunities)
-      .values({
-        orgId,
-        name: input.name,
-        description: input.description ?? null,
-        createdBy: userId,
-      })
-      .returning()
-      .catch(() => {
-        throw new ConflictException(`Community "${input.name}" already exists.`);
+    return this.db.transaction(async (tx) => {
+      const [community] = await tx
+        .insert(hrCommunities)
+        .values({
+          orgId,
+          name: input.name,
+          description: input.description ?? null,
+          createdBy: userId,
+        })
+        .returning()
+        .catch(() => {
+          throw new ConflictException(`Community "${input.name}" already exists.`);
+        });
+
+      await tx.insert(hrCommunityMembers).values({
+        communityId: community.id,
+        userId,
+        role: "moderator",
       });
 
-    await this.db.insert(hrCommunityMembers).values({
-      communityId: community.id,
-      userId,
-      role: "moderator",
+      return community;
     });
-
-    return community;
   }
 
   async joinCommunity(orgId: string, userId: string, communityId: number) {

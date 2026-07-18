@@ -464,7 +464,7 @@ export class ProjectsTicketsController {
     @Param("emoji") emoji: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeReaction(commentId, u.userId, emoji);
+    return this.subresources.removeReaction(commentId, u.userId, u.orgId, emoji);
   }
 
   @Get(":projectId/tickets/:ticketId/related-links")

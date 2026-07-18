@@ -270,7 +270,7 @@ export class BillingService {
       await this.db
         .update(timesheets)
         .set({ invoicingStatus: "INVOICE_DRAFTED", updatedAt: new Date() })
-        .where(inArray(timesheets.id, entries.map((e) => e.id)));
+        .where(and(inArray(timesheets.id, entries.map((e) => e.id)), eq(timesheets.orgId, u.orgId)));
     }
 
     await this.audit.recordWithDb({

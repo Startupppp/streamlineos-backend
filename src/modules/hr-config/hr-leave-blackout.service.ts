@@ -44,8 +44,8 @@ export class HrLeaveBlackoutService {
       .then((row) => row ?? null);
   }
 
-  async remove(id: number) {
-    await this.db.delete(leaveBlackoutDates).where(eq(leaveBlackoutDates.id, id));
+  async remove(orgId: string, id: number) {
+    await this.db.delete(leaveBlackoutDates).where(and(eq(leaveBlackoutDates.id, id), eq(leaveBlackoutDates.orgId, orgId)));
     return { success: true };
   }
 }

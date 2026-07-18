@@ -49,7 +49,7 @@ export class RunsService {
     await this.db
       .update(payrollRunEmployees)
       .set({ holdReason: hold ? (reason ?? "On hold") : null })
-      .where(eq(payrollRunEmployees.id, runEmployeeId));
+      .where(and(eq(payrollRunEmployees.id, runEmployeeId), eq(payrollRunEmployees.orgId, orgId)));
 
     this.audit.log({
       action: hold ? "payroll.employee_held" : "payroll.employee_unheld",
@@ -126,7 +126,7 @@ export class RunsService {
           totalDeductions: fromPaise(newDeductionsPaise),
           net: fromPaise(newNetPaise),
         })
-        .where(eq(payrollRunEmployees.id, runEmployeeId));
+        .where(and(eq(payrollRunEmployees.id, runEmployeeId), eq(payrollRunEmployees.orgId, orgId)));
     });
 
     this.audit.log({

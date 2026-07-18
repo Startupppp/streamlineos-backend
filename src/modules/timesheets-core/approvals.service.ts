@@ -122,7 +122,7 @@ export class ApprovalsService {
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
         })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -171,7 +171,7 @@ export class ApprovalsService {
               rateSource: resolved.source,
               updatedAt: now,
             })
-            .where(eq(timesheets.id, entry.id));
+            .where(and(eq(timesheets.id, entry.id), eq(timesheets.orgId, u.orgId)));
         }
       }
 
@@ -214,7 +214,7 @@ export class ApprovalsService {
       })
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-      .where(eq(timesheetPeriods.id, periodId))
+      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
       .limit(1);
 
     return updated;
@@ -235,7 +235,7 @@ export class ApprovalsService {
       await tx
         .update(timesheetPeriods)
         .set({ status: "REJECTED", rejectedAt: now, rejectionReason: input.reason, updatedAt: now })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -261,7 +261,7 @@ export class ApprovalsService {
     const [updated] = await this.db
       .select()
       .from(timesheetPeriods)
-      .where(eq(timesheetPeriods.id, periodId))
+      .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
       .limit(1);
 
     return updated;

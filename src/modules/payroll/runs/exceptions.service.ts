@@ -87,12 +87,12 @@ export class ExceptionsService {
           resolvedAt: new Date(),
           metadata: sql<Record<string, unknown>>`COALESCE(${payrollExceptions.metadata}, '{}')::jsonb || jsonb_build_object('resolveNote', ${body.note}::text)`,
         })
-        .where(eq(payrollExceptions.id, exceptionId));
+        .where(and(eq(payrollExceptions.id, exceptionId), eq(payrollExceptions.orgId, orgId)));
     } else {
       await this.db
         .update(payrollExceptions)
         .set({ status: "RESOLVED", resolvedBy: actorId, resolvedAt: new Date() })
-        .where(eq(payrollExceptions.id, exceptionId));
+        .where(and(eq(payrollExceptions.id, exceptionId), eq(payrollExceptions.orgId, orgId)));
     }
 
     return { ok: true };
@@ -127,7 +127,7 @@ export class ExceptionsService {
       await tx
         .update(payrollExceptions)
         .set({ status: "OVERRIDDEN", resolvedBy: actorId, resolvedAt: new Date(), overrideReason: body.reason })
-        .where(eq(payrollExceptions.id, exceptionId));
+        .where(and(eq(payrollExceptions.id, exceptionId), eq(payrollExceptions.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -152,7 +152,7 @@ export class ExceptionsService {
         await tx
           .update(payrollRuns)
           .set({ status: "PREVIEW_READY" })
-          .where(eq(payrollRuns.id, runId));
+          .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
       }
     });
 

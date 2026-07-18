@@ -30,14 +30,25 @@ export class TrainingService {
     return program;
   }
 
-  async listAttendance(programId: number) {
+  private async ensureProgram(orgId: string, programId: number) {
+    const [prog] = await this.db
+      .select({ id: trainingPrograms.id })
+      .from(trainingPrograms)
+      .where(and(eq(trainingPrograms.id, programId), eq(trainingPrograms.orgId, orgId)))
+      .limit(1);
+    if (!prog) throw new NotFoundException("Training program not found");
+  }
+
+  async listAttendance(orgId: string, programId: number) {
+    await this.ensureProgram(orgId, programId);
     return this.db.select().from(trainingAttendance)
       .where(eq(trainingAttendance.programId, programId))
       .orderBy(trainingAttendance.createdAt)
       .limit(200);
   }
 
-  async enrollUser(programId: number, userId: string) {
+  async enrollUser(orgId: string, programId: number, userId: string) {
+    await this.ensureProgram(orgId, programId);
     const existing = await this.db.select().from(trainingAttendance)
       .where(and(eq(trainingAttendance.programId, programId), eq(trainingAttendance.userId, userId)));
     if (existing.length > 0) return existing[0];
@@ -45,7 +56,8 @@ export class TrainingService {
     return attendance;
   }
 
-  async markAttendance(programId: number, userId: string, data: Partial<Omit<AttendanceInsert, "id" | "programId" | "userId" | "createdAt">>) {
+  async markAttendance(orgId: string, programId: number, userId: string, data: Partial<Omit<AttendanceInsert, "id" | "programId" | "userId" | "createdAt">>) {
+    await this.ensureProgram(orgId, programId);
     const [attendance] = await this.db.update(trainingAttendance).set(data)
       .where(and(eq(trainingAttendance.programId, programId), eq(trainingAttendance.userId, userId)))
       .returning();

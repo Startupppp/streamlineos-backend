@@ -285,7 +285,20 @@ export class ModulesService {
 
   async listModules(orgId: string, projectId: number) {
     const moduleList = await this.db
-      .select()
+      .select({
+        id: modules.id,
+        orgId: modules.orgId,
+        projectId: modules.projectId,
+        name: modules.name,
+        description: modules.description,
+        status: modules.status,
+        leadId: modules.leadId,
+        startDate: modules.startDate,
+        endDate: modules.endDate,
+        createdBy: modules.createdBy,
+        createdAt: modules.createdAt,
+        updatedAt: modules.updatedAt,
+      })
       .from(modules)
       .where(and(eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
       .orderBy(asc(modules.name))

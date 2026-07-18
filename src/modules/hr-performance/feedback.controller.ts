@@ -57,7 +57,7 @@ export class FeedbackController {
   @Get("my-reviews")
   @RequirePermission("hr:performance:view")
   getMyPendingReviews(@CurrentUser() u: CurrentUserContext) {
-    return this.service.getMyPendingReviews(u.userId);
+    return this.service.getMyPendingReviews(u.orgId, u.userId);
   }
 
   @Post("requests/:requestId/respond")

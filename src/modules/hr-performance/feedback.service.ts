@@ -66,12 +66,22 @@ export class FeedbackService {
       .returning();
   }
 
-  getMyPendingReviews(userId: string) {
+  getMyPendingReviews(orgId: string, userId: string) {
     return this.db
-      .select()
+      .select({
+        id: feedbackCycleRequests.id,
+        cycleId: feedbackCycleRequests.cycleId,
+        subjectId: feedbackCycleRequests.subjectId,
+        reviewerId: feedbackCycleRequests.reviewerId,
+        relationship: feedbackCycleRequests.relationship,
+        status: feedbackCycleRequests.status,
+        createdAt: feedbackCycleRequests.createdAt,
+      })
       .from(feedbackCycleRequests)
+      .innerJoin(feedbackCycles, eq(feedbackCycleRequests.cycleId, feedbackCycles.id))
       .where(
         and(
+          eq(feedbackCycles.orgId, orgId),
           eq(feedbackCycleRequests.reviewerId, userId),
           eq(feedbackCycleRequests.status, "PENDING"),
         ),

@@ -184,7 +184,7 @@ export class RecruitmentSourcingService {
     const [updated] = await this.db
       .update(recruitmentVendors)
       .set(updateData)
-      .where(eq(recruitmentVendors.id, vendorId))
+      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -267,7 +267,8 @@ export class RecruitmentSourcingService {
     return row;
   }
 
-  async updateSubmission(vendorId: number, submissionId: number, input: UpdateSubmissionInput) {
+  async updateSubmission(orgId: string, vendorId: number, submissionId: number, input: UpdateSubmissionInput) {
+    await this.ensureVendor(orgId, vendorId);
     const updateData: Partial<typeof vendorCandidateSubmissions.$inferInsert> = {};
     if (input.placementStatus !== undefined) updateData.placementStatus = input.placementStatus;
     if (input.invoiceStatus !== undefined) updateData.invoiceStatus = input.invoiceStatus;

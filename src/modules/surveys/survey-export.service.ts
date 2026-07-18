@@ -26,7 +26,7 @@ export class SurveyExportService {
     });
 
     const questions = await this.db.query.surveyQuestions.findMany({
-      where: eq(surveyQuestions.surveyId, surveyId),
+      where: and(eq(surveyQuestions.orgId, orgId), eq(surveyQuestions.surveyId, surveyId)),
       orderBy: [asc(surveyQuestions.sortOrder)],
     });
     const questionIds = [...new Set(questions.map((q) => q.id))];
@@ -35,24 +35,39 @@ export class SurveyExportService {
     const header = ["session_id", "status", "started_at", "submitted_at", "score", "passed", ...questionIds.map((id) => csvEscape(questionTitleById.get(id)))];
     const rows: string[] = [header.join(",")];
 
-    for (const session of sessions) {
-      const answers = await this.db.query.surveyAnswers.findMany({ where: eq(surveyAnswers.sessionId, session.id) });
-      const answerByQuestion = new Map(answers.map((a) => [a.questionId, a]));
+    if (sessions.length > 0) {
+      const sessionIds = sessions.map((s) => s.id);
+      const allAnswers = await this.db.query.surveyAnswers.findMany({
+        where: and(eq(surveyAnswers.orgId, orgId), inArray(surveyAnswers.sessionId, sessionIds)),
+      });
 
-      const row = [
-        session.id,
-        session.status,
-        session.startedAt?.toISOString() ?? "",
-        session.submittedAt?.toISOString() ?? "",
-        session.score ?? "",
-        session.passed ?? "",
-        ...questionIds.map((id) => {
-          const answer = answerByQuestion.get(id);
-          if (!answer) return "";
-          return csvEscape(answer.answerText ?? (answer.answerValue !== null ? JSON.stringify(answer.answerValue) : ""));
-        }),
-      ];
-      rows.push(row.map(csvEscape).join(","));
+      const answersBySession = new Map<number, Map<number, typeof allAnswers[number]>>();
+      for (const answer of allAnswers) {
+        let byQuestion = answersBySession.get(answer.sessionId);
+        if (!byQuestion) {
+          byQuestion = new Map();
+          answersBySession.set(answer.sessionId, byQuestion);
+        }
+        byQuestion.set(answer.questionId, answer);
+      }
+
+      for (const session of sessions) {
+        const answerByQuestion = answersBySession.get(session.id) ?? new Map();
+        const row = [
+          session.id,
+          session.status,
+          session.startedAt?.toISOString() ?? "",
+          session.submittedAt?.toISOString() ?? "",
+          session.score ?? "",
+          session.passed ?? "",
+          ...questionIds.map((id) => {
+            const answer = answerByQuestion.get(id);
+            if (!answer) return "";
+            return csvEscape(answer.answerText ?? (answer.answerValue !== null ? JSON.stringify(answer.answerValue) : ""));
+          }),
+        ];
+        rows.push(row.map(csvEscape).join(","));
+      }
     }
 
     return rows.join("\n");

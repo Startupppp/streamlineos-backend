@@ -119,8 +119,11 @@ export class ProjectsController {
 
   @Get(":projectId/members")
   @RequirePermission("projects:view")
-  listMembers(@Param("projectId", ParseIntPipe) projectId: number) {
-    return this.members.listMembers(projectId);
+  listMembers(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.listMembers(u.orgId, projectId);
   }
 
   @Post(":projectId/members")

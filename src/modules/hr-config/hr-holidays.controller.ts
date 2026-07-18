@@ -94,6 +94,6 @@ export class HrHolidaysController {
   ) {
     const existing = await this.holidays.getById(u.orgId, holidayId);
     if (!existing) throw new NotFoundException("Holiday not found.");
-    return this.holidays.remove(holidayId);
+    return this.holidays.remove(u.orgId, holidayId);
   }
 }

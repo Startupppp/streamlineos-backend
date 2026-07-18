@@ -78,7 +78,7 @@ export class BackgroundVerificationService {
         ...(body.status === "PASSED" || body.status === "FAILED" ? { completedAt: new Date() } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(backgroundVerifications.id, body.id));
+      .where(and(eq(backgroundVerifications.id, body.id), eq(backgroundVerifications.orgId, orgId)));
 
     return { success: true };
   }

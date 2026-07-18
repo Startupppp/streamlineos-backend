@@ -87,7 +87,7 @@ export class HrDocumentTemplatesController {
   ) {
     const template = await this.templates.getById(u.orgId, templateId);
     if (!template) throw new NotFoundException("Template not found");
-    return this.templates.listVersions(templateId);
+    return this.templates.listVersions(u.orgId, templateId);
   }
 
   @Patch(":templateId")
@@ -123,6 +123,6 @@ export class HrDocumentTemplatesController {
   ) {
     const existing = await this.templates.getById(u.orgId, templateId);
     if (!existing) throw new NotFoundException("Template not found");
-    return this.templates.softDelete(templateId);
+    return this.templates.softDelete(u.orgId, templateId);
   }
 }

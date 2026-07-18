@@ -231,7 +231,7 @@ export class AssetsService {
 
     if (!existing) throw new NotFoundException("Device not found.");
 
-    await this.db.delete(employeeDevices).where(eq(employeeDevices.id, deviceId));
+    await this.db.delete(employeeDevices).where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
     return { success: true };
   }
 }

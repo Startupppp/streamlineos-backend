@@ -152,11 +152,11 @@ export class HrDocumentTemplatesService {
     return updated;
   }
 
-  async softDelete(id: number) {
+  async softDelete(orgId: string, id: number) {
     await this.db
       .update(documentTemplates)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(documentTemplates.id, id));
+      .where(and(eq(documentTemplates.id, id), eq(documentTemplates.orgId, orgId)));
     return { success: true };
   }
 
@@ -173,11 +173,11 @@ export class HrDocumentTemplatesService {
     return { ...template, htmlContent: previewContent, previewVariables: placeholderMap };
   }
 
-  listVersions(templateId: number) {
+  listVersions(orgId: string, templateId: number) {
     return this.db
       .select()
       .from(documentTemplateVersions)
-      .where(eq(documentTemplateVersions.templateId, templateId))
+      .where(and(eq(documentTemplateVersions.templateId, templateId), eq(documentTemplateVersions.orgId, orgId)))
       .orderBy(desc(documentTemplateVersions.version));
   }
 }

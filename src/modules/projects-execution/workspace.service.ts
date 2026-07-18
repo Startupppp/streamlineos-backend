@@ -248,7 +248,7 @@ export class ViewsService {
     const [updated] = await this.db
       .update(projectViews)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(projectViews.id, viewId))
+      .where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -262,7 +262,7 @@ export class ViewsService {
     if (existing.createdBy !== userId && existing.visibility !== "shared") {
       throw new ForbiddenException("Cannot delete a private view you do not own");
     }
-    await this.db.delete(projectViews).where(eq(projectViews.id, viewId));
+    await this.db.delete(projectViews).where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)));
     return { success: true };
   }
 
@@ -318,7 +318,7 @@ export class ViewsService {
     const [updated] = await this.db
       .update(projectViews)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(projectViews.id, viewId))
+      .where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -336,7 +336,7 @@ export class ViewsService {
     if (existing.createdBy !== userId && existing.visibility !== "shared") {
       throw new ForbiddenException("Cannot delete a private view you do not own");
     }
-    await this.db.delete(projectViews).where(eq(projectViews.id, viewId));
+    await this.db.delete(projectViews).where(and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)));
     return { success: true };
   }
 }

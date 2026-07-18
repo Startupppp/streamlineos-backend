@@ -146,8 +146,9 @@ export class RecruitmentSourcingController {
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @Query(new ZodValidationPipe(submissionIdQuerySchema)) query: SubmissionIdQueryInput,
     @Body(new ZodValidationPipe(updateSubmissionSchema)) body: UpdateSubmissionInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.updateSubmission(vendorId, query.submissionId, body);
+    return this.sourcing.updateSubmission(u.orgId, vendorId, query.submissionId, body);
   }
 
   @Get("headcount")

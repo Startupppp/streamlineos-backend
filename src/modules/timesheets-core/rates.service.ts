@@ -72,7 +72,7 @@ export class RatesService {
     if (input.rateCardId !== undefined) updateData.rateCardId = input.rateCardId ?? null;
 
     await this.db.transaction(async (tx) => {
-      await tx.update(timesheetRates).set(updateData).where(eq(timesheetRates.id, rateId));
+      await tx.update(timesheetRates).set(updateData).where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)));
 
       await this.audit.record(tx, {
         orgId: u.orgId,
@@ -88,7 +88,7 @@ export class RatesService {
     const [updated] = await this.db
       .select()
       .from(timesheetRates)
-      .where(eq(timesheetRates.id, rateId))
+      .where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)))
       .limit(1);
 
     return updated!;
@@ -104,7 +104,7 @@ export class RatesService {
     if (!existing) throw new NotFoundException("Rate not found");
 
     await this.db.transaction(async (tx) => {
-      await tx.delete(timesheetRates).where(eq(timesheetRates.id, rateId));
+      await tx.delete(timesheetRates).where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)));
 
       await this.audit.record(tx, {
         orgId: u.orgId,

@@ -287,7 +287,7 @@ export class PeriodsService {
           currentApproverId: approverId,
           updatedAt: new Date(),
         })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -345,7 +345,7 @@ export class PeriodsService {
       await tx
         .update(timesheetPeriods)
         .set({ status: "DRAFT", submittedAt: null, updatedAt: new Date() })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -387,7 +387,7 @@ export class PeriodsService {
           approvedBy: null,
           updatedAt: new Date(),
         })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -420,7 +420,7 @@ export class PeriodsService {
       await tx
         .update(timesheetPeriods)
         .set({ lockedAt: new Date(), updatedAt: new Date() })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)
@@ -453,7 +453,7 @@ export class PeriodsService {
       await tx
         .update(timesheetPeriods)
         .set({ lockedAt: null, updatedAt: new Date() })
-        .where(eq(timesheetPeriods.id, periodId));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx
         .update(timesheets)

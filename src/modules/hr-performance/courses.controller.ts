@@ -29,7 +29,7 @@ export class CoursesController {
   @Get("my-enrollments")
   @RequirePermission("hr:learning:view")
   myEnrollments(@CurrentUser() u: CurrentUserContext) {
-    return this.courses.listEnrollments(u.userId);
+    return this.courses.listEnrollments(u.orgId, u.userId);
   }
 
   @Get()
@@ -64,7 +64,7 @@ export class CoursesController {
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
   ) {
-    return this.courses.enrollUser(courseId, u.userId);
+    return this.courses.enrollUser(u.orgId, courseId, u.userId);
   }
 
   @Patch(":courseId/progress")
@@ -74,6 +74,6 @@ export class CoursesController {
     @Param("courseId", ParseIntPipe) courseId: number,
     @Body(new ZodValidationPipe(updateProgressSchema)) body: UpdateProgressInput,
   ) {
-    return this.courses.updateProgress(courseId, u.userId, body.progressPct);
+    return this.courses.updateProgress(u.orgId, courseId, u.userId, body.progressPct);
   }
 }

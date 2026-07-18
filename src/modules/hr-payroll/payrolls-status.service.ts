@@ -51,7 +51,7 @@ export class PayrollStatusService {
     await this.db
       .update(payrolls)
       .set({ status: "APPROVED", approvedBy: userId })
-      .where(eq(payrolls.id, payrollId));
+      .where(and(eq(payrolls.id, payrollId), eq(payrolls.orgId, orgId)));
 
     void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
 
@@ -78,7 +78,7 @@ export class PayrollStatusService {
     if (!existing) return { ok: false, reason: "not_found" };
     if (existing.status !== "APPROVED") return { ok: false, reason: "not_approved" };
 
-    await this.db.update(payrolls).set({ status: "PAID" }).where(eq(payrolls.id, payrollId));
+    await this.db.update(payrolls).set({ status: "PAID" }).where(and(eq(payrolls.id, payrollId), eq(payrolls.orgId, orgId)));
 
     void this.cache.del(`hr:dashboard:payroll-summary:${orgId}`);
 

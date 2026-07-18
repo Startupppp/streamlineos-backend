@@ -61,7 +61,7 @@ export class LoansService {
 
     if (body.status && body.status !== existing.status) {
       await this.db.transaction(async (tx) => {
-        await tx.update(salaryLoans).set(patch).where(eq(salaryLoans.id, loanId));
+        await tx.update(salaryLoans).set(patch).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
         await tx.insert(auditLogs).values({
           action: "loan.status_changed",
           userId,
@@ -73,7 +73,7 @@ export class LoansService {
         });
       });
     } else {
-      await this.db.update(salaryLoans).set(patch).where(eq(salaryLoans.id, loanId));
+      await this.db.update(salaryLoans).set(patch).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
     }
 
     return { ok: true };

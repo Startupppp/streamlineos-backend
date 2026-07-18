@@ -65,13 +65,13 @@ export class TrainingController {
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.trainingService.enrollUser(programId, u.userId);
+    return this.trainingService.enrollUser(u.orgId, programId, u.userId);
   }
 
   @Get(":programId/attendance")
   @RequirePermission("hr:learning:manage")
-  listAttendance(@Param("programId", ParseIntPipe) programId: number) {
-    return this.trainingService.listAttendance(programId);
+  listAttendance(@Param("programId", ParseIntPipe) programId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.trainingService.listAttendance(u.orgId, programId);
   }
 
   @Patch(":programId/attendance/:userId")
@@ -80,7 +80,8 @@ export class TrainingController {
     @Param("programId", ParseIntPipe) programId: number,
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(markAttendanceSchema)) body: MarkAttendanceInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.trainingService.markAttendance(programId, userId, body);
+    return this.trainingService.markAttendance(u.orgId, programId, userId, body);
   }
 }

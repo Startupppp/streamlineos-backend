@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
-import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, rosterEntries, shiftTemplates, users } from "../../db/schema";
+import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, orgHolidays, organizationMembers, rosterEntries, rosters, shiftTemplates, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AttendancePolicyService } from "./attendance-policy.service";
@@ -150,6 +150,7 @@ export class AttendanceSummaryService {
           gracePeriodMinutes: shiftTemplates.gracePeriodMinutes,
         })
         .from(rosterEntries)
+        .innerJoin(rosters, and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)))
         .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
         .where(and(inArray(rosterEntries.userId, userIds), eq(rosterEntries.date, periodStart))),
 

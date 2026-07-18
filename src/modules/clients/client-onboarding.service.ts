@@ -92,7 +92,7 @@ export class ClientOnboardingService {
 
     if (!existing) return null;
 
-    await this.db.delete(clientOnboardingItems).where(eq(clientOnboardingItems.id, itemId));
+    await this.db.delete(clientOnboardingItems).where(and(eq(clientOnboardingItems.id, itemId), eq(clientOnboardingItems.orgId, orgId)));
 
     return { success: true };
   }

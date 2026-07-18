@@ -53,8 +53,8 @@ export class RostersController {
   @Get(":rosterId/entries")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
-  getEntries(@Param("rosterId", ParseIntPipe) rosterId: number) {
-    return this.service.getRosterEntries(rosterId);
+  getEntries(@CurrentUser() u: CurrentUserContext, @Param("rosterId", ParseIntPipe) rosterId: number) {
+    return this.service.getRosterEntries(u.orgId, rosterId);
   }
 
   @Post(":rosterId/entries")
@@ -62,10 +62,11 @@ export class RostersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   upsertEntry(
+    @CurrentUser() u: CurrentUserContext,
     @Param("rosterId", ParseIntPipe) rosterId: number,
     @Body(new ZodValidationPipe(upsertRosterEntrySchema)) body: UpsertRosterEntryInput,
   ) {
-    return this.service.upsertRosterEntry({ rosterId, ...body });
+    return this.service.upsertRosterEntry(u.orgId, { rosterId, ...body });
   }
 
   @Patch(":rosterId/publish")

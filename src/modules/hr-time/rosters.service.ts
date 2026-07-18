@@ -17,11 +17,21 @@ export class RostersService {
     return roster;
   }
 
-  async getRosterEntries(rosterId: number) {
+  async getRosterEntries(orgId: string, rosterId: number) {
+    const roster = await this.db.query.rosters.findFirst({
+      where: and(eq(rosters.id, rosterId), eq(rosters.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!roster) throw new NotFoundException("Roster not found");
     return this.db.select().from(rosterEntries).where(eq(rosterEntries.rosterId, rosterId));
   }
 
-  async upsertRosterEntry(data: { rosterId: number; userId: string; shiftId?: number; date: string; isDayOff?: boolean; notes?: string }) {
+  async upsertRosterEntry(orgId: string, data: { rosterId: number; userId: string; shiftId?: number; date: string; isDayOff?: boolean; notes?: string }) {
+    const roster = await this.db.query.rosters.findFirst({
+      where: and(eq(rosters.id, data.rosterId), eq(rosters.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!roster) throw new NotFoundException("Roster not found");
     const [entry] = await this.db.insert(rosterEntries).values(data)
       .onConflictDoUpdate({ target: [rosterEntries.rosterId, rosterEntries.userId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes } })
       .returning();

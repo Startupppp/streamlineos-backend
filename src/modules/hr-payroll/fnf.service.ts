@@ -148,7 +148,7 @@ export class FnfService {
         notes: body.notes ?? existing.notes,
         updatedAt: new Date(),
       })
-      .where(eq(fnfSettlements.id, fnfId))
+      .where(and(eq(fnfSettlements.id, fnfId), eq(fnfSettlements.orgId, orgId)))
       .returning();
 
     return { ok: true, record: updated };

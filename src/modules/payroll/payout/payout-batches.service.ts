@@ -309,7 +309,7 @@ export class PayoutBatchesService {
     if (!batch) throw new NotFoundException("Batch not found");
 
     const items = await this.db.query.payrollBankBatchItems.findMany({
-      where: eq(payrollBankBatchItems.batchId, batchId),
+      where: and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)),
     });
 
     return { batch, items };
@@ -334,13 +334,13 @@ export class PayoutBatchesService {
       await tx
         .update(payrollBankBatches)
         .set({ status: "SENT", sentAt: new Date() })
-        .where(eq(payrollBankBatches.id, batchId));
+        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
 
       await tx
         .update(payrollBankBatchItems)
         .set({ status: "SENT" })
         .where(
-          and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.status, "PENDING")),
+          and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId), eq(payrollBankBatchItems.status, "PENDING")),
         );
 
       await tx.insert(payrollRunEvents).values({
@@ -376,7 +376,7 @@ export class PayoutBatchesService {
     if (item.status === "PAID") throw new ConflictException("Item already marked paid");
 
     const batchRow = await this.db.query.payrollBankBatches.findFirst({
-      where: eq(payrollBankBatches.id, batchId),
+      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
       columns: { runId: true },
     });
 
@@ -385,7 +385,7 @@ export class PayoutBatchesService {
       await tx
         .update(payrollBankBatchItems)
         .set({ status: "PAID", transactionRef, paidAt: now })
-        .where(eq(payrollBankBatchItems.id, itemId));
+        .where(and(eq(payrollBankBatchItems.id, itemId), eq(payrollBankBatchItems.orgId, orgId)));
 
       if (batchRow?.runId) {
         await tx.insert(payrollRunEvents).values({
@@ -424,7 +424,7 @@ export class PayoutBatchesService {
     if (!item) throw new NotFoundException("Batch item not found");
 
     const batchRow = await this.db.query.payrollBankBatches.findFirst({
-      where: eq(payrollBankBatches.id, batchId),
+      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
       columns: { runId: true },
     });
 
@@ -432,7 +432,7 @@ export class PayoutBatchesService {
       await tx
         .update(payrollBankBatchItems)
         .set({ status: "FAILED", failureReason })
-        .where(eq(payrollBankBatchItems.id, itemId));
+        .where(and(eq(payrollBankBatchItems.id, itemId), eq(payrollBankBatchItems.orgId, orgId)));
 
       if (batchRow?.runId) {
         await tx.insert(payrollRunEvents).values({
@@ -520,7 +520,7 @@ export class PayoutBatchesService {
 
   private async checkRunCompletion(orgId: string, batchId: number, actorId: string) {
     const batch = await this.db.query.payrollBankBatches.findFirst({
-      where: eq(payrollBankBatches.id, batchId),
+      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
       columns: { runId: true },
     });
     if (!batch) return;
@@ -540,6 +540,7 @@ export class PayoutBatchesService {
       .from(payrollBankBatchItems)
       .where(
         and(
+          eq(payrollBankBatchItems.orgId, orgId),
           inArray(payrollBankBatchItems.batchId, batchIds),
           not(eq(payrollBankBatchItems.status, "PAID")),
           not(eq(payrollBankBatchItems.status, "FAILED")),
@@ -555,6 +556,7 @@ export class PayoutBatchesService {
       .from(payrollBankBatchItems)
       .where(
         and(
+          eq(payrollBankBatchItems.orgId, orgId),
           inArray(payrollBankBatchItems.batchId, batchIds),
           eq(payrollBankBatchItems.status, "PAID"),
         ),

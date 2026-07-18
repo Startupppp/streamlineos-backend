@@ -264,6 +264,7 @@ export class ApprovalsService {
     const submittedEvent = await this.db.query.payrollRunEvents.findFirst({
       where: and(
         eq(payrollRunEvents.runId, runId),
+        eq(payrollRunEvents.orgId, orgId),
         eq(payrollRunEvents.type, "APPROVAL_SUBMITTED"),
       ),
     });
@@ -293,7 +294,7 @@ export class ApprovalsService {
       await tx
         .update(payrollApprovals)
         .set({ status: "APPROVED", actedBy: userId, actedAt: new Date(), comment: comment ?? null })
-        .where(eq(payrollApprovals.id, approvalId));
+        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       if (isLastStage) {
         if (lockAfterApproval) {
@@ -306,7 +307,7 @@ export class ApprovalsService {
               approvedAt: new Date(),
               approvedBy: userId,
             })
-            .where(eq(payrollRuns.id, runId));
+            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
           await tx.insert(payrollRunEvents).values([
             { orgId, runId, type: "APPROVED", actorId: userId },
@@ -318,7 +319,7 @@ export class ApprovalsService {
           await tx
             .update(payrollRuns)
             .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
-            .where(eq(payrollRuns.id, runId));
+            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
           await tx.insert(payrollRunEvents).values({
             orgId,
@@ -442,6 +443,7 @@ export class ApprovalsService {
     const submittedEvent = await this.db.query.payrollRunEvents.findFirst({
       where: and(
         eq(payrollRunEvents.runId, runId),
+        eq(payrollRunEvents.orgId, orgId),
         eq(payrollRunEvents.type, "APPROVAL_SUBMITTED"),
       ),
     });
@@ -470,12 +472,12 @@ export class ApprovalsService {
       await tx
         .update(payrollApprovals)
         .set({ status: "REJECTED", actedBy: userId, actedAt: new Date(), comment })
-        .where(eq(payrollApprovals.id, approvalId));
+        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       await tx
         .update(payrollRuns)
         .set({ status: "PREVIEW_READY" })
-        .where(eq(payrollRuns.id, runId));
+        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
         orgId,

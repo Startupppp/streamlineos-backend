@@ -264,7 +264,7 @@ export class GenerateService {
         loanUpdate.closedAt = now;
       }
 
-      await tx.update(salaryLoans).set(loanUpdate).where(eq(salaryLoans.id, loanId));
+      await tx.update(salaryLoans).set(loanUpdate).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
     }
   }
 
@@ -282,7 +282,7 @@ export class GenerateService {
       await this.db
         .update(reimbursements)
         .set({ paidAt: null })
-        .where(inArray(reimbursements.id, prevIds));
+        .where(and(inArray(reimbursements.id, prevIds), eq(reimbursements.orgId, orgId)));
     }
   }
 

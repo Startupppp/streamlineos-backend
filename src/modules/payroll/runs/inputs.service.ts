@@ -86,7 +86,7 @@ export class InputsService {
     if (body.overtimeHours !== undefined) updateData.overtimeHours = body.overtimeHours;
     if (body.billableHours !== undefined) updateData.billableHours = body.billableHours;
 
-    await this.db.update(payrollInputs).set(updateData).where(eq(payrollInputs.id, inputId));
+    await this.db.update(payrollInputs).set(updateData).where(and(eq(payrollInputs.id, inputId), eq(payrollInputs.orgId, orgId)));
 
     await this.db.insert(payrollRunEvents).values({
       orgId,
