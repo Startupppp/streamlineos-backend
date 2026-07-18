@@ -19,3 +19,25 @@ export async function resolveLeavesDashboardScope(access: AccessService, u: Curr
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(DASHBOARD_LEAVES_PERMISSION) ?? "none";
 }
+
+export interface DashboardStatsFlags {
+  employees: boolean;
+  attendance: boolean;
+  projects: boolean;
+}
+
+export async function resolveDashboardStatsFlags(
+  access: AccessService,
+  u: CurrentUserContext,
+): Promise<DashboardStatsFlags> {
+  if (u.isPlatformAdmin || u.isOrgOwner) {
+    return { employees: true, attendance: true, projects: true };
+  }
+  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
+  const granted = (key: string) => (resolved.get(key) ?? "none") !== "none";
+  return {
+    employees: granted("hr:employees:view"),
+    attendance: granted("hr:attendance:view"),
+    projects: granted("projects:tickets:view"),
+  };
+}

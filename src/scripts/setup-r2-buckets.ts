@@ -2,6 +2,7 @@ import {
   S3Client,
   CreateBucketCommand,
   HeadBucketCommand,
+  PutBucketCorsCommand,
 } from "@aws-sdk/client-s3";
 
 async function ensureBucket(client: S3Client, bucket: string): Promise<void> {
@@ -23,6 +24,26 @@ async function ensureBucket(client: S3Client, bucket: string): Promise<void> {
     }
     throw err;
   }
+}
+
+async function ensurePublicReadCors(client: S3Client, bucket: string): Promise<void> {
+  await client.send(
+    new PutBucketCorsCommand({
+      Bucket: bucket,
+      CORSConfiguration: {
+        CORSRules: [
+          {
+            AllowedOrigins: ["*"],
+            AllowedMethods: ["GET", "HEAD"],
+            AllowedHeaders: ["*"],
+            ExposeHeaders: ["ETag", "Content-Length", "Content-Type"],
+            MaxAgeSeconds: 86400,
+          },
+        ],
+      },
+    }),
+  );
+  console.log(`✓ CORS (GET/HEAD *) applied on "${bucket}"`);
 }
 
 async function main(): Promise<void> {
@@ -55,6 +76,7 @@ async function main(): Promise<void> {
 
   for (const bucket of buckets) {
     await ensureBucket(client, bucket);
+    await ensurePublicReadCors(client, bucket);
   }
 
   console.log(
@@ -62,6 +84,9 @@ async function main(): Promise<void> {
   );
   console.log(
     "then set R2_KB_PUBLIC_URL to its public/CDN URL so uploaded images display.",
+  );
+  console.log(
+    "Public-read CORS is set so in-browser capture (snapDOM) can embed R2 images.",
   );
 }
 

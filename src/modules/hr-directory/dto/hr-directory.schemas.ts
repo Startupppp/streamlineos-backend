@@ -41,18 +41,20 @@ export const createTeamEventSchema = z
   })
   .refine((d) => !!(d.date || d.startDate), { message: "Event date is required" });
 
+export const ASSET_RETURN_CONDITIONS = ["Good", "Fair", "Poor"] as const;
+
 export const createAssetReturnSchema = z.object({
   userId: z.string().min(1),
   assetId: z.number().int().positive().optional(),
   assetName: z.string().min(1, "Asset name is required"),
-  condition: z.string().optional(),
-  notes: z.string().max(1000, "Notes must be at most 1000 characters").optional(),
+  condition: z.enum(ASSET_RETURN_CONDITIONS).optional(),
+  notes: z.string().trim().max(1000, "Notes must be at most 1000 characters").optional(),
 });
 
 export const patchAssetReturnSchema = z.object({
   status: z.enum(["RETURNED", "DAMAGED", "LOST"]).default("RETURNED"),
-  condition: z.string().optional(),
-  notes: z.string().optional(),
+  condition: z.enum(ASSET_RETURN_CONDITIONS).optional(),
+  notes: z.string().trim().max(500).optional(),
 });
 
 export const createDeviceSchema = z.object({

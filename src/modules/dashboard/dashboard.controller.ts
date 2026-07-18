@@ -12,6 +12,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -53,6 +55,8 @@ export class DashboardController {
   }
 
   @Get("active-sprint")
+  @UseGuards(ModuleGuard)
+  @RequireModule("projects")
   activeSprint(@CurrentUser() u: CurrentUserContext) {
     return this.project.getActiveSprintSummary(u.orgId, u);
   }
@@ -93,35 +97,30 @@ export class DashboardController {
   }
 
   @Get("birthdays")
+  @UseGuards(ModuleGuard)
+  @RequireModule("hr")
   birthdays(@CurrentUser() u: CurrentUserContext) {
     return this.hr.getBirthdays(u.orgId);
   }
 
-  @Get("branch-overview")
-  async branchOverview(@CurrentUser() u: CurrentUserContext) {
-    const result = await this.crm.getBranchOverview(u.orgId, this.toActor(u));
-    if (isForbidden(result)) throw new ForbiddenException(result.message);
-    return result;
-  }
-
   @Get("executive")
-  async executive(@CurrentUser() u: CurrentUserContext) {
-    const result = await this.crm.getExecutiveDashboard(u.orgId, this.toActor(u));
-    if (isForbidden(result)) throw new ForbiddenException(result.message);
-    return result;
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:analytics:read")
+  executive(@CurrentUser() u: CurrentUserContext) {
+    return this.crm.getExecutiveDashboard(u.orgId);
   }
 
   @Get("leaves-today")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:leaves:view")
   leavesToday(@CurrentUser() u: CurrentUserContext) {
     return this.leave.getLeavesToday(u.orgId);
   }
 
-  @Get("manager")
-  manager(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getManagerDashboard(u.orgId, u.userId);
-  }
-
   @Get("my-issues")
+  @UseGuards(ModuleGuard)
+  @RequireModule("projects")
   myIssues(
     @Query(new ZodValidationPipe(myIssuesSchema)) query: MyIssuesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -130,20 +129,20 @@ export class DashboardController {
   }
 
   @Get("my-leave-balance")
+  @UseGuards(ModuleGuard)
+  @RequireModule("hr")
   myLeaveBalance(@CurrentUser() u: CurrentUserContext) {
     return this.leave.getMyLeaveBalance(u.orgId, u.userId);
   }
 
   @Get("pending-approvals")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:leaves:approve")
   async pendingApprovals(@CurrentUser() u: CurrentUserContext) {
     const result = await this.leave.getPendingApprovals(u.orgId, u);
     if (isForbidden(result)) throw new ForbiddenException(result.message);
     return result;
-  }
-
-  @Get("pending-requests")
-  pendingRequests(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getPendingRequests(u.orgId, u.userId);
   }
 
   @Get("personal")
@@ -152,47 +151,54 @@ export class DashboardController {
   }
 
   @Get("recent-activity")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("projects")
+  @RequirePermission("projects:tickets:view")
   recentActivity(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentActivity(u.orgId, u);
   }
 
   @Get("recent-projects")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("projects")
+  @RequirePermission("projects:tickets:view")
   recentProjects(@CurrentUser() u: CurrentUserContext) {
     return this.project.getRecentProjects(u.orgId, u);
   }
 
-  @Get("role-stats")
-  roleStats(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getRoleStats(u.orgId);
-  }
-
   @Get("stats")
   stats(@CurrentUser() u: CurrentUserContext) {
-    return this.hr.getDashboardStats(u.orgId);
+    return this.hr.getDashboardStats(u.orgId, u);
   }
 
   @Get("team-attendance")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:attendance:view")
   teamAttendance(@CurrentUser() u: CurrentUserContext) {
     return this.hr.getTeamAttendance(u.orgId);
   }
 
   @Get("team-availability")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("hr")
+  @RequirePermission("hr:attendance:view")
   teamAvailability(@CurrentUser() u: CurrentUserContext) {
     return this.hr.getTeamAvailability(u.orgId);
   }
 
   @Get("today-activities")
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("crm")
+  @RequirePermission("crm:leads:view")
   todayActivities(@CurrentUser() u: CurrentUserContext) {
     return this.crm.getTodayActivities(u.orgId);
   }
 
   @Get("upcoming-holidays")
+  @UseGuards(ModuleGuard)
+  @RequireModule("hr")
   upcomingHolidays(@CurrentUser() u: CurrentUserContext) {
     return this.leave.getUpcomingHolidays(u.orgId);
-  }
-
-  @Get("upcoming-leaves")
-  upcomingLeaves(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getUpcomingLeaves(u.orgId);
   }
 }

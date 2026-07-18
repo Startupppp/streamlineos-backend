@@ -51,6 +51,7 @@ import { ProjectsIncidentsModule } from "./modules/projects-incidents/projects-i
 import { ProjectsWorkflowModule } from "./modules/projects-workflow/projects-workflow.module";
 import { ProjectsFormsModule } from "./modules/projects-forms/projects-forms.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
+import { ProjectsByIdModule } from "./modules/projects/projects-by-id.module";
 import { SupportModule } from "./modules/support/support.module";
 import { SignosModule } from "./modules/signos/signos.module";
 import { KbModule } from "./modules/kb/kb.module";
@@ -212,6 +213,7 @@ import { MeService } from "./me/me.service";
     ProjectsWorkflowModule,
     ProjectsFormsModule,
     ProjectsModule,
+    ProjectsByIdModule,
     SupportModule,
     SignosModule,
     KbModule,
