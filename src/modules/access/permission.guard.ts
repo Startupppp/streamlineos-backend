@@ -17,17 +17,18 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
-
     const permissionKey = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!permissionKey) throw new ForbiddenException("Permission denied");
+    if (!permissionKey) {
+      const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (isPublic) return true;
+      throw new ForbiddenException("Permission denied");
+    }
 
     const req = context.switchToHttp().getRequest<Request & { user?: CurrentUserContext }>();
 

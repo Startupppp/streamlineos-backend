@@ -33,6 +33,13 @@ class PermissionGuardTestController {
   protectedRoute() {
     return { ok: true };
   }
+
+  @Public()
+  @RequirePermission("settings:rbac:manage")
+  @Get("public-authentication")
+  publicAuthenticationRoute() {
+    return { ok: true };
+  }
 }
 
 const user: CurrentUserContext = {
@@ -114,6 +121,14 @@ describe("PermissionGuard routes (e2e)", () => {
 
     await request(app.getHttpServer())
       .get("/permission-guard-test/protected")
+      .expect(403);
+  });
+
+  it("enforces explicit permission metadata on a public authentication route", async () => {
+    resolveUserPermissions.mockResolvedValue(new Map());
+
+    await request(app.getHttpServer())
+      .get("/permission-guard-test/public-authentication")
       .expect(403);
   });
 });

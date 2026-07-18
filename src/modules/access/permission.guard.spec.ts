@@ -16,6 +16,10 @@ class GuardTestController {
 
   @RequirePermission("settings:rbac:manage")
   protectedRoute(): void {}
+
+  @Public()
+  @RequirePermission("settings:rbac:manage")
+  publicAuthenticationRoute(): void {}
 }
 
 const user: CurrentUserContext = {
@@ -103,6 +107,16 @@ describe("PermissionGuard", () => {
 
     await expect(
       guard.canActivate(contextFor(GuardTestController.prototype.protectedRoute)),
+    ).rejects.toThrow(new ForbiddenException("Permission denied"));
+  });
+
+  it("does not let public authentication metadata bypass an explicit permission", async () => {
+    resolveUserPermissions.mockResolvedValue(new Map());
+
+    await expect(
+      guard.canActivate(
+        contextFor(GuardTestController.prototype.publicAuthenticationRoute),
+      ),
     ).rejects.toThrow(new ForbiddenException("Permission denied"));
   });
 

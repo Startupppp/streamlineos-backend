@@ -11,9 +11,11 @@ database schema, and listens on port 1500 by default.
 4. Run `pnpm install`.
 5. Run `pnpm start:dev`.
 
-`CRON_SECRET` and `INTERNAL_API_SECRET` may be omitted for local development, but both are
-required when `NODE_ENV=production`. Generate independent values with
-`openssl rand -base64 48`; never commit or send those values through chat.
+`CRON_SECRET`, `INTERNAL_API_SECRET`, and `CONTACT_NOTIFICATION_EMAIL` may be omitted for
+local development, but all three are required when `NODE_ENV=production`. Generate
+independent secret values with `openssl rand -base64 48`; never commit or send those values
+through chat. `CONTACT_NOTIFICATION_EMAIL` must be the canonical inbox that receives public
+contact submissions.
 
 ## Tests
 

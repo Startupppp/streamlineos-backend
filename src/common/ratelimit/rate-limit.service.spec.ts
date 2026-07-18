@@ -6,10 +6,10 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
   const originalNodeEnv = process.env.NODE_ENV;
   let RateLimitService: typeof RateLimitServiceType;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     process.env.NODE_ENV = "production";
     jest.resetModules();
-    ({ RateLimitService } = require("./rate-limit.service"));
+    ({ RateLimitService } = await import("./rate-limit.service"));
   });
 
   afterAll(() => {

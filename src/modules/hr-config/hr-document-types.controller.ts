@@ -33,7 +33,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 
 @RequireModule("hr")
 @Controller("hr/document-types")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class HrDocumentTypesController {
   constructor(
     private readonly documentTypes: HrDocumentTypesService,
