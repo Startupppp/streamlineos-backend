@@ -44,7 +44,23 @@ export const updateSchema = z.object({
   dealId: z.number().nullable().optional(),
 });
 
+/** Matches the CRM contacts CSV import dialog payload. */
+export const bulkImportContactRowSchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email().optional().or(z.literal("")),
+  phone: z.string().optional(),
+  company: z.string().optional(),
+  title: z.string().optional(),
+  source: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const bulkImportContactsSchema = z.object({
+  contacts: z.array(bulkImportContactRowSchema).min(1).max(500),
+});
+
 export type ListInput = z.infer<typeof listSchema>;
 export type SearchInput = z.infer<typeof searchSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
+export type BulkImportContactsInput = z.infer<typeof bulkImportContactsSchema>;

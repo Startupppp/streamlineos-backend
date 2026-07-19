@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   NotFoundException,
   Param,
@@ -23,11 +24,13 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsService } from "./deals.service";
 import { resolveDealsReadScope } from "./deals-scope";
 import {
+  bulkImportDealsSchema,
   createDealSchema,
   listDealsSchema,
   logActivitySchema,
   patchCustomDataSchema,
   updateDealSchema,
+  type BulkImportDealsInput,
   type CreateDealInput,
   type ListDealsInput,
   type LogActivityInput,
@@ -65,6 +68,26 @@ export class DealsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.createDeal(u.orgId, u.userId, body);
+  }
+
+  @Post("bulk-import")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:create")
+  @HttpCode(201)
+  bulkImport(
+    @Body(new ZodValidationPipe(bulkImportDealsSchema)) body: BulkImportDealsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.deals.bulkImport(u.orgId, u.userId, body);
+  }
+
+  @Get("export")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("crm:deals:read")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="deals-export.csv"')
+  exportCsv(@CurrentUser() u: CurrentUserContext) {
+    return this.deals.exportCsv(u.orgId);
   }
 
   @Post(":dealId/clone")

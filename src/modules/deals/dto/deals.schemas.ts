@@ -24,6 +24,22 @@ export const createDealSchema = z.object({
   clientId: z.number().optional(),
 });
 
+/** Matches the CRM deals CSV import dialog payload. */
+export const bulkImportDealRowSchema = z.object({
+  name: z.string().min(1),
+  value: z.coerce.number().min(0).optional(),
+  stage: z.string().optional(),
+  ownerEmail: z.string().email().optional().or(z.literal("")),
+  expectedCloseDate: z.string().optional(),
+  contactEmail: z.string().email().optional().or(z.literal("")),
+  companyName: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const bulkImportDealsSchema = z.object({
+  deals: z.array(bulkImportDealRowSchema).min(1).max(500),
+});
+
 export const updateDealSchema = z.object({
   name: z.string().min(1).optional(),
   value: z.coerce.number().min(0).optional(),
@@ -150,6 +166,7 @@ export const overrideForecastSnapshotSchema = z.object({
 
 export type ListDealsInput = z.infer<typeof listDealsSchema>;
 export type CreateDealInput = z.infer<typeof createDealSchema>;
+export type BulkImportDealsInput = z.infer<typeof bulkImportDealsSchema>;
 export type UpdateDealInput = z.infer<typeof updateDealSchema>;
 export type ResolveApprovalInput = z.infer<typeof resolveApprovalSchema>;
 export type RequestApprovalInput = z.infer<typeof requestApprovalSchema>;
