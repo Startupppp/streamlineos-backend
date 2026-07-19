@@ -1,2 +1,0 @@
-ALTER TYPE "public"."acc_system_purpose" ADD VALUE IF NOT EXISTS 'SALARY_EXPENSE';
-ALTER TYPE "public"."acc_system_purpose" ADD VALUE IF NOT EXISTS 'ASSET_DISPOSAL_GAIN_LOSS';
