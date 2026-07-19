@@ -42,14 +42,14 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
       itemKey: "locations_departments",
       title: "Locations & departments",
       description: "Add at least one location and one department — required for employees, leave, payroll, and reporting.",
-      actionHref: "/hr/departments",
+      actionHref: "/hr/org?tab=departments",
       required: true,
     },
     {
       itemKey: "roles_positions",
       title: "Job roles, levels & positions",
       description: "Create at least one role/designation and one position or headcount record.",
-      actionHref: "/hr/org",
+      actionHref: "/hr/org?tab=roles",
       required: true,
     },
     {
@@ -77,7 +77,7 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
       itemKey: "onboarding_template",
       title: "Employee onboarding template",
       description: "Create an onboarding template covering personal details, documents, and manager assignment.",
-      actionHref: "/hr/onboarding",
+      actionHref: "/hr/onboarding?tab=plans",
       required: true,
     },
     {
@@ -112,7 +112,7 @@ const CHECKLIST_SEEDS: Record<string, ChecklistItemSeed[]> = {
       itemKey: "first_employees",
       title: "Add or invite your first employees",
       description: "Onboard a single employee or bulk-import your team.",
-      actionHref: "/hr/onboarding",
+      actionHref: "/hr/onboarding?tab=wizard",
       required: true,
     },
   ],
@@ -194,8 +194,15 @@ export class ModuleChecklistService {
     }
   }
 
-  /** `includeHr` is resolved by the controller from the caller's HR permissions — the HR entry is silently omitted (not an error) for callers without them, since this is a bulk multi-module listing. */
+  /**
+   * `includeHr` is resolved by the controller from the caller's HR permissions — the HR entry is
+   * silently omitted (not an error) for callers without them, since this is a bulk multi-module
+   * listing. Ensures a checklist row exists for every currently-visible module first, so orgs
+   * that predate this feature (never routed through org-setup's seeding) self-heal on first read
+   * instead of silently returning nothing.
+   */
   async listChecklists(orgId: string, visibleModuleKeys: string[], includeHr: boolean) {
+    await this.ensureChecklistsForModules(orgId, visibleModuleKeys);
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
       where: eq(moduleSetupChecklists.orgId, orgId),
       with: { items: true },
@@ -210,6 +217,7 @@ export class ModuleChecklistService {
     if (!visibleModuleKeys.includes(moduleKey)) {
       throw new NotFoundException(`Module setup checklist not found: ${moduleKey}`);
     }
+    await this.ensureChecklistsForModules(orgId, [moduleKey]);
     const checklist = await this.db.query.moduleSetupChecklists.findFirst({
       where: and(eq(moduleSetupChecklists.orgId, orgId), eq(moduleSetupChecklists.moduleKey, moduleKey)),
       with: { items: true },

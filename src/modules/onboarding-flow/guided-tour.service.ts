@@ -5,6 +5,8 @@ import type { Db } from "../../db/drizzle.module";
 import { guidedTours, userTourProgress } from "../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
 
+const HR_SETUP_TOUR_KEY = "hr_setup";
+
 @Injectable()
 export class GuidedTourService {
   constructor(
@@ -12,7 +14,20 @@ export class GuidedTourService {
     private readonly analytics: OnboardingAnalyticsService,
   ) {}
 
+  /** Idempotently seeds the global "hr_setup" tour definition. Safe to call repeatedly — mirrors ModuleChecklistService.ensureChecklistsForModules. */
+  private async ensureHrSetupTourDefinition() {
+    const existing = await this.db.query.guidedTours.findFirst({
+      where: and(isNull(guidedTours.orgId), eq(guidedTours.tourKey, HR_SETUP_TOUR_KEY)),
+    });
+    if (existing) return;
+
+    await this.db
+      .insert(guidedTours)
+      .values({ orgId: null, tourKey: HR_SETUP_TOUR_KEY, moduleKey: "HR", role: null, steps: [], isActive: true });
+  }
+
   async listToursForUser(orgId: string, userId: string, role?: string) {
+    await this.ensureHrSetupTourDefinition();
     const tours = await this.db.query.guidedTours.findMany({
       where: and(
         or(eq(guidedTours.orgId, orgId), isNull(guidedTours.orgId)),
