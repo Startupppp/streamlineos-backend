@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
-import { GoogleCalendarModule } from "../google-calendar/google-calendar.module";
 import { HrInterviewsController } from "./hr-interviews.controller";
 import { HrInterviewersController } from "./hr-interviewers.controller";
 import { HrHiringFlowsController } from "./hr-hiring-flows.controller";
@@ -21,7 +20,7 @@ import { HrInterviewResultsService } from "./hr-interview-results.service";
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, GoogleCalendarModule],
+  imports: [NotificationsModule, AutomationModule],
   controllers: [
     HrInterviewsController,
     HrInterviewersController,

@@ -42,8 +42,6 @@ const schema = z
     EMAIL_FROM_ADDRESS: optionalEmail,
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
-    GOOGLE_CLIENT_ID: z.string().optional(),
-    GOOGLE_CLIENT_SECRET: z.string().optional(),
     TURNSTILE_SECRET_KEY: z.string().optional(),
     ABLY_API_KEY: z.string().optional(),
     ENCRYPTION_KEY: z.string().optional(),

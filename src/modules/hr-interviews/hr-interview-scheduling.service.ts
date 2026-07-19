@@ -16,7 +16,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
-import { GoogleCalendarService } from "../google-calendar/google-calendar.service";
 import { getInterviewInviteEmail, getSelfScheduleBookingEmail } from "../email/templates/interviews";
 import type {
   CreateInterviewInput,
@@ -66,7 +65,6 @@ export class HrInterviewSchedulingService {
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
-    private readonly googleCalendar: GoogleCalendarService,
   ) {}
 
   async createInterview(orgId: string, input: CreateInterviewInput) {
@@ -89,9 +87,6 @@ export class HrInterviewSchedulingService {
 
     await this.cache.invalidatePattern(`hr:interviews:list:${orgId}:*`);
 
-    if (interview.interviewerId) {
-      void this.pushInterviewToCalendar(orgId, interview.interviewerId, interview).catch(() => undefined);
-    }
     void this.dispatchScheduledAutomation(orgId, interview, interview.interviewerId ?? "").catch(() => undefined);
 
     return interview;
@@ -172,8 +167,6 @@ export class HrInterviewSchedulingService {
         }),
       ),
     );
-
-    void this.pushInterviewToCalendar(orgId, userId, interview).catch(() => undefined);
 
     if (input.notifyChannels.email) {
       void this.dispatchScheduleEmails(interview, candidate, input).catch(() => undefined);
@@ -288,28 +281,6 @@ export class HrInterviewSchedulingService {
     }
 
     await Promise.allSettled(tasks);
-  }
-
-  private async pushInterviewToCalendar(
-    orgId: string,
-    interviewerId: string,
-    interview: InterviewRow,
-  ): Promise<void> {
-    const candidate = await this.db.query.candidates.findFirst({
-      where: and(eq(candidates.id, interview.candidateId), eq(candidates.orgId, orgId)),
-      columns: { firstName: true, lastName: true },
-    });
-    const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : "Candidate";
-    const start = new Date(interview.scheduledAt);
-    const end = new Date(start.getTime() + (interview.duration ?? 60) * 60_000);
-
-    await this.googleCalendar.pushInterviewEvent(interviewerId, {
-      summary: `Interview: ${candidateName}`,
-      description: interview.notes ?? "",
-      start,
-      end,
-      meetingLink: interview.meetingLink,
-    });
   }
 
   private async dispatchScheduledAutomation(

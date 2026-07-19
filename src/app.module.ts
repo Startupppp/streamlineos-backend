@@ -112,7 +112,6 @@ import { WorkspaceSearchModule } from "./modules/workspace-search/workspace-sear
 import { SupportKbGapModule } from "./modules/support-kb-gap";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
-import { GoogleCalendarModule } from "./modules/google-calendar/google-calendar.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AutomationModule } from "./modules/automation/automation.module";
 import { SessionsModule } from "./modules/sessions/sessions.module";
@@ -275,7 +274,6 @@ import { MeService } from "./me/me.service";
     SupportKbGapModule,
     StorageModule,
     BillingModule,
-    GoogleCalendarModule,
     RealtimeModule,
     AutomationModule,
     SessionsModule,
