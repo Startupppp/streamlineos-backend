@@ -8,6 +8,8 @@ export const listEmployeesSchema = z.object({
   departmentId: z.coerce.number().int().positive().optional(),
   /** "true" | "false" | "all" — default active-only for directory */
   isActive: z.enum(["true", "false", "all"]).optional().default("true"),
+  /** Org/job role on the user record (e.g. ENGINEERING, HR). Omit for all roles. */
+  role: z.string().min(1).max(64).optional(),
 });
 
 export const availabilitySchema = z.object({
