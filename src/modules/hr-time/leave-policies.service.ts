@@ -24,7 +24,7 @@ export interface CreateLeavePolicyInput {
   carryForwardExpiryMonths?: number;
   encashable?: boolean;
   probationRestricted?: boolean;
-  genderRestriction?: string;
+  genderRestriction?: string | null;
   appliesTo?: string;
   effectiveFrom: string;
   effectiveTo?: string;
