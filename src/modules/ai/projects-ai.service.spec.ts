@@ -1,5 +1,5 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { BadRequestException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, HttpStatus, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
@@ -226,7 +226,7 @@ describe("ProjectsAiService", () => {
   });
 
   describe("gateway failure — quota_exceeded", () => {
-    it("throws BadRequestException when gateway returns quota_exceeded", async () => {
+    it("throws 402 Payment Required when gateway returns quota_exceeded", async () => {
       let callCount = 0;
       mockWhere.mockImplementation(() => {
         callCount++;
@@ -236,7 +236,13 @@ describe("ProjectsAiService", () => {
 
       mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("quota_exceeded"));
 
-      await expect(service.summarize("org_1", 1, "user_1")).rejects.toThrow(BadRequestException);
+      try {
+        await service.summarize("org_1", 1, "user_1");
+        throw new Error("expected quota failure");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      }
     });
   });
 

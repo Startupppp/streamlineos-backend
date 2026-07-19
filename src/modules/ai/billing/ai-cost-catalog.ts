@@ -33,6 +33,8 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "ticket.summarize": 1,
   "ticket.improve-description": 1,
   "ticket.suggest-subtasks": 1,
+  "ticket.suggest-title": 1,
+  "ticket.suggest-fields": 1,
   "support.analysis": 1,
   "support.reply": 1,
   "support.macro": 1,

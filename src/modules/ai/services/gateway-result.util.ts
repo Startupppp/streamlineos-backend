@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
 import type { AiInvokeFailure, AiInvokeResult } from "../gateway/ai-gateway.types";
 
 function assertNever(x: never): never {
@@ -8,7 +8,10 @@ function assertNever(x: never): never {
 export function throwOnAiFailure(result: AiInvokeFailure): never {
   switch (result.kind) {
     case "quota_exceeded":
-      throw new BadRequestException(result.message);
+      throw new HttpException(
+        { message: result.message || "Insufficient AI credits" },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
     case "not_configured":
     case "provider_unavailable":
       throw new ServiceUnavailableException(result.message);

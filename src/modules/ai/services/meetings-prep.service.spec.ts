@@ -1,6 +1,6 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
-import { BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { HttpException, HttpStatus, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { MeetingsPrepService } from "./meetings-prep.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -197,7 +197,7 @@ describe("MeetingsPrepService", () => {
       expect(result.connectedIntegrations).toBe(true);
     });
 
-    it("should throw BadRequestException on AI quota_exceeded", async () => {
+    it("should throw 402 Payment Required on AI quota_exceeded", async () => {
       const failResult: AiInvokeResult<unknown> = {
         ok: false,
         kind: "quota_exceeded",
@@ -207,7 +207,13 @@ describe("MeetingsPrepService", () => {
       const gateway = makeGateway(failResult);
       const { service } = await buildModule({ gateway });
 
-      await expect(service.draftAgenda(ORG_A, USER_1, EVENT_ID, {})).rejects.toBeInstanceOf(BadRequestException);
+      try {
+        await service.draftAgenda(ORG_A, USER_1, EVENT_ID, {});
+        throw new Error("expected quota failure");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      }
     });
 
     it("should indicate connectedIntegrations=false when Composio not configured", async () => {

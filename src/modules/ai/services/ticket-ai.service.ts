@@ -1,20 +1,35 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { tickets, ticketComments, projectMeetings, meetingActionItems, meetingAttendees, users } from "../../../db/schema";
+import {
+  tickets,
+  ticketComments,
+  ticketLabels,
+  projects,
+  projectMeetings,
+  meetingActionItems,
+  meetingAttendees,
+  users,
+} from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   TicketSummaryOutputSchema,
   TicketSubtasksOutputSchema,
   MeetingExtractActionsOutputSchema,
   TicketHandoffOutputSchema,
+  TicketSuggestTitleOutputSchema,
+  TicketSuggestFieldsOutputSchema,
 } from "../dto/ticket-ai.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
 
 const TEXT_LIMIT = 2000;
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
 
 @Injectable()
 export class TicketAiService {
@@ -23,6 +38,16 @@ export class TicketAiService {
     private readonly gateway: AiGatewayService,
     private readonly audit: AuditService,
   ) {}
+
+  private async assertProject(orgId: string, projectId: number) {
+    const [project] = await this.db
+      .select({ id: projects.id, name: projects.name })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .limit(1);
+    if (!project) throw new NotFoundException("Project not found");
+    return project;
+  }
 
   private async assertTicket(orgId: string, projectId: number, ticketId: number) {
     const [ticket] = await this.db
@@ -240,6 +265,166 @@ Extract up to 10 proposed action items. Cite the attendee name when ownership is
     const data = unwrapAiResult(result);
     this.audit.log({ action: "ai.meeting.extract-actions", userId, orgId, resourceType: "meeting", resourceId: String(meetingId) });
     return { ...data, suggestions: true };
+  }
+
+  async suggestTitleFromDraft(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    draft: { title?: string; description?: string },
+  ) {
+    await this.assertProject(orgId, projectId);
+
+    const plainDescription = stripHtml(draft.description ?? "").slice(0, TEXT_LIMIT);
+    const currentTitle = (draft.title ?? "").trim();
+    if (!plainDescription && !currentTitle) {
+      throw new BadRequestException("Provide a title or description to suggest a title");
+    }
+
+    const system =
+      "You are a project management assistant. Suggest one concise, actionable issue title (max 120 characters). Output only the title — no quotes, no preamble.";
+    const user = `Project context: issue draft
+Current title: ${currentTitle || "(none)"}
+Description:
+${plainDescription || "(none)"}
+
+Suggest a clear issue title.`;
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.suggest-title",
+      prompt: { system, user },
+      schema: TicketSuggestTitleOutputSchema,
+      tier: "fast",
+      maxTokens: 128,
+      charge: { credits: getFeatureCost("ticket.suggest-title") },
+    });
+
+    const data = unwrapAiResult(result);
+    const title = data.title.trim().replace(/^["']|["']$/g, "").slice(0, 120);
+    this.audit.log({
+      action: "ai.ticket.suggest-title",
+      userId,
+      orgId,
+      resourceType: "project",
+      resourceId: String(projectId),
+    });
+    return { title };
+  }
+
+  async improveDescriptionDraft(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    draft: { title?: string; description?: string },
+  ) {
+    await this.assertProject(orgId, projectId);
+
+    const sourceText = (draft.description?.trim() || draft.title?.trim() || "").slice(0, TEXT_LIMIT);
+    if (!sourceText) {
+      throw new BadRequestException("Provide a title or description to improve");
+    }
+
+    const system = `You are a technical writer specializing in software tickets.
+Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
+Output ONLY the HTML string, no markdown, no code blocks, no preamble. Keep it under 5000 characters.
+Structure: overview paragraph, acceptance criteria as <ul>, optional notes.`;
+
+    const user = `Ticket title: "${(draft.title ?? "").trim() || "(untitled)"}"
+Draft description:
+${sourceText}
+
+Produce an improved HTML description.`;
+
+    const result = await this.gateway.invokeText({
+      actor: { orgId, userId },
+      feature: "ticket.improve-description",
+      prompt: { system, user },
+      tier: "fast",
+      maxTokens: 768,
+      charge: { credits: getFeatureCost("ticket.improve-description") },
+    });
+
+    const description = unwrapAiResult(result);
+    this.audit.log({
+      action: "ai.ticket.improve-description-draft",
+      userId,
+      orgId,
+      resourceType: "project",
+      resourceId: String(projectId),
+    });
+    return { description: description.slice(0, 5000) };
+  }
+
+  async suggestFieldsFromDraft(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    draft: { title?: string; description?: string },
+  ) {
+    await this.assertProject(orgId, projectId);
+
+    const plainDescription = stripHtml(draft.description ?? "").slice(0, TEXT_LIMIT);
+    const currentTitle = (draft.title ?? "").trim();
+    if (!plainDescription && !currentTitle) {
+      throw new BadRequestException("Provide a title or description to suggest fields");
+    }
+
+    const labels = await this.db
+      .select({ id: ticketLabels.id, name: ticketLabels.name })
+      .from(ticketLabels)
+      .where(eq(ticketLabels.orgId, orgId))
+      .orderBy(asc(ticketLabels.name))
+      .limit(100);
+
+    const labelCatalog =
+      labels.length > 0
+        ? labels.map((l) => l.name).join(", ")
+        : "(no labels configured — return an empty labelNames array)";
+
+    const system = `You are a project management assistant helping triage a new issue draft.
+Suggest priority (LOW|MEDIUM|HIGH|URGENT), story-point estimate (0-100 or null), and up to 5 labels.
+CRITICAL: labelNames must be chosen ONLY from the available labels list (exact name match). If none fit, return [].`;
+
+    const user = `Title: ${currentTitle || "(untitled)"}
+Description:
+${plainDescription || "(none)"}
+Available labels: ${labelCatalog}
+
+Suggest priority, points, and matching labels with a short rationale.`;
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.suggest-fields",
+      prompt: { system, user },
+      schema: TicketSuggestFieldsOutputSchema,
+      tier: "fast",
+      maxTokens: 512,
+      charge: { credits: getFeatureCost("ticket.suggest-fields") },
+    });
+
+    const data = unwrapAiResult(result);
+    const nameToId = new Map(labels.map((l) => [l.name.toLowerCase(), l] as const));
+    const matchedLabels = data.labelNames
+      .map((name) => nameToId.get(name.trim().toLowerCase()))
+      .filter((l): l is { id: number; name: string } => l != null)
+      .slice(0, 5);
+
+    this.audit.log({
+      action: "ai.ticket.suggest-fields",
+      userId,
+      orgId,
+      resourceType: "project",
+      resourceId: String(projectId),
+    });
+
+    return {
+      priority: data.priority,
+      points: data.points,
+      labelIds: matchedLabels.map((l) => l.id),
+      labelNames: matchedLabels.map((l) => l.name),
+      rationale: data.rationale,
+    };
   }
 
   async handoffSummary(orgId: string, userId: string, projectId: number, ticketId: number) {

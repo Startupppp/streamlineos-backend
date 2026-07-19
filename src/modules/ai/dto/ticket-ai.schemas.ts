@@ -5,6 +5,39 @@ export const improveDescriptionBodySchema = z.object({
 });
 export type ImproveDescriptionBodyInput = z.infer<typeof improveDescriptionBodySchema>;
 
+export const draftTicketBodySchema = z
+  .object({
+    title: z.string().max(500).optional(),
+    description: z.string().max(5000).optional(),
+  })
+  .refine(
+    (data) => Boolean(data.title?.trim() || data.description?.trim()),
+    { message: "Provide a title or description" },
+  );
+export type DraftTicketBodyInput = z.infer<typeof draftTicketBodySchema>;
+
+export const TicketSuggestTitleOutputSchema = z.object({
+  title: z.string().describe("Concise issue title, max 120 characters"),
+});
+export type TicketSuggestTitleOutput = z.infer<typeof TicketSuggestTitleOutputSchema>;
+
+export const TicketSuggestFieldsOutputSchema = z.object({
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).describe("Suggested priority"),
+  points: z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .nullable()
+    .describe("Suggested story-point estimate, or null if unclear"),
+  labelNames: z
+    .array(z.string())
+    .max(5)
+    .describe("Up to 5 labels chosen ONLY from the provided available labels list"),
+  rationale: z.string().describe("1-2 sentence rationale for the suggestions"),
+});
+export type TicketSuggestFieldsOutput = z.infer<typeof TicketSuggestFieldsOutputSchema>;
+
 export const TicketSummaryOutputSchema = z.object({
   summary: z.string().describe("2-3 sentence summary of the ticket"),
   keyPoints: z.array(z.string()).describe("Up to 5 key points about this ticket"),

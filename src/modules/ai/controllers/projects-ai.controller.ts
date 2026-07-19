@@ -31,7 +31,9 @@ import {
 } from "../dto/pm.schemas";
 import {
   improveDescriptionBodySchema,
+  draftTicketBodySchema,
   type ImproveDescriptionBodyInput,
+  type DraftTicketBodyInput,
 } from "../dto/ticket-ai.schemas";
 
 function parsePositiveInt(raw: string, label: string): number {
@@ -111,6 +113,54 @@ export class ProjectsAiController {
     requireFeature(u.plan, "ai.project-manager");
     this.ensureLlm();
     return this.projectsAi.ask(u.orgId, parseProjectId(rawId), body.question, u.userId);
+  }
+
+  @Post("projects/:projectId/tickets/draft/suggest-title")
+  async suggestDraftTitle(
+    @Param("projectId") rawPid: string,
+    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.suggestTitleFromDraft(
+      u.orgId,
+      u.userId,
+      parsePositiveInt(rawPid, "projectId"),
+      body,
+    );
+  }
+
+  @Post("projects/:projectId/tickets/draft/improve-description")
+  async improveDraftDescription(
+    @Param("projectId") rawPid: string,
+    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.improveDescriptionDraft(
+      u.orgId,
+      u.userId,
+      parsePositiveInt(rawPid, "projectId"),
+      body,
+    );
+  }
+
+  @Post("projects/:projectId/tickets/draft/suggest-fields")
+  async suggestDraftFields(
+    @Param("projectId") rawPid: string,
+    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.suggestFieldsFromDraft(
+      u.orgId,
+      u.userId,
+      parsePositiveInt(rawPid, "projectId"),
+      body,
+    );
   }
 
   @Post("tickets/:projectId/:ticketId/summarize")

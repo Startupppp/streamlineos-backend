@@ -1,6 +1,6 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
 import { MailAiService } from "./mail-ai.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import type { MailService } from "./mail.service";
@@ -128,11 +128,17 @@ describe("MailAiService", () => {
       expect(gateway.invokeStructured).toHaveBeenCalledTimes(1);
     });
 
-    it("propagates quota_exceeded as BadRequestException", async () => {
+    it("propagates quota_exceeded as 402 Payment Required", async () => {
       const gateway = makeGateway(makeGatewayFail("quota_exceeded"));
       const svc = makeService(gateway, makeMailService());
 
-      await expect(svc.inboxSummary(ACTOR)).rejects.toThrow(BadRequestException);
+      try {
+        await svc.inboxSummary(ACTOR);
+        throw new Error("expected quota failure");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      }
     });
 
     it("propagates provider_unavailable as ServiceUnavailableException", async () => {
@@ -168,11 +174,17 @@ describe("MailAiService", () => {
       expect(gateway.invokeStructured).toHaveBeenCalledTimes(1);
     });
 
-    it("propagates quota_exceeded as BadRequestException", async () => {
+    it("propagates quota_exceeded as 402 Payment Required", async () => {
       const gateway = makeGateway(makeGatewayFail("quota_exceeded"));
       const svc = makeService(gateway, makeMailService());
 
-      await expect(svc.threadSummary(ACTOR, 10, "thread-1")).rejects.toThrow(BadRequestException);
+      try {
+        await svc.threadSummary(ACTOR, 10, "thread-1");
+        throw new Error("expected quota failure");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      }
     });
   });
 
@@ -200,11 +212,17 @@ describe("MailAiService", () => {
       expect(mailSvc.getThread).toHaveBeenCalledWith("org-1", "user-1", "thread-1", 10);
     });
 
-    it("propagates quota_exceeded as BadRequestException", async () => {
+    it("propagates quota_exceeded as 402 Payment Required", async () => {
       const gateway = makeGateway(makeGatewayFail("quota_exceeded"));
       const svc = makeService(gateway, makeMailService());
 
-      await expect(svc.draft(ACTOR, { mode: "compose", instruction: "Draft something" })).rejects.toThrow(BadRequestException);
+      try {
+        await svc.draft(ACTOR, { mode: "compose", instruction: "Draft something" });
+        throw new Error("expected quota failure");
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      }
     });
   });
 });
