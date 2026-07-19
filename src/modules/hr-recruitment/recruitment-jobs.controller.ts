@@ -98,6 +98,16 @@ export class RecruitmentJobsController {
     return this.jobs.publish(u.orgId, jobId, body);
   }
 
+  @Post("jobs/:jobId/duplicate")
+  @HttpCode(201)
+  @RequirePermission("hr:employees:manage")
+  duplicate(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.jobs.duplicate(u.orgId, u.userId, jobId);
+  }
+
   @Get("jobs/:jobId/recruiters")
   @RequirePermission("hr:employees:view")
   listRecruiters(

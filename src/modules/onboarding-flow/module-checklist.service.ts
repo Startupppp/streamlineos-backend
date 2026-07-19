@@ -195,6 +195,42 @@ export class ModuleChecklistService {
   }
 
   /**
+   * Existing checklist item rows were snapshotted from CHECKLIST_SEEDS at creation time —
+   * ensureChecklistsForModules only inserts missing rows, it never touches rows that already
+   * exist. If a seed's title/description/actionHref/required/sortOrder is edited later (e.g. a
+   * fixed route), orgs provisioned before that edit keep serving the stale value forever unless
+   * something reconciles it. Runs for every module with a seed, not just HR.
+   */
+  private async syncItemMetadataFromSeed(moduleKey: string, items: (typeof moduleSetupChecklistItems.$inferSelect)[]) {
+    const seeds = CHECKLIST_SEEDS[moduleKey];
+    if (!seeds) return;
+    const seedByKey = new Map(seeds.map((s, index) => [s.itemKey, { ...s, sortOrder: index }]));
+
+    for (const item of items) {
+      const seed = seedByKey.get(item.itemKey);
+      if (!seed) continue;
+      const stale =
+        item.title !== seed.title ||
+        item.description !== (seed.description ?? null) ||
+        item.actionHref !== (seed.actionHref ?? null) ||
+        item.required !== seed.required ||
+        item.sortOrder !== seed.sortOrder;
+      if (!stale) continue;
+
+      await this.db
+        .update(moduleSetupChecklistItems)
+        .set({
+          title: seed.title,
+          description: seed.description ?? null,
+          actionHref: seed.actionHref ?? null,
+          required: seed.required,
+          sortOrder: seed.sortOrder,
+        })
+        .where(eq(moduleSetupChecklistItems.id, item.id));
+    }
+  }
+
+  /**
    * `includeHr` is resolved by the controller from the caller's HR permissions — the HR entry is
    * silently omitted (not an error) for callers without them, since this is a bulk multi-module
    * listing. Ensures a checklist row exists for every currently-visible module first, so orgs
@@ -210,7 +246,8 @@ export class ModuleChecklistService {
     const visible = checklists.filter(
       (c) => visibleModuleKeys.includes(c.moduleKey) && (c.moduleKey !== "HR" || includeHr),
     );
-    return Promise.all(visible.map((c) => (c.moduleKey === "HR" ? this.reconcileAndReload(orgId, c) : c)));
+    await Promise.all(visible.map((c) => this.syncItemMetadataFromSeed(c.moduleKey, c.items)));
+    return Promise.all(visible.map((c) => (c.moduleKey === "HR" ? this.reconcileAndReload(orgId, c) : this.reload(c))));
   }
 
   async getChecklist(orgId: string, moduleKey: string, visibleModuleKeys: string[]) {
@@ -223,24 +260,31 @@ export class ModuleChecklistService {
       with: { items: true },
     });
     if (!checklist) throw new NotFoundException(`Module setup checklist not found: ${moduleKey}`);
+    await this.syncItemMetadataFromSeed(moduleKey, checklist.items);
     if (moduleKey === "HR") return this.reconcileAndReload(orgId, checklist);
-    return checklist;
+    return this.reload(checklist);
   }
 
-  /**
-   * HR is the only module whose checklist completion is derived from real HR data rather than
-   * manual complete-clicks (task requirement). Re-derives todo/done for every non-skipped item
-   * on every read, then reloads so callers always see a state consistent with live data.
-   */
-  private async reconcileAndReload(orgId: string, checklist: ChecklistWithItems): Promise<ChecklistWithItems> {
-    const changed = await this.hrReconciliation.reconcile(orgId, checklist.items);
-    if (!changed) return checklist;
-    await this.recomputeProgress(checklist.id, orgId);
+  /** Re-reads a checklist + items — used after syncItemMetadataFromSeed may have updated rows in place. */
+  private async reload(checklist: ChecklistWithItems): Promise<ChecklistWithItems> {
     const reloaded = await this.db.query.moduleSetupChecklists.findFirst({
       where: eq(moduleSetupChecklists.id, checklist.id),
       with: { items: true },
     });
     return reloaded ?? checklist;
+  }
+
+  /**
+   * HR is the only module whose checklist completion is derived from real HR data rather than
+   * manual complete-clicks (task requirement). Re-derives todo/done for every non-skipped item
+   * on every read, then always reloads — callers must see a state consistent with live data,
+   * including any metadata sync (syncItemMetadataFromSeed) that ran on this same `checklist`
+   * object before reconciliation, which `changed` here doesn't account for.
+   */
+  private async reconcileAndReload(orgId: string, checklist: ChecklistWithItems): Promise<ChecklistWithItems> {
+    await this.hrReconciliation.reconcile(orgId, checklist.items);
+    await this.recomputeProgress(checklist.id, orgId);
+    return this.reload(checklist);
   }
 
   private async recomputeProgress(checklistId: number, orgId: string) {

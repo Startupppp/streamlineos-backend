@@ -163,6 +163,63 @@ export class RecruitmentJobsService {
     return { success: true };
   }
 
+  /**
+   * Clone a job posting as a new DRAFT. Title is unique-suffixed to avoid
+   * conflicting with the source posting (same location + type).
+   */
+  async duplicate(orgId: string, userId: string, jobId: number) {
+    const source = await this.db.query.jobPostings.findFirst({
+      where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
+    });
+    if (!source) throw new NotFoundException("Job posting not found.");
+
+    const baseTitle = source.title.replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, "").trim();
+    let title = `${baseTitle} (copy)`;
+    let attempt = 1;
+    // Ensure we don't trip the title+location+type uniqueness check forever.
+    while (attempt <= 20) {
+      const clash = await this.db.query.jobPostings.findFirst({
+        where: and(
+          eq(jobPostings.orgId, orgId),
+          sql`lower(trim(${jobPostings.title})) = ${title.trim().toLowerCase()}`,
+          sql`lower(trim(coalesce(${jobPostings.location}, ''))) = ${(source.location ?? "").trim().toLowerCase()}`,
+          eq(jobPostings.type, source.type ?? "FULL_TIME"),
+        ),
+        columns: { id: true },
+      });
+      if (!clash) break;
+      attempt += 1;
+      title = `${baseTitle} (copy ${attempt})`;
+    }
+
+    const [job] = await this.db
+      .insert(jobPostings)
+      .values({
+        orgId,
+        title,
+        departmentId: source.departmentId,
+        hiringFlowId: source.hiringFlowId,
+        location: source.location,
+        type: source.type ?? "FULL_TIME",
+        experience: source.experience,
+        salaryMin: source.salaryMin,
+        salaryMax: source.salaryMax,
+        description: source.description,
+        requirements: source.requirements,
+        benefits: source.benefits,
+        openings: source.openings ?? 1,
+        applicationDeadline: source.applicationDeadline,
+        status: "DRAFT",
+        postedBy: userId,
+        screeningQuestions: source.screeningQuestions,
+        isInternal: source.isInternal,
+      })
+      .returning();
+
+    await this.cache.invalidatePattern(`hr:jobs:list:${orgId}:*`);
+    return job;
+  }
+
   async publish(orgId: string, jobId: number, input: PublishJobInput) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),

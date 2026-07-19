@@ -5,7 +5,7 @@ import type { Db } from "../../db/drizzle.module";
 import { guidedTours, userTourProgress } from "../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
 
-const HR_SETUP_TOUR_KEY = "hr_setup";
+export const HR_SETUP_TOUR_KEY = "hr_setup";
 
 @Injectable()
 export class GuidedTourService {

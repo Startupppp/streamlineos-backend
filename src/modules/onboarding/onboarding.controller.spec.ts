@@ -3,6 +3,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { ForbiddenException } from "@nestjs/common";
 import { OnboardingController } from "./onboarding.controller";
 import type { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
+import type { GuidedTourService } from "../onboarding-flow/guided-tour.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -24,6 +25,7 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
 describe("OnboardingController — HR-only module-checklist gating", () => {
   let controller: OnboardingController;
   let checklists: { [K in keyof ModuleChecklistService]?: jest.Mock };
+  let tours: { [K in keyof GuidedTourService]?: jest.Mock };
   let access: { resolveUserPermissions: jest.Mock };
 
   beforeEach(() => {
@@ -35,6 +37,15 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       dismissChecklist: jest.fn().mockResolvedValue({ dismissedAt: new Date() }),
       restartChecklist: jest.fn().mockResolvedValue({ progress: 0, status: "in_progress" }),
     };
+    tours = {
+      listToursForUser: jest.fn().mockResolvedValue([
+        { id: 1, tourKey: "hr_setup", moduleKey: "HR", progress: null },
+        { id: 2, tourKey: "product_tour", moduleKey: null, progress: null },
+      ]),
+      saveProgress: jest.fn().mockResolvedValue({ status: "in_progress", currentStep: 0 }),
+      completeTour: jest.fn().mockResolvedValue({ status: "completed" }),
+      dismissTour: jest.fn().mockResolvedValue({ status: "dismissed" }),
+    };
     access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
 
     // Direct instantiation (not Test.createTestingModule) — this controller's class-level
@@ -44,7 +55,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       undefined as never,
       undefined as never,
       checklists as unknown as ModuleChecklistService,
-      undefined as never,
+      tours as unknown as GuidedTourService,
       undefined as never,
       access as never,
     );
@@ -143,6 +154,67 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
       await controller.listModuleChecklists(ctx({ isOrgOwner: true }));
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
       expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", ["HR", "CRM"], true);
+    });
+  });
+
+  describe("guided-tour routes — the hr_setup tour is HR-only, every other tour stays baseline", () => {
+    it("listTours: filters the hr_setup tour out of the response for a caller with no hr:* permission", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map());
+      const result = await controller.listTours(ctx());
+      expect(result.map((t: { tourKey: string }) => t.tourKey)).toEqual(["product_tour"]);
+    });
+
+    it("listTours: includes hr_setup for a caller with hr:employees:view", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
+      const result = await controller.listTours(ctx());
+      expect(result.map((t: { tourKey: string }) => t.tourKey)).toEqual(["hr_setup", "product_tour"]);
+    });
+
+    it("listTours: includes hr_setup for an org owner without hitting the DB", async () => {
+      const result = await controller.listTours(ctx({ isOrgOwner: true }));
+      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
+      expect(result.map((t: { tourKey: string }) => t.tourKey)).toEqual(["hr_setup", "product_tour"]);
+    });
+
+    it("saveTourProgress: rejects tourKey=hr_setup for a caller with no hr:* permission", async () => {
+      await expect(
+        controller.saveTourProgress("hr_setup", { currentStep: 1 }, ctx()),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tours.saveProgress).not.toHaveBeenCalled();
+    });
+
+    it("saveTourProgress: view permission is enough — a per-user row, unlike the org-wide checklist dismiss", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
+      await controller.saveTourProgress("hr_setup", { currentStep: 1 }, ctx());
+      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "hr_setup", 1);
+    });
+
+    it("saveTourProgress: never runs the HR check for a non-HR tourKey (no regression)", async () => {
+      await controller.saveTourProgress("product_tour", { currentStep: 1 }, ctx());
+      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
+      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "product_tour", 1);
+    });
+
+    it("completeTour: rejects tourKey=hr_setup for a caller with no hr:* permission", async () => {
+      await expect(controller.completeTour("hr_setup", ctx())).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tours.completeTour).not.toHaveBeenCalled();
+    });
+
+    it("dismissTour: rejects tourKey=hr_setup for a caller with no hr:* permission", async () => {
+      await expect(controller.dismissTour("hr_setup", ctx())).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tours.dismissTour).not.toHaveBeenCalled();
+    });
+
+    it("dismissTour: view permission is enough (dismissing my own welcome popup doesn't touch shared org data)", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
+      await controller.dismissTour("hr_setup", ctx());
+      expect(tours.dismissTour).toHaveBeenCalledWith("org-1", "user-1", "hr_setup");
+    });
+
+    it("dismissTour: bypasses the DB permission check for a platform admin", async () => {
+      await controller.dismissTour("hr_setup", ctx({ isPlatformAdmin: true }));
+      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
+      expect(tours.dismissTour).toHaveBeenCalled();
     });
   });
 });
