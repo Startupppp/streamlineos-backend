@@ -6,7 +6,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
@@ -15,6 +15,7 @@ import {
   magicLinkTokens,
   onboardingTasks,
   organizationMembers,
+  orgDepartments,
   payrollPolicies,
   payrollPolicyVersions,
   salaryStructures,
@@ -552,6 +553,71 @@ export class EmployeeMutationsService {
       deptRows.map((d) => [d.name.trim().toLowerCase(), d.id] as const),
     );
 
+    // Org hierarchy departments (Organization → Departments UI) — sync into
+    // legacy `departments` when bulk rows reference them by name or code.
+    const orgDeptRows = await this.db
+      .select({
+        name: orgDepartments.name,
+        code: orgDepartments.code,
+      })
+      .from(orgDepartments)
+      .where(
+        and(
+          eq(orgDepartments.orgId, actor.orgId),
+          isNull(orgDepartments.deletedAt),
+          sql`${orgDepartments.status} <> 'ARCHIVED'`,
+        ),
+      );
+
+    const orgDeptCanonicalName = new Map<string, string>();
+    for (const d of orgDeptRows) {
+      const name = d.name.trim();
+      if (!name) continue;
+      orgDeptCanonicalName.set(name.toLowerCase(), name);
+      if (d.code?.trim()) {
+        orgDeptCanonicalName.set(d.code.trim().toLowerCase(), name);
+      }
+    }
+
+    const resolveDepartmentId = async (raw: string): Promise<number | undefined> => {
+      const key = raw.trim().toLowerCase();
+      if (!key) return undefined;
+
+      const existing = deptByName.get(key);
+      if (existing != null) return existing;
+
+      const canonical = orgDeptCanonicalName.get(key);
+      if (!canonical) return undefined;
+
+      const byCanonical = deptByName.get(canonical.toLowerCase());
+      if (byCanonical != null) return byCanonical;
+
+      const inserted = await this.db
+        .insert(departments)
+        .values({ orgId: actor.orgId, name: canonical })
+        .onConflictDoNothing({ target: [departments.orgId, departments.name] })
+        .returning({ id: departments.id, name: departments.name });
+
+      let row = inserted[0];
+      if (!row) {
+        const [found] = await this.db
+          .select({ id: departments.id, name: departments.name })
+          .from(departments)
+          .where(
+            and(
+              eq(departments.orgId, actor.orgId),
+              sql`lower(${departments.name}) = ${canonical.toLowerCase()}`,
+            ),
+          )
+          .limit(1);
+        row = found;
+      }
+      if (!row) return undefined;
+
+      deptByName.set(row.name.trim().toLowerCase(), row.id);
+      return row.id;
+    };
+
     // Detect duplicate emails within the same upload
     const seenEmails = new Set<string>();
     const results: Array<{
@@ -584,14 +650,14 @@ export class EmployeeMutationsService {
 
       let departmentId = row.departmentId;
       if (departmentId == null && row.department) {
-        departmentId = deptByName.get(row.department.trim().toLowerCase());
+        departmentId = await resolveDepartmentId(row.department);
         if (departmentId == null) {
           failed += 1;
           results.push({
             row: rowNum,
             email,
             success: false,
-            error: `Unknown department "${row.department}". Create it first or use an existing name.`,
+            error: `Unknown department "${row.department}". Create it under Organization → Departments (or HR departments) first.`,
           });
           continue;
         }

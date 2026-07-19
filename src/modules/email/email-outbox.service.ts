@@ -40,7 +40,7 @@ export class EmailOutboxService {
     const row = inserted[0];
     if (!row) {
       this.logger.error("EMAIL_OUTBOX: insert failed", { to: toEmail, subject: options.subject });
-      return;
+      throw new Error("Failed to enqueue email");
     }
 
     if (getEmailProvider() === "none") {
@@ -53,7 +53,7 @@ export class EmailOutboxService {
         to: toEmail,
         subject: options.subject,
       });
-      return;
+      throw new Error("No email provider configured");
     }
 
     try {
@@ -79,20 +79,23 @@ export class EmailOutboxService {
           subject: options.subject,
           error: errorMessage,
         });
-      } else {
-        const reason = hasAttachments ? "has-attachments" : "non-retryable-error";
-        await this.db
-          .update(emailOutbox)
-          .set({ status: "FAILED", attempts: 1, lastError: `${reason}: ${errorMessage}` })
-          .where(eq(emailOutbox.id, row.id));
-        this.logger.error("EMAIL_OUTBOX: send failed (not retryable)", {
-          id: row.id,
-          to: toEmail,
-          subject: options.subject,
-          reason,
-          error: errorMessage,
-        });
+        // Queued for cron retry — treat as accepted for callers
+        return;
       }
+
+      const reason = hasAttachments ? "has-attachments" : "non-retryable-error";
+      await this.db
+        .update(emailOutbox)
+        .set({ status: "FAILED", attempts: 1, lastError: `${reason}: ${errorMessage}` })
+        .where(eq(emailOutbox.id, row.id));
+      this.logger.error("EMAIL_OUTBOX: send failed (not retryable)", {
+        id: row.id,
+        to: toEmail,
+        subject: options.subject,
+        reason,
+        error: errorMessage,
+      });
+      throw err instanceof Error ? err : new Error(errorMessage);
     }
   }
 

@@ -76,7 +76,13 @@ export class AuthService {
           token: hashToken(rawToken),
           expires: addHours(new Date(), 24),
         });
-        void this.email.sendVerificationEmail(normalizedEmail, rawToken).catch(() => {});
+        try {
+          await this.email.sendVerificationEmail(normalizedEmail, rawToken);
+        } catch {
+          throw new ServiceUnavailableException(
+            "Account exists but we could not send the verification email. Try resend on the signup page.",
+          );
+        }
       }
       return { success: true };
     }

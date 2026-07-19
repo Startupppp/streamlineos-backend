@@ -61,6 +61,7 @@ export class EmployeesService {
       search?: string;
       departmentId?: number;
       isActive?: "true" | "false" | "all";
+      role?: string;
     },
     scope: DataScope,
   ) {
@@ -70,9 +71,10 @@ export class EmployeesService {
     const limitN = opts.limit ?? 20;
     const isActive = opts.isActive ?? "true";
     const departmentId = opts.departmentId;
+    const role = opts.role?.trim() || undefined;
 
     // Always paginate the directory listing so large orgs don't load unbounded lists.
-    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}`;
+    const key = `hr:employees:paginated:${orgId}:${branchKey}:${scope}:${pageN}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
     return this.cache.cached(
       key,
       () =>
@@ -85,6 +87,7 @@ export class EmployeesService {
           scope,
           departmentId,
           isActive,
+          role,
         ),
       CACHE_TTL.SHORT,
     );
@@ -152,6 +155,7 @@ export class EmployeesService {
     scope: DataScope,
     departmentId?: number,
     isActive: "true" | "false" | "all" = "true",
+    role?: string,
   ) {
     const offset = (page - 1) * limit;
 
@@ -162,6 +166,7 @@ export class EmployeesService {
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
     if (departmentId != null) baseConditions.push(eq(users.departmentId, departmentId));
+    if (role) baseConditions.push(eq(users.role, role));
 
     const branchCond = branchIdFilter(users.branchId, branch);
     if (branchCond) baseConditions.push(branchCond);

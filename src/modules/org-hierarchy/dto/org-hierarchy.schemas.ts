@@ -7,9 +7,20 @@ const code = z
   .toUpperCase()
   .regex(/^[A-Z0-9]{2,20}$/, "Code must be 2–20 uppercase alphanumeric characters");
 
+const orgNodeName = z
+  .string()
+  .trim()
+  .min(1, "Name is required")
+  .max(100)
+  .refine((v) => /[\p{L}\p{N}]/u.test(v), {
+    message: "Name must contain at least one letter or number",
+  });
+
+const optionalOrgNodeName = orgNodeName.optional();
+
 export const createBusinessUnitSchema = z
   .object({
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     code,
     description: z.string().trim().max(500).optional(),
   })
@@ -19,7 +30,7 @@ export type CreateBusinessUnitInput = z.infer<typeof createBusinessUnitSchema>;
 
 export const updateBusinessUnitSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     code: code.optional(),
     description: z.string().trim().max(500).optional(),
     status: nodeStatus.optional(),
@@ -30,7 +41,7 @@ export type UpdateBusinessUnitInput = z.infer<typeof updateBusinessUnitSchema>;
 
 export const createOrgBranchSchema = z
   .object({
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     code,
     businessUnitId: z.string().uuid().optional(),
     managerUserId: z.string().optional(),
@@ -48,7 +59,7 @@ export type CreateOrgBranchInput = z.infer<typeof createOrgBranchSchema>;
 
 export const updateOrgBranchSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     code: code.optional(),
     businessUnitId: z.string().uuid().optional().nullable(),
     managerUserId: z.string().optional().nullable(),
@@ -67,7 +78,7 @@ export type UpdateOrgBranchInput = z.infer<typeof updateOrgBranchSchema>;
 
 export const createOrgDepartmentSchema = z
   .object({
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     code,
     branchId: z.string().uuid().optional(),
     headUserId: z.string().optional(),
@@ -79,7 +90,7 @@ export type CreateOrgDepartmentInput = z.infer<typeof createOrgDepartmentSchema>
 
 export const updateOrgDepartmentSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     code: code.optional(),
     branchId: z.string().uuid().optional().nullable(),
     headUserId: z.string().optional().nullable(),
@@ -92,7 +103,7 @@ export type UpdateOrgDepartmentInput = z.infer<typeof updateOrgDepartmentSchema>
 
 export const createOrgTeamSchema = z
   .object({
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     code,
     departmentId: z.string().uuid().optional(),
     leadUserId: z.string().optional(),
@@ -105,7 +116,7 @@ export type CreateOrgTeamInput = z.infer<typeof createOrgTeamSchema>;
 
 export const updateOrgTeamSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     code: code.optional(),
     departmentId: z.string().uuid().optional().nullable(),
     leadUserId: z.string().optional().nullable(),
@@ -119,7 +130,7 @@ export type UpdateOrgTeamInput = z.infer<typeof updateOrgTeamSchema>;
 
 export const createOrgLocationSchema = z
   .object({
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     type: z.enum(["OFFICE", "WAREHOUSE", "STORE", "FACTORY", "REMOTE"]).default("OFFICE"),
     address: z.string().trim().max(500).optional(),
     latitude: z.number().min(-90).max(90).optional(),
@@ -131,7 +142,7 @@ export type CreateOrgLocationInput = z.infer<typeof createOrgLocationSchema>;
 
 export const updateOrgLocationSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     type: z.enum(["OFFICE", "WAREHOUSE", "STORE", "FACTORY", "REMOTE"]).optional(),
     address: z.string().trim().max(500).optional(),
     latitude: z.number().min(-90).max(90).optional().nullable(),
@@ -145,7 +156,7 @@ export type UpdateOrgLocationInput = z.infer<typeof updateOrgLocationSchema>;
 export const createCostCenterSchema = z
   .object({
     code,
-    name: z.string().trim().min(1).max(100),
+    name: orgNodeName,
     description: z.string().trim().max(500).optional(),
   })
   .strict();
@@ -155,7 +166,7 @@ export type CreateCostCenterInput = z.infer<typeof createCostCenterSchema>;
 export const updateCostCenterSchema = z
   .object({
     code: code.optional(),
-    name: z.string().trim().min(1).max(100).optional(),
+    name: optionalOrgNodeName,
     description: z.string().trim().max(500).optional(),
     status: nodeStatus.optional(),
   })

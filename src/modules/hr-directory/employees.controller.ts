@@ -94,6 +94,7 @@ export class EmployeesController {
       search,
       departmentId: query.departmentId,
       isActive: query.isActive,
+      role: query.role,
     }, scope);
   }
 
