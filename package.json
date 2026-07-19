@@ -58,7 +58,6 @@
     "jose": "^5.9.6",
     "mammoth": "^1.12.0",
     "multer": "^2.2.0",
-    "nodemailer": "^9.0.3",
     "otplib": "^13.4.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
@@ -70,6 +69,7 @@
     "sharp": "^0.35.3",
     "ua-parser-js": "^1.0.40",
     "web-push": "^3.6.7",
+    "zeptomail": "^8.0.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -85,7 +85,6 @@
     "@types/jest": "^29.5.14",
     "@types/multer": "^2.1.0",
     "@types/node": "^20.17.0",
-    "@types/nodemailer": "^8.0.1",
     "@types/pdf-parse": "^1.1.5",
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^6.0.2",

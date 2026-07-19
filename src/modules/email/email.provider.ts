@@ -1,33 +1,25 @@
 import { Resend } from "resend";
-import nodemailer, { type Transporter } from "nodemailer";
+import { SendMailClient } from "zeptomail";
 import { logger } from "../../common/logger/logger.service";
-import { getFromAddress } from "./email.constants";
+import { getFromAddress, getFromParts } from "./email.constants";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const ZEPTOMAIL_TIMEOUT_MS = 30_000;
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const ZEPTOMAIL_SMTP_HOST = process.env.ZEPTOMAIL_SMTP_HOST?.trim() || "smtp.zeptomail.in";
-const ZEPTOMAIL_SMTP_PORT = Number(process.env.ZEPTOMAIL_SMTP_PORT) || 587;
-const ZEPTOMAIL_SMTP_USER = process.env.ZEPTOMAIL_SMTP_USER?.trim() || "emailapikey";
-const ZEPTOMAIL_SMTP_PASS = process.env.ZEPTOMAIL_SMTP_PASS?.trim();
+const ZEPTOMAIL_API_URL = process.env.ZEPTOMAIL_API_URL?.trim() || "https://api.zeptomail.in/v1.1/email";
+const ZEPTOMAIL_TOKEN_RAW = process.env.ZEPTOMAIL_TOKEN?.trim();
+const ZEPTOMAIL_TOKEN = ZEPTOMAIL_TOKEN_RAW
+  ? ZEPTOMAIL_TOKEN_RAW.startsWith("Zoho-enczapikey")
+    ? ZEPTOMAIL_TOKEN_RAW
+    : `Zoho-enczapikey ${ZEPTOMAIL_TOKEN_RAW}`
+  : undefined;
 const EMAIL_PROVIDER_PREFERENCE = process.env.EMAIL_PROVIDER?.toLowerCase().trim();
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-
-const zeptomailTransport: Transporter | null = ZEPTOMAIL_SMTP_PASS
-  ? nodemailer.createTransport({
-      host: ZEPTOMAIL_SMTP_HOST,
-      port: ZEPTOMAIL_SMTP_PORT,
-      secure: ZEPTOMAIL_SMTP_PORT === 465,
-      requireTLS: ZEPTOMAIL_SMTP_PORT !== 465,
-      pool: true,
-      maxConnections: 3,
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 30_000,
-      auth: { user: ZEPTOMAIL_SMTP_USER, pass: ZEPTOMAIL_SMTP_PASS },
-    })
+const zeptomail = ZEPTOMAIL_TOKEN
+  ? new SendMailClient({ url: ZEPTOMAIL_API_URL, token: ZEPTOMAIL_TOKEN })
   : null;
 
 export type Provider = "zeptomail" | "resend" | "none";
@@ -62,9 +54,9 @@ class EmailSendError extends Error {
 }
 
 function resolveProvider(): Provider {
-  if (EMAIL_PROVIDER_PREFERENCE === "zeptomail" && zeptomailTransport) return "zeptomail";
+  if (EMAIL_PROVIDER_PREFERENCE === "zeptomail" && zeptomail) return "zeptomail";
   if (EMAIL_PROVIDER_PREFERENCE === "resend" && resend) return "resend";
-  if (zeptomailTransport) return "zeptomail";
+  if (zeptomail) return "zeptomail";
   if (resend) return "resend";
   return "none";
 }
@@ -99,7 +91,7 @@ export function isTransientError(error: unknown): boolean {
   if (error instanceof EmailSendError) return !error.permanent;
   if (!error || typeof error !== "object") return true;
   const code = (error as { code?: number | string }).code;
-  if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ECONNECTION") {
+  if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ECONNREFUSED") {
     return true;
   }
   const statusCode =
@@ -113,6 +105,22 @@ export function isTransientError(error: unknown): boolean {
 }
 
 const delay = (ms: number): Promise<void> => new Promise<void>((r) => setTimeout(r, ms));
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new EmailSendError(`${label} timed out after ${ms}ms`, false)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (reason: unknown) => {
+        clearTimeout(timer);
+        reject(reason);
+      },
+    );
+  });
+}
 
 async function sendViaResend(options: EmailOptions): Promise<void> {
   if (!resend) throw new EmailSendError("Resend not initialized", true);
@@ -151,47 +159,88 @@ async function sendViaResend(options: EmailOptions): Promise<void> {
   logger.info("Email sent (resend)", { to: recipients, subject: options.subject, id: data?.id });
 }
 
-function smtpErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  return "ZeptoMail SMTP send failed";
+interface ZeptoErrorDetail {
+  code?: string;
+  message?: string;
+  target?: string;
 }
 
-function isPermanentSmtpError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const responseCode = (error as { responseCode?: number }).responseCode;
-  return typeof responseCode === "number" && responseCode >= 500 && responseCode < 600;
+interface ZeptoErrorBody {
+  error?: {
+    code?: string;
+    message?: string;
+    details?: ZeptoErrorDetail[];
+    request_id?: string;
+  };
+}
+
+function zeptoRejectionToError(reason: unknown): EmailSendError {
+  if (reason instanceof EmailSendError) return reason;
+  if (typeof reason === "string") {
+    return new EmailSendError(reason, true, reason);
+  }
+  if (reason instanceof Error) {
+    return new EmailSendError(reason.message || "ZeptoMail send failed", false, reason);
+  }
+  if (reason && typeof reason === "object") {
+    const body = reason as ZeptoErrorBody;
+    if (body.error) {
+      const detail = Array.isArray(body.error.details)
+        ? body.error.details
+            .map((d) => [d.target, d.message].filter(Boolean).join(": "))
+            .filter(Boolean)
+            .join("; ")
+        : "";
+      const message = [body.error.message, detail].filter(Boolean).join(" — ") || "ZeptoMail send failed";
+      const permanent = body.error.code !== "TM_5001";
+      return new EmailSendError(message, permanent, reason);
+    }
+  }
+  return new EmailSendError("ZeptoMail send failed", false, reason);
+}
+
+function toBase64(content: Buffer | string): string {
+  return Buffer.isBuffer(content) ? content.toString("base64") : content;
 }
 
 async function sendViaZeptomail(options: EmailOptions): Promise<void> {
-  if (!zeptomailTransport) throw new EmailSendError("ZeptoMail transport not initialized", true);
+  if (!zeptomail) throw new EmailSendError("ZeptoMail client not initialized", true);
 
   const recipients = normalizeRecipients(options.to);
-  const attachments = options.attachments?.map((a) => ({
-    filename: a.filename,
-    content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content),
-    contentType: a.type,
-    ...(a.cid ? { cid: a.cid } : {}),
-    ...(a.disposition ? { contentDisposition: a.disposition } : {}),
-  }));
-
   const cc = options.cc ? normalizeRecipients(options.cc) : undefined;
   const bcc = options.bcc ? normalizeRecipients(options.bcc) : undefined;
 
+  const inline = options.attachments?.filter((a) => a.cid) ?? [];
+  const regular = options.attachments?.filter((a) => !a.cid) ?? [];
+
+  const toItem = (address: string) => ({ email_address: { address, name: "" } });
+
   try {
-    const info = await zeptomailTransport.sendMail({
-      from: getFromAddress(),
-      to: recipients,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || htmlToText(options.html),
-      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-      ...(cc?.length ? { cc } : {}),
-      ...(bcc?.length ? { bcc } : {}),
-      ...(attachments?.length ? { attachments } : {}),
-    });
-    logger.info("Email sent (zeptomail)", { to: recipients, subject: options.subject, id: info.messageId });
-  } catch (error) {
-    throw new EmailSendError(smtpErrorMessage(error), isPermanentSmtpError(error), error);
+    const response = await withTimeout(
+      zeptomail.sendMail({
+        from: getFromParts(),
+        to: recipients.map(toItem),
+        subject: options.subject,
+        htmlbody: options.html,
+        textbody: options.text || htmlToText(options.html),
+        ...(options.replyTo ? { reply_to: [{ address: options.replyTo, name: "" }] } : {}),
+        ...(cc?.length ? { cc: cc.map(toItem) } : {}),
+        ...(bcc?.length ? { bcc: bcc.map(toItem) } : {}),
+        ...(regular.length
+          ? { attachments: regular.map((a) => ({ name: a.filename, mime_type: a.type, content: toBase64(a.content) })) }
+          : {}),
+        ...(inline.length
+          ? { inline_images: inline.map((a) => ({ cid: a.cid ?? "", mime_type: a.type, content: toBase64(a.content) })) }
+          : {}),
+      }),
+      ZEPTOMAIL_TIMEOUT_MS,
+      "ZeptoMail send",
+    );
+    const requestId =
+      response && typeof response === "object" ? (response as { request_id?: string }).request_id : undefined;
+    logger.info("Email sent (zeptomail)", { to: recipients, subject: options.subject, requestId });
+  } catch (reason) {
+    throw zeptoRejectionToError(reason);
   }
 }
 
@@ -226,7 +275,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
     logger.warn("EMAIL_SKIPPED: no email provider configured", {
       to: recipients,
       subject: options.subject,
-      hint: "Set EMAIL_PROVIDER + ZEPTOMAIL_SMTP_PASS (or RESEND_API_KEY) in .env",
+      hint: "Set EMAIL_PROVIDER + ZEPTOMAIL_TOKEN (or RESEND_API_KEY) in .env",
     });
     throw new EmailSendError("No email provider configured", true);
   }
@@ -234,7 +283,7 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
   const fallbackProvider: Provider | null =
     activeProvider === "zeptomail" && resend
       ? "resend"
-      : activeProvider === "resend" && zeptomailTransport
+      : activeProvider === "resend" && zeptomail
         ? "zeptomail"
         : null;
 

@@ -41,7 +41,7 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
   async validateConfig(): Promise<ProviderValidationResult> {
     const provider = getEmailProvider();
     return provider === "none"
-      ? { valid: false, message: "No email provider configured (set ZEPTOMAIL_SMTP_PASS or RESEND_API_KEY)" }
+      ? { valid: false, message: "No email provider configured (set ZEPTOMAIL_TOKEN or RESEND_API_KEY)" }
       : { valid: true, message: `Email provider: ${provider}` };
   }
 

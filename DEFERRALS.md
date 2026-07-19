@@ -69,7 +69,7 @@ The integration modules that previously blocked the deferred routes above have l
 
 | Module | Routes | Provider(s) / deps | Unblocks |
 | --- | --- | --- | --- |
-| email | 3 | ZeptoMail SMTP + Resend fallback (`nodemailer`, `resend`), `exceljs` for xlsx attachments, Twilio gateway for SMS | notifications-email rows under deals / organization / projects |
+| email | 3 | ZeptoMail API + Resend fallback (`zeptomail`, `resend`), `exceljs` for xlsx attachments, Twilio gateway for SMS | notifications-email rows under deals / organization / projects |
 | ai | 22 | `@langchain/openai` (chat + embeddings, OpenAI), `ai` + `@ai-sdk/google` (streaming chat / RAG generation, Gemini) | kb-rag rows under support (KB semantic Q&A, reindex, index-status) |
 | storage | 7 | `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` (R2/S3 presign + delete), `multer` upload interceptor | object-storage-r2 row under support (KB attachment download presign + delete) |
 | billing | 4 | Razorpay (HMAC-verified REST + webhook); no extra npm dep | — (new) |

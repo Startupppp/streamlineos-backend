@@ -15,7 +15,7 @@ export class AutomationEmailService {
     if (getEmailProvider() === "none") {
       logger.warn("automation.email skipped: no provider configured", {
         subject: options.subject,
-        hint: "Set EMAIL_PROVIDER + ZEPTOMAIL_SMTP_PASS (or RESEND_API_KEY) in .env",
+        hint: "Set EMAIL_PROVIDER + ZEPTOMAIL_TOKEN (or RESEND_API_KEY) in .env",
       });
       return;
     }

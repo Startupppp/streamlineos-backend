@@ -57,7 +57,7 @@ export class HrSendEmailController {
   ) {
     if (getEmailProvider() === "none")
       throw new BadRequestException(
-        "Email not configured. Set ZEPTOMAIL_SMTP_PASS or RESEND_API_KEY.",
+        "Email not configured. Set ZEPTOMAIL_TOKEN or RESEND_API_KEY.",
       );
 
     let subject = body.subject;

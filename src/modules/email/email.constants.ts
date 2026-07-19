@@ -26,6 +26,10 @@ export function getFromAddress(): string {
   return name ? `${name} <${email}>` : email;
 }
 
+export function getFromParts(): { address: string; name: string } {
+  return { address: getFromEmail(), name: getFromName() ?? "" };
+}
+
 export function getSupportEmail(): string {
   return getFromEmail();
 }
