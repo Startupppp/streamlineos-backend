@@ -13,6 +13,7 @@ import {
   chatMessages,
   users,
 } from "../../db/schema";
+import type { ChatAttachmentPayload } from "../realtime/dto/realtime.schemas";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -133,7 +134,7 @@ export class ChatMessagesService {
       }
     }
 
-    const message = await this.db.transaction(async (tx) => {
+    const { message, insertedAttachments } = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(chatMessages)
         .values({
@@ -145,8 +146,9 @@ export class ChatMessagesService {
         })
         .returning();
 
+      let attachmentRows: ChatAttachmentPayload[] = [];
       if (body.attachments && body.attachments.length > 0) {
-        await tx.insert(chatAttachments).values(
+        attachmentRows = await tx.insert(chatAttachments).values(
           body.attachments.map((a) => ({
             messageId: created.id,
             fileName: a.fileName,
@@ -155,7 +157,7 @@ export class ChatMessagesService {
             fileSize: a.fileSize,
             mimeType: a.mimeType,
           })),
-        );
+        ).returning();
       }
 
       await tx
@@ -168,14 +170,14 @@ export class ChatMessagesService {
         .set({ archivedAt: null })
         .where(eq(chatChannelMembers.channelId, channelId));
 
-      return created;
+      return { message: created, insertedAttachments: attachmentRows };
     });
 
     void this.cache.invalidatePattern(`chat:unread:*:${orgId}`).catch(() => undefined);
     void this.replyReminders
       .scheduleForMessage(orgId, channelId, message.id, userId)
       .catch(() => undefined);
-    void this.dispatchMessageSideEffects(orgId, channelId, message, body).catch(() => undefined);
+    void this.dispatchMessageSideEffects(orgId, channelId, message, body, insertedAttachments).catch(() => undefined);
 
     return message;
   }
@@ -185,26 +187,30 @@ export class ChatMessagesService {
     channelId: number,
     message: PersistedMessage,
     body: SendMessageInput,
+    insertedAttachments: ChatAttachmentPayload[],
   ): Promise<void> {
     if (!this.ably.configured && !this.webPush.configured) return;
 
     const [sender] = await this.db
-      .select({ name: users.name })
+      .select({ name: users.name, image: users.image })
       .from(users)
       .where(eq(users.id, message.senderId))
       .limit(1);
     const senderName = sender?.name ?? null;
+    const senderImage = sender?.image ?? null;
 
     await this.ably.publishChatMessage(orgId, channelId, {
       id: message.id,
       channelId: message.channelId,
       senderId: message.senderId,
       senderName,
+      senderImage,
       content: message.content,
       createdAt: message.createdAt,
       replyToId: message.replyToId,
       metadata: message.metadata,
       messageType: message.messageType,
+      attachments: insertedAttachments,
     });
 
     await this.webPush.sendToChannelMembers(channelId, message.senderId, {
@@ -260,7 +266,7 @@ export class ChatMessagesService {
     }
   }
 
-  async edit(messageId: number, userId: string, content: string) {
+  async edit(messageId: number, userId: string, orgId: string, content: string) {
     const message = await this.db.query.chatMessages.findFirst({
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
@@ -272,15 +278,24 @@ export class ChatMessagesService {
       throw new ForbiddenException("You can only edit your own messages");
     }
 
+    const updatedAt = new Date();
     await this.db
       .update(chatMessages)
-      .set({ content: content.trim(), isEdited: true, updatedAt: new Date() })
+      .set({ content: content.trim(), isEdited: true, updatedAt })
       .where(and(eq(chatMessages.id, messageId), eq(chatMessages.senderId, userId)));
+
+    void this.ably.publishChatEvent(orgId, message.channelId, "message:updated", {
+      id: messageId,
+      channelId: message.channelId,
+      content: content.trim(),
+      isEdited: true,
+      updatedAt: updatedAt.toISOString(),
+    }).catch(() => undefined);
 
     return { ok: true };
   }
 
-  async remove(messageId: number, userId: string, role: string) {
+  async remove(messageId: number, userId: string, role: string, orgId: string) {
     const message = await this.db.query.chatMessages.findFirst({
       where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
@@ -298,6 +313,11 @@ export class ChatMessagesService {
       .update(chatMessages)
       .set({ isDeleted: true, content: null, updatedAt: new Date() })
       .where(and(eq(chatMessages.id, messageId), eq(chatMessages.channelId, message.channelId)));
+
+    void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
+      id: messageId,
+      channelId: message.channelId,
+    }).catch(() => undefined);
 
     return { ok: true };
   }
@@ -409,16 +429,18 @@ export class ChatMessagesService {
         channelId: message.channelId,
         senderId: message.senderId,
         senderName,
+        senderImage: null,
         content: message.content,
         createdAt: message.createdAt,
         replyToId: message.replyToId,
         metadata,
         messageType: "system",
+        attachments: [],
       })
       .catch(() => undefined);
   }
 
-  async react(channelId: number, messageId: number, userId: string, emoji: string) {
+  async react(channelId: number, messageId: number, userId: string, orgId: string, emoji: string) {
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.channelId, channelId),
@@ -459,6 +481,12 @@ export class ChatMessagesService {
       .update(chatMessages)
       .set({ reactions: updated, updatedAt: new Date() })
       .where(eq(chatMessages.id, messageId));
+
+    void this.ably.publishChatEvent(orgId, channelId, "reaction:updated", {
+      messageId,
+      channelId,
+      reactions: updated,
+    }).catch(() => undefined);
 
     return { reactions: updated };
   }

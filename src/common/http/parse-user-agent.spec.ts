@@ -1,9 +1,16 @@
 import {
+  enrichUserAgent,
   parseUserAgent,
   resolveDeviceClientInfo,
   withClientInfo,
   withDeviceClientInfo,
 } from "./parse-user-agent";
+
+const ELECTRON_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.291 Electron/39.0.0 Safari/537.36";
+
+const ELECTRON_PRODUCT_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) StreamlineOS/1.2.0 Chrome/120.0.6099.291 Electron/39.0.0 Safari/537.36";
 
 describe("parseUserAgent", () => {
   it("labels axios as an API client", () => {
@@ -23,6 +30,24 @@ describe("parseUserAgent", () => {
     expect(result.platform).toBe("Desktop");
   });
 
+  it("labels Electron shells as StreamlineOS Desktop without engine version", () => {
+    const result = parseUserAgent(ELECTRON_UA);
+    expect(result.browser).toBe("StreamlineOS Desktop");
+    expect(result.os).toBe("Windows");
+    expect(result.platform).toBe("Desktop");
+  });
+
+  it("prefers StreamlineOS product token over Electron engine label", () => {
+    const result = parseUserAgent(ELECTRON_PRODUCT_UA);
+    expect(result.browser).toBe("StreamlineOS Desktop");
+    expect(result.os).toBe("macOS");
+  });
+
+  it("honors x-client-app hints for desktop shells", () => {
+    const result = parseUserAgent(ELECTRON_UA, { clientApp: "StreamlineOS Desktop" });
+    expect(result.browser).toBe("StreamlineOS Desktop");
+  });
+
   it("labels curl as cURL", () => {
     expect(parseUserAgent("curl/8.4.0").browser).toBe("cURL 8.4.0");
   });
@@ -33,6 +58,19 @@ describe("parseUserAgent", () => {
       os: null,
       platform: null,
     });
+  });
+});
+
+describe("enrichUserAgent", () => {
+  it("appends a StreamlineOS product token from client-app hints", () => {
+    expect(enrichUserAgent(ELECTRON_UA, { clientApp: "StreamlineOS Desktop" })).toContain(
+      "StreamlineOS/Desktop",
+    );
+  });
+
+  it("does not duplicate StreamlineOS tokens", () => {
+    const enriched = enrichUserAgent(ELECTRON_PRODUCT_UA, { clientApp: "StreamlineOS Desktop" });
+    expect(enriched.match(/StreamlineOS/gi)?.length).toBe(1);
   });
 });
 
@@ -63,6 +101,21 @@ describe("resolveDeviceClientInfo", () => {
     });
     expect(result.browser).toBe("Chrome 124");
     expect(result.os).toBe("macOS");
+  });
+
+  it("relabels legacy stored Electron browser labels", () => {
+    expect(
+      resolveDeviceClientInfo({
+        browser: "Electron 39",
+        os: "Windows",
+        platform: "Desktop",
+        fingerprint: "device-fp-1",
+      }),
+    ).toEqual({
+      browser: "StreamlineOS Desktop",
+      os: "Windows",
+      platform: "Desktop",
+    });
   });
 });
 

@@ -33,7 +33,7 @@ export class ExternalCalendarEventsService {
     endIso: string,
   ): Promise<ExternalEventsResult> {
     if (!this.gateway.isConfigured()) return { events: [], errors: [] };
-    const connections = await this.db
+    const allConnections = await this.db
       .select({
         id: userIntegrationConnections.id,
         toolkit: userIntegrationConnections.toolkit,
@@ -48,6 +48,10 @@ export class ExternalCalendarEventsService {
           eq(userIntegrationConnections.status, "active"),
         ),
       );
+    const connections = allConnections.filter(
+      (c): c is typeof c & { toolkit: "googlecalendar" | "outlook" } =>
+        c.toolkit === "googlecalendar" || c.toolkit === "outlook",
+    );
     if (connections.length === 0) return { events: [], errors: [] };
 
     const mappedRows = await this.db

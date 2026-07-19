@@ -85,6 +85,9 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "chat.summarize": 1,
   "payroll.explain-payslip": 1,
   "timesheets.summarize": 1,
+  "mail.inbox-summary": 2,
+  "mail.thread-summary": 1,
+  "mail.draft": 1,
 };
 
 export function getFeatureCost(feature: string): number {

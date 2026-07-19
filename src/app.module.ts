@@ -153,6 +153,7 @@ import { FinanceAssetsModule } from "./modules/finance-assets/finance-assets.mod
 import { FinanceControlsModule } from "./modules/finance-controls/finance-controls.module";
 import { AccountingAiModule } from "./modules/accounting-ai/accounting-ai.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
+import { MailModule } from "./modules/mail/mail.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -310,6 +311,7 @@ import { MeService } from "./me/me.service";
     FinanceControlsModule,
     AccountingAiModule,
     AgentAccessModule,
+    MailModule,
   ],
   controllers: [HealthController, MeController],
   providers: [

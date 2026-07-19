@@ -23,17 +23,14 @@ import {
   huddleSignalSchema,
   muteSchema,
   raiseHandSchema,
-  cameraSchema,
   screenShareSchema,
   kickSchema,
   type HuddleSignalInput,
   type MuteInput,
   type RaiseHandInput,
-  type CameraInput,
   type ScreenShareInput,
   type KickInput,
 } from "./dto/huddle.schemas";
-import { videoSignalSchema, type VideoSignalInput } from "./dto/video.schemas";
 import { z } from "zod";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
@@ -72,7 +69,7 @@ export class ChatHuddlesController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.getActiveHuddle(channelId, u.userId);
+    return this.huddles.getActiveHuddle(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Join an active huddle" })
@@ -140,53 +137,33 @@ export class ChatHuddlesController {
 
   @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
+  @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("huddles/:huddleId/signal")
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
-  sendSignal(
+  async sendSignal(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body(new ZodValidationPipe(huddleSignalSchema)) body: HuddleSignalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const rl = await this.rateLimit.check("chat:huddle-signal", u.userId);
+    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.huddles.sendSignal(huddleId, u.userId, body, u.orgId);
   }
 
-  @ApiOperation({ summary: "Start a video meeting in a channel" })
+  @ApiOperation({ summary: "Heartbeat to keep a participant active in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
-  @Post("channels/:channelId/meeting/start")
+  @ApiResponse({ status: 429, description: "Rate limited" })
+  @Patch("huddles/:huddleId/heartbeat")
   @HttpCode(200)
-  @RequirePermission("chat:channels:write")
-  startMeeting(
-    @Param("channelId", ParseIntPipe) channelId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.huddles.startVideoMeeting(channelId, u.userId, u.orgId);
-  }
-
-  @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a video meeting" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Post("huddles/:huddleId/meeting-signal")
-  @HttpCode(200)
-  @RequirePermission("chat:channels:write")
-  meetingSignal(
+  @RequirePermission("chat:channels:read")
+  async heartbeat(
     @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body(new ZodValidationPipe(videoSignalSchema)) body: VideoSignalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.sendMeetingSignal(huddleId, u.userId, u.orgId, body.targetUserId, body.type, body.payload);
-  }
-
-  @ApiOperation({ summary: "Toggle camera on/off in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Patch("huddles/:huddleId/camera")
-  @HttpCode(200)
-  @RequirePermission("chat:messages:write")
-  setCameraState(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body(new ZodValidationPipe(cameraSchema)) body: CameraInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.huddles.setCameraState(huddleId, u.userId, body.isCameraOff, u.orgId);
+    const rl = await this.rateLimit.check("chat:huddle-heartbeat", u.userId);
+    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
+    return this.huddles.heartbeat(huddleId, u.userId);
   }
 
   @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })

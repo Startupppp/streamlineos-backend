@@ -3,7 +3,13 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
+
+function headerString(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
 
 @Controller("hr/sessions")
 @UseGuards(JwtAuthGuard)
@@ -12,7 +18,15 @@ export class SessionsController {
 
   @Get()
   list(@Req() req: Request, @CurrentUser() u: CurrentUserContext) {
-    const userAgent = req.headers["user-agent"];
+    const rawUa =
+      headerString(req.headers["x-client-user-agent"]) ??
+      headerString(req.headers["user-agent"]) ??
+      "";
+    const clientApp =
+      headerString(req.headers["x-client-app"]) ??
+      headerString(req.headers["x-streamlineos-client"]) ??
+      null;
+    const userAgent = enrichUserAgent(rawUa, { clientApp });
     const raw = req.headers["x-forwarded-for"];
     const ipAddress =
       (Array.isArray(raw) ? raw[0] : raw)?.split(",")[0]?.trim() ??

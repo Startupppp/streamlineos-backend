@@ -100,7 +100,7 @@ export class ChatMessagesController {
     @Body(new ZodValidationPipe(editMessageSchema)) body: EditMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.edit(messageId, u.userId, body.content);
+    return this.messages.edit(messageId, u.userId, u.orgId, body.content);
   }
 
   @ApiOperation({ summary: "Soft-delete a message" })
@@ -111,7 +111,7 @@ export class ChatMessagesController {
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.remove(messageId, u.userId, u.role);
+    return this.messages.remove(messageId, u.userId, u.role, u.orgId);
   }
 
   @ApiOperation({ summary: "Toggle an emoji reaction on a message" })
@@ -125,7 +125,7 @@ export class ChatMessagesController {
     @Body(new ZodValidationPipe(reactionSchema)) body: ReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.react(channelId, messageId, u.userId, body.emoji);
+    return this.messages.react(channelId, messageId, u.userId, u.orgId, body.emoji);
   }
 
   @ApiOperation({ summary: "List thread replies for a message" })

@@ -37,6 +37,7 @@ import {
   type RequestEmailOtpInput,
   type VerifyEmailOtpInput,
 } from "./dto/auth.schemas";
+import { enrichUserAgent } from "../../common/http/parse-user-agent";
 
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
@@ -56,7 +57,8 @@ export class AuthController {
     ipAddress: string;
   } {
     const rawUa = req.headers["x-client-user-agent"] ?? req.headers["user-agent"] ?? "";
-    const userAgent = rawUa.slice(0, 500);
+    const clientApp = req.headers["x-client-app"] ?? req.headers["x-streamlineos-client"] ?? null;
+    const userAgent = enrichUserAgent(rawUa, { clientApp });
     const ipAddress =
       req.headers["x-client-ip"] ??
       req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ??

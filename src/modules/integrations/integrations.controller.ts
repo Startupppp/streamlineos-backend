@@ -42,7 +42,7 @@ export class IntegrationsController {
     @Body(new ZodValidationPipe(initiateConnectionSchema)) body: InitiateConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.initiate(u.userId, body.toolkit);
+    return this.integrations.initiate(u.userId, body.toolkit, body.returnPath);
   }
 
   @Post("connections/finalize")

@@ -631,12 +631,15 @@ export class CalendarService {
           eq(userIntegrationConnections.orgId, orgId),
           eq(userIntegrationConnections.userId, userId),
           eq(userIntegrationConnections.status, "active"),
+          inArray(userIntegrationConnections.toolkit, ["googlecalendar", "outlook"]),
         ),
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new Error("Calendar account connection not found");
-    return row;
+    if (!row || (row.toolkit !== "googlecalendar" && row.toolkit !== "outlook")) {
+      throw new Error("Calendar account connection not found");
+    }
+    return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
   private async attendeeEmails(attendeeIds: string[]): Promise<string[]> {

@@ -30,6 +30,7 @@ const schema = z
     COMPOSIO_API_KEY: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
+    COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV !== "production") return;

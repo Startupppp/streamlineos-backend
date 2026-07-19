@@ -61,8 +61,10 @@ export class IntegrationsService {
       .limit(50);
   }
 
-  async initiate(userId: string, toolkit: IntegrationToolkit) {
-    const callbackUrl = `${this.config.APP_URL}/calendar`;
+  async initiate(userId: string, toolkit: IntegrationToolkit, returnPath?: "/calendar" | "/mail") {
+    const defaultPath = toolkit === "gmail" ? "/mail" : "/calendar";
+    const resolvedPath = returnPath ?? defaultPath;
+    const callbackUrl = `${this.config.APP_URL}${resolvedPath}`;
     return this.gateway.initiateConnection(userId, toolkit, callbackUrl);
   }
 
@@ -253,7 +255,7 @@ export class IntegrationsService {
   }
 
   private toToolkit(slug: string | null): IntegrationToolkit {
-    if (slug === "googlecalendar" || slug === "outlook") return slug;
+    if (slug === "googlecalendar" || slug === "outlook" || slug === "gmail") return slug;
     throw new BadRequestException(`Unsupported toolkit: ${slug ?? "unknown"}`);
   }
 

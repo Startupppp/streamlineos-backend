@@ -1,11 +1,12 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ChatHuddlesService } from "./chat-huddles.service";
+import { ChatHuddlesService, HUDDLE_MESH_MAX_PARTICIPANTS } from "./chat-huddles.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 
 const mockDb = {
   query: {
@@ -33,6 +34,9 @@ const mockAudit = { log: jest.fn() };
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }),
 };
+const mockPlanLimits = {
+  resolveTier: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }),
+};
 
 describe("ChatHuddlesService", () => {
   let service: ChatHuddlesService;
@@ -40,6 +44,7 @@ describe("ChatHuddlesService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
+    mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatHuddlesService,
@@ -48,6 +53,7 @@ describe("ChatHuddlesService", () => {
         { provide: WebPushService, useValue: mockWebPush },
         { provide: AuditService, useValue: mockAudit },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
       ],
     }).compile();
     service = module.get(ChatHuddlesService);
@@ -138,6 +144,78 @@ describe("ChatHuddlesService", () => {
       mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
       const result = await service.joinHuddle(1, "user2", "org1");
       expect(result).toEqual({ ok: true });
+    });
+
+    it("FREE plan: third join throws ForbiddenException with upgrade message", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "FREE", plan: "FREE" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user3", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([
+        { userId: "user1" },
+        { userId: "user2" },
+      ]);
+      await expect(service.joinHuddle(1, "user3", "org1")).rejects.toThrow(
+        new ForbiddenException("Huddles are one-to-one on the Free plan. Upgrade to start group huddles."),
+      );
+    });
+
+    it("PAID plan: third join is allowed subject to org max", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user3", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([
+        { userId: "user1" },
+        { userId: "user2" },
+      ]);
+      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
+      const result = await service.joinHuddle(1, "user3", "org1");
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("PAID plan: join beyond HUDDLE_MESH_MAX_PARTICIPANTS throws ForbiddenException even when org allows 50", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "newUser", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      const existingParticipants = Array.from({ length: HUDDLE_MESH_MAX_PARTICIPANTS }, (_, i) => ({ userId: `user${i + 1}` }));
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue(existingParticipants);
+      mockOrgSettings.getSettings.mockResolvedValue({ maxHuddleParticipants: 50 });
+      await expect(service.joinHuddle(1, "newUser", "org1")).rejects.toThrow(
+        new ForbiddenException(`This call is full (max ${HUDDLE_MESH_MAX_PARTICIPANTS} participants)`),
+      );
+    });
+  });
+
+  describe("inviteToHuddle", () => {
+    it("throws NotFoundException if huddle not found", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
+      await expect(service.inviteToHuddle(1, "user1", "org1", ["user2"])).rejects.toThrow(NotFoundException);
+    });
+
+    it("FREE plan: invite when 2 active participants throws ForbiddenException", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "FREE", plan: "FREE" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([
+        { userId: "user1" },
+        { userId: "user2" },
+      ]);
+      await expect(service.inviteToHuddle(1, "user1", "org1", ["user3"])).rejects.toThrow(
+        new ForbiddenException("Huddles are one-to-one on the Free plan. Upgrade to start group huddles."),
+      );
+    });
+
+    it("PAID plan: invite proceeds regardless of participant count", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "PAID", plan: "STARTER" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1", role: "MEMBER" });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      const result = await service.inviteToHuddle(1, "user1", "org1", ["user3"]);
+      expect(result).toEqual({ ok: true });
+      expect(mockAbly.publishToUser).toHaveBeenCalledWith("org1", "user3", "notification:huddle_invite", expect.any(Object));
     });
   });
 });

@@ -3,7 +3,7 @@ import { boolean, index, serial, pgTable, text, timestamp, unique } from "drizzl
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 
-export type IntegrationToolkit = "googlecalendar" | "outlook";
+export type IntegrationToolkit = "googlecalendar" | "outlook" | "gmail";
 export type IntegrationConnectionStatus = "active" | "needs_reauth" | "disabled";
 export type IntegrationConnectionScope = "user" | "org";
 

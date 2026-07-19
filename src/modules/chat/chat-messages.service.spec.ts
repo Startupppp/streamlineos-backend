@@ -36,7 +36,11 @@ const mockCache = {
   get: jest.fn().mockResolvedValue(null),
 };
 
-const mockAbly = { publishChatEvent: jest.fn().mockResolvedValue(undefined) };
+const mockAbly = {
+  configured: false,
+  publishChatEvent: jest.fn().mockResolvedValue(undefined),
+  publishChatMessage: jest.fn().mockResolvedValue(undefined),
+};
 const mockWebPush = { sendToUser: jest.fn().mockResolvedValue(undefined) };
 const mockReplyReminders = { scheduleForMessage: jest.fn().mockResolvedValue(undefined) };
 const mockNotifications = {
@@ -136,24 +140,24 @@ describe("ChatMessagesService", () => {
   describe("edit", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(service.edit(999, "user1", "new content")).rejects.toThrow(NotFoundException);
+      await expect(service.edit(999, "user1", "org1", "new content")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the message owner", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderId: "user2", isDeleted: false });
-      await expect(service.edit(1, "user1", "new content")).rejects.toThrow(ForbiddenException);
+      await expect(service.edit(1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe("remove", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(service.remove(999, "user1", "MEMBER")).rejects.toThrow(NotFoundException);
+      await expect(service.remove(999, "user1", "MEMBER", "org1")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the owner and not admin", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderId: "user2", isDeleted: false, channelId: 1 });
-      await expect(service.remove(1, "user1", "MEMBER")).rejects.toThrow(ForbiddenException);
+      await expect(service.remove(1, "user1", "MEMBER", "org1")).rejects.toThrow(ForbiddenException);
     });
   });
 });

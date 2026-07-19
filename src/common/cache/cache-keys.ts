@@ -122,6 +122,10 @@ export const CACHE_KEYS = {
   invTraceabilitySerial: (orgId: string, serialId: number) => `inv:trace:serial:${orgId}:${serialId}`,
   invStockLevelPattern: (orgId: string) => `inv:stock:levels:${orgId}:*`,
 
+  mailMessages: (accountId: number, folder: string, cursor: string, q: string) =>
+    `mail:messages:${accountId}:${folder}:${cursor}:${q}`,
+  mailMessagesPattern: (accountId: number) => `mail:messages:${accountId}:*`,
+
   featureFlags: () => "feature-flags:all",
 
   orgBusinessUnits: (orgId: string) => `org:bu:${orgId}`,

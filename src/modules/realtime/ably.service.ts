@@ -22,8 +22,6 @@ export class AblyService {
       [`chat:${orgId}:*`]: ["subscribe", "publish", "history"],
       [`huddle:${orgId}:*`]: ["subscribe", "publish"],
       [`huddle-signal:${orgId}:*`]: ["subscribe", "publish"],
-      [`meeting:${orgId}:*`]: ["subscribe", "publish"],
-      [`meeting-signal:${orgId}:*`]: ["subscribe", "publish"],
       [`notifications:${orgId}:${clientId}`]: ["subscribe"],
     };
     return this.rest().auth.createTokenRequest({ clientId, capability, ttl: CHAT_TOKEN_TTL_MS });
@@ -41,6 +39,14 @@ export class AblyService {
       .catch(() => undefined);
   }
 
+  async publishChatEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
+    if (!this.apiKey) return;
+    await this.rest()
+      .channels.get(this.channelName(orgId, channelId))
+      .publish(event, data)
+      .catch(() => undefined);
+  }
+
   async publishHuddleEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
     if (!this.apiKey) return;
     await this.rest()
@@ -55,16 +61,6 @@ export class AblyService {
       .channels.get(`huddle-signal:${orgId}:${channelId}:${targetUserId}`)
       .publish("signal", data)
       .catch(() => undefined);
-  }
-
-  async publishMeetingEvent(orgId: string, channelId: number, event: string, data: unknown): Promise<void> {
-    if (!this.apiKey) return;
-    await this.rest().channels.get(`meeting:${orgId}:${channelId}`).publish(event, data).catch(() => undefined);
-  }
-
-  async publishMeetingSignal(orgId: string, channelId: number, targetUserId: string, data: unknown): Promise<void> {
-    if (!this.apiKey) return;
-    await this.rest().channels.get(`meeting-signal:${orgId}:${channelId}:${targetUserId}`).publish("signal", data).catch(() => undefined);
   }
 
   async publishToUser(orgId: string, userId: string, event: string, data: unknown): Promise<void> {

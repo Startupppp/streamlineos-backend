@@ -26,6 +26,15 @@ const googleCalendarInfoSchema = z.object({
   calendar_data: z.object({ id: z.string().optional() }).optional(),
 });
 
+const gmailProfileSchema = z.object({
+  emailAddress: z.string().optional(),
+});
+
+const outlookProfileSchema = z.object({
+  mail: z.string().optional(),
+  userPrincipalName: z.string().optional(),
+});
+
 function unwrapResponseData(value: unknown): unknown {
   if (value !== null && typeof value === "object" && "response_data" in value) {
     return (value as Record<string, unknown>).response_data;
@@ -69,6 +78,7 @@ export class ComposioGateway {
 
   authConfigIdFor(toolkit: IntegrationToolkit): string | null {
     if (toolkit === "googlecalendar") return this.config.COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR ?? null;
+    if (toolkit === "gmail") return this.config.COMPOSIO_AUTH_CONFIG_GMAIL ?? null;
     return this.config.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? null;
   }
 
@@ -173,16 +183,58 @@ export class ComposioGateway {
           {},
           connectedAccountId,
         );
-        const parsed = googleCalendarInfoSchema.safeParse(
-          unwrapResponseData(raw),
-        );
+        const parsed = googleCalendarInfoSchema.safeParse(unwrapResponseData(raw));
         const id = parsed.success ? parsed.data.calendar_data?.id : undefined;
         return id && id.includes("@") ? id : null;
+      }
+      if (toolkit === "gmail") {
+        const raw = await this.executeTool(
+          "GMAIL_GET_PROFILE",
+          userId,
+          { user_id: "me" },
+          connectedAccountId,
+        );
+        const parsed = gmailProfileSchema.safeParse(unwrapResponseData(raw));
+        return parsed.success ? (parsed.data.emailAddress ?? null) : null;
+      }
+      if (toolkit === "outlook") {
+        const raw = await this.executeTool(
+          "OUTLOOK_OUTLOOK_GET_PROFILE",
+          userId,
+          { user_id: "me" },
+          connectedAccountId,
+        );
+        const parsed = outlookProfileSchema.safeParse(unwrapResponseData(raw));
+        if (!parsed.success) return null;
+        return parsed.data.mail ?? parsed.data.userPrincipalName ?? null;
       }
       return null;
     } catch {
       return null;
     }
+  }
+
+  async executeProxy(
+    connectedAccountId: string,
+    method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH",
+    endpoint: string,
+    body?: unknown,
+  ): Promise<unknown> {
+    const client = this.getClient();
+    const result = await client.tools.proxyExecute({
+      connectedAccountId,
+      method,
+      endpoint,
+      ...(body !== undefined ? { body } : {}),
+    });
+    if (result.status >= 400) {
+      const message = typeof result.data === "object" && result.data !== null && "error" in result.data
+        ? String((result.data as Record<string, unknown>).error)
+        : `Proxy request failed with status ${result.status}`;
+      const isAuthError = /auth|token|expired|unauthoriz|invalid_grant|reconnect/i.test(message) || result.status === 401;
+      throw new ComposioToolError(message, isAuthError);
+    }
+    return result.data;
   }
 
   async executeTool(

@@ -6,6 +6,12 @@ export type ParsedClientInfo = {
   platform: string | null;
 };
 
+export type ClientAgentHints = {
+  clientApp?: string | null;
+};
+
+const DESKTOP_APP_LABEL = "StreamlineOS Desktop";
+
 type ApiClientRule = {
   test: (ua: string) => boolean;
   label: (ua: string) => string;
@@ -91,6 +97,71 @@ function looksLikeStoredRawClientToken(value: string): boolean {
   return /^[\w.-]+\/[\d.]+$/i.test(value);
 }
 
+function looksLikeElectronBrowserLabel(value: string): boolean {
+  return /^Electron(?:\s+\d+)?$/i.test(value.trim());
+}
+
+function isElectronUserAgent(ua: string, browserName: string | undefined): boolean {
+  return browserName === "Electron" || /(?:^|[^a-z])Electron\//i.test(ua);
+}
+
+function normalizeClientAppHint(clientApp: string): string {
+  const trimmed = clientApp.trim().replace(/\s+/g, " ");
+  if (!trimmed) return DESKTOP_APP_LABEL;
+  if (/^streamlineos(?:\s+desktop)?$/i.test(trimmed)) return DESKTOP_APP_LABEL;
+  if (/desktop/i.test(trimmed) && /streamlineos/i.test(trimmed)) return DESKTOP_APP_LABEL;
+  return trimmed.slice(0, 80);
+}
+
+function extractDesktopAppLabel(ua: string): string | null {
+  if (/\bStreamlineOS(?:\/[\w.-]+)?\b/i.test(ua)) {
+    return DESKTOP_APP_LABEL;
+  }
+  return null;
+}
+
+function resolveBrowserLabel(
+  ua: string,
+  browserName: string | undefined,
+  browserVersion: string | undefined,
+  hints?: ClientAgentHints,
+): string {
+  const hint = hints?.clientApp?.trim();
+  if (hint) {
+    return normalizeClientAppHint(hint);
+  }
+
+  const productLabel = extractDesktopAppLabel(ua);
+  if (productLabel) {
+    return productLabel;
+  }
+
+  if (isElectronUserAgent(ua, browserName)) {
+    return DESKTOP_APP_LABEL;
+  }
+
+  if (browserName) {
+    return formatBrowserLabel(browserName, browserVersion);
+  }
+
+  return "Unknown";
+}
+
+export function enrichUserAgent(
+  userAgent: string | null | undefined,
+  hints?: ClientAgentHints,
+): string {
+  const ua = (userAgent ?? "").trim();
+  const clientApp = hints?.clientApp?.trim();
+  if (!clientApp || /\bStreamlineOS\b/i.test(ua)) {
+    return ua.slice(0, 500);
+  }
+
+  const token = "StreamlineOS/Desktop";
+  if (!ua) return token;
+  return `${ua} ${token}`.slice(0, 500);
+}
+
 function resolvePlatform(deviceType: string | undefined): string | null {
   if (deviceType === "mobile") return "Mobile";
   if (deviceType === "tablet") return "Tablet";
@@ -107,12 +178,20 @@ function normalizeOsName(name: string | undefined): string | null {
   return name;
 }
 
-export function parseUserAgent(userAgent: string | null | undefined): ParsedClientInfo {
-  if (!userAgent?.trim()) {
+export function parseUserAgent(
+  userAgent: string | null | undefined,
+  hints?: ClientAgentHints,
+): ParsedClientInfo {
+  const enriched = enrichUserAgent(userAgent, hints);
+  if (!enriched) {
+    const hint = hints?.clientApp?.trim();
+    if (hint) {
+      return { browser: normalizeClientAppHint(hint), os: null, platform: null };
+    }
     return { browser: "Unknown", os: null, platform: null };
   }
 
-  const ua = userAgent.trim();
+  const ua = enriched;
 
   const apiClient = detectApiClient(ua);
   if (apiClient) {
@@ -124,13 +203,10 @@ export function parseUserAgent(userAgent: string | null | undefined): ParsedClie
   }
 
   const parsed = new UAParser(ua).getResult();
-  const browserName = parsed.browser.name
-    ? formatBrowserLabel(parsed.browser.name, parsed.browser.version)
-    : "Unknown";
   const osName = normalizeOsName(parsed.os.name);
 
   return {
-    browser: browserName,
+    browser: resolveBrowserLabel(ua, parsed.browser.name, parsed.browser.version, hints),
     os: osName,
     platform: resolvePlatform(parsed.device.type),
   };
@@ -148,6 +224,14 @@ export function resolveDeviceClientInfo(device: {
 
   if (device.browser && looksLikeStoredRawClientToken(device.browser)) {
     return parseUserAgent(device.browser);
+  }
+
+  if (device.browser && looksLikeElectronBrowserLabel(device.browser)) {
+    return {
+      browser: DESKTOP_APP_LABEL,
+      os: device.os,
+      platform: device.platform ?? "Desktop",
+    };
   }
 
   if (device.browser) {

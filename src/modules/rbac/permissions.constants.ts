@@ -3523,6 +3523,10 @@ export const PERMISSIONS: Permission[] = [
   ...FEEDBUCKET_PERMISSIONS,
   ...AI_SUMMARIES_PERMISSIONS,
   ...EXECUTIVE_BRIEF_PERMISSIONS,
+  { name: "mail:inbox:view", resource: "mail:inbox", action: "view", description: "View unified mail inbox and messages" },
+  { name: "mail:messages:send", resource: "mail:messages", action: "send", description: "Send and reply to emails" },
+  { name: "mail:messages:manage", resource: "mail:messages", action: "manage", description: "Archive, trash, star, and mark email messages" },
+  { name: "mail:ai:use", resource: "mail:ai", action: "use", description: "Use AI inbox summary, thread summary, and draft generation" },
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -3560,6 +3564,10 @@ const EMPLOYEE_SELF_SERVICE = [
   "calendar:read",
   "calendar:write",
   "calendar:ai:use",
+  "mail:inbox:view",
+  "mail:messages:send",
+  "mail:messages:manage",
+  "mail:ai:use",
   "integrations:connections:view",
   "integrations:connections:manage",
   "onboarding:module-checklists:view",
