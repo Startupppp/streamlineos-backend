@@ -4,8 +4,6 @@ export type NotificationChannel =
   | "PUSH"
   | "SMS"
   | "WHATSAPP"
-  | "SLACK"
-  | "TEAMS"
   | "WEBHOOK";
 
 export type NotificationPriority = "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
@@ -27,7 +25,7 @@ export type SuppressionReason =
   | "COST_LIMIT";
 
 export const ALL_CHANNELS: readonly NotificationChannel[] = [
-  "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
+  "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK",
 ];
 
 export interface NotificationEventDefinition {

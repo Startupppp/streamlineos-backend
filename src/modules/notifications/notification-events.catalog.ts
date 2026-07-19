@@ -6,8 +6,8 @@ const IA: NotificationChannel[] = ["IN_APP"];
 const IA_EMAIL: NotificationChannel[] = ["IN_APP", "EMAIL"];
 const IA_PUSH: NotificationChannel[] = ["IN_APP", "PUSH"];
 const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
-const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SLACK", "TEAMS"];
-const ALLOWED_URGENT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS"];
+const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH"];
+const ALLOWED_URGENT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP"];
 
 function e(
   eventKey: string,

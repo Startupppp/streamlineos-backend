@@ -3,7 +3,7 @@ import { z } from "zod";
 const TYPES = ["INFO", "SUCCESS", "WARNING", "ERROR"] as const;
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
 const CATEGORIES = ["SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM"] as const;
-const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"] as const;
+const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK"] as const;
 const STATUSES = ["DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED", "FAILED"] as const;
 const AUDIENCE_TYPES = ["all", "roles", "departments", "users"] as const;
 

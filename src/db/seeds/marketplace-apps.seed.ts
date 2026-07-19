@@ -28,18 +28,6 @@ const APPS = [
     sortOrder: 1,
   },
   {
-    slug: "slack",
-    name: "Slack",
-    description: "Send notifications and alerts directly to Slack channels",
-    category: "Operations",
-    pricingType: "free",
-    monthlyPrice: 0,
-    annualPrice: 0,
-    trialDays: 0,
-    features: ["Channel notifications", "DM alerts", "Slash commands"],
-    sortOrder: 2,
-  },
-  {
     slug: "ai-writer",
     name: "AI Writer",
     description: "Generate HR documents, job descriptions, and emails with AI",

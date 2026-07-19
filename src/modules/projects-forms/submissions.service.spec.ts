@@ -195,7 +195,7 @@ describe("SubmissionsService.createSubmission", () => {
 
   it("skips actions of unknown types: collects them in skippedActionTypes", async () => {
     const form = makeForm({
-      actions: [{ type: "send_email", config: {} }, { type: "notify_slack", config: {} }],
+      actions: [{ type: "send_email", config: {} }, { type: "notify_pager", config: {} }],
     });
     (mockDb.query as { projectForms: { findFirst: jest.Mock } }).projectForms.findFirst.mockResolvedValueOnce(form);
 
@@ -227,7 +227,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     const result = await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
 
-    expect(result.skippedActionTypes).toEqual(["send_email", "notify_slack"]);
+    expect(result.skippedActionTypes).toEqual(["send_email", "notify_pager"]);
     expect(result.executedActionTypes).toHaveLength(0);
     expect(result.status).toBe("submitted");
     expect(result.convertedTicketId).toBeNull();

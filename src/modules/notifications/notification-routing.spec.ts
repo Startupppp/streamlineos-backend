@@ -25,7 +25,7 @@ function makeDef(over: Partial<NotificationEventDefinition> = {}): NotificationE
 
 function makePrefs(channelEnabled: Partial<Record<NotificationChannel, boolean>> = {}, quietHours = { start: null as string | null, end: null as string | null, timezone: "UTC", includeWeekends: true }) {
   return {
-    channelEnabled: { IN_APP: true, EMAIL: true, PUSH: true, SMS: false, WHATSAPP: false, SLACK: false, TEAMS: false, WEBHOOK: true, ...channelEnabled },
+    channelEnabled: { IN_APP: true, EMAIL: true, PUSH: true, SMS: false, WHATSAPP: false, WEBHOOK: true, ...channelEnabled },
     quietHours,
     categories: {},
     modulePreferences: {},

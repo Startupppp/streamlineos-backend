@@ -56,8 +56,6 @@ const FALLBACK_CHAIN: Partial<Record<NotificationChannel, NotificationChannel>> 
   WHATSAPP: "SMS",
   SMS: "EMAIL",
   PUSH: "EMAIL",
-  TEAMS: "EMAIL",
-  SLACK: "EMAIL",
   EMAIL: "IN_APP",
 };
 
@@ -229,8 +227,6 @@ export class NotificationRoutingService {
       PUSH: row?.pushEnabled ?? true,
       SMS: row?.smsEnabled ?? false,
       WHATSAPP: row?.whatsappEnabled ?? false,
-      SLACK: row?.slackEnabled ?? false,
-      TEAMS: row?.teamsEnabled ?? false,
       WEBHOOK: true,
     };
     return {

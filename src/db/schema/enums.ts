@@ -83,7 +83,7 @@ export const deliveryStatusEnum = pgEnum("delivery_status", [
   "QUEUED", "PROCESSING", "DELIVERED", "FAILED", "EXPIRED",
 ]);
 export const notificationChannelEnum = pgEnum("notification_channel", [
-  "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK",
+  "IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK",
 ]);
 
 // Delivery engine (notifications) â€” one row per channel per recipient tracks its full lifecycle.
@@ -98,7 +98,7 @@ export const notificationPolicyScopeEnum = pgEnum("notification_policy_scope", [
   "ORG", "ROLE", "DEPARTMENT", "TEAM", "PROJECT",
 ]);
 export const notificationProviderEnum = pgEnum("notification_provider", [
-  "SMTP", "TWILIO", "META_WHATSAPP", "SLACK", "TEAMS", "WEBHOOK", "WEB_PUSH", "INTERNAL", "SANDBOX",
+  "SMTP", "TWILIO", "META_WHATSAPP", "WEBHOOK", "WEB_PUSH", "INTERNAL", "SANDBOX",
 ]);
 export const notificationQuietHoursBehaviorEnum = pgEnum("notification_quiet_hours_behavior", [
   "respect", "bypass_if_high", "always_bypass",

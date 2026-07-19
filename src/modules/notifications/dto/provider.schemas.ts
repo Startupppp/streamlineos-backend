@@ -6,16 +6,12 @@ const CHANNELS = [
   "PUSH",
   "SMS",
   "WHATSAPP",
-  "SLACK",
-  "TEAMS",
   "WEBHOOK",
 ] as const;
 const PROVIDERS = [
   "SMTP",
   "TWILIO",
   "META_WHATSAPP",
-  "SLACK",
-  "TEAMS",
   "WEBHOOK",
   "WEB_PUSH",
   "INTERNAL",

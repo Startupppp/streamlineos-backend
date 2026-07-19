@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"] as const;
+const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK"] as const;
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
 
 export const updateEventPolicySchema = z.object({

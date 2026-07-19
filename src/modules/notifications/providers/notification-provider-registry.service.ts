@@ -20,7 +20,7 @@ export class NotificationProviderRegistry {
   ) {
     this.providers.set("EMAIL", this.email);
     this.providers.set("PUSH", this.webPush);
-    const sandboxChannels: NotificationChannel[] = ["SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"];
+    const sandboxChannels: NotificationChannel[] = ["SMS", "WHATSAPP", "WEBHOOK"];
     for (const channel of sandboxChannels) {
       this.providers.set(channel, new SandboxProvider(channel));
     }

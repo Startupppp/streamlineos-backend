@@ -12,7 +12,7 @@ import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type NotificationCategoryValue, type AnnounceInput } from "./notifications.service";
 import type { DispatchEventInput, NotificationChannel, NotificationEventDefinition } from "./notification.types";
 
-type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "SLACK" | "TEAMS" | "WEBHOOK";
+type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
 type RenderedTemplate = { subject: string | null; body: string };
 type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
@@ -25,8 +25,6 @@ const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   PUSH: "WEB_PUSH",
   SMS: "TWILIO",
   WHATSAPP: "TWILIO",
-  SLACK: "SLACK",
-  TEAMS: "TEAMS",
   WEBHOOK: "WEBHOOK",
 };
 

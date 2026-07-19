@@ -12,10 +12,8 @@ export const updatePreferenceSchema = z.object({
   emailEnabled: z.boolean().optional(),
   pushEnabled: z.boolean().optional(),
   smsEnabled: z.boolean().optional(),
-  inAppEnabled: z.boolean().optional(),
-  slackEnabled: z.boolean().optional(),
-  teamsEnabled: z.boolean().optional(),
   whatsappEnabled: z.boolean().optional(),
+  inAppEnabled: z.boolean().optional(),
   soundEnabled: z.boolean().optional(),
   quietHoursStart: z.string().nullable().optional(),
   quietHoursEnd: z.string().nullable().optional(),
@@ -29,7 +27,7 @@ export const updatePreferenceSchema = z.object({
   modulePreferences: z.record(z.string(), z.object({ mode: z.string().optional(), muted: z.boolean().optional() })).optional(),
 });
 
-const SUPPRESSION_CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"] as const;
+const SUPPRESSION_CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK"] as const;
 
 export const createSuppressionSchema = z.object({
   scopeType: z.enum(["event", "module", "category"]),

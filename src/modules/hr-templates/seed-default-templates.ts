@@ -98,7 +98,7 @@ export function buildDefaultTemplates(): DefaultTemplate[] {
       content: {
         items: [
           item("Send welcome email with first-day instructions", "hr", -3, 0),
-          item("Create user accounts (email, HRMS, Slack)", "it", 0, 1),
+          item("Create user accounts (email, HRMS)", "it", 0, 1),
           item("Set up laptop and required software", "it", 0, 2),
           item("Assign buddy / onboarding partner", "hr", 0, 3),
           item("Complete personal information form", "employee", 1, 4),
@@ -121,7 +121,7 @@ export function buildDefaultTemplates(): DefaultTemplate[] {
         items: [
           item("Collect resignation letter", "hr", 0, 0),
           item("Initiate exit interview scheduling", "hr", 0, 1),
-          item("Revoke access to all systems (email, HRMS, Slack)", "it", 0, 2),
+          item("Revoke access to all systems (email, HRMS)", "it", 0, 2),
           item("Collect company laptop and assets", "it", 0, 3),
           item("Settle outstanding expense claims", "hr", 3, 4),
           item("Process final settlement (FNF)", "hr", 7, 5),

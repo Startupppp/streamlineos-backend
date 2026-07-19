@@ -197,8 +197,6 @@ export const notificationPreferences = pgTable("notification_preferences", {
   pushEnabled: boolean("push_enabled").default(true).notNull(),
   smsEnabled: boolean("sms_enabled").default(false).notNull(),
   inAppEnabled: boolean("in_app_enabled").default(true).notNull(),
-  slackEnabled: boolean("slack_enabled").default(false).notNull(),
-  teamsEnabled: boolean("teams_enabled").default(false).notNull(),
   whatsappEnabled: boolean("whatsapp_enabled").default(false).notNull(),
   soundEnabled: boolean("sound_enabled").default(true).notNull(),
   quietHoursStart: text("quiet_hours_start"),
