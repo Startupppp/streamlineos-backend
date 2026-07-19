@@ -51,7 +51,7 @@ export class HrOrgCatalogService {
           name: input.name,
           code: input.code ?? null,
           type: input.type ?? "OFFICE",
-          address: (input.address as never) ?? null,
+          address: input.address ?? null,
         })
         .returning();
       return row;
@@ -69,7 +69,7 @@ export class HrOrgCatalogService {
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.type !== undefined && { type: input.type }),
-        ...(input.address !== undefined && { address: input.address as never }),
+        ...(input.address !== undefined && { address: input.address }),
       })
       .where(and(eq(hrLocations.id, id), eq(hrLocations.orgId, orgId), isNull(hrLocations.deletedAt)))
       .returning();

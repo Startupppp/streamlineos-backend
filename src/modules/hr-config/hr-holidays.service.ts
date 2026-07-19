@@ -78,8 +78,8 @@ export class HrHolidaysService {
       .then((rows) => rows[0]);
   }
 
-  async remove(id: number) {
-    await this.db.delete(holidays).where(eq(holidays.id, id));
+  async remove(orgId: string, id: number) {
+    await this.db.delete(holidays).where(and(eq(holidays.id, id), eq(holidays.orgId, orgId)));
     return { success: true };
   }
 

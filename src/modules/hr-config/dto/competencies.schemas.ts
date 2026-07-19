@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const skillListQuerySchema = z.object({
   userId: z.string().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(100),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createSkillSchema = z.object({
@@ -18,7 +18,7 @@ export const createSkillSchema = z.object({
 export const certificationListQuerySchema = z.object({
   userId: z.string().min(1).optional(),
   expiringSoon: z.enum(["true", "false"]).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(100),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const createCertificationSchema = z

@@ -64,6 +64,7 @@ export class TestSuitesController {
 
   @Delete(":suiteId")
   @RequirePermission("projects:qa:manage")
+  @HttpCode(204)
   deleteSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("suiteId", ParseIntPipe) suiteId: number,

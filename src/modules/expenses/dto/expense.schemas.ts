@@ -17,7 +17,7 @@ export const listSchema = z.object({
   userId: z.string().min(1).optional(),
   status: z.enum(ALL_EXPENSE_STATUSES).optional(),
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });

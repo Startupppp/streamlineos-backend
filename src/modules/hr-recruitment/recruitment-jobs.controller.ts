@@ -79,12 +79,13 @@ export class RecruitmentJobsController {
   }
 
   @Delete("jobs/:jobId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  remove(
+  async remove(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.jobs.remove(u.orgId, jobId);
+    await this.jobs.remove(u.orgId, jobId);
   }
 
   @Post("jobs/:jobId/publish")
@@ -118,13 +119,14 @@ export class RecruitmentJobsController {
   }
 
   @Delete("jobs/:jobId/recruiters")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  removeRecruiter(
+  async removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(assignRecruiterSchema)) body: AssignRecruiterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.jobs.removeRecruiter(jobId, body);
+    await this.jobs.removeRecruiter(jobId, body);
   }
 
   @Get("jobs/:jobId/share")

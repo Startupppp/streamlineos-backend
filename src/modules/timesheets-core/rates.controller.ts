@@ -56,7 +56,7 @@ export class RatesController {
   }
 
   @Delete(":rateId")
-  @HttpCode(200)
+  @HttpCode(204)
   @RequirePermission("timesheets:rates:manage")
   delete(
     @Param("rateId", ParseIntPipe) rateId: number,

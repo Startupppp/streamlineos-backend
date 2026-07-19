@@ -3,9 +3,7 @@ import { and, count, desc, eq, gte, lt, or, sql, sum } from "drizzle-orm";
 import {
   attendance,
   calendarEvents,
-  expenses,
   leaveBalances,
-  leaveRequests,
   leaveTypes,
   notifications,
   organizationMembers,
@@ -19,7 +17,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { getTodayString } from "./date.helpers";
+import { resolveDashboardStatsFlags } from "./dashboard-scope";
 
 export interface BirthdayEntry {
   id: string;
@@ -36,38 +37,50 @@ export class DashboardHrService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
-  getDashboardStats(orgId: string) {
-    return this.cache.cached(
-      CACHE_KEYS.dashboardStats(orgId),
-      async () => {
-        const today = getTodayString();
-        const [org, memberCountResult, projectCountResult, attendanceCountResult] =
-          await Promise.all([
-            this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
-            this.db
-              .select({ count: count() })
-              .from(organizationMembers)
-              .innerJoin(users, eq(organizationMembers.userId, users.id))
-              .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
-            this.db.select({ count: count() }).from(projects).where(eq(projects.orgId, orgId)),
-            this.db
-              .select({ count: count() })
-              .from(attendance)
-              .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
-          ]);
+  async getDashboardStats(orgId: string, u: CurrentUserContext) {
+    const [full, flags] = await Promise.all([
+      this.cache.cached(
+        CACHE_KEYS.dashboardStats(orgId),
+        async () => {
+          const today = getTodayString();
+          const [org, memberCountResult, projectCountResult, attendanceCountResult] =
+            await Promise.all([
+              this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
+              this.db
+                .select({ count: count() })
+                .from(organizationMembers)
+                .innerJoin(users, eq(organizationMembers.userId, users.id))
+                .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+              this.db.select({ count: count() }).from(projects).where(eq(projects.orgId, orgId)),
+              this.db
+                .select({ count: count() })
+                .from(attendance)
+                .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
+            ]);
 
-        return {
-          orgName: org?.name || "Organization",
-          totalEmployees: Number(memberCountResult[0]?.count || 0),
-          activeProjects: Number(projectCountResult[0]?.count || 0),
-          presentToday: Number(attendanceCountResult[0]?.count || 0),
-          orgSlug: org?.slug || orgId.slice(0, 8),
-        };
-      },
-      CACHE_TTL.SHORT,
-    );
+          return {
+            orgName: org?.name || "Organization",
+            totalEmployees: Number(memberCountResult[0]?.count || 0),
+            activeProjects: Number(projectCountResult[0]?.count || 0),
+            presentToday: Number(attendanceCountResult[0]?.count || 0),
+            orgSlug: org?.slug || orgId.slice(0, 8),
+          };
+        },
+        CACHE_TTL.SHORT,
+      ),
+      resolveDashboardStatsFlags(this.access, u),
+    ]);
+
+    return {
+      orgName: full.orgName,
+      orgSlug: full.orgSlug,
+      totalEmployees: flags.employees ? full.totalEmployees : null,
+      presentToday: flags.attendance ? full.presentToday : null,
+      activeProjects: flags.projects ? full.activeProjects : null,
+    };
   }
 
   getTeamAvailability(orgId: string) {
@@ -102,22 +115,6 @@ export class DashboardHrService {
         }));
       },
       CACHE_TTL.SHORT,
-    );
-  }
-
-  getRoleStats(orgId: string): Promise<Record<string, number>> {
-    return this.cache.cached(
-      `dashboard:role-stats:${orgId}`,
-      async () => {
-        const rows = await this.db
-          .select({ role: users.role, cnt: sql<number>`count(*)::int` })
-          .from(organizationMembers)
-          .innerJoin(users, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-          .groupBy(users.role);
-        return Object.fromEntries(rows.map((r) => [r.role, r.cnt]));
-      },
-      CACHE_TTL.MEDIUM,
     );
   }
 
@@ -346,75 +343,6 @@ export class DashboardHrService {
         type: e.category,
       })),
       unreadNotifications: Number(unreadCount[0]?.cnt ?? 0),
-    };
-  }
-
-  async getManagerDashboard(orgId: string, _userId: string) {
-    const today = getTodayString();
-
-    const [teamMembers, pendingLeaves, pendingExpenses, overdueTickets] = await Promise.all([
-      this.db
-        .select({
-          userId: users.id,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          checkIn: attendance.checkIn,
-          status: attendance.status,
-          leaveStatus: leaveRequests.status,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(attendance, and(eq(attendance.userId, users.id), eq(attendance.date, today)))
-        .leftJoin(
-          leaveRequests,
-          and(
-            eq(leaveRequests.userId, users.id),
-            eq(leaveRequests.status, "APPROVED"),
-            lt(leaveRequests.startDate, today),
-            gte(leaveRequests.endDate, today),
-          ),
-        )
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .limit(50),
-      this.db
-        .select({ cnt: count() })
-        .from(leaveRequests)
-        .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING"))),
-      this.db
-        .select({ cnt: count() })
-        .from(expenses)
-        .where(and(eq(expenses.orgId, orgId), eq(expenses.status, "PENDING"))),
-      this.db
-        .select({ cnt: count() })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            or(eq(tickets.status, "TODO"), eq(tickets.status, "IN_PROGRESS")),
-          ),
-        ),
-    ]);
-
-    const teamAttendanceToday = teamMembers.map((m) => {
-      let status: "present" | "absent" | "leave" = "absent";
-      if (m.leaveStatus === "APPROVED") status = "leave";
-      else if (m.checkIn) status = "present";
-      return {
-        userId: m.userId,
-        name:
-          m.firstName && m.lastName
-            ? `${m.firstName} ${m.lastName}`
-            : (m.name ?? "Unknown"),
-        status,
-      };
-    });
-
-    return {
-      teamAttendanceToday,
-      pendingLeaveApprovals: Number(pendingLeaves[0]?.cnt ?? 0),
-      pendingExpenseApprovals: Number(pendingExpenses[0]?.cnt ?? 0),
-      teamOverdueTasks: Number(overdueTickets[0]?.cnt ?? 0),
     };
   }
 }

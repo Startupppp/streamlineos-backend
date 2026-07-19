@@ -139,12 +139,13 @@ export class RecruitmentCandidatesController {
   }
 
   @Delete(":candidateId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  remove(
+  async remove(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.candidates.remove(u.orgId, candidateId);
+    await this.candidates.remove(u.orgId, candidateId);
   }
 
   @Patch(":candidateId/stage")

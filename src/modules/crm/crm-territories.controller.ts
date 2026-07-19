@@ -78,6 +78,7 @@ export class CrmTerritoriesController {
   }
 
   @Delete(":territoryId")
+  @HttpCode(204)
   @RequirePermission("crm:territories:manage")
   async remove(
     @Param("territoryId", ParseIntPipe) territoryId: number,
@@ -85,6 +86,6 @@ export class CrmTerritoriesController {
   ) {
     const exists = await this.territories.exists(u.orgId, territoryId);
     if (!exists) throw new NotFoundException("Territory not found");
-    return this.territories.remove(u.orgId, territoryId);
+    await this.territories.remove(u.orgId, territoryId);
   }
 }

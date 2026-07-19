@@ -93,6 +93,7 @@ export class HrDocumentTypesController {
   }
 
   @Delete(":documentTypeId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   async remove(

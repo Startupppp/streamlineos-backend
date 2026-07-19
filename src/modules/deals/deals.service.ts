@@ -254,7 +254,11 @@ export class DealsService {
             orgId, dealId, requestedBy: userId, requestedStage: input.stage, status: "pending",
           }).returning();
           this.audit.log({ action: "deal.approval_requested", userId, orgId, targetId: String(dealId), targetType: "deal", metadata: { requestedStage: input.stage } });
-          return { ok: true as const, deal: existing as unknown as DealRow, stageChanged: false, previousStage: null, approvalPending: true, approvalId: approval!.id };
+          const currentDeal = await this.db.query.deals.findFirst({
+            where: and(eq(deals.id, dealId), eq(deals.orgId, orgId)),
+          });
+          if (!currentDeal) return { ok: false, reason: "not_found" };
+          return { ok: true as const, deal: currentDeal, stageChanged: false, previousStage: null, approvalPending: true, approvalId: approval!.id };
         }
       }
 

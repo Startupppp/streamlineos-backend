@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -26,19 +27,23 @@ export class SignTemplatesController {
   constructor(private readonly templates: SignTemplatesService) {}
 
   @Post("templates")
+  @HttpCode(201)
   @RequirePermission("sign:template:manage")
   create(@Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
     return this.templates.create(u.orgId, u.userId, body);
   }
 
   @Post("envelopes/:envelopeId/save-as-template")
+  @HttpCode(201)
   @RequirePermission("sign:template:manage")
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body("name") name: string,
+    @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, name);
+    const parsed = z.object({ name: z.string().min(1).max(200) }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Invalid request: name is required");
+    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, parsed.data.name);
   }
 
   @Get("templates")
@@ -47,45 +52,46 @@ export class SignTemplatesController {
     return this.templates.list(u.orgId);
   }
 
-  @Get("templates/:id")
+  @Get("templates/:templateId")
   @RequirePermission("sign:template:manage")
-  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.templates.get(u.orgId, id);
+  get(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.templates.get(u.orgId, templateId);
   }
 
-  @Patch("templates/:id")
+  @Patch("templates/:templateId")
   @RequirePermission("sign:template:manage")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.update(u.orgId, id, body, { orgId: u.orgId, userId: u.userId });
+    return this.templates.update(u.orgId, templateId, body, { orgId: u.orgId, userId: u.userId });
   }
 
-  @Post("templates/:id/duplicate")
+  @Post("templates/:templateId/duplicate")
   @RequirePermission("sign:template:manage")
-  duplicate(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.templates.duplicate(u.orgId, id, { orgId: u.orgId, userId: u.userId });
+  duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId });
   }
 
-  @Post("templates/:id/create-envelope")
+  @Post("templates/:templateId/create-envelope")
+  @HttpCode(201)
   @RequirePermission("sign:envelope:create")
   createEnvelope(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(createEnvelopeFromTemplateSchema)) body: CreateEnvelopeFromTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.instantiate(u.orgId, u.userId, id, body);
+    return this.templates.instantiate(u.orgId, u.userId, templateId, body);
   }
 
-  @Post("templates/:id/publish-public-form")
+  @Post("templates/:templateId/publish-public-form")
   @RequirePermission("sign:template:manage")
   publishPublicForm(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(publishPublicFormSchema)) body: PublishPublicFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.publishPublicForm(u.orgId, u.userId, id, body);
+    return this.templates.publishPublicForm(u.orgId, u.userId, templateId, body);
   }
 }

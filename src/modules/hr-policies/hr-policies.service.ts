@@ -327,7 +327,7 @@ export class HrPoliciesService {
     scopes: Array<{ scopeType: string; scopeValue: string }>,
   ) {
     await this.db.transaction(async (tx) => {
-      await tx.delete(hrPolicyScopes).where(eq(hrPolicyScopes.policyId, policyId));
+      await tx.delete(hrPolicyScopes).where(and(eq(hrPolicyScopes.policyId, policyId), eq(hrPolicyScopes.orgId, orgId)));
       if (scopes.length > 0) {
         await tx.insert(hrPolicyScopes).values(
           scopes.map((s) => ({

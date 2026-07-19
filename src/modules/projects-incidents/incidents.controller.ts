@@ -80,6 +80,7 @@ export class IncidentsController {
 
   @Delete(":incidentId")
   @RequirePermission("projects:incidents:manage")
+  @HttpCode(204)
   deleteIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,

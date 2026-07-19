@@ -44,7 +44,7 @@ export class AssetsService {
       .leftJoin(users, eq(assetReturns.userId, users.id))
       .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, userId, { ownerColumn: assetReturns.userId })))
       .orderBy(desc(assetReturns.createdAt))
-      .limit(500);
+      .limit(100);
 
     return rows.map((r) => {
       const name = `${r.userFirstName ?? ""} ${r.userLastName ?? ""}`.trim();
@@ -105,7 +105,7 @@ export class AssetsService {
         notes: body.notes ?? existing.notes,
         returnedAt: new Date(),
       })
-      .where(eq(assetReturns.id, returnId))
+      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
       .returning();
 
     return updated;
@@ -135,7 +135,7 @@ export class AssetsService {
       .innerJoin(users, eq(employeeDevices.userId, users.id))
       .where(eq(employeeDevices.orgId, orgId))
       .orderBy(desc(employeeDevices.createdAt))
-      .limit(500);
+      .limit(100);
 
     return rows.map((r) => ({
       id: r.id,
@@ -223,7 +223,7 @@ export class AssetsService {
         ...(body.status !== undefined && { status: body.status }),
         ...(body.returnDate !== undefined && { returnDate: formatDateOnly(new Date(body.returnDate)) }),
       })
-      .where(eq(employeeDevices.id, deviceId));
+      .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
 
     return { success: true };
   }
@@ -235,7 +235,7 @@ export class AssetsService {
 
     if (!existing) throw new NotFoundException("Device not found.");
 
-    await this.db.delete(employeeDevices).where(eq(employeeDevices.id, deviceId));
+    await this.db.delete(employeeDevices).where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
     return { success: true };
   }
 }

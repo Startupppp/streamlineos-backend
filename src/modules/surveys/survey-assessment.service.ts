@@ -112,6 +112,7 @@ export class SurveyAssessmentService {
     return this.db.query.surveyCertificates.findMany({
       where: and(eq(surveyCertificates.orgId, orgId), eq(surveyCertificates.surveyId, surveyId)),
       orderBy: [desc(surveyCertificates.issuedAt)],
+      limit: 100,
     });
   }
 }

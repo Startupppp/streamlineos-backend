@@ -1,9 +1,22 @@
-import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
-  invPurchaseOrders, invPoLines, invGrns, invGrnLines,
-  invLots, invSerialNumbers, invQualityInspections,
-  invStockTransactions, invProductVariants, invProducts,
+  invPurchaseOrders,
+  invPoLines,
+  invGrns,
+  invGrnLines,
+  invLots,
+  invSerialNumbers,
+  invQualityInspections,
+  invStockTransactions,
+  invProductVariants,
+  invProducts,
+  invLocations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -14,7 +27,11 @@ import { InventorySettingsService } from "../inv-stock-engine/inventory-settings
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../inv-stock-engine/stock-engine.types";
 import { JournalPostingService } from "../accounting/journal-posting.service";
-import type { CreateGrnInput, ListGrnInput, ReverseGrnInput } from "./dto/inv-purchase-orders.schemas";
+import type {
+  CreateGrnInput,
+  ListGrnInput,
+  ReverseGrnInput,
+} from "./dto/inv-purchase-orders.schemas";
 import { PoService } from "./po.service";
 
 @Injectable()
@@ -37,34 +54,63 @@ export class GrnService {
     data: CreateGrnInput,
   ) {
     const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
+      where: and(
+        eq(invPurchaseOrders.id, poId),
+        eq(invPurchaseOrders.orgId, orgId),
+      ),
       with: {
         lines: {
           with: {
-            productVariant: { with: { product: { columns: { id: true, trackingMethod: true } } } },
+            productVariant: {
+              with: {
+                product: { columns: { id: true, trackingMethod: true } },
+              },
+            },
           },
         },
       },
     });
     if (!po) throw new NotFoundException("Purchase order not found");
     if (po.status !== "SENT" && po.status !== "PARTIAL") {
-      throw new BadRequestException("Purchase order must be SENT or PARTIAL to receive goods");
+      throw new BadRequestException(
+        "Purchase order must be SENT or PARTIAL to receive goods",
+      );
     }
 
     const settings = await this.settingsService.get(orgId);
-    const locationId = data.locationId ?? await this.poService.resolveLocationId(orgId, po.warehouseId);
+    let locationId: number;
+    if (data.locationId != null) {
+      const loc = await this.db.query.invLocations.findFirst({
+        where: and(
+          eq(invLocations.id, data.locationId),
+          eq(invLocations.orgId, orgId),
+          eq(invLocations.isActive, true),
+        ),
+        columns: { id: true },
+      });
+      if (!loc) throw new NotFoundException("Location not found or inactive");
+      locationId = loc.id;
+    } else
+      locationId = await this.poService.resolveLocationId(
+        orgId,
+        po.warehouseId,
+      );
+
     const grnNumber = await this.numSeq.next(orgId, "GRN");
 
     for (const line of data.lines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId);
-      if (!poLine) throw new BadRequestException(`PO line ${line.poLineId} not found`);
+      if (!poLine)
+        throw new BadRequestException(`PO line ${line.poLineId} not found`);
 
-      const remaining = parseFloat(poLine.quantity) - parseFloat(poLine.quantityReceived);
-      const maxAllowed = remaining * (1 + parseFloat(settings.overReceiptTolerancePct) / 100);
+      const remaining =
+        parseFloat(poLine.quantity) - parseFloat(poLine.quantityReceived);
+      const maxAllowed =
+        remaining * (1 + parseFloat(settings.overReceiptTolerancePct) / 100);
 
       if (line.quantityReceived > maxAllowed + 0.0001) {
         throw new BadRequestException(
-          `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`
+          `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
         );
       }
 
@@ -74,7 +120,7 @@ export class GrnService {
         const serials = line.serialNumbers ?? [];
         if (serials.length !== line.quantityReceived) {
           throw new BadRequestException(
-            `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`
+            `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
           );
         }
 
@@ -100,15 +146,18 @@ export class GrnService {
     const serialMap = new Map<string, number>();
 
     const grnId = await this.db.transaction(async (tx) => {
-      const [grn] = await tx.insert(invGrns).values({
-        orgId,
-        poId,
-        grnNumber,
-        receivedDate: data.receivedDate,
-        locationId,
-        notes: data.notes,
-        createdBy: userId,
-      }).returning();
+      const [grn] = await tx
+        .insert(invGrns)
+        .values({
+          orgId,
+          poId,
+          grnNumber,
+          locationId,
+          notes: data.notes,
+          createdBy: userId,
+          receivedDate: data.receivedDate,
+        })
+        .returning();
 
       for (const line of data.lines) {
         const poLine = po.lines.find((l) => l.id === line.poLineId)!;
@@ -130,17 +179,23 @@ export class GrnService {
           if (existing) {
             resolvedLotId = existing.id;
           } else {
-            const [newLot] = await tx.insert(invLots).values({
-              orgId,
-              productVariantId: poLine.productVariantId,
-              lotNumber: line.lotNumber,
-              expiryDate: line.expiryDate,
-              manufactureDate: line.manufactureDate,
-              status: "ACTIVE",
-            }).returning({ id: invLots.id });
+            const [newLot] = await tx
+              .insert(invLots)
+              .values({
+                orgId,
+                status: "ACTIVE",
+                lotNumber: line.lotNumber,
+                expiryDate: line.expiryDate,
+                manufactureDate: line.manufactureDate,
+                productVariantId: poLine.productVariantId,
+              })
+              .returning({ id: invLots.id });
             resolvedLotId = newLot.id;
           }
-          lotMap.set(`${poLine.productVariantId}:${line.lotNumber}`, resolvedLotId);
+          lotMap.set(
+            `${poLine.productVariantId}:${line.lotNumber}`,
+            resolvedLotId,
+          );
         }
 
         if (trackingMethod === "SERIAL" && line.serialNumbers?.length) {
@@ -153,28 +208,37 @@ export class GrnService {
             ),
             columns: { id: true, serialNumber: true },
           });
-          const existingMap = new Map(existing.map((s) => [s.serialNumber, s.id]));
+          const existingMap = new Map(
+            existing.map((s) => [s.serialNumber, s.id]),
+          );
           const toInsert = serials.filter((sn) => !existingMap.has(sn));
           const toUpdateIds = existing.map((s) => s.id);
 
           if (toUpdateIds.length > 0) {
-            await tx.update(invSerialNumbers)
+            await tx
+              .update(invSerialNumbers)
               .set({ status: "IN_STOCK", currentLocationId: locationId })
               .where(inArray(invSerialNumbers.id, toUpdateIds));
             for (const s of existing) resolvedSerialIds.push(s.id);
           }
 
           if (toInsert.length > 0) {
-            const inserted = await tx.insert(invSerialNumbers).values(
-              toInsert.map((sn) => ({
-                orgId,
-                productVariantId: poLine.productVariantId,
-                serialNumber: sn,
-                lotId: resolvedLotId,
-                status: "IN_STOCK" as const,
-                currentLocationId: locationId,
-              }))
-            ).returning({ id: invSerialNumbers.id, serialNumber: invSerialNumbers.serialNumber });
+            const inserted = await tx
+              .insert(invSerialNumbers)
+              .values(
+                toInsert.map((sn) => ({
+                  orgId,
+                  serialNumber: sn,
+                  lotId: resolvedLotId,
+                  status: "IN_STOCK" as const,
+                  currentLocationId: locationId,
+                  productVariantId: poLine.productVariantId,
+                })),
+              )
+              .returning({
+                id: invSerialNumbers.id,
+                serialNumber: invSerialNumbers.serialNumber,
+              });
             for (const row of inserted) {
               resolvedSerialIds.push(row.id);
               serialMap.set(row.serialNumber, row.id);
@@ -190,25 +254,34 @@ export class GrnService {
           rejectionReason: line.rejectionReason,
         });
 
-        await tx.update(invPoLines)
-          .set({ quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}` })
-          .where(eq(invPoLines.id, line.poLineId));
+        await tx
+          .update(invPoLines)
+          .set({
+            quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}`,
+          })
+          .where(and(eq(invPoLines.id, line.poLineId), eq(invPoLines.poId, poId)));
       }
 
       const allLines = await tx.query.invPoLines.findMany({
         where: eq(invPoLines.poId, poId),
       });
       const allReceived = allLines.every(
-        (l) => parseFloat(l.quantityReceived) >= parseFloat(l.quantity)
+        (l) => parseFloat(l.quantityReceived) >= parseFloat(l.quantity),
       );
-      await tx.update(invPurchaseOrders)
-        .set({ status: allReceived ? "RECEIVED" : "PARTIAL", updatedAt: new Date() })
-        .where(eq(invPurchaseOrders.id, poId));
+      await tx
+        .update(invPurchaseOrders)
+        .set({
+          status: allReceived ? "RECEIVED" : "PARTIAL",
+          updatedAt: new Date(),
+        })
+        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)));
 
       return grn.id;
     });
 
-    const acceptedLines = data.lines.filter((l) => l.qualityStatus === "ACCEPTED");
+    const acceptedLines = data.lines.filter(
+      (l) => l.qualityStatus === "ACCEPTED",
+    );
     if (acceptedLines.length > 0) {
       const movements = [];
       for (const line of acceptedLines) {
@@ -229,9 +302,10 @@ export class GrnService {
             });
           }
         } else {
-          const lotKey = trackingMethod === "LOT" && line.lotNumber
-            ? `${poLine.productVariantId}:${line.lotNumber}`
-            : undefined;
+          const lotKey =
+            trackingMethod === "LOT" && line.lotNumber
+              ? `${poLine.productVariantId}:${line.lotNumber}`
+              : undefined;
           const lotId = lotKey ? lotMap.get(lotKey) : undefined;
 
           movements.push({
@@ -272,8 +346,18 @@ export class GrnService {
         status: "POSTED",
         createdBy: userId,
         lines: [
-          { accountCode: "1300", debit: totalValue, credit: 0, description: `Inventory received - ${grnNumber}` },
-          { accountCode: "2000", debit: 0, credit: totalValue, description: `AP - PO ${po.poNumber}` },
+          {
+            credit: 0,
+            debit: totalValue,
+            accountCode: "1300",
+            description: `Inventory received - ${grnNumber}`,
+          },
+          {
+            accountCode: "2000",
+            debit: 0,
+            credit: totalValue,
+            description: `AP - PO ${po.poNumber}`,
+          },
         ],
       });
     }
@@ -304,47 +388,65 @@ export class GrnService {
     const offset = (page - 1) * limit;
     const hash = `${poId ?? ""}:${vendorId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cached(`inv:grn:list:${orgId}:${hash}`, async () => {
-      const conditions = [eq(invGrns.orgId, orgId)];
-      if (poId) conditions.push(eq(invGrns.poId, poId));
-      if (dateFrom) conditions.push(gte(invGrns.receivedDate, dateFrom));
-      if (dateTo) conditions.push(lte(invGrns.receivedDate, dateTo));
+    return this.cache.cached(
+      `inv:grn:list:${orgId}:${hash}`,
+      async () => {
+        const conditions = [eq(invGrns.orgId, orgId)];
+        if (poId) conditions.push(eq(invGrns.poId, poId));
+        if (dateFrom) conditions.push(gte(invGrns.receivedDate, dateFrom));
+        if (dateTo) conditions.push(lte(invGrns.receivedDate, dateTo));
 
-      if (vendorId) {
-        const poIds = await this.db
-          .select({ id: invPurchaseOrders.id })
-          .from(invPurchaseOrders)
-          .where(and(eq(invPurchaseOrders.orgId, orgId), eq(invPurchaseOrders.vendorId, vendorId)));
-        if (poIds.length === 0) return { items: [], total: 0, page, totalPages: 0 };
-        conditions.push(inArray(invGrns.poId, poIds.map((p) => p.id)));
-      }
+        if (vendorId) {
+          const poIds = await this.db
+            .select({ id: invPurchaseOrders.id })
+            .from(invPurchaseOrders)
+            .where(
+              and(
+                eq(invPurchaseOrders.orgId, orgId),
+                eq(invPurchaseOrders.vendorId, vendorId),
+              ),
+            );
+          if (poIds.length === 0)
+            return { items: [], total: 0, page, totalPages: 0 };
+          conditions.push(
+            inArray(
+              invGrns.poId,
+              poIds.map((p) => p.id),
+            ),
+          );
+        }
 
-      const where = and(...conditions);
+        const where = and(...conditions);
 
-      const [items, countResult] = await Promise.all([
-        this.db.query.invGrns.findMany({
-          where,
-          orderBy: [desc(invGrns.createdAt)],
-          limit,
-          offset,
-          with: {
-            purchaseOrder: {
-              columns: { id: true, poNumber: true, vendorId: true },
-              with: { vendor: { columns: { id: true, name: true } } },
+        const [items, countResult] = await Promise.all([
+          this.db.query.invGrns.findMany({
+            where,
+            orderBy: [desc(invGrns.createdAt)],
+            limit,
+            offset,
+            with: {
+              purchaseOrder: {
+                columns: { id: true, poNumber: true, vendorId: true },
+                with: { vendor: { columns: { id: true, name: true } } },
+              },
+              creator: { columns: { id: true, name: true } },
             },
-            creator: { columns: { id: true, name: true } },
-          },
-        }),
-        this.db.select({ count: sql<number>`count(*)::int` }).from(invGrns).where(where),
-      ]);
+          }),
+          this.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invGrns)
+            .where(where),
+        ]);
 
-      return {
-        items,
-        total: countResult[0]?.count ?? 0,
-        page,
-        totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-      };
-    }, CACHE_TTL.SHORT);
+        return {
+          items,
+          total: countResult[0]?.count ?? 0,
+          page,
+          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+        };
+      },
+      CACHE_TTL.SHORT,
+    );
   }
 
   async getGrn(orgId: string, grnId: number) {
@@ -384,7 +486,8 @@ export class GrnService {
       ),
     });
 
-    if (txns.length === 0) throw new BadRequestException("No stock transactions found for this GRN");
+    if (txns.length === 0)
+      throw new BadRequestException("No stock transactions found for this GRN");
 
     for (const txn of txns) {
       const reverseKey = `${idempotencyKey}:rev:${txn.id}`;
@@ -396,28 +499,35 @@ export class GrnService {
     }
 
     const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, grn.poId), eq(invPurchaseOrders.orgId, orgId)),
+      where: and(
+        eq(invPurchaseOrders.id, grn.poId),
+        eq(invPurchaseOrders.orgId, orgId),
+      ),
       with: { lines: true },
     });
 
     if (po) {
       for (const grnLine of grn.lines) {
-        await this.db.update(invPoLines)
+        await this.db
+          .update(invPoLines)
           .set({
             quantityReceived: sql`GREATEST(0, ${invPoLines.quantityReceived} - ${grnLine.quantityReceived})`,
           })
-          .where(eq(invPoLines.id, grnLine.poLineId));
+          .where(and(eq(invPoLines.id, grnLine.poLineId), eq(invPoLines.poId, po.id)));
       }
 
       const updatedLines = await this.db.query.invPoLines.findMany({
         where: eq(invPoLines.poId, po.id),
       });
-      const anyReceived = updatedLines.some((l) => parseFloat(l.quantityReceived) > 0);
+      const anyReceived = updatedLines.some(
+        (l) => parseFloat(l.quantityReceived) > 0,
+      );
       const newStatus = anyReceived ? "PARTIAL" : "SENT";
 
-      await this.db.update(invPurchaseOrders)
+      await this.db
+        .update(invPurchaseOrders)
         .set({ status: newStatus, updatedAt: new Date() })
-        .where(eq(invPurchaseOrders.id, po.id));
+        .where(and(eq(invPurchaseOrders.id, po.id), eq(invPurchaseOrders.orgId, orgId)));
     }
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, grn.poId));

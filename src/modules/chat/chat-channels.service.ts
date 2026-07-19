@@ -105,6 +105,7 @@ export class ChatChannelsService {
           eq(chatChannels.isArchived, false),
         ),
         orderBy: [desc(chatChannels.lastMessageAt)],
+        limit: 100,
         with: {
           members: {
             with: { user: { columns: { id: true, name: true, image: true } } },
@@ -184,6 +185,7 @@ export class ChatChannelsService {
         eq(chatChannels.isArchived, false),
       ),
       orderBy: [desc(chatChannels.lastMessageAt)],
+      limit: 100,
       with: {
         members: {
           columns: { userId: true },
@@ -228,6 +230,7 @@ export class ChatChannelsService {
 
     return this.db.query.chatChannelMembers.findMany({
       where: eq(chatChannelMembers.channelId, channelId),
+      limit: 100,
       with: {
         user: {
           columns: { id: true, name: true, image: true, email: true, role: true },

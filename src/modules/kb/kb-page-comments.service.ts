@@ -122,6 +122,12 @@ export class KbPageCommentsService {
   }
 
   async resolve(orgId: string, commentId: number): Promise<CommentRow> {
+    const existing = await this.db.query.kbPageComments.findFirst({
+      where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!existing) throw new NotFoundException("Comment not found");
+
     const [updated] = await this.db
       .update(kbPageComments)
       .set({ resolvedAt: new Date(), updatedAt: new Date() })

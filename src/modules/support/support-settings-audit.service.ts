@@ -38,7 +38,7 @@ export class SupportSettingsAuditService {
     }
   }
 
-  list(orgId: string, entityType?: SettingsAuditEntityType, limit = 200) {
+  list(orgId: string, entityType?: SettingsAuditEntityType, limit = 100) {
     return this.db.query.supportSettingsAuditLog.findMany({
       where: entityType
         ? and(eq(supportSettingsAuditLog.orgId, orgId), eq(supportSettingsAuditLog.entityType, entityType))

@@ -1,4 +1,4 @@
-import { ConflictException, Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -8,12 +8,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CoursesService } from "./courses.service";
-import {
-  createCourseSchema,
-  updateCourseSchema,
-  type CreateCourseInput,
-  type UpdateCourseInput,
-} from "./dto/courses.schemas";
 
 const updateProgressSchema = z.object({
   progressPct: z.number().min(0).max(100),
@@ -35,7 +29,7 @@ export class CoursesController {
   @Get("my-enrollments")
   @RequirePermission("hr:learning:view")
   myEnrollments(@CurrentUser() u: CurrentUserContext) {
-    return this.courses.listEnrollments(u.userId);
+    return this.courses.listEnrollments(u.orgId, u.userId);
   }
 
   @Get()
@@ -45,12 +39,13 @@ export class CoursesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:learning:manage")
   createCourse(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createCourseSchema)) body: CreateCourseInput,
+    @Body() body: Record<string, unknown>,
   ) {
-    return this.courses.createCourse(u.orgId, body);
+    return this.courses.createCourse(u.orgId, body as Parameters<CoursesService["createCourse"]>[1]);
   }
 
   @Patch(":courseId")
@@ -58,20 +53,18 @@ export class CoursesController {
   updateCourse(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
-    @Body(new ZodValidationPipe(updateCourseSchema)) body: UpdateCourseInput,
+    @Body() body: Record<string, unknown>,
   ) {
-    return this.courses.updateCourse(u.orgId, courseId, body);
+    return this.courses.updateCourse(u.orgId, courseId, body as Parameters<CoursesService["updateCourse"]>[2]);
   }
 
   @Post(":courseId/enroll")
   @RequirePermission("hr:learning:view")
-  async enroll(
+  enroll(
     @CurrentUser() u: CurrentUserContext,
     @Param("courseId", ParseIntPipe) courseId: number,
   ) {
-    const enrollment = await this.courses.enrollUser(courseId, u.userId);
-    if (!enrollment) throw new ConflictException("You are already enrolled in this course");
-    return enrollment;
+    return this.courses.enrollUser(u.orgId, courseId, u.userId);
   }
 
   @Patch(":courseId/progress")
@@ -81,6 +74,6 @@ export class CoursesController {
     @Param("courseId", ParseIntPipe) courseId: number,
     @Body(new ZodValidationPipe(updateProgressSchema)) body: UpdateProgressInput,
   ) {
-    return this.courses.updateProgress(courseId, u.userId, body.progressPct);
+    return this.courses.updateProgress(u.orgId, courseId, u.userId, body.progressPct);
   }
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   ForbiddenException,
+  HttpCode,
   Inject,
   NotFoundException,
   Param,
@@ -31,6 +32,7 @@ export class StorageVaultController {
   ) {}
 
   @Post(":documentId/url")
+  @HttpCode(200)
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,

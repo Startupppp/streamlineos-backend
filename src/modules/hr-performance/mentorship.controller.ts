@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { MentorshipService } from "./mentorship.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -28,6 +28,7 @@ export class MentorshipController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:learning:manage")
   create(
     @CurrentUser() user: CurrentUserContext,
@@ -36,13 +37,13 @@ export class MentorshipController {
     return this.mentorshipService.create(user.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":mentorshipId")
   @RequirePermission("hr:learning:manage")
   update(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("mentorshipId", ParseIntPipe) mentorshipId: number,
     @Body(new ZodValidationPipe(updateMentorshipSchema)) body: UpdateMentorshipInput,
   ) {
-    return this.mentorshipService.update(user.orgId, id, body);
+    return this.mentorshipService.update(user.orgId, mentorshipId, body);
   }
 }

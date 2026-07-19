@@ -63,44 +63,48 @@ export class CreditNotesService {
     const igstAmount = 0;
     const total = round4(subtotal + taxPool);
 
-    const [cn] = await this.db
-      .insert(creditNotes)
-      .values({
-        orgId,
-        creditNoteNumber: `CN-DRAFT-${Date.now()}`,
-        clientId: input.clientId ?? null,
-        invoiceId: input.invoiceId ?? null,
-        status: "DRAFT",
-        reason: input.reason ?? null,
-        subtotal: subtotal.toFixed(4),
-        taxAmount: taxPool.toFixed(4),
-        cgstAmount: cgstAmount.toFixed(4),
-        sgstAmount: sgstAmount.toFixed(4),
-        igstAmount: igstAmount.toFixed(4),
-        total: total.toFixed(4),
-        currency: input.currency,
-        placeOfSupply: input.placeOfSupply ?? null,
-        customerGstin: input.customerGstin ?? null,
-        supplierGstin: input.supplierGstin ?? null,
-        notes: input.notes ?? null,
-        createdBy: userId,
-      })
-      .returning();
+    const cn = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(creditNotes)
+        .values({
+          orgId,
+          creditNoteNumber: `CN-DRAFT-${Date.now()}`,
+          clientId: input.clientId ?? null,
+          invoiceId: input.invoiceId ?? null,
+          status: "DRAFT",
+          reason: input.reason ?? null,
+          subtotal: subtotal.toFixed(4),
+          taxAmount: taxPool.toFixed(4),
+          cgstAmount: cgstAmount.toFixed(4),
+          sgstAmount: sgstAmount.toFixed(4),
+          igstAmount: igstAmount.toFixed(4),
+          total: total.toFixed(4),
+          currency: input.currency,
+          placeOfSupply: input.placeOfSupply ?? null,
+          customerGstin: input.customerGstin ?? null,
+          supplierGstin: input.supplierGstin ?? null,
+          notes: input.notes ?? null,
+          createdBy: userId,
+        })
+        .returning();
 
-    if (!cn) throw new Error("Credit note insert returned no rows");
+      if (!inserted) throw new Error("Credit note insert returned no rows");
 
-    await this.db.insert(creditNoteItems).values(
-      itemsWithAmounts.map((it) => ({
-        creditNoteId: cn.id,
-        description: it.description,
-        hsnSacCode: it.hsnSacCode ?? null,
-        quantity: it.quantity.toFixed(4),
-        rate: it.rate.toFixed(4),
-        gstRate: it.gstRate.toFixed(2),
-        amount: it.amount.toFixed(4),
-        lineOrder: it.lineOrder,
-      })),
-    );
+      await tx.insert(creditNoteItems).values(
+        itemsWithAmounts.map((it) => ({
+          creditNoteId: inserted.id,
+          description: it.description,
+          hsnSacCode: it.hsnSacCode ?? null,
+          quantity: it.quantity.toFixed(4),
+          rate: it.rate.toFixed(4),
+          gstRate: it.gstRate.toFixed(2),
+          amount: it.amount.toFixed(4),
+          lineOrder: it.lineOrder,
+        })),
+      );
+
+      return inserted;
+    });
 
     this.audit.log({ action: "credit_note.create", userId, orgId, resourceType: "credit_note", resourceId: String(cn.id) });
     return cn;
@@ -217,13 +221,13 @@ export class CreditNotesService {
       await tx
         .update(invoices)
         .set({ amountPaid: newInvPaid.toFixed(4), status: newInvStatus, updatedAt: new Date() })
-        .where(eq(invoices.id, input.invoiceId));
+        .where(and(eq(invoices.id, input.invoiceId), eq(invoices.orgId, orgId)));
 
       const newCnStatus = newApplied >= cnTotal - 0.01 ? "APPLIED" : "POSTED";
       await tx
         .update(creditNotes)
         .set({ appliedAmount: newApplied.toFixed(4), status: newCnStatus, updatedAt: new Date() })
-        .where(eq(creditNotes.id, id));
+        .where(and(eq(creditNotes.id, id), eq(creditNotes.orgId, orgId)));
     });
 
     this.audit.log({ action: "credit_note.apply", userId, orgId, resourceType: "credit_note", resourceId: String(id), metadata: { invoiceId: input.invoiceId, amount: input.amount } });

@@ -188,7 +188,7 @@ export class TimerService {
     await this.db
       .update(timerSessions)
       .set({ status: "PAUSED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(eq(timerSessions.id, timerId));
+      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     return buildTimerShape(row!);
@@ -205,7 +205,7 @@ export class TimerService {
     await this.db
       .update(timerSessions)
       .set({ status: "RUNNING", lastResumedAt: new Date(), updatedAt: new Date() })
-      .where(eq(timerSessions.id, timerId));
+      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     return buildTimerShape(row!);
@@ -229,7 +229,7 @@ export class TimerService {
     await this.db
       .update(timerSessions)
       .set({ status: "STOPPED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(eq(timerSessions.id, timerId));
+      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     return buildTimerShape(row!);
@@ -245,7 +245,7 @@ export class TimerService {
     await this.db
       .update(timerSessions)
       .set({ status: "DISCARDED", updatedAt: new Date() })
-      .where(eq(timerSessions.id, timerId));
+      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     return { success: true };
   }
@@ -283,7 +283,7 @@ export class TimerService {
       await tx
         .update(timerSessions)
         .set({ status: "CONVERTED", updatedAt: new Date() })
-        .where(eq(timerSessions.id, timerId));
+        .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
     });
 
     await this.audit.recordWithDb({

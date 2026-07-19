@@ -30,38 +30,38 @@ export class SurveyLiveSessionController {
 
   @Get("live-sessions/:sessionId")
   @RequirePermission("surveys:live:host")
-  get(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    return this.liveSessions.get(sessionId);
+  get(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.liveSessions.get(u.orgId, sessionId);
   }
 
   @Post("live-sessions/:sessionId/start")
   @RequirePermission("surveys:live:host")
-  start(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    return this.liveSessions.start(sessionId);
+  start(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.liveSessions.start(u.orgId, sessionId);
   }
 
   @Post("live-sessions/:sessionId/next")
   @RequirePermission("surveys:live:host")
-  next(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    return this.liveSessions.next(sessionId);
+  next(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.liveSessions.next(u.orgId, sessionId);
   }
 
   @Post("live-sessions/:sessionId/reveal")
   @RequirePermission("surveys:live:host")
-  reveal(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    return this.liveSessions.reveal(sessionId);
+  reveal(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.liveSessions.reveal(u.orgId, sessionId);
   }
 
   @Post("live-sessions/:sessionId/end")
   @RequirePermission("surveys:live:host")
-  end(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    return this.liveSessions.end(sessionId);
+  end(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.liveSessions.end(u.orgId, sessionId);
   }
 
   @Get("live-sessions/:sessionId/results")
   @RequirePermission("surveys:live:host")
-  async results(@Param("sessionId", ParseIntPipe) sessionId: number) {
-    const session = await this.liveSessions.get(sessionId);
+  async results(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
+    const session = await this.liveSessions.get(u.orgId, sessionId);
     const participantCount = await this.liveParticipants.getParticipantCount(sessionId);
     if (!session.currentQuestionId) {
       return { participantCount, revealed: false, question: null };

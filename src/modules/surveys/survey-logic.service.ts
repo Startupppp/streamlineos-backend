@@ -18,6 +18,7 @@ export class SurveyLogicService {
     return this.db.query.surveyLogicRules.findMany({
       where: and(eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.versionId, draft.id)),
       orderBy: [asc(surveyLogicRules.sortOrder)],
+      limit: 100,
     });
   }
 

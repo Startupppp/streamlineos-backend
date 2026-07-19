@@ -3,9 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { bankTransfers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { BankTransferEntry } from "../../db/schema/hr/bank-transfers";
-
-type BankTransferInsert = typeof bankTransfers.$inferInsert;
+import type { CreateBankTransferInput } from "./dto/payroll.schemas";
 
 function generateNeftCsv(transfer: typeof bankTransfers.$inferSelect): string {
   const header = "SrNo,BeneficiaryName,AccountNumber,IFSCCode,Amount,Remarks";
@@ -28,10 +26,19 @@ export class BankTransfersService {
       .limit(50);
   }
 
-  async create(orgId: string, userId: string, data: Partial<BankTransferInsert>) {
+  async create(orgId: string, userId: string, data: CreateBankTransferInput) {
     const [item] = await this.db
       .insert(bankTransfers)
-      .values({ ...data, orgId, createdBy: userId } as BankTransferInsert)
+      .values({
+        orgId,
+        createdBy: userId,
+        month: data.month,
+        totalAmount: data.totalAmount,
+        employeeCount: data.employeeCount,
+        entries: data.entries,
+        bankFileUrl: data.bankFileUrl ?? null,
+        referenceNo: data.referenceNo ?? null,
+      })
       .returning();
     return item;
   }

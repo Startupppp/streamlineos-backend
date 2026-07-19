@@ -77,6 +77,7 @@ export class ProjectsRoadmapController {
 
   @Delete("roadmap/:itemId")
   @RequirePermission("projects:roadmap:manage")
+  @HttpCode(204)
   deleteRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -115,6 +116,7 @@ export class ProjectsRoadmapController {
 
   @Delete("feedback/:postId")
   @RequirePermission("projects:roadmap:manage")
+  @HttpCode(204)
   deleteFeedback(
     @Param("postId", ParseIntPipe) postId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,6 +155,7 @@ export class ProjectsRoadmapController {
 
   @Delete("changelog/:entryId")
   @RequirePermission("projects:roadmap:manage")
+  @HttpCode(204)
   deleteChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

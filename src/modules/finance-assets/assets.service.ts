@@ -89,7 +89,7 @@ export class AssetsService {
       const [bill] = await this.db
         .select({ id: purchaseBills.id })
         .from(purchaseBills)
-        .where(eq(purchaseBills.id, input.billId))
+        .where(and(eq(purchaseBills.id, input.billId), eq(purchaseBills.orgId, u.orgId)))
         .limit(1);
       if (!bill) throw new NotFoundException(`Purchase bill ${input.billId} not found`);
     }
@@ -385,7 +385,7 @@ export class AssetsService {
     const [acct] = await executor
       .select({ code: ledgerAccounts.code })
       .from(ledgerAccounts)
-      .where(eq(ledgerAccounts.id, accountId))
+      .where(and(eq(ledgerAccounts.id, accountId), eq(ledgerAccounts.orgId, orgId)))
       .limit(1);
     if (!acct) throw new UnprocessableEntityException(`Ledger account for category ${categoryId} not found`);
     return acct.code;
@@ -410,7 +410,7 @@ export class AssetsService {
     const [acct] = await executor
       .select({ code: ledgerAccounts.code })
       .from(ledgerAccounts)
-      .where(eq(ledgerAccounts.id, map.accountId))
+      .where(and(eq(ledgerAccounts.id, map.accountId), eq(ledgerAccounts.orgId, orgId)))
       .limit(1);
     if (!acct) throw new UnprocessableEntityException(`Ledger account for system purpose ${purpose} not found`);
     return acct.code;

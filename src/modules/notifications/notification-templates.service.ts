@@ -41,6 +41,8 @@ export class NotificationTemplatesService {
           : undefined,
       ),
       orderBy: (t, { desc }) => [desc(t.updatedAt)],
+      limit: filters.limit,
+      offset: filters.offset,
     });
   }
 

@@ -190,7 +190,7 @@ export class ImportsService {
         duplicateCount,
         status: "COMPLETED",
       })
-      .where(eq(finBankImports.id, importRecord.id));
+      .where(and(eq(finBankImports.id, importRecord.id), eq(finBankImports.orgId, orgId)));
 
     if (newTransactionIds.length > 0) {
       await this.matching.suggestMatches(u, input.bankAccountId, newTransactionIds);

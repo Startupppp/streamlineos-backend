@@ -42,7 +42,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 function resolveLimit(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? Math.min(parsed, 100) : fallback;
 }
 
 @RequireModule("crm")

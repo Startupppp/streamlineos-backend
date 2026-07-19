@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -39,6 +40,7 @@ export class HrImportController {
   constructor(private readonly importService: HrImportService) {}
 
   @Post("hr/import/jobs")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   createJob(

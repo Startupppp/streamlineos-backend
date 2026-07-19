@@ -228,7 +228,7 @@ export class CrmPricebooksService {
     }
 
     const product = await this.db.query.crmProducts.findFirst({
-      where: eq(crmProducts.id, query.productId),
+      where: and(eq(crmProducts.id, query.productId), eq(crmProducts.orgId, orgId)),
       columns: { unitPrice: true },
     });
     if (!product) throw new NotFoundException("Product not found");

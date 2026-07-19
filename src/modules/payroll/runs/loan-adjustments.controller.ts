@@ -1,5 +1,6 @@
 import {
   Controller,
+  HttpCode,
   Post,
   Body,
   Param,
@@ -23,6 +24,7 @@ export class LoanAdjustmentsController {
   constructor(private readonly loanAdjustmentsService: LoanAdjustmentsService) {}
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("payroll:runs:update")
   async create(
     @Param("runId", ParseIntPipe) runId: number,

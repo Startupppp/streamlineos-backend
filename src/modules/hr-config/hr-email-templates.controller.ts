@@ -58,6 +58,7 @@ export class HrEmailTemplatesController {
   }
 
   @Delete(":templateId")
+  @HttpCode(204)
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
+  Controller, Get, HttpCode, Patch, Delete, Post, Param, Query, Body, UseGuards, Res
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -23,6 +23,13 @@ import {
   type BulkUpdateUsersInput, type ListAuditInput, type ImportUsersRow, type CreateUserInput,
 } from "./dto/users.schemas";
 import { z } from "zod";
+
+const listInvitationsSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  includeAccepted: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
+});
+type ListInvitationsInput = z.infer<typeof listInvitationsSchema>;
 
 @Controller("users")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -63,13 +70,13 @@ export class UsersController {
   @RequirePermission("hr:employees:manage")
   @Get("invitations")
   listInvitations(
-    @Query() query: { page?: string; limit?: string; includeAccepted?: string },
+    @Query(new ZodValidationPipe(listInvitationsSchema)) query: ListInvitationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitations.listPaginated(u.orgId, {
-      page: query.page ? Number(query.page) : undefined,
-      limit: query.limit ? Number(query.limit) : undefined,
-      includeAccepted: query.includeAccepted === "true",
+      page: query.page,
+      limit: query.limit,
+      includeAccepted: query.includeAccepted,
     });
   }
 
@@ -116,6 +123,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:manage")
   @Post("bulk-suspend")
+  @HttpCode(200)
   bulkSuspend(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -125,6 +133,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:manage")
   @Post("bulk-archive")
+  @HttpCode(200)
   bulkArchive(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -134,6 +143,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:manage")
   @Post("bulk-restore")
+  @HttpCode(200)
   bulkRestore(
     @Body(new ZodValidationPipe(bulkActionSchema)) body: BulkActionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +153,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:manage")
   @Post("bulk-update")
+  @HttpCode(200)
   bulkUpdate(
     @Body(new ZodValidationPipe(bulkUpdateUsersSchema)) body: BulkUpdateUsersInput,
     @CurrentUser() u: CurrentUserContext,
@@ -164,6 +175,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:create")
   @Post("invitations/:invitationId/resend")
+  @HttpCode(200)
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, u.userId);
   }
@@ -295,6 +307,7 @@ export class UsersController {
 
   @RequirePermission("hr:employees:manage")
   @Post(":userId/reset-password")
+  @HttpCode(200)
   resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.resetPassword(u.orgId, userId, u.userId);
   }

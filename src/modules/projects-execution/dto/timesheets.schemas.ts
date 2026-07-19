@@ -24,7 +24,7 @@ export const timeEntriesListQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   page: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const teamTimesheetsQuerySchema = z.object({

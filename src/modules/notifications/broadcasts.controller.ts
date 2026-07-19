@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -41,6 +42,7 @@ export class BroadcastsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("notifications:broadcasts:manage")
   create(
     @Body(new ZodValidationPipe(createBroadcastSchema)) dto: CreateBroadcastInput,
@@ -60,6 +62,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @HttpCode(200)
   @RequirePermission("notifications:broadcasts:manage")
   publish(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
@@ -69,6 +72,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/cancel")
+  @HttpCode(200)
   @RequirePermission("notifications:broadcasts:manage")
   cancel(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,

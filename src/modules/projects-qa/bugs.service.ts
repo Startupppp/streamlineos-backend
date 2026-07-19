@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
-import { bugs } from "../../db/schema";
+import { bugs, projects } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -13,7 +13,17 @@ export class BugsService {
     private readonly audit: AuditService,
   ) {}
 
+  private async assertProject(orgId: string, projectId: number): Promise<void> {
+    const [row] = await this.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .limit(1);
+    if (!row) throw new NotFoundException("Project not found");
+  }
+
   async listBugs(orgId: string, projectId: number, query: BugListQuery) {
+    await this.assertProject(orgId, projectId);
     const conditions = [
       eq(bugs.orgId, orgId),
       eq(bugs.projectId, projectId),
@@ -45,6 +55,7 @@ export class BugsService {
   }
 
   async createBug(orgId: string, userId: string, projectId: number, input: CreateBugInput) {
+    await this.assertProject(orgId, projectId);
     const [bug] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx

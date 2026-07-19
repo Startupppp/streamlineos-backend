@@ -51,7 +51,7 @@ export class InvAiService {
 
     const existingKeys = new Set<string>(
       existing.map((e) => {
-        const refs = e.sourceRefs as Record<string, unknown>;
+        const refs: Record<string, unknown> = e.sourceRefs ?? {};
         return `${e.insightType}:${refs["_key"] ?? ""}`;
       }),
     );

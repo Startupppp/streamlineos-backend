@@ -78,6 +78,7 @@ export class FormsController {
 
   @Delete(":formId")
   @RequirePermission("projects:forms:manage")
+  @HttpCode(204)
   deleteForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,

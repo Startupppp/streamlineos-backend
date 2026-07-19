@@ -98,6 +98,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/activate")
+  @HttpCode(200)
   @RequirePermission("hr:policies:manage")
   activate(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -107,6 +108,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/archive")
+  @HttpCode(200)
   @RequirePermission("hr:policies:manage")
   archive(
     @Param("policyId", ParseIntPipe) policyId: number,

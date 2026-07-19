@@ -55,23 +55,23 @@ export class SupportCustomFieldsController {
     return result;
   }
 
-  @Patch("custom-fields/:id")
+  @Patch("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
   async updateField(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.customFields.updateField(u.orgId, id, body);
-    await this.audit.record(u.orgId, u.userId, "custom_field", id, "updated", body);
+    const result = await this.customFields.updateField(u.orgId, fieldId, body);
+    await this.audit.record(u.orgId, u.userId, "custom_field", fieldId, "updated", body);
     return result;
   }
 
-  @Delete("custom-fields/:id")
+  @Delete("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
-  async deleteField(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.customFields.deleteField(u.orgId, id);
-    await this.audit.record(u.orgId, u.userId, "custom_field", id, "deleted");
+  async deleteField(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.customFields.deleteField(u.orgId, fieldId);
+    await this.audit.record(u.orgId, u.userId, "custom_field", fieldId, "deleted");
     return result;
   }
 

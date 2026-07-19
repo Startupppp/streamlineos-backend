@@ -22,11 +22,13 @@ export class MarketplaceService {
         .select()
         .from(marketplaceApps)
         .where(eq(marketplaceApps.isActive, true))
-        .orderBy(marketplaceApps.sortOrder),
+        .orderBy(marketplaceApps.sortOrder)
+        .limit(100),
       this.db
         .select()
         .from(appInstallations)
-        .where(eq(appInstallations.orgId, orgId)),
+        .where(eq(appInstallations.orgId, orgId))
+        .limit(100),
     ]);
     const installMap = new Map(installs.map((i) => [i.appId, i]));
     return apps.map((app) => ({

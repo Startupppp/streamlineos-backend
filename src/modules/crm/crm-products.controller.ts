@@ -65,11 +65,12 @@ export class CrmProductsController {
   }
 
   @Delete("products/:productId")
+  @HttpCode(204)
   @RequirePermission("crm:products:manage")
-  remove(
+  async remove(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.remove(u.orgId, productId);
+    await this.products.remove(u.orgId, productId);
   }
 }

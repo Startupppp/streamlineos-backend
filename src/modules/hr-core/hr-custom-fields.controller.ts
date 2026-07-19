@@ -54,24 +54,24 @@ export class HrCustomFieldsController {
     return this.svc.createDefinition(u.orgId, body);
   }
 
-  @Patch("definitions/:id")
+  @Patch("definitions/:fieldId")
   @RequirePermission("hr:employees:manage")
   updateDefinition(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateDefinition(u.orgId, id, body);
+    return this.svc.updateDefinition(u.orgId, fieldId, body);
   }
 
-  @Delete("definitions/:id")
+  @Delete("definitions/:fieldId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   deleteDefinition(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteDefinition(u.orgId, id);
+    return this.svc.deleteDefinition(u.orgId, fieldId);
   }
 
   @Get(":entityType/:entityId/values")

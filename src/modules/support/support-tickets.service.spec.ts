@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, NotFoundException } from "@nest
 import { SupportTicketsService } from "./support-tickets.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
@@ -88,13 +89,22 @@ const mockMentions = {
   processMessageMentions: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockPlanLimits = {
+  assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+};
+
 describe("SupportTicketsService", () => {
   let service: SupportTicketsService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDb.returning.mockResolvedValue([{ id: 1, orgId: "org1", title: "Login not working" }]);
+    mockDb.select.mockReturnThis();
+    mockDb.from.mockReturnThis();
+    mockDb.where.mockResolvedValue([]);
+    mockDb.groupBy.mockResolvedValue([]);
     mockCache.cached.mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher());
+    mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
     mockMacros.applyRoutingRules.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,6 +112,7 @@ describe("SupportTicketsService", () => {
         SupportTicketsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
+        { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: SupportMacrosService, useValue: mockMacros },
         { provide: SupportNotificationsService, useValue: mockNotifications },
         { provide: SupportRealtimeService, useValue: mockRealtime },

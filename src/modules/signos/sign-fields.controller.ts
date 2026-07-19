@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -24,6 +24,7 @@ export class SignFieldsController {
   constructor(private readonly fields: SignFieldsService) {}
 
   @Post("envelopes/:envelopeId/fields")
+  @HttpCode(201)
   @RequirePermission("sign:envelope:create")
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -40,21 +41,21 @@ export class SignFieldsController {
     return this.fields.listForEnvelope(u.orgId, envelopeId);
   }
 
-  @Patch("fields/:id")
+  @Patch("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body(new ZodValidationPipe(updateFieldSchema)) body: UpdateFieldInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.fields.update(u.orgId, id, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.fields.update(u.orgId, fieldId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
   }
 
-  @Delete("fields/:id")
+  @Delete("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
-  async remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.fields.remove(u.orgId, id, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+  async remove(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
     return { success: true };
   }
 }

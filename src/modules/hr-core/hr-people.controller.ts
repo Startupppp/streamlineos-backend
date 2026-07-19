@@ -81,6 +81,7 @@ export class HrPeopleController {
   }
 
   @Delete(":personId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   remove(

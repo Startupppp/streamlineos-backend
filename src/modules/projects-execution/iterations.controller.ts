@@ -87,6 +87,7 @@ export class SprintsController {
 
   @Delete(":sprintId")
   @RequirePermission("projects:sprints:manage")
+  @HttpCode(204)
   deleteSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("sprintId", ParseIntPipe) sprintId: number,
@@ -136,6 +137,7 @@ export class CyclesController {
 
   @Delete(":cycleId")
   @RequirePermission("projects:workspace:manage")
+  @HttpCode(204)
   deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +184,7 @@ export class ModulesController {
 
   @Delete(":moduleId")
   @RequirePermission("projects:workspace:manage")
+  @HttpCode(204)
   deleteModule(
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -229,6 +232,7 @@ export class EpicsController {
 
   @Delete(":epicId")
   @RequirePermission("projects:tickets:delete")
+  @HttpCode(204)
   deleteEpic(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("epicId", ParseIntPipe) epicId: number,

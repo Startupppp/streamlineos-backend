@@ -29,7 +29,6 @@ import {
   removeMemberSchema,
   updateCustomStateSchema,
   updateLabelSchema,
-  updateProjectSchema,
   type AddMemberInput,
   type CreateLabelInput,
   type CreateProjectInput,
@@ -39,7 +38,6 @@ import {
   type RemoveMemberInput,
   type UpdateCustomStateInput,
   type UpdateLabelInput,
-  type UpdateProjectInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -119,8 +117,11 @@ export class ProjectsController {
 
   @Get(":projectId/members")
   @RequirePermission("projects:view")
-  listMembers(@Param("projectId", ParseIntPipe) projectId: number) {
-    return this.members.listMembers(projectId);
+  listMembers(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.listMembers(u.orgId, projectId);
   }
 
   @Post(":projectId/members")
@@ -136,6 +137,7 @@ export class ProjectsController {
 
   @Delete(":projectId/members")
   @RequirePermission("projects:manage")
+  @HttpCode(204)
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
@@ -201,33 +203,5 @@ export class ProjectsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.createLabel(u.orgId, body);
-  }
-
-  @Get(":projectId")
-  @RequirePermission("projects:view")
-  getProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.projects.getProject(u, projectId);
-  }
-
-  @Patch(":projectId")
-  @RequirePermission("projects:update")
-  updateProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.projects.updateProject(u, projectId, body);
-  }
-
-  @Delete(":projectId")
-  @RequirePermission("projects:delete")
-  deleteProject(
-    @Param("projectId", ParseIntPipe) projectId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.projects.deleteProject(u, projectId);
   }
 }

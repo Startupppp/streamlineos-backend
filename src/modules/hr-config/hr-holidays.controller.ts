@@ -86,6 +86,7 @@ export class HrHolidaysController {
   }
 
   @Delete(":holidayId")
+  @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,
@@ -93,6 +94,6 @@ export class HrHolidaysController {
   ) {
     const existing = await this.holidays.getById(u.orgId, holidayId);
     if (!existing) throw new NotFoundException("Holiday not found.");
-    return this.holidays.remove(holidayId);
+    return this.holidays.remove(u.orgId, holidayId);
   }
 }

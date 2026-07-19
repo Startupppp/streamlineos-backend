@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Patch,
   Delete,
@@ -36,6 +37,7 @@ export class SalaryStructureTemplatesController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   create(
@@ -45,24 +47,25 @@ export class SalaryStructureTemplatesController {
     return this.service.create(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(updateSalaryStructureTemplateSchema)) body: UpdateSalaryStructureTemplateInput,
   ) {
-    return this.service.update(u.orgId, id, body);
+    return this.service.update(u.orgId, templateId, body);
   }
 
-  @Delete(":id")
+  @Delete(":templateId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   remove(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("templateId", ParseIntPipe) templateId: number,
   ) {
-    return this.service.remove(u.orgId, id);
+    return this.service.remove(u.orgId, templateId);
   }
 }

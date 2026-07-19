@@ -61,6 +61,7 @@ export class CrmWebFormsController {
   }
 
   @Delete(":formId")
+  @HttpCode(204)
   @RequirePermission("crm:web-forms:manage")
   async remove(
     @Param("formId", ParseIntPipe) formId: number,
@@ -68,6 +69,6 @@ export class CrmWebFormsController {
   ) {
     const exists = await this.forms.exists(u.orgId, formId);
     if (!exists) throw new NotFoundException("Form not found");
-    return this.forms.remove(u.orgId, formId);
+    await this.forms.remove(u.orgId, formId);
   }
 }

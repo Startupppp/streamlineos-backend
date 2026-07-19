@@ -43,7 +43,8 @@ export class KbPageCommentsController {
   }
 
   @Post("pages/:pageId/comments")
-  @RequirePermission("kb:pages:view")
+  @RequirePermission("kb:pages:update")
+  @HttpCode(201)
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(createPageCommentSchema)) body: CreatePageCommentInput,
@@ -53,7 +54,7 @@ export class KbPageCommentsController {
   }
 
   @Patch("page-comments/:commentId")
-  @RequirePermission("kb:pages:view")
+  @RequirePermission("kb:pages:update")
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body(new ZodValidationPipe(updatePageCommentSchema)) body: UpdatePageCommentInput,
@@ -66,7 +67,7 @@ export class KbPageCommentsController {
 
   @Delete("page-comments/:commentId")
   @HttpCode(204)
-  @RequirePermission("kb:pages:view")
+  @RequirePermission("kb:pages:update")
   async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,7 +78,8 @@ export class KbPageCommentsController {
   }
 
   @Post("page-comments/:commentId/resolve")
-  @RequirePermission("kb:pages:view")
+  @RequirePermission("kb:pages:update")
+  @HttpCode(200)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

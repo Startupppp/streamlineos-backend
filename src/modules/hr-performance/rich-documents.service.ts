@@ -92,7 +92,7 @@ export class RichDocumentsService {
     await this.db
       .update(richDocuments)
       .set({ isPublished: !existing.isPublished, updatedAt: new Date() })
-      .where(eq(richDocuments.id, documentId));
+      .where(and(eq(richDocuments.id, documentId), eq(richDocuments.orgId, orgId)));
 
     return { success: true };
   }

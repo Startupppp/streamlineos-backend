@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -13,6 +14,7 @@ import {
   type RejectTravelRequestInput,
 } from "./dto/travel.schemas";
 
+@RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("hr/travel")
 export class TravelController {
@@ -25,6 +27,7 @@ export class TravelController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:travel:create")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -39,25 +42,31 @@ export class TravelController {
     return this.service.listPending(u.orgId);
   }
 
-  @Patch(":id/manager-approve")
+  @Patch(":travelRequestId/manager-approve")
   @RequirePermission("hr:travel:manage")
-  managerApprove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.managerApprove(u.orgId, id, u.userId);
+  managerApprove(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
+  ) {
+    return this.service.managerApprove(u.orgId, travelRequestId, u.userId);
   }
 
-  @Patch(":id/finance-approve")
+  @Patch(":travelRequestId/finance-approve")
   @RequirePermission("hr:travel:manage")
-  financeApprove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.financeApprove(u.orgId, id, u.userId);
+  financeApprove(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
+  ) {
+    return this.service.financeApprove(u.orgId, travelRequestId, u.userId);
   }
 
-  @Patch(":id/reject")
+  @Patch(":travelRequestId/reject")
   @RequirePermission("hr:travel:manage")
   reject(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
     @Body(new ZodValidationPipe(rejectTravelRequestSchema)) body: RejectTravelRequestInput,
   ) {
-    return this.service.reject(u.orgId, id, body.reason);
+    return this.service.reject(u.orgId, travelRequestId, body.reason);
   }
 }

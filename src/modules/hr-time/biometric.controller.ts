@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -7,12 +8,19 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BiometricService } from "./biometric.service";
-import {
-  createBiometricDeviceSchema,
-  updateBiometricDeviceSchema,
-  type CreateBiometricDeviceInput,
-  type UpdateBiometricDeviceInput,
-} from "./dto/biometric.schemas";
+
+const createDeviceSchema = z.object({
+  name: z.string().min(1).max(100),
+  ipAddress: z.string().min(1).max(45),
+  port: z.number().int().positive().optional(),
+  vendor: z.string().max(100).optional(),
+  location: z.string().max(200).optional(),
+});
+
+const updateDeviceSchema = createDeviceSchema.partial();
+
+type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
+type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -28,17 +36,25 @@ export class BiometricController {
   }
 
   @Post("devices")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  createDevice(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createBiometricDeviceSchema)) body: CreateBiometricDeviceInput) {
+  createDevice(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createDeviceSchema)) body: CreateDeviceInput,
+  ) {
     return this.service.createDevice(u.orgId, body);
   }
 
-  @Patch("devices/:id")
+  @Patch("devices/:deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
-  updateDevice(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateBiometricDeviceSchema)) body: UpdateBiometricDeviceInput) {
-    return this.service.updateDevice(u.orgId, id, body);
+  updateDevice(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("deviceId", ParseIntPipe) deviceId: number,
+    @Body(new ZodValidationPipe(updateDeviceSchema)) body: UpdateDeviceInput,
+  ) {
+    return this.service.updateDevice(u.orgId, deviceId, body);
   }
 
   @Get("logs")

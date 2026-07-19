@@ -77,12 +77,13 @@ export class ContactRolesController {
   }
 
   @Delete(":contactId/roles/:roleId")
+  @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
-  removeRole(
+  async removeRole(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.removeRole(u.orgId, contactId, roleId, u.userId);
+    await this.svc.removeRole(u.orgId, contactId, roleId, u.userId);
   }
 }

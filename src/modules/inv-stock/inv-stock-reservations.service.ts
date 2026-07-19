@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { invStockReservations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -24,11 +24,11 @@ export class InvStockReservationsService {
     const hash = `${sourceType ?? ""}:${status ?? ""}:${variantId ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
     return this.cache.cached(CACHE_KEYS.invReservationsList(orgId, hash), async () => {
-      const conditions = [eq(invStockReservations.orgId, orgId)];
+      const conditions: SQL[] = [eq(invStockReservations.orgId, orgId)];
       if (sourceType) conditions.push(eq(invStockReservations.sourceType, sourceType));
       if (status) conditions.push(eq(invStockReservations.status, status));
       if (variantId) conditions.push(eq(invStockReservations.productVariantId, variantId));
-      if (warehouseId) conditions.push(eq(invStockReservations.warehouseId, warehouseId) as ReturnType<typeof eq>);
+      if (warehouseId) conditions.push(eq(invStockReservations.warehouseId, warehouseId));
 
       const where = and(...conditions);
       const [items, countResult] = await Promise.all([

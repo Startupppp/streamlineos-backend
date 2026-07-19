@@ -201,10 +201,17 @@ export class SupportChannelsService {
    * "requesterPhone" column for this alone isn't worth a migration yet.
    */
   private async ingestInboundMessage(orgId: string, channel: SupportChannelRow, input: NormalizedInboundMessage) {
-    const existingByMessageId = await this.db.query.supportTicketMessages.findFirst({
-      where: eq(supportTicketMessages.sourceMessageId, input.messageId),
-      columns: { id: true, ticketId: true },
-    });
+    const [existingByMessageId] = await this.db
+      .select({ id: supportTicketMessages.id, ticketId: supportTicketMessages.ticketId })
+      .from(supportTicketMessages)
+      .innerJoin(supportTickets, eq(supportTicketMessages.ticketId, supportTickets.id))
+      .where(
+        and(
+          eq(supportTicketMessages.sourceMessageId, input.messageId),
+          eq(supportTickets.orgId, orgId),
+        ),
+      )
+      .limit(1);
     if (existingByMessageId) {
       return { ticketId: existingByMessageId.ticketId, messageId: existingByMessageId.id, deduped: true };
     }

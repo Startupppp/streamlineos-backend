@@ -26,6 +26,6 @@ export class BiometricService {
 
   async getLogs(orgId: string) {
     return this.db.select().from(biometricLogs).where(eq(biometricLogs.orgId, orgId))
-      .orderBy(desc(biometricLogs.punchTime)).limit(200);
+      .orderBy(desc(biometricLogs.punchTime)).limit(100);
   }
 }

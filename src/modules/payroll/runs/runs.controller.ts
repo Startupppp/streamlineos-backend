@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Body,
   Param,
@@ -44,6 +45,7 @@ export class RunsController {
   ) {}
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("payroll:runs:update")
   async create(
     @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
@@ -89,6 +91,7 @@ export class RunsController {
   }
 
   @Post(":runId/generate")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async generate(
     @Param("runId", ParseIntPipe) runId: number,
@@ -104,6 +107,7 @@ export class RunsController {
   }
 
   @Post(":runId/recalculate")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async recalculate(
     @Param("runId", ParseIntPipe) runId: number,
@@ -144,6 +148,7 @@ export class RunsController {
   }
 
   @Post(":runId/employees/:runEmployeeId/adjustments")
+  @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
   async addAdjustment(
     @Param("runId", ParseIntPipe) runId: number,
@@ -160,6 +165,7 @@ export class RunsController {
   }
 
   @Post(":runId/employees/:runEmployeeId/hold")
+  @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   async setEmployeeHold(
     @Param("runId", ParseIntPipe) runId: number,

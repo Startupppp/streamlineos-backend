@@ -167,6 +167,74 @@ export const taxCalcSchema = z.object({
 });
 export type TaxCalcInput = z.infer<typeof taxCalcSchema>;
 
+const bankTransferEntrySchema = z.object({
+  userId: z.string().min(1),
+  amount: z.number().positive(),
+  bankAccount: z.string().min(1).max(50),
+  ifscCode: z.string().min(1).max(20),
+  employeeName: z.string().min(1).max(200),
+  status: z.enum(["PENDING", "COMPLETED", "FAILED"]).default("PENDING"),
+});
+
+export const createBankTransferSchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must be YYYY-MM"),
+  totalAmount: z.string().regex(/^\d+(\.\d{1,2})?$/),
+  employeeCount: z.number().int().nonnegative(),
+  entries: z.array(bankTransferEntrySchema).min(1),
+  bankFileUrl: z.string().url().optional(),
+  referenceNo: z.string().max(100).optional(),
+});
+export type CreateBankTransferInput = z.infer<typeof createBankTransferSchema>;
+
+export const updateBankTransferStatusSchema = z.object({
+  status: z.enum(["PENDING", "PROCESSING", "COMPLETED", "FAILED"]),
+  referenceNo: z.string().max(100).optional(),
+});
+export type UpdateBankTransferStatusInput = z.infer<typeof updateBankTransferStatusSchema>;
+
+export const createAllowanceSchema = z.object({
+  name: z.string().min(1).max(100),
+  category: z.string().min(1).max(100),
+  formulaType: z.enum(["FIXED", "PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FORMULA"]).optional(),
+  value: z.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
+  cap: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  isTaxable: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+export type CreateAllowanceInput = z.infer<typeof createAllowanceSchema>;
+
+export const updateAllowanceSchema = createAllowanceSchema.partial();
+export type UpdateAllowanceInput = z.infer<typeof updateAllowanceSchema>;
+
+const decimalNonNegativeStringSchema = z
+  .number()
+  .nonnegative()
+  .optional()
+  .transform((n) => (n === undefined ? undefined : n.toFixed(2)));
+
+export const hrTaxCreateOrUpdateSchema = z.object({
+  financialYear: z.string().min(1).max(20),
+  regime: z.enum(["OLD", "NEW"]).optional(),
+  hra: decimalNonNegativeStringSchema,
+  lta: decimalNonNegativeStringSchema,
+  section80c: decimalNonNegativeStringSchema,
+  section80d: decimalNonNegativeStringSchema,
+  section80g: decimalNonNegativeStringSchema,
+  homeLoanInterest: decimalNonNegativeStringSchema,
+  previousEmploymentIncome: decimalNonNegativeStringSchema,
+  previousEmployerTds: decimalNonNegativeStringSchema,
+});
+export type HrTaxCreateOrUpdateInput = z.infer<typeof hrTaxCreateOrUpdateSchema>;
+
+export const hrTaxAddProofSchema = z.object({
+  category: z.string().min(1).max(100),
+  amount: z.number().nonnegative().transform((n) => n.toFixed(2)),
+  description: z.string().max(500).optional(),
+  proofUrl: z.string().url().optional(),
+  financialYear: z.string().min(1).max(20).optional(),
+});
+export type HrTaxAddProofInput = z.infer<typeof hrTaxAddProofSchema>;
+
 export const createTaxWindowBodySchema = z.object({
   financialYear: z.string().min(1),
   opensAt: z.string().datetime(),

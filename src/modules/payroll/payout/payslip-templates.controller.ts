@@ -68,6 +68,7 @@ export class PayslipTemplatesController {
   }
 
   @Delete(":templateId")
+  @HttpCode(204)
   @RequirePermission("payroll:payslips:manage")
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,

@@ -161,11 +161,11 @@ export class LeadsOpsService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(leads).set(mergedFields).where(eq(leads.id, winnerId));
+      await tx.update(leads).set(mergedFields).where(and(eq(leads.id, winnerId), eq(leads.orgId, orgId)));
       await tx
         .update(leads)
         .set({ deletedAt: new Date(), mergedIntoId: winnerId, updatedAt: new Date() })
-        .where(eq(leads.id, loserId));
+        .where(and(eq(leads.id, loserId), eq(leads.orgId, orgId)));
       await tx.update(leadActivities).set({ leadId: winnerId }).where(eq(leadActivities.leadId, loserId));
       await tx.update(leadNotes).set({ leadId: winnerId }).where(eq(leadNotes.leadId, loserId));
       await tx.update(leadTasks).set({ leadId: winnerId }).where(eq(leadTasks.leadId, loserId));

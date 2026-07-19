@@ -1,17 +1,19 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbackService } from "./feedback.service";
 import {
-  createFeedbackCycleSchema,
+  createCycleSchema,
   updateCycleStatusSchema,
-  type CreateFeedbackCycleInput,
+  submitResponseSchema,
+  type CreateCycleInput,
   type UpdateCycleStatusInput,
+  type SubmitResponseInput,
 } from "./dto/feedback.schemas";
 
 @RequireModule("hr")
@@ -27,44 +29,46 @@ export class FeedbackController {
   }
 
   @Post("cycles")
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
   createCycle(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createFeedbackCycleSchema)) body: CreateFeedbackCycleInput,
+    @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
 
-  @Get("cycles/:id")
+  @Get("cycles/:cycleId")
   @RequirePermission("hr:performance:view")
-  getCycle(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.getCycle(u.orgId, id);
+  getCycle(@CurrentUser() u: CurrentUserContext, @Param("cycleId", ParseIntPipe) cycleId: number) {
+    return this.service.getCycle(u.orgId, cycleId);
   }
 
-  @Patch("cycles/:id")
+  @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
   updateCycleStatus(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("cycleId", ParseIntPipe) cycleId: number,
     @Body(new ZodValidationPipe(updateCycleStatusSchema)) body: UpdateCycleStatusInput,
   ) {
-    return this.service.updateCycleStatus(u.orgId, id, body.status);
+    return this.service.updateCycleStatus(u.orgId, cycleId, body.status);
   }
 
   @Get("my-reviews")
   @RequirePermission("hr:performance:view")
   getMyPendingReviews(@CurrentUser() u: CurrentUserContext) {
-    return this.service.getMyPendingReviews(u.userId);
+    return this.service.getMyPendingReviews(u.orgId, u.userId);
   }
 
   @Post("requests/:requestId/respond")
+  @HttpCode(200)
   @RequirePermission("hr:performance:view")
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body() body: Parameters<FeedbackService["submitResponse"]>[2],
+    @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,
   ) {
-    return this.service.submitResponse(u.userId, requestId, body);
+    return this.service.submitResponse(u.orgId, u.userId, requestId, body);
   }
 
   @Get("results/:subjectId")

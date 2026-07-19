@@ -12,12 +12,17 @@ import {
   documents,
 } from "../../db/schema";
 import { hrImportRows } from "../../db/schema/hr/import-jobs";
-import type {
-  EmployeeRow,
-  LeaveBalanceRow,
-  AttendanceRow,
-  AssetRow,
-  DocumentMetadataRow,
+import {
+  employeeRowSchema,
+  leaveBalanceRowSchema,
+  attendanceRowSchema,
+  assetRowSchema,
+  documentMetadataRowSchema,
+  type EmployeeRow,
+  type LeaveBalanceRow,
+  type AttendanceRow,
+  type AssetRow,
+  type DocumentMetadataRow,
 } from "./schemas/entity-row-schemas";
 import type { HrImportEntity } from "./dto/import-job.dto";
 
@@ -38,11 +43,11 @@ export class HrImportCommitService {
     entity: HrImportEntity,
     payload: Record<string, unknown>,
   ): Promise<CommitRef | null> {
-    if (entity === "employees") return this.commitEmployee(tx, orgId, payload as unknown as EmployeeRow);
-    if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, payload as unknown as LeaveBalanceRow);
-    if (entity === "attendance") return this.commitAttendance(tx, orgId, payload as unknown as AttendanceRow);
-    if (entity === "assets") return this.commitAsset(tx, orgId, payload as unknown as AssetRow);
-    if (entity === "document_metadata") return this.commitDocument(tx, orgId, payload as unknown as DocumentMetadataRow);
+    if (entity === "employees") return this.commitEmployee(tx, orgId, employeeRowSchema.parse(payload));
+    if (entity === "leave_balances") return this.commitLeaveBalance(tx, orgId, leaveBalanceRowSchema.parse(payload));
+    if (entity === "attendance") return this.commitAttendance(tx, orgId, attendanceRowSchema.parse(payload));
+    if (entity === "assets") return this.commitAsset(tx, orgId, assetRowSchema.parse(payload));
+    if (entity === "document_metadata") return this.commitDocument(tx, orgId, documentMetadataRowSchema.parse(payload));
     return null;
   }
 

@@ -72,7 +72,7 @@ export class BonusesService {
     const [updated] = await this.db
       .update(bonuses)
       .set({ status: body.status, approvedBy: userId, approvedAt: new Date() })
-      .where(eq(bonuses.id, bonusId))
+      .where(and(eq(bonuses.id, bonusId), eq(bonuses.orgId, orgId)))
       .returning();
 
     return { ok: true, bonus: updated };

@@ -169,6 +169,16 @@ export class UserOpsService {
   async bulkUpdateUsers(orgId: string, data: BulkUpdateUsersInput, actorUserId: string) {
     const { userIds, role, departmentId, branchId, teamId, managerUserId } = data;
 
+    const memberRows = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)));
+    const scopedIds = memberRows.map((r) => r.userId);
+
+    if (scopedIds.length === 0) {
+      return { success: true, updated: 0 };
+    }
+
     const userUpdate: Record<string, unknown> = {};
     if (departmentId !== undefined) userUpdate.departmentId = departmentId;
     if (branchId !== undefined) userUpdate.branchId = branchId;
@@ -176,7 +186,7 @@ export class UserOpsService {
     if (teamId !== undefined) userUpdate.team = teamId;
 
     if (Object.keys(userUpdate).length > 0) {
-      await this.db.update(users).set(userUpdate).where(inArray(users.id, userIds));
+      await this.db.update(users).set(userUpdate).where(inArray(users.id, scopedIds));
     }
 
     if (role) {
@@ -186,7 +196,7 @@ export class UserOpsService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            inArray(organizationMembers.userId, userIds),
+            inArray(organizationMembers.userId, scopedIds),
           ),
         );
     }
@@ -196,10 +206,10 @@ export class UserOpsService {
       userId: actorUserId,
       orgId,
       targetType: "user",
-      metadata: { userIds, changes: { role, departmentId, branchId, teamId, managerUserId } },
+      metadata: { userIds: scopedIds, changes: { role, departmentId, branchId, teamId, managerUserId } },
     });
 
-    return { success: true, updated: userIds.length };
+    return { success: true, updated: scopedIds.length };
   }
 
   async resetPassword(orgId: string, userId: string, actorUserId: string) {

@@ -50,7 +50,7 @@ export class TaxService {
       const [updated] = await this.db
         .update(taxDeclarations)
         .set({ ...data, updatedAt: new Date() })
-        .where(eq(taxDeclarations.id, existing[0].id))
+        .where(and(eq(taxDeclarations.id, existing[0].id), eq(taxDeclarations.orgId, orgId)))
         .returning();
       return updated;
     }
@@ -96,7 +96,7 @@ export class TaxService {
     return this.db
       .select()
       .from(investmentProofs)
-      .where(eq(investmentProofs.declarationId, declarationId))
+      .where(and(eq(investmentProofs.declarationId, declarationId), eq(investmentProofs.orgId, orgId)))
       .orderBy(desc(investmentProofs.createdAt));
   }
 }

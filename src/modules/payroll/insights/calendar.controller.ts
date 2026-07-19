@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -41,6 +42,7 @@ export class CalendarController {
   }
 
   @Post("generate")
+  @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   generate(@CurrentUser() u: CurrentUserContext, @Query("month") month: string) {
@@ -48,6 +50,7 @@ export class CalendarController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   create(
@@ -69,6 +72,7 @@ export class CalendarController {
   }
 
   @Delete(":eventId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   remove(

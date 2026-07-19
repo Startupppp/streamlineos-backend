@@ -48,6 +48,7 @@ export class ProjectsTemplatesController {
 
   @Delete("templates/:templateId")
   @RequirePermission("projects:manage")
+  @HttpCode(204)
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

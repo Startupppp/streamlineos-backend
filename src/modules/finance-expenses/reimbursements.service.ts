@@ -101,7 +101,7 @@ export class ReimbursementsService {
     await this.db
       .update(expenses)
       .set({ reimbursementBatchId: batch.id, updatedAt: new Date() })
-      .where(inArray(expenses.id, input.expenseIds));
+      .where(and(inArray(expenses.id, input.expenseIds), eq(expenses.orgId, u.orgId)));
 
     this.audit.log({
       action: "fin.reimbursement_batch.created",
@@ -241,7 +241,7 @@ export class ReimbursementsService {
           bankAccountId: input.bankAccountId ?? null,
           updatedAt: new Date(),
         })
-        .where(eq(finReimbursementBatches.id, batchId));
+        .where(and(eq(finReimbursementBatches.id, batchId), eq(finReimbursementBatches.orgId, u.orgId)));
 
       await tx
         .update(expenses)

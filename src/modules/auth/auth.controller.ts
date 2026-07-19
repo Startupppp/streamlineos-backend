@@ -51,6 +51,20 @@ export class AuthController {
     return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
   }
 
+  private resolveClientContext(req: { ip?: string; headers: Record<string, string> }): {
+    userAgent: string;
+    ipAddress: string;
+  } {
+    const rawUa = req.headers["x-client-user-agent"] ?? req.headers["user-agent"] ?? "";
+    const userAgent = rawUa.slice(0, 500);
+    const ipAddress =
+      req.headers["x-client-ip"] ??
+      req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ??
+      req.ip ??
+      "unknown";
+    return { userAgent, ipAddress };
+  }
+
   private async enforceRateLimit(
     tier: string,
     identifier: string,
@@ -144,7 +158,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
-    return this.authTokensService.verifyMagicLink(body.token);
+    return this.authTokensService.verifyMagicLink(body.token, this.resolveClientContext(req));
   }
 
   @Post("google")
@@ -158,7 +172,7 @@ export class AuthController {
     if (!secret || req.headers["x-internal-secret"] !== secret) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
-    return this.authTokensService.googleOAuth(body);
+    return this.authTokensService.googleOAuth(body, this.resolveClientContext(req));
   }
 
   @Post("email-otp")

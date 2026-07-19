@@ -55,12 +55,13 @@ export class HrLeaveBlackoutController {
   }
 
   @Delete(":blackoutId")
+  @HttpCode(204)
   async remove(
     @Param("blackoutId", ParseIntPipe) blackoutId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.blackout.getById(u.orgId, blackoutId);
     if (!existing) throw new NotFoundException("Blackout date not found");
-    return this.blackout.remove(blackoutId);
+    return this.blackout.remove(u.orgId, blackoutId);
   }
 }

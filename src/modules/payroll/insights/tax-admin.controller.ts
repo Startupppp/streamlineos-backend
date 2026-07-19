@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Response } from "express";
+import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { taxDeclarations, users } from "../../../db/schema";
@@ -21,7 +22,13 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { buildCsv } from "./lib/csv";
+
+const rejectDeclarationSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+type RejectDeclarationInput = z.infer<typeof rejectDeclarationSchema>;
 
 @Controller("payroll/tax")
 @UseGuards(JwtAuthGuard)
@@ -98,7 +105,7 @@ export class TaxAdminController {
   async reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
-    @Body() body: { note?: string },
+    @Body(new ZodValidationPipe(rejectDeclarationSchema)) body: RejectDeclarationInput,
   ) {
     const [updated] = await this.db
       .update(taxDeclarations)
@@ -142,7 +149,7 @@ export class TaxAdminController {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(whereClause)
-      .limit(1000);
+      .limit(100);
 
     const headers = [
       "ID",

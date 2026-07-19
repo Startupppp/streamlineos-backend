@@ -475,7 +475,7 @@ export class EntriesService {
     if (input.workLink !== undefined) updateData.workLink = input.workLink;
 
     await this.db.transaction(async (tx) => {
-      await tx.update(timesheets).set(updateData).where(eq(timesheets.id, entryId));
+      await tx.update(timesheets).set(updateData).where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)));
 
       if (input.hours !== undefined && entry.ticketId) {
         const [ticketHours] = await tx
@@ -529,7 +529,7 @@ export class EntriesService {
       await tx
         .update(timesheets)
         .set({ voidedAt: new Date(), voidReason: input.reason, updatedAt: new Date() })
-        .where(eq(timesheets.id, entryId));
+        .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)));
 
       if (entry.ticketId) {
         const [ticketHours] = await tx

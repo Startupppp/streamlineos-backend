@@ -175,7 +175,7 @@ export class WorkLogsService {
         approvedAt: new Date(),
         rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
       })
-      .where(eq(timesheets.id, body.id))
+      .where(and(eq(timesheets.id, body.id), eq(timesheets.orgId, u.orgId)))
       .returning();
 
     void this.dispatchWorkLogStatusEmail(existing, body.status, u.userId, body.rejectionReason).catch(() => undefined);

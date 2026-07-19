@@ -12,7 +12,7 @@ const criteriaSchema = z.object({
 }).optional().default({});
 
 export const territoryListSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).default(100),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const territoryCreateSchema = z.object({

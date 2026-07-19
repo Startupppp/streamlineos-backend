@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -17,6 +17,7 @@ export class SignBulkSendController {
   constructor(private readonly bulkSend: SignBulkSendService) {}
 
   @Post("jobs")
+  @HttpCode(201)
   @RequirePermission("sign:bulk_send:run")
   create(@Body(new ZodValidationPipe(createBulkSendJobSchema)) body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.createJob(u.orgId, u.userId, body);
@@ -28,21 +29,21 @@ export class SignBulkSendController {
     return this.bulkSend.listJobs(u.orgId);
   }
 
-  @Get("jobs/:id")
+  @Get("jobs/:jobId")
   @RequirePermission("sign:bulk_send:run")
-  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.bulkSend.getJob(u.orgId, id);
+  get(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.bulkSend.getJob(u.orgId, jobId);
   }
 
-  @Post("jobs/:id/cancel")
+  @Post("jobs/:jobId/cancel")
   @RequirePermission("sign:bulk_send:run")
-  cancel(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.bulkSend.cancel(u.orgId, id, { userId: u.userId });
+  cancel(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.bulkSend.cancel(u.orgId, jobId, { userId: u.userId });
   }
 
-  @Get("jobs/:id/error-report")
+  @Get("jobs/:jobId/error-report")
   @RequirePermission("sign:bulk_send:run")
-  errorReport(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.bulkSend.getErrorReport(u.orgId, id);
+  errorReport(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.bulkSend.getErrorReport(u.orgId, jobId);
   }
 }

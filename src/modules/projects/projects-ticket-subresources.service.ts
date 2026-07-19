@@ -69,12 +69,12 @@ export class ProjectsTicketSubresourcesService {
     return this.comments.addReaction(commentId, userId, orgId, emoji);
   }
 
-  removeReaction(commentId: number, userId: string, emoji: string) {
-    return this.comments.removeReaction(commentId, userId, emoji);
+  removeReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+    return this.comments.removeReaction(commentId, userId, orgId, emoji);
   }
 
-  getCommentReactions(commentId: number) {
-    return this.comments.getCommentReactions(commentId);
+  getCommentReactions(commentId: number, orgId: string) {
+    return this.comments.getCommentReactions(commentId, orgId);
   }
 
   async getActivity(
@@ -132,7 +132,11 @@ export class ProjectsTicketSubresourcesService {
   getSubtasks(orgId: string, ticketId: number) {
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId)),
-      with: { assignee: true },
+      with: {
+        assignee: {
+          columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
+        },
+      },
       limit: 200,
     });
   }
@@ -164,7 +168,7 @@ export class ProjectsTicketSubresourcesService {
         workItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
         relatedWorkItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
       },
-      limit: 200,
+      limit: 100,
     });
 
     return relations.map((r) => {
@@ -186,7 +190,7 @@ export class ProjectsTicketSubresourcesService {
     }
 
     const relatedTicket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, body.relatedTicketId), eq(tickets.projectId, projectId)),
+      where: and(eq(tickets.id, body.relatedTicketId), eq(tickets.projectId, projectId), eq(tickets.orgId, u.orgId)),
       columns: { id: true },
     });
     if (!relatedTicket) throw new NotFoundException("Related ticket not found in this project.");
@@ -221,8 +225,12 @@ export class ProjectsTicketSubresourcesService {
     await this.requireTicket(orgId, ticketId);
     return this.db.query.ticketWatchers.findMany({
       where: eq(ticketWatchers.ticketId, ticketId),
-      with: { user: true },
-      limit: 200,
+      with: {
+        user: {
+          columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
+        },
+      },
+      limit: 100,
     });
   }
 
@@ -351,6 +359,13 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async updateChecklistItem(orgId: string, itemId: number, data: { text?: string; isCompleted?: boolean; assigneeId?: string | null; dueDate?: string | null; order?: number }) {
+    const existing = await this.db.query.ticketChecklistItems.findFirst({
+      where: eq(ticketChecklistItems.id, itemId),
+      columns: { id: true, checklistId: true },
+      with: { checklist: { columns: { orgId: true } } },
+    });
+    if (!existing || existing.checklist.orgId !== orgId) throw new NotFoundException("Checklist item not found");
+
     const [item] = await this.db.update(ticketChecklistItems)
       .set(data)
       .where(eq(ticketChecklistItems.id, itemId))
@@ -360,6 +375,13 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async deleteChecklistItem(orgId: string, itemId: number) {
+    const existing = await this.db.query.ticketChecklistItems.findFirst({
+      where: eq(ticketChecklistItems.id, itemId),
+      columns: { id: true, checklistId: true },
+      with: { checklist: { columns: { orgId: true } } },
+    });
+    if (!existing || existing.checklist.orgId !== orgId) throw new NotFoundException("Checklist item not found");
+
     const [deleted] = await this.db.delete(ticketChecklistItems)
       .where(eq(ticketChecklistItems.id, itemId))
       .returning();
@@ -441,7 +463,7 @@ export class ProjectsTicketSubresourcesService {
     const [updated] = await this.db
       .update(ticketRelatedLinks)
       .set(update)
-      .where(eq(ticketRelatedLinks.id, linkId))
+      .where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)))
       .returning();
     return updated;
   }
@@ -454,7 +476,7 @@ export class ProjectsTicketSubresourcesService {
       .where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)));
     if (!link) throw new NotFoundException("Related link not found");
     if (link.createdBy !== u.userId && !u.isOrgOwner) throw new ForbiddenException("Cannot delete another user's link");
-    await this.db.delete(ticketRelatedLinks).where(eq(ticketRelatedLinks.id, linkId));
+    await this.db.delete(ticketRelatedLinks).where(and(eq(ticketRelatedLinks.id, linkId), eq(ticketRelatedLinks.ticketId, ticketId)));
   }
 
   private async assertTicketAccess(u: CurrentUserContext, projectId: number, ticketId: number) {

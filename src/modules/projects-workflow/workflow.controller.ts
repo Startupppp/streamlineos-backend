@@ -66,6 +66,7 @@ export class WorkflowController {
 
   @Delete("transitions/:transitionId")
   @RequirePermission("projects:workflow:manage")
+  @HttpCode(204)
   deleteTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("transitionId", ParseIntPipe) transitionId: number,

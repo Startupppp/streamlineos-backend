@@ -134,8 +134,9 @@ export class AccountingPayablesQueryService {
     return this.db
       .select()
       .from(vendorPayments)
-      .where(eq(vendorPayments.billId, billId))
-      .orderBy(asc(vendorPayments.paymentDate), asc(vendorPayments.id));
+      .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)))
+      .orderBy(asc(vendorPayments.paymentDate), asc(vendorPayments.id))
+      .limit(100);
   }
 
   async listVendors(orgId: string, query: ListCustomersOutstandingQuery) {

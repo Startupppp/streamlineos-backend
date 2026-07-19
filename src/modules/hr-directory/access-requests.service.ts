@@ -20,7 +20,7 @@ export class AccessRequestsService {
         ),
       )
       .orderBy(desc(hrAccessRequests.createdAt))
-      .limit(200);
+      .limit(100);
   }
 
   async create(orgId: string, input: CreateAccessRequestInput) {

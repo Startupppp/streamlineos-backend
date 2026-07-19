@@ -273,6 +273,7 @@ export class BillingController {
   }
 
   @Post("affiliate/register")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   registerAffiliate(@CurrentUser() u: CurrentUserContext) {
@@ -334,6 +335,7 @@ export class BillingController {
   }
 
   @Post("enterprise-quotes")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
   createEnterpriseQuote(
@@ -425,6 +427,7 @@ export class BillingController {
   }
 
   @Post("coupons")
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   createCoupon(@Body(new ZodValidationPipe(createCouponSchema)) body: CreateCouponInput) {

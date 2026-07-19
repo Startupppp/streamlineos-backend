@@ -180,6 +180,8 @@ describe("KbMediaService", () => {
         expect.stringContaining("kb-media/"),
         "photo.webp",
         "image/webp",
+        undefined,
+        undefined,
       );
       expect(result.name).toBe("photo.jpg");
     });
@@ -201,6 +203,8 @@ describe("KbMediaService", () => {
         expect.any(String),
         "banner.webp",
         "image/webp",
+        undefined,
+        undefined,
       );
     });
   });
@@ -219,6 +223,8 @@ describe("KbMediaService", () => {
         expect.any(String),
         "anim.gif",
         "image/gif",
+        undefined,
+        undefined,
       );
     });
   });
@@ -233,6 +239,8 @@ describe("KbMediaService", () => {
         expect.any(String),
         "clip.mp4",
         "video/mp4",
+        undefined,
+        undefined,
       );
     });
   });
@@ -245,6 +253,8 @@ describe("KbMediaService", () => {
         "kb-media/tenant-xyz",
         expect.any(String),
         expect.any(String),
+        undefined,
+        undefined,
       );
     });
 
@@ -255,6 +265,8 @@ describe("KbMediaService", () => {
         "kb-media/org-other",
         expect.any(String),
         expect.any(String),
+        undefined,
+        undefined,
       );
     });
   });
@@ -281,6 +293,8 @@ describe("KbMediaService", () => {
         expect.any(String),
         "img.webp",
         "image/webp",
+        undefined,
+        undefined,
       );
     });
   });

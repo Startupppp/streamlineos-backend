@@ -47,7 +47,7 @@ export class TimesheetsService {
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
+    const limit = query.limit;
     const offset = (page - 1) * limit;
 
     const scope = await resolveTimesheetsScope(this.access, user);
@@ -105,7 +105,7 @@ export class TimesheetsService {
     const [updated] = await this.db
       .update(timesheets)
       .set(updateData)
-      .where(eq(timesheets.id, entryId))
+      .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)))
       .returning();
 
     if (input.hours !== undefined && entry.ticketId) {
@@ -134,7 +134,7 @@ export class TimesheetsService {
     }
 
     const ticketId = entry.ticketId;
-    await this.db.delete(timesheets).where(eq(timesheets.id, entryId));
+    await this.db.delete(timesheets).where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
     if (ticketId) await this.recomputeTimeSpent(ticketId);
 
@@ -166,7 +166,7 @@ export class TimesheetsService {
         approvedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(timesheets.id, entryId));
+      .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
     return { success: true };
   }
@@ -191,7 +191,7 @@ export class TimesheetsService {
     await this.db
       .update(timesheets)
       .set({ status: "REJECTED", rejectionReason: input.reason ?? null, updatedAt: new Date() })
-      .where(eq(timesheets.id, entryId));
+      .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
     return { success: true };
   }

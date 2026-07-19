@@ -1,11 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
+import { addDays } from "date-fns";
 import { userSessions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import type { Redis } from "@upstash/redis";
-import { withClientInfo } from "../../common/http/parse-user-agent";
+import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 
@@ -22,11 +23,38 @@ export class SessionsService {
     userAgent: string | undefined,
     ipAddress: string | undefined,
   ) {
-    if (currentSessionId) {
-      await this.db
-        .update(userSessions)
-        .set({ lastActive: new Date(), userAgent, ipAddress })
-        .where(and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)));
+    if (currentSessionId && !currentSessionId.startsWith("pat:")) {
+      const now = new Date();
+      const incoming = userAgent ?? null;
+      const incomingIsApiClient = isApiClientUserAgent(incoming);
+
+      const existing = await this.db.query.userSessions.findFirst({
+        where: and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)),
+        columns: { id: true, userAgent: true },
+      });
+
+      if (!existing) {
+        await this.db.insert(userSessions).values({
+          id: currentSessionId,
+          userId,
+          userAgent: incoming,
+          ipAddress: ipAddress ?? null,
+          isRevoked: false,
+          lastActive: now,
+          expiresAt: addDays(now, 30),
+        });
+      } else {
+        const storedIsApiClient = isApiClientUserAgent(existing.userAgent);
+        const shouldOverwriteUa = !incomingIsApiClient || storedIsApiClient || existing.userAgent === null;
+
+        await this.db
+          .update(userSessions)
+          .set({
+            lastActive: now,
+            ...(shouldOverwriteUa ? { userAgent: incoming, ipAddress: ipAddress ?? null } : {}),
+          })
+          .where(and(eq(userSessions.id, currentSessionId), eq(userSessions.userId, userId)));
+      }
     }
 
     const rows = await this.db.query.userSessions.findMany({

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -34,6 +34,7 @@ export class NotificationEventsController {
   }
 
   @Post("emit")
+  @HttpCode(200)
   @RequirePermission("notifications:events:manage")
   emit(
     @Body(new ZodValidationPipe(emitEventSchema)) body: EmitEventInput,

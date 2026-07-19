@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   BadRequestException,
   Param,
@@ -56,6 +57,7 @@ export class LeadsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("crm:leads:create")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -117,8 +119,9 @@ export class LeadsController {
   }
 
   @Delete(":leadId")
+  @HttpCode(204)
   @RequirePermission("crm:leads:delete")
-  remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.leads.remove(u.orgId, u.userId, leadId);
+  async remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.leads.remove(u.orgId, u.userId, leadId);
   }
 }

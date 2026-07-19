@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -17,11 +17,9 @@ export class SignAiController {
 
   @Post("summarize")
   summarize(
-    @Param("envelopeId") rawId: string,
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const id = parseInt(rawId, 10);
-    if (Number.isNaN(id) || id <= 0) throw new BadRequestException("Invalid envelopeId");
-    return this.signAi.summarizeDocument(u.orgId, id, u.userId);
+    return this.signAi.summarizeDocument(u.orgId, envelopeId, u.userId);
   }
 }

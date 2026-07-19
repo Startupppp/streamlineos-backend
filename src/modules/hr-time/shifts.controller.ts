@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards, HttpCode } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -10,15 +11,31 @@ import { ShiftsService } from "./shifts.service";
 import {
   createShiftSchema,
   updateShiftSchema,
-  assignShiftSchema,
-  createSwapRequestSchema,
-  updateSwapStatusSchema,
   type CreateShiftInput,
   type UpdateShiftInput,
-  type AssignShiftInput,
-  type CreateSwapRequestInput,
-  type UpdateSwapStatusInput,
 } from "./dto/shifts.schemas";
+
+const assignShiftSchema = z.object({
+  userId: z.string().min(1),
+  shiftId: z.number().int().positive(),
+  effectiveFrom: z.string().min(1),
+  effectiveTo: z.string().optional(),
+});
+
+const createSwapSchema = z.object({
+  targetUserId: z.string().min(1),
+  requestDate: z.string().min(1),
+  targetDate: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+const updateSwapStatusSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED"]),
+});
+
+type AssignShiftInput = z.infer<typeof assignShiftSchema>;
+type CreateSwapInput = z.infer<typeof createSwapSchema>;
+type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -33,6 +50,7 @@ export class ShiftsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -41,20 +59,21 @@ export class ShiftsController {
     return this.service.createShift(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":shiftId")
   @RequirePermission("hr:attendance:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("shiftId", ParseIntPipe) shiftId: number,
     @Body(new ZodValidationPipe(updateShiftSchema)) body: UpdateShiftInput,
   ) {
-    return this.service.updateShift(u.orgId, id, body);
+    return this.service.updateShift(u.orgId, shiftId, body);
   }
 
-  @Delete(":id")
+  @Delete(":shiftId")
+  @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
-  remove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.deleteShift(u.orgId, id);
+  remove(@CurrentUser() u: CurrentUserContext, @Param("shiftId", ParseIntPipe) shiftId: number) {
+    return this.service.deleteShift(u.orgId, shiftId);
   }
 
   @Get("assignments")
@@ -64,8 +83,12 @@ export class ShiftsController {
   }
 
   @Post("assignments")
+  @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
-  assign(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(assignShiftSchema)) body: AssignShiftInput) {
+  assign(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(assignShiftSchema)) body: AssignShiftInput,
+  ) {
     return this.service.assignShift(u.orgId, body);
   }
 
@@ -76,14 +99,22 @@ export class ShiftsController {
   }
 
   @Post("swaps")
+  @HttpCode(201)
   @RequirePermission("hr:attendance:view")
-  createSwap(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createSwapRequestSchema)) body: CreateSwapRequestInput) {
+  createSwap(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createSwapSchema)) body: CreateSwapInput,
+  ) {
     return this.service.createSwapRequest(u.orgId, { ...body, requesterId: u.userId });
   }
 
-  @Patch("swaps/:id")
+  @Patch("swaps/:swapId")
   @RequirePermission("hr:attendance:manage")
-  updateSwap(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateSwapStatusSchema)) body: UpdateSwapStatusInput) {
-    return this.service.updateSwapStatus(u.orgId, id, body.status, u.userId);
+  updateSwap(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("swapId", ParseIntPipe) swapId: number,
+    @Body(new ZodValidationPipe(updateSwapStatusSchema)) body: UpdateSwapStatusInput,
+  ) {
+    return this.service.updateSwapStatus(u.orgId, swapId, body.status, u.userId);
   }
 }

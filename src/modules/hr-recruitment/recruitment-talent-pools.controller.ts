@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -29,6 +29,7 @@ export class RecruitmentTalentPoolsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   create(
     @Body(new ZodValidationPipe(createTalentPoolSchema)) body: CreateTalentPoolInput,
@@ -48,6 +49,7 @@ export class RecruitmentTalentPoolsController {
   }
 
   @Delete(":poolId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   remove(@Param("poolId", ParseIntPipe) poolId: number, @CurrentUser() u: CurrentUserContext) {
     return this.pools.remove(u.orgId, poolId);
@@ -60,6 +62,7 @@ export class RecruitmentTalentPoolsController {
   }
 
   @Post(":poolId/members")
+  @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   addMember(
     @Param("poolId", ParseIntPipe) poolId: number,
@@ -70,12 +73,13 @@ export class RecruitmentTalentPoolsController {
   }
 
   @Delete(":poolId/members/:candidateId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  removeMember(
+  async removeMember(
     @Param("poolId", ParseIntPipe) poolId: number,
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pools.removeMember(u.orgId, poolId, candidateId);
+    await this.pools.removeMember(u.orgId, poolId, candidateId);
   }
 }

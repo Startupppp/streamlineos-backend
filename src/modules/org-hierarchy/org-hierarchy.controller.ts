@@ -87,23 +87,23 @@ export class OrgHierarchyController {
     return this.service.createBusinessUnit(u.orgId, u.userId, body);
   }
 
-  @Patch("business-units/:id")
+  @Patch("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
   updateBusinessUnit(
-    @Param("id") id: string,
+    @Param("businessUnitId") businessUnitId: string,
     @Body(new ZodValidationPipe(updateBusinessUnitSchema)) body: UpdateBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateBusinessUnit(u.orgId, u.userId, id, body);
+    return this.service.updateBusinessUnit(u.orgId, u.userId, businessUnitId, body);
   }
 
-  @Delete("business-units/:id")
+  @Delete("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
   async deleteBusinessUnit(
-    @Param("id") id: string,
+    @Param("businessUnitId") businessUnitId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteBusinessUnit(u.orgId, u.userId, id);
+    await this.service.deleteBusinessUnit(u.orgId, u.userId, businessUnitId);
     return { message: "Business unit deleted" };
   }
 
@@ -128,23 +128,23 @@ export class OrgHierarchyController {
     return this.service.createOrgBranch(u.orgId, u.userId, body);
   }
 
-  @Patch("branches/:id")
+  @Patch("branches/:branchId")
   @RequirePermission("settings:organization:manage")
   updateOrgBranch(
-    @Param("id") id: string,
+    @Param("branchId") branchId: string,
     @Body(new ZodValidationPipe(updateOrgBranchSchema)) body: UpdateOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateOrgBranch(u.orgId, u.userId, id, body);
+    return this.service.updateOrgBranch(u.orgId, u.userId, branchId, body);
   }
 
-  @Delete("branches/:id")
+  @Delete("branches/:branchId")
   @RequirePermission("settings:organization:manage")
   async deleteOrgBranch(
-    @Param("id") id: string,
+    @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteOrgBranch(u.orgId, u.userId, id);
+    await this.service.deleteOrgBranch(u.orgId, u.userId, branchId);
     return { message: "Branch deleted" };
   }
 
@@ -169,23 +169,23 @@ export class OrgHierarchyController {
     return this.service.createDepartment(u.orgId, u.userId, body);
   }
 
-  @Patch("departments/:id")
+  @Patch("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
   updateDepartment(
-    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
     @Body(new ZodValidationPipe(updateOrgDepartmentSchema)) body: UpdateOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateDepartment(u.orgId, u.userId, id, body);
+    return this.service.updateDepartment(u.orgId, u.userId, departmentId, body);
   }
 
-  @Delete("departments/:id")
+  @Delete("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
   async deleteDepartment(
-    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteDepartment(u.orgId, u.userId, id);
+    await this.service.deleteDepartment(u.orgId, u.userId, departmentId);
     return { message: "Department deleted" };
   }
 
@@ -210,23 +210,23 @@ export class OrgHierarchyController {
     return this.service.createTeam(u.orgId, u.userId, body);
   }
 
-  @Patch("teams/:id")
+  @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
   updateTeam(
-    @Param("id") id: string,
+    @Param("teamId") teamId: string,
     @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateTeam(u.orgId, u.userId, id, body);
+    return this.service.updateTeam(u.orgId, u.userId, teamId, body);
   }
 
-  @Delete("teams/:id")
+  @Delete("teams/:teamId")
   @RequirePermission("settings:organization:manage")
   async deleteTeam(
-    @Param("id") id: string,
+    @Param("teamId") teamId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteTeam(u.orgId, u.userId, id);
+    await this.service.deleteTeam(u.orgId, u.userId, teamId);
     return { message: "Team deleted" };
   }
 
@@ -248,23 +248,23 @@ export class OrgHierarchyController {
     return this.service.createLocation(u.orgId, u.userId, body);
   }
 
-  @Patch("locations/:id")
+  @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
   updateLocation(
-    @Param("id") id: string,
+    @Param("locationId") locationId: string,
     @Body(new ZodValidationPipe(updateOrgLocationSchema)) body: UpdateOrgLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateLocation(u.orgId, u.userId, id, body);
+    return this.service.updateLocation(u.orgId, u.userId, locationId, body);
   }
 
-  @Delete("locations/:id")
+  @Delete("locations/:locationId")
   @RequirePermission("settings:organization:manage")
   async deleteLocation(
-    @Param("id") id: string,
+    @Param("locationId") locationId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteLocation(u.orgId, u.userId, id);
+    await this.service.deleteLocation(u.orgId, u.userId, locationId);
     return { message: "Location deleted" };
   }
 
@@ -286,63 +286,63 @@ export class OrgHierarchyController {
     return this.service.createCostCenter(u.orgId, u.userId, body);
   }
 
-  @Patch("cost-centers/:id")
+  @Patch("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
   updateCostCenter(
-    @Param("id") id: string,
+    @Param("costCenterId") costCenterId: string,
     @Body(new ZodValidationPipe(updateCostCenterSchema)) body: UpdateCostCenterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateCostCenter(u.orgId, u.userId, id, body);
+    return this.service.updateCostCenter(u.orgId, u.userId, costCenterId, body);
   }
 
-  @Delete("cost-centers/:id")
+  @Delete("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
   async deleteCostCenter(
-    @Param("id") id: string,
+    @Param("costCenterId") costCenterId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.service.deleteCostCenter(u.orgId, u.userId, id);
+    await this.service.deleteCostCenter(u.orgId, u.userId, costCenterId);
     return { message: "Cost center deleted" };
   }
 
-  @Patch("business-units/:id/move")
+  @Patch("business-units/:businessUnitId/move")
   @RequirePermission("settings:organization:manage")
   moveBusinessUnit(
-    @Param("id") id: string,
+    @Param("businessUnitId") businessUnitId: string,
     @Body() body: { parentId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBusinessUnit(u.orgId, id, body.parentId ?? null);
+    return this.service.moveBusinessUnit(u.orgId, businessUnitId, body.parentId ?? null);
   }
 
-  @Patch("branches/:id/move")
+  @Patch("branches/:branchId/move")
   @RequirePermission("settings:organization:manage")
   moveBranch(
-    @Param("id") id: string,
+    @Param("branchId") branchId: string,
     @Body() body: { businessUnitId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveBranch(u.orgId, id, body.businessUnitId ?? null);
+    return this.service.moveBranch(u.orgId, branchId, body.businessUnitId ?? null);
   }
 
-  @Patch("departments/:id/move")
+  @Patch("departments/:departmentId/move")
   @RequirePermission("settings:organization:manage")
   moveDepartment(
-    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
     @Body() body: { branchId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveDepartment(u.orgId, id, body.branchId ?? null);
+    return this.service.moveDepartment(u.orgId, departmentId, body.branchId ?? null);
   }
 
-  @Patch("teams/:id/move")
+  @Patch("teams/:teamId/move")
   @RequirePermission("settings:organization:manage")
   moveTeam(
-    @Param("id") id: string,
+    @Param("teamId") teamId: string,
     @Body() body: { departmentId: string | null },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.moveTeam(u.orgId, id, body.departmentId ?? null);
+    return this.service.moveTeam(u.orgId, teamId, body.departmentId ?? null);
   }
 }

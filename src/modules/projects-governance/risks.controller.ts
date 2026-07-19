@@ -78,6 +78,7 @@ export class RisksController {
 
   @Delete(":riskId")
   @RequirePermission("projects:risks:manage")
+  @HttpCode(204)
   softDeleteRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,

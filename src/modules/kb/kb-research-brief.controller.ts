@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -22,6 +22,7 @@ export class KbResearchBriefController {
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
+  @HttpCode(201)
   async enqueue(@Body() body: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const parsed = kbResearchBriefCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
@@ -39,11 +40,9 @@ export class KbResearchBriefController {
   @Get("research-briefs/:briefId")
   @RequirePermission("kb:pages:view")
   async getById(
-    @Param("briefId") briefIdParam: string,
+    @Param("briefId", ParseIntPipe) briefId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const briefId = parseInt(briefIdParam, 10);
-    if (isNaN(briefId)) throw new BadRequestException("Invalid brief ID");
     return this.briefs.getById(u, briefId);
   }
 
@@ -51,12 +50,10 @@ export class KbResearchBriefController {
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   async rateBrief(
-    @Param("briefId") briefIdParam: string,
+    @Param("briefId", ParseIntPipe) briefId: number,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    const briefId = parseInt(briefIdParam, 10);
-    if (isNaN(briefId)) throw new BadRequestException("Invalid brief ID");
     const parsed = kbResearchBriefRateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
     await this.briefs.rateBrief(u, briefId, parsed.data.rating);

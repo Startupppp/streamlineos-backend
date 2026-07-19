@@ -5,8 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
-import { projectMembers, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { projectMembers, projects, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -17,6 +17,14 @@ import type {
   UpdateCustomStateInput,
 } from "./dto/projects.schemas";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+
+async function assertProjectOwnership(db: Db, orgId: string, projectId: number): Promise<void> {
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+    columns: { id: true },
+  });
+  if (!project) throw new NotFoundException("Project not found");
+}
 
 function statusTypeOf(type: string | null | undefined): string {
   return type ?? "unstarted";
@@ -29,7 +37,7 @@ export class ProjectsMembersService {
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
   ) {}
 
-  listMembers(projectId: number) {
+  listMembers(orgId: string, projectId: number) {
     return this.db
       .select({
         id: users.id,
@@ -43,12 +51,15 @@ export class ProjectsMembersService {
       })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
+      .innerJoin(projects, and(eq(projects.id, projectMembers.projectId), eq(projects.orgId, orgId)))
       .where(eq(projectMembers.projectId, projectId))
       .orderBy(asc(projectMembers.joinedAt))
-      .limit(200);
+      .limit(100);
   }
 
   async addMember(projectId: number, body: AddMemberInput, orgId: string, actorId: string) {
+    await assertProjectOwnership(this.db, orgId, projectId);
+
     const existing = await this.db.query.projectMembers.findFirst({
       where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.userId)),
     });
@@ -72,9 +83,16 @@ export class ProjectsMembersService {
   }
 
   async removeMember(projectId: number, userId: string, orgId: string, actorId: string) {
+    await assertProjectOwnership(this.db, orgId, projectId);
+
     await this.db
       .delete(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, userId),
+        ),
+      );
 
     await this.db
       .update(tickets)
@@ -82,6 +100,7 @@ export class ProjectsMembersService {
       .where(
         and(
           eq(tickets.projectId, projectId),
+          eq(tickets.orgId, orgId),
           eq(tickets.assigneeId, userId),
           ne(tickets.status, "DONE"),
           ne(tickets.status, "CANCELLED"),

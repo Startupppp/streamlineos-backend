@@ -1,5 +1,6 @@
 ﻿import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -433,20 +434,28 @@ export class BillingService {
     const all = await this.db.query.coupons.findMany({
       orderBy: (c, { desc: d }) => [d(c.createdAt)],
       with: { redemptions: true },
+      limit: 100,
     });
     return all;
   }
 
   async createCoupon(data: CreateCouponInput) {
-    const [created] = await this.db.insert(coupons).values({
-      code: data.code.toUpperCase(),
-      type: data.type,
-      value: String(data.value),
-      maxUses: data.maxUses,
-      applicablePlans: data.applicablePlans,
-      expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
-    }).returning();
-    return created;
+    try {
+      const [created] = await this.db.insert(coupons).values({
+        code: data.code.toUpperCase(),
+        type: data.type,
+        value: String(data.value),
+        maxUses: data.maxUses,
+        applicablePlans: data.applicablePlans,
+        expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
+      }).returning();
+      return created;
+    } catch (err: unknown) {
+      if (typeof err === "object" && err !== null && (err as { code?: string }).code === "23505") {
+        throw new ConflictException("A coupon with this code already exists");
+      }
+      throw err;
+    }
   }
 
   async updateCoupon(id: number, data: UpdateCouponInput) {

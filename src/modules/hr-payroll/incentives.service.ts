@@ -145,7 +145,7 @@ export class IncentivesService {
         approvedAt: new Date(),
         notes: body.notes ?? existing.notes,
       })
-      .where(eq(incentives.id, incentiveId));
+      .where(and(eq(incentives.id, incentiveId), eq(incentives.orgId, orgId)));
 
     return { ok: true };
   }
@@ -156,7 +156,7 @@ export class IncentivesService {
     });
     if (!existing) return { ok: false };
 
-    await this.db.update(incentives).set({ status: "REJECTED" }).where(eq(incentives.id, incentiveId));
+    await this.db.update(incentives).set({ status: "REJECTED" }).where(and(eq(incentives.id, incentiveId), eq(incentives.orgId, orgId)));
     return { ok: true };
   }
 }

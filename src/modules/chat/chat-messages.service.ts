@@ -262,9 +262,12 @@ export class ChatMessagesService {
 
   async edit(messageId: number, userId: string, content: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: eq(chatMessages.id, messageId),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
-    if (!message || message.isDeleted) throw new NotFoundException("Message not found");
+    if (!message) throw new NotFoundException("Message not found");
+    if (!(await this.isMember(message.channelId, userId))) {
+      throw new ForbiddenException("You are not a member of this channel");
+    }
     if (message.senderId !== userId) {
       throw new ForbiddenException("You can only edit your own messages");
     }
@@ -272,16 +275,19 @@ export class ChatMessagesService {
     await this.db
       .update(chatMessages)
       .set({ content: content.trim(), isEdited: true, updatedAt: new Date() })
-      .where(eq(chatMessages.id, messageId));
+      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.senderId, userId)));
 
     return { ok: true };
   }
 
   async remove(messageId: number, userId: string, role: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: eq(chatMessages.id, messageId),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
     });
-    if (!message || message.isDeleted) throw new NotFoundException("Message not found");
+    if (!message) throw new NotFoundException("Message not found");
+    if (!(await this.isMember(message.channelId, userId))) {
+      throw new ForbiddenException("You are not a member of this channel");
+    }
 
     const isAdmin = role === CEO || role === HR;
     if (!isAdmin && message.senderId !== userId) {
@@ -291,7 +297,7 @@ export class ChatMessagesService {
     await this.db
       .update(chatMessages)
       .set({ isDeleted: true, content: null, updatedAt: new Date() })
-      .where(eq(chatMessages.id, messageId));
+      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.channelId, message.channelId)));
 
     return { ok: true };
   }

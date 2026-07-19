@@ -157,6 +157,7 @@ export class SignFieldsService {
     return this.db.query.signFields.findMany({
       where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)),
       orderBy: (f, { asc }) => [asc(f.pageNumber), asc(f.orderIndex)],
+      limit: 100,
     });
   }
 }

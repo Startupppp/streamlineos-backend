@@ -265,16 +265,19 @@ export class ProjectsService {
 
   async updateProject(u: CurrentUserContext, projectId: number, body: UpdateProjectInput) {
     const orgId = u.orgId;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isOwnerOrAdmin = perms.has("projects:manage");
 
-    if (!isOwnerOrAdmin) {
-      const project = await this.db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
-        columns: { managerId: true },
-      });
-      if (!project || project.managerId !== u.userId) {
-        throw new ForbiddenException("Only project managers or admins can update project settings.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+      const hasManage = perms.has("projects:manage");
+
+      if (!hasManage) {
+        const project = await this.db.query.projects.findFirst({
+          where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+          columns: { managerId: true },
+        });
+        if (!project || project.managerId !== u.userId) {
+          throw new ForbiddenException("Only project managers or admins can update project settings.");
+        }
       }
     }
 
@@ -318,6 +321,7 @@ export class ProjectsService {
             .from(tickets)
             .where(
               and(
+                eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 inArray(tickets.assigneeId, removedMembers),
                 ne(tickets.status, "DONE"),
@@ -332,7 +336,7 @@ export class ProjectsService {
             byNewAssignee.set(newAssignee, ids);
           }
           for (const [newAssignee, ids] of byNewAssignee) {
-            await tx.update(tickets).set({ assigneeId: newAssignee }).where(inArray(tickets.id, ids));
+            await tx.update(tickets).set({ assigneeId: newAssignee }).where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
           }
         } else if (removedMembers.length > 0) {
           await tx
@@ -340,6 +344,7 @@ export class ProjectsService {
             .set({ assigneeId: null })
             .where(
               and(
+                eq(tickets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 inArray(tickets.assigneeId, removedMembers),
                 ne(tickets.status, "DONE"),

@@ -196,13 +196,14 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Delete("reference-checks/:checkId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  deleteReferenceCheck(
+  async deleteReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.deleteReferenceCheck(u.orgId, candidateId, checkId);
+    await this.records.deleteReferenceCheck(u.orgId, candidateId, checkId);
   }
 
   @Get("documents")
@@ -262,14 +263,14 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Delete("vault/:documentId")
-  @HttpCode(200)
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
-  deleteVaultDocument(
+  async deleteVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
+    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
   }
 
   @Get("vault/access-logs")

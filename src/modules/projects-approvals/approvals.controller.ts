@@ -104,6 +104,7 @@ export class ApprovalsController {
 
   @Delete(":approvalId")
   @RequirePermission("projects:approvals:manage")
+  @HttpCode(204)
   softDeleteApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

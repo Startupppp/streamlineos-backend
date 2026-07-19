@@ -32,6 +32,7 @@ export class SurveyAutomationService {
     return this.db.query.surveyAutomationEvents.findMany({
       where: and(eq(surveyAutomationEvents.orgId, orgId), eq(surveyAutomationEvents.surveyId, surveyId)),
       orderBy: [desc(surveyAutomationEvents.createdAt)],
+      limit: 100,
     });
   }
 

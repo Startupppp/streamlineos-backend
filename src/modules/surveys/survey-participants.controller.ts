@@ -44,6 +44,7 @@ export class SurveyParticipantsController {
   }
 
   @Post("invite")
+  @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   invite(
     @Param("surveyId", ParseIntPipe) surveyId: number,
@@ -54,6 +55,7 @@ export class SurveyParticipantsController {
   }
 
   @Post("remind")
+  @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   remind(
     @Param("surveyId", ParseIntPipe) surveyId: number,

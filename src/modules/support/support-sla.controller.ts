@@ -19,7 +19,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
-import type { SettingsAuditEntityType } from "../../db/schema";
+import { SETTINGS_AUDIT_ENTITY_TYPES, type SettingsAuditEntityType } from "../../db/schema";
 import {
   createBusinessHoursSchema,
   createSlaPolicySchema,
@@ -60,23 +60,23 @@ export class SupportSlaController {
     return result;
   }
 
-  @Patch("business-hours/:id")
+  @Patch("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
   async updateBusinessHours(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("businessHoursId", ParseIntPipe) businessHoursId: number,
     @Body(new ZodValidationPipe(updateBusinessHoursSchema)) body: UpdateBusinessHoursInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sla.updateBusinessHours(u.orgId, id, body);
-    await this.audit.record(u.orgId, u.userId, "business_hours", id, "updated", body);
+    const result = await this.sla.updateBusinessHours(u.orgId, businessHoursId, body);
+    await this.audit.record(u.orgId, u.userId, "business_hours", businessHoursId, "updated", body);
     return result;
   }
 
-  @Delete("business-hours/:id")
+  @Delete("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
-  async deleteBusinessHours(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.sla.deleteBusinessHours(u.orgId, id);
-    await this.audit.record(u.orgId, u.userId, "business_hours", id, "deleted");
+  async deleteBusinessHours(@Param("businessHoursId", ParseIntPipe) businessHoursId: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.sla.deleteBusinessHours(u.orgId, businessHoursId);
+    await this.audit.record(u.orgId, u.userId, "business_hours", businessHoursId, "deleted");
     return result;
   }
 
@@ -98,23 +98,23 @@ export class SupportSlaController {
     return result;
   }
 
-  @Patch("sla-policies/:id")
+  @Patch("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
   async updateSlaPolicy(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("slaPolicyId", ParseIntPipe) slaPolicyId: number,
     @Body(new ZodValidationPipe(updateSlaPolicySchema)) body: UpdateSlaPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sla.updateSlaPolicy(u.orgId, id, body);
-    await this.audit.record(u.orgId, u.userId, "sla_policy", id, "updated", body);
+    const result = await this.sla.updateSlaPolicy(u.orgId, slaPolicyId, body);
+    await this.audit.record(u.orgId, u.userId, "sla_policy", slaPolicyId, "updated", body);
     return result;
   }
 
-  @Delete("sla-policies/:id")
+  @Delete("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
-  async deleteSlaPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.sla.deleteSlaPolicy(u.orgId, id);
-    await this.audit.record(u.orgId, u.userId, "sla_policy", id, "deleted");
+  async deleteSlaPolicy(@Param("slaPolicyId", ParseIntPipe) slaPolicyId: number, @CurrentUser() u: CurrentUserContext) {
+    const result = await this.sla.deleteSlaPolicy(u.orgId, slaPolicyId);
+    await this.audit.record(u.orgId, u.userId, "sla_policy", slaPolicyId, "deleted");
     return result;
   }
 
@@ -129,9 +129,14 @@ export class SupportSlaController {
   @RequirePermission("support:settings:manage")
   listSettingsAuditLog(
     @Query("entityType") entityType: string | undefined,
+    @Query("limit") limit: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audit.list(u.orgId, entityType as SettingsAuditEntityType | undefined);
+    const parsedLimit = Math.min(Number(limit) || 50, 100);
+    const typedEntityType = SETTINGS_AUDIT_ENTITY_TYPES.includes(entityType as SettingsAuditEntityType)
+      ? (entityType as SettingsAuditEntityType)
+      : undefined;
+    return this.audit.list(u.orgId, typedEntityType, parsedLimit);
   }
 
   @Get(":supportTicketId/risk")

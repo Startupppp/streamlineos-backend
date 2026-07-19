@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -31,6 +31,7 @@ export class OvertimeController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:attendance:view")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -39,16 +40,22 @@ export class OvertimeController {
     return this.service.createRequest(u.orgId, u.userId, body);
   }
 
-  @Patch(":id/approve")
+  @Patch(":overtimeRequestId/approve")
   @RequirePermission("hr:attendance:manage")
-  approve(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.approveRequest(u.orgId, id, u.userId);
+  approve(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("overtimeRequestId", ParseIntPipe) overtimeRequestId: number,
+  ) {
+    return this.service.approveRequest(u.orgId, overtimeRequestId, u.userId);
   }
 
-  @Patch(":id/reject")
+  @Patch(":overtimeRequestId/reject")
   @RequirePermission("hr:attendance:manage")
-  reject(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.rejectRequest(u.orgId, id, u.userId);
+  reject(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("overtimeRequestId", ParseIntPipe) overtimeRequestId: number,
+  ) {
+    return this.service.rejectRequest(u.orgId, overtimeRequestId, u.userId);
   }
 
   @Get("comp-off")

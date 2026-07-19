@@ -107,6 +107,7 @@ export class SignAuditService {
       .select()
       .from(signAuditEvents)
       .where(and(eq(signAuditEvents.orgId, orgId), eq(signAuditEvents.envelopeId, envelopeId)))
-      .orderBy(desc(signAuditEvents.createdAt));
+      .orderBy(desc(signAuditEvents.createdAt))
+      .limit(100);
   }
 }

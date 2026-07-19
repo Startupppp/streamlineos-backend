@@ -104,7 +104,7 @@ export class SoFulfillmentService {
       const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
       await (tx as Db).update(invSalesOrders)
         .set({ status: newStatus, updatedAt: new Date() })
-        .where(eq(invSalesOrders.id, soId));
+        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
     });
 
     const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
@@ -174,7 +174,7 @@ export class SoFulfillmentService {
 
     await this.db.update(invSalesOrders)
       .set({ status: allPicked ? "PICKED" : so.status, updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -232,7 +232,7 @@ export class SoFulfillmentService {
 
     await this.db.update(invSalesOrders)
       .set({ status: "PACKED", updatedAt: new Date() })
-      .where(eq(invSalesOrders.id, soId));
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -380,7 +380,7 @@ export class SoFulfillmentService {
         for (const [lineId, shippedQty] of lineShippedQtyMap) {
           await (tx as Db).update(invSoLines)
             .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}` })
-            .where(eq(invSoLines.id, lineId));
+            .where(and(eq(invSoLines.id, lineId), eq(invSoLines.soId, soId)));
         }
       }
 
@@ -409,7 +409,7 @@ export class SoFulfillmentService {
 
       await (tx as Db).update(invSalesOrders)
         .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
-        .where(eq(invSalesOrders.id, soId));
+        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
       return ship;
     });

@@ -46,7 +46,7 @@ export class QuotesLifecycleService {
     const [updated] = await this.db
       .update(quotes)
       .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-      .where(eq(quotes.id, quoteId))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.orgId, orgId)))
       .returning();
 
     this.audit.log({

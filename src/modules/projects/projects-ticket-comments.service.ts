@@ -186,7 +186,7 @@ export class ProjectsTicketCommentsService {
     await this.db
       .update(ticketComments)
       .set({ content, updatedAt: new Date() })
-      .where(eq(ticketComments.id, commentId));
+      .where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_updated");
@@ -217,7 +217,7 @@ export class ProjectsTicketCommentsService {
       throw new ForbiddenException("Only the comment author or a project manager can delete this comment");
     }
 
-    await this.db.delete(ticketComments).where(eq(ticketComments.id, commentId));
+    await this.db.delete(ticketComments).where(and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, u.orgId)));
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_deleted");
@@ -229,6 +229,12 @@ export class ProjectsTicketCommentsService {
   }
 
   async addReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+    const comment = await this.db.query.ticketComments.findFirst({
+      where: and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!comment) throw new NotFoundException("Comment not found");
+
     const [reaction] = await this.db
       .insert(ticketCommentReactions)
       .values({ commentId, userId, orgId, emoji })
@@ -237,22 +243,23 @@ export class ProjectsTicketCommentsService {
     return reaction ?? { commentId, userId, emoji };
   }
 
-  async removeReaction(commentId: number, userId: string, emoji: string) {
+  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string) {
     await this.db
       .delete(ticketCommentReactions)
       .where(
         and(
           eq(ticketCommentReactions.commentId, commentId),
           eq(ticketCommentReactions.userId, userId),
+          eq(ticketCommentReactions.orgId, orgId),
           eq(ticketCommentReactions.emoji, emoji),
         ),
       );
   }
 
-  getCommentReactions(commentId: number) {
+  getCommentReactions(commentId: number, orgId: string) {
     return this.db
       .select()
       .from(ticketCommentReactions)
-      .where(eq(ticketCommentReactions.commentId, commentId));
+      .where(and(eq(ticketCommentReactions.commentId, commentId), eq(ticketCommentReactions.orgId, orgId)));
   }
 }

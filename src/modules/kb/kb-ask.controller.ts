@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -105,6 +106,7 @@ export class KbAskController {
 
   @Post("ask/conversations")
   @RequirePermission("kb:pages:view")
+  @HttpCode(201)
   async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = kbConversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
@@ -114,12 +116,10 @@ export class KbAskController {
   @Patch("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
   async renameConversation(
-    @Param("conversationId") conversationIdParam: string,
+    @Param("conversationId", ParseIntPipe) conversationId: number,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const conversationId = parseInt(conversationIdParam, 10);
-    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
     const parsed = kbConversationRenameSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
     return this.history.renameConversation(u.orgId, u.userId, conversationId, parsed.data.title);
@@ -128,11 +128,9 @@ export class KbAskController {
   @Delete("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
   async deleteConversation(
-    @Param("conversationId") conversationIdParam: string,
+    @Param("conversationId", ParseIntPipe) conversationId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    const conversationId = parseInt(conversationIdParam, 10);
-    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
     await this.history.deleteConversation(u.orgId, u.userId, conversationId);
     return { success: true };
   }
@@ -140,12 +138,10 @@ export class KbAskController {
   @Get("ask/conversations/:conversationId/messages")
   @RequirePermission("kb:pages:view")
   async getConversationMessages(
-    @Param("conversationId") conversationIdParam: string,
+    @Param("conversationId", ParseIntPipe) conversationId: number,
     @Query() query: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const conversationId = parseInt(conversationIdParam, 10);
-    if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
     const parsed = kbConversationMessagesQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
     return this.history.listMessages(u.orgId, u.userId, conversationId, {

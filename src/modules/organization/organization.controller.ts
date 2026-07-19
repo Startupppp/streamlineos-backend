@@ -155,13 +155,14 @@ export class OrganizationController {
   }
 
   @Delete("members/:memberId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
-  removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
+  async removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot remove yourself from the organization");
     }
-    return this.organization.removeMember(u.orgId, u.userId, memberId);
+    await this.organization.removeMember(u.orgId, u.userId, memberId);
   }
 
   @Get("invitations")
@@ -249,13 +250,14 @@ export class OrganizationController {
   }
 
   @Delete("custom-domains/:domainId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
-  removeCustomDomain(
+  async removeCustomDomain(
     @Param("domainId") domainId: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
+  ): Promise<void> {
+    await this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
   }
 
   @UseGuards(PermissionGuard)
@@ -276,10 +278,11 @@ export class OrganizationController {
   }
 
   @Delete("holidays/:holidayId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
-  deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
+  async deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
+    await this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
   }
 
   @Post("archive")

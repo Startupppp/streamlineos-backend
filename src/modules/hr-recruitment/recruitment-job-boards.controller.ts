@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -27,6 +27,7 @@ export class RecruitmentJobBoardsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -36,24 +37,25 @@ export class RecruitmentJobBoardsController {
     return this.service.create(u.orgId, u.userId, jobId, body);
   }
 
-  @Patch(":id")
+  @Patch(":postingId")
   @RequirePermission("hr:employees:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("postingId", ParseIntPipe) postingId: number,
     @Body(new ZodValidationPipe(updateJobBoardPostingSchema)) body: UpdateJobBoardPostingInput,
   ) {
-    return this.service.update(u.orgId, jobId, id, body);
+    return this.service.update(u.orgId, jobId, postingId, body);
   }
 
-  @Delete(":id")
+  @Delete(":postingId")
+  @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("postingId", ParseIntPipe) postingId: number,
   ) {
-    return this.service.remove(u.orgId, jobId, id);
+    return this.service.remove(u.orgId, jobId, postingId);
   }
 }

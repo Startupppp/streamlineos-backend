@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   holidays,
   leaveBalances,
@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { addDays, formatDateOnly, getTodayString } from "./date.helpers";
+import { getTodayString } from "./date.helpers";
 import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
@@ -120,61 +120,6 @@ export class DashboardLeaveService {
         };
       },
       CACHE_TTL.SHORT,
-    );
-  }
-
-  getPendingRequests(orgId: string, userId: string) {
-    return this.db
-      .select({
-        id: leaveRequests.id,
-        startDate: leaveRequests.startDate,
-        endDate: leaveRequests.endDate,
-        status: leaveRequests.status,
-        reason: leaveRequests.reason,
-        createdAt: leaveRequests.createdAt,
-        leaveTypeName: leaveTypes.name,
-      })
-      .from(leaveRequests)
-      .innerJoin(leaveTypes, eq(leaveRequests.leaveTypeId, leaveTypes.id))
-      .where(
-        and(
-          eq(leaveRequests.orgId, orgId),
-          eq(leaveRequests.userId, userId),
-          eq(leaveRequests.status, "PENDING"),
-        ),
-      )
-      .orderBy(desc(leaveRequests.createdAt))
-      .limit(10);
-  }
-
-  getUpcomingLeaves(orgId: string) {
-    const today = getTodayString();
-    const nextWeek = formatDateOnly(addDays(new Date(), 7));
-    const key = `dashboard:upcoming-leaves:${orgId}:${today}`;
-    return this.cache.cached(
-      key,
-      () =>
-        this.db
-          .select({
-            id: leaveRequests.id,
-            startDate: leaveRequests.startDate,
-            endDate: leaveRequests.endDate,
-            leaveTypeId: leaveRequests.leaveTypeId,
-            employeeName: users.name,
-            employeeDesignation: users.designation,
-            employeeImage: users.image,
-          })
-          .from(leaveRequests)
-          .innerJoin(users, eq(leaveRequests.userId, users.id))
-          .where(
-            and(
-              eq(leaveRequests.orgId, orgId),
-              eq(leaveRequests.status, "APPROVED"),
-              gte(leaveRequests.startDate, today),
-              lte(leaveRequests.startDate, nextWeek),
-            ),
-          ),
-      CACHE_TTL.MEDIUM,
     );
   }
 

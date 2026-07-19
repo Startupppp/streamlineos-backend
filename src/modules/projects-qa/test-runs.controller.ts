@@ -82,6 +82,7 @@ export class TestRunsController {
 
   @Delete(":runId")
   @RequirePermission("projects:qa:manage")
+  @HttpCode(204)
   deleteRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("runId", ParseIntPipe) runId: number,

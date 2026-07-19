@@ -61,6 +61,7 @@ export class HrHandbookController {
   }
 
   @Delete(":handbookId")
+  @HttpCode(204)
   @RequirePermission("hr:handbook:manage")
   async remove(
     @Param("handbookId", ParseIntPipe) handbookId: number,

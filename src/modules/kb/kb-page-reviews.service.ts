@@ -14,6 +14,8 @@ import type {
 } from "./dto/kb-page-reviews.schemas";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
+const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
+const REVIEW_TYPES = ["approval", "freshness"] as const;
 
 type ReviewWithContext = ReviewRow & {
   pageTitle: string | null;
@@ -38,8 +40,12 @@ export class KbPageReviewsService {
     const reviewer = alias(users, "reviewer");
 
     const conditions = [eq(kbPageReviews.orgId, orgId)];
-    if (status) conditions.push(eq(kbPageReviews.status, status as ReviewRow["status"]));
-    if (type) conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
+    if (status && REVIEW_STATUSES.includes(status as ReviewRow["status"])) {
+      conditions.push(eq(kbPageReviews.status, status as ReviewRow["status"]));
+    }
+    if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
+      conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
+    }
 
     return this.db
       .select({

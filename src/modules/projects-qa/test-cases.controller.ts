@@ -78,6 +78,7 @@ export class TestCasesController {
 
   @Delete(":caseId")
   @RequirePermission("projects:qa:manage")
+  @HttpCode(204)
   deleteCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,

@@ -226,7 +226,7 @@ export class ProfilesService {
     await this.db
       .update(employeeSalaryProfiles)
       .set(updateData)
-      .where(eq(employeeSalaryProfiles.id, profileId));
+      .where(and(eq(employeeSalaryProfiles.id, profileId), eq(employeeSalaryProfiles.orgId, orgId)));
 
     this.audit.log({
       action: "payroll.salary_profile_updated",
@@ -244,7 +244,7 @@ export class ProfilesService {
     if (body.components && body.components.length > 0) {
       await this.db
         .delete(employeeSalaryProfileComponents)
-        .where(eq(employeeSalaryProfileComponents.profileId, profileId));
+        .where(and(eq(employeeSalaryProfileComponents.profileId, profileId), eq(employeeSalaryProfileComponents.orgId, orgId)));
 
       await this.db.insert(employeeSalaryProfileComponents).values(
         body.components.map((c, idx) => ({

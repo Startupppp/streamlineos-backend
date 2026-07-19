@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { employeeShiftAssignments, rosterEntries, shiftTemplates } from "../../db/schema";
+import { employeeShiftAssignments, rosterEntries, rosters, shiftTemplates } from "../../db/schema";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 
 const DEFAULT_GRACE_MINUTES = 15;
@@ -72,6 +72,7 @@ export class AttendancePolicyService {
         gracePeriodMinutes: shiftTemplates.gracePeriodMinutes,
       })
       .from(rosterEntries)
+      .innerJoin(rosters, and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)))
       .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
       .where(and(eq(rosterEntries.userId, employeeId), eq(rosterEntries.date, date)))
       .limit(1);

@@ -161,6 +161,11 @@ export function resolveDeviceClientInfo(device: {
   return parseUserAgent(device.fingerprint);
 }
 
+export function isApiClientUserAgent(ua: string | null | undefined): boolean {
+  if (!ua?.trim()) return false;
+  return detectApiClient(ua.trim()) !== null;
+}
+
 export function withClientInfo<T extends { userAgent: string | null }>(
   entry: T,
 ): T & { browser: string; os: string | null; platform: string | null } {

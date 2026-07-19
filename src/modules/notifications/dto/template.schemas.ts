@@ -32,6 +32,8 @@ export const listTemplatesSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "true")),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;

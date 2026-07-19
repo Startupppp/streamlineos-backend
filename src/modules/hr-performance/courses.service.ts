@@ -35,14 +35,24 @@ export class CoursesService {
     return this.db.select().from(courseCategories).where(eq(courseCategories.orgId, orgId));
   }
 
-  async enrollUser(courseId: number, userId: string) {
+  private async ensureCourse(orgId: string, courseId: number) {
+    const [course] = await this.db
+      .select({ id: courses.id })
+      .from(courses)
+      .where(and(eq(courses.id, courseId), eq(courses.orgId, orgId)))
+      .limit(1);
+    if (!course) throw new NotFoundException("Course not found");
+  }
+
+  async enrollUser(orgId: string, courseId: number, userId: string) {
+    await this.ensureCourse(orgId, courseId);
     const [enrollment] = await this.db.insert(courseEnrollments)
       .values({ courseId, userId }).onConflictDoNothing().returning();
     return enrollment;
   }
 
   async assignCourse(orgId: string, userId: string, courseId: number, source: string) {
-    const enrollment = await this.enrollUser(courseId, userId);
+    const enrollment = await this.enrollUser(orgId, courseId, userId);
     if (enrollment) {
       void this.hrAutomation.emit(orgId, "course.assigned", {
         userId,
@@ -54,14 +64,27 @@ export class CoursesService {
     return enrollment;
   }
 
-  async listEnrollments(userId: string) {
-    return this.db.select().from(courseEnrollments)
-      .where(eq(courseEnrollments.userId, userId))
+  async listEnrollments(orgId: string, userId: string) {
+    return this.db
+      .select({
+        id: courseEnrollments.id,
+        courseId: courseEnrollments.courseId,
+        userId: courseEnrollments.userId,
+        status: courseEnrollments.status,
+        progressPct: courseEnrollments.progressPct,
+        completedAt: courseEnrollments.completedAt,
+        score: courseEnrollments.score,
+        createdAt: courseEnrollments.createdAt,
+      })
+      .from(courseEnrollments)
+      .innerJoin(courses, eq(courseEnrollments.courseId, courses.id))
+      .where(and(eq(courses.orgId, orgId), eq(courseEnrollments.userId, userId)))
       .orderBy(desc(courseEnrollments.createdAt))
       .limit(100);
   }
 
-  async updateProgress(courseId: number, userId: string, progressPct: number) {
+  async updateProgress(orgId: string, courseId: number, userId: string, progressPct: number) {
+    await this.ensureCourse(orgId, courseId);
     const [e] = await this.db.update(courseEnrollments)
       .set({
         progressPct: progressPct.toString(),

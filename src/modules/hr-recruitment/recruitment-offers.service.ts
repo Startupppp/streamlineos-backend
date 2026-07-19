@@ -118,7 +118,7 @@ export class RecruitmentOffersService {
     await this.db
       .update(candidateOffers)
       .set({ offerStatus: "PENDING_APPROVAL", updatedAt: new Date() })
-      .where(eq(candidateOffers.id, offerId));
+      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_SUBMITTED_FOR_APPROVAL",
       userId,
@@ -147,7 +147,7 @@ export class RecruitmentOffersService {
         updatedAt: now,
         ...tokenFields,
       })
-      .where(eq(candidateOffers.id, offerId));
+      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_APPROVED",
       userId,
@@ -174,7 +174,7 @@ export class RecruitmentOffersService {
     await this.db
       .update(candidateOffers)
       .set({ offerStatus: "APPROVAL_REJECTED", approvalRemarks: remarks ?? null, updatedAt: new Date() })
-      .where(eq(candidateOffers.id, offerId));
+      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_APPROVAL_REJECTED",
       userId,
@@ -189,7 +189,7 @@ export class RecruitmentOffersService {
   async listVersions(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
     return this.db.query.offerVersions.findMany({
-      where: eq(offerVersions.offerId, offerId),
+      where: and(eq(offerVersions.offerId, offerId), eq(offerVersions.orgId, orgId)),
       orderBy: [desc(offerVersions.versionNumber)],
     });
   }
@@ -197,7 +197,7 @@ export class RecruitmentOffersService {
   async listNegotiations(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
     return this.db.query.offerNegotiations.findMany({
-      where: eq(offerNegotiations.offerId, offerId),
+      where: and(eq(offerNegotiations.offerId, offerId), eq(offerNegotiations.orgId, orgId)),
       orderBy: [asc(offerNegotiations.createdAt)],
     });
   }
@@ -228,7 +228,7 @@ export class RecruitmentOffersService {
       await this.db
         .update(candidateOffers)
         .set({ offerStatus: "COUNTERED", respondedAt: new Date(), updatedAt: new Date() })
-        .where(eq(candidateOffers.id, offerId));
+        .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
       if (offer.offeredBy) {
         this.audit.log({
           action: "OFFER_COUNTERED_BY_CANDIDATE",
@@ -255,7 +255,7 @@ export class RecruitmentOffersService {
             sentAt: now,
             updatedAt: now,
           })
-          .where(eq(candidateOffers.id, offerId));
+          .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
         this.audit.log({
           action: "OFFER_TERMS_REVISED",
           userId,
@@ -317,7 +317,7 @@ export class RecruitmentOffersService {
     const [updated] = await this.db
       .update(candidateOffers)
       .set(updateData)
-      .where(eq(candidateOffers.id, offerId))
+      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)))
       .returning();
 
     if (
@@ -438,7 +438,7 @@ export class RecruitmentOffersService {
     });
     if (!existing) throw new NotFoundException("Offer not found");
 
-    await this.db.delete(candidateOffers).where(eq(candidateOffers.id, offerId));
+    await this.db.delete(candidateOffers).where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
     this.audit.log({
       action: "OFFER_DELETED",
       userId,

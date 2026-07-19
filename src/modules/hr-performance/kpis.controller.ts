@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -33,25 +33,30 @@ export class KpisController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
-  createKpi(@CurrentUser() u: CurrentUserContext, @Body(new ZodValidationPipe(createKpiSchema)) body: CreateKpiInput) {
+  createKpi(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createKpiSchema)) body: CreateKpiInput,
+  ) {
     return this.service.createKpi(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":kpiId")
   @RequirePermission("hr:performance:manage")
   updateKpi(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("kpiId", ParseIntPipe) kpiId: number,
     @Body(new ZodValidationPipe(updateKpiSchema)) body: UpdateKpiInput,
   ) {
-    return this.service.updateKpi(u.orgId, id, body);
+    return this.service.updateKpi(u.orgId, kpiId, body);
   }
 
-  @Delete(":id")
+  @Delete(":kpiId")
+  @HttpCode(204)
   @RequirePermission("hr:performance:manage")
-  deleteKpi(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.deleteKpi(u.orgId, id);
+  async deleteKpi(@CurrentUser() u: CurrentUserContext, @Param("kpiId", ParseIntPipe) kpiId: number) {
+    await this.service.deleteKpi(u.orgId, kpiId);
   }
 
   @Get("frameworks")
@@ -61,6 +66,7 @@ export class KpisController {
   }
 
   @Post("frameworks")
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
   createFramework(
     @CurrentUser() u: CurrentUserContext,
@@ -69,28 +75,30 @@ export class KpisController {
     return this.service.createFramework(u.orgId, body);
   }
 
-  @Patch("frameworks/:id")
+  @Patch("frameworks/:frameworkId")
   @RequirePermission("hr:performance:manage")
   updateFramework(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("frameworkId", ParseIntPipe) frameworkId: number,
     @Body(new ZodValidationPipe(updateFrameworkSchema)) body: UpdateFrameworkInput,
   ) {
-    return this.service.updateFramework(u.orgId, id, body);
+    return this.service.updateFramework(u.orgId, frameworkId, body);
   }
 
-  @Get("frameworks/:id/competencies")
+  @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
-  listCompetencies(@Param("id", ParseIntPipe) frameworkId: number) {
-    return this.service.listCompetencies(frameworkId);
+  listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.service.listCompetencies(u.orgId, frameworkId);
   }
 
-  @Post("frameworks/:id/competencies")
+  @Post("frameworks/:frameworkId/competencies")
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
   createCompetency(
-    @Param("id", ParseIntPipe) frameworkId: number,
+    @Param("frameworkId", ParseIntPipe) frameworkId: number,
     @Body(new ZodValidationPipe(createCompetencySchema)) body: CreateCompetencyInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.createCompetency(frameworkId, body);
+    return this.service.createCompetency(u.orgId, frameworkId, body);
   }
 }

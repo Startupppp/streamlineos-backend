@@ -95,12 +95,13 @@ export class EngagementExtrasController {
   }
 
   @Delete("badges/:badgeId")
+  @HttpCode(204)
   @RequirePermission("hr:engagement:manage")
-  deleteBadge(
+  async deleteBadge(
     @Param("badgeId", ParseIntPipe) badgeId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteBadge(u.orgId, badgeId);
+    await this.svc.deleteBadge(u.orgId, badgeId);
   }
 
   @Post("badges/:badgeId/award")
@@ -254,12 +255,13 @@ export class EngagementExtrasController {
   }
 
   @Delete("campaigns/:campaignId")
+  @HttpCode(204)
   @RequirePermission("hr:engagement:manage")
-  deleteCampaign(
+  async deleteCampaign(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteCampaign(u.orgId, campaignId);
+    await this.svc.deleteCampaign(u.orgId, campaignId);
   }
 
   @Get("employee-of-month")

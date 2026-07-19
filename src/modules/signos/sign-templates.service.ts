@@ -246,7 +246,7 @@ export class SignTemplatesService {
     const [updated] = await this.db
       .update(signTemplates)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(signTemplates.id, templateId))
+      .where(and(eq(signTemplates.id, templateId), eq(signTemplates.orgId, orgId)))
       .returning();
 
     if (input.status === "published" && template.status !== "published") {
@@ -277,7 +277,7 @@ export class SignTemplatesService {
   }
 
   async list(orgId: string) {
-    return this.db.query.signTemplates.findMany({ where: eq(signTemplates.orgId, orgId), orderBy: (t, { desc }) => [desc(t.updatedAt)] });
+    return this.db.query.signTemplates.findMany({ where: eq(signTemplates.orgId, orgId), orderBy: (t, { desc }) => [desc(t.updatedAt)], limit: 100 });
   }
 
   async get(orgId: string, templateId: number) {

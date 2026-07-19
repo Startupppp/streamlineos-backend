@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -14,6 +14,8 @@ import {
   type CreateForecastSnapshotInput,
   compareForecastSnapshotsSchema,
   type CompareForecastSnapshotsInput,
+  overrideForecastSnapshotSchema,
+  type OverrideForecastSnapshotInput,
 } from "./dto/deals.schemas";
 
 @RequireModule("crm")
@@ -50,6 +52,7 @@ export class DealsAnalyticsController {
   }
 
   @Post("forecast/snapshot")
+  @HttpCode(201)
   @RequirePermission("crm:deals:forecast")
   captureForecastSnapshot(
     @Body(new ZodValidationPipe(createForecastSnapshotSchema)) body: CreateForecastSnapshotInput,
@@ -76,17 +79,17 @@ export class DealsAnalyticsController {
   @Get(":dealId/health")
   @RequirePermission("crm:deals:read")
   getDealHealth(
-    @Param("dealId") dealId: string,
+    @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.analytics.getDealHealth(u.orgId, Number(dealId));
+    return this.analytics.getDealHealth(u.orgId, dealId);
   }
 
   @Patch("forecast/:snapshotId/override")
   @RequirePermission("crm:deals:manage")
   overrideForecast(
     @Param("snapshotId") snapshotId: string,
-    @Body() body: { overrideAmount?: number; overrideNote?: string },
+    @Body(new ZodValidationPipe(overrideForecastSnapshotSchema)) body: OverrideForecastSnapshotInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.overrideForecastSnapshot(u.orgId, u.userId, snapshotId, body);

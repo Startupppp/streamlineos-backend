@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Post,
   Patch,
   Body,
@@ -59,6 +60,7 @@ export class ProfilesController {
   }
 
   @Post(":employeeUserId/profiles")
+  @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
   async createProfile(
     @Param("employeeUserId") employeeUserId: string,

@@ -18,11 +18,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TrainingService } from "./training.service";
 import {
-  createTrainingProgramSchema,
-  updateTrainingProgramSchema,
+  createProgramSchema,
+  updateProgramSchema,
   markAttendanceSchema,
-  type CreateTrainingProgramInput,
-  type UpdateTrainingProgramInput,
+  type CreateProgramInput,
+  type UpdateProgramInput,
   type MarkAttendanceInput,
 } from "./dto/training.schemas";
 
@@ -42,7 +42,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   @HttpCode(201)
   createProgram(
-    @Body(new ZodValidationPipe(createTrainingProgramSchema)) body: CreateTrainingProgramInput,
+    @Body(new ZodValidationPipe(createProgramSchema)) body: CreateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.createProgram(u.orgId, body);
@@ -52,7 +52,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(updateTrainingProgramSchema)) body: UpdateTrainingProgramInput,
+    @Body(new ZodValidationPipe(updateProgramSchema)) body: UpdateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.updateProgram(u.orgId, programId, body);
@@ -65,13 +65,13 @@ export class TrainingController {
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.trainingService.enrollUser(programId, u.userId);
+    return this.trainingService.enrollUser(u.orgId, programId, u.userId);
   }
 
   @Get(":programId/attendance")
   @RequirePermission("hr:learning:manage")
-  listAttendance(@Param("programId", ParseIntPipe) programId: number) {
-    return this.trainingService.listAttendance(programId);
+  listAttendance(@Param("programId", ParseIntPipe) programId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.trainingService.listAttendance(u.orgId, programId);
   }
 
   @Patch(":programId/attendance/:userId")
@@ -80,7 +80,8 @@ export class TrainingController {
     @Param("programId", ParseIntPipe) programId: number,
     @Param("userId") userId: string,
     @Body(new ZodValidationPipe(markAttendanceSchema)) body: MarkAttendanceInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.trainingService.markAttendance(programId, userId, body);
+    return this.trainingService.markAttendance(u.orgId, programId, userId, body);
   }
 }

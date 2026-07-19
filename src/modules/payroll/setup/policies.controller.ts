@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -52,6 +53,7 @@ export class PayrollPoliciesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
   async create(
     @Body(new ZodValidationPipe(createPolicySchema)) body: CreatePolicyInput,
@@ -80,6 +82,7 @@ export class PayrollPoliciesController {
   }
 
   @Post(":policyId/activate")
+  @HttpCode(200)
   @RequirePermission("payroll:policies:manage")
   async activate(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -99,6 +102,7 @@ export class PayrollPoliciesController {
   }
 
   @Post(":policyId/versions")
+  @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
   async createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,

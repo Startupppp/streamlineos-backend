@@ -82,13 +82,13 @@ export class HrWebhooksController {
   }
 
   @Delete(":subscriptionId")
-  @HttpCode(200)
+  @HttpCode(204)
   @RequirePermission("hr:integrations:manage")
-  remove(
+  async remove(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.webhooks.deleteSubscription(u.orgId, subscriptionId);
+    await this.webhooks.deleteSubscription(u.orgId, subscriptionId);
   }
 
   @Post(":subscriptionId/test")

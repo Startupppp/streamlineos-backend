@@ -448,29 +448,40 @@ export class SupportAiService {
     const [updated] = await this.db
       .update(supportAiSuggestions)
       .set({ status: input.status, feedback: input.feedback ?? null, resolvedAt: new Date(), resolvedBy: userId })
-      .where(eq(supportAiSuggestions.id, suggestionId))
+      .where(and(eq(supportAiSuggestions.id, suggestionId), eq(supportAiSuggestions.orgId, orgId)))
       .returning();
     return updated;
   }
 
   private async applySuggestion(orgId: string, suggestion: typeof supportAiSuggestions.$inferSelect): Promise<void> {
-    const payload = suggestion.payload as Record<string, unknown>;
+    const payload = suggestion.payload;
     switch (suggestion.type) {
-      case "priority":
+      case "priority": {
+        const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+        type ValidPriority = (typeof VALID_PRIORITIES)[number];
+        const raw = String(payload.priority ?? "");
+        if (!VALID_PRIORITIES.includes(raw as ValidPriority)) return;
         await this.db.update(supportTickets)
-          .set({ priority: payload.priority as (typeof supportTickets.$inferInsert)["priority"], updatedAt: new Date() })
+          .set({ priority: raw as ValidPriority, updatedAt: new Date() })
           .where(and(eq(supportTickets.id, suggestion.ticketId), eq(supportTickets.orgId, orgId)));
         return;
-      case "category":
+      }
+      case "category": {
+        const category = String(payload.category ?? "");
+        if (!category) return;
         await this.db.update(supportTickets)
-          .set({ category: payload.category as string, updatedAt: new Date() })
+          .set({ category, updatedAt: new Date() })
           .where(and(eq(supportTickets.id, suggestion.ticketId), eq(supportTickets.orgId, orgId)));
         return;
-      case "duplicate":
+      }
+      case "duplicate": {
+        const candidateTicketId = Number(payload.candidateTicketId);
+        if (!Number.isInteger(candidateTicketId) || candidateTicketId <= 0) return;
         await this.db.insert(supportTicketLinks)
-          .values({ orgId, ticketId: suggestion.ticketId, linkedTicketId: payload.candidateTicketId as number, relation: "duplicate", createdBy: null })
+          .values({ orgId, ticketId: suggestion.ticketId, linkedTicketId: candidateTicketId, relation: "duplicate", createdBy: null })
           .onConflictDoNothing();
         return;
+      }
       default:
         return;
     }

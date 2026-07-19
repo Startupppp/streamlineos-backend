@@ -173,7 +173,7 @@ export class BudgetsService {
     if (input.endsAt !== undefined) updateData.endsAt = input.endsAt;
     if (input.status !== undefined) updateData.status = input.status;
 
-    await this.db.update(timesheetBudgets).set(updateData).where(eq(timesheetBudgets.id, budgetId));
+    await this.db.update(timesheetBudgets).set(updateData).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
 
     await this.audit.recordWithDb({
       orgId,
@@ -194,7 +194,7 @@ export class BudgetsService {
       .where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
     if (!existing) throw new NotFoundException("Budget not found");
 
-    await this.db.delete(timesheetBudgets).where(eq(timesheetBudgets.id, budgetId));
+    await this.db.delete(timesheetBudgets).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
 
     await this.audit.recordWithDb({
       orgId,

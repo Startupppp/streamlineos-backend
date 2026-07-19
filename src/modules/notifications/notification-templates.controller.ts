@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -45,6 +46,7 @@ export class NotificationTemplatesController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("notifications:templates:manage")
   create(
     @Body(new ZodValidationPipe(createTemplateSchema)) dto: CreateTemplateInput,
@@ -73,6 +75,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/preview")
+  @HttpCode(200)
   @RequirePermission("notifications:templates:view")
   preview(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -83,6 +86,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/test")
+  @HttpCode(200)
   @RequirePermission("notifications:templates:manage")
   testSend(
     @Param("templateId", ParseIntPipe) templateId: number,

@@ -14,7 +14,7 @@ export class SignWatermarkService {
   ) {}
 
   async list(orgId: string) {
-    return this.db.query.signWatermarkPolicies.findMany({ where: eq(signWatermarkPolicies.orgId, orgId) });
+    return this.db.query.signWatermarkPolicies.findMany({ where: eq(signWatermarkPolicies.orgId, orgId), limit: 100 });
   }
 
   async get(orgId: string, id: number) {

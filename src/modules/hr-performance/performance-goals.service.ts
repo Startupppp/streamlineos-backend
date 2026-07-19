@@ -108,7 +108,7 @@ export class PerformanceGoalsService {
         ...(input.endDate !== undefined && { endDate: input.endDate }),
         updatedAt: new Date(),
       })
-      .where(eq(goals.id, goalId));
+      .where(and(eq(goals.id, goalId), eq(goals.orgId, orgId)));
 
     return { success: true };
   }

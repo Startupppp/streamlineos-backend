@@ -89,6 +89,7 @@ export class TimeEntriesController {
 
   @Delete(":entryId")
   @RequirePermission("projects:timesheets:create")
+  @HttpCode(204)
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,7 +105,7 @@ export class BillingSummaryController {
   constructor(private readonly timesheets: TimesheetsService) {}
 
   @Get()
-  @RequirePermission("projects:view")
+  @RequirePermission("projects:timesheets:view")
   billingSummary(
     @Query(new ZodValidationPipe(billingSummaryQuerySchema)) query: BillingSummaryQuery,
     @CurrentUser() u: CurrentUserContext,

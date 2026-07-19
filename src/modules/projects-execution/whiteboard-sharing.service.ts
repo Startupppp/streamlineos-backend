@@ -114,7 +114,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set(setValues)
-      .where(eq(projectWhiteboards.id, whiteboardId))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
       .returning();
 
     return {
@@ -137,7 +137,7 @@ export class WhiteboardSharingService {
     const [updated] = await this.db
       .update(projectWhiteboards)
       .set({ shareToken: newToken, updatedAt: new Date() })
-      .where(eq(projectWhiteboards.id, whiteboardId))
+      .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId)))
       .returning();
 
     return {

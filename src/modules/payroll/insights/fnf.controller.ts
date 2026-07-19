@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -40,6 +41,7 @@ export class FnfController {
   }
 
   @Post(":settlementId/approve")
+  @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:manage")
   approve(

@@ -19,10 +19,15 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 
 const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
 const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
+const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
+const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
+type DigestQueryInput = z.infer<typeof digestQuerySchema>;
+type SupplierDelayQueryInput = z.infer<typeof supplierDelayQuerySchema>;
 
 @RequireModule("inventory")
 @Controller("inventory/ai")
@@ -46,10 +51,10 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
   getDigest(
-    @Query("narrate") narrate: string | undefined,
+    @Query(new ZodValidationPipe(digestQuerySchema)) query: DigestQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.explainService.getDigest(u.orgId, u.userId, narrate === "true");
+    return this.explainService.getDigest(u.orgId, u.userId, query.narrate === "true");
   }
 
   @Post("reorder-proposal")
@@ -83,10 +88,9 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
   getSupplierDelayBriefing(
-    @Query("vendorId") vendorIdStr: string | undefined,
+    @Query(new ZodValidationPipe(supplierDelayQuerySchema)) query: SupplierDelayQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const vendorId = vendorIdStr != null ? parseInt(vendorIdStr, 10) : undefined;
-    return this.explainService.getSupplierDelayBriefing(u.orgId, u.userId, vendorId);
+    return this.explainService.getSupplierDelayBriefing(u.orgId, u.userId, query.vendorId);
   }
 }

@@ -264,7 +264,14 @@ Generate:
       orgId,
       userId,
       action: "meetings.send-follow-up",
-      payload: { eventId, followUpDraft: followUpDraft as unknown as Record<string, unknown>, channel },
+      payload: {
+        eventId,
+        followUpSubject: followUpDraft.subject,
+        followUpBody: followUpDraft.body,
+        followUpActionItems: JSON.stringify(followUpDraft.actionItems),
+        followUpNextMeetingDate: followUpDraft.nextMeetingDate ?? null,
+        channel,
+      },
       ttlSeconds: 180,
       idempotencyKey: `meetings-followup-${orgId}-${userId}-${eventId}`,
     });
@@ -277,13 +284,10 @@ Generate:
   ): Promise<{ executed: boolean; channel?: string; error?: string; message?: string }> {
     const confirmed = await this.confirmation.confirm({ token, actor: { orgId, userId } });
 
-    const payload = confirmed.payload as {
-      eventId: number;
-      followUpDraft: FollowUpOutput;
-      channel: "calendar" | "none";
-    };
-
-    const { eventId, followUpDraft, channel } = payload;
+    const rawPayload = confirmed.payload;
+    const eventId = Number(rawPayload["eventId"]);
+    const followUpBody = String(rawPayload["followUpBody"] ?? "");
+    const channel = String(rawPayload["channel"] ?? "none") as "calendar" | "none";
 
     const event = await this.loadEvent(orgId, eventId);
 
@@ -307,7 +311,7 @@ Generate:
       event.description ?? "",
       "",
       "--- Follow-up ---",
-      followUpDraft.body,
+      followUpBody,
     ]
       .join("\n")
       .trim();
@@ -330,7 +334,7 @@ Generate:
           userId,
           {
             subject: `Follow-up: ${event.title}`,
-            body: followUpDraft.body,
+            body: followUpBody,
             start_datetime: new Date(Date.now() + 5 * 60_000).toISOString(),
             end_datetime: new Date(Date.now() + 35 * 60_000).toISOString(),
           },

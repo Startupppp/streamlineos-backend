@@ -80,7 +80,10 @@ export const createEffectiveDateChangeSchema = z.object({
 
 export const listEffectiveDateChangesSchema = z.object({
   employmentId: z.coerce.number().int().positive().optional(),
-  changeType: z.string().optional(),
+  changeType: z.enum([
+    "department", "manager", "location", "designation", "job_level",
+    "employment_type", "compensation", "work_schedule", "policy_assignment",
+  ]).optional(),
   status: z.enum(["draft", "approved", "applied"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

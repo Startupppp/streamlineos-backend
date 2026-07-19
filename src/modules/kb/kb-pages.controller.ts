@@ -81,6 +81,7 @@ export class KbPagesController {
 
   @Post("pages")
   @RequirePermission("kb:pages:create")
+  @HttpCode(201)
   async create(
     @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
     @CurrentUser() u: CurrentUserContext,
@@ -111,6 +112,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/move")
   @RequirePermission("kb:pages:update")
+  @HttpCode(200)
   async move(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body(new ZodValidationPipe(movePageSchema)) body: MovePageInput,
@@ -121,6 +123,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/duplicate")
   @RequirePermission("kb:pages:create")
+  @HttpCode(201)
   async duplicate(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -139,6 +142,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/restore")
   @RequirePermission("kb:pages:update")
+  @HttpCode(200)
   async restore(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -165,6 +169,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/favorite")
   @RequirePermission("kb:pages:view")
+  @HttpCode(200)
   async addFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -221,6 +226,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/versions/:versionNumber/restore")
   @RequirePermission("kb:pages:update")
+  @HttpCode(200)
   async restoreVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,

@@ -10,6 +10,7 @@ const mockDb = {
   },
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
   groupBy: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockResolvedValue([]),
@@ -26,6 +27,10 @@ describe("SupportReportsService", () => {
     jest.clearAllMocks();
     mockDb.query.supportQueues.findMany.mockResolvedValue([]);
     mockDb.query.automationRules.findMany.mockResolvedValue([]);
+    mockDb.select.mockReturnThis();
+    mockDb.from.mockReturnThis();
+    mockDb.leftJoin.mockReturnThis();
+    mockDb.where.mockReturnThis();
     mockDb.groupBy.mockReturnThis();
     mockDb.orderBy.mockResolvedValue([]);
     mockCache.cached.mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher());
@@ -141,25 +146,23 @@ describe("SupportReportsService", () => {
   describe("getQueuePerformance", () => {
     it("resolves queue names for each grouped row", async () => {
       mockDb.orderBy.mockResolvedValueOnce([
-        { queueId: 5, ticketsHandled: 10, openTickets: 3, avgResolutionMinutes: 120 },
+        { queueId: 5, queueName: "Billing", ticketsHandled: 10, openTickets: 3, avgResolutionMinutes: 120 },
       ]);
-      mockDb.query.supportQueues.findMany.mockResolvedValueOnce([{ id: 5, name: "Billing" }]);
 
       const result = await service.getQueuePerformance("org1", {});
       expect(result).toEqual([
-        { queueId: 5, ticketsHandled: 10, openTickets: 3, avgResolutionMinutes: 120, queueName: "Billing" },
+        { queueId: 5, queueName: "Billing", ticketsHandled: 10, openTickets: 3, avgResolutionMinutes: 120 },
       ]);
     });
   });
 
   describe("getAutomationPerformance", () => {
     it("resolves automation rule names for each grouped row, labeling deleted rules", async () => {
-      mockDb.orderBy.mockResolvedValueOnce([{ ruleId: 9, total: 5, succeeded: 4, failed: 1, skipped: 0 }]);
-      mockDb.query.automationRules.findMany.mockResolvedValueOnce([]);
+      mockDb.orderBy.mockResolvedValueOnce([{ ruleId: 9, ruleName: null, total: 5, succeeded: 4, failed: 1, skipped: 0 }]);
 
       const result = await service.getAutomationPerformance("org1", {});
       expect(result).toEqual([
-        { ruleId: 9, total: 5, succeeded: 4, failed: 1, skipped: 0, ruleName: "Deleted automation" },
+        { ruleId: 9, ruleName: "Deleted automation", total: 5, succeeded: 4, failed: 1, skipped: 0 },
       ]);
     });
   });

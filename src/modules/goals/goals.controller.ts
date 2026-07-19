@@ -96,13 +96,13 @@ export class GoalsController {
 
   @Delete(":goalId")
   @RequirePermission("projects:goals:manage")
+  @HttpCode(204)
   async remove(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.goals.remove(u.orgId, goalId);
     if (!result) throw new NotFoundException("Goal not found");
-    return result;
   }
 
   @Post(":goalId/check-in")

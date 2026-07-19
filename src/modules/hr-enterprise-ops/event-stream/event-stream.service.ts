@@ -54,7 +54,7 @@ export class EventStreamService {
       eventType,
       entityType,
       entityId,
-      payload: sanitized as unknown,
+      payload: sanitized,
       actorUserId: actor ?? null,
       occurredAt: new Date(),
     });

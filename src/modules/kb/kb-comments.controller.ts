@@ -39,7 +39,8 @@ export class KbCommentsController {
   }
 
   @Post("articles/:articleId/comments")
-  @RequirePermission("kb:articles:view")
+  @RequirePermission("kb:articles:create")
+  @HttpCode(201)
   async create(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body(new ZodValidationPipe(createCommentSchema)) body: CreateCommentInput,
@@ -49,7 +50,7 @@ export class KbCommentsController {
   }
 
   @Patch("comments/:commentId")
-  @RequirePermission("kb:articles:view")
+  @RequirePermission("kb:articles:update")
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body(new ZodValidationPipe(updateCommentSchema)) body: UpdateCommentInput,
@@ -60,7 +61,7 @@ export class KbCommentsController {
 
   @Delete("comments/:commentId")
   @HttpCode(204)
-  @RequirePermission("kb:articles:view")
+  @RequirePermission("kb:articles:update")
   async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +71,7 @@ export class KbCommentsController {
 
   @Post("comments/:commentId/resolve")
   @RequirePermission("kb:articles:update")
+  @HttpCode(200)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

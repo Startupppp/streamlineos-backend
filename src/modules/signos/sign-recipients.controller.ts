@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -29,6 +29,7 @@ export class SignRecipientsController {
   constructor(private readonly recipients: SignRecipientsService) {}
 
   @Post("envelopes/:envelopeId/recipients")
+  @HttpCode(201)
   @RequirePermission("sign:envelope:create")
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -45,21 +46,21 @@ export class SignRecipientsController {
     return this.recipients.listForEnvelope(u.orgId, envelopeId);
   }
 
-  @Patch("recipients/:id")
+  @Patch("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
   update(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("recipientId", ParseIntPipe) recipientId: number,
     @Body(new ZodValidationPipe(updateRecipientSchema)) body: UpdateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.update(u.orgId, id, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
   }
 
-  @Delete("recipients/:id")
+  @Delete("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
-  async remove(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.recipients.remove(u.orgId, id, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+  async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
     return { success: true };
   }
 }

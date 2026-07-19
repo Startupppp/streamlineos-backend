@@ -122,7 +122,7 @@ export class WfhService {
         rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
         approverId,
       })
-      .where(eq(wfhRequests.id, requestId));
+      .where(and(eq(wfhRequests.id, requestId), eq(wfhRequests.orgId, orgId)));
 
     return { success: true };
   }

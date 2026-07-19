@@ -84,6 +84,12 @@ export class ProjectsReleasesService {
   }
 
   async removeTicketFromRelease(orgId: string, releaseId: number, ticketId: number) {
+    const release = await this.db.query.projectReleases.findFirst({
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!release) throw new NotFoundException("Release not found");
+
     await this.db.delete(releaseTickets)
       .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.ticketId, ticketId)));
     return { success: true };

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -39,7 +39,7 @@ export class VendorPaymentsAllocationsService {
     const existingAllocations = await this.db
       .select({ total: sql<string>`COALESCE(sum(${finVendorPaymentAllocations.amount}::numeric), 0)::text` })
       .from(finVendorPaymentAllocations)
-      .where(eq(finVendorPaymentAllocations.vendorPaymentId, input.vendorPaymentId));
+      .where(and(eq(finVendorPaymentAllocations.vendorPaymentId, input.vendorPaymentId), eq(finVendorPaymentAllocations.orgId, orgId)));
 
     const alreadyAllocated = Number(existingAllocations[0]?.total ?? 0);
     const paymentAmount = Number(payment.amount);
@@ -51,13 +51,15 @@ export class VendorPaymentsAllocationsService {
       );
     }
 
+    const billIds = input.allocations.map((a) => a.billId);
+    const billRows = await this.db
+      .select()
+      .from(purchaseBills)
+      .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)));
+    const billMap = new Map(billRows.map((b) => [b.id, b]));
+
     for (const alloc of input.allocations) {
-      const billRows = await this.db
-        .select()
-        .from(purchaseBills)
-        .where(and(eq(purchaseBills.id, alloc.billId), eq(purchaseBills.orgId, orgId)))
-        .limit(1);
-      const bill = billRows[0];
+      const bill = billMap.get(alloc.billId);
       if (!bill) throw new NotFoundException(`Purchase bill ${alloc.billId} not found`);
       if (bill.status === "CANCELLED") {
         throw new ConflictException(`Bill ${alloc.billId} is cancelled`);

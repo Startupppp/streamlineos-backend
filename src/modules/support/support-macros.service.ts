@@ -55,7 +55,7 @@ export class SupportMacrosService {
     return this.db.query.supportMacros.findMany({
       where: and(...conditions),
       orderBy: [asc(supportMacros.title)],
-      limit: 200,
+      limit: 100,
     });
   }
 
@@ -147,7 +147,7 @@ export class SupportMacrosService {
     await this.db
       .update(supportMacros)
       .set({ usageCount: sql`${supportMacros.usageCount} + 1` })
-      .where(eq(supportMacros.id, macroId));
+      .where(and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)));
 
     return { body: rendered, isInternal: macro.actions?.isInternal ?? false, actionsApplied: macro.actions ?? {} };
   }
@@ -189,7 +189,7 @@ export class SupportMacrosService {
     return this.db.query.supportRoutingRules.findMany({
       where: eq(supportRoutingRules.orgId, orgId),
       orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-      limit: 200,
+      limit: 100,
     });
   }
 
@@ -289,13 +289,19 @@ export class SupportMacrosService {
    * no candidate qualifies — a misconfigured skill requirement shouldn't
    * leave a ticket unassigned.
    */
-  private async filterBySkills(candidates: string[], requiredSkills: string[]): Promise<string[]> {
+  private async filterBySkills(orgId: string, candidates: string[], requiredSkills: string[]): Promise<string[]> {
     if (requiredSkills.length === 0) return candidates;
 
     const rows = await this.db
       .select({ userId: supportAgentSkills.userId, skill: supportAgentSkills.skill })
       .from(supportAgentSkills)
-      .where(and(inArray(supportAgentSkills.userId, candidates), inArray(supportAgentSkills.skill, requiredSkills)));
+      .where(
+        and(
+          eq(supportAgentSkills.orgId, orgId),
+          inArray(supportAgentSkills.userId, candidates),
+          inArray(supportAgentSkills.skill, requiredSkills),
+        ),
+      );
 
     const skillsByUser = new Map<string, Set<string>>();
     for (const row of rows) {
@@ -313,11 +319,16 @@ export class SupportMacrosService {
    * available by default). Falls back to the full candidate list if nobody
    * is available — better to assign someone than leave the ticket unassigned.
    */
-  private async filterByAvailability(candidates: string[]): Promise<string[]> {
+  private async filterByAvailability(orgId: string, candidates: string[]): Promise<string[]> {
     const rows = await this.db
       .select({ userId: supportAgentAvailability.userId, isAvailable: supportAgentAvailability.isAvailable })
       .from(supportAgentAvailability)
-      .where(inArray(supportAgentAvailability.userId, candidates));
+      .where(
+        and(
+          eq(supportAgentAvailability.orgId, orgId),
+          inArray(supportAgentAvailability.userId, candidates),
+        ),
+      );
 
     const availabilityByUser = new Map(rows.map((r) => [r.userId, r.isAvailable]));
     const available = candidates.filter((c) => availabilityByUser.get(c) ?? true);
@@ -335,12 +346,12 @@ export class SupportMacrosService {
     }
 
     if (mode === "skill_based") {
-      const qualified = await this.filterBySkills(candidates, requiredSkills);
+      const qualified = await this.filterBySkills(orgId, candidates, requiredSkills);
       return this.loadBalance(orgId, qualified);
     }
 
     if (mode === "availability_based") {
-      const available = await this.filterByAvailability(candidates);
+      const available = await this.filterByAvailability(orgId, candidates);
       return this.loadBalance(orgId, available);
     }
 
@@ -354,7 +365,9 @@ export class SupportMacrosService {
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
-    await this.db.delete(supportAgentSkills).where(eq(supportAgentSkills.userId, userId));
+    await this.db
+      .delete(supportAgentSkills)
+      .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userId, userId)));
     if (skills.length > 0) {
       await this.db
         .insert(supportAgentSkills)

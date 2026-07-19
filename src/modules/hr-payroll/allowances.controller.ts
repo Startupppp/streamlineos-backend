@@ -1,10 +1,17 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AllowancesService } from "./allowances.service";
+import {
+  createAllowanceSchema,
+  updateAllowanceSchema,
+  type CreateAllowanceInput,
+  type UpdateAllowanceInput,
+} from "./dto/payroll.schemas";
 
 @UseGuards(JwtAuthGuard)
 @Controller("hr/payroll/allowances")
@@ -19,27 +26,32 @@ export class AllowancesController {
   }
 
   @Post()
+  @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
-    return this.service.create(u.orgId, body as Parameters<AllowancesService["create"]>[1]);
+  create(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createAllowanceSchema)) body: CreateAllowanceInput,
+  ) {
+    return this.service.create(u.orgId, body);
   }
 
-  @Patch(":id")
+  @Patch(":allowanceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   update(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
-    @Body() body: Record<string, unknown>,
+    @Param("allowanceId", ParseIntPipe) allowanceId: number,
+    @Body(new ZodValidationPipe(updateAllowanceSchema)) body: UpdateAllowanceInput,
   ) {
-    return this.service.update(u.orgId, id, body as Parameters<AllowancesService["update"]>[2]);
+    return this.service.update(u.orgId, allowanceId, body);
   }
 
-  @Delete(":id")
+  @Delete(":allowanceId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
-  remove(@CurrentUser() u: CurrentUserContext, @Param("id", ParseIntPipe) id: number) {
-    return this.service.remove(u.orgId, id);
+  remove(@CurrentUser() u: CurrentUserContext, @Param("allowanceId", ParseIntPipe) allowanceId: number) {
+    return this.service.remove(u.orgId, allowanceId);
   }
 }

@@ -72,7 +72,7 @@ export class ReimbursementsService {
         ...(body.rejectionReason && { rejectionReason: body.rejectionReason }),
         updatedAt: new Date(),
       })
-      .where(eq(reimbursements.id, reimbursementId));
+      .where(and(eq(reimbursements.id, reimbursementId), eq(reimbursements.orgId, orgId)));
 
     if (body.status === "APPROVED" || body.status === "REJECTED") {
       void this.dispatchAutomation(orgId, reimbursementId, existing.userId, existing.amount, body.status);

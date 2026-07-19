@@ -103,7 +103,7 @@ export class HrEffectiveChangesService {
 
     const conditions = [eq(hrEffectiveDatedChanges.orgId, orgId)];
     if (employmentId) conditions.push(eq(hrEffectiveDatedChanges.employmentId, employmentId));
-    if (changeType) conditions.push(eq(hrEffectiveDatedChanges.changeType, changeType as never));
+    if (changeType) conditions.push(eq(hrEffectiveDatedChanges.changeType, changeType));
     if (status) conditions.push(eq(hrEffectiveDatedChanges.status, status));
 
     const where = and(...conditions);

@@ -15,7 +15,8 @@ export class ChatSearchService {
     const memberChannels = await this.db
       .select({ channelId: chatChannelMembers.channelId })
       .from(chatChannelMembers)
-      .where(eq(chatChannelMembers.userId, userId));
+      .innerJoin(chatChannels, eq(chatChannels.id, chatChannelMembers.channelId))
+      .where(and(eq(chatChannelMembers.userId, userId), eq(chatChannels.orgId, orgId)));
 
     const memberChannelIds = memberChannels.map(m => m.channelId);
     if (memberChannelIds.length === 0) return { results: [], nextCursor: undefined };

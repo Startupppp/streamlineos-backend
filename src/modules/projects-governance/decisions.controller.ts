@@ -78,6 +78,7 @@ export class DecisionsController {
 
   @Delete(":decisionId")
   @RequirePermission("projects:decisions:manage")
+  @HttpCode(204)
   softDeleteDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,

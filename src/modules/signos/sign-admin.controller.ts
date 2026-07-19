@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -45,32 +45,33 @@ export class SignAdminController {
     return this.watermark.list(u.orgId);
   }
 
-  @Get("watermark-policies/:id")
+  @Get("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
-  getWatermarkPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.watermark.get(u.orgId, id);
+  getWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.watermark.get(u.orgId, policyId);
   }
 
   @Post("watermark-policies")
+  @HttpCode(201)
   @RequirePermission("sign:admin:manage")
   createWatermarkPolicy(@Body(new ZodValidationPipe(watermarkPolicyInputSchema)) body: WatermarkPolicyInput, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.create(u.orgId, u.userId, body);
   }
 
-  @Patch("watermark-policies/:id")
+  @Patch("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
   updateWatermarkPolicy(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("policyId", ParseIntPipe) policyId: number,
     @Body(new ZodValidationPipe(watermarkPolicyInputSchema.partial())) body: Partial<WatermarkPolicyInput>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.watermark.update(u.orgId, id, u.userId, body);
+    return this.watermark.update(u.orgId, policyId, u.userId, body);
   }
 
-  @Delete("watermark-policies/:id")
+  @Delete("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
-  async removeWatermarkPolicy(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    await this.watermark.remove(u.orgId, id, u.userId);
+  async removeWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.watermark.remove(u.orgId, policyId, u.userId);
     return { success: true };
   }
 

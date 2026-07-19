@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,7 +8,15 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { EssService } from "./ess.service";
 import {
   essBankSchema,
+  essCreateReimbursementSchema,
+  essCreateLoanSchema,
+  essSubmitTaxDeclarationSchema,
+  essAddTaxProofSchema,
   type EssBank,
+  type EssCreateReimbursement,
+  type EssCreateLoan,
+  type EssSubmitTaxDeclaration,
+  type EssAddTaxProof,
 } from "./dto/insights.schemas";
 
 @Controller("payroll/me")
@@ -41,10 +49,11 @@ export class EssController {
   }
 
   @Post("reimbursements")
+  @HttpCode(201)
   @RequirePermission("self:payroll")
   createReimbursement(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: { category: string; amount: number; description: string; receiptUrl?: string; payrollMonth?: string },
+    @Body(new ZodValidationPipe(essCreateReimbursementSchema)) body: EssCreateReimbursement,
   ) {
     return this.essService.createReimbursement(u.orgId, u.userId, body);
   }
@@ -56,10 +65,11 @@ export class EssController {
   }
 
   @Post("loans")
+  @HttpCode(201)
   @RequirePermission("self:payroll")
   createLoan(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: { amount: number; reason: string; totalEmis: number },
+    @Body(new ZodValidationPipe(essCreateLoanSchema)) body: EssCreateLoan,
   ) {
     return this.essService.createLoan(u.orgId, u.userId, body);
   }
@@ -71,29 +81,21 @@ export class EssController {
   }
 
   @Post("tax-declaration")
+  @HttpCode(201)
   @RequirePermission("self:payroll")
   submitTaxDeclaration(
     @CurrentUser() u: CurrentUserContext,
-    @Body()
-    body: {
-      financialYear: string;
-      regime: "OLD" | "NEW";
-      hra?: number;
-      lta?: number;
-      section80c?: number;
-      section80d?: number;
-      section80g?: number;
-      homeLoanInterest?: number;
-    },
+    @Body(new ZodValidationPipe(essSubmitTaxDeclarationSchema)) body: EssSubmitTaxDeclaration,
   ) {
     return this.essService.submitTaxDeclaration(u.orgId, u.userId, body);
   }
 
   @Post("tax-declaration/proofs")
+  @HttpCode(201)
   @RequirePermission("self:payroll")
   addTaxProof(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: { declarationId: number; category: string; amount: number; description?: string; proofUrl?: string },
+    @Body(new ZodValidationPipe(essAddTaxProofSchema)) body: EssAddTaxProof,
   ) {
     return this.essService.addTaxProof(u.orgId, u.userId, body);
   }

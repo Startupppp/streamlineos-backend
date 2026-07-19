@@ -5,7 +5,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { DealsStakeholdersService, type CreateStakeholderInput, type UpdateStakeholderInput } from "./deals-stakeholders.service";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { DealsStakeholdersService } from "./deals-stakeholders.service";
+import {
+  createStakeholderSchema,
+  updateStakeholderSchema,
+  type CreateStakeholderInput,
+  type UpdateStakeholderInput,
+} from "./dto/deals.schemas";
 
 @RequireModule("crm")
 @Controller("deals/:dealId/stakeholders")
@@ -29,7 +36,7 @@ export class DealsStakeholdersController {
   @HttpCode(201)
   createStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body() body: CreateStakeholderInput,
+    @Body(new ZodValidationPipe(createStakeholderSchema)) body: CreateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stakeholders.createStakeholder(u.orgId, dealId, body);
@@ -41,20 +48,21 @@ export class DealsStakeholdersController {
   updateStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
-    @Body() body: UpdateStakeholderInput,
+    @Body(new ZodValidationPipe(updateStakeholderSchema)) body: UpdateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stakeholders.updateStakeholder(u.orgId, dealId, stakeholderId, body);
   }
 
   @Delete(":stakeholderId")
+  @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
-  deleteStakeholder(
+  async deleteStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stakeholders.deleteStakeholder(u.orgId, dealId, stakeholderId);
+    await this.stakeholders.deleteStakeholder(u.orgId, dealId, stakeholderId);
   }
 }

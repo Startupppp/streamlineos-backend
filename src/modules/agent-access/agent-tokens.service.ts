@@ -65,7 +65,8 @@ export class AgentTokensService {
         createdAt: agentTokens.createdAt,
       })
       .from(agentTokens)
-      .where(and(eq(agentTokens.userId, userId), eq(agentTokens.orgId, orgId)));
+      .where(and(eq(agentTokens.userId, userId), eq(agentTokens.orgId, orgId)))
+      .limit(100);
   }
 
   async revoke(userId: string, orgId: string, tokenId: number) {

@@ -53,7 +53,7 @@ export class SuccessionService {
     const [updated] = await this.db
       .update(hrSuccessionPlans)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(hrSuccessionPlans.id, id))
+      .where(and(eq(hrSuccessionPlans.id, id), eq(hrSuccessionPlans.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -65,7 +65,7 @@ export class SuccessionService {
       .where(and(eq(hrSuccessionPlans.id, id), eq(hrSuccessionPlans.orgId, orgId)))
       .limit(1);
     if (!existing.length) throw new NotFoundException("Succession plan not found");
-    await this.db.delete(hrSuccessionPlans).where(eq(hrSuccessionPlans.id, id));
+    await this.db.delete(hrSuccessionPlans).where(and(eq(hrSuccessionPlans.id, id), eq(hrSuccessionPlans.orgId, orgId)));
     return { success: true };
   }
 }

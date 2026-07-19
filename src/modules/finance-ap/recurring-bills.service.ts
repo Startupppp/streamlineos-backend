@@ -208,7 +208,7 @@ export class RecurringBillsService {
         await this.db
           .update(finRecurringBillTemplates)
           .set({ isActive: false, updatedAt: new Date() })
-          .where(eq(finRecurringBillTemplates.id, template.id));
+          .where(and(eq(finRecurringBillTemplates.id, template.id), eq(finRecurringBillTemplates.orgId, template.orgId)));
         continue;
       }
 
@@ -219,7 +219,7 @@ export class RecurringBillsService {
         await this.db
           .update(finRecurringBillTemplates)
           .set({ lastRunDate: today, nextRunDate: nextRun, updatedAt: new Date() })
-          .where(eq(finRecurringBillTemplates.id, template.id));
+          .where(and(eq(finRecurringBillTemplates.id, template.id), eq(finRecurringBillTemplates.orgId, template.orgId)));
 
         void this.dispatch.emit({
           eventKey: "accounting.bill.recurring_generated",

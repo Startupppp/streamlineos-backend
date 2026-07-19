@@ -25,27 +25,27 @@ export class SignCertificatesController {
     private readonly finalization: SignFinalizationService,
   ) {}
 
-  @Get(":id/audit")
+  @Get(":envelopeId/audit")
   @RequirePermission("sign:audit:view")
-  getAudit(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.audit.listForEnvelope(u.orgId, id);
+  getAudit(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.audit.listForEnvelope(u.orgId, envelopeId);
   }
 
-  @Get(":id/certificate")
+  @Get(":envelopeId/certificate")
   @RequirePermission("sign:certificate:download")
-  getCertificate(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
-    return this.finalization.getCertificateUrl(u.orgId, id);
+  getCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.finalization.getCertificateUrl(u.orgId, envelopeId);
   }
 
-  @Get(":id/final-pdf")
+  @Get(":envelopeId/final-pdf")
   @RequirePermission("sign:certificate:download")
-  getFinalPdf(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.finalization.getFinalPdfUrl(u.orgId, id, { userId: u.userId, ipAddress: clientIp(req) });
+  getFinalPdf(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.finalization.getFinalPdfUrl(u.orgId, envelopeId, { userId: u.userId, ipAddress: clientIp(req) });
   }
 
-  @Post(":id/regenerate-certificate")
+  @Post(":envelopeId/regenerate-certificate")
   @RequirePermission("sign:admin:manage")
-  regenerateCertificate(@Param("id", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.finalization.regenerateCertificate(u.orgId, id, { userId: u.userId, ipAddress: clientIp(req) });
+  regenerateCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.finalization.regenerateCertificate(u.orgId, envelopeId, { userId: u.userId, ipAddress: clientIp(req) });
   }
 }

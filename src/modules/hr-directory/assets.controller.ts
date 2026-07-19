@@ -94,6 +94,7 @@ export class AssetsController {
   }
 
   @Delete("devices/:deviceId")
+  @HttpCode(204)
   @RequirePermission("hr:assets:manage")
   deleteDevice(@Param("deviceId", ParseIntPipe) deviceId: number, @CurrentUser() u: CurrentUserContext) {
     return this.assets.deleteDevice(u.orgId, deviceId);

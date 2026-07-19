@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, UseGuards, Query } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, ParseIntPipe, UseGuards, Query, HttpCode } from "@nestjs/common";
 import { CalibrationService } from "./calibration.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -7,7 +7,10 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { upsertCalibrationEntrySchema, type UpsertCalibrationEntryInput } from "./dto/calibration.schemas";
+import {
+  upsertCalibrationEntrySchema,
+  type UpsertCalibrationEntryInput,
+} from "./dto/calibration.schemas";
 
 @RequireModule("hr")
 @Controller("hr/performance/calibration")
@@ -25,6 +28,7 @@ export class CalibrationController {
   }
 
   @Post("cycles/:cycleId/entries")
+  @HttpCode(201)
   @RequirePermission("hr:performance:manage")
   upsertEntry(
     @CurrentUser() user: CurrentUserContext,

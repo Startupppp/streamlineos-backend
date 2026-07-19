@@ -154,7 +154,7 @@ export class VendorReturnsService {
 
       await tx.update(invVendorReturns)
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
-        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.status, "DRAFT")));
+        .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId), eq(invVendorReturns.status, "DRAFT")));
     });
 
     await Promise.all([
@@ -199,7 +199,7 @@ export class VendorReturnsService {
 
     await this.db.update(invVendorReturns)
       .set({ status: "CANCELLED", cancelledAt: new Date(), updatedAt: new Date() })
-      .where(eq(invVendorReturns.id, returnId));
+      .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId)));
 
     await this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`);
     return this.get(orgId, returnId);

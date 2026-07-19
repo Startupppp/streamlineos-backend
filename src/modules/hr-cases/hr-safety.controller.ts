@@ -53,17 +53,18 @@ export class HrSafetyController {
     return this.safety.listIncidents(user.orgId, query);
   }
 
-  @Get("incidents/:id")
+  @Get("incidents/:incidentId")
   @RequirePermission("hr:safety:view")
   async getIncident(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
   ) {
     const hasSensitive = await this.canSensitive(user);
-    return this.safety.getIncidentById(user.orgId, id, hasSensitive);
+    return this.safety.getIncidentById(user.orgId, incidentId, hasSensitive);
   }
 
   @Post("incidents")
+  @HttpCode(201)
   @RequirePermission("hr:safety:manage")
   createIncident(
     @CurrentUser() user: CurrentUserContext,
@@ -73,26 +74,26 @@ export class HrSafetyController {
     return this.safety.createIncident(user.orgId, user.userId, body, req.ip);
   }
 
-  @Patch("incidents/:id")
+  @Patch("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
   async updateIncident(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
     @Body(new ZodValidationPipe(updateIncidentSchema)) body: UpdateIncidentInput,
     @Req() req: Request,
   ) {
     const hasSensitive = await this.canSensitive(user);
-    return this.safety.updateIncident(user.orgId, id, user.userId, hasSensitive, body, req.ip);
+    return this.safety.updateIncident(user.orgId, incidentId, user.userId, hasSensitive, body, req.ip);
   }
 
-  @Delete("incidents/:id")
+  @Delete("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
   @HttpCode(204)
   async deleteIncident(
     @CurrentUser() user: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("incidentId", ParseIntPipe) incidentId: number,
   ) {
-    await this.safety.deleteIncident(user.orgId, id, user.userId);
+    await this.safety.deleteIncident(user.orgId, incidentId, user.userId);
   }
 
   @Post("wellness/checkin")

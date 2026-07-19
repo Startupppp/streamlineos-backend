@@ -29,9 +29,9 @@ export const jobListSchema = z
   .object({
     status: z.enum(JOB_STATUSES).optional(),
     page: z.coerce.number().int().min(1).optional(),
-    pageSize: z.coerce.number().int().min(1).max(200).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
     /** @deprecated prefer page/pageSize */
-    limit: z.coerce.number().int().min(1).max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
     /** @deprecated prefer page/pageSize */
     offset: z.coerce.number().int().min(0).optional(),
   })
@@ -151,6 +151,6 @@ export type RecruiterActivityInput = z.infer<typeof recruiterActivitySchema>;
 
 export const recruiterActivityQuerySchema = z.object({
   recruiterId: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type RecruiterActivityQueryInput = z.infer<typeof recruiterActivityQuerySchema>;

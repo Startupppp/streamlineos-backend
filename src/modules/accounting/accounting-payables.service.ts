@@ -318,7 +318,7 @@ export class AccountingPayablesService {
       const newPaidTotal = await tx
         .select({ paid: sql<string>`COALESCE(sum(${vendorPayments.amount}::numeric), 0)::text` })
         .from(vendorPayments)
-        .where(eq(vendorPayments.billId, billId));
+        .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)));
       const paidSum = Number(newPaidTotal[0]?.paid ?? 0);
       const nextStatus = paidSum >= total - 0.005 ? "PAID" : "PARTIALLY_PAID";
 

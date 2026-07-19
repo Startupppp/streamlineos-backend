@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -49,6 +50,7 @@ export class ContactsController {
   }
 
   @Post()
+  @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
@@ -90,12 +92,13 @@ export class ContactsController {
   }
 
   @Delete(":contactId")
+  @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
-  remove(
+  async remove(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.contacts.remove(u.orgId, contactId);
+    await this.contacts.remove(u.orgId, contactId);
   }
 
   @Get(":contactId/vcard")
