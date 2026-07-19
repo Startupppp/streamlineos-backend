@@ -54,6 +54,7 @@ describe("HR Recruitment auth (e2e)", () => {
     ["patch", "/hr/recruitment/jobs/1"],
     ["delete", "/hr/recruitment/jobs/1"],
     ["post", "/hr/recruitment/jobs/1/publish"],
+    ["post", "/hr/recruitment/jobs/1/duplicate"],
     ["get", "/hr/recruitment/jobs/1/recruiters"],
     ["post", "/hr/recruitment/jobs/1/recruiters"],
     ["get", "/hr/recruitment/jobs/1/share"],

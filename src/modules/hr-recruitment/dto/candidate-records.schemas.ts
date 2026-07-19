@@ -85,15 +85,40 @@ export const addVaultDocumentSchema = z.object({
 });
 export type AddVaultDocumentInput = z.infer<typeof addVaultDocumentSchema>;
 
-export const createOfferSchema = z.object({
-  jobPostingId: z.number().int().optional(),
-  offeredSalary: z.number().positive().optional(),
-  offeredDesignation: z.string().min(1).optional(),
-  joiningDate: z.string().optional(),
-  offerLetterUrl: z.string().url().optional(),
-  validUntil: z.string().optional(),
-  notes: z.string().optional(),
-});
+export const createOfferSchema = z
+  .object({
+    jobPostingId: z.number().int().positive().optional(),
+    offeredSalary: z.number().positive("Offer salary must be greater than 0").optional(),
+    offeredDesignation: z.string().trim().min(1).max(200).optional(),
+    joiningDate: z
+      .string()
+      .optional()
+      .refine(
+        (d) => !d || new Date(d) >= new Date(new Date().toDateString()),
+        "Joining date cannot be in the past",
+      ),
+    offerLetterUrl: z.string().url("Offer letter URL must be valid").optional().or(z.literal("")),
+    validUntil: z
+      .string()
+      .optional()
+      .refine(
+        (d) => !d || new Date(d) >= new Date(new Date().toDateString()),
+        "Offer expiry cannot be in the past",
+      ),
+    notes: z.string().max(5000).optional(),
+  })
+  .refine(
+    (d) => {
+      if (d.joiningDate && d.validUntil) {
+        // validUntil is an expiry for the offer letter, not the joining date;
+        // only reject clearly invalid relative dates (expiry before joining is allowed).
+        return !Number.isNaN(new Date(d.joiningDate).getTime())
+          && !Number.isNaN(new Date(d.validUntil).getTime());
+      }
+      return true;
+    },
+    { message: "Joining date and offer expiry must be valid dates", path: ["validUntil"] },
+  );
 export type CreateOfferInput = z.infer<typeof createOfferSchema>;
 
 export const updateOfferSchema = z.object({
