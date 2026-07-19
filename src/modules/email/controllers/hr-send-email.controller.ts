@@ -19,6 +19,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
 import { EmailService } from "../email.service";
+import { getEmailProvider } from "../email.provider";
 
 const sendEmailSchema = z.object({
   to: z.string().email(),
@@ -54,13 +55,10 @@ export class HrSendEmailController {
     @Body(new ZodValidationPipe(sendEmailSchema)) body: SendEmailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const providerConfigured =
-      process.env["RESEND_API_KEY"] ?? process.env["SENDGRID_API_KEY"];
-    if (!providerConfigured) {
+    if (getEmailProvider() === "none")
       throw new BadRequestException(
-        "Email not configured. Set RESEND_API_KEY or SENDGRID_API_KEY.",
+        "Email not configured. Set ZEPTOMAIL_SMTP_PASS or RESEND_API_KEY.",
       );
-    }
 
     let subject = body.subject;
     let emailBody = body.body;
@@ -101,7 +99,11 @@ export class HrSendEmailController {
       emailBody = replaceVariables(emailBody, body.variables);
     }
 
-    await this.emailService.sendEmail({ to: body.to, subject, html: emailBody });
+    await this.emailService.sendEmail({
+      to: body.to,
+      subject,
+      html: emailBody,
+    });
 
     return { sent: true, to: body.to, subject };
   }

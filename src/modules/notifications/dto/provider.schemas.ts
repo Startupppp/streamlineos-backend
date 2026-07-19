@@ -1,7 +1,26 @@
 import { z } from "zod";
 
-const CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "SLACK", "TEAMS", "WEBHOOK"] as const;
-const PROVIDERS = ["SMTP", "SENDGRID", "TWILIO", "META_WHATSAPP", "SLACK", "TEAMS", "WEBHOOK", "WEB_PUSH", "INTERNAL", "SANDBOX"] as const;
+const CHANNELS = [
+  "IN_APP",
+  "EMAIL",
+  "PUSH",
+  "SMS",
+  "WHATSAPP",
+  "SLACK",
+  "TEAMS",
+  "WEBHOOK",
+] as const;
+const PROVIDERS = [
+  "SMTP",
+  "TWILIO",
+  "META_WHATSAPP",
+  "SLACK",
+  "TEAMS",
+  "WEBHOOK",
+  "WEB_PUSH",
+  "INTERNAL",
+  "SANDBOX",
+] as const;
 
 export const createProviderSchema = z.object({
   channel: z.enum(CHANNELS),
@@ -15,7 +34,9 @@ export const createProviderSchema = z.object({
   monthlyCostLimit: z.number().int().positive().nullable().optional(),
 });
 
-export const updateProviderSchema = createProviderSchema.partial().omit({ channel: true, provider: true });
+export const updateProviderSchema = createProviderSchema
+  .partial()
+  .omit({ channel: true, provider: true });
 
 export const testProviderSchema = z.object({
   to: z.string().max(320).optional(),

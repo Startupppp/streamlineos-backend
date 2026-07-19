@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import sgMail, { type MailDataRequired } from "@sendgrid/mail";
+import nodemailer, { type Transporter } from "nodemailer";
 import { logger } from "../../common/logger/logger.service";
 import { getFromAddress } from "./email.constants";
 
@@ -7,13 +7,30 @@ const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const ZEPTOMAIL_SMTP_HOST = process.env.ZEPTOMAIL_SMTP_HOST?.trim() || "smtp.zeptomail.in";
+const ZEPTOMAIL_SMTP_PORT = Number(process.env.ZEPTOMAIL_SMTP_PORT) || 587;
+const ZEPTOMAIL_SMTP_USER = process.env.ZEPTOMAIL_SMTP_USER?.trim() || "emailapikey";
+const ZEPTOMAIL_SMTP_PASS = process.env.ZEPTOMAIL_SMTP_PASS?.trim();
 const EMAIL_PROVIDER_PREFERENCE = process.env.EMAIL_PROVIDER?.toLowerCase().trim();
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-if (SENDGRID_API_KEY) sgMail.setApiKey(SENDGRID_API_KEY);
 
-export type Provider = "resend" | "sendgrid" | "none";
+const zeptomailTransport: Transporter | null = ZEPTOMAIL_SMTP_PASS
+  ? nodemailer.createTransport({
+      host: ZEPTOMAIL_SMTP_HOST,
+      port: ZEPTOMAIL_SMTP_PORT,
+      secure: ZEPTOMAIL_SMTP_PORT === 465,
+      requireTLS: ZEPTOMAIL_SMTP_PORT !== 465,
+      pool: true,
+      maxConnections: 3,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
+      auth: { user: ZEPTOMAIL_SMTP_USER, pass: ZEPTOMAIL_SMTP_PASS },
+    })
+  : null;
+
+export type Provider = "zeptomail" | "resend" | "none";
 
 export interface EmailAttachment {
   filename: string;
@@ -34,11 +51,21 @@ export interface EmailOptions {
   bcc?: string | string[];
 }
 
+class EmailSendError extends Error {
+  readonly permanent: boolean;
+
+  constructor(message: string, permanent: boolean, cause?: unknown) {
+    super(message, cause !== undefined ? { cause } : undefined);
+    this.name = "EmailSendError";
+    this.permanent = permanent;
+  }
+}
+
 function resolveProvider(): Provider {
-  if (EMAIL_PROVIDER_PREFERENCE === "sendgrid" && SENDGRID_API_KEY) return "sendgrid";
+  if (EMAIL_PROVIDER_PREFERENCE === "zeptomail" && zeptomailTransport) return "zeptomail";
   if (EMAIL_PROVIDER_PREFERENCE === "resend" && resend) return "resend";
+  if (zeptomailTransport) return "zeptomail";
   if (resend) return "resend";
-  if (SENDGRID_API_KEY) return "sendgrid";
   return "none";
 }
 
@@ -69,9 +96,10 @@ function htmlToText(html: string): string {
 }
 
 export function isTransientError(error: unknown): boolean {
+  if (error instanceof EmailSendError) return !error.permanent;
   if (!error || typeof error !== "object") return true;
   const code = (error as { code?: number | string }).code;
-  if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "ENOTFOUND" || code === "EAI_AGAIN") {
+  if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ECONNECTION") {
     return true;
   }
   const statusCode =
@@ -87,7 +115,7 @@ export function isTransientError(error: unknown): boolean {
 const delay = (ms: number): Promise<void> => new Promise<void>((r) => setTimeout(r, ms));
 
 async function sendViaResend(options: EmailOptions): Promise<void> {
-  if (!resend) throw new Error("Resend not initialized");
+  if (!resend) throw new EmailSendError("Resend not initialized", true);
 
   const recipients = normalizeRecipients(options.to);
   const text = options.text || htmlToText(options.html);
@@ -115,63 +143,68 @@ async function sendViaResend(options: EmailOptions): Promise<void> {
 
   if (error) {
     const err = error as { statusCode?: number; name?: string; message?: string };
-    const wrapped = new Error(err.message || "Resend send failed");
-    (wrapped as { statusCode?: number }).statusCode = err.statusCode;
-    throw wrapped;
+    const status = err.statusCode;
+    const permanent = typeof status === "number" && status >= 400 && status < 500;
+    throw new EmailSendError(err.message || "Resend send failed", permanent, error);
   }
 
   logger.info("Email sent (resend)", { to: recipients, subject: options.subject, id: data?.id });
 }
 
-async function sendViaSendgrid(options: EmailOptions): Promise<void> {
-  const recipients = normalizeRecipients(options.to);
-  const attachments = options.attachments?.map((a) => ({
-    content: Buffer.isBuffer(a.content) ? a.content.toString("base64") : a.content,
-    filename: a.filename,
-    type: a.type,
-    disposition: (a.disposition ?? "attachment") as string,
-    ...(a.cid ? { contentId: a.cid } : {}),
-  }));
-
-  const sgCc = options.cc ? normalizeRecipients(options.cc) : undefined;
-  const sgBcc = options.bcc ? normalizeRecipients(options.bcc) : undefined;
-
-  const msg: MailDataRequired = {
-    to: recipients.length === 1 ? recipients[0] : recipients,
-    from: getFromAddress(),
-    subject: options.subject,
-    html: options.html,
-    text: options.text || htmlToText(options.html),
-    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-    ...(sgCc?.length ? { cc: sgCc.length === 1 ? sgCc[0] : sgCc } : {}),
-    ...(sgBcc?.length ? { bcc: sgBcc.length === 1 ? sgBcc[0] : sgBcc } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-    trackingSettings: {
-      clickTracking: { enable: false, enableText: false },
-      openTracking: { enable: false },
-    },
-  };
-
-  await sgMail.send(msg);
-  logger.info("Email sent (sendgrid)", { to: recipients, subject: options.subject });
+function smtpErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "ZeptoMail SMTP send failed";
 }
 
-function providerStatusCode(error: unknown): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const code = (error as { statusCode?: number }).statusCode;
-  return typeof code === "number" ? code : undefined;
+function isPermanentSmtpError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const responseCode = (error as { responseCode?: number }).responseCode;
+  return typeof responseCode === "number" && responseCode >= 500 && responseCode < 600;
+}
+
+async function sendViaZeptomail(options: EmailOptions): Promise<void> {
+  if (!zeptomailTransport) throw new EmailSendError("ZeptoMail transport not initialized", true);
+
+  const recipients = normalizeRecipients(options.to);
+  const attachments = options.attachments?.map((a) => ({
+    filename: a.filename,
+    content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content),
+    contentType: a.type,
+    ...(a.cid ? { cid: a.cid } : {}),
+    ...(a.disposition ? { contentDisposition: a.disposition } : {}),
+  }));
+
+  const cc = options.cc ? normalizeRecipients(options.cc) : undefined;
+  const bcc = options.bcc ? normalizeRecipients(options.bcc) : undefined;
+
+  try {
+    const info = await zeptomailTransport.sendMail({
+      from: getFromAddress(),
+      to: recipients,
+      subject: options.subject,
+      html: options.html,
+      text: options.text || htmlToText(options.html),
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(cc?.length ? { cc } : {}),
+      ...(bcc?.length ? { bcc } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+    });
+    logger.info("Email sent (zeptomail)", { to: recipients, subject: options.subject, id: info.messageId });
+  } catch (error) {
+    throw new EmailSendError(smtpErrorMessage(error), isPermanentSmtpError(error), error);
+  }
 }
 
 async function sendWithProvider(provider: Provider, options: EmailOptions): Promise<void> {
+  if (provider === "zeptomail") {
+    await sendViaZeptomail(options);
+    return;
+  }
   if (provider === "resend") {
     await sendViaResend(options);
     return;
   }
-  if (provider === "sendgrid") {
-    await sendViaSendgrid(options);
-    return;
-  }
-  throw new Error("No email provider configured");
+  throw new EmailSendError("No email provider configured", true);
 }
 
 export async function sendEmailOnceDirect(options: EmailOptions): Promise<void> {
@@ -193,16 +226,16 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
     logger.warn("EMAIL_SKIPPED: no email provider configured", {
       to: recipients,
       subject: options.subject,
-      hint: "Set EMAIL_PROVIDER + SENDGRID_API_KEY (or RESEND_API_KEY) in .env",
+      hint: "Set EMAIL_PROVIDER + ZEPTOMAIL_SMTP_PASS (or RESEND_API_KEY) in .env",
     });
-    throw new Error("No email provider configured");
+    throw new EmailSendError("No email provider configured", true);
   }
 
   const fallbackProvider: Provider | null =
-    activeProvider === "resend" && SENDGRID_API_KEY
-      ? "sendgrid"
-      : activeProvider === "sendgrid" && resend
-        ? "resend"
+    activeProvider === "zeptomail" && resend
+      ? "resend"
+      : activeProvider === "resend" && zeptomailTransport
+        ? "zeptomail"
         : null;
 
   let lastError: unknown;
@@ -213,35 +246,28 @@ export async function dispatchEmail(options: EmailOptions): Promise<void> {
       return;
     } catch (error) {
       lastError = error;
-      const status = providerStatusCode(error);
-      if (
-        fallbackProvider &&
-        status !== undefined &&
-        status >= 400 &&
-        status < 500
-      ) {
-        logger.warn("Email primary provider rejected send; trying fallback", {
-          primary: activeProvider,
-          fallback: fallbackProvider,
-          to: recipients,
-          subject: options.subject,
-          status,
-        });
-        try {
-          await sendWithProvider(fallbackProvider, options);
-          return;
-        } catch (fallbackError) {
-          lastError = fallbackError;
-          logger.error("Email fallback provider failed", {
+      if (!isTransientError(error)) {
+        if (fallbackProvider) {
+          logger.warn("Email primary provider rejected send; trying fallback", {
+            primary: activeProvider,
             fallback: fallbackProvider,
             to: recipients,
             subject: options.subject,
-            error: fallbackError,
           });
-          throw fallbackError;
+          try {
+            await sendWithProvider(fallbackProvider, options);
+            return;
+          } catch (fallbackError) {
+            lastError = fallbackError;
+            logger.error("Email fallback provider failed", {
+              fallback: fallbackProvider,
+              to: recipients,
+              subject: options.subject,
+              error: fallbackError,
+            });
+            throw fallbackError;
+          }
         }
-      }
-      if (!isTransientError(error)) {
         logger.error("Email send failed (non-retryable)", {
           provider: activeProvider,
           to: recipients,

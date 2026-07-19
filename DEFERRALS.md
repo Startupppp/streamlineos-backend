@@ -69,13 +69,13 @@ The integration modules that previously blocked the deferred routes above have l
 
 | Module | Routes | Provider(s) / deps | Unblocks |
 | --- | --- | --- | --- |
-| email | 3 | Resend + SendGrid fallback (`resend`, `@sendgrid/mail`), `exceljs` for xlsx attachments, Twilio gateway for SMS | notifications-email rows under deals / organization / projects |
+| email | 3 | ZeptoMail SMTP + Resend fallback (`nodemailer`, `resend`), `exceljs` for xlsx attachments, Twilio gateway for SMS | notifications-email rows under deals / organization / projects |
 | ai | 22 | `@langchain/openai` (chat + embeddings, OpenAI), `ai` + `@ai-sdk/google` (streaming chat / RAG generation, Gemini) | kb-rag rows under support (KB semantic Q&A, reindex, index-status) |
 | storage | 7 | `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` (R2/S3 presign + delete), `multer` upload interceptor | object-storage-r2 row under support (KB attachment download presign + delete) |
 | billing | 4 | Razorpay (HMAC-verified REST + webhook); no extra npm dep | — (new) |
 | google-calendar | 3 | Google Calendar REST (OAuth token passthrough); no extra npm dep | interview-scheduling calendar invites |
 | realtime | 1 | `ably` (token auth) + `web-push` (VAPID push) | live presence / push fan-out |
-| automation | 1 | automation rule engine; sends via its own `AutomationEmailService` (Resend/SendGrid) and injected `NotificationsService` | automation-engine row under deals (`runAutomationsForEvent`) |
+| automation | 1 | automation rule engine; sends via its own `AutomationEmailService` (ZeptoMail/Resend) and injected `NotificationsService` | automation-engine row under deals (`runAutomationsForEvent`) |
 | webhooks-dispatch | 3 | `WebhooksDispatchService` — fire-and-forget HMAC-signed outbound delivery to org `webhook_endpoints`, logged to `webhook_logs` (node `crypto` + global `fetch`; no new dep) | outbound `dispatchWebhook` rows: `deal.won` (deals), `lead.created` (leads), `leave.approved` (hr-time) |
 
 Wiring notes: `email`, `storage` are `@Global` (their services are app-wide); `realtime` exports `AblyService`/`WebPushService`; `automation` imports `NotificationsModule` for `NotificationsService` and uses its own email sender (no dependency on `EmailModule`). All seven modules are registered in `src/app.module.ts`. Four service return types (`ChannelResult`, `TaskSuggestion`/`WorkloadAnalysis`, `KbAnswerSource`, `ActionResult`) were exported so controllers can name them (TS4053).
