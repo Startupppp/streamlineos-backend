@@ -31,6 +31,8 @@ import type {
   UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 import { encrypt, encryptBankDetails } from "./crypto.helpers";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import { HR_NOTIFY_ROLES } from "../hr-lifecycle/hr-role-constants";
 
@@ -79,6 +81,7 @@ export class OnboardingService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly sessions: OnboardingSessionService,
     private readonly probation: OnboardingProbationService,
+    private readonly cache: CacheService,
   ) {}
 
   async getProgressSummary(orgId: string) {
@@ -417,6 +420,8 @@ export class OnboardingService {
       .update(users)
       .set({ onboardingCompletedAt: new Date() })
       .where(eq(users.id, userId));
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
     await this.sessions.completeSession(orgId, userId, "employee_onboarding");
 
