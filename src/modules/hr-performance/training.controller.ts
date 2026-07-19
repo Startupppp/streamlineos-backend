@@ -18,11 +18,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { TrainingService } from "./training.service";
 import {
-  createProgramSchema,
-  updateProgramSchema,
+  createTrainingProgramSchema,
+  updateTrainingProgramSchema,
   markAttendanceSchema,
-  type CreateProgramInput,
-  type UpdateProgramInput,
+  type CreateTrainingProgramInput,
+  type UpdateTrainingProgramInput,
   type MarkAttendanceInput,
 } from "./dto/training.schemas";
 
@@ -42,7 +42,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   @HttpCode(201)
   createProgram(
-    @Body(new ZodValidationPipe(createProgramSchema)) body: CreateProgramInput,
+    @Body(new ZodValidationPipe(createTrainingProgramSchema)) body: CreateTrainingProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.createProgram(u.orgId, body);
@@ -52,7 +52,7 @@ export class TrainingController {
   @RequirePermission("hr:learning:manage")
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(updateProgramSchema)) body: UpdateProgramInput,
+    @Body(new ZodValidationPipe(updateTrainingProgramSchema)) body: UpdateTrainingProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.trainingService.updateProgram(u.orgId, programId, body);

@@ -33,5 +33,20 @@ export const updateCycleStatusSchema = z.object({
   status: z.enum(CYCLE_STATUSES),
 });
 
+export const submitFeedbackResponseSchema = z.object({
+  responses: z
+    .array(
+      z.object({
+        questionId: z.string().trim().min(1, "Question id is required"),
+        rating: z.number().int().min(1).max(5).optional(),
+        text: z.string().trim().max(2000, "Response must be at most 2000 characters").optional(),
+      }),
+    )
+    .min(1, "At least one response is required")
+    .max(50, "At most 50 responses are allowed"),
+  overallRating: z.number().int().min(1).max(5).optional(),
+});
+
 export type CreateFeedbackCycleInput = z.infer<typeof createFeedbackCycleSchema>;
 export type UpdateCycleStatusInput = z.infer<typeof updateCycleStatusSchema>;
+export type SubmitFeedbackResponseInput = z.infer<typeof submitFeedbackResponseSchema>;

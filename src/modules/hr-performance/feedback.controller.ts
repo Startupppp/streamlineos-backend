@@ -8,12 +8,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbackService } from "./feedback.service";
 import {
-  createCycleSchema,
+  createFeedbackCycleSchema,
   updateCycleStatusSchema,
-  submitResponseSchema,
-  type CreateCycleInput,
+  submitFeedbackResponseSchema,
+  type CreateFeedbackCycleInput,
   type UpdateCycleStatusInput,
-  type SubmitResponseInput,
+  type SubmitFeedbackResponseInput,
 } from "./dto/feedback.schemas";
 
 @RequireModule("hr")
@@ -33,7 +33,7 @@ export class FeedbackController {
   @RequirePermission("hr:performance:manage")
   createCycle(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,
+    @Body(new ZodValidationPipe(createFeedbackCycleSchema)) body: CreateFeedbackCycleInput,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
@@ -66,7 +66,7 @@ export class FeedbackController {
   submitResponse(
     @CurrentUser() u: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,
+    @Body(new ZodValidationPipe(submitFeedbackResponseSchema)) body: SubmitFeedbackResponseInput,
   ) {
     return this.service.submitResponse(u.orgId, u.userId, requestId, body);
   }

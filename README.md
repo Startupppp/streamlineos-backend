@@ -70,6 +70,11 @@ Provide production environment variables at runtime, expose port 1500 or the con
 `PORT`, and run database migrations as a separate release step before shifting traffic.
 The container does not run migrations automatically.
 
+Attach the first-party hostname `api.streamlineos.in` as a Railway custom domain (DNS in
+Cloudflare). Browser clients and CSP must use that origin via the frontend
+`NEXT_PUBLIC_API_URL` — see `docs/production-api-domain.md`. Keep `CORS_ORIGINS` set to the
+web origins (`https://www.streamlineos.in`, …), not the API hostname.
+
 ## Authenticated endpoints
 
 - `GET /me` — current user context (requires `Authorization: Bearer <backend-token>`)

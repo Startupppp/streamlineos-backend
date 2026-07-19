@@ -8,10 +8,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
-  createSuccessionSchema,
-  updateSuccessionSchema,
-  type CreateSuccessionInput,
-  type UpdateSuccessionInput,
+  createSuccessionPlanSchema,
+  updateSuccessionPlanSchema,
+  type CreateSuccessionPlanInput,
+  type UpdateSuccessionPlanInput,
 } from "./dto/succession.schemas";
 
 @RequireModule("hr")
@@ -31,7 +31,7 @@ export class SuccessionController {
   @RequirePermission("hr:succession:manage")
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSuccessionSchema)) body: CreateSuccessionInput,
+    @Body(new ZodValidationPipe(createSuccessionPlanSchema)) body: CreateSuccessionPlanInput,
   ) {
     return this.successionService.create(user.orgId, user.userId, body);
   }
@@ -41,7 +41,7 @@ export class SuccessionController {
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("successionId", ParseIntPipe) successionId: number,
-    @Body(new ZodValidationPipe(updateSuccessionSchema)) body: UpdateSuccessionInput,
+    @Body(new ZodValidationPipe(updateSuccessionPlanSchema)) body: UpdateSuccessionPlanInput,
   ) {
     return this.successionService.update(user.orgId, successionId, body);
   }
