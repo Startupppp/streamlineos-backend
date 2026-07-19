@@ -228,9 +228,11 @@ export class ComposioGateway {
       ...(body !== undefined ? { body } : {}),
     });
     if (result.status >= 400) {
-      const message = typeof result.data === "object" && result.data !== null && "error" in result.data
-        ? String((result.data as Record<string, unknown>).error)
-        : `Proxy request failed with status ${result.status}`;
+      const data: unknown = result.data;
+      let message = `Proxy request failed with status ${result.status}`;
+      if (typeof data === "object" && data !== null && "error" in data) {
+        message = String(data.error);
+      }
       const isAuthError = /auth|token|expired|unauthoriz|invalid_grant|reconnect/i.test(message) || result.status === 401;
       throw new ComposioToolError(message, isAuthError);
     }

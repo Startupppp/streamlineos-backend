@@ -7,8 +7,8 @@ import {
   type NormalizerConnectionMeta,
 } from "./mail-normalizers";
 
-const gmailConn: NormalizerConnectionMeta = { id: 1, provider: "gmail", accountEmail: "user@gmail.com" };
-const outlookConn: NormalizerConnectionMeta = { id: 2, provider: "outlook", accountEmail: "user@outlook.com" };
+const gmailConn: NormalizerConnectionMeta = { id: 1, composioAccountId: "ca_gmail1", provider: "gmail", accountEmail: "user@gmail.com" };
+const outlookConn: NormalizerConnectionMeta = { id: 2, composioAccountId: "ca_outlook1", provider: "outlook", accountEmail: "user@outlook.com" };
 
 function makeGmailRaw(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,6 +49,56 @@ function makeOutlookRaw(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("normalizeGmailMessage (Composio flattened shape)", () => {
+  it("maps the live Composio response shape", () => {
+    const result = normalizeGmailMessage(
+      {
+        messageId: "19f79b8291fce2c3",
+        threadId: "19f79b8291fce2c3",
+        labelIds: ["CATEGORY_PROMOTIONS", "UNREAD", "INBOX"],
+        preview: "Fresh picks for you",
+        sender: "Pinterest <recommendations@discover.pinterest.com>",
+        to: "Aditya Challa <aditya@m32.ai>",
+        subject: "Shiva Wallpapers",
+        messageTimestamp: "2026-07-19T09:32:19Z",
+        messageText: "Fresh picks for you and more",
+        attachmentList: [],
+        payload: { headers: [] },
+      },
+      gmailConn,
+      false,
+    );
+    expect(result.id).toBe("19f79b8291fce2c3");
+    expect(result.threadId).toBe("19f79b8291fce2c3");
+    expect(result.from).toEqual({ name: "Pinterest", email: "recommendations@discover.pinterest.com" });
+    expect(result.to).toEqual([{ name: "Aditya Challa", email: "aditya@m32.ai" }]);
+    expect(result.subject).toBe("Shiva Wallpapers");
+    expect(result.isRead).toBe(false);
+    expect(result.snippet).toBe("Fresh picks for you");
+    expect(result.date).toBe("2026-07-19T09:32:19.000Z");
+  });
+
+  it("uses messageText as body text fallback in detail mode", () => {
+    const result = normalizeGmailMessage(
+      {
+        messageId: "m1",
+        threadId: "t1",
+        sender: "A <a@b.co>",
+        messageTimestamp: "2026-07-19T09:32:19Z",
+        messageText: "plain body",
+      },
+      gmailConn,
+      true,
+    );
+    expect(result.bodyText).toBe("plain body");
+    expect(result.bodyHtml).toBeNull();
+  });
+
+  it("throws when no id field is present", () => {
+    expect(() => normalizeGmailMessage({ threadId: "t1" }, gmailConn, false)).toThrow();
+  });
+});
 
 describe("normalizeGmailMessage", () => {
   it("maps summary fields correctly", () => {

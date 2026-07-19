@@ -58,7 +58,7 @@ export class GmailMailProvider {
     if (query) args.query = query;
     if (folder === "archive") args.query = [query, "-label:inbox"].filter(Boolean).join(" ");
 
-    const raw = await this.gateway.executeTool("GMAIL_FETCH_EMAILS", userId, args, conn.id.toString());
+    const raw = await this.gateway.executeTool("GMAIL_FETCH_EMAILS", userId, args, conn.composioAccountId);
     const data = unwrapComposioData(raw);
     const parsed = gmailListResponseSchema.safeParse(data);
     const items = parsed.success ? (parsed.data.messages ?? []) : [];
@@ -84,7 +84,7 @@ export class GmailMailProvider {
       "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
       userId,
       { user_id: "me", message_id: messageId, format: "full" },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
     return normalizeGmailMessage(unwrapComposioData(raw), conn, true);
   }
@@ -98,7 +98,7 @@ export class GmailMailProvider {
       "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
       userId,
       { user_id: "me", thread_id: threadId },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
     const data = unwrapComposioData(raw);
     const parsed = gmailThreadResponseSchema.safeParse(data);
@@ -135,7 +135,7 @@ export class GmailMailProvider {
         cc: cc ?? [],
         bcc: bcc ?? [],
       },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
   }
 
@@ -158,7 +158,7 @@ export class GmailMailProvider {
         is_html: true,
         cc: cc ?? [],
       },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
   }
 
@@ -178,7 +178,7 @@ export class GmailMailProvider {
         add_label_ids: addLabelIds,
         remove_label_ids: removeLabelIds,
       },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
   }
 
@@ -191,7 +191,7 @@ export class GmailMailProvider {
       "GMAIL_MOVE_TO_TRASH",
       userId,
       { user_id: "me", message_id: messageId },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
   }
 
@@ -206,7 +206,7 @@ export class GmailMailProvider {
       "GMAIL_GET_ATTACHMENT",
       userId,
       { user_id: "me", message_id: messageId, attachment_id: attachmentId, file_name: fileName },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
     const data = unwrapComposioData(raw);
     const parsed = gmailAttachmentResponseSchema.safeParse(data);

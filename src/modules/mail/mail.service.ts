@@ -94,7 +94,7 @@ export class MailService {
     query: string | undefined,
     skipCache: boolean,
   ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextProviderCursor: string | number | undefined }> {
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
     const cacheKey = CACHE_KEYS.mailMessages(acc.id, folder, String(cursorValue ?? ""), query ?? "");
 
@@ -120,7 +120,7 @@ export class MailService {
     accountId: number,
   ): Promise<MailMessageDetail> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     try {
       if (acc.provider === "gmail") return await this.gmail.getMessage(userId, conn, messageId);
       return await this.outlook.getMessage(userId, conn, messageId);
@@ -137,7 +137,7 @@ export class MailService {
     accountId: number,
   ): Promise<MailMessageDetail[]> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     try {
       if (acc.provider === "gmail") return await this.gmail.getThread(userId, conn, threadId);
       return await this.outlook.getThread(userId, conn, threadId);
@@ -158,7 +158,7 @@ export class MailService {
     bcc?: string[],
   ): Promise<void> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     if (acc.provider === "gmail") {
       await this.gmail.sendEmail(userId, conn, to, subject, bodyHtml, cc, bcc);
     } else {
@@ -176,7 +176,7 @@ export class MailService {
     cc?: string[],
   ): Promise<void> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     if (acc.provider === "gmail") {
       if (!threadId) throw new BadRequestException("threadId is required for Gmail replies");
       await this.gmail.replyToThread(userId, conn, threadId, messageId, bodyHtml, cc);
@@ -194,31 +194,32 @@ export class MailService {
     threadId?: string,
   ): Promise<void> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
 
     if (acc.provider === "gmail") {
-      if (action !== "trash" && !threadId) {
-        throw new BadRequestException("threadId is required for Gmail label operations");
-      }
-      switch (action) {
-        case "markRead":
-          await this.gmail.modifyThreadLabels(userId, conn, threadId!, [], ["UNREAD"]);
-          break;
-        case "markUnread":
-          await this.gmail.modifyThreadLabels(userId, conn, threadId!, ["UNREAD"], []);
-          break;
-        case "star":
-          await this.gmail.modifyThreadLabels(userId, conn, threadId!, ["STARRED"], []);
-          break;
-        case "unstar":
-          await this.gmail.modifyThreadLabels(userId, conn, threadId!, [], ["STARRED"]);
-          break;
-        case "archive":
-          await this.gmail.modifyThreadLabels(userId, conn, threadId!, [], ["INBOX"]);
-          break;
-        case "trash":
-          await this.gmail.moveToTrash(userId, conn, messageId);
-          break;
+      if (action === "trash") {
+        await this.gmail.moveToTrash(userId, conn, messageId);
+      } else {
+        if (!threadId) {
+          throw new BadRequestException("threadId is required for Gmail label operations");
+        }
+        switch (action) {
+          case "markRead":
+            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["UNREAD"]);
+            break;
+          case "markUnread":
+            await this.gmail.modifyThreadLabels(userId, conn, threadId, ["UNREAD"], []);
+            break;
+          case "star":
+            await this.gmail.modifyThreadLabels(userId, conn, threadId, ["STARRED"], []);
+            break;
+          case "unstar":
+            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["STARRED"]);
+            break;
+          case "archive":
+            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["INBOX"]);
+            break;
+        }
       }
     } else {
       switch (action) {
@@ -255,7 +256,7 @@ export class MailService {
     fileName: string,
   ): Promise<MailDownloadResponse> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, provider: acc.provider, accountEmail: acc.accountEmail };
+    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     if (acc.provider === "gmail") {
       return this.gmail.getAttachment(userId, conn, messageId, attachmentId, fileName);
     }

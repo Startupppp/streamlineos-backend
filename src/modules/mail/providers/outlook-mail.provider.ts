@@ -56,7 +56,7 @@ export class OutlookMailProvider {
         "OUTLOOK_OUTLOOK_SEARCH_MESSAGES",
         userId,
         { query, size: limit, from_index: skip },
-        conn.id.toString(),
+        conn.composioAccountId,
       );
       const data = unwrapComposioData(raw);
       const parsed = outlookSearchResponseSchema.safeParse(data);
@@ -76,7 +76,7 @@ export class OutlookMailProvider {
         "OUTLOOK_OUTLOOK_LIST_MESSAGES",
         userId,
         args,
-        conn.id.toString(),
+        conn.composioAccountId,
       );
       const data = unwrapComposioData(raw);
       const parsed = outlookListResponseSchema.safeParse(data);
@@ -105,13 +105,13 @@ export class OutlookMailProvider {
         "OUTLOOK_OUTLOOK_GET_MESSAGE",
         userId,
         { user_id: "me", message_id: messageId, select: OUTLOOK_DETAIL_FIELDS.join(",") },
-        conn.id.toString(),
+        conn.composioAccountId,
       ),
       this.gateway.executeTool(
         "OUTLOOK_LIST_OUTLOOK_ATTACHMENTS",
         userId,
         { user_id: "me", message_id: messageId },
-        conn.id.toString(),
+        conn.composioAccountId,
       ),
     ]);
 
@@ -138,7 +138,7 @@ export class OutlookMailProvider {
         select: OUTLOOK_DETAIL_FIELDS,
         orderby: ["receivedDateTime asc"],
       },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
     const data = unwrapComposioData(raw);
     const parsed = outlookListResponseSchema.safeParse(data);
@@ -174,7 +174,7 @@ export class OutlookMailProvider {
       },
       saveToSentItems: true,
     };
-    await this.gateway.executeProxy(conn.id.toString(), "POST", "/me/sendMail", payload);
+    await this.gateway.executeProxy(conn.composioAccountId, "POST", "/me/sendMail", payload);
   }
 
   async replyToMessage(
@@ -189,15 +189,15 @@ export class OutlookMailProvider {
       message: { ccRecipients },
       comment: bodyHtml,
     };
-    await this.gateway.executeProxy(conn.id.toString(), "POST", `/me/messages/${messageId}/reply`, payload);
+    await this.gateway.executeProxy(conn.composioAccountId, "POST", `/me/messages/${messageId}/reply`, payload);
   }
 
   async markRead(conn: NormalizerConnectionMeta, messageId: string, isRead: boolean): Promise<void> {
-    await this.gateway.executeProxy(conn.id.toString(), "PATCH", `/me/messages/${messageId}`, { isRead });
+    await this.gateway.executeProxy(conn.composioAccountId, "PATCH", `/me/messages/${messageId}`, { isRead });
   }
 
   async setFlag(conn: NormalizerConnectionMeta, messageId: string, flagStatus: "flagged" | "notFlagged"): Promise<void> {
-    await this.gateway.executeProxy(conn.id.toString(), "PATCH", `/me/messages/${messageId}`, { flag: { flagStatus } });
+    await this.gateway.executeProxy(conn.composioAccountId, "PATCH", `/me/messages/${messageId}`, { flag: { flagStatus } });
   }
 
   async moveMessage(
@@ -210,7 +210,7 @@ export class OutlookMailProvider {
       "OUTLOOK_OUTLOOK_MOVE_MESSAGE",
       userId,
       { user_id: "me", message_id: messageId, destination_id: destinationId },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
   }
 
@@ -225,7 +225,7 @@ export class OutlookMailProvider {
       "OUTLOOK_DOWNLOAD_OUTLOOK_ATTACHMENT",
       userId,
       { user_id: "me", message_id: messageId, attachment_id: attachmentId, file_name: fileName },
-      conn.id.toString(),
+      conn.composioAccountId,
     );
     const data = unwrapComposioData(raw) as Record<string, unknown> | null;
     const downloadUrl = typeof data?.url === "string" ? data.url : (typeof data?.downloadUrl === "string" ? data.downloadUrl : "");

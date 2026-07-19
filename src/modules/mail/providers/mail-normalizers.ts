@@ -32,19 +32,75 @@ function parseAddresses(raw: unknown): MailAddress[] {
 
 const gmailHeaderSchema = z.array(z.object({ name: z.string(), value: z.string() }));
 
+const gmailPartSchema = z.object({
+  mimeType: z.string().optional(),
+  filename: z.string().optional(),
+  body: z
+    .object({
+      data: z.string().optional(),
+      size: z.number().optional(),
+      attachmentId: z.string().optional(),
+    })
+    .optional(),
+});
+
+const gmailPayloadSchema = z.object({
+  headers: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
+  mimeType: z.string().optional(),
+  body: z.object({ data: z.string().optional(), size: z.number().optional() }).optional(),
+  parts: z.array(z.unknown()).optional(),
+});
+
 const gmailMessageSchema = z.object({
-  id: z.string(),
+  messageId: z.string().optional(),
+  id: z.string().optional(),
   threadId: z.string().optional(),
   labelIds: z.array(z.string()).optional(),
+  preview: z.unknown().optional(),
   snippet: z.string().optional(),
-  payload: z.object({
-    headers: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
-    mimeType: z.string().optional(),
-    body: z.object({ data: z.string().optional(), size: z.number().optional() }).optional(),
-    parts: z.array(z.unknown()).optional(),
-  }).optional(),
+  sender: z.string().optional(),
+  to: z.unknown().optional(),
+  subject: z.string().nullable().optional(),
+  messageTimestamp: z.string().optional(),
   internalDate: z.string().optional(),
+  messageText: z.string().optional(),
+  attachmentList: z.array(z.unknown()).optional(),
+  payload: gmailPayloadSchema.optional(),
 });
+
+const gmailAttachmentListItemSchema = z.object({
+  attachmentId: z.string(),
+  filename: z.string().optional(),
+  mimeType: z.string().optional(),
+});
+
+function parseGmailAttachmentList(items: unknown[] | undefined): MailAttachment[] {
+  if (!items) return [];
+  const attachments: MailAttachment[] = [];
+  for (const item of items) {
+    const parsed = gmailAttachmentListItemSchema.safeParse(item);
+    if (!parsed.success) continue;
+    attachments.push({
+      id: parsed.data.attachmentId,
+      fileName: parsed.data.filename ?? "attachment",
+      mimeType: parsed.data.mimeType ?? "application/octet-stream",
+      sizeBytes: null,
+    });
+  }
+  return attachments;
+}
+
+function resolveGmailDate(messageTimestamp?: string, internalDate?: string): string {
+  if (messageTimestamp) {
+    const d = new Date(messageTimestamp);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  if (internalDate) {
+    const d = new Date(Number(internalDate));
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return new Date().toISOString();
+}
 
 const outlookMessageSchema = z.object({
   id: z.string(),
@@ -89,9 +145,8 @@ function parseGmailAddresses(raw: string): MailAddress[] {
   return raw.split(",").map((s) => parseGmailAddress(s.trim())).filter((a) => a.email);
 }
 
-function extractGmailBody(payload: z.infer<typeof gmailMessageSchema>["payload"]): { html: string | null; text: string | null } {
+function extractGmailBody(payload: z.infer<typeof gmailPayloadSchema> | undefined): { html: string | null; text: string | null } {
   if (!payload) return { html: null, text: null };
-  const parts = payload.parts ?? [];
   if (payload.mimeType === "text/html") {
     const data = payload.body?.data;
     return { html: data ? Buffer.from(data, "base64url").toString("utf-8") : null, text: null };
@@ -102,34 +157,33 @@ function extractGmailBody(payload: z.infer<typeof gmailMessageSchema>["payload"]
   }
   let html: string | null = null;
   let text: string | null = null;
-  for (const rawPart of parts) {
-    const part = rawPart as Record<string, unknown>;
-    const mimeType = String(part.mimeType ?? "");
-    const bodyData = (part.body as Record<string, unknown> | undefined)?.data;
-    if (mimeType === "text/html" && typeof bodyData === "string") {
+  for (const rawPart of payload.parts ?? []) {
+    const parsed = gmailPartSchema.safeParse(rawPart);
+    if (!parsed.success) continue;
+    const bodyData = parsed.data.body?.data;
+    if (typeof bodyData !== "string") continue;
+    if (parsed.data.mimeType === "text/html") {
       html = Buffer.from(bodyData, "base64url").toString("utf-8");
-    } else if (mimeType === "text/plain" && typeof bodyData === "string" && !text) {
+    } else if (parsed.data.mimeType === "text/plain" && !text) {
       text = Buffer.from(bodyData, "base64url").toString("utf-8");
     }
   }
   return { html, text };
 }
 
-function extractGmailAttachments(payload: z.infer<typeof gmailMessageSchema>["payload"]): MailAttachment[] {
+function extractGmailAttachments(payload: z.infer<typeof gmailPayloadSchema> | undefined): MailAttachment[] {
   if (!payload?.parts) return [];
   const attachments: MailAttachment[] = [];
   for (const rawPart of payload.parts) {
-    const part = rawPart as Record<string, unknown>;
-    const filename = part.filename;
-    if (typeof filename !== "string" || !filename) continue;
-    const body = part.body as Record<string, unknown> | undefined;
-    const attachmentId = body?.attachmentId;
-    if (typeof attachmentId !== "string") continue;
+    const parsed = gmailPartSchema.safeParse(rawPart);
+    if (!parsed.success) continue;
+    const { filename, body, mimeType } = parsed.data;
+    if (!filename || !body?.attachmentId) continue;
     attachments.push({
-      id: attachmentId,
+      id: body.attachmentId,
       fileName: filename,
-      mimeType: typeof part.mimeType === "string" ? part.mimeType : "application/octet-stream",
-      sizeBytes: typeof body?.size === "number" ? body.size : null,
+      mimeType: mimeType ?? "application/octet-stream",
+      sizeBytes: body.size ?? null,
     });
   }
   return attachments;
@@ -144,6 +198,7 @@ export function unwrapComposioData(data: unknown): unknown {
 
 export interface NormalizerConnectionMeta {
   id: number;
+  composioAccountId: string;
   provider: MailProvider;
   accountEmail: string | null;
 }
@@ -164,30 +219,39 @@ export function normalizeGmailMessage(
   detailMode: boolean,
 ): MailMessageSummary | MailMessageDetail {
   const parsed = gmailMessageSchema.parse(raw);
+  const id = parsed.messageId ?? parsed.id;
+  if (!id) throw new Error("Gmail message is missing an id");
   const headers = gmailHeaderSchema.parse(parsed.payload?.headers ?? []);
-  const from = parseGmailAddress(getGmailHeader(headers, "from"));
-  const to = parseGmailAddresses(getGmailHeader(headers, "to"));
+  const from = parseGmailAddress(parsed.sender ?? getGmailHeader(headers, "from"));
+  const toSource = typeof parsed.to === "string" && parsed.to ? parsed.to : getGmailHeader(headers, "to");
+  const to = parseGmailAddresses(toSource);
   const cc = parseGmailAddresses(getGmailHeader(headers, "cc"));
-  const subject = getGmailHeader(headers, "subject") || "(no subject)";
+  const subject = parsed.subject ?? getGmailHeader(headers, "subject") ?? "";
   const labels = parsed.labelIds ?? [];
   const isRead = !labels.includes("UNREAD");
   const isStarred = labels.includes("STARRED");
-  const hasAttachments = (parsed.payload?.parts ?? []).some((p) => {
-    const part = p as Record<string, unknown>;
-    return typeof part.filename === "string" && part.filename.length > 0;
-  });
-  const dateMs = parsed.internalDate ? Number(parsed.internalDate) : Date.now();
-  const date = new Date(dateMs).toISOString();
-  const snippet = clampSnippet(parsed.snippet ?? "");
+  const listAttachments = parseGmailAttachmentList(parsed.attachmentList);
+  const hasAttachments =
+    listAttachments.length > 0 ||
+    (parsed.payload?.parts ?? []).some((p) => {
+      const part = gmailPartSchema.safeParse(p);
+      return part.success && Boolean(part.data.filename);
+    });
+  const date = resolveGmailDate(parsed.messageTimestamp, parsed.internalDate);
+  const snippetSource =
+    typeof parsed.preview === "string" && parsed.preview
+      ? parsed.preview
+      : (parsed.snippet ?? parsed.messageText ?? "");
+  const snippet = clampSnippet(snippetSource);
 
   const summary: MailMessageSummary = {
-    id: parsed.id,
+    id,
     threadId: parsed.threadId ?? null,
     accountId: conn.id,
     provider: "gmail",
     from,
     to,
-    subject,
+    subject: subject || "(no subject)",
     snippet,
     date,
     isRead,
@@ -198,9 +262,10 @@ export function normalizeGmailMessage(
   if (!detailMode) return summary;
 
   const { html, text } = extractGmailBody(parsed.payload);
-  const attachments = extractGmailAttachments(parsed.payload);
+  const bodyAttachments = extractGmailAttachments(parsed.payload);
+  const attachments = bodyAttachments.length > 0 ? bodyAttachments : listAttachments;
 
-  return { ...summary, cc, bodyHtml: html, bodyText: text, attachments };
+  return { ...summary, cc, bodyHtml: html, bodyText: text ?? parsed.messageText ?? null, attachments };
 }
 
 export function normalizeOutlookMessage(
