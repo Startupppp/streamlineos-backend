@@ -16,7 +16,6 @@ const MODULE_CATALOG = [
   "accounting",
   "inventory",
   "kb",
-  "blog",
   "support",
   "surveys",
   "payroll",

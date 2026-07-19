@@ -216,7 +216,7 @@ describe("EntitlementsService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it("skips the org array SQL for unmapped module keys (kb, blog, etc.)", async () => {
+    it("skips the org array SQL for unmapped module keys (kb, etc.)", async () => {
       const { db } = buildMockDb();
       const { cache } = buildMockCache();
 
@@ -246,10 +246,10 @@ describe("EntitlementsService", () => {
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(11);
+      expect(result).toHaveLength(10);
       expect(result.every((r) => r.enabled)).toBe(true);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
-      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
     });
 
     it("derives enabled from the organizations.enabledModules array", async () => {
@@ -259,25 +259,25 @@ describe("EntitlementsService", () => {
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(11);
+      expect(result).toHaveLength(10);
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "projects")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "payroll")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
-      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
     });
 
-    it("marks kb and blog as core: true regardless of enabledModules", async () => {
+    it("marks kb as core: true regardless of enabledModules", async () => {
       const { db, mocks } = buildMockDb();
       mocks.orgFindFirst.mockResolvedValue({ enabledModules: [] });
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).listModules("org-1");
 
-      expect(result).toHaveLength(11);
+      expect(result).toHaveLength(10);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
-      expect(result.find((r) => r.moduleKey === "blog")).toMatchObject({ enabled: true, core: true });
+      expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);
     });
 

@@ -392,15 +392,22 @@ export class BillingService {
       const packs = await this.aiCredits.listPacks();
       const pack = packs.find((p) => p.id === packId);
       if (!pack) throw new BadRequestException("AI credit pack not found");
-      return this.razorpay.createOrder({
+      const order = await this.razorpay.createOrder({
         amount: pack.priceInPaise * quantity,
-        receipt: `ai_pack_${packId}_${orgId}`,
+        receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
         notes: {
           orgId: String(orgId),
           packId: String(packId),
           quantity: String(quantity),
         },
       });
+      return {
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        keyId: this.razorpay.getKeyId(),
+        pack,
+      };
     }
     throw new BadRequestException("Unknown addon type");
   }
