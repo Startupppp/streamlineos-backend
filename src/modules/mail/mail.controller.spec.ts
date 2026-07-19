@@ -14,6 +14,9 @@ describe("MailController RBAC metadata", () => {
     ["replyMail", "mail:messages:send"],
     ["performAction", "mail:messages:manage"],
     ["getAttachment", "mail:inbox:view"],
+    ["aiInboxSummary", "mail:ai:use"],
+    ["aiThreadSummary", "mail:ai:use"],
+    ["aiDraft", "mail:ai:use"],
   ];
 
   it.each(expectations)("%s requires %s", (method, permission) => {

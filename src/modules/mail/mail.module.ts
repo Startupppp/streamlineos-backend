@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { IntegrationsModule } from "../integrations/integrations.module";
 import { AiModule } from "../ai/ai.module";
 import { MailController } from "./mail.controller";
@@ -9,7 +9,7 @@ import { GmailMailProvider } from "./providers/gmail-mail.provider";
 import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 
 @Module({
-  imports: [IntegrationsModule, AiModule],
+  imports: [IntegrationsModule, forwardRef(() => AiModule)],
   controllers: [MailController],
   providers: [MailService, MailAccountsService, MailAiService, GmailMailProvider, OutlookMailProvider],
   exports: [MailService, MailAccountsService, MailAiService],

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { CrmAiController } from "./controllers/crm-ai.controller";
 import { CrmCopilotController } from "./controllers/crm-copilot.controller";
 import { HrAiController } from "./controllers/hr-ai.controller";
@@ -29,6 +29,7 @@ import { CrmCopilotTools } from "./crm-copilot-tools";
 import { CommsCopilotTools } from "./comms-copilot-tools";
 import { ProjectsCopilotTools } from "./projects-copilot-tools";
 import { CommsActionsTools } from "./comms-actions-tools";
+import { MailCopilotTools } from "./mail-copilot-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { AiFeedbackService } from "./services/ai-feedback.service";
 import { CalendarModule } from "../calendar/calendar.module";
@@ -44,13 +45,14 @@ import { MeetingsAiController } from "./controllers/meetings-ai.controller";
 import { MeetingsPrepService } from "./services/meetings-prep.service";
 import { ExecutiveBriefModule } from "./executive-brief/executive-brief.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
+import { MailModule } from "../mail/mail.module";
 import { BlogAiController } from "./controllers/blog-ai.controller";
 import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
 
 @Module({
-  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule],
+  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, forwardRef(() => MailModule)],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
     LlmService,
@@ -76,6 +78,7 @@ import { SurveyAiService } from "./services/survey-ai.service";
     CommsCopilotTools,
     ProjectsCopilotTools,
     CommsActionsTools,
+    MailCopilotTools,
     ToolAccessService,
     AiGatewayService,
     AiFeedbackService,

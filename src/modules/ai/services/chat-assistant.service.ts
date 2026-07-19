@@ -33,6 +33,7 @@ import { CrmCopilotTools } from "../crm-copilot-tools";
 import { CommsCopilotTools } from "../comms-copilot-tools";
 import { ProjectsCopilotTools } from "../projects-copilot-tools";
 import { CommsActionsTools } from "../comms-actions-tools";
+import { MailCopilotTools } from "../mail-copilot-tools";
 import { ToolAccessService } from "../tool-access.service";
 
 const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-1.5-pro-latest";
@@ -84,6 +85,7 @@ export class ChatAssistantService {
     private readonly commsCopilot: CommsCopilotTools,
     private readonly projectsCopilot: ProjectsCopilotTools,
     private readonly commsActions: CommsActionsTools,
+    private readonly mailCopilot: MailCopilotTools,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
     private readonly usageSvc: AiUsageService,
@@ -236,6 +238,11 @@ You can take the following actions on behalf of the user when asked:
 **Bonus**
 - **grantBonus**: Grant a bonus to an employee — creates a PENDING bonus that a payroll admin approves before payout (requires confirmation)
 
+**Mail**
+- **listRecentEmails**: List recent emails from the user's connected inbox (requires confirmation)
+- **summarizeMailThread**: Summarize an email thread and suggest a reply
+- **sendMailFromAccount**: Send an email from the user's connected mail account (requires confirmation)
+
 **Knowledge Base**
 - **searchKnowledgeBase**: Search org wiki, documents, and policies
 
@@ -269,7 +276,7 @@ You can take the following actions on behalf of the user when asked:
 - Always confirm details before scheduling events or sending messages on the user's behalf.
 
 ## Confirmation Protocol
-When you call a consequential write tool (createTicket, updateTicketStatus, addTicketComment, createCalendarReminder, sendEmail, postChannelMessage, grantRecognition, grantBonus) and the tool returns { requiresConfirmation: true, proposalId, token, action, summary, preview }, you MUST output EXACTLY this JSON on a line by itself (no markdown, no extra text before or after):
+When you call a consequential write tool (createTicket, updateTicketStatus, addTicketComment, createCalendarReminder, sendEmail, postChannelMessage, grantRecognition, grantBonus, sendMailFromAccount) and the tool returns { requiresConfirmation: true, proposalId, token, action, summary, preview }, you MUST output EXACTLY this JSON on a line by itself (no markdown, no extra text before or after):
 
 CONFIRM_ACTION:{"requiresConfirmation":true,"proposalId":<id>,"token":"<token>","action":"<action>","summary":"<summary>","preview":<preview_object>}
 
@@ -404,6 +411,7 @@ Tone: Professional, concise, actionable.`;
       ...this.commsCopilot.buildTools({ actor }),
       ...this.projectsCopilot.buildTools({ actor }),
       ...this.commsActions.buildTools({ actor }),
+      ...this.mailCopilot.buildTools({ actor }),
       ...inlineTools,
     };
 

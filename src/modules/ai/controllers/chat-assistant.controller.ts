@@ -39,6 +39,8 @@ import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { EngagementService } from "../../hr-performance/engagement.service";
 import { BonusesService } from "../../hr-payroll/bonuses.service";
 import { createBonusSchema } from "../../hr-payroll/dto/payroll.schemas";
+import { MailService } from "../../mail/mail.service";
+import { MailAccountsService } from "../../mail/mail-accounts.service";
 import { tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -86,6 +88,7 @@ const CONFIRMABLE_ACTIONS = [
   "chat.postChannel",
   "hr.grantRecognition",
   "hr.grantBonus",
+  "mail.send",
 ] as const;
 
 type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
@@ -370,6 +373,32 @@ export class ChatAssistantController {
         const bonus = await bonusSvc.createBonus(u.orgId, bonusInput);
         result = { bonusId: bonus.id, status: bonus.status, amount: bonus.amount };
         summary = `Bonus created (PENDING payroll approval): ${bonus.amount}`;
+        break;
+      }
+
+      case "mail.send": {
+        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "mail:messages:send");
+        if (deny) throw new ForbiddenException(deny);
+        const mailSendPayloadSchema = z.object({
+          accountId: z.number().int().positive(),
+          toEmail: z.string().email(),
+          subject: z.string().min(1).max(500),
+          body: z.string().min(1),
+        });
+        const mailPayload = mailSendPayloadSchema.parse(payload);
+        const mailAccountsSvc = this.moduleRef.get(MailAccountsService, { strict: false });
+        await mailAccountsSvc.assertOwnedConnection(u.orgId, u.userId, mailPayload.accountId);
+        const mailSvc = this.moduleRef.get(MailService, { strict: false });
+        await mailSvc.sendMail(
+          u.orgId,
+          u.userId,
+          mailPayload.accountId,
+          [mailPayload.toEmail],
+          mailPayload.subject,
+          `<p>${mailPayload.body}</p>`,
+        );
+        result = { sent: true };
+        summary = `Email sent to ${mailPayload.toEmail}`;
         break;
       }
 
