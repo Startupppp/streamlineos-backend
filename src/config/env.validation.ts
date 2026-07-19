@@ -1,10 +1,15 @@
 import { z } from "zod";
 
 const deploymentSecret = z.string().min(32).optional();
+const emptyToUndefined = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
 const optionalEmail = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === "" ? undefined : value,
+  emptyToUndefined,
   z.string().trim().email().optional(),
+);
+const optionalUrl = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().url().optional(),
 );
 
 const schema = z
@@ -25,6 +30,16 @@ const schema = z
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
+    EMAIL_PROVIDER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["zeptomail", "resend"]).optional(),
+    ),
+    ZEPTOMAIL_API_URL: optionalUrl,
+    ZEPTOMAIL_TOKEN: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().min(40, "ZEPTOMAIL_TOKEN looks truncated").optional(),
+    ),
+    EMAIL_FROM_ADDRESS: optionalEmail,
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
     COMPOSIO_API_KEY: z.string().optional(),

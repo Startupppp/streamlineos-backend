@@ -68,4 +68,38 @@ describe("validateEnv", () => {
       }),
     ).toThrow(/CONTACT_NOTIFICATION_EMAIL/);
   });
+
+  it("accepts a valid email provider configuration", () => {
+    const cfg = validateEnv({
+      ...base,
+      EMAIL_PROVIDER: "zeptomail",
+      ZEPTOMAIL_API_URL: "https://api.zeptomail.in/v1.1/email",
+      ZEPTOMAIL_TOKEN: "Zoho-enczapikey ".padEnd(60, "x"),
+      EMAIL_FROM_ADDRESS: "support@example.com",
+    });
+    expect(cfg.EMAIL_PROVIDER).toBe("zeptomail");
+  });
+
+  it("treats empty email provider vars as unset", () => {
+    const cfg = validateEnv({
+      ...base,
+      EMAIL_PROVIDER: "",
+      ZEPTOMAIL_API_URL: "",
+      ZEPTOMAIL_TOKEN: "",
+    });
+    expect(cfg.EMAIL_PROVIDER).toBeUndefined();
+    expect(cfg.ZEPTOMAIL_TOKEN).toBeUndefined();
+  });
+
+  it("rejects a retired EMAIL_PROVIDER value", () => {
+    expect(() =>
+      validateEnv({ ...base, EMAIL_PROVIDER: "sendgrid" }),
+    ).toThrow(/EMAIL_PROVIDER/);
+  });
+
+  it("rejects a truncated ZEPTOMAIL_TOKEN", () => {
+    expect(() =>
+      validateEnv({ ...base, ZEPTOMAIL_TOKEN: "too-short" }),
+    ).toThrow(/ZEPTOMAIL_TOKEN/);
+  });
 });
