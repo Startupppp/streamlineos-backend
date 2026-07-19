@@ -43,7 +43,7 @@ import {
 } from "./dto/onboarding.schemas";
 import { ModuleRecommendationService } from "../onboarding-flow/module-recommendation.service";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
-import { GuidedTourService } from "../onboarding-flow/guided-tour.service";
+import { GuidedTourService, HR_SETUP_TOUR_KEY } from "../onboarding-flow/guided-tour.service";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import {
   checklistItemSkipSchema,
@@ -175,35 +175,54 @@ export class OnboardingController {
     return this.checklists.restartChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
   }
 
+  /**
+   * The HR setup tour ("hr_setup") is the guided-tour analog of the HR module checklist and must
+   * be HR-only for the same reason (task requirement) — every other tour stays covered by the
+   * generic onboarding:tours:* baseline permission.
+   */
+  private async assertTourAccess(tourKey: string, u: CurrentUserContext, mode: "view" | "manage") {
+    if (tourKey === HR_SETUP_TOUR_KEY) await this.assertHrChecklistAccess(u, mode);
+  }
+
   @Get("tours")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  listTours(@CurrentUser() u: CurrentUserContext) {
-    return this.tours.listToursForUser(u.orgId, u.userId, u.role);
+  async listTours(@CurrentUser() u: CurrentUserContext) {
+    const tours = await this.tours.listToursForUser(u.orgId, u.userId, u.role);
+    const includeHr = await this.hasHrChecklistAccess(u);
+    return includeHr ? tours : tours.filter((t) => t.tourKey !== HR_SETUP_TOUR_KEY);
   }
 
+  /**
+   * "view" mode, not "manage": unlike the module-checklist's org-wide dismiss/restart, a tour's
+   * progress/dismissal is a per-user row (userTourProgress) that never affects any other user or
+   * shared org data — an HR-view-only user must still be able to dismiss their own welcome popup.
+   */
   @Post("tours/:tourKey/progress")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  saveTourProgress(
+  async saveTourProgress(
     @Param("tourKey") tourKey: string,
     @Body(new ZodValidationPipe(tourProgressSchema)) body: TourProgressInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.assertTourAccess(tourKey, u, "view");
     return this.tours.saveProgress(u.orgId, u.userId, tourKey, body.currentStep);
   }
 
   @Post("tours/:tourKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  completeTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+  async completeTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+    await this.assertTourAccess(tourKey, u, "view");
     return this.tours.completeTour(u.orgId, u.userId, tourKey);
   }
 
   @Post("tours/:tourKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  dismissTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+  async dismissTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+    await this.assertTourAccess(tourKey, u, "view");
     return this.tours.dismissTour(u.orgId, u.userId, tourKey);
   }
 
