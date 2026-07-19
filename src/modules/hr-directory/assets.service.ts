@@ -91,7 +91,11 @@ export class AssetsService {
       .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)));
 
     if (!existing) throw new NotFoundException("Asset return record not found.");
-    if (existing.status === "RETURNED") throw new BadRequestException("Asset already marked as returned.");
+    if (existing.status === "RETURNED" || existing.status === "DAMAGED" || existing.status === "LOST") {
+      throw new BadRequestException(
+        `This return record is already finalized as ${existing.status.toLowerCase()} and cannot be changed.`,
+      );
+    }
 
     const [updated] = await this.db
       .update(assetReturns)

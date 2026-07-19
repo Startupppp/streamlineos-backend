@@ -65,6 +65,11 @@ export const reviewClaimSchema = z.object({
 });
 export type ReviewClaimInput = z.infer<typeof reviewClaimSchema>;
 
+export const setPayoutRouteSchema = z.object({
+  payoutRoute: z.enum(["payroll_payable", "finance_payable", "already_paid"]),
+});
+export type SetPayoutRouteInput = z.infer<typeof setPayoutRouteSchema>;
+
 export const createVisitLogSchema = z.object({
   travelRequestId: z.number().int().positive(),
   visitedAt: z.string().datetime(),

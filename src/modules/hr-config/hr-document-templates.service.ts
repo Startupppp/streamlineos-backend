@@ -9,6 +9,7 @@ import { documentTemplates, documentTemplateVersions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { extractVariables } from "./hr-config.helpers";
+import { sanitizeHtml } from "../hr-templates/html-sanitizer";
 import type {
   CreateTemplateInput,
   TemplateListQuery,
@@ -55,7 +56,8 @@ export class HrDocumentTemplatesService {
       .limit(1);
     if (existing) throw new ConflictException("A template with this name already exists");
 
-    const variables = input.variables ?? extractVariables(input.htmlContent);
+    const htmlContent = sanitizeHtml(input.htmlContent);
+    const variables = input.variables ?? extractVariables(htmlContent);
 
     const [template] = await this.db
       .insert(documentTemplates)
@@ -63,7 +65,7 @@ export class HrDocumentTemplatesService {
         orgId,
         title: input.title,
         type: input.type,
-        htmlContent: input.htmlContent,
+        htmlContent,
         variables,
         createdBy: userId,
       })
@@ -112,11 +114,12 @@ export class HrDocumentTemplatesService {
       if (duplicate) throw new ConflictException("A template with this name already exists");
     }
 
-    const contentChanging = input.htmlContent !== undefined && input.htmlContent !== existing.htmlContent;
+    const sanitizedHtmlContent = input.htmlContent !== undefined ? sanitizeHtml(input.htmlContent) : undefined;
+    const contentChanging = sanitizedHtmlContent !== undefined && sanitizedHtmlContent !== existing.htmlContent;
 
     let variables = input.variables;
-    if (input.htmlContent !== undefined && variables === undefined) {
-      variables = extractVariables(input.htmlContent);
+    if (sanitizedHtmlContent !== undefined && variables === undefined) {
+      variables = extractVariables(sanitizedHtmlContent);
     }
 
     const updated = await this.db.transaction(async (tx) => {
@@ -138,7 +141,7 @@ export class HrDocumentTemplatesService {
         .set({
           ...(input.title !== undefined && { title: input.title }),
           ...(input.type !== undefined && { type: input.type }),
-          ...(input.htmlContent !== undefined && { htmlContent: input.htmlContent }),
+          ...(sanitizedHtmlContent !== undefined && { htmlContent: sanitizedHtmlContent }),
           ...(variables !== undefined && { variables }),
           version: existing.version + 1,
           updatedAt: new Date(),

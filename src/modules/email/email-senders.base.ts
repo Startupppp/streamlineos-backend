@@ -1,6 +1,5 @@
 import { EmailBase } from "./email-base";
 import { appUrl } from "./app-url";
-import { type EmailAttachment } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
@@ -13,12 +12,11 @@ import {
   getLeaveCancellationEmailTemplate,
   getResignationSubmittedEmailTemplate,
   getResignationApprovedEmailTemplate,
-  getTerminationEmailTemplate,
   getReviewAssignedEmailTemplate,
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
-import { getAccountDeactivationEmailTemplate, getEmailOtpTemplate, getAccountLockedEmailTemplate } from "./templates/auth";
+import { getEmailOtpTemplate, getAccountLockedEmailTemplate } from "./templates/auth";
 import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
@@ -213,30 +211,6 @@ export abstract class EmailSendersBase extends EmailBase {
     });
   }
 
-  sendTerminationEmail(
-    employeeEmail: string,
-    employeeName: string,
-    employeeDesignation: string,
-    terminationDate: string,
-    terminatedBy: string,
-    reason: string,
-    attachments?: EmailAttachment[],
-  ): Promise<void> {
-    return this.sendEmail({
-      to: employeeEmail,
-      subject: "Notice of employment termination",
-      html: getTerminationEmailTemplate(
-        employeeName,
-        employeeDesignation,
-        terminationDate,
-        terminatedBy,
-        reason,
-        "hr@streamlineos.app",
-      ),
-      attachments,
-    });
-  }
-
   sendOnboardingCompleteEmployeeEmail(email: string, employeeName: string): Promise<void> {
     return this.sendEmail({
       to: email,
@@ -281,14 +255,6 @@ export abstract class EmailSendersBase extends EmailBase {
       to: email,
       subject: "Your sign-in code",
       html: getEmailOtpTemplate(code),
-    });
-  }
-
-  sendAccountDeactivationEmail(email: string, employeeName: string, deactivatedBy: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: "Your account has been deactivated",
-      html: getAccountDeactivationEmailTemplate(employeeName, deactivatedBy),
     });
   }
 

@@ -8,6 +8,7 @@ import {
   hrDependents,
 } from "../../db/schema/hr/benefits";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
+import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import type { EnrollInput, WaiveInput, CreateDependentInput, PatchDependentInput } from "./dto/benefits.schemas";
 
 @Injectable()
@@ -15,6 +16,7 @@ export class HrBenefitsEnrollmentService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policyEval: HrPolicyEvaluationService,
+    private readonly plans: HrBenefitsPlansService,
   ) {}
 
   async checkEligibility(orgId: string, planId: number, employeeId: string) {
@@ -43,6 +45,11 @@ export class HrBenefitsEnrollmentService {
 
     if (!plan || plan.status !== "active") {
       throw new BadRequestException("Benefit plan is not available for enrollment");
+    }
+
+    const windowOpen = await this.plans.checkEnrollmentWindowOpen(orgId, data.planId);
+    if (!windowOpen) {
+      throw new BadRequestException("Enrollment window for this plan is not currently open");
     }
 
     try {

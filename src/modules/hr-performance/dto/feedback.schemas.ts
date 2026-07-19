@@ -1,34 +1,37 @@
 import { z } from "zod";
 
-const questionSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().trim().min(1).max(2000),
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date");
+
+const CYCLE_TYPES = ["360", "PEER", "UPWARD", "DOWNWARD"] as const;
+const CYCLE_STATUSES = ["DRAFT", "ACTIVE", "CLOSED", "ARCHIVED"] as const;
+
+const feedbackQuestionSchema = z.object({
+  id: z.string().trim().min(1, "Question id is required"),
+  text: z
+    .string()
+    .trim()
+    .min(1, "Question text is required")
+    .max(500, "Question text must be at most 500 characters"),
   type: z.enum(["rating", "text"]),
 });
 
-export const createCycleSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  type: z.string().max(50).optional(),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
-  isAnonymous: z.boolean().optional(),
-  questions: z.array(questionSchema).optional(),
-});
-export type CreateCycleInput = z.infer<typeof createCycleSchema>;
+export const createFeedbackCycleSchema = z
+  .object({
+    name: z.string().trim().min(1, "Cycle name is required").max(200, "Cycle name must be at most 200 characters"),
+    type: z.enum(CYCLE_TYPES).optional().default("360"),
+    startDate: dateOnly,
+    endDate: dateOnly,
+    isAnonymous: z.boolean().optional().default(true),
+    questions: z.array(feedbackQuestionSchema).max(50, "At most 50 questions are allowed").optional(),
+  })
+  .refine((d) => d.endDate >= d.startDate, {
+    message: "End date must be on or after start date",
+    path: ["endDate"],
+  });
 
 export const updateCycleStatusSchema = z.object({
-  status: z.string().trim().min(1).max(50),
+  status: z.enum(CYCLE_STATUSES),
 });
+
+export type CreateFeedbackCycleInput = z.infer<typeof createFeedbackCycleSchema>;
 export type UpdateCycleStatusInput = z.infer<typeof updateCycleStatusSchema>;
-
-const responseSchema = z.object({
-  questionId: z.string().min(1),
-  rating: z.number().int().min(1).max(10).optional(),
-  text: z.string().max(5000).optional(),
-});
-
-export const submitResponseSchema = z.object({
-  responses: z.array(responseSchema).min(1),
-  overallRating: z.number().int().min(1).max(10).optional(),
-});
-export type SubmitResponseInput = z.infer<typeof submitResponseSchema>;

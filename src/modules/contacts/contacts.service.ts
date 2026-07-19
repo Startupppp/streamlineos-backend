@@ -6,7 +6,13 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import type { CreateInput, ListInput, UpdateInput } from "./dto/contact.schemas";
+import { toCsv } from "../inv-import-export/csv.util";
+import type {
+  BulkImportContactsInput,
+  CreateInput,
+  ListInput,
+  UpdateInput,
+} from "./dto/contact.schemas";
 
 @Injectable()
 export class ContactsService {
@@ -139,5 +145,77 @@ export class ContactsService {
       .where(and(eq(contacts.id, id), eq(contacts.orgId, orgId)));
     await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
     return { success: true };
+  }
+
+  async bulkImport(orgId: string, input: BulkImportContactsInput) {
+    await this.planLimits.assertWithinLimit(orgId, "crmContacts", input.contacts.length);
+
+    let created = 0;
+    let failed = 0;
+
+    for (const row of input.contacts) {
+      try {
+        const email = row.email?.trim() || null;
+        await this.db.insert(contacts).values({
+          orgId,
+          name: row.name.trim(),
+          email: email || null,
+          phone: row.phone?.trim() || null,
+          company: row.company?.trim() || null,
+          title: row.title?.trim() || null,
+          tags: [],
+        });
+        created++;
+      } catch {
+        failed++;
+      }
+    }
+
+    if (created > 0) {
+      await this.cache.invalidatePattern(`crm:contacts:list:${orgId}:*`);
+    }
+
+    return { created, failed };
+  }
+
+  async exportCsv(orgId: string): Promise<string> {
+    const rows = await this.db
+      .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        phone: contacts.phone,
+        title: contacts.title,
+        company: contacts.company,
+        department: contacts.department,
+        createdAt: contacts.createdAt,
+      })
+      .from(contacts)
+      .where(and(eq(contacts.orgId, orgId), isNull(contacts.deletedAt)))
+      .orderBy(contacts.name);
+
+    const headers = [
+      "id",
+      "name",
+      "email",
+      "phone",
+      "title",
+      "company",
+      "department",
+      "createdAt",
+    ];
+    return toCsv(
+      headers,
+      rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email ?? "",
+        phone: r.phone ?? "",
+        title: r.title ?? "",
+        company: r.company ?? "",
+        department: r.department ?? "",
+        createdAt: r.createdAt?.toISOString() ?? "",
+      })),
+    );
   }
 }

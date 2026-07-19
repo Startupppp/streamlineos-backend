@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   NotFoundException,
   Param,
@@ -23,10 +24,12 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ContactsService } from "./contacts.service";
 import { buildVcard, vcardFilename } from "./vcard";
 import {
+  bulkImportContactsSchema,
   createSchema,
   listSchema,
   searchSchema,
   updateSchema,
+  type BulkImportContactsInput,
   type CreateInput,
   type ListInput,
   type SearchInput,
@@ -57,6 +60,24 @@ export class ContactsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.contacts.create(u.orgId, body);
+  }
+
+  @Post("bulk-import")
+  @HttpCode(201)
+  @RequirePermission("crm:contacts:manage")
+  bulkImport(
+    @Body(new ZodValidationPipe(bulkImportContactsSchema)) body: BulkImportContactsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.contacts.bulkImport(u.orgId, body);
+  }
+
+  @Get("export")
+  @RequirePermission("crm:contacts:view")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="contacts-export.csv"')
+  exportCsv(@CurrentUser() u: CurrentUserContext) {
+    return this.contacts.exportCsv(u.orgId);
   }
 
   @Get("search")

@@ -7,6 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
+import { toCsv } from "../inv-import-export/csv.util";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 
@@ -207,5 +208,55 @@ export class ClientsService {
     events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return { events, total: events.length };
+  }
+
+  async exportCsv(orgId: string): Promise<string> {
+    const rows = await this.db
+      .select({
+        id: clients.id,
+        name: clients.name,
+        email: clients.email,
+        phone: clients.phone,
+        company: clients.company,
+        city: clients.city,
+        status: clients.status,
+        healthScore: clients.healthScore,
+        healthStatus: clients.healthStatus,
+        investmentValue: clients.investmentValue,
+        createdAt: clients.createdAt,
+      })
+      .from(clients)
+      .where(eq(clients.orgId, orgId))
+      .orderBy(asc(clients.name));
+
+    const headers = [
+      "id",
+      "name",
+      "email",
+      "phone",
+      "company",
+      "city",
+      "status",
+      "healthScore",
+      "healthStatus",
+      "investmentValue",
+      "createdAt",
+    ];
+    return toCsv(
+      headers,
+      rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email ?? "",
+        phone: r.phone ?? "",
+        company: r.company ?? "",
+        city: r.city ?? "",
+        status: r.status,
+        healthScore: r.healthScore ?? "",
+        healthStatus: r.healthStatus ?? "",
+        investmentValue: r.investmentValue ?? "",
+        createdAt: r.createdAt?.toISOString() ?? "",
+      })),
+    );
   }
 }

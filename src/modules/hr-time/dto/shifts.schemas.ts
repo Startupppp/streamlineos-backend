@@ -46,3 +46,34 @@ export const updateShiftSchema = z.object({
 
 export type CreateShiftInput = z.infer<typeof createShiftSchema>;
 export type UpdateShiftInput = z.infer<typeof updateShiftSchema>;
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date");
+
+export const assignShiftSchema = z.object({
+  userId: z.string().trim().min(1, "Employee is required"),
+  shiftId: z.coerce.number().int().positive("A shift must be selected"),
+  effectiveFrom: dateOnly,
+  effectiveTo: dateOnly.optional(),
+});
+
+export const createSwapRequestSchema = z
+  .object({
+    targetUserId: z.string().trim().min(1, "Target employee is required"),
+    requestDate: dateOnly,
+    targetDate: dateOnly,
+    reason: z.string().trim().max(500, "Reason must be at most 500 characters").optional(),
+  })
+  .refine((data) => data.requestDate !== data.targetDate, {
+    message: "Request date and target date must be different",
+    path: ["targetDate"],
+  });
+
+const SWAP_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+
+export const updateSwapStatusSchema = z.object({
+  status: z.enum(SWAP_STATUSES),
+});
+
+export type AssignShiftInput = z.infer<typeof assignShiftSchema>;
+export type CreateSwapRequestInput = z.infer<typeof createSwapRequestSchema>;
+export type UpdateSwapStatusInput = z.infer<typeof updateSwapStatusSchema>;

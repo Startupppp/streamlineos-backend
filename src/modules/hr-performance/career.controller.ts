@@ -5,8 +5,17 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CareerService } from "./career.service";
-import type { careerPaths, employeeCareerPlans } from "../../db/schema";
+import {
+  createCareerPathSchema,
+  updateCareerPathSchema,
+  saveCareerPlanSchema,
+  completedFlagSchema,
+  type CreateCareerPathInput,
+  type UpdateCareerPathInput,
+  type SaveCareerPlanInput,
+} from "./dto/career.schemas";
 
 @RequireModule("hr")
 @Controller("hr/career-development")
@@ -22,8 +31,11 @@ export class CareerController {
 
   @Put("my-plan")
   @RequirePermission("hr:learning:view")
-  saveMyPlan(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
-    return this.careerService.saveMyPlan(u.orgId, u.userId, body as Partial<typeof employeeCareerPlans.$inferInsert>);
+  saveMyPlan(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(saveCareerPlanSchema)) body: SaveCareerPlanInput,
+  ) {
+    return this.careerService.saveMyPlan(u.orgId, u.userId, body);
   }
 
   @Patch("my-plan/milestones/:milestoneIdx")
@@ -31,7 +43,7 @@ export class CareerController {
   updateMilestone(
     @CurrentUser() u: CurrentUserContext,
     @Param("milestoneIdx", ParseIntPipe) idx: number,
-    @Body("completed") completed: boolean,
+    @Body("completed", new ZodValidationPipe(completedFlagSchema)) completed: boolean,
   ) {
     return this.careerService.updateMilestone(u.orgId, u.userId, idx, completed);
   }
@@ -45,8 +57,11 @@ export class CareerController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:learning:manage")
-  createPath(@CurrentUser() u: CurrentUserContext, @Body() body: Record<string, unknown>) {
-    return this.careerService.createPath(u.orgId, body as typeof careerPaths.$inferInsert);
+  createPath(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createCareerPathSchema)) body: CreateCareerPathInput,
+  ) {
+    return this.careerService.createPath(u.orgId, body);
   }
 
   @Patch(":pathId")
@@ -54,8 +69,8 @@ export class CareerController {
   updatePath(
     @CurrentUser() u: CurrentUserContext,
     @Param("pathId", ParseIntPipe) pathId: number,
-    @Body() body: Record<string, unknown>,
+    @Body(new ZodValidationPipe(updateCareerPathSchema)) body: UpdateCareerPathInput,
   ) {
-    return this.careerService.updatePath(u.orgId, pathId, body as Partial<typeof careerPaths.$inferInsert>);
+    return this.careerService.updatePath(u.orgId, pathId, body);
   }
 }

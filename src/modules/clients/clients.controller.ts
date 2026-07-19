@@ -4,6 +4,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   InternalServerErrorException,
   NotFoundException,
@@ -81,6 +82,14 @@ export class ClientsController {
   async listClients(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveClientsReadScope(this.access, u);
     return this.clients.listClients(u.orgId, u.userId, scope);
+  }
+
+  @Get("export")
+  @RequirePermission("crm:clients:read")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="clients-export.csv"')
+  exportCsv(@CurrentUser() u: CurrentUserContext) {
+    return this.clients.exportCsv(u.orgId);
   }
 
   @Get("health")

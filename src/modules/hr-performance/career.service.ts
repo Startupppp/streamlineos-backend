@@ -15,7 +15,7 @@ export class CareerService {
       .limit(100);
   }
 
-  async createPath(orgId: string, data: typeof careerPaths.$inferInsert) {
+  async createPath(orgId: string, data: Omit<typeof careerPaths.$inferInsert, "orgId">) {
     const [path] = await this.db.insert(careerPaths).values({ ...data, orgId }).returning();
     return path;
   }

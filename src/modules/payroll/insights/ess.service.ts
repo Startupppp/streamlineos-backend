@@ -300,6 +300,18 @@ export class EssService {
       where: and(eq(taxDeclarations.id, body.declarationId), eq(taxDeclarations.userId, userId), eq(taxDeclarations.orgId, orgId)),
     });
     if (!declaration) throw new NotFoundException("Tax declaration not found");
+
+    const window = await this.getActiveWindow(orgId);
+    if (!window) throw new ForbiddenException("Tax declaration window is not open");
+    if (window.lockDate) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      if (todayIso > window.lockDate) {
+        throw new ForbiddenException(
+          `Tax declaration window is locked — submission deadline was ${window.lockDate}`,
+        );
+      }
+    }
+
     return this.taxService.addProof(orgId, body.declarationId, {
       category: body.category,
       amount: body.amount.toString(),
