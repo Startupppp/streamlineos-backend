@@ -1,29 +1,32 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { desc, eq, inArray } from "drizzle-orm";
 import {
-  organizations,
-  organizationMembers,
-  subscriptions,
   roles,
-  rolePermissionGrants,
   users,
+  subscriptions,
+  organizations,
   magicLinkTokens,
+  organizationMembers,
+  rolePermissionGrants,
 } from "../../db/schema";
-import { DRIZZLE } from "../../db/drizzle.constants";
+import { addDays, addMinutes } from "date-fns";
 import { type Db } from "../../db/drizzle.module";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type SetupInput } from "./dto/org.schemas";
+import {
+  OnboardingSessionService,
+  type SessionPatch,
+} from "../onboarding-flow/onboarding-session.service";
+import { EmailService } from "../email/email.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { logger } from "../../common/logger/logger.service";
+import { PERMISSIONS } from "../rbac/permissions.constants";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { addDays, addMinutes } from "date-fns";
-import { type SetupInput } from "./dto/org.schemas";
-import { OnboardingSessionService, type SessionPatch } from "../onboarding-flow/onboarding-session.service";
-import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
-import { PERMISSIONS } from "../rbac/permissions.constants";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
-import { EmailService } from "../email/email.service";
-import { logger } from "../../common/logger/logger.service";
+import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 
 const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
 
@@ -45,10 +48,14 @@ export class OrgSetupService {
     });
     if (!user?.email) return;
     const name = user.name?.trim() || user.firstName?.trim() || user.email;
-    const base = (process.env.EMAIL_APP_URL ?? process.env.APP_URL ?? "").trim().replace(/\/$/, "");
-    void this.email.sendWelcomeEmail(user.email, name, `${base}/dashboard`).catch((error: unknown) => {
-      logger.error("Welcome email send failed", { userId, error });
-    });
+    const base = (process.env.EMAIL_APP_URL ?? process.env.APP_URL ?? "")
+      .trim()
+      .replace(/\/$/, "");
+    void this.email
+      .sendWelcomeEmail(user.email, name, `${base}/dashboard`)
+      .catch((error: unknown) => {
+        logger.error("Welcome email send failed", { userId, error });
+      });
   }
 
   private slugify(name: string): string {
@@ -157,22 +164,24 @@ export class OrgSetupService {
 
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
     const orgId = await this.resolveOrCreateOrg(u, input);
-    if (u.orgId && !u.isOrgOwner) {
-      return { success: true, orgId };
-    }
+    if (u.orgId && !u.isOrgOwner) return { success: true, orgId };
+
+    // Partial onboarding still yields a usable workspace: fall back to the
+    // default module set (matching skip) so a created org is never module-less.
+    const resolvedModules = input.enabledModules?.length
+      ? input.enabledModules
+      : DEFAULT_SKIP_MODULES;
 
     await this.db.transaction(async (tx) => {
       await tx
         .update(organizations)
         .set({
-          industry: input.industry,
-          companySize: input.companySize,
+          industry: input.industry || "IT Services",
+          companySize: input.companySize || "1-10",
           ...(input.country ? { country: input.country } : {}),
           ...(input.timezone ? { timezone: input.timezone } : {}),
           ...(input.companyName ? { name: input.companyName } : {}),
-          ...(input.enabledModules
-            ? { enabledModules: input.enabledModules }
-            : {}),
+          enabledModules: resolvedModules,
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
@@ -188,17 +197,7 @@ export class OrgSetupService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
 
-    this.audit.log({
-      action: "org.setup.completed",
-      userId: u.userId,
-      orgId,
-      targetId: orgId,
-      targetType: "organization",
-    });
-
-    if (input.enabledModules?.length) {
-      await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
-    }
+    await this.checklists.ensureChecklistsForModules(orgId, resolvedModules);
     await this.sessions.completeSession(orgId, u.userId, "org_setup");
     await this.sendWelcome(u.userId);
 
@@ -259,11 +258,17 @@ export class OrgSetupService {
         })
         .where(eq(organizations.id, orgId));
 
-      await tx.update(users).set({ lastActiveOrgId: orgId }).where(eq(users.id, u.userId));
+      await tx
+        .update(users)
+        .set({ lastActiveOrgId: orgId })
+        .where(eq(users.id, u.userId));
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    await this.checklists.ensureChecklistsForModules(orgId, DEFAULT_SKIP_MODULES);
+    await this.checklists.ensureChecklistsForModules(
+      orgId,
+      DEFAULT_SKIP_MODULES,
+    );
     await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);
 
     this.audit.log({
