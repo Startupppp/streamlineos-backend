@@ -59,9 +59,10 @@ import {
   getWorkLogRejectedEmailTemplate,
   getOnboardingReminderEmailTemplate,
 } from "./index";
-import { getBrandUrl } from "../email.constants";
+import { getBrandName, getBrandUrl } from "../branding";
 
 const BASE_URL = getBrandUrl();
+const BRAND = getBrandName();
 
 export interface TemplateEntry {
   category: string;
@@ -86,7 +87,7 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
   "auth.welcome": {
     category: "Auth",
     name: "Welcome / Account Created",
-    subject: "Your StreamlineOS account is ready",
+    subject: `Your ${BRAND} account is ready`,
     generateHtml: () =>
       getWelcomeEmailTemplate("Priya Sharma", "priya@acme.in", `${BASE_URL}/setup?token=test-token`),
   },
@@ -525,7 +526,7 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
   "platform.contact_reply": {
     category: "Platform",
     name: "Contact Form — Staff Reply",
-    subject: "Re: your billing message to StreamlineOS",
+    subject: `Re: your billing message to ${BRAND}`,
     generateHtml: () =>
       getContactReplyEmail({
         name: "Rohan Mehta",
@@ -690,7 +691,7 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
   "notif.onboarding_welcome": {
     category: "Notifications",
     name: "Onboarding Welcome",
-    subject: "Welcome to StreamlineOS",
+    subject: `Welcome to ${BRAND}`,
     generateHtml: () =>
       getOnboardingWelcomeEmailTemplate("Arjun Kapoor", "Junior Developer", "Mon, 7 Jul 2026", 6),
   },

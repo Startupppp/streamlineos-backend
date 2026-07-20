@@ -1,3 +1,4 @@
+import { getBrandName } from "../branding";
 import { getEmailTemplate, appUrl, escapeHtml } from "./base";
 import { renderButton, renderCallout, renderFallbackLink, renderKeyValueRows } from "./components";
 
@@ -6,10 +7,12 @@ export function getInvitationEmailTemplate(
   organizationName: string,
   inviterName?: string,
 ): string {
+  const brand = getBrandName();
+  const sBrand = escapeHtml(brand);
   const safeOrgName = escapeHtml(organizationName);
   const intro = inviterName
-    ? `<strong>${escapeHtml(inviterName)}</strong> has invited you to join <strong>${safeOrgName}</strong> on StreamlineOS.`
-    : `You have been invited to join <strong>${safeOrgName}</strong> on StreamlineOS.`;
+    ? `<strong>${escapeHtml(inviterName)}</strong> has invited you to join <strong>${safeOrgName}</strong> on ${sBrand}.`
+    : `You have been invited to join <strong>${safeOrgName}</strong> on ${sBrand}.`;
   const preheaderInviter = inviterName
     ? `${escapeHtml(inviterName)} invited you to join`
     : "You have been invited to join";
@@ -26,7 +29,7 @@ export function getInvitationEmailTemplate(
 
   return getEmailTemplate({
     title: `You've been invited to join ${safeOrgName}`,
-    preheader: `${preheaderInviter} ${safeOrgName} on StreamlineOS.`,
+    preheader: `${preheaderInviter} ${safeOrgName} on ${brand}.`,
     content,
   });
 }
@@ -65,6 +68,7 @@ export function getCompanyAnnouncementEmailTemplate(
   message: string,
   announcedBy: string,
 ): string {
+  const brand = getBrandName();
   const safeSubject = escapeHtml(subject);
   const safeAnnouncedBy = escapeHtml(announcedBy);
   const safeMessage = escapeHtml(message).replace(/\n/g, "<br>");
@@ -82,7 +86,7 @@ export function getCompanyAnnouncementEmailTemplate(
     <p class="email-text" style="font-size:14px;color:#64748b;">
       Posted by <strong>${safeAnnouncedBy}</strong> on ${postedDate}
     </p>
-    ${renderButton("Open StreamlineOS", `${appUrl}/dashboard`)}
+    ${renderButton(`Open ${brand}`, `${appUrl}/dashboard`)}
   `;
 
   return getEmailTemplate({

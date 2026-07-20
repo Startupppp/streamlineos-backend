@@ -1,5 +1,6 @@
 import { EmailBase } from "./email-base";
 import { appUrl } from "./app-url";
+import { getBrandName } from "./branding";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
@@ -57,7 +58,7 @@ export abstract class EmailSendersBase extends EmailBase {
   sendWelcomeEmail(email: string, name: string, setupUrl: string): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Your StreamlineOS account is ready",
+      subject: `Your ${getBrandName()} account is ready`,
       html: getWelcomeEmailTemplate(name, email, setupUrl),
     });
   }
@@ -289,7 +290,7 @@ export abstract class EmailSendersBase extends EmailBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Welcome to StreamlineOS",
+      subject: `Welcome to ${getBrandName()}`,
       html: getOnboardingWelcomeEmailTemplate(employeeName, designation, joiningDate, taskCount),
     });
   }

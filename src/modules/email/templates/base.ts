@@ -1,10 +1,16 @@
 import { appUrl } from "../app-url";
-import { getBrandUrl, getSupportEmail, getEmailLogoUrl } from "../email.constants";
+import {
+  EMAIL_THEME,
+  getBrandInitial,
+  getBrandName,
+  getBrandUrl,
+  getEmailLogoUrl,
+  getSupportEmail,
+} from "../branding";
 
 export { appUrl };
 
-const FONT =
-  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const { font: FONT } = EMAIL_THEME;
 
 export function escapeHtml(str: string): string {
   return str
@@ -21,19 +27,21 @@ export interface EmailTemplateProps {
   content: string;
 }
 
-function buildBrandMark(): string {
+function buildBrandMark(brandName: string): string {
   const logoUrl = getEmailLogoUrl();
+  const safeName = escapeHtml(brandName);
   if (logoUrl) {
     return (
       `<td width="36" height="36" style="width:36px;height:36px;vertical-align:middle;">` +
-      `<img src="${logoUrl}" alt="StreamlineOS" width="36" height="36" style="display:block;border:0;width:36px;height:36px;border-radius:9px;">` +
+      `<img src="${logoUrl}" alt="${safeName}" width="36" height="36" style="display:block;border:0;width:36px;height:36px;border-radius:9px;">` +
       `</td>`
     );
   }
 
+  const initial = escapeHtml(getBrandInitial());
   return (
-    `<td width="36" height="36" bgcolor="#0b1220" style="width:36px;height:36px;background-color:#0b1220;border-radius:9px;text-align:center;vertical-align:middle;">` +
-    `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">S</span>` +
+    `<td width="36" height="36" bgcolor="${EMAIL_THEME.accent}" style="width:36px;height:36px;background-color:${EMAIL_THEME.accent};border-radius:9px;text-align:center;vertical-align:middle;">` +
+    `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">${initial}</span>` +
     `</td>`
   );
 }
@@ -45,10 +53,12 @@ export function getEmailTemplate({
 }: EmailTemplateProps): string {
   const supportEmail = getSupportEmail();
   const brandUrl = getBrandUrl();
-  const brandMark = buildBrandMark();
+  const brandName = getBrandName();
+  const safeBrandName = escapeHtml(brandName);
+  const brandMark = buildBrandMark(brandName);
   const year = new Date().getFullYear();
   const preheaderText = preheader
-    ? `<div style="display:none;font-size:1px;color:#eef1f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
+    ? `<div style="display:none;font-size:1px;color:${EMAIL_THEME.canvas};line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>`
     : "";
 
   return `<!DOCTYPE html>
@@ -79,7 +89,7 @@ export function getEmailTemplate({
       margin: 0 !important;
       padding: 0 !important;
       width: 100% !important;
-      background-color: #eef1f6;
+      background-color: ${EMAIL_THEME.canvas};
       font-family: ${FONT};
       -webkit-font-smoothing: antialiased;
     }
@@ -87,30 +97,30 @@ export function getEmailTemplate({
       font-family: ${FONT};
       font-size: 22px;
       font-weight: 700;
-      color: #0b1220;
-      letter-spacing: -0.025em;
+      color: ${EMAIL_THEME.ink};
+      letter-spacing: -0.03em;
       line-height: 1.25;
       margin: 0 0 10px 0;
     }
     .email-text {
       font-family: ${FONT};
-      font-size: 14px;
+      font-size: 15px;
       line-height: 1.6;
-      color: #475569;
+      color: ${EMAIL_THEME.text};
       margin: 0 0 12px 0;
     }
     .email-label {
       font-family: ${FONT};
       font-size: 11px;
       font-weight: 700;
-      color: #94a3b8;
+      color: ${EMAIL_THEME.textFaint};
       letter-spacing: 0.1em;
       text-transform: uppercase;
       margin: 0 0 6px 0;
     }
     .credential-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
+      background-color: ${EMAIL_THEME.surface};
+      border: 1px solid ${EMAIL_THEME.surfaceBorder};
       border-radius: 10px;
       padding: 4px 0;
       margin: 16px 0;
@@ -119,14 +129,14 @@ export function getEmailTemplate({
       margin: 0;
       font-family: ${FONT};
       font-size: 13px;
-      color: #475569;
+      color: ${EMAIL_THEME.text};
     }
     .credential-label {
       font-weight: 600;
-      color: #0b1220;
+      color: ${EMAIL_THEME.ink};
     }
     .credential-value {
-      color: #1e40af;
+      color: ${EMAIL_THEME.accentDeep};
       font-weight: 600;
       background-color: #eff6ff;
       padding: 1px 7px;
@@ -137,91 +147,87 @@ export function getEmailTemplate({
     }
     .divider {
       height: 1px;
-      background-color: #e2e8f0;
+      background-color: ${EMAIL_THEME.surfaceBorder};
       margin: 20px 0;
       border: none;
     }
     .fallback-url {
       font-family: Consolas, 'Courier New', Courier, monospace;
       font-size: 11px;
-      color: #94a3b8;
+      color: ${EMAIL_THEME.textFaint};
       word-break: break-all;
       line-height: 1.5;
       display: block;
     }
     @media only screen and (max-width: 600px) {
       .email-shell { width: 100% !important; }
-      .card-body { padding: 24px 18px 18px !important; }
+      .card-body { padding: 26px 18px 22px !important; }
       .email-footer { padding: 16px 18px 18px !important; }
       .email-title { font-size: 20px !important; }
-      .brand-pad { padding: 18px 18px 0 !important; }
+      .brand-pad { padding: 18px 18px !important; }
     }
     @media (prefers-color-scheme: dark) {
-      body, .email-canvas { background-color: #0b1220 !important; }
+      body, .email-canvas { background-color: #070b14 !important; }
       .email-card { background-color: #111827 !important; border-color: #1f2937 !important; }
       .email-title { color: #f8fafc !important; }
       .email-text { color: #cbd5e1 !important; }
-      .email-footer-bg { background-color: #0f172a !important; }
-      .email-footer-text, .email-footer-text a { color: #94a3b8 !important; }
-      .brand-name { color: #f8fafc !important; }
-      .brand-accent { color: #60a5fa !important; }
+      .email-footer-bg { background-color: ${EMAIL_THEME.ink} !important; border-color: #1f2937 !important; }
+      .email-footer-text, .email-footer-text a { color: ${EMAIL_THEME.textFaint} !important; }
     }
   </style>
 </head>
 <body>
 ${preheaderText}
-<table role="presentation" class="email-canvas" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#eef1f6;">
+<table role="presentation" class="email-canvas" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:${EMAIL_THEME.canvas};">
   <tr>
-    <td style="padding:32px 16px;" align="center">
-      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="560" style="max-width:560px;width:100%;background-color:#ffffff;border-radius:14px;border:1px solid #e2e8f0;overflow:hidden;">
+    <td style="padding:36px 16px;" align="center">
+      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="560" style="max-width:560px;width:100%;background-color:${EMAIL_THEME.card};border-radius:16px;border:1px solid ${EMAIL_THEME.cardBorder};overflow:hidden;">
         <tr>
-          <td style="padding:0;font-size:0;line-height:0;">
-            <!--[if mso]>
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560"><tr>
-              <td bgcolor="#0b1220" width="280" height="3" style="font-size:0;line-height:0;">&nbsp;</td>
-              <td bgcolor="#1e40af" width="140" height="3" style="font-size:0;line-height:0;">&nbsp;</td>
-              <td bgcolor="#3b82f6" width="140" height="3" style="font-size:0;line-height:0;">&nbsp;</td>
-            </tr></table>
-            <![endif]-->
-            <!--[if !mso]><!-->
-            <div style="height:3px;line-height:3px;font-size:0;background-color:#0b1220;background-image:linear-gradient(90deg,#0b1220 0%,#1e40af 55%,#3b82f6 100%);">&nbsp;</div>
-            <!--<![endif]-->
-          </td>
-        </tr>
-        <tr>
-          <td class="brand-pad" style="padding:22px 28px 0;">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+          <td class="brand-pad" bgcolor="${EMAIL_THEME.ink}" style="background-color:${EMAIL_THEME.ink};padding:22px 28px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
               <tr>
                 ${brandMark}
-                <td style="vertical-align:middle;padding-left:11px;">
-                  <span class="brand-name" style="font-family:${FONT};font-size:16px;font-weight:700;color:#0b1220;letter-spacing:-0.02em;">Streamline<span class="brand-accent" style="color:#1e40af;">OS</span></span>
+                <td style="vertical-align:middle;padding-left:12px;">
+                  <span style="font-family:${FONT};font-size:17px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">${safeBrandName}</span>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
         <tr>
-          <td class="card-body" style="padding:22px 28px 24px;">
+          <td style="padding:0;font-size:0;line-height:0;background-color:${EMAIL_THEME.accent};">
+            <!--[if mso]>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560"><tr>
+              <td bgcolor="${EMAIL_THEME.accent}" height="3" style="font-size:0;line-height:0;">&nbsp;</td>
+            </tr></table>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <div style="height:3px;line-height:3px;font-size:0;background-color:${EMAIL_THEME.accent};">&nbsp;</div>
+            <!--<![endif]-->
+          </td>
+        </tr>
+        <tr>
+          <td class="card-body" style="padding:28px 28px 26px;">
             ${content}
           </td>
         </tr>
         <tr>
-          <td class="email-footer-bg" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;">
+          <td class="email-footer-bg" style="background-color:${EMAIL_THEME.footerBg};border-top:1px solid ${EMAIL_THEME.footerBorder};">
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
               <tr>
-                <td class="email-footer" style="padding:16px 28px 18px;text-align:center;">
-                  <p class="email-footer-text" style="font-family:${FONT};font-size:12px;line-height:1.5;color:#64748b;margin:0 0 4px 0;">
-                    Sent by <strong style="color:#475569;">StreamlineOS</strong>
+                <td class="email-footer" style="padding:18px 28px 20px;text-align:center;">
+                  <p class="email-footer-text" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:0 0 4px 0;">
+                    Sent by <strong style="color:${EMAIL_THEME.textStrong};">${safeBrandName}</strong>
                     &nbsp;&middot;&nbsp;
-                    <a href="mailto:${supportEmail}" style="color:#64748b;text-decoration:underline;">${supportEmail}</a>
+                    <a href="mailto:${supportEmail}" style="color:${EMAIL_THEME.textMuted};text-decoration:underline;">${supportEmail}</a>
                   </p>
-                  <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:#94a3b8;margin:0 0 4px 0;">
-                    You&apos;re receiving this because you have a StreamlineOS account or interaction.
+                  <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:${EMAIL_THEME.textFaint};margin:0 0 4px 0;">
+                    You&apos;re receiving this because you have a ${safeBrandName} account or interaction.
                   </p>
-                  <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:#94a3b8;margin:0;">
-                    <a href="${brandUrl}/legal/privacy" style="color:#94a3b8;text-decoration:underline;">Privacy</a>
+                  <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:${EMAIL_THEME.textFaint};margin:0;">
+                    <a href="${brandUrl}/legal/privacy" style="color:${EMAIL_THEME.textFaint};text-decoration:underline;">Privacy</a>
                     &nbsp;&middot;&nbsp;
-                    &copy; ${year} StreamlineOS
+                    &copy; ${year} ${safeBrandName}
                   </p>
                 </td>
               </tr>

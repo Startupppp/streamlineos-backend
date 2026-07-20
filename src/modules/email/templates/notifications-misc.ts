@@ -1,3 +1,4 @@
+import { getBrandName } from "../branding";
 import { getEmailTemplate, appUrl, escapeHtml } from "./base";
 import { renderButton, renderKeyValueRows, renderCallout, renderBadge } from "./components";
 import type { Tone } from "./components";
@@ -8,6 +9,7 @@ export function getOnboardingWelcomeEmailTemplate(
   joiningDate: string,
   taskCount: number
 ): string {
+  const brand = getBrandName();
   const rows: Array<{ label: string; value: string }> = [
     { label: "Role", value: designation },
     { label: "Onboarding starts", value: joiningDate },
@@ -20,7 +22,7 @@ export function getOnboardingWelcomeEmailTemplate(
     ${renderButton("Start onboarding", `${appUrl}/hr/onboarding/my-tasks`)}
   `;
   return getEmailTemplate({
-    title: "Welcome to StreamlineOS",
+    title: `Welcome to ${brand}`,
     preheader: `Your onboarding starts on ${escapeHtml(joiningDate)} — ${taskCount} task${taskCount !== 1 ? "s" : ""} to complete`,
     content,
   });

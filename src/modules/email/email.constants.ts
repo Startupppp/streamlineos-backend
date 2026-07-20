@@ -21,23 +21,3 @@ export function getFromAddress(): string {
 export function getFromParts(): { address: string; name: string } {
   return { address: getFromEmail(), name: getFromName() ?? "" };
 }
-
-export function getSupportEmail(): string {
-  const dedicated = process.env.SUPPORT_EMAIL?.trim();
-  if (dedicated && EMAIL_RE.test(dedicated)) {
-    return dedicated;
-  }
-  return getFromEmail();
-}
-
-export function getBrandUrl(): string {
-  return ((process.env.EMAIL_APP_URL ?? process.env.APP_URL)?.trim() ?? "").replace(/\/$/, "");
-}
-
-export function getEmailLogoUrl(): string | null {
-  const base = (process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? "").trim().replace(/\/$/, "");
-  if (!base) return null;
-  return `${base}/email-assets/logo-v2.png`;
-}
-
-export const EMAIL_LOGO_URL = getEmailLogoUrl() ?? "";

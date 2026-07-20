@@ -1,5 +1,5 @@
-﻿import { escapeHtml, getEmailTemplate } from "./base";
-import { getSupportEmail } from "../email.constants";
+﻿import { getBrandName, getSupportEmail } from "../branding";
+import { escapeHtml, getEmailTemplate } from "./base";
 import { renderButton, renderCallout, renderKeyValueRows } from "./components";
 
 interface InterviewInviteParams {
@@ -87,7 +87,7 @@ export function getSelfScheduleBookingEmail(
   candidateName: string,
   bookingUrl: string,
   expiresAtLabel: string,
-  orgName = process.env.APP_BRAND_NAME ?? "StreamlineOS",
+  orgName = getBrandName(),
 ): { subject: string; html: string } {
   const name = escapeHtml(candidateName);
   const company = escapeHtml(orgName);

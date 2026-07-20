@@ -15,7 +15,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
-import { getSupportEmail } from "../email/email.constants";
+import { getSupportEmail } from "../email/branding";
 import {
   getContactAdminNotificationEmail,
   getContactAutoreplyEmail,

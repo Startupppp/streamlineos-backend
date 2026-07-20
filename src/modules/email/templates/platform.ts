@@ -1,3 +1,4 @@
+import { getBrandName } from "../branding";
 import { getEmailTemplate, escapeHtml } from "./base";
 import { renderKeyValueRows, renderCallout, renderButton } from "./components";
 
@@ -80,7 +81,8 @@ export interface ContactReplyEmailParams {
 
 export function getContactReplyEmail(params: ContactReplyEmailParams): { subject: string; html: string } {
   const { name, replyBody, originalMessage, originalTopic } = params;
-  const subject = `Re: your ${originalTopic} message to StreamlineOS`;
+  const brand = getBrandName();
+  const subject = `Re: your ${originalTopic} message to ${brand}`;
   const firstName = escapeHtml(name.split(" ")[0] ?? name);
   const escapedReply = escapeHtml(replyBody).replace(/\n/g, "<br>");
   const escapedOriginal = escapeHtml(originalMessage).replace(/\n/g, "<br>");
@@ -97,7 +99,7 @@ export function getContactReplyEmail(params: ContactReplyEmailParams): { subject
     subject,
     html: getEmailTemplate({
       title: escapeHtml(subject),
-      preheader: "A reply to your message from the StreamlineOS team.",
+      preheader: `A reply to your message from the ${brand} team.`,
       content,
     }),
   };
@@ -135,9 +137,10 @@ export function getTrialReminderEmail(params: TrialReminderEmailParams): { subje
   const expiryPhrase =
     daysLeft === 0 ? "expires today" : daysLeft === 1 ? "ends tomorrow" : `ends in ${daysLeft} days`;
 
+  const brand = getBrandName();
   const content = `
 <h1 class="email-title">${escapeHtml(subject)}</h1>
-<p class="email-text">Hi ${escapeHtml(orgName)} team, your StreamlineOS free trial ${expiryPhrase}. Upgrade to keep full access to all your data and features.</p>
+<p class="email-text">Hi ${escapeHtml(orgName)} team, your ${escapeHtml(brand)} free trial ${expiryPhrase}. Upgrade to keep full access to all your data and features.</p>
 ${renderKeyValueRows(rows)}
 ${renderButton("Choose a plan", upgradeUrl)}
 ${daysLeft <= 3 ? renderCallout("Act now — once the trial expires, access to your account will be restricted.", "warning") : ""}
@@ -146,7 +149,7 @@ ${daysLeft <= 3 ? renderCallout("Act now — once the trial expires, access to y
     subject,
     html: getEmailTemplate({
       title: subject,
-      preheader: "Upgrade StreamlineOS to keep full access after your trial ends.",
+      preheader: `Upgrade ${brand} to keep full access after your trial ends.`,
       content,
     }),
   };

@@ -1,7 +1,9 @@
+import { getBrandName } from "../branding";
 import { TEMPLATE_MAP } from "./test-catalog";
 
 describe("Email template catalog smoke-check", () => {
   const entries = Object.entries(TEMPLATE_MAP);
+  const brandName = getBrandName();
 
   it("catalog exposes at least one entry", () => {
     expect(entries.length).toBeGreaterThan(0);
@@ -15,7 +17,7 @@ describe("Email template catalog smoke-check", () => {
     }).not.toThrow();
 
     expect(html).toContain("<!DOCTYPE html");
-    expect(html).toContain("StreamlineOS");
+    expect(html).toContain(brandName);
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("NaN");
     expect(html).not.toContain("[object Object]");
