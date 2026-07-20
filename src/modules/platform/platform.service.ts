@@ -15,6 +15,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { EmailService } from "../email/email.service";
+import { getSupportEmail } from "../email/email.constants";
 import {
   getContactAdminNotificationEmail,
   getContactAutoreplyEmail,
@@ -31,7 +32,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const inr = (paise: number) => Math.round(paise / 100);
 
 const BRAND_URL = (process.env.APP_URL ?? "").replace(/\/$/, "");
-const BRAND_SUPPORT_EMAIL = "support@streamlineos.in";
 
 const TOPIC_LABEL: Record<string, string> = {
   sales: "Talk to sales",
@@ -43,7 +43,7 @@ const TOPIC_LABEL: Record<string, string> = {
 
 function getContactRecipients(): string[] {
   const recipient = process.env.CONTACT_NOTIFICATION_EMAIL?.trim();
-  return recipient ? [recipient] : [BRAND_SUPPORT_EMAIL];
+  return recipient ? [recipient] : [getSupportEmail()];
 }
 
 @Injectable()
@@ -104,7 +104,7 @@ export class PlatformService {
         to: input.email,
         subject: autoreplyEmail.subject,
         html: autoreplyEmail.html,
-        replyTo: BRAND_SUPPORT_EMAIL,
+        replyTo: getSupportEmail(),
       });
     } catch (error) {
       logger.warn("[contact-form] Customer auto-reply failed", { error });
@@ -359,7 +359,7 @@ export class PlatformService {
       to: message.email,
       subject: replyEmail.subject,
       html: replyEmail.html,
-      replyTo: BRAND_SUPPORT_EMAIL,
+      replyTo: getSupportEmail(),
     });
     await this.db
       .update(platformMessages)

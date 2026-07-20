@@ -11,7 +11,7 @@
     "typecheck": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.build.json",
     "start": "node --max-old-space-size=8192 ./node_modules/@nestjs/cli/bin/nest.js start",
     "start:dev": "node --max-old-space-size=8192 --env-file=.env ./node_modules/@nestjs/cli/bin/nest.js start --builder swc --watch",
-    "start:prod": "node --max-old-space-size=8192 dist/main.js",
+    "start:prod": "node --max-old-space-size=8192 --env-file-if-exists=.env dist/main.js",
     "db:push": "drizzle-kit push --config drizzle.config.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
