@@ -393,6 +393,38 @@ export class OnboardingService {
     return { success: true };
   }
 
+  async getPersonalDetails(orgId: string, userId: string) {
+    const [user] = await this.db
+      .select({
+        phone: users.phone,
+        gender: users.gender,
+        dateOfBirth: users.dateOfBirth,
+        emergencyContact: users.emergencyContact,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!user) {
+      throw new NotFoundException("User not found in this organization");
+    }
+
+    return {
+      phone: user.phone,
+      gender: user.gender,
+      dateOfBirth: user.dateOfBirth,
+      emergencyName: user.emergencyContact?.name ?? null,
+      emergencyRelation: user.emergencyContact?.relation ?? null,
+      emergencyPhone: user.emergencyContact?.phone ?? null,
+    };
+  }
+
   async saveBankDetails(orgId: string, userId: string, input: BankDetailsInput) {
     await this.db
       .update(users)

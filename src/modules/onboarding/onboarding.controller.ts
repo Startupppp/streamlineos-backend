@@ -291,6 +291,13 @@ export class OnboardingController {
     return this.onboarding.savePersonalDetails(u.orgId, u.userId, body);
   }
 
+  @Get("personal-details")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:onboarding:tasks:view")
+  getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
+    return this.onboarding.getPersonalDetails(u.orgId, u.userId);
+  }
+
   @Patch("bank-details")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:complete")
