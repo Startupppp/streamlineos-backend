@@ -149,7 +149,7 @@ export class AuthController {
   ) {
     await this.enforceRateLimit("auth:magic-link", this.getIp(req));
     await this.authTokensService.requestMagicLink(body);
-    return { message: "If an account exists, a sign-in link has been sent" };
+    return { message: "We've emailed you a sign-in link. Check your inbox." };
   }
 
   @Post("magic-link/verify")
@@ -186,7 +186,7 @@ export class AuthController {
   ) {
     await this.enforceRateLimit("auth:email-otp", this.getIp(req));
     await this.authTokensService.requestEmailOtp(body.email);
-    return { message: "If an account exists, a one-time code has been sent" };
+    return { message: "We've emailed you a 6-digit sign-in code." };
   }
 
   @Post("email-otp/verify")
