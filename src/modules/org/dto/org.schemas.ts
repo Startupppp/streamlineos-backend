@@ -6,6 +6,7 @@ export const setupSchema = z.object({
   companySize: z.string().min(1, "Company size is required"),
   country: z.string().optional(),
   timezone: z.string().optional(),
+  phone: z.string().max(32).optional(),
   enabledModules: z.array(z.string()).optional(),
 });
 

@@ -50,6 +50,59 @@ const schema = z
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
+    EMAIL_FROM_NAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    EMAIL_APP_URL: optionalUrl,
+    NOREPLY_EMAIL: optionalEmail,
+    RESEND_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    OPENAI_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    OPENROUTER_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    GOOGLE_GENERATIVE_AI_API_KEY: z.preprocess(
+      emptyToUndefined,
+      z.string().optional(),
+    ),
+    AI_LLM_PROVIDER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["openai", "openrouter"]).optional(),
+    ),
+    AI_CHAT_PROVIDER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["google", "openrouter"]).optional(),
+    ),
+    RAZORPAY_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    RAZORPAY_KEY_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+    RAZORPAY_WEBHOOK_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().optional(),
+    ),
+    VAPID_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    VAPID_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_REGION: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_BUCKET_NAME: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_ACCESS_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_SECRET_ACCESS_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_KB_BUCKET_NAME: z.preprocess(emptyToUndefined, z.string().optional()),
+    R2_ENDPOINT: optionalUrl,
+    NEXT_PUBLIC_R2_PUBLIC_URL: optionalUrl,
+    R2_KB_PUBLIC_URL: optionalUrl,
+    TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().optional()),
+    TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+    TWILIO_FROM_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
+    APP_BRAND_NAME: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
+    CHAT_REPLY_REMINDER_MINUTES: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
+    ),
+    NOTIFICATIONS_WORKER_INTERVAL_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
+    ),
+    NOTIFICATIONS_INPROCESS_WORKER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV !== "production") return;

@@ -6,7 +6,6 @@ import { type Db } from "../../db/drizzle.module";
 import { chatChannelMembers, pushSubscriptions } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
 
-const DEFAULT_VAPID_SUBJECT = "https://streamlineos.app";
 const EXPIRED_STATUS = new Set([404, 410]);
 
 @Injectable()
@@ -94,6 +93,6 @@ export class WebPushService {
       if (from.includes("@")) return `mailto:${from}`;
     }
 
-    return DEFAULT_VAPID_SUBJECT;
+    throw new Error("VAPID subject requires APP_URL (https) or EMAIL_FROM_ADDRESS to be set");
   }
 }

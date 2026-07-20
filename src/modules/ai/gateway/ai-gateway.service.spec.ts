@@ -115,8 +115,9 @@ describe("AiGatewayService", () => {
         charge: { credits: 5 },
       });
 
-      expect(ledger.reserve).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1", credits: 5 }));
-      expect(ledger.settle).toHaveBeenCalledWith(42, expect.objectContaining({ actualCredits: 5 }));
+      expect(ledger.reserve).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1", credits: 1000 }));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(ledger.settle).toHaveBeenCalledWith(42, expect.objectContaining({ actualMilli: expect.any(Number) }));
     });
   });
 

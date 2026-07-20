@@ -480,8 +480,8 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     teams: 2,
     managers: 2,
     locations: 2,
-    loginUrl: "http://localhost:1000",
-    apiUrl: "http://localhost:1500",
+    loginUrl: process.env.APP_URL ?? "http://localhost:1000",
+    apiUrl: `http://localhost:${process.env.PORT ?? 1500}`,
   };
 }
 

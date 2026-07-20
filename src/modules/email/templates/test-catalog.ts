@@ -58,8 +58,9 @@ import {
   getWorkLogRejectedEmailTemplate,
   getOnboardingReminderEmailTemplate,
 } from "./index";
+import { getBrandUrl } from "../email.constants";
 
-const BASE_URL = process.env.APP_URL ?? "https://streamlineos.app";
+const BASE_URL = getBrandUrl();
 
 export interface TemplateEntry {
   category: string;

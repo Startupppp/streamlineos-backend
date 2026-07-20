@@ -43,7 +43,9 @@ function toInterviewType(value: string | undefined): InterviewType {
 }
 
 function bookingBaseUrl(): string {
-  return process.env.APP_URL ?? "https://streamlineos.app";
+  const url = process.env.APP_URL?.trim();
+  if (!url) throw new Error("APP_URL is required for interview booking links");
+  return url.replace(/\/$/, "");
 }
 
 interface InterviewRow {
@@ -255,7 +257,7 @@ export class HrInterviewSchedulingService {
         recipientName: `${interviewer.firstName ?? ""} ${interviewer.lastName ?? ""}`.trim() || "Interviewer",
         candidateName,
         jobTitle: "this position",
-        companyName: "StreamlineOS",
+        companyName: process.env.APP_BRAND_NAME ?? "StreamlineOS",
         scheduledAt: dateLabel,
         durationMinutes: input.durationMinutes,
         format: formatLabel,
@@ -270,7 +272,7 @@ export class HrInterviewSchedulingService {
         recipientName: candidateName,
         candidateName,
         jobTitle: "this position",
-        companyName: "StreamlineOS",
+        companyName: process.env.APP_BRAND_NAME ?? "StreamlineOS",
         scheduledAt: dateLabel,
         durationMinutes: input.durationMinutes,
         format: formatLabel,

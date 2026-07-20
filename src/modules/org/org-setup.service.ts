@@ -163,7 +163,10 @@ export class OrgSetupService {
 
       await tx
         .update(users)
-        .set({ lastActiveOrgId: orgId })
+        .set({
+          lastActiveOrgId: orgId,
+          ...(input.phone ? { phone: input.phone } : {}),
+        })
         .where(eq(users.id, u.userId));
     });
 

@@ -120,7 +120,7 @@ export const orgAiCredits = pgTable(
     lifetimeConsumed: integer("lifetime_consumed").default(0).notNull(),
     autoTopUpEnabled: boolean("auto_top_up_enabled").default(false).notNull(),
     autoTopUpPackId: integer("auto_top_up_pack_id"),
-    autoTopUpThreshold: integer("auto_top_up_threshold").default(100),
+    autoTopUpThreshold: integer("auto_top_up_threshold").default(100000),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [index("org_ai_credits_org_idx").on(t.orgId)],

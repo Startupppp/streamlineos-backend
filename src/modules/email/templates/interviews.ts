@@ -1,4 +1,5 @@
 ﻿import { escapeHtml, getEmailTemplate } from "./base";
+import { getSupportEmail } from "../email.constants";
 import { renderButton, renderCallout, renderKeyValueRows } from "./components";
 
 interface InterviewInviteParams {
@@ -86,7 +87,7 @@ export function getSelfScheduleBookingEmail(
   candidateName: string,
   bookingUrl: string,
   expiresAtLabel: string,
-  orgName = "StreamlineOS",
+  orgName = process.env.APP_BRAND_NAME ?? "StreamlineOS",
 ): { subject: string; html: string } {
   const name = escapeHtml(candidateName);
   const company = escapeHtml(orgName);
@@ -133,7 +134,7 @@ ${renderKeyValueRows(rows)}`;
 function feedbackRatingButton(ratingLabel: string, bgColor: string): string {
   const subject = encodeURIComponent(`Interview Feedback â€” ${ratingLabel}`);
   const body = encodeURIComponent(`Hi, I would rate my interview experience as ${ratingLabel}. (Add your comments here)`);
-  const href = `mailto:hr@streamlineos.app?subject=${subject}&body=${body}`;
+  const href = `mailto:${getSupportEmail()}?subject=${subject}&body=${body}`;
   return `<td style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${bgColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(ratingLabel)}</a></td>`;
 }
 
