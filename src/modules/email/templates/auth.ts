@@ -1,5 +1,11 @@
 import { getEmailTemplate, appUrl, escapeHtml } from "./base";
-import { renderButton, renderCallout, renderFallbackLink, renderKeyValueRows } from "./components";
+import {
+  renderButton,
+  renderCallout,
+  renderFallbackLink,
+  renderKeyValueRows,
+  renderOtpCode,
+} from "./components";
 
 export function getVerificationEmailTemplate(verificationUrl: string): string {
   const content = `
@@ -23,16 +29,16 @@ export function getMagicLinkEmailTemplate(magicLinkUrl: string): string {
   const content = `
     <h1 class="email-title">Your sign-in link</h1>
     <p class="email-text">
-      A one-click sign-in was requested for your StreamlineOS account.
+      Use the button below to sign in to StreamlineOS. This link works once and expires in 1 hour.
     </p>
     ${renderButton("Sign in to StreamlineOS", magicLinkUrl)}
-    ${renderCallout("This link expires in 1 hour and can only be used once. If you did not request this, you can safely ignore this email.")}
+    ${renderCallout("If you did not request this sign-in link, you can safely ignore this email.")}
     ${renderFallbackLink(magicLinkUrl)}
   `;
 
   return getEmailTemplate({
     title: "Your sign-in link",
-    preheader: "Your one-time sign-in link for StreamlineOS — expires in 1 hour.",
+    preheader: "Your one-time StreamlineOS sign-in link — expires in 1 hour.",
     content,
   });
 }
@@ -85,23 +91,19 @@ export function getAccountDeactivationEmailTemplate(
 }
 
 export function getEmailOtpTemplate(code: string): string {
-  // Keep digits contiguous so copy-paste yields "123456" (letter-spacing is visual only).
-  const digits = escapeHtml(code);
-
+  const safeCode = escapeHtml(code);
   const content = `
     <h1 class="email-title">Your sign-in code</h1>
     <p class="email-text">
-      Use the code below to sign in to your StreamlineOS account.
+      Enter this code to sign in to StreamlineOS. It expires in 10 minutes.
     </p>
-    <div style="text-align:center;margin:24px 0;">
-      <span style="font-family:'Courier New',Courier,monospace;font-size:36px;font-weight:700;letter-spacing:0.35em;color:#0b1220;background:#f8fafc;padding:14px 28px 14px 36px;border-radius:10px;border:1px solid #e2e8f0;display:inline-block;">${digits}</span>
-    </div>
-    ${renderCallout("This code expires in 10 minutes and can only be used once. If you did not request this, you can safely ignore this email.")}
+    ${renderOtpCode(code)}
+    ${renderCallout("This code can only be used once. If you did not request it, you can safely ignore this email.")}
   `;
 
   return getEmailTemplate({
     title: "Your sign-in code",
-    preheader: "Your one-time sign-in code for StreamlineOS — expires in 10 minutes.",
+    preheader: `Your StreamlineOS sign-in code is ${safeCode} — expires in 10 minutes.`,
     content,
   });
 }
@@ -114,7 +116,7 @@ export function getAccountLockedEmailTemplate(name: string): string {
     <p class="email-text">
       Hi ${sName}, your StreamlineOS account was locked after 5 failed sign-in attempts.
     </p>
-    ${renderCallout("Your account will unlock automatically in 15 minutes. You can sign in again after the lockout period using a magic link or one-time code.", "warning")}
+    ${renderCallout("Your account unlocks automatically in 15 minutes. You can also sign in again with a magic link or one-time code after the lockout ends.", "warning")}
     ${renderButton("Sign in to StreamlineOS", `${appUrl}/signin`)}
   `;
 

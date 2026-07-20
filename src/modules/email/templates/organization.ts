@@ -17,7 +17,7 @@ export function getInvitationEmailTemplate(
   const content = `
     <h1 class="email-title">You&#39;ve been invited to join ${safeOrgName}</h1>
     <p class="email-text">
-      ${intro}
+      ${intro} Accept below to create your account and join the workspace.
     </p>
     ${renderButton("Accept invitation", invitationUrl)}
     ${renderCallout("This invitation expires in 7 days. If you do not recognise this organisation, you can safely ignore this email.")}

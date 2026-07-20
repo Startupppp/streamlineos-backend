@@ -4,6 +4,7 @@ import {
   getWelcomeEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
+  getEmailOtpTemplate,
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
@@ -100,6 +101,12 @@ export const TEMPLATE_MAP: Record<string, TemplateEntry> = {
     name: "Account Locked",
     subject: "Your account is temporarily locked",
     generateHtml: () => getAccountLockedEmailTemplate("Priya Sharma"),
+  },
+  "auth.otp": {
+    category: "Auth",
+    name: "Sign-In OTP",
+    subject: "Your sign-in code",
+    generateHtml: () => getEmailOtpTemplate("482917"),
   },
 
   "org.invitation": {

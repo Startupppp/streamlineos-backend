@@ -4,6 +4,7 @@ export {
   getWelcomeEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
+  getEmailOtpTemplate,
 } from "./auth";
 
 export {
@@ -42,6 +43,7 @@ export {
   renderCallout,
   renderBadge,
   renderFallbackLink,
+  renderOtpCode,
 } from "./components";
 export type { Tone } from "./components";
 
