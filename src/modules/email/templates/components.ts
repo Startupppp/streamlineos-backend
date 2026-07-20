@@ -14,17 +14,17 @@ const FONT = EMAIL_THEME.font;
 
 export function renderButton(label: string, url: string): string {
   const safeLabel = escapeHtml(label);
-  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0 10px 0;">
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0 8px 0;">
   <tr>
-    <td align="left" bgcolor="${EMAIL_THEME.ink}" style="border-radius:9px;background-color:${EMAIL_THEME.ink};">
+    <td align="left" bgcolor="${EMAIL_THEME.ink}" style="border-radius:10px;background-color:${EMAIL_THEME.ink};">
       <!--[if mso]>
-      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:46px;v-text-anchor:middle;width:230px;" arcsize="20%" stroke="f" fillcolor="${EMAIL_THEME.ink}">
+      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="21%" stroke="f" fillcolor="${EMAIL_THEME.ink}">
       <w:anchorlock/>
       <center style="color:#ffffff;font-family:Segoe UI,Roboto,Arial,sans-serif;font-size:14px;font-weight:600;">${safeLabel}</center>
       </v:roundrect>
       <![endif]-->
       <!--[if !mso]><!-->
-      <a href="${url}" target="_blank" style="display:inline-block;padding:13px 28px;background-color:${EMAIL_THEME.ink};color:#ffffff;text-decoration:none;font-family:${FONT};font-size:14px;font-weight:600;border-radius:9px;letter-spacing:-0.01em;line-height:1.2;border:1px solid ${EMAIL_THEME.ink};">${safeLabel}</a>
+      <a href="${url}" target="_blank" style="display:inline-block;padding:14px 30px;background-color:${EMAIL_THEME.ink};color:#ffffff;text-decoration:none;font-family:${FONT};font-size:14px;font-weight:600;border-radius:10px;letter-spacing:-0.01em;line-height:1.2;border:1px solid ${EMAIL_THEME.ink};">${safeLabel}</a>
       <!--<![endif]-->
     </td>
   </tr>
@@ -52,9 +52,10 @@ export function renderKeyValueRows(rows: Array<{ label: string; value: string }>
 
 export function renderCallout(text: string, tone: Tone = "info"): string {
   const t = TONES[tone];
-  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:18px 0;">
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:20px 0 4px 0;background-color:${t.bg};border:1px solid ${t.border};border-radius:10px;overflow:hidden;">
   <tr>
-    <td style="padding:13px 15px;background-color:${t.bg};border:1px solid ${t.border};border-left:3px solid ${t.accent};border-radius:0 10px 10px 0;">
+    <td width="4" bgcolor="${t.accent}" style="width:4px;background-color:${t.accent};font-size:0;line-height:0;">&nbsp;</td>
+    <td style="padding:13px 14px;">
       <p style="font-family:${FONT};font-size:13px;line-height:1.55;color:${t.text};margin:0;">${text}</p>
     </td>
   </tr>
@@ -67,8 +68,8 @@ export function renderBadge(label: string, tone: Tone): string {
 }
 
 export function renderFallbackLink(url: string): string {
-  return `<p style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:20px 0 6px 0;">If the button doesn&apos;t work, copy and paste this link into your browser:</p>
-<p style="font-family:Consolas,'Courier New',Courier,monospace;font-size:11px;line-height:1.55;color:${EMAIL_THEME.textFaint};word-break:break-all;margin:0;">${escapeHtml(url)}</p>`;
+  return `<p style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:22px 0 6px 0;">Or paste this link into your browser:</p>
+<p style="font-family:Consolas,'Courier New',Courier,monospace;font-size:11px;line-height:1.55;color:${EMAIL_THEME.textFaint};word-break:break-all;margin:0;padding:10px 12px;background-color:${EMAIL_THEME.surface};border:1px solid ${EMAIL_THEME.surfaceBorder};border-radius:8px;">${escapeHtml(url)}</p>`;
 }
 
 export function renderOtpCode(code: string): string {

@@ -166,22 +166,18 @@ export class OrgSetupService {
     const orgId = await this.resolveOrCreateOrg(u, input);
     if (u.orgId && !u.isOrgOwner) return { success: true, orgId };
 
-    // Partial onboarding still yields a usable workspace: fall back to the
-    // default module set (matching skip) so a created org is never module-less.
-    const resolvedModules = input.enabledModules?.length
-      ? input.enabledModules
-      : DEFAULT_SKIP_MODULES;
-
     await this.db.transaction(async (tx) => {
       await tx
         .update(organizations)
         .set({
-          industry: input.industry || "IT Services",
-          companySize: input.companySize || "1-10",
+          industry: input.industry,
+          companySize: input.companySize,
           ...(input.country ? { country: input.country } : {}),
           ...(input.timezone ? { timezone: input.timezone } : {}),
           ...(input.companyName ? { name: input.companyName } : {}),
-          enabledModules: resolvedModules,
+          ...(input.enabledModules
+            ? { enabledModules: input.enabledModules }
+            : {}),
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
@@ -197,7 +193,12 @@ export class OrgSetupService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
 
-    await this.checklists.ensureChecklistsForModules(orgId, resolvedModules);
+    if (input.enabledModules?.length)
+      await this.checklists.ensureChecklistsForModules(
+        orgId,
+        input.enabledModules,
+      );
+
     await this.sessions.completeSession(orgId, u.userId, "org_setup");
     await this.sendWelcome(u.userId);
 

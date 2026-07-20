@@ -30,16 +30,16 @@ function buildBrandMark(brandName: string): string {
   const safeName = escapeHtml(brandName);
   if (logoUrl) {
     return (
-      `<td width="36" height="36" style="width:36px;height:36px;vertical-align:middle;">` +
-      `<img src="${logoUrl}" alt="${safeName}" width="36" height="36" style="display:block;border:0;width:36px;height:36px;border-radius:9px;">` +
+      `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
+      `<img src="${logoUrl}" alt="${safeName}" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
       `</td>`
     );
   }
 
   const initial = escapeHtml(brandName.charAt(0).toUpperCase() || "S");
   return (
-    `<td width="36" height="36" bgcolor="${EMAIL_THEME.accent}" style="width:36px;height:36px;background-color:${EMAIL_THEME.accent};border-radius:9px;text-align:center;vertical-align:middle;">` +
-    `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">${initial}</span>` +
+    `<td width="32" height="32" bgcolor="${EMAIL_THEME.ink}" style="width:32px;height:32px;background-color:${EMAIL_THEME.ink};border-radius:8px;text-align:center;vertical-align:middle;">` +
+    `<span style="font-family:${FONT};font-size:14px;font-weight:700;color:#ffffff;line-height:32px;display:inline-block;width:32px;text-align:center;">${initial}</span>` +
     `</td>`
   );
 }
@@ -91,30 +91,30 @@ export function getEmailTemplate({
       font-family: ${FONT};
       -webkit-font-smoothing: antialiased;
     }
-    .email-title {
-      font-family: ${FONT};
-      font-size: 22px;
-      font-weight: 700;
-      color: ${EMAIL_THEME.ink};
-      letter-spacing: -0.03em;
-      line-height: 1.25;
-      margin: 0 0 10px 0;
-    }
-    .email-text {
-      font-family: ${FONT};
-      font-size: 15px;
-      line-height: 1.6;
-      color: ${EMAIL_THEME.text};
-      margin: 0 0 12px 0;
-    }
     .email-label {
       font-family: ${FONT};
       font-size: 11px;
       font-weight: 700;
-      color: ${EMAIL_THEME.textFaint};
-      letter-spacing: 0.1em;
+      color: ${EMAIL_THEME.accentDeep};
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      margin: 0 0 6px 0;
+      margin: 0 0 10px 0;
+    }
+    .email-title {
+      font-family: ${FONT};
+      font-size: 26px;
+      font-weight: 700;
+      color: ${EMAIL_THEME.ink};
+      letter-spacing: -0.035em;
+      line-height: 1.2;
+      margin: 0 0 12px 0;
+    }
+    .email-text {
+      font-family: ${FONT};
+      font-size: 15px;
+      line-height: 1.65;
+      color: ${EMAIL_THEME.text};
+      margin: 0 0 14px 0;
     }
     .credential-box {
       background-color: ${EMAIL_THEME.surface};
@@ -159,17 +159,20 @@ export function getEmailTemplate({
     }
     @media only screen and (max-width: 600px) {
       .email-shell { width: 100% !important; }
-      .card-body { padding: 26px 18px 22px !important; }
-      .email-footer { padding: 16px 18px 18px !important; }
-      .email-title { font-size: 20px !important; }
-      .brand-pad { padding: 18px 18px !important; }
+      .card-body { padding: 22px 20px 20px !important; }
+      .brand-pad { padding: 18px 20px 16px !important; }
+      .email-footer { padding: 14px 20px 18px !important; }
+      .email-title { font-size: 22px !important; }
     }
     @media (prefers-color-scheme: dark) {
       body, .email-canvas { background-color: #070b14 !important; }
       .email-card { background-color: #111827 !important; border-color: #1f2937 !important; }
+      .email-brand-row { background-color: #111827 !important; border-color: #1f2937 !important; }
+      .email-brand-name { color: #f8fafc !important; }
       .email-title { color: #f8fafc !important; }
       .email-text { color: #cbd5e1 !important; }
-      .email-footer-bg { background-color: ${EMAIL_THEME.ink} !important; border-color: #1f2937 !important; }
+      .email-label { color: #93c5fd !important; }
+      .email-footer-bg { background-color: #0b1220 !important; border-color: #1f2937 !important; }
       .email-footer-text, .email-footer-text a { color: ${EMAIL_THEME.textFaint} !important; }
     }
   </style>
@@ -178,20 +181,8 @@ export function getEmailTemplate({
 ${preheaderText}
 <table role="presentation" class="email-canvas" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:${EMAIL_THEME.canvas};">
   <tr>
-    <td style="padding:36px 16px;" align="center">
-      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="560" style="max-width:560px;width:100%;background-color:${EMAIL_THEME.card};border-radius:16px;border:1px solid ${EMAIL_THEME.cardBorder};overflow:hidden;">
-        <tr>
-          <td class="brand-pad" bgcolor="${EMAIL_THEME.ink}" style="background-color:${EMAIL_THEME.ink};padding:22px 28px;">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-              <tr>
-                ${brandMark}
-                <td style="vertical-align:middle;padding-left:12px;">
-                  <span style="font-family:${FONT};font-size:17px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">${safeBrandName}</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+    <td style="padding:40px 16px;" align="center">
+      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="560" style="max-width:560px;width:100%;background-color:${EMAIL_THEME.card};border-radius:14px;border:1px solid ${EMAIL_THEME.cardBorder};overflow:hidden;">
         <tr>
           <td style="padding:0;font-size:0;line-height:0;background-color:${EMAIL_THEME.accent};">
             <!--[if mso]>
@@ -205,7 +196,19 @@ ${preheaderText}
           </td>
         </tr>
         <tr>
-          <td class="card-body" style="padding:28px 28px 26px;">
+          <td class="brand-pad email-brand-row" style="background-color:${EMAIL_THEME.card};padding:22px 32px 18px;border-bottom:1px solid ${EMAIL_THEME.cardBorder};">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+              <tr>
+                ${brandMark}
+                <td style="vertical-align:middle;padding-left:11px;">
+                  <span class="email-brand-name" style="font-family:${FONT};font-size:15px;font-weight:700;color:${EMAIL_THEME.ink};letter-spacing:-0.02em;">${safeBrandName}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="card-body" style="padding:28px 32px 28px;">
             ${content}
           </td>
         </tr>
@@ -213,14 +216,11 @@ ${preheaderText}
           <td class="email-footer-bg" style="background-color:${EMAIL_THEME.footerBg};border-top:1px solid ${EMAIL_THEME.footerBorder};">
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
               <tr>
-                <td class="email-footer" style="padding:18px 28px 20px;text-align:center;">
-                  <p class="email-footer-text" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:0 0 4px 0;">
-                    Sent by <strong style="color:${EMAIL_THEME.textStrong};">${safeBrandName}</strong>
+                <td class="email-footer" style="padding:16px 32px 18px;text-align:center;">
+                  <p class="email-footer-text" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:0 0 6px 0;">
+                    <strong style="color:${EMAIL_THEME.textStrong};">${safeBrandName}</strong>
                     &nbsp;&middot;&nbsp;
-                    <a href="mailto:${supportEmail}" style="color:${EMAIL_THEME.textMuted};text-decoration:underline;">${supportEmail}</a>
-                  </p>
-                  <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:${EMAIL_THEME.textFaint};margin:0 0 4px 0;">
-                    You&apos;re receiving this because you have a ${safeBrandName} account or interaction.
+                    <a href="mailto:${supportEmail}" style="color:${EMAIL_THEME.textMuted};text-decoration:none;">${supportEmail}</a>
                   </p>
                   <p class="email-footer-text" style="font-family:${FONT};font-size:11px;line-height:1.5;color:${EMAIL_THEME.textFaint};margin:0;">
                     <a href="${brandUrl}/legal/privacy" style="color:${EMAIL_THEME.textFaint};text-decoration:underline;">Privacy</a>
