@@ -24,11 +24,20 @@ function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
 
 describe("OnboardingController — HR-only module-checklist gating", () => {
   let controller: OnboardingController;
+  let onboarding: { getPersonalDetails: jest.Mock };
   let checklists: { [K in keyof ModuleChecklistService]?: jest.Mock };
   let tours: { [K in keyof GuidedTourService]?: jest.Mock };
   let access: { resolveUserPermissions: jest.Mock };
 
   beforeEach(() => {
+    onboarding = {
+      getPersonalDetails: jest.fn().mockResolvedValue({
+        phone: "+919876543210",
+        gender: "FEMALE",
+        dateOfBirth: "1994-01-01",
+        emergencyContact: null,
+      }),
+    };
     checklists = {
       listChecklists: jest.fn().mockResolvedValue([]),
       getChecklist: jest.fn().mockResolvedValue({ id: 1, moduleKey: "HR", items: [] }),
@@ -52,13 +61,23 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     // @UseGuards(JwtAuthGuard) pulls in DRIZZLE/Redis-dependent guards that Nest's testing
     // module eagerly tries to resolve on .compile() even when unused by the methods under test.
     controller = new OnboardingController(
-      undefined as never,
+      onboarding as never,
       undefined as never,
       checklists as unknown as ModuleChecklistService,
       tours as unknown as GuidedTourService,
       undefined as never,
       access as never,
     );
+  });
+
+  it("loads the caller's tenant-scoped personal details", async () => {
+    await expect(controller.getPersonalDetails(ctx())).resolves.toEqual({
+      phone: "+919876543210",
+      gender: "FEMALE",
+      dateOfBirth: "1994-01-01",
+      emergencyContact: null,
+    });
+    expect(onboarding.getPersonalDetails).toHaveBeenCalledWith("org-1", "user-1");
   });
 
   describe("getModuleChecklist", () => {

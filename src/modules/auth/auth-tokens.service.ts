@@ -5,8 +5,8 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
-import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import { and, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   accounts,
   emailOtpCodes,
@@ -178,14 +178,21 @@ export class AuthTokensService {
     const tokenHash = hashToken(token);
     const expiresAt = addHours(new Date(), 1);
 
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-    });
+    await Promise.all([
+      this.db.insert(magicLinkTokens).values({
+        id: randomUUID(),
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      }),
+      this.db
+        .delete(magicLinkTokens)
+        .where(and(eq(magicLinkTokens.userId, user.id), lt(magicLinkTokens.expiresAt, subDays(new Date(), 1)))),
+    ]);
 
-    await this.email.sendMagicLinkEmail(user.email, token);
+    void this.email.sendMagicLinkEmail(user.email, token).catch((error: unknown) => {
+      logger.error("Magic link email send failed", { userId: user.id, error });
+    });
   }
 
   async requestEmailOtp(email: string): Promise<void> {
@@ -202,10 +209,15 @@ export class AuthTokensService {
     const codeHash = hashToken(rawCode);
     const expiresAt = addMinutes(new Date(), 10);
 
-    await this.db
-      .update(emailOtpCodes)
-      .set({ usedAt: new Date() })
-      .where(and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt)));
+    await Promise.all([
+      this.db
+        .update(emailOtpCodes)
+        .set({ usedAt: new Date() })
+        .where(and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt))),
+      this.db
+        .delete(emailOtpCodes)
+        .where(and(eq(emailOtpCodes.userId, user.id), lt(emailOtpCodes.expiresAt, subDays(new Date(), 1)))),
+    ]);
 
     await this.db.insert(emailOtpCodes).values({
       userId: user.id,
@@ -239,15 +251,19 @@ export class AuthTokensService {
 
     if (!row) throw new UnauthorizedException("Invalid or expired code");
 
-    await this.db
+    const [bumped] = await this.db
       .update(emailOtpCodes)
       .set({ attempts: sql`${emailOtpCodes.attempts} + 1` })
-      .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)));
+      .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)))
+      .returning({ attempts: emailOtpCodes.attempts });
 
-    if (row.attempts >= 5) throw new UnauthorizedException("Invalid or expired code");
+    if (!bumped || bumped.attempts > 5) throw new UnauthorizedException("Invalid or expired code");
 
-    const submittedHash = hashToken(code);
-    if (submittedHash !== row.codeHash) throw new UnauthorizedException("Invalid or expired code");
+    const submittedHash = Buffer.from(hashToken(code), "hex");
+    const expectedHash = Buffer.from(row.codeHash, "hex");
+    const codeMatches =
+      submittedHash.length === expectedHash.length && timingSafeEqual(submittedHash, expectedHash);
+    if (!codeMatches) throw new UnauthorizedException("Invalid or expired code");
 
     const [updated] = await this.db
       .update(emailOtpCodes)
@@ -295,14 +311,27 @@ export class AuthTokensService {
     if (!row) {
       throw new UnauthorizedException({ code: "AUTH_TOKEN_INVALID", message: "Invalid magic link" });
     }
-    if (row.usedAt || new Date(row.expiresAt) <= new Date()) {
+    if (new Date(row.expiresAt) <= new Date()) {
+      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "token_expired", context);
       throw new UnauthorizedException({
         code: "AUTH_TOKEN_EXPIRED",
         message: "Magic link has expired or has already been used",
       });
     }
 
-    await this.db.update(magicLinkTokens).set({ usedAt: new Date() }).where(eq(magicLinkTokens.id, row.id));
+    const [claimed] = await this.db
+      .update(magicLinkTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(magicLinkTokens.id, row.id), isNull(magicLinkTokens.usedAt)))
+      .returning({ id: magicLinkTokens.id });
+
+    if (!claimed) {
+      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "token_already_used", context);
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_EXPIRED",
+        message: "Magic link has expired or has already been used",
+      });
+    }
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, row.userId),
