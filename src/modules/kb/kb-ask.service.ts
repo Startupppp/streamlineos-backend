@@ -5,6 +5,7 @@ import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 
 const MAX_CONTEXT_ARTICLES = 6;
 const MAX_CONTEXT_CHARS = 1500;
@@ -38,6 +39,7 @@ export class KbAskService {
     answer: string;
     citations: AskCitation[];
     hasContext: boolean;
+    aiUsage?: AiUsageMeta;
   }> {
     const top = await this.search.retrieveTopArticles(
       user,
@@ -85,7 +87,7 @@ export class KbAskService {
       : context;
     if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
 
-    const gatewayResult = await this.aiGateway.invokeText({
+    const gatewayResult = await this.aiGateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.ask",
       tier: "fast",
@@ -105,6 +107,7 @@ export class KbAskService {
     }
 
     const answer = gatewayResult.data;
+    const aiUsage = gatewayResult.aiUsage;
 
     await this.events.record(user.orgId, "ai_answer", {
       actorId: user.userId,
@@ -122,6 +125,6 @@ export class KbAskService {
       ...sources.map((s) => ({ kind: "source" as const, sourceId: s.sourceId, title: s.title, spaceId: s.spaceId, updatedAt: s.updatedAt })),
     ];
 
-    return { answer, citations, hasContext: true };
+    return { answer, citations, hasContext: true, aiUsage };
   }
 }

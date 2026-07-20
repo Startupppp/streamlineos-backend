@@ -3,23 +3,7 @@ import { aiUsageLogs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-
-const COST_PER_1K_TOKENS: Record<string, { input: number; output: number }> = {
-  "gemini-1.5-pro-latest": { input: 0.00125, output: 0.005 },
-  "gemini-1.5-flash-latest": { input: 0.000075, output: 0.0003 },
-  "gpt-4o": { input: 0.005, output: 0.015 },
-  "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-  "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
-  "openai/gpt-4o": { input: 0.005, output: 0.015 },
-  "openai/gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-  "google/gemini-1.5-pro-latest": { input: 0.00125, output: 0.005 },
-};
-
-function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
-  const rates = COST_PER_1K_TOKENS[model];
-  if (!rates) return 0;
-  return (promptTokens / 1000) * rates.input + (completionTokens / 1000) * rates.output;
-}
+import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 
 export interface TrackAiUsageParams {
   orgId: string;
@@ -32,6 +16,7 @@ export interface TrackAiUsageParams {
   latencyMs?: number;
   correlationId?: string;
   outcome?: string;
+  creditsMilli?: number;
 }
 
 @Injectable()
@@ -43,7 +28,9 @@ export class AiUsageService {
     const promptTokens = params.promptTokens ?? 0;
     const completionTokens = params.completionTokens ?? 0;
     const totalTokens = promptTokens + completionTokens;
-    const estimatedCostUsd = estimateCost(model, promptTokens, completionTokens).toFixed(6);
+    const { costUsd } = computeTokenCharge(model, promptTokens, completionTokens);
+    const estimatedCostUsd = costUsd.toFixed(6);
+    const creditsMilli = params.creditsMilli ?? 0;
 
     try {
       await this.db.insert(aiUsageLogs).values({
@@ -55,6 +42,7 @@ export class AiUsageService {
         completionTokens,
         totalTokens,
         estimatedCostUsd,
+        creditsMilli,
         metadata: metadata ?? null,
         latencyMs: latencyMs ?? null,
         correlationId: correlationId ?? null,

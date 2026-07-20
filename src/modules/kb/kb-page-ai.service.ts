@@ -6,9 +6,10 @@ import { type Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
-import { unwrapAiResult } from "../ai/services/gateway-result.util";
 import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import { throwOnAiFailure } from "../ai/services/gateway-result.util";
 
 const MAX_PAGE_TEXT = 4000;
 
@@ -34,11 +35,11 @@ export class KbPageAiService {
     return page;
   }
 
-  async summarize(user: CurrentUserContext, pageId: number): Promise<{ text: string }> {
+  async summarize(user: CurrentUserContext, pageId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const page = await this.assertPageVisible(user, pageId);
     const content = (page.contentText ?? "").slice(0, MAX_PAGE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.page-summarize",
       tier: "fast",
@@ -50,16 +51,16 @@ export class KbPageAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.page-summarize", userId: user.userId, orgId: user.orgId, resourceType: "kb_page", resourceId: String(pageId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async ask(user: CurrentUserContext, pageId: number, question: string): Promise<{ text: string }> {
+  async ask(user: CurrentUserContext, pageId: number, question: string): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const page = await this.assertPageVisible(user, pageId);
     const content = (page.contentText ?? "").slice(0, MAX_PAGE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.page-ask",
       tier: "fast",
@@ -71,16 +72,16 @@ export class KbPageAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.page-ask", userId: user.userId, orgId: user.orgId, resourceType: "kb_page", resourceId: String(pageId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async improve(user: CurrentUserContext, pageId: number): Promise<{ text: string }> {
+  async improve(user: CurrentUserContext, pageId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const page = await this.assertPageVisible(user, pageId);
     const content = (page.contentText ?? "").slice(0, MAX_PAGE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.page-improve",
       tier: "fast",
@@ -92,16 +93,16 @@ export class KbPageAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.page-improve", userId: user.userId, orgId: user.orgId, resourceType: "kb_page", resourceId: String(pageId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async suggestRelated(user: CurrentUserContext, pageId: number): Promise<{ text: string }> {
+  async suggestRelated(user: CurrentUserContext, pageId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const page = await this.assertPageVisible(user, pageId);
     const content = (page.contentText ?? "").slice(0, MAX_PAGE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.page-suggest-related",
       tier: "fast",
@@ -113,8 +114,8 @@ export class KbPageAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.page-suggest-related", userId: user.userId, orgId: user.orgId, resourceType: "kb_page", resourceId: String(pageId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 }

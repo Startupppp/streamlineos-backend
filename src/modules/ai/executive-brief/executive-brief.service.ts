@@ -8,6 +8,7 @@ import { CrmSalesDashboardService } from "../../crm/crm-sales-dashboard.service"
 import { SupportReportsService } from "../../support/support-reports.service";
 import { getFeatureCost } from "../billing/ai-cost-catalog";
 import type { SnapshotCitation } from "../../ai-summaries/ai-summaries.types";
+import type { AiUsageMeta } from "../gateway/ai-gateway.types";
 
 export interface BriefCitation {
   id: string;
@@ -21,6 +22,7 @@ export interface ExecutiveBriefResult {
   sources: Record<string, unknown>;
   uncertaintyNotes: string[];
   generatedAt: string;
+  aiUsage?: AiUsageMeta;
 }
 
 @Injectable()
@@ -77,7 +79,7 @@ export class ExecutiveBriefService {
       support: { title: "Support Overview", href: "/support" },
     };
 
-    const invokeResult = await this.getSvc(AiGatewayService).invokeText({
+    const invokeResult = await this.getSvc(AiGatewayService).invokeTextWithUsage({
       actor: { orgId, userId },
       feature: "exec.brief.generate",
       prompt: {
@@ -95,9 +97,11 @@ export class ExecutiveBriefService {
 
     let narrative = "";
     const citations: BriefCitation[] = [];
+    let aiUsage: AiUsageMeta | undefined;
 
     if (invokeResult.ok) {
       narrative = invokeResult.data;
+      aiUsage = invokeResult.aiUsage;
       for (const key of Object.keys(sources)) {
         const m = MODULE_MAP[key];
         if (m) citations.push({ id: key, ...m });
@@ -135,6 +139,7 @@ export class ExecutiveBriefService {
       sources,
       uncertaintyNotes,
       generatedAt: new Date().toISOString(),
+      aiUsage,
     };
   }
 }

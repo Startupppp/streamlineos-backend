@@ -64,7 +64,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
           .mockReturnValueOnce({
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                for: jest.fn().mockResolvedValue([{ balance: 50, orgId: "org1" }]),
+                for: jest.fn().mockResolvedValue([{ balance: 50000, orgId: "org1" }]),
               }),
             }),
           })
@@ -90,7 +90,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
         orgId: "org1",
         userId: "user1",
         feature: "crm.score-lead",
-        credits: 10,
+        credits: 10000,
       });
 
       expect(result).toEqual({ reservationId: 42 });
@@ -109,7 +109,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
         orgId: "org1",
         userId: "user1",
         feature: "crm.score-lead",
-        credits: 5,
+        credits: 5000,
         idempotencyKey: "idem-abc",
       });
 
@@ -130,7 +130,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
         const txSelect = jest.fn().mockReturnValue({
           from: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              for: jest.fn().mockResolvedValue([{ balance: 2, orgId: "org1" }]),
+              for: jest.fn().mockResolvedValue([{ balance: 2000, orgId: "org1" }]),
             }),
           }),
         });
@@ -139,15 +139,15 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
       });
 
       await expect(
-        svc.reserve({ orgId: "org1", userId: "u1", feature: "kb.ask", credits: 10 }),
+        svc.reserve({ orgId: "org1", userId: "u1", feature: "kb.ask", credits: 10000 }),
       ).rejects.toThrow("Insufficient AI credits");
     });
   });
 
   describe("settle", () => {
-    it("settles fully — charges actual credits, no refund", async () => {
-      const reservation = { id: 1, orgId: "org1", userId: "u1", feature: "crm.score-lead", credits: 5, status: "RESERVED" };
-      const wallet = { orgId: "org1", balance: 100 };
+    it("settles fully — charges actual milli credits, no refund", async () => {
+      const reservation = { id: 1, orgId: "org1", userId: "u1", feature: "crm.score-lead", credits: 5000, status: "RESERVED" };
+      const wallet = { orgId: "org1", balance: 100000 };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         let callCount = 0;
@@ -170,8 +170,8 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
       await expect(svc.settle(1, {})).resolves.toBeUndefined();
     });
 
-    it("settles partially — refunds the difference", async () => {
-      const reservation = { id: 2, orgId: "org1", userId: "u1", feature: "pm.plan", credits: 10, status: "RESERVED" };
+    it("settles partially — refunds the difference when actual < reserved", async () => {
+      const reservation = { id: 2, orgId: "org1", userId: "u1", feature: "pm.plan", credits: 10000, status: "RESERVED" };
       const wallet = { orgId: "org1", balance: 0 };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -189,11 +189,38 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
         return fn({ select: txSelect, update: txUpdate, insert: txInsert });
       });
 
-      await expect(svc.settle(2, { actualCredits: 7 })).resolves.toBeUndefined();
+      await expect(svc.settle(2, { actualMilli: 7000 })).resolves.toBeUndefined();
+    });
+
+    it("charges overage — balance goes negative when actual > reserved", async () => {
+      const reservation = { id: 8, orgId: "org1", userId: "u1", feature: "kb.ask", credits: 5000, status: "RESERVED" };
+      const wallet = { orgId: "org1", balance: 0 };
+
+      let capturedNewBalance: number | undefined;
+      db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        let callCount = 0;
+        const txSelect = jest.fn().mockImplementation(() => ({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              for: jest.fn().mockResolvedValue(callCount++ === 0 ? [reservation] : [wallet]),
+            }),
+          }),
+        }));
+        const txUpdateSet = jest.fn().mockImplementation((setArg: { balance?: number }) => {
+          if (setArg.balance !== undefined) capturedNewBalance = setArg.balance;
+          return { where: jest.fn().mockResolvedValue([]) };
+        });
+        const txUpdate = jest.fn().mockReturnValue({ set: txUpdateSet });
+        const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) });
+        return fn({ select: txSelect, update: txUpdate, insert: txInsert });
+      });
+
+      await expect(svc.settle(8, { actualMilli: 8000 })).resolves.toBeUndefined();
+      expect(capturedNewBalance).toBe(-3000);
     });
 
     it("is idempotent — silently returns when already SETTLED", async () => {
-      const reservation = { id: 3, orgId: "org1", userId: null, feature: "chat.message", credits: 1, status: "SETTLED" };
+      const reservation = { id: 3, orgId: "org1", userId: null, feature: "chat.message", credits: 1000, status: "SETTLED" };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const txSelect = jest.fn().mockReturnValue({
@@ -212,8 +239,8 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
 
   describe("release", () => {
     it("restores balance and marks RELEASED", async () => {
-      const reservation = { id: 5, orgId: "org1", userId: null, feature: "kb.ask", credits: 3, status: "RESERVED" };
-      const wallet = { orgId: "org1", balance: 10 };
+      const reservation = { id: 5, orgId: "org1", userId: null, feature: "kb.ask", credits: 3000, status: "RESERVED" };
+      const wallet = { orgId: "org1", balance: 10000 };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         let callCount = 0;
@@ -234,7 +261,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
     });
 
     it("is idempotent — silently returns when already RELEASED", async () => {
-      const reservation = { id: 6, orgId: "org1", userId: null, feature: "kb.ask", credits: 1, status: "RELEASED" };
+      const reservation = { id: 6, orgId: "org1", userId: null, feature: "kb.ask", credits: 1000, status: "RELEASED" };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const txSelect = jest.fn().mockReturnValue({
@@ -251,7 +278,7 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
     });
 
     it("throws ConflictException when releasing a SETTLED reservation", async () => {
-      const reservation = { id: 7, orgId: "org1", userId: null, feature: "kb.ask", credits: 1, status: "SETTLED" };
+      const reservation = { id: 7, orgId: "org1", userId: null, feature: "kb.ask", credits: 1000, status: "SETTLED" };
 
       db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const txSelect = jest.fn().mockReturnValue({
@@ -280,8 +307,8 @@ describe("AiCreditsService — reserve/settle/release ledger", () => {
         }),
       });
 
-      const reservation10 = { id: 10, orgId: "org1", userId: null, feature: "chat.message", credits: 1, status: "RESERVED" };
-      const reservation11 = { id: 11, orgId: "org2", userId: null, feature: "chat.message", credits: 1, status: "RESERVED" };
+      const reservation10 = { id: 10, orgId: "org1", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
+      const reservation11 = { id: 11, orgId: "org2", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
       const wallet = { orgId: "org1", balance: 0 };
 
       let releaseCall = 0;

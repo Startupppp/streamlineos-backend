@@ -21,7 +21,8 @@ import { getTodayString } from "../ai-date.util";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 import { AiUsageService } from "./ai-usage.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { KbAskService } from "../../kb/kb-ask.service";
@@ -293,10 +294,10 @@ Tone: Professional, concise, actionable.`;
   ) {
     const { userId, orgId } = actor;
 
-    const credits = getFeatureCost(CHAT_FEATURE);
+    const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
     let reservationId = 0;
     try {
-      const reserved = await this.ledger.reserve({ orgId, userId, feature: CHAT_FEATURE, credits });
+      const reserved = await this.ledger.reserve({ orgId, userId, feature: CHAT_FEATURE, credits: reserveMilli });
       reservationId = reserved.reservationId;
     } catch (error) {
       if (error instanceof BadRequestException) {
@@ -423,9 +424,27 @@ Tone: Professional, concise, actionable.`;
       system: contextPrompt,
       temperature: 0.7,
       stopWhen: stepCountIs(10),
-      onFinish: async ({ text }) => {
-        void this.ledger.settle(reservationId, { model: modelId }).catch(() => undefined);
-        void this.usageSvc.track({ orgId, userId, feature: CHAT_FEATURE, model: modelId }).catch(() => undefined);
+      onFinish: async ({ text, usage }) => {
+        const promptTokens = usage?.inputTokens ?? 0;
+        const completionTokens = usage?.outputTokens ?? 0;
+        const { costUsd, milliCredits } = computeTokenCharge(modelId, promptTokens, completionTokens);
+        void this.ledger.settle(reservationId, {
+          actualMilli: milliCredits,
+          model: modelId,
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          costUsd,
+        }).catch(() => undefined);
+        void this.usageSvc.track({
+          orgId,
+          userId,
+          feature: CHAT_FEATURE,
+          model: modelId,
+          promptTokens,
+          completionTokens,
+          creditsMilli: milliCredits,
+        }).catch(() => undefined);
         try {
           if (conversationId !== undefined) {
             await this.history.appendToConversation(orgId, userId, conversationId, "assistant", text);

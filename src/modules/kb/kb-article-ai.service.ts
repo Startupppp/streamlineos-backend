@@ -6,9 +6,10 @@ import { type Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
-import { unwrapAiResult } from "../ai/services/gateway-result.util";
 import { KbAccessService } from "./kb-access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import { throwOnAiFailure } from "../ai/services/gateway-result.util";
 
 const MAX_ARTICLE_TEXT = 4000;
 
@@ -31,11 +32,11 @@ export class KbArticleAiService {
     return row;
   }
 
-  async summarize(user: CurrentUserContext, articleId: number): Promise<{ text: string }> {
+  async summarize(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
     const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.article-summarize",
       tier: "fast",
@@ -47,16 +48,16 @@ export class KbArticleAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.article-summarize", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async ask(user: CurrentUserContext, articleId: number, question: string): Promise<{ text: string }> {
+  async ask(user: CurrentUserContext, articleId: number, question: string): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
     const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.article-ask",
       tier: "fast",
@@ -68,16 +69,16 @@ export class KbArticleAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.article-ask", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async improve(user: CurrentUserContext, articleId: number): Promise<{ text: string }> {
+  async improve(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
     const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.article-improve",
       tier: "fast",
@@ -89,16 +90,16 @@ export class KbArticleAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.article-improve", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async suggestRelated(user: CurrentUserContext, articleId: number): Promise<{ text: string }> {
+  async suggestRelated(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
     const article = await this.assertArticle(user, articleId);
     const content = (article.content ?? "").slice(0, MAX_ARTICLE_TEXT);
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.article-suggest-related",
       tier: "fast",
@@ -110,8 +111,8 @@ export class KbArticleAiService {
       },
     });
 
-    const text = unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
     this.audit.log({ action: "ai.kb.article-suggest-related", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text };
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 }

@@ -397,6 +397,7 @@ export const aiUsageLogs = pgTable("ai_usage_logs", {
   completionTokens: integer("completion_tokens").notNull().default(0),
   totalTokens: integer("total_tokens").notNull().default(0),
   estimatedCostUsd: numeric("estimated_cost_usd", { precision: 12, scale: 6 }),
+  creditsMilli: integer("credits_milli").notNull().default(0),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   latencyMs: integer("latency_ms"),
   correlationId: varchar("correlation_id", { length: 64 }),

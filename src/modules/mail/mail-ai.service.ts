@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
-import { unwrapAiResult } from "../ai/services/gateway-result.util";
+import { throwOnAiFailure, unwrapAiResult } from "../ai/services/gateway-result.util";
 import { MailService } from "./mail.service";
 import {
   MailDraftOutputSchema,
@@ -13,6 +13,7 @@ import {
   type MailThreadSummaryOutput,
 } from "./dto/mail-ai-schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 
 const SNIPPET_MAX = 160;
 const BODY_CHAR_MAX = 1500;
@@ -44,7 +45,7 @@ export class MailAiService {
   async inboxSummary(
     actor: CurrentUserContext,
     accountId?: number | "all",
-  ): Promise<MailInboxSummaryOutput> {
+  ): Promise<MailInboxSummaryOutput & { aiUsage?: AiUsageMeta }> {
     const accountIdParam = accountId === undefined || accountId === "all" ? "all" : String(accountId);
 
     const listResult = await this.mail.listMessages(
@@ -68,7 +69,7 @@ export class MailAiService {
       "You are an intelligent email assistant. Given a list of inbox message metadata, produce a concise inbox summary, highlight the most important messages, and list any action items the user should handle. Output only valid JSON matching the requested schema. bodyHtml must use only p, br, ul, li tags.";
     const user = `Inbox messages (${listResult.messages.length} total):\n${lines.join("\n")}\n\nSummarize the inbox, identify highlights, and list action items.`;
 
-    const result = await this.gateway.invokeStructured({
+    const result = await this.gateway.invokeStructuredWithUsage({
       actor: { orgId: actor.orgId, userId: actor.userId },
       feature: "mail.inbox-summary",
       prompt: { system, user },
@@ -77,7 +78,8 @@ export class MailAiService {
       charge: { credits: getFeatureCost("mail.inbox-summary") },
     });
 
-    return unwrapAiResult(result);
+    if (!result.ok) return throwOnAiFailure(result);
+    return { ...result.data, aiUsage: result.aiUsage };
   }
 
   async threadSummary(

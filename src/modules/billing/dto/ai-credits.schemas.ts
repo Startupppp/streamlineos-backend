@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const aiCreditsUsageQuerySchema = z.object({
+  days: z.coerce.number().refine((v) => v === 7 || v === 30 || v === 90, {
+    message: "days must be 7, 30, or 90",
+  }).default(30),
+});
+
 export const purchaseAiPackSchema = z.object({
   packId: z.coerce.number().int().positive(),
   paymentId: z.string().optional(),
@@ -19,7 +25,7 @@ export const consumeCreditsSchema = z.object({
 export const autoTopUpSchema = z.object({
   enabled: z.boolean(),
   packId: z.number().int().positive().optional(),
-  threshold: z.number().int().min(0).optional(),
+  threshold: z.number().min(0).optional(),
 });
 
 export const listTransactionsSchema = z.object({

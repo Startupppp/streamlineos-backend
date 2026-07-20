@@ -9,8 +9,7 @@ import {
   orgAiCredits,
 } from "../../db/schema";
 import { DEFAULT_AI_CREDIT_PACKS } from "./ai-credit-packs.constants";
-
-const TRIAL_GRANT_AMOUNT = 100;
+import { TRIAL_GRANT_MILLI, planGrantMilli, creditsToMilliUnits, milliUnitsToCredits } from "./ai-credit-units";
 
 @Injectable()
 export class AiCreditsService {
@@ -26,14 +25,14 @@ export class AiCreditsService {
         [wallet] = await this.db.transaction(async (tx) => {
           const [created] = await tx
             .insert(orgAiCredits)
-            .values({ orgId, balance: TRIAL_GRANT_AMOUNT, lifetimeGranted: TRIAL_GRANT_AMOUNT })
+            .values({ orgId, balance: TRIAL_GRANT_MILLI, lifetimeGranted: TRIAL_GRANT_MILLI })
             .returning();
           await tx.insert(aiCreditTransactions).values({
             orgId,
             userId: null,
             type: "PLAN_GRANT",
-            amount: TRIAL_GRANT_AMOUNT,
-            balanceAfter: TRIAL_GRANT_AMOUNT,
+            amount: TRIAL_GRANT_MILLI,
+            balanceAfter: TRIAL_GRANT_MILLI,
             feature: "trial-grant",
             referenceId: "trial-grant",
           });
@@ -52,12 +51,46 @@ export class AiCreditsService {
       }
     }
     const recentTransactions = await this.db
-      .select()
+      .select({
+        id: aiCreditTransactions.id,
+        orgId: aiCreditTransactions.orgId,
+        userId: aiCreditTransactions.userId,
+        type: aiCreditTransactions.type,
+        amount: aiCreditTransactions.amount,
+        balanceAfter: aiCreditTransactions.balanceAfter,
+        feature: aiCreditTransactions.feature,
+        model: aiCreditTransactions.model,
+        referenceId: aiCreditTransactions.referenceId,
+        metadata: aiCreditTransactions.metadata,
+        promptTokens: aiCreditTransactions.promptTokens,
+        completionTokens: aiCreditTransactions.completionTokens,
+        totalTokens: aiCreditTransactions.totalTokens,
+        costUsd: aiCreditTransactions.costUsd,
+        createdAt: aiCreditTransactions.createdAt,
+      })
       .from(aiCreditTransactions)
       .where(eq(aiCreditTransactions.orgId, orgId))
       .orderBy(desc(aiCreditTransactions.createdAt))
       .limit(20);
-    return { wallet, recentTransactions };
+
+    const mappedTransactions = recentTransactions.map((t) => ({
+      ...t,
+      amount: milliUnitsToCredits(t.amount),
+      balanceAfter: milliUnitsToCredits(t.balanceAfter),
+    }));
+
+    return {
+      wallet: {
+        ...wallet,
+        balance: milliUnitsToCredits(wallet!.balance),
+        lifetimeGranted: milliUnitsToCredits(wallet!.lifetimeGranted),
+        lifetimeConsumed: milliUnitsToCredits(wallet!.lifetimeConsumed),
+        autoTopUpThreshold: wallet!.autoTopUpThreshold !== null
+          ? milliUnitsToCredits(wallet!.autoTopUpThreshold)
+          : null,
+      },
+      recentTransactions: mappedTransactions,
+    };
   }
 
   async listPacks() {
@@ -103,6 +136,7 @@ export class AiCreditsService {
     model?: string,
     referenceId?: string,
   ) {
+    const amountMilli = creditsToMilliUnits(amount);
     return this.db.transaction(async (tx) => {
       const [wallet] = await tx
         .select()
@@ -110,16 +144,16 @@ export class AiCreditsService {
         .where(eq(orgAiCredits.orgId, orgId))
         .for("update");
 
-      if (!wallet || wallet.balance < amount) {
+      if (!wallet || wallet.balance < amountMilli) {
         throw new BadRequestException("Insufficient AI credits");
       }
 
-      const newBalance = wallet.balance - amount;
+      const newBalance = wallet.balance - amountMilli;
       await tx
         .update(orgAiCredits)
         .set({
           balance: newBalance,
-          lifetimeConsumed: sql`${orgAiCredits.lifetimeConsumed} + ${amount}`,
+          lifetimeConsumed: sql`${orgAiCredits.lifetimeConsumed} + ${amountMilli}`,
           updatedAt: new Date(),
         })
         .where(eq(orgAiCredits.orgId, orgId));
@@ -128,14 +162,14 @@ export class AiCreditsService {
         orgId,
         userId,
         type: "USAGE",
-        amount: -amount,
+        amount: -amountMilli,
         balanceAfter: newBalance,
         feature,
         model,
         referenceId,
       });
 
-      return { balance: newBalance };
+      return { balance: milliUnitsToCredits(newBalance) };
     });
   }
 
@@ -146,6 +180,7 @@ export class AiCreditsService {
     feature: string,
     referenceId?: string,
   ) {
+    const amountMilli = creditsToMilliUnits(amount);
     return this.db.transaction(async (tx) => {
       const [wallet] = await tx
         .select()
@@ -154,7 +189,7 @@ export class AiCreditsService {
         .for("update");
 
       const currentBalance = wallet?.balance ?? 0;
-      const newBalance = currentBalance + amount;
+      const newBalance = currentBalance + amountMilli;
 
       if (wallet) {
         await tx
@@ -172,24 +207,19 @@ export class AiCreditsService {
         orgId,
         userId,
         type: "REFUND",
-        amount,
+        amount: amountMilli,
         balanceAfter: newBalance,
         feature,
         referenceId,
       });
 
-      return { balance: newBalance };
+      return { balance: milliUnitsToCredits(newBalance) };
     });
   }
 
   async grantPlanCredits(orgId: string, plan: string, userId?: string, referenceId?: string) {
-    const grantMap: Record<string, number> = {
-      STARTER: 500,
-      PROFESSIONAL: 2000,
-      ENTERPRISE: 10000,
-    };
-    const amount = grantMap[plan] ?? 0;
-    if (!amount) return;
+    const amountMilli = planGrantMilli(plan);
+    if (!amountMilli) return;
 
     try {
       await this.db.transaction(async (tx) => {
@@ -220,12 +250,12 @@ export class AiCreditsService {
             .returning();
         }
 
-        const newBalance = wallet.balance + amount;
+        const newBalance = wallet.balance + amountMilli;
         await tx
           .update(orgAiCredits)
           .set({
             balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amount}`,
+            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amountMilli}`,
             updatedAt: new Date(),
           })
           .where(eq(orgAiCredits.orgId, orgId));
@@ -234,7 +264,7 @@ export class AiCreditsService {
           orgId,
           userId: userId ?? null,
           type: "PLAN_GRANT",
-          amount,
+          amount: amountMilli,
           balanceAfter: newBalance,
           feature: "plan_activation",
           referenceId: referenceId ?? plan,
@@ -263,6 +293,7 @@ export class AiCreditsService {
     if (!pack) throw new NotFoundException("AI credit pack not found or inactive");
 
     const creditsAdded = pack.credits + pack.bonusCredits;
+    const creditsAddedMilli = creditsToMilliUnits(creditsAdded);
     const referenceId = paymentReferenceId ?? String(packId);
 
     try {
@@ -280,12 +311,12 @@ export class AiCreditsService {
           await tx.insert(orgAiCredits).values({ orgId });
         }
 
-        const newBalance = currentBalance + creditsAdded;
+        const newBalance = currentBalance + creditsAddedMilli;
         const [updated] = await tx
           .update(orgAiCredits)
           .set({
             balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
+            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
             updatedAt: new Date(),
           })
           .where(eq(orgAiCredits.orgId, orgId))
@@ -295,7 +326,7 @@ export class AiCreditsService {
           orgId,
           userId,
           type: "PURCHASE",
-          amount: creditsAdded,
+          amount: creditsAddedMilli,
           balanceAfter: newBalance,
           feature: "credit_purchase",
           referenceId,
@@ -305,14 +336,14 @@ export class AiCreditsService {
         return updated;
       });
 
-      return { balance: wallet.balance, creditsAdded, pack };
+      return { balance: milliUnitsToCredits(wallet.balance), creditsAdded, pack };
     } catch (err: unknown) {
       if ((err as { code?: string }).code === "23505") {
         const [wallet] = await this.db
           .select()
           .from(orgAiCredits)
           .where(eq(orgAiCredits.orgId, orgId));
-        return { balance: wallet?.balance ?? 0, creditsAdded, pack };
+        return { balance: milliUnitsToCredits(wallet?.balance ?? 0), creditsAdded, pack };
       }
       throw err;
     }
@@ -333,6 +364,10 @@ export class AiCreditsService {
           model: aiCreditTransactions.model,
           referenceId: aiCreditTransactions.referenceId,
           createdAt: aiCreditTransactions.createdAt,
+          promptTokens: aiCreditTransactions.promptTokens,
+          completionTokens: aiCreditTransactions.completionTokens,
+          totalTokens: aiCreditTransactions.totalTokens,
+          costUsd: aiCreditTransactions.costUsd,
         })
         .from(aiCreditTransactions)
         .where(eq(aiCreditTransactions.orgId, orgId))
@@ -345,14 +380,19 @@ export class AiCreditsService {
         .where(eq(aiCreditTransactions.orgId, orgId)),
     ]);
     const total = Number(countRow?.total ?? 0);
-    return { items, total, page, totalPages: Math.ceil(total / limit) };
+    const mappedItems = items.map((t) => ({
+      ...t,
+      amount: milliUnitsToCredits(t.amount),
+      balanceAfter: milliUnitsToCredits(t.balanceAfter),
+    }));
+    return { items: mappedItems, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   async updateAutoTopUp(
     orgId: string,
     enabled: boolean,
     packId?: number,
-    threshold?: number,
+    thresholdCredits?: number,
   ) {
     let [wallet] = await this.db
       .select()
@@ -364,17 +404,28 @@ export class AiCreditsService {
         .values({ orgId })
         .returning();
     }
+    const thresholdMilli = thresholdCredits !== undefined
+      ? creditsToMilliUnits(thresholdCredits)
+      : wallet.autoTopUpThreshold ?? undefined;
     const [updated] = await this.db
       .update(orgAiCredits)
       .set({
         autoTopUpEnabled: enabled,
         autoTopUpPackId: packId ?? wallet.autoTopUpPackId,
-        autoTopUpThreshold: threshold ?? wallet.autoTopUpThreshold,
+        autoTopUpThreshold: thresholdMilli,
         updatedAt: new Date(),
       })
       .where(eq(orgAiCredits.orgId, orgId))
       .returning();
-    return updated;
+    return {
+      ...updated,
+      balance: milliUnitsToCredits(updated.balance),
+      lifetimeGranted: milliUnitsToCredits(updated.lifetimeGranted),
+      lifetimeConsumed: milliUnitsToCredits(updated.lifetimeConsumed),
+      autoTopUpThreshold: updated.autoTopUpThreshold !== null
+        ? milliUnitsToCredits(updated.autoTopUpThreshold)
+        : null,
+    };
   }
 
   async getWalletsEligibleForAutoTopUp() {
@@ -441,6 +492,7 @@ export class AiCreditsService {
     if (!pack) return;
 
     const creditsAdded = pack.credits + pack.bonusCredits;
+    const creditsAddedMilli = creditsToMilliUnits(creditsAdded);
 
     try {
       await this.db.transaction(async (tx) => {
@@ -457,12 +509,12 @@ export class AiCreditsService {
           [wallet] = await tx.insert(orgAiCredits).values({ orgId }).returning();
         }
 
-        const newBalance = currentBalance + creditsAdded;
+        const newBalance = currentBalance + creditsAddedMilli;
         await tx
           .update(orgAiCredits)
           .set({
             balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAdded}`,
+            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
             updatedAt: new Date(),
           })
           .where(eq(orgAiCredits.orgId, orgId));
@@ -471,7 +523,7 @@ export class AiCreditsService {
           orgId,
           userId: null,
           type: "PURCHASE",
-          amount: creditsAdded,
+          amount: creditsAddedMilli,
           balanceAfter: newBalance,
           feature: "credit_purchase",
           referenceId: paymentId,
@@ -520,14 +572,14 @@ export class AiCreditsService {
         if (!wallet) {
           [wallet] = await tx
             .insert(orgAiCredits)
-            .values({ orgId, balance: TRIAL_GRANT_AMOUNT, lifetimeGranted: TRIAL_GRANT_AMOUNT })
+            .values({ orgId, balance: TRIAL_GRANT_MILLI, lifetimeGranted: TRIAL_GRANT_MILLI })
             .returning();
           await tx.insert(aiCreditTransactions).values({
             orgId,
             userId: null,
             type: "PLAN_GRANT",
-            amount: TRIAL_GRANT_AMOUNT,
-            balanceAfter: TRIAL_GRANT_AMOUNT,
+            amount: TRIAL_GRANT_MILLI,
+            balanceAfter: TRIAL_GRANT_MILLI,
             feature: "trial-grant",
             referenceId: "trial-grant",
           });
@@ -579,7 +631,15 @@ export class AiCreditsService {
 
   async settle(
     reservationId: number,
-    input: { actualCredits?: number; model?: string; metadata?: Record<string, unknown> },
+    input: {
+      actualMilli?: number;
+      model?: string;
+      metadata?: Record<string, unknown>;
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      costUsd?: number;
+    },
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
       const [reservation] = await tx
@@ -594,40 +654,45 @@ export class AiCreditsService {
         throw new ConflictException(`Cannot settle a reservation in status ${reservation.status}`);
       }
 
-      const actual = Math.max(0, Math.min(input.actualCredits ?? reservation.credits, reservation.credits));
-      const refund = reservation.credits - actual;
+      const actualMilli = Math.max(0, input.actualMilli ?? reservation.credits);
+      const reservedMilli = reservation.credits;
+      const delta = reservedMilli - actualMilli;
 
-      let newBalance = 0;
-      if (actual > 0 || refund > 0) {
-        const [wallet] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, reservation.orgId))
-          .for("update");
+      const [wallet] = await tx
+        .select()
+        .from(orgAiCredits)
+        .where(eq(orgAiCredits.orgId, reservation.orgId))
+        .for("update");
 
-        const currentBalance = wallet?.balance ?? 0;
-        newBalance = currentBalance + refund;
+      const currentBalance = wallet?.balance ?? 0;
+      const newBalance = currentBalance + delta;
 
-        await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeConsumed: sql`${orgAiCredits.lifetimeConsumed} + ${actual}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, reservation.orgId));
-      }
+      await tx
+        .update(orgAiCredits)
+        .set({
+          balance: newBalance,
+          lifetimeConsumed: sql`${orgAiCredits.lifetimeConsumed} + ${actualMilli}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(orgAiCredits.orgId, reservation.orgId));
 
-      if (actual > 0) {
+      if (actualMilli > 0) {
+        const costUsdStr = input.costUsd !== undefined
+          ? String(input.costUsd.toFixed(6))
+          : null;
         await tx.insert(aiCreditTransactions).values({
           orgId: reservation.orgId,
           userId: reservation.userId,
           type: "USAGE",
-          amount: -actual,
+          amount: -actualMilli,
           balanceAfter: newBalance,
           feature: reservation.feature,
           model: input.model ?? null,
           metadata: input.metadata ?? null,
+          promptTokens: input.promptTokens ?? null,
+          completionTokens: input.completionTokens ?? null,
+          totalTokens: input.totalTokens ?? null,
+          costUsd: costUsdStr,
         });
       }
 

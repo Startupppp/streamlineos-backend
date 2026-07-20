@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   serial,
   text,
@@ -138,6 +139,10 @@ export const aiCreditTransactions = pgTable(
     model: varchar("model", { length: 100 }),
     referenceId: varchar("reference_id", { length: 100 }),
     metadata: jsonb("metadata"),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    totalTokens: integer("total_tokens"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [

@@ -26,6 +26,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { SessionService } from "./session.service";
 import { hashToken } from "../../common/security/token.util";
+import { logger } from "../../common/logger/logger.service";
 import { addDays, addHours, addMinutes, subDays } from "date-fns";
 import type {
   GoogleOAuthInput,
@@ -212,7 +213,9 @@ export class AuthTokensService {
       expiresAt,
     });
 
-    void this.email.sendEmailOtpEmail(user.email, rawCode).catch(() => {});
+    void this.email.sendEmailOtpEmail(user.email, rawCode).catch((error: unknown) => {
+      logger.error("Email OTP send failed", { userId: user.id, error });
+    });
   }
 
   async verifyEmailOtp(email: string, code: string): Promise<{ autoLoginToken: string }> {

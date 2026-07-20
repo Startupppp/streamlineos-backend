@@ -95,3 +95,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
 export function getFeatureCost(feature: string): number {
   return AI_FEATURE_COSTS[feature] ?? 1;
 }
+
+export function getReserveEstimateMilli(feature: string): number {
+  return getFeatureCost(feature) * 1000;
+}

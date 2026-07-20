@@ -9,7 +9,15 @@ export interface AiCreditLedger {
 
   settle(
     reservationId: number,
-    input: { actualCredits?: number; model?: string; metadata?: Record<string, unknown> },
+    input: {
+      actualMilli?: number;
+      model?: string;
+      metadata?: Record<string, unknown>;
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      costUsd?: number;
+    },
   ): Promise<void>;
 
   release(reservationId: number, reason: string): Promise<void>;

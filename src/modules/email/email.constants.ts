@@ -35,7 +35,7 @@ export function getSupportEmail(): string {
 }
 
 export function getBrandUrl(): string {
-  return (process.env.APP_URL?.trim() ?? "").replace(/\/$/, "");
+  return ((process.env.EMAIL_APP_URL ?? process.env.APP_URL)?.trim() ?? "").replace(/\/$/, "");
 }
 
 export const EMAIL_LOGO_URL =

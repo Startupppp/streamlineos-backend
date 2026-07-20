@@ -33,6 +33,7 @@ import {
 } from "./feedbucket-ai.prompts";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { FeedbucketConsoleEntry, FeedbucketMetadata, FeedbucketNetworkEntry } from "../../db/schema/feedbucket";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "feedbucket.analyze" as const;
 const PUBLIC_FEATURE_KEY = "feedbucket.assist" as const;
@@ -206,7 +207,7 @@ export class FeedbucketAiService {
     networkLogs?: FeedbucketNetworkEntry[] | null;
     metadata?: FeedbucketMetadata | null;
     consoleLogs?: FeedbucketConsoleEntry[] | null;
-  }): Promise<FeedbackAnalysis> {
+  }): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
     const system = buildSystemPrompt();
     const userContent = buildUserPrompt({
       type: opts.type,
@@ -218,7 +219,7 @@ export class FeedbucketAiService {
     });
 
     const credits = getFeatureCost(opts.feature);
-    const result = await this.gateway.invokeStructuredWithImage({
+    const result = await this.gateway.invokeStructuredWithImageWithUsage({
       actor: { orgId: opts.orgId, userId: opts.userId },
       feature: opts.feature,
       tier: "standard",
@@ -240,6 +241,7 @@ export class FeedbucketAiService {
       description: sanitizeHtml(rawResult.description),
       model: "standard",
       processedAt: new Date().toISOString(),
+      aiUsage: result.aiUsage,
     };
   }
 
@@ -279,7 +281,7 @@ export class FeedbucketAiService {
     };
   }
 
-  async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis> {
+  async analyze(u: CurrentUserContext, submissionId: number, force = false): Promise<FeedbackAnalysis & { aiUsage?: AiUsageMeta }> {
     requireFeature(u.plan, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);

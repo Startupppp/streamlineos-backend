@@ -6,10 +6,14 @@ import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { redactSensitiveData } from "../redaction.util";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "./credit-ledger.interface";
+import { computeTokenCharge, milliToCredits } from "../billing/ai-model-pricing.constants";
+import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
 import type {
   AiInvokeResult,
   AiInvokeFailure,
   AiInvokeBaseOpts,
+  AiInvokeWithUsageResult,
+  AiUsageMeta,
 } from "./ai-gateway.types";
 
 interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {
@@ -56,9 +60,37 @@ export class AiGatewayService {
     return promise;
   }
 
+  async invokeStructuredWithUsage<T>(opts: InvokeStructuredOpts<T>): Promise<AiInvokeWithUsageResult<T>> {
+    const correlationId = randomUUID();
+    return this.runStructuredWithUsage(opts, correlationId);
+  }
+
   async invokeStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>): Promise<AiInvokeResult<T>> {
     const correlationId = randomUUID();
     return this.runStructuredWithImage(opts, correlationId);
+  }
+
+  async invokeStructuredWithImageWithUsage<T>(opts: InvokeStructuredWithImageOpts<T>): Promise<AiInvokeWithUsageResult<T>> {
+    const correlationId = randomUUID();
+    const result = await this.runStructuredWithImage(opts, correlationId);
+    if (!result.ok) return result;
+
+    const { costUsd, milliCredits } = computeTokenCharge(
+      result.model,
+      result.usage.promptTokens ?? 0,
+      result.usage.completionTokens ?? 0,
+    );
+
+    const aiUsage: AiUsageMeta = {
+      model: result.model,
+      promptTokens: result.usage.promptTokens ?? 0,
+      completionTokens: result.usage.completionTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
+      credits: milliToCredits(milliCredits),
+      costUsd,
+    };
+
+    return { ok: true, data: result.data, aiUsage };
   }
 
   async invokeText(opts: InvokeTextOpts): Promise<AiInvokeResult<string>> {
@@ -80,16 +112,22 @@ export class AiGatewayService {
     return promise;
   }
 
+  async invokeTextWithUsage(opts: InvokeTextOpts): Promise<AiInvokeWithUsageResult<string>> {
+    const correlationId = randomUUID();
+    return this.runTextWithUsage(opts, correlationId);
+  }
+
   private async runStructured<T>(opts: InvokeStructuredOpts<T>, correlationId: string): Promise<AiInvokeResult<T>> {
     const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
     const prompt = redact
       ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
       : opts.prompt;
 
+    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(charge, actor, feature, correlationId);
+      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
       if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
       reservationId = reserveResult.reservationId;
     }
@@ -109,7 +147,11 @@ export class AiGatewayService {
       const latencyMs = Date.now() - start;
       const usage = result.usage;
 
-      await this.settleAndTrack(reservationId, charge, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok");
+      const { costUsd, milliCredits } = charge
+        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        : { costUsd: 0, milliCredits: 0 };
+
+      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
 
       return {
         ok: true,
@@ -129,16 +171,39 @@ export class AiGatewayService {
     }
   }
 
+  private async runStructuredWithUsage<T>(opts: InvokeStructuredOpts<T>, correlationId: string): Promise<AiInvokeWithUsageResult<T>> {
+    const result = await this.runStructured(opts, correlationId);
+    if (!result.ok) return result;
+
+    const { costUsd, milliCredits } = computeTokenCharge(
+      result.model,
+      result.usage.promptTokens ?? 0,
+      result.usage.completionTokens ?? 0,
+    );
+
+    const aiUsage: AiUsageMeta = {
+      model: result.model,
+      promptTokens: result.usage.promptTokens ?? 0,
+      completionTokens: result.usage.completionTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
+      credits: milliToCredits(milliCredits),
+      costUsd,
+    };
+
+    return { ok: true, data: result.data, aiUsage };
+  }
+
   private async runStructuredWithImage<T>(opts: InvokeStructuredWithImageOpts<T>, correlationId: string): Promise<AiInvokeResult<T>> {
     const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
     const prompt = redact
       ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
       : opts.prompt;
 
+    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(charge, actor, feature, correlationId);
+      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
       if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
       reservationId = reserveResult.reservationId;
     }
@@ -159,7 +224,11 @@ export class AiGatewayService {
       const latencyMs = Date.now() - start;
       const usage = result.usage;
 
-      await this.settleAndTrack(reservationId, charge, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok");
+      const { costUsd, milliCredits } = charge
+        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        : { costUsd: 0, milliCredits: 0 };
+
+      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
 
       return {
         ok: true,
@@ -185,10 +254,11 @@ export class AiGatewayService {
       ? { system: redactSensitiveData(opts.prompt.system), user: redactSensitiveData(opts.prompt.user) }
       : opts.prompt;
 
+    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
     if (charge) {
-      const reserveResult = await this.reserveCredits(charge, actor, feature, correlationId);
+      const reserveResult = await this.reserveCredits(reserveMilli, actor, feature, correlationId);
       if (!reserveResult.reserved) return { ok: false, kind: reserveResult.kind, message: reserveResult.message, correlationId: reserveResult.correlationId };
       reservationId = reserveResult.reservationId;
     }
@@ -206,7 +276,11 @@ export class AiGatewayService {
       const latencyMs = Date.now() - start;
       const usage = result.usage;
 
-      await this.settleAndTrack(reservationId, charge, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok");
+      const { costUsd, milliCredits } = charge
+        ? computeTokenCharge(result.model, usage.promptTokens ?? 0, usage.completionTokens ?? 0)
+        : { costUsd: 0, milliCredits: 0 };
+
+      await this.settleAndTrack(reservationId, charge ? { milli: reserveMilli } : undefined, result.model, usage, actor, feature, opts.prompt, correlationId, latencyMs, "ok", milliCredits, costUsd);
 
       return {
         ok: true,
@@ -226,8 +300,30 @@ export class AiGatewayService {
     }
   }
 
+  private async runTextWithUsage(opts: InvokeTextOpts, correlationId: string): Promise<AiInvokeWithUsageResult<string>> {
+    const result = await this.runText(opts, correlationId);
+    if (!result.ok) return result;
+
+    const { costUsd, milliCredits } = computeTokenCharge(
+      result.model,
+      result.usage.promptTokens ?? 0,
+      result.usage.completionTokens ?? 0,
+    );
+
+    const aiUsage: AiUsageMeta = {
+      model: result.model,
+      promptTokens: result.usage.promptTokens ?? 0,
+      completionTokens: result.usage.completionTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
+      credits: milliToCredits(milliCredits),
+      costUsd,
+    };
+
+    return { ok: true, data: result.data, aiUsage };
+  }
+
   private async reserveCredits(
-    charge: NonNullable<AiInvokeBaseOpts["charge"]>,
+    milliAmount: number,
     actor: AiInvokeBaseOpts["actor"],
     feature: string,
     correlationId: string,
@@ -237,8 +333,7 @@ export class AiGatewayService {
         orgId: actor.orgId,
         userId: actor.userId,
         feature,
-        credits: charge.credits,
-        idempotencyKey: charge.idempotencyKey,
+        credits: milliAmount,
       });
       return { reserved: true, reservationId };
     } catch (error) {
@@ -254,7 +349,7 @@ export class AiGatewayService {
 
   private async settleAndTrack(
     reservationId: number,
-    charge: AiInvokeBaseOpts["charge"],
+    charge: { milli: number } | undefined,
     model: string,
     usage: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null },
     actor: AiInvokeBaseOpts["actor"],
@@ -263,10 +358,19 @@ export class AiGatewayService {
     correlationId: string,
     latencyMs: number,
     outcome: "ok" | "error",
+    actualMilli = 0,
+    costUsd = 0,
   ): Promise<void> {
     if (charge && reservationId !== 0) {
       void this.ledger
-        .settle(reservationId, { actualCredits: charge.credits, model })
+        .settle(reservationId, {
+          actualMilli,
+          model,
+          promptTokens: usage.promptTokens ?? undefined,
+          completionTokens: usage.completionTokens ?? undefined,
+          totalTokens: usage.totalTokens ?? undefined,
+          costUsd,
+        })
         .catch(() => undefined);
     }
 
@@ -281,6 +385,7 @@ export class AiGatewayService {
         latencyMs,
         correlationId,
         outcome,
+        creditsMilli: actualMilli,
       })
       .catch(() => undefined);
 

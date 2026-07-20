@@ -8,6 +8,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { AiCreditsUsageService } from "./ai-credits-usage.service";
 import { RazorpayService } from "./razorpay.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
@@ -30,7 +31,7 @@ import {
   type UpdateCouponInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import { autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
+import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import {
@@ -51,6 +52,7 @@ export class BillingController {
     private readonly billing: BillingService,
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
+    private readonly aiCreditsUsage: AiCreditsUsageService,
     private readonly razorpay: RazorpayService,
     private readonly affiliate: AffiliateService,
     private readonly referral: ReferralService,
@@ -207,6 +209,16 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
+  }
+
+  @Get("ai-credits/usage")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("billing:ai-credits:view")
+  getAiCreditsUsage(
+    @Query(new ZodValidationPipe(aiCreditsUsageQuerySchema)) query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.aiCreditsUsage.getUsage(u.orgId, query.days);
   }
 
   @Post("ai-credits/auto-topup")

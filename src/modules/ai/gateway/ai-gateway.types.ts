@@ -4,6 +4,15 @@ export interface AiTokenUsage {
   totalTokens: number | null;
 }
 
+export interface AiUsageMeta {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  credits: number;
+  costUsd: number;
+}
+
 export interface AiInvokeSuccess<T> {
   ok: true;
   data: T;
@@ -21,6 +30,14 @@ export interface AiInvokeFailure {
 }
 
 export type AiInvokeResult<T> = AiInvokeSuccess<T> | AiInvokeFailure;
+
+export interface AiInvokeWithUsageSuccess<T> {
+  ok: true;
+  data: T;
+  aiUsage: AiUsageMeta;
+}
+
+export type AiInvokeWithUsageResult<T> = AiInvokeWithUsageSuccess<T> | AiInvokeFailure;
 
 export interface AiInvokeActor {
   orgId: string;

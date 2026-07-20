@@ -27,6 +27,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { logger } from "../../common/logger/logger.service";
 import { SupportKnowledgeGapStatus } from "../../db/schema/support/support-kb-gap";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 
 type GapRow = typeof supportKnowledgeGaps.$inferSelect;
 
@@ -87,7 +88,7 @@ export class SupportKbGapService {
     return { created, updated };
   }
 
-  async proposeDraft(orgId: string, gapId: number, actorUserId: string, userCtx?: CurrentUserContext): Promise<GapRow> {
+  async proposeDraft(orgId: string, gapId: number, actorUserId: string, userCtx?: CurrentUserContext): Promise<GapRow & { aiUsage?: AiUsageMeta }> {
     const gap = await this.db.query.supportKnowledgeGaps.findFirst({
       where: and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)),
     });
@@ -108,7 +109,7 @@ export class SupportKbGapService {
     const kbOwnerIds = await this.findKbOwners(orgId);
 
     const evidenceText = this.buildEvidenceText(gap);
-    const gatewayResult = await this.aiGateway.invokeStructured({
+    const gatewayResult = await this.aiGateway.invokeStructuredWithUsage({
       actor: { orgId, userId: actorUserId },
       feature: GAP_DRAFT_FEATURE,
       tier: "standard",
@@ -135,6 +136,7 @@ export class SupportKbGapService {
     }
 
     const { title, body } = gatewayResult.data;
+    const gapAiUsage = gatewayResult.aiUsage;
     const contentText = body.replace(/[#*_`[\]()]/g, "").slice(0, 500);
 
     const ctx: CurrentUserContext = userCtx ?? {
@@ -198,7 +200,7 @@ export class SupportKbGapService {
     }
 
     if (!updated) throw new NotFoundException("Gap not found after update");
-    return updated;
+    return { ...updated, aiUsage: gapAiUsage };
   }
 
   async listGaps(
