@@ -23,6 +23,9 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "hr.generate-review": 2,
   "hr.generate-jd": 1,
   "hr.score-candidate": 1,
+  "hr.composite-score": 2,
+  "hr.resume-parse": 1,
+  "hr.email-template-generate": 1,
   "hr.helpdesk-reply": 1,
   "pm.summary": 1,
   "pm.risks": 1,
@@ -92,7 +95,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "mail.draft": 1,
 };
 
-export function getFeatureCost(feature: string): number {
+function getFeatureCost(feature: string): number {
   return AI_FEATURE_COSTS[feature] ?? 1;
 }
 

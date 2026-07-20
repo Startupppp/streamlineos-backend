@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, Logger, ServiceUnavailableException } 
 import { KbEventsService } from "./kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
@@ -92,7 +91,7 @@ export class KbAskService {
       feature: "kb.ask",
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("kb.ask") },
+      charge: true,
       prompt: {
         system: ASK_SYSTEM_PROMPT,
         user: `Question: ${input.question}\n\nContext:\n${fullContext}`,

@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { blogPosts } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { unwrapAiResult } from "./gateway-result.util";
 
 @Injectable()
@@ -47,7 +47,7 @@ export class BlogAiService {
       prompt: { system, user },
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("blog.improve-writing") },
+      charge: true,
     });
 
     const content = unwrapAiResult(result);
@@ -70,7 +70,7 @@ export class BlogAiService {
       prompt: { system, user },
       tier: "fast",
       maxTokens: 128,
-      charge: { credits: getFeatureCost("blog.suggest-title") },
+      charge: true,
     });
 
     const title = unwrapAiResult(result);
@@ -92,7 +92,7 @@ export class BlogAiService {
       prompt: { system, user },
       tier: "fast",
       maxTokens: 200,
-      charge: { credits: getFeatureCost("blog.summarize") },
+      charge: true,
     });
 
     const excerpt = unwrapAiResult(result);

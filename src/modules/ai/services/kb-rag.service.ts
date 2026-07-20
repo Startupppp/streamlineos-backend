@@ -1,7 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
 import {
   kbArticleAttachments,
   kbArticleChunks,
@@ -13,7 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 
 const DEFAULT_TOP_K = 6;
 const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
@@ -192,26 +190,13 @@ export class KbRagService {
       feature: "kb.public-ask",
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("kb.public-ask") },
+      charge: true,
       prompt: { system, user },
     });
 
     if (!gatewayResult.ok) {
       if (gatewayResult.kind === "quota_exceeded") {
         throw new BadRequestException(gatewayResult.message);
-      }
-      if (gatewayResult.kind === "not_configured" && process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-        const { text } = await generateText({
-          model: google("gemini-2.0-flash"),
-          system,
-          prompt: user,
-          temperature: 0.2,
-        });
-        return {
-          answer: text.trim(),
-          sources: this.dedupeSources(results),
-          hasContext: true,
-        };
       }
       throw new ServiceUnavailableException("AI provider is temporarily unavailable");
     }

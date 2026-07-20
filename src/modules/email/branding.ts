@@ -31,7 +31,7 @@ export function getBrandName(): string {
 
 export function getSupportEmail(): string {
   const candidates = [
-    process.env.EMAIL_FROM_ADDRESS?.trim(),
+    process.env.BRAND_SUPPORT_EMAIL?.trim(),
     process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim(),
   ];
   for (const candidate of candidates) {

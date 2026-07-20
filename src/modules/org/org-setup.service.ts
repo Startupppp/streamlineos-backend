@@ -22,6 +22,8 @@ import { OnboardingSessionService, type SessionPatch } from "../onboarding-flow/
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 import { PERMISSIONS } from "../rbac/permissions.constants";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { EmailService } from "../email/email.service";
+import { logger } from "../../common/logger/logger.service";
 
 const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
 
@@ -33,7 +35,21 @@ export class OrgSetupService {
     private readonly cache: CacheService,
     private readonly sessions: OnboardingSessionService,
     private readonly checklists: ModuleChecklistService,
+    private readonly email: EmailService,
   ) {}
+
+  private async sendWelcome(userId: string): Promise<void> {
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true, name: true, firstName: true },
+    });
+    if (!user?.email) return;
+    const name = user.name?.trim() || user.firstName?.trim() || user.email;
+    const base = (process.env.EMAIL_APP_URL ?? process.env.APP_URL ?? "").trim().replace(/\/$/, "");
+    void this.email.sendWelcomeEmail(user.email, name, `${base}/dashboard`).catch((error: unknown) => {
+      logger.error("Welcome email send failed", { userId, error });
+    });
+  }
 
   private slugify(name: string): string {
     return (
@@ -184,6 +200,7 @@ export class OrgSetupService {
       await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
     }
     await this.sessions.completeSession(orgId, u.userId, "org_setup");
+    await this.sendWelcome(u.userId);
 
     const autoLoginToken = randomBytes(32).toString("hex");
     await this.db.insert(magicLinkTokens).values({

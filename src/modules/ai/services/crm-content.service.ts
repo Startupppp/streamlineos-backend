@@ -4,7 +4,7 @@ import { users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import {
   conversationSummaryPrompt,
   emailGeneratorPrompt,
@@ -38,10 +38,9 @@ function trunc(s: string | null | undefined, max = MAX_TEXT): string {
 }
 
 function actorCharge(
-  feature: string,
   actor: { orgId: string; userId: string | null } | undefined,
-): { charge: { credits: number } | undefined } {
-  return actor?.orgId ? { charge: { credits: getFeatureCost(feature) } } : { charge: undefined };
+): { charge: boolean | undefined } {
+  return { charge: actor?.orgId ? true : undefined };
 }
 
 @Injectable()
@@ -61,7 +60,7 @@ export class CrmContentService {
       schema: LeadEnrichmentSchema,
       tier: "standard",
       maxTokens: 1024,
-      ...actorCharge("crm.enrich-lead", actor),
+      ...actorCharge(actor),
     });
     if (!result.ok) throwOnAiFailure(result);
     return result.data;
@@ -87,7 +86,7 @@ export class CrmContentService {
       schema: GeneratedEmailSchema,
       tier: "fast",
       maxTokens: 1024,
-      ...actorCharge("crm.generate-email", actor),
+      ...actorCharge(actor),
     });
     if (!result.ok) throwOnAiFailure(result);
     return result.data;
@@ -146,7 +145,7 @@ export class CrmContentService {
       schema: ObjectionResponseSchema,
       tier: "fast",
       maxTokens: 1024,
-      ...actorCharge("crm.objection-handler", actor),
+      ...actorCharge(actor),
     });
     if (!result.ok) throwOnAiFailure(result);
     return result.data;
@@ -172,7 +171,7 @@ export class CrmContentService {
       schema: SentimentSchema,
       tier: "fast",
       maxTokens: 512,
-      ...actorCharge("crm.sentiment", actor),
+      ...actorCharge(actor),
     });
     if (!result.ok) throwOnAiFailure(result);
     return result.data;
@@ -188,7 +187,7 @@ export class CrmContentService {
       schema: ConversationSummarySchema,
       tier: "fast",
       maxTokens: 512,
-      ...actorCharge("crm.summarize", actor),
+      ...actorCharge(actor),
       dedupe: true,
     });
     if (!result.ok) throwOnAiFailure(result);
@@ -207,7 +206,7 @@ export class CrmContentService {
       },
       tier: "fast",
       maxTokens: 1024,
-      ...actorCharge("crm.report-narrator", actor),
+      ...actorCharge(actor),
     });
 
     if (!result.ok) throwOnAiFailure(result);

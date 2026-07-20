@@ -1,7 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { randomUUID } from "crypto";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { PeriodsService } from "./periods.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -113,10 +111,7 @@ export class TimesheetsAiService {
       feature: FEATURE_KEY,
       tier: "fast",
       maxTokens: 512,
-      charge: {
-        credits: getFeatureCost(FEATURE_KEY),
-        idempotencyKey: `timesheets-summary-${u.orgId}-${periodId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       prompt: {
         system: buildSystemPrompt(),

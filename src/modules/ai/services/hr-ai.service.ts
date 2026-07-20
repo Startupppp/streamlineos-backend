@@ -44,7 +44,7 @@ import {
 } from "../dto/output.schemas";
 import type { GenerateJdInput } from "../dto/request.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { unwrapAiResult } from "./gateway-result.util";
 import { redactSensitiveData } from "../redaction.util";
 
@@ -124,7 +124,7 @@ export class HrAiService {
       schema: AttritionRiskSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("hr.attrition-risk") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -187,7 +187,7 @@ export class HrAiService {
       schema: ReviewDraftSchema,
       tier: "fast",
       maxTokens: 1536,
-      charge: { credits: getFeatureCost("hr.generate-review") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -226,7 +226,7 @@ export class HrAiService {
       schema: HelpdeskReplySchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("hr.helpdesk-reply") },
+      charge: true,
     });
 
     return unwrapAiResult(result);
@@ -274,7 +274,7 @@ export class HrAiService {
       schema: CandidateScoreSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("hr.score-candidate") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -321,7 +321,7 @@ export class HrAiService {
       schema: PolicyQaSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("hr.policy-qa") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -362,7 +362,7 @@ export class HrAiService {
       schema: InterviewKitSchema,
       tier: "fast",
       maxTokens: 2048,
-      charge: { credits: getFeatureCost("hr.interview-kit") },
+      charge: true,
     });
 
     return unwrapAiResult(result);
@@ -405,7 +405,7 @@ export class HrAiService {
       schema: LetterDraftSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("hr.letter-draft") },
+      charge: true,
     });
 
     return unwrapAiResult(result);
@@ -457,7 +457,7 @@ export class HrAiService {
       schema: InterviewNotesSummarySchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("hr.interview-notes-summary") },
+      charge: true,
     });
 
     return unwrapAiResult(result);
@@ -487,7 +487,7 @@ Keep it concise, specific, and compelling. Do not use bold, headers, or markdown
       prompt: { system, user },
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("hr.generate-jd") },
+      charge: true,
     });
 
     const description = unwrapAiResult(result);

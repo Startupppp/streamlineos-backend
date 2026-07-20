@@ -5,7 +5,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { unwrapAiResult } from "../ai/services/gateway-result.util";
 import { extractAttachmentText } from "../kb/kb-attachment-extract.util";
 
@@ -77,7 +76,7 @@ export class SignAiService {
       },
       tier: "standard",
       maxTokens: 600,
-      charge: { credits: getFeatureCost(SIGN_SUMMARIZE_FEATURE) },
+      charge: true,
     });
 
     const summary = unwrapAiResult(result);

@@ -3,7 +3,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { aiUsageLogs } from "../../db/schema";
-import { milliUnitsToCredits } from "./ai-credit-units";
+import { milliToCredits } from "../ai/billing/ai-model-pricing.constants";
 
 export interface AiCreditsUsageResult {
   totals: {
@@ -104,14 +104,14 @@ export class AiCreditsUsageService {
         promptTokens: Number(totalsRow?.promptTokens ?? 0),
         completionTokens: Number(totalsRow?.completionTokens ?? 0),
         totalTokens: Number(totalsRow?.totalTokens ?? 0),
-        credits: milliUnitsToCredits(Number(totalsRow?.creditsMilli ?? 0)),
+        credits: milliToCredits(Number(totalsRow?.creditsMilli ?? 0)),
         costUsd: Number(totalsRow?.costUsd ?? 0),
       },
       byFeature: byFeatureRows.map((r) => ({
         feature: r.feature,
         requests: Number(r.requests),
         totalTokens: Number(r.totalTokens),
-        credits: milliUnitsToCredits(Number(r.creditsMilli)),
+        credits: milliToCredits(Number(r.creditsMilli)),
         costUsd: Number(r.costUsd),
       })),
       byModel: byModelRows.map((r) => ({
@@ -120,14 +120,14 @@ export class AiCreditsUsageService {
         promptTokens: Number(r.promptTokens),
         completionTokens: Number(r.completionTokens),
         totalTokens: Number(r.totalTokens),
-        credits: milliUnitsToCredits(Number(r.creditsMilli)),
+        credits: milliToCredits(Number(r.creditsMilli)),
         costUsd: Number(r.costUsd),
       })),
       daily: dailyRows.map((r) => ({
         date: r.date,
         requests: Number(r.requests),
         totalTokens: Number(r.totalTokens),
-        credits: milliUnitsToCredits(Number(r.creditsMilli)),
+        credits: milliToCredits(Number(r.creditsMilli)),
       })),
     };
   }

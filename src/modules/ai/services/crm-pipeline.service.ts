@@ -4,7 +4,7 @@ import { dealActivities, deals, leads } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { OrgFeaturesService } from "./org-features.service";
 import { findDuplicateLeads } from "../../leads/duplicate-leads";
 import {
@@ -121,7 +121,7 @@ export class CrmPipelineService {
       schema: StalePipelineDigestSchema,
       tier: "standard",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.stale-pipeline") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -195,7 +195,7 @@ export class CrmPipelineService {
       schema: DataQualityCopilotSchema,
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("crm.data-quality") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);

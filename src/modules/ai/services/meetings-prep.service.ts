@@ -16,7 +16,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiConfirmationService, type ProposeResult } from "../../ai-confirmation/ai-confirmation.service";
 import { ComposioGateway, ComposioToolError } from "../../integrations/composio.gateway";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
 import { agendaOutputSchema, followUpOutputSchema, type AgendaOutput, type FollowUpOutput } from "../dto/meetings-output.schemas";
 
@@ -186,7 +185,7 @@ Generate:
       schema: agendaOutputSchema,
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("meetings.prep") },
+      charge: true,
     });
 
     const agenda = unwrapAiResult(result);
@@ -243,7 +242,7 @@ Generate:
       schema: followUpOutputSchema,
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("meetings.follow-up") },
+      charge: true,
     });
 
     const followUp = unwrapAiResult(result);

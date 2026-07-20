@@ -22,7 +22,6 @@ import {
   TicketSuggestFieldsOutputSchema,
 } from "../dto/ticket-ai.schemas";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
 
 const TEXT_LIMIT = 2000;
@@ -97,7 +96,7 @@ Provide a summary, key points, and any blockers visible in the discussion.`;
       schema: TicketSummaryOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("ticket.summarize") },
+      charge: true,
       dedupe: true,
     });
 
@@ -128,7 +127,7 @@ Produce an improved HTML description.`;
       prompt: { system, user },
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("ticket.improve-description") },
+      charge: true,
     });
 
     const description = unwrapAiResult(result);
@@ -162,7 +161,7 @@ Suggest 3-7 subtask titles.`;
       schema: TicketSubtasksOutputSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("ticket.suggest-subtasks") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -259,7 +258,7 @@ Extract up to 10 proposed action items. Cite the attendee name when ownership is
       schema: MeetingExtractActionsOutputSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("pm.extract-meeting-actions") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -297,7 +296,7 @@ Suggest a clear issue title.`;
       schema: TicketSuggestTitleOutputSchema,
       tier: "fast",
       maxTokens: 128,
-      charge: { credits: getFeatureCost("ticket.suggest-title") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -342,7 +341,7 @@ Produce an improved HTML description.`;
       prompt: { system, user },
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("ticket.improve-description") },
+      charge: true,
     });
 
     const description = unwrapAiResult(result);
@@ -400,7 +399,7 @@ Suggest priority, points, and matching labels with a short rationale.`;
       schema: TicketSuggestFieldsOutputSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("ticket.suggest-fields") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -459,7 +458,7 @@ Produce a handoff brief with current state, key decisions, next action, and bloc
       schema: TicketHandoffOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("ticket.handoff") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);

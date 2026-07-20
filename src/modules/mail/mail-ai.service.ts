@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { throwOnAiFailure, unwrapAiResult } from "../ai/services/gateway-result.util";
 import { MailService } from "./mail.service";
 import {
@@ -75,7 +74,7 @@ export class MailAiService {
       prompt: { system, user },
       tier: "fast",
       schema: MailInboxSummaryOutputSchema,
-      charge: { credits: getFeatureCost("mail.inbox-summary") },
+      charge: true,
     });
 
     if (!result.ok) return throwOnAiFailure(result);
@@ -109,7 +108,7 @@ export class MailAiService {
       prompt: { system, user },
       tier: "fast",
       schema: MailThreadSummaryOutputSchema,
-      charge: { credits: getFeatureCost("mail.thread-summary") },
+      charge: true,
     });
 
     return unwrapAiResult(result);
@@ -160,7 +159,7 @@ export class MailAiService {
       prompt: { system, user },
       tier: "fast",
       schema: MailDraftOutputSchema,
-      charge: { credits: getFeatureCost("mail.draft") },
+      charge: true,
     });
 
     return unwrapAiResult(result);

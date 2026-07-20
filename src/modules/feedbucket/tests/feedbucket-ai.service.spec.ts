@@ -196,7 +196,7 @@ describe("FeedbucketAiService", () => {
       const { service, gateway } = buildService({});
       await service.analyze(makeUser(), SUB_ID);
       expect(gateway.invokeStructuredWithImage).toHaveBeenCalledWith(
-        expect.objectContaining({ charge: { credits: 5 } }),
+        expect.objectContaining({ charge: true }),
       );
     });
 
@@ -340,7 +340,7 @@ describe("FeedbucketAiService", () => {
         expect.objectContaining({
           actor: { orgId: ORG_A, userId: USER_A },
           feature: "feedbucket.assist",
-          charge: { credits: 5 },
+          charge: true,
         }),
       );
     });

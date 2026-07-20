@@ -29,7 +29,6 @@ import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
 import { ChatHistoryService } from "../services/chat-history.service";
 import { OrgFeaturesService } from "../services/org-features.service";
-import { AiUsageService } from "../services/ai-usage.service";
 import { AiConfirmationService } from "../../ai-confirmation/ai-confirmation.service";
 import { ProjectsTicketsService } from "../../projects/projects-tickets.service";
 import { ProjectsTicketCommentsService } from "../../projects/projects-ticket-comments.service";
@@ -106,7 +105,6 @@ export class ChatAssistantController {
     private readonly chat: ChatAssistantService,
     private readonly history: ChatHistoryService,
     private readonly orgFeatures: OrgFeaturesService,
-    private readonly usage: AiUsageService,
     private readonly confirmation: AiConfirmationService,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
@@ -218,22 +216,6 @@ export class ChatAssistantController {
         parsed.data.conversationId,
         parsed.data.persona,
       );
-      const model = this.chat.getChatModelId();
-
-      void result.usage
-        .then((usage) => {
-          if (!usage) return;
-          void this.usage.track({
-            orgId: u.orgId,
-            userId: u.userId,
-            feature: "ai_chat",
-            model,
-            promptTokens: usage.inputTokens ?? 0,
-            completionTokens: usage.outputTokens ?? 0,
-          });
-        })
-        .catch(() => undefined);
-
       result.pipeTextStreamToResponse(res);
     } catch (error) {
       logger.error("Chat route error", { error });

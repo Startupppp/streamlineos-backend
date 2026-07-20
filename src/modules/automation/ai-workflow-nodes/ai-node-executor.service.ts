@@ -22,13 +22,6 @@ const FEATURE_MAP: Record<AiNodeType, string> = {
   routing_suggestion: "workflow.routing_suggestion",
 };
 
-const CREDIT_MAP: Record<AiNodeType, number> = {
-  classify: 1,
-  summarize: 1,
-  extract: 1,
-  routing_suggestion: 2,
-};
-
 export interface AiNodeResult {
   ok: boolean;
   output?: unknown;
@@ -53,7 +46,6 @@ export class AiNodeExecutorService {
     payload: Record<string, unknown>,
   ): Promise<AiNodeResult> {
     const feature = FEATURE_MAP[nodeType];
-    const credits = CREDIT_MAP[nodeType];
 
     const flagEnabled = await this.featureFlags.evaluate(feature, orgId);
     if (!flagEnabled) {
@@ -79,7 +71,7 @@ export class AiNodeExecutorService {
           user: `Text to classify: "${fieldText}"\n\nLabels: ${config.labels.join(", ")}\n\nRespond with the matching label and a confidence score between 0 and 1.`,
         },
         schema: classifyNodeOutputSchema,
-        charge: { credits },
+        charge: true,
         tier: "fast",
       });
 
@@ -111,7 +103,7 @@ export class AiNodeExecutorService {
           system: `You are a summarization engine. Summarize the provided fields into a single concise paragraph.`,
           user: `Fields to summarize:\n${fieldTexts}`,
         },
-        charge: { credits },
+        charge: true,
         tier: "fast",
       });
 
@@ -145,7 +137,7 @@ export class AiNodeExecutorService {
           user: `Extract the following fields:\n${fieldDescriptions}\n\nFrom this payload:\n${payloadText}`,
         },
         schema: extractNodeOutputSchema,
-        charge: { credits },
+        charge: true,
         tier: "fast",
       });
 
@@ -177,7 +169,7 @@ export class AiNodeExecutorService {
         user: `Field value: "${fieldText}"\n\nRouting options: ${config.options.join(", ")}\n\nSelect the best option and provide your reasoning.`,
       },
       schema: llmSchema,
-      charge: { credits },
+      charge: true,
       tier: "standard",
     });
 

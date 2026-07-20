@@ -9,7 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { candidateApplications, candidates, interviews } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { LlmService } from "../ai/providers/llm.service";
+import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import {
   AiScoreSchema,
   CompositeScoreSchema,
@@ -36,42 +36,57 @@ function clamp(n: number, min = 0, max = 100): number {
 export class RecruitmentCandidateAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
   ) {}
 
-  async aiScore(orgId: string, candidateId: number): Promise<AiScoreResult> {
+  async aiScore(
+    orgId: string,
+    candidateId: number,
+    userId: string,
+  ): Promise<AiScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
-    if (!this.llm.isConfigured()) {
-      throw new ServiceUnavailableException("AI scoring is not configured.");
-    }
-
     const application = await this.db.query.candidateApplications.findFirst({
-      where: and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.orgId, orgId)),
+      where: and(
+        eq(candidateApplications.candidateId, candidateId),
+        eq(candidateApplications.orgId, orgId),
+      ),
       with: { jobPosting: true },
       orderBy: (t, { desc: d }) => [d(t.appliedAt)],
     });
 
-    const jobTitle = application?.jobPosting?.title ?? "an unspecified position";
+    const jobTitle =
+      application?.jobPosting?.title ?? "an unspecified position";
     const jobRequirements = application?.jobPosting?.requirements ?? "";
 
-    const profile: string[] = [`Name: ${candidate.firstName} ${candidate.lastName}`];
-    if (candidate.currentRole) profile.push(`Current Role: ${candidate.currentRole}`);
-    if (candidate.currentCompany) profile.push(`Current Company: ${candidate.currentCompany}`);
-    if (candidate.experienceYears) profile.push(`Years of Experience: ${candidate.experienceYears}`);
-    if (candidate.skills?.length) profile.push(`Skills: ${candidate.skills.join(", ")}`);
-    if (candidate.resumeText) profile.push(`\nResume Text:\n${candidate.resumeText.slice(0, 3000)}`);
+    const profile: string[] = [
+      `Name: ${candidate.firstName} ${candidate.lastName}`,
+    ];
+    if (candidate.currentRole)
+      profile.push(`Current Role: ${candidate.currentRole}`);
+    if (candidate.currentCompany)
+      profile.push(`Current Company: ${candidate.currentCompany}`);
+    if (candidate.experienceYears)
+      profile.push(`Years of Experience: ${candidate.experienceYears}`);
+    if (candidate.skills?.length)
+      profile.push(`Skills: ${candidate.skills.join(", ")}`);
+    if (candidate.resumeText)
+      profile.push(`\nResume Text:\n${candidate.resumeText.slice(0, 3000)}`);
 
-    const result = await this.llm.invokeStructured({
-      model: "fast",
+    const gatewayResult = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "hr.score-candidate",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: true,
       schema: AiScoreSchema,
-      schemaName: "candidate_ai_score",
-      system:
-        "You are an expert HR recruiter evaluating a candidate. Score each dimension from 0 to 100 based on the candidate profile and job requirements.",
-      user: `Position: "${jobTitle}"
+      prompt: {
+        system:
+          "You are an expert HR recruiter evaluating a candidate. Score each dimension from 0 to 100 based on the candidate profile and job requirements.",
+        user: `Position: "${jobTitle}"
 
 Job Requirements:
 ${jobRequirements || "Not specified."}
@@ -80,18 +95,27 @@ Candidate Profile:
 ${profile.join("\n")}
 
 Score the candidate on technicalSkills, experience, communication, cultureFit and leadership (0-100 each), provide an overall (0-100) and a 2-3 sentence summary.`,
+      },
     });
 
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new BadRequestException(gatewayResult.message);
+      throw new ServiceUnavailableException(
+        "AI scoring is temporarily unavailable",
+      );
+    }
+
     const scored: AiScoreResult = {
-      overall: clamp(result.overall),
+      overall: clamp(gatewayResult.data.overall),
       breakdown: {
-        technicalSkills: clamp(result.breakdown.technicalSkills),
-        experience: clamp(result.breakdown.experience),
-        communication: clamp(result.breakdown.communication),
-        cultureFit: clamp(result.breakdown.cultureFit),
-        leadership: clamp(result.breakdown.leadership),
+        technicalSkills: clamp(gatewayResult.data.breakdown.technicalSkills),
+        experience: clamp(gatewayResult.data.breakdown.experience),
+        communication: clamp(gatewayResult.data.breakdown.communication),
+        cultureFit: clamp(gatewayResult.data.breakdown.cultureFit),
+        leadership: clamp(gatewayResult.data.breakdown.leadership),
       },
-      summary: result.summary,
+      summary: gatewayResult.data.summary,
     };
 
     await this.db
@@ -107,15 +131,24 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
     return scored;
   }
 
-  async compositeScore(orgId: string, candidateId: number): Promise<CompositeScoreResult> {
+  async compositeScore(
+    orgId: string,
+    candidateId: number,
+    userId: string,
+  ): Promise<CompositeScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
     const candidateInterviews = await this.db.query.interviews.findMany({
-      where: and(eq(interviews.candidateId, candidateId), eq(interviews.orgId, orgId)),
-      with: { scorecards: { where: (sc, { isNotNull: nn }) => nn(sc.submittedAt) } },
+      where: and(
+        eq(interviews.candidateId, candidateId),
+        eq(interviews.orgId, orgId),
+      ),
+      with: {
+        scorecards: { where: (sc, { isNotNull: nn }) => nn(sc.submittedAt) },
+      },
       orderBy: (t, { asc }) => [asc(t.scheduledAt)],
     });
 
@@ -126,27 +159,35 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
       );
     }
 
-    if (!this.llm.isConfigured()) {
-      throw new ServiceUnavailableException("AI composite scoring is not configured.");
-    }
-
     const application = await this.db.query.candidateApplications.findFirst({
-      where: and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.orgId, orgId)),
+      where: and(
+        eq(candidateApplications.candidateId, candidateId),
+        eq(candidateApplications.orgId, orgId),
+      ),
       with: { jobPosting: true },
       orderBy: (t, { desc: d }) => [d(t.appliedAt)],
     });
 
-    const jobTitle = application?.jobPosting?.title ?? "an unspecified position";
+    const jobTitle =
+      application?.jobPosting?.title ?? "an unspecified position";
     const jobRequirements = application?.jobPosting?.requirements ?? "";
 
     const roundBlocks = candidateInterviews
       .filter((iv) => (iv.scorecards ?? []).length > 0)
       .map((iv, i) => {
         const scs = iv.scorecards ?? [];
-        const ratingValues = scs.flatMap((sc) => Object.values(sc.ratings ?? {}));
-        const avg = ratingValues.length > 0 ? ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length : null;
+        const ratingValues = scs.flatMap((sc) =>
+          Object.values(sc.ratings ?? {}),
+        );
+        const avg =
+          ratingValues.length > 0
+            ? ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length
+            : null;
         const recommendations = scs.map((sc) => sc.recommendation).join(", ");
-        const notes = scs.map((sc) => sc.notes).filter(Boolean).join(" | ");
+        const notes = scs
+          .map((sc) => sc.notes)
+          .filter(Boolean)
+          .join(" | ");
         return `Round ${i + 1} (${iv.type}) — ${iv.scheduledAt.toISOString().split("T")[0]}:
   Recommendations: ${recommendations}
   Avg Score: ${avg != null ? avg.toFixed(1) : "N/A"}
@@ -154,13 +195,17 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
       })
       .join("\n\n");
 
-    const result = await this.llm.invokeStructured({
-      model: "fast",
+    const gatewayResult = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "hr.composite-score",
+      tier: "fast",
+      maxTokens: 1536,
+      charge: true,
       schema: CompositeScoreSchema,
-      schemaName: "candidate_composite_score",
-      system:
-        "You are a senior talent acquisition expert generating a holistic composite hire/no-hire recommendation across all interview rounds.",
-      user: `Job Title: ${jobTitle}
+      prompt: {
+        system:
+          "You are a senior talent acquisition expert generating a holistic composite hire/no-hire recommendation across all interview rounds.",
+        user: `Job Title: ${jobTitle}
 Job Requirements:
 ${jobRequirements || "Not specified."}
 
@@ -170,8 +215,18 @@ Interview Scorecard Data:
 ${roundBlocks}
 
 Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite score (0-100), reasoning, strengths across rounds, concerns across rounds, and a per-round summary.`,
+      },
     });
 
+    if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new BadRequestException(gatewayResult.message);
+      throw new ServiceUnavailableException(
+        "AI scoring is temporarily unavailable",
+      );
+    }
+
+    const result = gatewayResult.data;
     return {
       verdict: result.verdict,
       overall: clamp(result.overall),
@@ -182,24 +237,40 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
         interviewType: rs.interviewType,
         scheduledAt: rs.scheduledAt,
         recommendation: rs.recommendation,
-        overallRating: rs.overallRating != null ? clamp(rs.overallRating) : null,
+        overallRating:
+          rs.overallRating != null ? clamp(rs.overallRating) : null,
         keyNotes: rs.keyNotes,
       })),
     };
   }
 
-  async parseResume(orgId: string, candidateId: number, file: Express.Multer.File | undefined, body: unknown) {
+  async parseResume(
+    orgId: string,
+    candidateId: number,
+    userId: string,
+    file: Express.Multer.File | undefined,
+    body: unknown,
+  ) {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      columns: { id: true, firstName: true, lastName: true, email: true, phone: true },
+      columns: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+      },
     });
     if (!candidate) throw new NotFoundException("Candidate not found");
 
     let text: string;
     if (file) {
-      if (file.size > RESUME_MAX_SIZE) throw new BadRequestException("File too large (max 5MB)");
+      if (file.size > RESUME_MAX_SIZE)
+        throw new BadRequestException("File too large (max 5MB)");
       if (!RESUME_ALLOWED_TYPES.includes(file.mimetype)) {
-        throw new BadRequestException("Unsupported file type. Please upload a PDF, DOCX, or TXT file.");
+        throw new BadRequestException(
+          "Unsupported file type. Please upload a PDF, DOCX, or TXT file.",
+        );
       }
       text = file.buffer.toString("utf-8");
     } else {
@@ -208,7 +279,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
       if (!text) throw new BadRequestException("resumeText is required");
     }
 
-    const parsed = await this.parseResumeText(text);
+    const parsed = await this.parseResumeText(text, orgId, userId);
 
     await this.db
       .update(candidates)
@@ -218,9 +289,14 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     return {
       parsed,
       suggestions: {
-        firstName: parsed.name && !candidate.firstName ? parsed.name.split(" ")[0] : null,
+        firstName:
+          parsed.name && !candidate.firstName
+            ? parsed.name.split(" ")[0]
+            : null,
         lastName:
-          parsed.name && !candidate.firstName ? parsed.name.split(" ").slice(1).join(" ") || null : null,
+          parsed.name && !candidate.firstName
+            ? parsed.name.split(" ").slice(1).join(" ") || null
+            : null,
         email: parsed.email && !candidate.email ? parsed.email : null,
         phone: parsed.phone && !candidate.phone ? parsed.phone : null,
         currentCompany: parsed.currentCompany,
@@ -234,29 +310,42 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     };
   }
 
-  private async parseResumeText(text: string): Promise<ParsedResume> {
+  private async parseResumeText(
+    text: string,
+    orgId: string,
+    userId: string,
+  ): Promise<ParsedResume> {
     const trimmed = text.slice(0, 12000);
-    if (!this.llm.isConfigured()) return this.fallbackExtract(trimmed);
-    try {
-      return await this.llm.invokeStructured({
-        model: "fast",
-        schema: ParsedResumeSchema,
-        schemaName: "ParsedResume",
+    const gatewayResult = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "hr.resume-parse",
+      tier: "fast",
+      maxTokens: 1024,
+      charge: true,
+      schema: ParsedResumeSchema,
+      prompt: {
         system:
           "You are an expert resume parser. Extract structured information from the resume text provided. Return null for fields that cannot be found. For skills, return a list of technical and professional skills mentioned. For experienceYears, calculate based on work history if possible, otherwise return null.",
         user: `Parse the following resume and extract the requested fields:\n\n${trimmed}`,
-      });
-    } catch {
-      return this.fallbackExtract(trimmed);
-    }
+      },
+    });
+
+    if (!gatewayResult.ok) return this.fallbackExtract(trimmed);
+    return gatewayResult.data;
   }
 
   private fallbackExtract(text: string): ParsedResume {
-    const email = text.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
+    const email = text.match(
+      /([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/,
+    );
     const phone = text.match(/(\+?[\d\s\-().]{7,15}\d)/);
     const name = text.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})/m);
-    const linkedin = text.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s]+)/i);
-    const portfolio = text.match(/(https?:\/\/(?:github\.com|portfolio\.|behance\.net|dribbble\.com)[^\s]+)/i);
+    const linkedin = text.match(
+      /(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^\s]+)/i,
+    );
+    const portfolio = text.match(
+      /(https?:\/\/(?:github\.com|portfolio\.|behance\.net|dribbble\.com)[^\s]+)/i,
+    );
     return {
       name: name?.[1] ?? null,
       email: email?.[1] ?? null,

@@ -1,6 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -10,7 +9,6 @@ import {
   payrollLineItems,
 } from "../../../db/schema";
 import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../../ai/billing/ai-cost-catalog";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 
@@ -112,10 +110,7 @@ export class PayrollAiExplainService {
       feature: FEATURE_KEY,
       tier: "fast",
       maxTokens: 400,
-      charge: {
-        credits: getFeatureCost(FEATURE_KEY),
-        idempotencyKey: `payroll-explain-${orgId}-${publicationId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       prompt: {
         system: buildSystemPrompt(),

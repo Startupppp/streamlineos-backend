@@ -176,7 +176,6 @@ describe("POST /public/feedbucket/:publicKey/ai-assist", () => {
 
     expect(err).toBeInstanceOf(HttpException);
     expect((err as HttpException).getStatus()).toBe(402);
-    // The model was never reached — BadRequestException from credits guard (consumeCredits)
     expect(aiService.analyzePublic).toHaveBeenCalledTimes(1);
   });
 

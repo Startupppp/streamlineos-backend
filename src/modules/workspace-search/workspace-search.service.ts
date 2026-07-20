@@ -1,8 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "crypto";
 import { WorkspaceSearchRetrievalService, type WorkspaceHit } from "./workspace-search-retrieval.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AskBody, SearchQuery } from "./dto/workspace-search.schemas";
 
@@ -49,17 +47,12 @@ export class WorkspaceSearchService {
       .map((h, i) => `[${i + 1}] ${h.entityType.toUpperCase()}: ${h.title}\n${h.snippet}`)
       .join("\n\n");
 
-    const featureCost = getFeatureCost("workspace.ask");
-    const charge = featureCost > 0
-      ? { credits: featureCost, idempotencyKey: `workspace-ask-${user.orgId}-${randomUUID()}` }
-      : undefined;
-
     const result = await this.gateway.invokeText({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "workspace.ask",
       tier: "fast",
       maxTokens: 512,
-      ...(charge ? { charge } : {}),
+      charge: true,
       prompt: {
         system:
           "You are a helpful workspace assistant for StreamlineOS. Answer the user's question using only the provided context. Cite sources with [n] notation inline. Be concise and factual.",

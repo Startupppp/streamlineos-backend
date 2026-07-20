@@ -60,7 +60,7 @@ describe("TicketAiService.handoffSummary", () => {
     expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: "ticket.handoff",
-        charge: { credits: expect.any(Number) },
+        charge: true,
         tier: "fast",
         maxTokens: 768,
       }),
@@ -138,7 +138,7 @@ describe("TicketAiService.extractMeetingActions", () => {
     expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: "pm.extract-meeting-actions",
-        charge: { credits: expect.any(Number) },
+        charge: true,
         tier: "fast",
         maxTokens: 1024,
       }),

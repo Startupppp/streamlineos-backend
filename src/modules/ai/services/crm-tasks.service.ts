@@ -4,7 +4,7 @@ import { crmDeals, leads, tasks, tickets, timesheets, users } from "../../../db/
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { PriorityResponseSchema } from "../dto/output.schemas";
 import { formatDateOnly } from "../ai-date.util";
 import { throwOnAiFailure } from "./gateway-result.util";
@@ -161,7 +161,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
       schema: PriorityResponseSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("crm.prioritize-tasks") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);

@@ -1,12 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
-import { randomUUID } from "crypto";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiSummariesService } from "../../ai-summaries/ai-summaries.service";
 import { ProjectsAnalyticsService } from "../../projects/projects-analytics.service";
 import { CrmSalesDashboardService } from "../../crm/crm-sales-dashboard.service";
 import { SupportReportsService } from "../../support/support-reports.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
 import type { SnapshotCitation } from "../../ai-summaries/ai-summaries.types";
 import type { AiUsageMeta } from "../gateway/ai-gateway.types";
 
@@ -16,13 +14,31 @@ export interface BriefCitation {
   href: string;
 }
 
-export interface ExecutiveBriefResult {
+export interface ExecutiveBriefSnapshot {
+  narrative: string;
+  citations: BriefCitation[];
+  uncertaintyNotes: string[];
+  generatedAt: string;
+  aiUsage?: AiUsageMeta | null;
+}
+
+export interface LatestBriefResponse {
+  snapshot: ExecutiveBriefSnapshot | null;
+  isStale: boolean;
+  staleSinceMinutes?: number;
+}
+
+export interface ExecutiveBriefResult extends ExecutiveBriefSnapshot {
+  sources: Record<string, unknown>;
+}
+
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+interface StoredBriefPayload {
   narrative: string;
   citations: BriefCitation[];
   sources: Record<string, unknown>;
   uncertaintyNotes: string[];
-  generatedAt: string;
-  aiUsage?: AiUsageMeta;
 }
 
 @Injectable()
@@ -38,8 +54,36 @@ export class ExecutiveBriefService {
     return this.moduleRef.get(token, { strict: false });
   }
 
-  async getLatest(orgId: string) {
-    return this.summaries.getLatestWithDiff(orgId, "executive_brief", orgId);
+  async getLatest(orgId: string): Promise<LatestBriefResponse> {
+    const result = await this.summaries.getLatestWithDiff(orgId, "executive_brief", orgId);
+
+    if (!result) {
+      return { snapshot: null, isStale: false };
+    }
+
+    const { snapshot } = result;
+    const ageMs = Date.now() - new Date(snapshot.createdAt).getTime();
+    const isStale = ageMs > STALE_THRESHOLD_MS;
+    const staleSinceMinutes = isStale ? Math.floor(ageMs / 60_000) : undefined;
+
+    let payload: StoredBriefPayload;
+    try {
+      payload = JSON.parse(snapshot.summary) as StoredBriefPayload;
+    } catch {
+      this.logger.warn("Failed to parse executive brief snapshot summary JSON", { id: snapshot.id });
+      return { snapshot: null, isStale };
+    }
+
+    return {
+      snapshot: {
+        narrative: payload.narrative ?? "",
+        citations: Array.isArray(payload.citations) ? payload.citations : [],
+        uncertaintyNotes: Array.isArray(payload.uncertaintyNotes) ? payload.uncertaintyNotes : [],
+        generatedAt: snapshot.createdAt.toISOString(),
+      },
+      isStale,
+      staleSinceMinutes,
+    };
   }
 
   async generate(orgId: string, userId: string): Promise<ExecutiveBriefResult> {
@@ -89,10 +133,7 @@ export class ExecutiveBriefService {
       },
       tier: "standard",
       maxTokens: 1024,
-      charge: {
-        credits: getFeatureCost("exec.brief.generate"),
-        idempotencyKey: `exec-brief-${orgId}-${randomUUID()}`,
-      },
+      charge: true,
     });
 
     let narrative = "";

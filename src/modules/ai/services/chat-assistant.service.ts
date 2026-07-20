@@ -93,10 +93,6 @@ export class ChatAssistantService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
   ) {}
 
-  getChatModelId(): string {
-    return resolveChatModelId();
-  }
-
   private async fetchContext(userId: string, orgId: string): Promise<ChatContext> {
     const today = getTodayString();
 

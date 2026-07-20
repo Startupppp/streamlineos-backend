@@ -5,7 +5,7 @@ import { auditLogs, dealActivities, deals, leadActivities, leads } from "../../.
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { OrgFeaturesService } from "./org-features.service";
 import { CrmScoringService } from "./crm-scoring.service";
 import { CrmContentService } from "./crm-content.service";
@@ -135,7 +135,7 @@ ${truncate(activitiesText, 1500)}`;
       schema: LeadSummarySchema,
       tier: "standard",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.copilot.summary") },
+      charge: true,
       dedupe: true,
     });
 
@@ -213,7 +213,7 @@ ${truncate(activitiesText, 1500)}`;
       schema: DealInsightsSchema,
       tier: "standard",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.copilot.summary") },
+      charge: true,
       dedupe: true,
     });
 
@@ -318,7 +318,7 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
       schema: ConversationSummarySchema.extend({ objections: z.array(z.string()).default([]) }),
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.copilot.notes") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -374,7 +374,7 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
         },
         tier: "fast",
         maxTokens: 512,
-        charge: { credits: getFeatureCost("crm.copilot.duplicates") },
+        charge: true,
       });
 
       if (!result.ok) throwOnAiFailure(result);

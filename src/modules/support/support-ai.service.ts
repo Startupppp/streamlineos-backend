@@ -17,7 +17,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmbeddingsService } from "../ai/providers/embeddings.service";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { OrgFeaturesService } from "../ai/services/org-features.service";
 import { redactSensitiveData } from "../ai/redaction.util";
 import { logger } from "../../common/logger/logger.service";
@@ -197,7 +196,7 @@ export class SupportAiService {
       feature: "support.reply",
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("support.reply") },
+      charge: true,
       prompt: {
         system: "You draft support-agent replies. Write a helpful, concise, professional reply the agent can review and edit before sending. Never claim to have taken an action that hasn't happened.",
         user: `Ticket: ${redactSensitiveData(ticket.title)}\n\nConversation:\n${thread || redactSensitiveData(ticket.description ?? "") || "(no messages yet)"}${kbCtx}`,
@@ -226,7 +225,7 @@ export class SupportAiService {
       feature: "support.macro",
       tier: "fast",
       schema: macroPickSchema,
-      charge: { credits: getFeatureCost("support.macro") },
+      charge: true,
       prompt: {
         system: "Pick the single macro (canned response) that best fits replying to this ticket. If none are a good fit, return null.",
         user: `Ticket: ${redactSensitiveData(ticket.title)}\n${redactSensitiveData(ticket.description ?? "")}\n\nAvailable macros:\n${catalog}`,
@@ -279,7 +278,7 @@ export class SupportAiService {
       feature: "support.translate",
       tier: "fast",
       schema: translationSchema,
-      charge: { credits: getFeatureCost("support.translate") },
+      charge: true,
       prompt: {
         system: "You translate support-ticket messages faithfully, preserving tone and meaning. Return only the translation and your best guess at the source language — never add commentary.",
         user: `Translate the following message into ${targetLanguage}:\n\n${redactSensitiveData(message.body)}`,
@@ -310,7 +309,7 @@ export class SupportAiService {
       feature: "support.translate",
       tier: "fast",
       schema: translationSchema,
-      charge: { credits: getFeatureCost("support.translate") },
+      charge: true,
       prompt: {
         system: "You translate support-agent draft replies faithfully, preserving tone and meaning. Return only the translation and source language — never add commentary.",
         user: `Translate the following draft into ${language}:\n\n${redactSensitiveData(body)}`,
@@ -339,7 +338,7 @@ export class SupportAiService {
       feature: "support.reply",
       tier: "fast",
       schema: improveReplyOutputSchema,
-      charge: { credits: getFeatureCost("support.reply") },
+      charge: true,
       prompt: {
         system: "You improve support-agent reply drafts. Make them clearer, more empathetic, and professional while preserving the agent's intent. Return the improved reply and a short list of what changed.",
         user: `Ticket: ${redactSensitiveData(ticket.title)}\n\nCurrent draft:\n${redactSensitiveData(content)}${macroCtx}`,
@@ -370,7 +369,7 @@ export class SupportAiService {
       feature: "support.handoff",
       tier: "fast",
       schema: handoffSummarySchema,
-      charge: { credits: getFeatureCost("support.handoff") },
+      charge: true,
       prompt: {
         system: "You brief a support agent who is picking up a ticket from a teammate. Be concrete about what's already been tried and what's still unresolved. Never invent facts not present below.",
         user: `Ticket: ${redactSensitiveData(ticket.title)}\nStatus: ${ticket.status}\nPriority: ${ticket.priority}\n\nFull history (including internal notes):\n${thread || "(no messages yet)"}`,
@@ -399,7 +398,7 @@ export class SupportAiService {
       feature: "support.root-cause",
       tier: "fast",
       schema: rootCauseSchema,
-      charge: { credits: getFeatureCost("support.root-cause") },
+      charge: true,
       prompt: {
         system: "You look at a set of similar support tickets and name the likely shared root cause. If they don't actually look related, say so plainly in the summary.",
         user: `These tickets were flagged as similar:\n${catalog}`,

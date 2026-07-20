@@ -1,9 +1,10 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function getFromEmail(): string {
-  const fromEmail = process.env.EMAIL_FROM_ADDRESS?.trim();
+  const fromEmail =
+    process.env.NOREPLY_EMAIL?.trim() || process.env.EMAIL_FROM_ADDRESS?.trim();
   if (!fromEmail || !EMAIL_RE.test(fromEmail)) {
-    throw new Error("EMAIL_FROM_ADDRESS is missing or invalid in the backend environment");
+    throw new Error("NOREPLY_EMAIL / EMAIL_FROM_ADDRESS is missing or invalid in the backend environment");
   }
   return fromEmail;
 }

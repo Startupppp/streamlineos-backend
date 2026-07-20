@@ -4,30 +4,26 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
 import { AccessService } from "../access/access.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { eq, sql } from "drizzle-orm";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
   organizations,
   roles,
   subscriptions,
   users,
-  verificationTokens,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { EmailService } from "../email/email.service";
 import { SessionService } from "./session.service";
 import { AuthTokensService } from "./auth-tokens.service";
-import { hashToken } from "../../common/security/token.util";
-import { addDays, addHours } from "date-fns";
+import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
 
 function slugify(name: string): string {
@@ -42,10 +38,6 @@ function slugify(name: string): string {
   );
 }
 
-function generateToken(): string {
-  return randomBytes(32).toString("hex");
-}
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -53,7 +45,6 @@ export class AuthService {
     private readonly sessionService: SessionService,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
     private readonly access: AccessService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
@@ -64,26 +55,10 @@ export class AuthService {
 
     const existing = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, emailVerified: true },
+      columns: { id: true },
     });
 
     if (existing) {
-      if (!existing.emailVerified) {
-        const rawToken = generateToken();
-        await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
-        await this.db.insert(verificationTokens).values({
-          identifier: normalizedEmail,
-          token: hashToken(rawToken),
-          expires: addHours(new Date(), 24),
-        });
-        try {
-          await this.email.sendVerificationEmail(normalizedEmail, rawToken);
-        } catch {
-          throw new ServiceUnavailableException(
-            "Account exists but we could not send the verification email. Try resend on the signup page.",
-          );
-        }
-      }
       return { success: true };
     }
 
@@ -106,7 +81,7 @@ export class AuthService {
         role: "OWNER",
         isActive: true,
         hasDashboardAccess: true,
-        emailVerified: null,
+        emailVerified: new Date(),
         lastActiveOrgId: orgId,
       });
 
@@ -129,21 +104,6 @@ export class AuthService {
       const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };
       await tx.insert(roles).values({ ...adminRole, orgId });
     });
-
-    const rawToken = generateToken();
-    await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
-    await this.db.insert(verificationTokens).values({
-      identifier: normalizedEmail,
-      token: hashToken(rawToken),
-      expires: addHours(new Date(), 24),
-    });
-    try {
-      await this.email.sendVerificationEmail(normalizedEmail, rawToken);
-    } catch {
-      throw new ServiceUnavailableException(
-        "Account created but we could not send the verification email. Try resend on the signup page.",
-      );
-    }
 
     this.audit.log({
       action: "user.registered",

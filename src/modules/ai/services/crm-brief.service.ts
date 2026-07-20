@@ -10,7 +10,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import { NlSearchFilterSchema } from "../dto/output.schemas";
 import type { AccountSummaryInput, MeetingPrepInput, NlSearchInput } from "../dto/request.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
@@ -128,7 +128,7 @@ Please generate a comprehensive account summary with:
       },
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("crm.account-summary") },
+      charge: true,
       dedupe: true,
     });
 
@@ -268,7 +268,7 @@ Please generate a structured pre-meeting brief with:
       },
       tier: "standard",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("crm.meeting-prep") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -293,7 +293,7 @@ Please generate a structured pre-meeting brief with:
       schema: NlSearchFilterSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.nl-search") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -412,7 +412,7 @@ Keep the tone professional but warm. Max 200 words for the body.`;
       },
       tier: "standard",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.meeting-follow-up") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);

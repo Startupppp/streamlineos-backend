@@ -11,7 +11,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { chatChannelMembers, chatMessages, users } from "../../db/schema";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 
 const SUMMARIZE_LIMIT = 50;
 
@@ -78,10 +77,7 @@ export class ChatSummarizeService {
       },
       tier: "fast",
       maxTokens: 600,
-      charge: {
-        credits: getFeatureCost("chat.summarize"),
-        idempotencyKey: `chat-summarize-${channelId}-${actor.userId}-${Date.now()}`,
-      },
+      charge: true,
     });
 
     if (!result.ok) throw new InternalServerErrorException(result.message);

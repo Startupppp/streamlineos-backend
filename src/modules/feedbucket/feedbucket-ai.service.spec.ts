@@ -83,7 +83,7 @@ describe("FeedbucketAiService — gateway migration", () => {
         expect.objectContaining({
           actor: { orgId: ORG_A, userId: USER_A },
           feature: "feedbucket.assist",
-          charge: { credits: 5 },
+          charge: true,
         }),
       );
     });

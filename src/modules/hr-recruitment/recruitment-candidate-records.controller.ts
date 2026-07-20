@@ -60,7 +60,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ai.aiScore(u.orgId, candidateId);
+    return this.ai.aiScore(u.orgId, candidateId, u.userId);
   }
 
   @Post("composite-score")
@@ -69,19 +69,21 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ai.compositeScore(u.orgId, candidateId);
+    return this.ai.compositeScore(u.orgId, candidateId, u.userId);
   }
 
   @Post("resume-parse")
   @RequirePermission("hr:employees:manage")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ai.parseResume(u.orgId, candidateId, file, body);
+    return this.ai.parseResume(u.orgId, candidateId, u.userId, file, body);
   }
 
   @Get("rollout-documents")
@@ -98,10 +100,16 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   generateRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(rolloutDocumentsSchema)) body: RolloutDocumentsInput,
+    @Body(new ZodValidationPipe(rolloutDocumentsSchema))
+    body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.generateRolloutDocuments(u.orgId, u.userId, candidateId, body);
+    return this.records.generateRolloutDocuments(
+      u.orgId,
+      u.userId,
+      candidateId,
+      body,
+    );
   }
 
   @Get("calibration")
@@ -118,7 +126,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   createCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createCalibrationSchema)) body: CreateCalibrationInput,
+    @Body(new ZodValidationPipe(createCalibrationSchema))
+    body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.createCalibration(u.orgId, u.userId, candidateId, body);
@@ -128,7 +137,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   updateCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(updateCalibrationSchema)) body: UpdateCalibrationInput,
+    @Body(new ZodValidationPipe(updateCalibrationSchema))
+    body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.updateCalibration(u.orgId, candidateId, body);
@@ -148,7 +158,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   createReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createReferralSchema)) body: CreateReferralInput,
+    @Body(new ZodValidationPipe(createReferralSchema))
+    body: CreateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.createReferral(u.orgId, candidateId, body);
@@ -158,7 +169,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   updateReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(updateReferralSchema)) body: UpdateReferralInput,
+    @Body(new ZodValidationPipe(updateReferralSchema))
+    body: UpdateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.updateReferral(u.orgId, candidateId, body);
@@ -178,10 +190,16 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   createReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createReferenceCheckSchema)) body: CreateReferenceCheckInput,
+    @Body(new ZodValidationPipe(createReferenceCheckSchema))
+    body: CreateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.createReferenceCheck(u.orgId, u.userId, candidateId, body);
+    return this.records.createReferenceCheck(
+      u.orgId,
+      u.userId,
+      candidateId,
+      body,
+    );
   }
 
   @Patch("reference-checks/:checkId")
@@ -189,10 +207,16 @@ export class RecruitmentCandidateRecordsController {
   updateReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
-    @Body(new ZodValidationPipe(updateReferenceCheckSchema)) body: UpdateReferenceCheckInput,
+    @Body(new ZodValidationPipe(updateReferenceCheckSchema))
+    body: UpdateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.updateReferenceCheck(u.orgId, candidateId, checkId, body);
+    return this.records.updateReferenceCheck(
+      u.orgId,
+      candidateId,
+      checkId,
+      body,
+    );
   }
 
   @Delete("reference-checks/:checkId")
@@ -220,7 +244,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   generateDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(generateDocumentSchema)) body: GenerateDocumentInput,
+    @Body(new ZodValidationPipe(generateDocumentSchema))
+    body: GenerateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.generateDocument(u.orgId, u.userId, candidateId, body);
@@ -234,10 +259,17 @@ export class RecruitmentCandidateRecordsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const doc = await this.records.viewDocument(u.orgId, candidateId, documentId);
+    const doc = await this.records.viewDocument(
+      u.orgId,
+      candidateId,
+      documentId,
+    );
     const safeTitle = doc.title.replace(/[^a-z0-9_-]/gi, "_");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Disposition", `inline; filename="${safeTitle}.html"`);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${safeTitle}.html"`,
+    );
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.send(doc.htmlContent);
   }
@@ -256,7 +288,8 @@ export class RecruitmentCandidateRecordsController {
   @RequirePermission("hr:employees:manage")
   addVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(addVaultDocumentSchema)) body: AddVaultDocumentInput,
+    @Body(new ZodValidationPipe(addVaultDocumentSchema))
+    body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);

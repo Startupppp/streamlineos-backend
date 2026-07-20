@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
+
 import {
   churnRiskPrompt,
   dealPredictionPrompt,
@@ -106,7 +106,7 @@ export class CrmScoringService {
       schema: LeadScoreSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.score-lead") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -200,7 +200,7 @@ export class CrmScoringService {
       schema: DealPredictionSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.predict-deal") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -265,7 +265,7 @@ export class CrmScoringService {
       schema: ChurnRiskSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.churn-risk") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -347,7 +347,7 @@ export class CrmScoringService {
       schema: NextActionSchema,
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("crm.next-action") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);
@@ -444,7 +444,7 @@ export class CrmScoringService {
       schema: NextActionWithEvidenceSchema,
       tier: "fast",
       maxTokens: 600,
-      charge: { credits: getFeatureCost("crm.next-action") },
+      charge: true,
     });
 
     if (!result.ok) throwOnAiFailure(result);

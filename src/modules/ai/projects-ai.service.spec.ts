@@ -306,10 +306,9 @@ describe("ProjectsAiService", () => {
 
       await service.summarize("org_1", 1, "user_1");
 
-      const call = mockGateway.invokeStructured.mock.calls[0][0] as { feature: string; charge: { credits: number }; dedupe: boolean };
-      expect(call.feature).toBe("pm.summary");
-      expect(call.charge).toEqual({ credits: 1 });
-      expect(call.dedupe).toBe(true);
+      expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
+        expect.objectContaining({ feature: "pm.summary", charge: true, dedupe: true }),
+      );
     });
 
     it("invokes gateway with correct feature key for detectRisks", async () => {

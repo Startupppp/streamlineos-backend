@@ -14,7 +14,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { feedbucketSubmissions } from "../../db/schema";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { AiUsageService } from "../ai/services/ai-usage.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -218,7 +217,6 @@ export class FeedbucketAiService {
       networkLogs: opts.networkLogs,
     });
 
-    const credits = getFeatureCost(opts.feature);
     const result = await this.gateway.invokeStructuredWithImageWithUsage({
       actor: { orgId: opts.orgId, userId: opts.userId },
       feature: opts.feature,
@@ -226,7 +224,7 @@ export class FeedbucketAiService {
       prompt: { system, user: userContent },
       schema: FeedbackAnalysisSchema,
       images: opts.imageDataUrls,
-      charge: { credits },
+      charge: true,
       redact: false,
     });
 

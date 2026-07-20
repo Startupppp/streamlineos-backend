@@ -116,6 +116,60 @@ describe("AiCreditsService.purchaseCreditsDirectly", () => {
       | undefined;
     expect(txFn).toBeDefined();
   });
+
+  it("automatic top-up: skips wallet credit if same referenceId already purchased within transaction", async () => {
+    const existingPurchaseTx = [{ id: 77 }];
+    const currentWalletRow = { ...mockWalletRow, balance: 50000 };
+
+    let txSelectCallCount = 0;
+    const autoTxMock = {
+      select: jest.fn().mockImplementation(() => {
+        txSelectCallCount++;
+        if (txSelectCallCount === 1) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue(existingPurchaseTx),
+              }),
+            }),
+          };
+        }
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([currentWalletRow]),
+          }),
+        };
+      }),
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([currentWalletRow]),
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+
+    const packChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([mockPack]),
+    };
+
+    const autoDb = {
+      select: jest.fn().mockReturnValue(packChain),
+      transaction: jest.fn().mockImplementation(
+        (fn: (tx: typeof autoTxMock) => Promise<unknown>) => fn(autoTxMock),
+      ),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [AiCreditsService, { provide: DRIZZLE, useValue: autoDb }],
+    }).compile();
+    const svc = module.get(AiCreditsService);
+
+    const result = await svc.purchaseCreditsDirectly("org1", null, 1, true);
+
+    expect(autoTxMock.insert).not.toHaveBeenCalled();
+    expect(autoTxMock.update).not.toHaveBeenCalled();
+    expect(result.creditsAdded).toBe(mockPack.credits + mockPack.bonusCredits);
+  });
 });
 
 describe("AiCreditsService.grantPlanCredits — idempotency", () => {

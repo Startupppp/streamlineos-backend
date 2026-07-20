@@ -10,7 +10,6 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
 
 @Injectable()
@@ -80,7 +79,7 @@ export class SurveyAiService {
       prompt: { system, user },
       tier: "standard",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("survey.summarize-responses") },
+      charge: true,
     });
 
     const summary = unwrapAiResult(result);

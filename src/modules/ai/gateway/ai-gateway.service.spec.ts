@@ -112,7 +112,7 @@ describe("AiGatewayService", () => {
         feature: FEATURE,
         prompt: PROMPT,
         schema: GreetingSchema,
-        charge: { credits: 5 },
+        charge: true,
       });
 
       expect(ledger.reserve).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1", credits: 1000 }));
@@ -133,7 +133,7 @@ describe("AiGatewayService", () => {
         actor: ACTOR,
         feature: FEATURE,
         prompt: PROMPT,
-        charge: { credits: 5 },
+        charge: true,
       });
 
       expect(result.ok).toBe(false);
@@ -168,7 +168,7 @@ describe("AiGatewayService", () => {
         actor: ACTOR,
         feature: FEATURE,
         prompt: PROMPT,
-        charge: { credits: 10 },
+        charge: true,
       });
 
       expect(result.ok).toBe(false);
@@ -246,7 +246,7 @@ describe("AiGatewayService", () => {
         actor: ACTOR,
         feature: FEATURE,
         prompt: PROMPT,
-        charge: { credits: 5 },
+        charge: true,
       });
 
       expect(ledger.settle).not.toHaveBeenCalled();

@@ -1,12 +1,10 @@
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { invAiInsights } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { AiConfirmationService } from "../ai-confirmation/ai-confirmation.service";
 import { InvReplenishmentService } from "../inv-replenishment/inv-replenishment.service";
 import { InvVendorsService } from "../inv-vendors/inv-vendors.service";
@@ -164,10 +162,7 @@ export class InvAiExplainService {
       feature: FEATURE_KEY,
       tier: "fast",
       maxTokens: 512,
-      charge: {
-        credits: getFeatureCost(FEATURE_KEY),
-        idempotencyKey: `inv-explain-${orgId}-${insightId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       schema: ExplainResponseSchema,
       prompt: {
@@ -234,10 +229,7 @@ export class InvAiExplainService {
         feature: FEATURE_KEY,
         tier: "fast",
         maxTokens: 256,
-        charge: {
-          credits: getFeatureCost(FEATURE_KEY),
-          idempotencyKey: `inv-digest-${orgId}-${randomUUID()}`,
-        },
+        charge: true,
         redact: false,
         prompt: {
           system: buildSystemPrompt(),
@@ -294,10 +286,7 @@ export class InvAiExplainService {
       feature: REORDER_FEATURE_KEY,
       tier: "fast",
       maxTokens: 512,
-      charge: {
-        credits: getFeatureCost(REORDER_FEATURE_KEY),
-        idempotencyKey: `inv-reorder-${orgId}-${variantId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       schema: ExplainResponseSchema,
       prompt: {
@@ -423,10 +412,7 @@ export class InvAiExplainService {
               feature: DELAY_FEATURE_KEY,
               tier: "fast",
               maxTokens: 512,
-              charge: {
-                credits: getFeatureCost(DELAY_FEATURE_KEY),
-                idempotencyKey: `inv-delay-${orgId}-${randomUUID()}`,
-              },
+              charge: true,
               redact: false,
               prompt: {
                 system: buildSystemPrompt(),

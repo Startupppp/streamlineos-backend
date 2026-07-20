@@ -25,7 +25,6 @@ import {
   changeImpactPrompt,
 } from "../prompts/pm.prompts";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { getFeatureCost } from "../billing/ai-cost-catalog";
 import { unwrapAiResult } from "./gateway-result.util";
 
 const NO_DATA = {
@@ -131,7 +130,7 @@ export class ProjectsAiService {
       schema: PmSummaryOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("pm.summary") },
+      charge: true,
       dedupe: true,
     });
 
@@ -178,7 +177,7 @@ export class ProjectsAiService {
       schema: PmRisksOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("pm.risks") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -214,7 +213,7 @@ export class ProjectsAiService {
       schema: PmClientUpdateOutputSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("pm.client-update") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -242,7 +241,7 @@ export class ProjectsAiService {
       schema: PmPlanOutputSchema,
       tier: "fast",
       maxTokens: 1536,
-      charge: { credits: getFeatureCost("pm.plan") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -269,7 +268,7 @@ export class ProjectsAiService {
       schema: PmExtractOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("pm.extract-tasks") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -303,7 +302,7 @@ export class ProjectsAiService {
       schema: PmAskOutputSchema,
       tier: "fast",
       maxTokens: 768,
-      charge: { credits: getFeatureCost("pm.ask") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -352,7 +351,7 @@ export class ProjectsAiService {
       schema: PmWeeklyUpdateOutputSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("pm.weekly-update") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);
@@ -403,7 +402,7 @@ export class ProjectsAiService {
       schema: PmChangeImpactOutputSchema,
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("pm.change-impact") },
+      charge: true,
     });
 
     const data = unwrapAiResult(result);

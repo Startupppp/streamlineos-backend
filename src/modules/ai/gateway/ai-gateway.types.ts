@@ -51,18 +51,13 @@ export interface AiInvokePrompt {
   promptVersion?: number;
 }
 
-export interface AiInvokeCharge {
-  credits: number;
-  idempotencyKey?: string;
-}
-
 export interface AiInvokeBaseOpts {
   actor: AiInvokeActor;
   feature: string;
   prompt: AiInvokePrompt;
   tier?: "fast" | "standard";
   maxTokens?: number;
-  charge?: AiInvokeCharge;
+  charge?: boolean;
   redact?: boolean;
   dedupe?: boolean;
 }

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { Annotation, StateGraph, END, START } from "@langchain/langgraph";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import type { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import type { KbSearchService, RetrievedSource } from "./kb-search.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -102,7 +101,7 @@ export function buildResearchBriefGraph(deps: BriefGraphDeps) {
       feature: "kb.research-brief",
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("kb.research-brief") },
+      charge: true,
       schema: SubQuestionsSchema,
       prompt: {
         system:
@@ -156,7 +155,7 @@ export function buildResearchBriefGraph(deps: BriefGraphDeps) {
       feature: "kb.research-brief",
       tier: "standard",
       maxTokens: 2048,
-      charge: { credits: getFeatureCost("kb.research-brief") },
+      charge: true,
       prompt: {
         system:
           "You are a research assistant. Synthesize a comprehensive, well-structured report in Markdown using ONLY the provided sources. " +
@@ -178,7 +177,7 @@ export function buildResearchBriefGraph(deps: BriefGraphDeps) {
       feature: "kb.research-brief",
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("kb.research-brief") },
+      charge: true,
       schema: CritiqueSchema,
       prompt: {
         system:

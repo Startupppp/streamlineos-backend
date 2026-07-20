@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { ToolAccessService } from "./tool-access.service";
-import { LlmService } from "./providers/llm.service";
+import { AiGatewayService } from "./gateway/ai-gateway.service";
 
 export interface HrToolContext {
   orgId: string;
@@ -17,7 +17,7 @@ export class HrCopilotTools {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly toolAccess: ToolAccessService,
-    private readonly llm: LlmService,
+    private readonly gateway: AiGatewayService,
   ) {}
 
   buildTools(ctx: HrToolContext) {
@@ -58,29 +58,37 @@ export class HrCopilotTools {
             )
             .join("\n");
 
-          try {
-            const answer = await this.llm.invokeText({
+          const result = await this.gateway.invokeText({
+            actor: { orgId, userId },
+            feature: "hr.policy-qa",
+            prompt: {
               system:
                 "You are an HR policy assistant. Answer the user's question based only on the provided HR policies. Be concise and accurate. If you cannot answer from the listed policies, say so clearly.",
               user: `Active HR policies:\n\n${policyList}\n\nQuestion: ${question}`,
-            });
+            },
+            charge: true,
+          });
 
-            return {
-              answer,
-              sources: policies.map((p: Record<string, unknown>) => ({
-                policyType: String(p.policy_type),
-                status: String(p.status),
-                citation: `HR Policy: ${String(p.policy_type)} (active)`,
-              })),
-              disclaimer:
-                "AI-generated response based on your organization's active HR policies. For official decisions, consult your HR department.",
-            };
-          } catch {
+          if (!result.ok) {
+            if (result.kind === "quota_exceeded") {
+              return { answer: "AI credits exhausted. Please top up your AI credits and try again.", sources: [] };
+            }
             return {
               answer: `Your organization has ${policies.length} active policies covering: ${policies.map((p: Record<string, unknown>) => String(p.policy_type)).join(", ")}. For specific details, please contact HR.`,
               sources: [],
             };
           }
+
+          return {
+            answer: result.data,
+            sources: policies.map((p: Record<string, unknown>) => ({
+              policyType: String(p.policy_type),
+              status: String(p.status),
+              citation: `HR Policy: ${String(p.policy_type)} (active)`,
+            })),
+            disclaimer:
+              "AI-generated response based on your organization's active HR policies. For official decisions, consult your HR department.",
+          };
         },
       }),
 
@@ -190,8 +198,10 @@ export class HrCopilotTools {
           const emp = empRows[0] as Record<string, string> | undefined;
           const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
 
-          try {
-            const draft = await this.llm.invokeText({
+          const result = await this.gateway.invokeText({
+            actor: { orgId, userId },
+            feature: "hr.generate-review",
+            prompt: {
               system:
                 "You are an HR professional helping draft performance review notes. Write balanced, constructive, and specific reviews. Use professional language. Write in 2-3 focused paragraphs.",
               user: [
@@ -202,24 +212,34 @@ export class HrCopilotTools {
               ]
                 .filter(Boolean)
                 .join("\n"),
-            });
+            },
+            charge: true,
+          });
 
-            return {
-              draft,
-              employee: empName,
-              period: reviewPeriod,
-              rating: overallRating,
-              disclaimer:
-                "DRAFT -- AI-generated suggestion. Requires human review, editing, and approval before any official use. Do not share with the employee until reviewed.",
-              requiresApproval: true,
-            };
-          } catch {
+          if (!result.ok) {
+            if (result.kind === "quota_exceeded") {
+              return {
+                draft: "AI credits exhausted. Please top up your AI credits and try again.",
+                disclaimer: "DRAFT -- Requires human review and approval.",
+                requiresApproval: true,
+              };
+            }
             return {
               draft: `Performance review draft for ${empName} (${reviewPeriod}):\n\nUnable to generate draft at this time. Please write the review manually based on the provided inputs.`,
               disclaimer: "DRAFT -- Requires human review and approval.",
               requiresApproval: true,
             };
           }
+
+          return {
+            draft: result.data,
+            employee: empName,
+            period: reviewPeriod,
+            rating: overallRating,
+            disclaimer:
+              "DRAFT -- AI-generated suggestion. Requires human review, editing, and approval before any official use. Do not share with the employee until reviewed.",
+            requiresApproval: true,
+          };
         },
       }),
 
@@ -251,8 +271,10 @@ export class HrCopilotTools {
           const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
           const currentTitle = emp?.designation ?? "current role";
 
-          try {
-            const draft = await this.llm.invokeText({
+          const result = await this.gateway.invokeText({
+            actor: { orgId, userId },
+            feature: "hr.letter-draft",
+            prompt: {
               system:
                 "You are an HR professional drafting formal promotion letters. Write in a warm yet professional tone. Structure: opening congratulations, recognition of contributions, new role details, expression of confidence, closing. Keep to 3-4 paragraphs.",
               user: [
@@ -265,19 +287,19 @@ export class HrCopilotTools {
               ]
                 .filter(Boolean)
                 .join("\n"),
-            });
+            },
+            charge: true,
+          });
 
-            return {
-              draft,
-              employee: empName,
-              newTitle,
-              effectiveDate,
-              disclaimer:
-                "DRAFT -- AI-generated promotion letter. Must be reviewed and approved by HR leadership, then signed by an authorized representative before delivery. Do NOT send to the employee without authorization.",
-              requiresApproval: true,
-              autoSaved: false,
-            };
-          } catch {
+          if (!result.ok) {
+            if (result.kind === "quota_exceeded") {
+              return {
+                draft: "AI credits exhausted. Please top up your AI credits and try again.",
+                disclaimer: "DRAFT -- Requires human review and approval.",
+                requiresApproval: true,
+                autoSaved: false,
+              };
+            }
             return {
               draft: `Dear ${empName},\n\nWe are pleased to inform you of your promotion to ${newTitle} effective ${effectiveDate}.\n\n[Please complete this letter with specific achievements and expectations.]\n\nCongratulations,\nHR Department`,
               disclaimer: "DRAFT -- Requires human review and approval.",
@@ -285,6 +307,17 @@ export class HrCopilotTools {
               autoSaved: false,
             };
           }
+
+          return {
+            draft: result.data,
+            employee: empName,
+            newTitle,
+            effectiveDate,
+            disclaimer:
+              "DRAFT -- AI-generated promotion letter. Must be reviewed and approved by HR leadership, then signed by an authorized representative before delivery. Do NOT send to the employee without authorization.",
+            requiresApproval: true,
+            autoSaved: false,
+          };
         },
       }),
 

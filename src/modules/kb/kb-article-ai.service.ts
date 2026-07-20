@@ -5,7 +5,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { KbAccessService } from "./kb-access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
@@ -41,7 +40,7 @@ export class KbArticleAiService {
       feature: "kb.article-summarize",
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("kb.article-summarize") },
+      charge: true,
       prompt: {
         system: "You are a knowledge base assistant. Summarize the provided article concisely in 3-5 bullet points covering the key points. Be factual and direct.",
         user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}`,
@@ -62,7 +61,7 @@ export class KbArticleAiService {
       feature: "kb.article-ask",
       tier: "fast",
       maxTokens: 512,
-      charge: { credits: getFeatureCost("kb.article-ask") },
+      charge: true,
       prompt: {
         system: "You are a knowledge base assistant. Answer the user's question using ONLY the content of the article provided. If the article does not contain the answer, say so clearly. Never fabricate information.",
         user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}\n\nQuestion: ${question}`,
@@ -83,7 +82,7 @@ export class KbArticleAiService {
       feature: "kb.article-improve",
       tier: "fast",
       maxTokens: 1024,
-      charge: { credits: getFeatureCost("kb.article-improve") },
+      charge: true,
       prompt: {
         system: "You are a technical writer. Rewrite the provided article content for clarity, conciseness, and professional quality. Fix grammar and structure. Output ONLY the improved plain text. Preserve all factual information.",
         user: `Article title: "${article.title}"\n\nContent to improve:\n${content || "(no content yet)"}`,
@@ -104,7 +103,7 @@ export class KbArticleAiService {
       feature: "kb.article-suggest-related",
       tier: "fast",
       maxTokens: 384,
-      charge: { credits: getFeatureCost("kb.article-suggest-related") },
+      charge: true,
       prompt: {
         system: "You are a knowledge base curator. Based on the article content, suggest 4-6 related topics or articles that would complement it. Format as a simple bullet list of topic titles. Be specific and actionable.",
         user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}`,

@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -11,7 +10,6 @@ import {
   journalLines,
 } from "../../db/schema";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
-import { getFeatureCost } from "../ai/billing/ai-cost-catalog";
 import { extractAttachmentText } from "../kb/kb-attachment-extract.util";
 import type { VarianceExplainInput, ReconciliationExplainInput, ExtractDocumentInput } from "./dto/accounting-ai.dto";
 
@@ -160,10 +158,7 @@ export class AccountingAiService {
       feature: VARIANCE_FEATURE,
       tier: "fast",
       maxTokens: 600,
-      charge: {
-        credits: getFeatureCost(VARIANCE_FEATURE),
-        idempotencyKey: `acc-variance-${orgId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       schema: VarianceResponseSchema,
       prompt: {
@@ -263,10 +258,7 @@ export class AccountingAiService {
       feature: RECON_FEATURE,
       tier: "fast",
       maxTokens: 512,
-      charge: {
-        credits: getFeatureCost(RECON_FEATURE),
-        idempotencyKey: `acc-recon-${orgId}-${body.matchId}-${randomUUID()}`,
-      },
+      charge: true,
       redact: false,
       schema: ReconciliationResponseSchema,
       prompt: {
@@ -320,10 +312,7 @@ export class AccountingAiService {
         feature: EXTRACT_FEATURE,
         tier: "fast",
         maxTokens: 1024,
-        charge: {
-          credits: getFeatureCost(EXTRACT_FEATURE),
-          idempotencyKey: `acc-extract-${orgId}-${randomUUID()}`,
-        },
+        charge: true,
         redact: false,
         schema: ExtractedDocumentSchema,
         images: [body.fileBase64],
@@ -343,10 +332,7 @@ export class AccountingAiService {
         feature: EXTRACT_FEATURE,
         tier: "fast",
         maxTokens: 1024,
-        charge: {
-          credits: getFeatureCost(EXTRACT_FEATURE),
-          idempotencyKey: `acc-extract-${orgId}-${randomUUID()}`,
-        },
+        charge: true,
         redact: false,
         schema: ExtractedDocumentSchema,
         prompt: {
