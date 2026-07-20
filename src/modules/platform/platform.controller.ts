@@ -2,6 +2,7 @@
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   NotFoundException,
@@ -18,6 +19,7 @@ import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { PlatformOwnerGuard } from "../../common/auth/platform-owner.guard";
+import { bustPlatformAdminCache } from "../../common/auth/jwt-auth.guard";
 import { PlatformService } from "./platform.service";
 import {
   visitSchema,
@@ -26,7 +28,9 @@ import {
   markRepliedBodySchema,
   replyMessageSchema,
   contactFormSchema,
+  grantPlatformAdminSchema,
   type ContactFormInput,
+  type GrantPlatformAdminInput,
 } from "./dto/platform.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -179,6 +183,31 @@ export class PlatformController {
   @Get("visitors")
   getVisitorAnalytics() {
     return this.platform.getVisitorAnalytics();
+  }
+
+  @UseGuards(PlatformOwnerGuard)
+  @Get("admins")
+  listAdmins() {
+    return this.platform.listPlatformAdmins();
+  }
+
+  @UseGuards(PlatformOwnerGuard)
+  @Post("admins")
+  @HttpCode(200)
+  async grantAdmin(
+    @Body(new ZodValidationPipe(grantPlatformAdminSchema)) body: GrantPlatformAdminInput,
+  ) {
+    const result = await this.platform.grantPlatformAdmin(body.email);
+    bustPlatformAdminCache(result.id);
+    return result;
+  }
+
+  @UseGuards(PlatformOwnerGuard)
+  @Delete("admins/:userId")
+  async revokeAdmin(@Param("userId") userId: string) {
+    const result = await this.platform.revokePlatformAdmin(userId);
+    bustPlatformAdminCache(userId);
+    return result;
   }
 
   @UseGuards(PlatformOwnerGuard)

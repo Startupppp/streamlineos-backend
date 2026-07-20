@@ -6,22 +6,6 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-
-interface OrgContext {
-  orgId: string;
-  role: string;
-  isOwner: boolean;
-  enabledModules: string[];
-  plan: string | null;
-}
-
-interface OrgContextEntry {
-  value: OrgContext;
-  expiresAt: number;
-}
-
-const ORG_CTX_TTL_MS = 60_000;
-const REVOCATION_CACHE_TTL_MS = 5_000;
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
@@ -43,6 +27,34 @@ import {
   users,
 } from "../../db/schema";
 
+interface OrgContext {
+  orgId: string;
+  role: string;
+  isOwner: boolean;
+  enabledModules: string[];
+  plan: string | null;
+}
+
+interface OrgContextEntry {
+  value: OrgContext;
+  expiresAt: number;
+}
+
+interface PlatformAdminEntry {
+  value: boolean;
+  expiresAt: number;
+}
+
+const ORG_CTX_TTL_MS = 60_000;
+const PLATFORM_ADMIN_TTL_MS = 30_000;
+const REVOCATION_CACHE_TTL_MS = 5_000;
+
+const platformAdminCache = new Map<string, PlatformAdminEntry>();
+
+export function bustPlatformAdminCache(userId: string): void {
+  platformAdminCache.delete(userId);
+}
+
 function extractClaims(payload: JWTPayload): BackendClaims {
   return {
     sub: typeof payload.sub === "string" ? payload.sub : "",
@@ -62,7 +74,7 @@ function extractClaims(payload: JWTPayload): BackendClaims {
         )
       : [],
     plan: typeof payload["plan"] === "string" ? payload["plan"] : null,
-    isPlatformAdmin: payload["isPlatformAdmin"] === true,
+    isPlatformAdmin: false,
     isOrgOwner: payload["isOrgOwner"] === true,
     sessionId:
       typeof payload["sessionId"] === "string" ? payload["sessionId"] : "",
@@ -74,6 +86,7 @@ export class JwtAuthGuard implements CanActivate {
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
   private readonly revocationCache = new Map<string, number>();
   private readonly jwtSecretKey: Uint8Array | null;
+  private readonly db_resolvePlatformAdmin: (userId: string) => Promise<boolean>;
 
   constructor(
     private readonly reflector: Reflector,
@@ -82,6 +95,27 @@ export class JwtAuthGuard implements CanActivate {
   ) {
     const raw = process.env.BACKEND_JWT_SECRET;
     this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
+    this.db_resolvePlatformAdmin = async (userId: string): Promise<boolean> => {
+      const cached = platformAdminCache.get(userId);
+      if (cached && cached.expiresAt > Date.now()) return cached.value;
+      try {
+        const row = await this.db.query.users.findFirst({
+          where: eq(users.id, userId),
+          columns: { isPlatformAdmin: true },
+        });
+        const value = row?.isPlatformAdmin ?? false;
+        platformAdminCache.set(userId, { value, expiresAt: Date.now() + PLATFORM_ADMIN_TTL_MS });
+        if (platformAdminCache.size > 5000) {
+          const now = Date.now();
+          for (const [key, entry] of platformAdminCache) {
+            if (entry.expiresAt <= now) platformAdminCache.delete(key);
+          }
+        }
+        return value;
+      } catch {
+        return false;
+      }
+    };
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -145,13 +179,15 @@ export class JwtAuthGuard implements CanActivate {
       const path = req.path ?? req.url?.split("?")[0] ?? "";
       const isOrgSetup = req.method === "PATCH" && path === "/org/setup";
 
+      const isPlatformAdmin = await this.db_resolvePlatformAdmin(claims.sub);
+
       let orgId = claims.orgId;
       let isOrgOwner = claims.isOrgOwner;
       let role = claims.role;
       let enabledModules = claims.enabledModules;
       let plan = claims.plan;
 
-      if (!orgId && !claims.isPlatformAdmin) {
+      if (!orgId && !isPlatformAdmin) {
         const resolved = await this.resolveOrgContext(claims.sub);
         if (resolved) {
           orgId = resolved.orgId;
@@ -166,7 +202,7 @@ export class JwtAuthGuard implements CanActivate {
       }
 
       // 403, not 401: the session is valid — a 401 would make the api-client force a sign-out loop for users who haven't created their org yet.
-      if (!orgId && !claims.isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
+      if (!orgId && !isPlatformAdmin && !allowNoOrg && !isOrgSetup) {
         throw new ForbiddenException("Organization not found");
       }
 
@@ -178,7 +214,7 @@ export class JwtAuthGuard implements CanActivate {
         permissions: claims.permissions,
         enabledModules,
         plan,
-        isPlatformAdmin: claims.isPlatformAdmin,
+        isPlatformAdmin,
         isOrgOwner,
         sessionId: claims.sessionId,
       };

@@ -123,6 +123,7 @@ export const users = pgTable("users", {
   totpEnabled: boolean("totp_enabled").default(false).notNull(),
   googleRefreshToken: text("google_refresh_token"),
   googleEmail: text("google_email"),
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   isProfilePictureRequired: boolean("is_profile_picture_required").default(false).notNull(),
   bio: text("bio"),
   linkedinUrl: text("linkedin_url"),

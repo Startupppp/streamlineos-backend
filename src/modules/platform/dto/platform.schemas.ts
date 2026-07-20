@@ -43,3 +43,8 @@ export const replyMessageSchema = z.object({
   repliedById: z.string().min(1),
 });
 export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
+
+export const grantPlatformAdminSchema = z.object({
+  email: z.string().email().trim().toLowerCase(),
+});
+export type GrantPlatformAdminInput = z.infer<typeof grantPlatformAdminSchema>;

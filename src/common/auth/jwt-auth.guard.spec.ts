@@ -1,6 +1,6 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { JwtAuthGuard } from "./jwt-auth.guard";
+import { JwtAuthGuard, bustPlatformAdminCache } from "./jwt-auth.guard";
 import { signToken } from "../../../test/helpers/sign-token";
 
 function ctxWith(headers: Record<string, string>): ExecutionContext {
@@ -30,7 +30,13 @@ describe("JwtAuthGuard", () => {
   };
   const guard = new JwtAuthGuard(reflector, mockDb as unknown as import("../../db/drizzle.module").Db, null);
 
-  beforeEach(() => reflector.getAllAndOverride.mockReturnValue(false));
+  beforeEach(() => {
+    reflector.getAllAndOverride.mockReturnValue(false);
+    mockDb.query.users.findFirst.mockResolvedValue(undefined);
+    bustPlatformAdminCache("user_1");
+    bustPlatformAdminCache("user_42");
+    bustPlatformAdminCache("u");
+  });
 
   it("rejects a missing token with 401", async () => {
     await expect(guard.canActivate(ctxWith({}))).rejects.toBeInstanceOf(UnauthorizedException);
@@ -91,8 +97,9 @@ describe("JwtAuthGuard", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("accepts a platform-admin token with no orgId", async () => {
-    const token = await signToken({ isPlatformAdmin: true, orgId: null, sessionId: "sess_admin" });
+  it("accepts a platform-admin token with no orgId when DB confirms platform admin", async () => {
+    mockDb.query.users.findFirst.mockResolvedValueOnce({ isPlatformAdmin: true });
+    const token = await signToken({ sub: "user_1", orgId: null, sessionId: "sess_admin" });
     const ctx = ctxWith({ authorization: `Bearer ${token}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const req = ctx.switchToHttp().getRequest<{ user: { isPlatformAdmin: boolean; orgId: string } }>();

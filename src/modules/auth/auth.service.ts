@@ -179,6 +179,7 @@ export class AuthService {
     totpEnabled: boolean;
     orgId: string | null;
     isOrgOwner: boolean;
+    isPlatformAdmin: boolean;
     mfaEnforced: boolean;
     enabledModules: string[];
     orgOnboardingCompletedAt: string | null;
@@ -206,6 +207,7 @@ export class AuthService {
               totpEnabled: true,
               onboardingCompletedAt: true,
               lastActiveOrgId: true,
+              isPlatformAdmin: true,
             },
           })
           .catch(() => {
@@ -260,6 +262,7 @@ export class AuthService {
           totpEnabled: user.totpEnabled,
           orgId: resolvedOrgId,
           isOrgOwner,
+          isPlatformAdmin: user.isPlatformAdmin,
           mfaEnforced,
           enabledModules,
           orgOnboardingCompletedAt,
