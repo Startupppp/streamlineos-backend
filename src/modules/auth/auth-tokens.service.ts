@@ -6,7 +6,12 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { and, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
-import { randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  randomBytes,
+  randomInt,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import {
   accounts,
   emailOtpCodes,
@@ -102,15 +107,23 @@ export class AuthTokensService {
       .catch(() => {});
   }
 
-  async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
+  async verifyEmail(
+    input: VerifyEmailInput,
+  ): Promise<{ autoLoginToken: string }> {
     const record = await this.db.query.verificationTokens.findFirst({
       where: eq(verificationTokens.token, hashToken(input.token)),
     });
     if (!record) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_INVALID", message: "Invalid verification token" });
+      throw new BadRequestException({
+        code: "AUTH_TOKEN_INVALID",
+        message: "Invalid verification token",
+      });
     }
     if (new Date(record.expires) <= new Date()) {
-      throw new BadRequestException({ code: "AUTH_TOKEN_EXPIRED", message: "Verification token has expired" });
+      throw new BadRequestException({
+        code: "AUTH_TOKEN_EXPIRED",
+        message: "Verification token has expired",
+      });
     }
 
     const [updatedUsers] = await Promise.all([
@@ -119,7 +132,9 @@ export class AuthTokensService {
         .set({ emailVerified: new Date() })
         .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`)
         .returning({ id: users.id }),
-      this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, record.identifier)),
+      this.db
+        .delete(verificationTokens)
+        .where(eq(verificationTokens.identifier, record.identifier)),
     ]);
 
     const userId = updatedUsers[0]?.id;
@@ -149,7 +164,9 @@ export class AuthTokensService {
 
     const rawToken = generateToken();
 
-    await this.db.delete(verificationTokens).where(eq(verificationTokens.identifier, normalizedEmail));
+    await this.db
+      .delete(verificationTokens)
+      .where(eq(verificationTokens.identifier, normalizedEmail));
 
     await this.db.insert(verificationTokens).values({
       identifier: normalizedEmail,
@@ -166,13 +183,51 @@ export class AuthTokensService {
     }
   }
 
-  async requestMagicLink(input: MagicLinkRequestInput): Promise<void> {
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${input.email.toLowerCase()}`,
-      columns: { id: true, email: true, emailVerified: true },
-    });
+  // Passwordless signup + login are one flow: the code/link IS the email-ownership proof.
+  // Behaves identically for new and existing emails (no account enumeration); the account
+  // is created here and marked verified only when the code/link is successfully used.
+  private async findOrCreateUser(
+    email: string,
+  ): Promise<{ id: string; email: string }> {
+    const normalizedEmail = email.toLowerCase().trim();
 
-    if (!user || !user.emailVerified) return;
+    const existing = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, email: true },
+    });
+    if (existing) return existing;
+
+    const displayName = normalizedEmail.split("@")[0] || normalizedEmail;
+    const [created] = await this.db
+      .insert(users)
+      .values({
+        id: randomUUID(),
+        email: normalizedEmail,
+        name: displayName,
+        firstName: displayName,
+        lastName: "",
+        role: "OWNER",
+        isActive: true,
+        hasDashboardAccess: true,
+        emailVerified: null,
+      })
+      .onConflictDoNothing()
+      .returning({ id: users.id, email: users.email });
+    if (created) return created;
+
+    const row = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, email: true },
+    });
+    if (!row)
+      throw new ServiceUnavailableException(
+        "Could not start sign-in. Please try again.",
+      );
+    return row;
+  }
+
+  async requestMagicLink(input: MagicLinkRequestInput): Promise<void> {
+    const user = await this.findOrCreateUser(input.email);
 
     const token = generateToken();
     const tokenHash = hashToken(token);
@@ -187,23 +242,26 @@ export class AuthTokensService {
       }),
       this.db
         .delete(magicLinkTokens)
-        .where(and(eq(magicLinkTokens.userId, user.id), lt(magicLinkTokens.expiresAt, subDays(new Date(), 1)))),
+        .where(
+          and(
+            eq(magicLinkTokens.userId, user.id),
+            lt(magicLinkTokens.expiresAt, subDays(new Date(), 1)),
+          ),
+        ),
     ]);
 
-    void this.email.sendMagicLinkEmail(user.email, token).catch((error: unknown) => {
-      logger.error("Magic link email send failed", { userId: user.id, error });
-    });
+    void this.email
+      .sendMagicLinkEmail(user.email, token)
+      .catch((error: unknown) => {
+        logger.error("Magic link email send failed", {
+          userId: user.id,
+          error,
+        });
+      });
   }
 
   async requestEmailOtp(email: string): Promise<void> {
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const user = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, email: true, emailVerified: true },
-    });
-
-    if (!user || !user.emailVerified) return;
+    const user = await this.findOrCreateUser(email);
 
     const rawCode = String(randomInt(0, 1_000_000)).padStart(6, "0");
     const codeHash = hashToken(rawCode);
@@ -213,10 +271,17 @@ export class AuthTokensService {
       this.db
         .update(emailOtpCodes)
         .set({ usedAt: new Date() })
-        .where(and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt))),
+        .where(
+          and(eq(emailOtpCodes.userId, user.id), isNull(emailOtpCodes.usedAt)),
+        ),
       this.db
         .delete(emailOtpCodes)
-        .where(and(eq(emailOtpCodes.userId, user.id), lt(emailOtpCodes.expiresAt, subDays(new Date(), 1)))),
+        .where(
+          and(
+            eq(emailOtpCodes.userId, user.id),
+            lt(emailOtpCodes.expiresAt, subDays(new Date(), 1)),
+          ),
+        ),
     ]);
 
     await this.db.insert(emailOtpCodes).values({
@@ -225,12 +290,17 @@ export class AuthTokensService {
       expiresAt,
     });
 
-    void this.email.sendEmailOtpEmail(user.email, rawCode).catch((error: unknown) => {
-      logger.error("Email OTP send failed", { userId: user.id, error });
-    });
+    void this.email
+      .sendEmailOtpEmail(user.email, rawCode)
+      .catch((error: unknown) => {
+        logger.error("Email OTP send failed", { userId: user.id, error });
+      });
   }
 
-  async verifyEmailOtp(email: string, code: string): Promise<{ autoLoginToken: string }> {
+  async verifyEmailOtp(
+    email: string,
+    code: string,
+  ): Promise<{ autoLoginToken: string }> {
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await this.db.query.users.findFirst({
@@ -257,13 +327,16 @@ export class AuthTokensService {
       .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)))
       .returning({ attempts: emailOtpCodes.attempts });
 
-    if (!bumped || bumped.attempts > 5) throw new UnauthorizedException("Invalid or expired code");
+    if (!bumped || bumped.attempts > 5)
+      throw new UnauthorizedException("Invalid or expired code");
 
     const submittedHash = Buffer.from(hashToken(code), "hex");
     const expectedHash = Buffer.from(row.codeHash, "hex");
     const codeMatches =
-      submittedHash.length === expectedHash.length && timingSafeEqual(submittedHash, expectedHash);
-    if (!codeMatches) throw new UnauthorizedException("Invalid or expired code");
+      submittedHash.length === expectedHash.length &&
+      timingSafeEqual(submittedHash, expectedHash);
+    if (!codeMatches)
+      throw new UnauthorizedException("Invalid or expired code");
 
     const [updated] = await this.db
       .update(emailOtpCodes)
@@ -272,6 +345,11 @@ export class AuthTokensService {
       .returning({ id: emailOtpCodes.id });
 
     if (!updated) throw new UnauthorizedException("Invalid or expired code");
+
+    await this.db
+      .update(users)
+      .set({ emailVerified: new Date() })
+      .where(and(eq(users.id, user.id), isNull(users.emailVerified)));
 
     const rawToken = generateToken();
     const tokenHash = hashToken(rawToken);
@@ -309,10 +387,20 @@ export class AuthTokensService {
     });
 
     if (!row) {
-      throw new UnauthorizedException({ code: "AUTH_TOKEN_INVALID", message: "Invalid magic link" });
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_INVALID",
+        message: "Invalid magic link",
+      });
     }
     if (new Date(row.expiresAt) <= new Date()) {
-      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "token_expired", context);
+      await this.logLoginEvent(
+        row.userId,
+        null,
+        "magic_link.verify",
+        false,
+        "token_expired",
+        context,
+      );
       throw new UnauthorizedException({
         code: "AUTH_TOKEN_EXPIRED",
         message: "Magic link has expired or has already been used",
@@ -322,11 +410,20 @@ export class AuthTokensService {
     const [claimed] = await this.db
       .update(magicLinkTokens)
       .set({ usedAt: new Date() })
-      .where(and(eq(magicLinkTokens.id, row.id), isNull(magicLinkTokens.usedAt)))
+      .where(
+        and(eq(magicLinkTokens.id, row.id), isNull(magicLinkTokens.usedAt)),
+      )
       .returning({ id: magicLinkTokens.id });
 
     if (!claimed) {
-      await this.logLoginEvent(row.userId, null, "magic_link.verify", false, "token_already_used", context);
+      await this.logLoginEvent(
+        row.userId,
+        null,
+        "magic_link.verify",
+        false,
+        "token_already_used",
+        context,
+      );
       throw new UnauthorizedException({
         code: "AUTH_TOKEN_EXPIRED",
         message: "Magic link has expired or has already been used",
@@ -338,6 +435,11 @@ export class AuthTokensService {
       columns: { lastActiveOrgId: true },
     });
 
+    await this.db
+      .update(users)
+      .set({ emailVerified: new Date() })
+      .where(and(eq(users.id, row.userId), isNull(users.emailVerified)));
+
     const [membership, sessionId] = await Promise.all([
       this.resolveActiveMembership(row.userId, user?.lastActiveOrgId ?? null),
       this.createLoginSession(row.userId, context),
@@ -345,7 +447,14 @@ export class AuthTokensService {
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.userSession(row.userId)),
-      this.logLoginEvent(row.userId, membership?.orgId ?? null, "magic_link.verify", true, null, context),
+      this.logLoginEvent(
+        row.userId,
+        membership?.orgId ?? null,
+        "magic_link.verify",
+        true,
+        null,
+        context,
+      ),
     ]);
 
     return {
@@ -371,15 +480,30 @@ export class AuthTokensService {
         this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(loginHistory)
-          .where(and(eq(loginHistory.success, true), gte(loginHistory.createdAt, startOfToday))),
+          .where(
+            and(
+              eq(loginHistory.success, true),
+              gte(loginHistory.createdAt, startOfToday),
+            ),
+          ),
         this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(loginHistory)
-          .where(and(eq(loginHistory.success, false), gte(loginHistory.createdAt, sevenDaysAgo))),
+          .where(
+            and(
+              eq(loginHistory.success, false),
+              gte(loginHistory.createdAt, sevenDaysAgo),
+            ),
+          ),
         this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(userSessions)
-          .where(and(eq(userSessions.isRevoked, false), gt(userSessions.expiresAt, now))),
+          .where(
+            and(
+              eq(userSessions.isRevoked, false),
+              gt(userSessions.expiresAt, now),
+            ),
+          ),
       ]);
 
     return {
@@ -405,8 +529,18 @@ export class AuthTokensService {
     });
 
     if (existingAccount) {
-      const sessionId = await this.createLoginSession(existingAccount.userId, context);
-      void this.logLoginEvent(existingAccount.userId, null, "google_oauth.login", true, null, context);
+      const sessionId = await this.createLoginSession(
+        existingAccount.userId,
+        context,
+      );
+      void this.logLoginEvent(
+        existingAccount.userId,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
       return { userId: existingAccount.userId, isNewUser: false, sessionId };
     }
 
@@ -427,11 +561,21 @@ export class AuthTokensService {
         .onConflictDoNothing();
 
       if (!existingUser.emailVerified) {
-        await this.db.update(users).set({ emailVerified: new Date() }).where(eq(users.id, existingUser.id));
+        await this.db
+          .update(users)
+          .set({ emailVerified: new Date() })
+          .where(eq(users.id, existingUser.id));
       }
 
       const sessionId = await this.createLoginSession(existingUser.id, context);
-      void this.logLoginEvent(existingUser.id, null, "google_oauth.login", true, null, context);
+      void this.logLoginEvent(
+        existingUser.id,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
       return { userId: existingUser.id, isNewUser: false, sessionId };
     }
 
@@ -463,10 +607,21 @@ export class AuthTokensService {
       });
     });
 
-    this.audit.log({ action: "user.registered", userId, metadata: { email: normalizedEmail, provider: "google" } });
+    this.audit.log({
+      action: "user.registered",
+      userId,
+      metadata: { email: normalizedEmail, provider: "google" },
+    });
 
     const sessionId = await this.createLoginSession(userId, context);
-    void this.logLoginEvent(userId, null, "google_oauth.register", true, null, context);
+    void this.logLoginEvent(
+      userId,
+      null,
+      "google_oauth.register",
+      true,
+      null,
+      context,
+    );
     return { userId, isNewUser: true, sessionId };
   }
 }
