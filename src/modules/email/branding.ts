@@ -1,13 +1,12 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const BRAND_NAME = "StreamlineOS";
-export const BRAND_SUPPORT_EMAIL = "support@streamlineos.in";
+const DEFAULT_BRAND_NAME = "StreamlineOS";
+const DEFAULT_SUPPORT_EMAIL = "support@streamlineos.in";
 
 export const EMAIL_THEME = {
   ink: "#0b1220",
   accent: "#3b82f6",
   accentDeep: "#1e40af",
-  accentSoft: "#60a5fa",
   canvas: "#e8edf5",
   card: "#ffffff",
   cardBorder: "#dbe3ef",
@@ -26,7 +25,7 @@ export function getBrandName(): string {
   return (
     process.env.APP_BRAND_NAME?.trim() ||
     process.env.EMAIL_FROM_NAME?.trim() ||
-    BRAND_NAME
+    DEFAULT_BRAND_NAME
   );
 }
 
@@ -40,24 +39,11 @@ export function getSupportEmail(): string {
       return candidate;
     }
   }
-  return BRAND_SUPPORT_EMAIL;
-}
-
-export function getBrandUrl(): string {
-  return ((process.env.EMAIL_APP_URL ?? process.env.APP_URL)?.trim() ?? "").replace(
-    /\/$/,
-    "",
-  );
+  return DEFAULT_SUPPORT_EMAIL;
 }
 
 export function getEmailLogoUrl(): string | null {
   const base = (process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? "").trim().replace(/\/$/, "");
   if (!base) return null;
   return `${base}/email-assets/logo-v2.png`;
-}
-
-export function getBrandInitial(): string {
-  const name = getBrandName();
-  const initial = name.charAt(0);
-  return initial ? initial.toUpperCase() : "S";
 }

@@ -1,8 +1,3 @@
-/**
- * Public site URL used in email links (verify, invites, etc.).
- * Prefer EMAIL_APP_URL when the API runs locally against a shared DB
- * so verification links still point at the real frontend.
- */
 function resolveAppUrl(): string {
   const url = (process.env.EMAIL_APP_URL ?? process.env.APP_URL)?.trim();
   if (!url) {

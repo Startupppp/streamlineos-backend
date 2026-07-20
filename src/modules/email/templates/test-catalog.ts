@@ -59,9 +59,10 @@ import {
   getWorkLogRejectedEmailTemplate,
   getOnboardingReminderEmailTemplate,
 } from "./index";
-import { getBrandName, getBrandUrl } from "../branding";
+import { appUrl } from "../app-url";
+import { getBrandName } from "../branding";
 
-const BASE_URL = getBrandUrl();
+const BASE_URL = appUrl;
 const BRAND = getBrandName();
 
 export interface TemplateEntry {

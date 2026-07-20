@@ -1,9 +1,7 @@
 import { appUrl } from "../app-url";
 import {
   EMAIL_THEME,
-  getBrandInitial,
   getBrandName,
-  getBrandUrl,
   getEmailLogoUrl,
   getSupportEmail,
 } from "../branding";
@@ -38,7 +36,7 @@ function buildBrandMark(brandName: string): string {
     );
   }
 
-  const initial = escapeHtml(getBrandInitial());
+  const initial = escapeHtml(brandName.charAt(0).toUpperCase() || "S");
   return (
     `<td width="36" height="36" bgcolor="${EMAIL_THEME.accent}" style="width:36px;height:36px;background-color:${EMAIL_THEME.accent};border-radius:9px;text-align:center;vertical-align:middle;">` +
     `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">${initial}</span>` +
@@ -52,7 +50,7 @@ export function getEmailTemplate({
   content,
 }: EmailTemplateProps): string {
   const supportEmail = getSupportEmail();
-  const brandUrl = getBrandUrl();
+  const brandUrl = appUrl;
   const brandName = getBrandName();
   const safeBrandName = escapeHtml(brandName);
   const brandMark = buildBrandMark(brandName);

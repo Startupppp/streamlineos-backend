@@ -15,6 +15,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EmailService } from "../email/email.service";
+import { getBrandName } from "../email/branding";
 import { AutomationService } from "../automation/automation.service";
 import { getInterviewInviteEmail, getSelfScheduleBookingEmail } from "../email/templates/interviews";
 import type {
@@ -257,7 +258,7 @@ export class HrInterviewSchedulingService {
         recipientName: `${interviewer.firstName ?? ""} ${interviewer.lastName ?? ""}`.trim() || "Interviewer",
         candidateName,
         jobTitle: "this position",
-        companyName: process.env.APP_BRAND_NAME ?? "StreamlineOS",
+        companyName: getBrandName(),
         scheduledAt: dateLabel,
         durationMinutes: input.durationMinutes,
         format: formatLabel,
@@ -272,7 +273,7 @@ export class HrInterviewSchedulingService {
         recipientName: candidateName,
         candidateName,
         jobTitle: "this position",
-        companyName: process.env.APP_BRAND_NAME ?? "StreamlineOS",
+        companyName: getBrandName(),
         scheduledAt: dateLabel,
         durationMinutes: input.durationMinutes,
         format: formatLabel,

@@ -1,6 +1,6 @@
-import { EmailBase } from "./email-base";
 import { appUrl } from "./app-url";
 import { getBrandName } from "./branding";
+import { dispatchEmail, type EmailOptions } from "./email.provider";
 import {
   getVerificationEmailTemplate,
   getMagicLinkEmailTemplate,
@@ -25,7 +25,11 @@ import {
   getOnboardingTaskEmailTemplate,
 } from "./templates/notifications-misc";
 
-export abstract class EmailSendersBase extends EmailBase {
+export abstract class EmailSendersBase {
+  sendEmail(options: EmailOptions): Promise<void> {
+    return dispatchEmail(options);
+  }
+
   sendVerificationEmail(email: string, token: string): Promise<void> {
     return this.sendEmail({
       to: email,
