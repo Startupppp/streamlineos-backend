@@ -45,5 +45,6 @@ export function getSupportEmail(): string {
 export function getEmailLogoUrl(): string | null {
   const base = (process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? "").trim().replace(/\/$/, "");
   if (!base) return null;
-  return `${base}/email-assets/logo-v2.png`;
+  const path = (process.env.EMAIL_LOGO_PATH?.trim() || "email-assets/logo-v2.png").replace(/^\//, "");
+  return `${base}/${path}`;
 }

@@ -1,10 +1,5 @@
 import { appUrl } from "../app-url";
-import {
-  EMAIL_THEME,
-  getBrandName,
-  getEmailLogoUrl,
-  getSupportEmail,
-} from "../branding";
+import { EMAIL_THEME, getBrandName, getEmailLogoUrl, getSupportEmail } from "../branding";
 
 export { appUrl };
 
@@ -26,20 +21,25 @@ export interface EmailTemplateProps {
 }
 
 function buildBrandMark(brandName: string): string {
-  const logoUrl = getEmailLogoUrl();
   const safeName = escapeHtml(brandName);
-  if (logoUrl) {
+  const logoUrl = getEmailLogoUrl();
+  if (!logoUrl) {
+    const initial = escapeHtml(brandName.charAt(0).toUpperCase() || "S");
     return (
-      `<td width="36" height="36" style="width:36px;height:36px;vertical-align:middle;">` +
-      `<img src="${escapeHtml(logoUrl)}" alt="${safeName}" width="36" height="36" style="display:block;border:0;outline:none;text-decoration:none;width:36px;height:36px;border-radius:9px;">` +
+      `<td width="40" height="40" bgcolor="${EMAIL_THEME.card}" style="width:40px;height:40px;background-color:${EMAIL_THEME.card};border-radius:10px;text-align:center;vertical-align:middle;">` +
+      `<span style="font-family:${FONT};font-size:18px;font-weight:700;color:${EMAIL_THEME.ink};line-height:40px;display:inline-block;width:40px;text-align:center;">${initial}</span>` +
       `</td>`
     );
   }
-
-  const initial = escapeHtml(brandName.charAt(0).toUpperCase() || "S");
   return (
-    `<td width="36" height="36" bgcolor="${EMAIL_THEME.accent}" style="width:36px;height:36px;background-color:${EMAIL_THEME.accent};border-radius:9px;text-align:center;vertical-align:middle;">` +
-    `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">${initial}</span>` +
+    `<td width="40" style="width:40px;vertical-align:middle;">` +
+    `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="40" style="width:40px;border-collapse:collapse;">` +
+    `<tr>` +
+    `<td width="40" height="40" bgcolor="${EMAIL_THEME.card}" style="width:40px;height:40px;background-color:${EMAIL_THEME.card};border-radius:10px;text-align:center;vertical-align:middle;">` +
+    `<img src="${escapeHtml(logoUrl)}" alt="${safeName}" width="30" height="30" style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:30px;height:30px;max-width:30px;border-radius:7px;">` +
+    `</td>` +
+    `</tr>` +
+    `</table>` +
     `</td>`
   );
 }
