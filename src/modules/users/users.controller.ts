@@ -306,10 +306,10 @@ export class UsersController {
   }
 
   @RequirePermission("hr:employees:manage")
-  @Post(":userId/reset-password")
+  @Post(":userId/send-signin-link")
   @HttpCode(200)
-  resetPassword(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.userOps.resetPassword(u.orgId, userId, u.userId);
+  sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.userOps.sendSigninLink(u.orgId, userId, u.userId);
   }
 
   @RequirePermission("hr:employees:manage")

@@ -13,10 +13,7 @@ import { addDays, addMinutes } from "date-fns";
 import { type Db } from "../../db/drizzle.module";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type SetupInput } from "./dto/org.schemas";
-import {
-  OnboardingSessionService,
-  type SessionPatch,
-} from "../onboarding-flow/onboarding-session.service";
+import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import { EmailService } from "../email/email.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
@@ -72,7 +69,7 @@ export class OrgSetupService {
 
   private async resolveOrCreateOrg(
     u: CurrentUserContext,
-    input: SetupInput,
+    input: Pick<SetupInput, "companyName">,
   ): Promise<string> {
     if (u.orgId) {
       const existingOrg = await this.db.query.organizations.findFirst({
@@ -175,9 +172,7 @@ export class OrgSetupService {
           ...(input.country ? { country: input.country } : {}),
           ...(input.timezone ? { timezone: input.timezone } : {}),
           ...(input.companyName ? { name: input.companyName } : {}),
-          ...(input.enabledModules
-            ? { enabledModules: input.enabledModules }
-            : {}),
+          enabledModules: input.enabledModules,
           onboardingCompletedAt: new Date(),
         })
         .where(eq(organizations.id, orgId));
@@ -193,11 +188,7 @@ export class OrgSetupService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
 
-    if (input.enabledModules?.length)
-      await this.checklists.ensureChecklistsForModules(
-        orgId,
-        input.enabledModules,
-      );
+    await this.checklists.ensureChecklistsForModules(orgId, input.enabledModules);
 
     await this.sessions.completeSession(orgId, u.userId, "org_setup");
     await this.sendWelcome(u.userId);
@@ -214,15 +205,15 @@ export class OrgSetupService {
   }
 
   // Pre-org users have no organizations row (org_id FK is NOT NULL), so the wizard session stays client-side until complete/skip creates the org.
-  private ephemeralSession(patch?: SessionPatch) {
+  private ephemeralSession() {
     return {
       id: 0,
       type: "org_setup" as const,
-      status: patch ? ("in_progress" as const) : ("not_started" as const),
-      currentStep: patch?.currentStep ?? null,
-      completedSteps: patch?.completedSteps ?? [],
-      skippedSteps: patch?.skippedSteps ?? [],
-      data: patch?.data ?? {},
+      status: "not_started" as const,
+      currentStep: null,
+      completedSteps: [],
+      skippedSteps: [],
+      data: {},
     };
   }
 
@@ -231,17 +222,9 @@ export class OrgSetupService {
     return this.sessions.getOrCreateSession(u.orgId, u.userId, "org_setup");
   }
 
-  async patchSetupSession(u: CurrentUserContext, patch: SessionPatch) {
-    if (!u.orgId) return this.ephemeralSession(patch);
-    return this.sessions.patchSession(u.orgId, u.userId, "org_setup", patch);
-  }
-
   /** Minimal-defaults path for "Set up later" — mirrors the frontend's existing skip defaults. */
   async skipSetup(u: CurrentUserContext, reason?: string) {
-    const orgId = await this.resolveOrCreateOrg(u, {
-      industry: "IT Services",
-      companySize: "1-10",
-    } as SetupInput);
+    const orgId = await this.resolveOrCreateOrg(u, {});
 
     if (u.orgId && !u.isOrgOwner) {
       await this.sessions.skipSession(orgId, u.userId, "org_setup", reason);

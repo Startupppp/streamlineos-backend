@@ -156,7 +156,6 @@ const BILLING = [
 
 const SECURITY = [
   e("security.login.new_device", "security", "SECURITY", "New device sign-in", { defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
-  e("security.password.changed", "security", "SECURITY", "Password changed", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
   e("security.mfa.disabled", "security", "SECURITY", "Two-factor disabled", { defaultPriority: "CRITICAL", defaultType: "WARNING", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
   e("security.role.changed", "security", "SECURITY", "Role or permissions changed", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),
   e("security.api_key.created", "security", "SECURITY", "API key created", { defaultPriority: "HIGH", defaultChannels: IA_EMAIL, allowedChannels: ALLOWED_URGENT, mandatory: true, quietHoursBehavior: "always_bypass" }),

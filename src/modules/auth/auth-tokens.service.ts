@@ -468,7 +468,6 @@ export class AuthTokensService {
     loginsToday: number;
     failedLoginsLast7Days: number;
     activeSessions: number;
-    passwordResetsLast7Days: number;
   }> {
     const now = new Date();
     const startOfToday = new Date(now);
@@ -510,7 +509,6 @@ export class AuthTokensService {
       loginsToday: loginsTodayResult[0]?.count ?? 0,
       failedLoginsLast7Days: failedLoginsResult[0]?.count ?? 0,
       activeSessions: activeSessionsResult[0]?.count ?? 0,
-      passwordResetsLast7Days: 0,
     };
   }
 

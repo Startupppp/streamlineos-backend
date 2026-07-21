@@ -1,4 +1,4 @@
-﻿import { getBrandName, getSupportEmail } from "../branding";
+﻿import { EMAIL_THEME, getBrandName, getSupportEmail } from "../branding";
 import { escapeHtml, getEmailTemplate } from "./base";
 import { renderButton, renderCallout, renderKeyValueRows } from "./components";
 
@@ -132,10 +132,10 @@ ${renderKeyValueRows(rows)}`;
 }
 
 function feedbackRatingButton(ratingLabel: string, bgColor: string): string {
-  const subject = encodeURIComponent(`Interview Feedback â€” ${ratingLabel}`);
+  const subject = encodeURIComponent(`Interview Feedback - ${ratingLabel}`);
   const body = encodeURIComponent(`Hi, I would rate my interview experience as ${ratingLabel}. (Add your comments here)`);
   const href = `mailto:${getSupportEmail()}?subject=${subject}&body=${body}`;
-  return `<td style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;background:${bgColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(ratingLabel)}</a></td>`;
+  return `<td class="email-rating-btn" style="padding:4px;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 18px;min-height:44px;line-height:20px;background:${bgColor};color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;font-family:${EMAIL_THEME.font};text-align:center;">${escapeHtml(ratingLabel)}</a></td>`;
 }
 
 export function getCandidateFeedbackEmail(params: {
@@ -158,7 +158,7 @@ export function getCandidateFeedbackEmail(params: {
 <p class="email-text">Thank you for taking the time to interview with ${company} on ${dateStr}. Your feedback helps us improve our hiring process.</p>
 ${renderCallout("Was the process clear and respectful? Did you feel heard? Any suggestions?", "info")}
 <p class="email-text" style="margin:0 0 12px 0;font-weight:600;">How would you rate your experience?</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;"><tr>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 24px 0;width:100%;"><tr>
 ${feedbackRatingButton("Excellent", "#16a34a")}
 ${feedbackRatingButton("Good", "#06b6d4")}
 ${feedbackRatingButton("Could be better", "#d97706")}

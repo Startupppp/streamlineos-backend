@@ -66,6 +66,7 @@ export function getEmailTemplate({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="x-apple-disable-message-reformatting">
+  <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
   <meta name="color-scheme" content="light dark">
   <meta name="supported-color-schemes" content="light dark">
   <title>${title}</title>
@@ -80,16 +81,38 @@ export function getEmailTemplate({
   <![endif]-->
   <style>
     :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    html, body { width: 100% !important; margin: 0 !important; padding: 0 !important; }
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; max-width: 100%; }
     body {
-      margin: 0 !important;
-      padding: 0 !important;
       width: 100% !important;
       background-color: ${EMAIL_THEME.canvas};
       font-family: ${FONT};
       -webkit-font-smoothing: antialiased;
+    }
+    .email-shell {
+      width: 100% !important;
+      max-width: 600px !important;
+    }
+    .email-btn-wrap-primary {
+      width: auto !important;
+      max-width: 100% !important;
+    }
+    .email-btn-table {
+      width: auto !important;
+      max-width: 100% !important;
+    }
+    .email-btn-link-primary {
+      display: inline-block !important;
+      box-sizing: border-box !important;
+      text-align: center !important;
+      min-height: 48px !important;
+    }
+    .email-btn-link-secondary {
+      display: inline-block !important;
+      text-align: left !important;
+      min-height: 44px !important;
     }
     .email-label {
       font-family: ${FONT};
@@ -108,6 +131,7 @@ export function getEmailTemplate({
       letter-spacing: -0.035em;
       line-height: 1.2;
       margin: 0 0 12px 0;
+      word-break: break-word;
     }
     .email-text {
       font-family: ${FONT};
@@ -115,6 +139,7 @@ export function getEmailTemplate({
       line-height: 1.65;
       color: ${EMAIL_THEME.text};
       margin: 0 0 14px 0;
+      word-break: break-word;
     }
     .credential-box {
       background-color: ${EMAIL_THEME.surface};
@@ -122,6 +147,7 @@ export function getEmailTemplate({
       border-radius: 10px;
       padding: 4px 0;
       margin: 16px 0;
+      width: 100%;
     }
     .credential-item {
       margin: 0;
@@ -157,12 +183,86 @@ export function getEmailTemplate({
       line-height: 1.5;
       display: block;
     }
-    @media only screen and (max-width: 600px) {
-      .email-shell { width: 100% !important; }
-      .card-body { padding: 22px 20px 20px !important; }
-      .brand-pad { padding: 18px 20px 16px !important; }
-      .email-footer { padding: 14px 20px 18px !important; }
+    @media only screen and (max-width: 620px) {
+      .email-outer-pad { padding: 12px 8px !important; }
+      .email-shell {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .card-body { padding: 20px 16px 18px !important; }
+      .brand-pad { padding: 16px 16px 12px !important; }
+      .email-footer { padding: 14px 16px 16px !important; }
       .email-title { font-size: 22px !important; }
+      .email-btn-wrap-primary,
+      .email-btn-wrap-primary td,
+      .email-btn-table,
+      .email-btn-table td,
+      .email-btn-primary {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      .email-btn-link-primary {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 14px 18px !important;
+        min-height: 48px !important;
+        font-size: 15px !important;
+        text-align: center !important;
+      }
+      .email-btn-wrap-secondary,
+      .email-btn-wrap-secondary td {
+        width: 100% !important;
+      }
+      .email-btn-link-secondary {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+        padding: 12px 8px !important;
+      }
+      .email-otp-digits {
+        font-size: 26px !important;
+        letter-spacing: 0.18em !important;
+        padding-left: 0.18em !important;
+      }
+      .kv-label,
+      .kv-value {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      .kv-label {
+        padding-bottom: 2px !important;
+        border-bottom: 0 !important;
+      }
+      .kv-value {
+        padding-top: 0 !important;
+      }
+      .email-stack-col {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+      .email-rating-btn {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 4px 0 !important;
+      }
+      .email-rating-btn a {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+        padding: 12px 16px !important;
+        min-height: 44px !important;
+      }
     }
     @media (prefers-color-scheme: dark) {
       body, .email-canvas { background-color: #070b14 !important; }
@@ -174,19 +274,23 @@ export function getEmailTemplate({
       .email-label { color: #93c5fd !important; }
       .email-footer-bg { background-color: #0b1220 !important; border-color: #1f2937 !important; }
       .email-footer-text, .email-footer-text a { color: ${EMAIL_THEME.textFaint} !important; }
+      .email-btn-link-secondary { color: #93c5fd !important; }
     }
   </style>
 </head>
-<body>
+<body width="100%" style="margin:0;padding:0;width:100%;background-color:${EMAIL_THEME.canvas};">
 ${preheaderText}
-<table role="presentation" class="email-canvas" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:${EMAIL_THEME.canvas};">
+<table role="presentation" class="email-canvas" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;background-color:${EMAIL_THEME.canvas};border-collapse:collapse;">
   <tr>
-    <td style="padding:40px 16px;" align="center">
-      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="560" style="max-width:560px;width:100%;background-color:${EMAIL_THEME.card};border-radius:14px;border:1px solid ${EMAIL_THEME.cardBorder};overflow:hidden;">
+    <td class="email-outer-pad" align="center" style="padding:28px 12px;width:100%;">
+      <!--[if mso]>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" align="center"><tr><td>
+      <![endif]-->
+      <table role="presentation" class="email-shell email-card" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;max-width:600px;background-color:${EMAIL_THEME.card};border-radius:14px;border:1px solid ${EMAIL_THEME.cardBorder};overflow:hidden;border-collapse:separate;">
         <tr>
           <td style="padding:0;font-size:0;line-height:0;background-color:${EMAIL_THEME.accent};">
             <!--[if mso]>
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="560"><tr>
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600"><tr>
               <td bgcolor="${EMAIL_THEME.accent}" height="3" style="font-size:0;line-height:0;">&nbsp;</td>
             </tr></table>
             <![endif]-->
@@ -196,11 +300,11 @@ ${preheaderText}
           </td>
         </tr>
         <tr>
-          <td class="brand-pad email-brand-row" style="background-color:${EMAIL_THEME.card};padding:22px 32px 18px;border-bottom:1px solid ${EMAIL_THEME.cardBorder};">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <td class="brand-pad email-brand-row" style="background-color:${EMAIL_THEME.card};padding:22px 28px 18px;border-bottom:1px solid ${EMAIL_THEME.cardBorder};">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;">
               <tr>
                 ${brandMark}
-                <td style="vertical-align:middle;padding-left:11px;">
+                <td style="vertical-align:middle;padding-left:11px;width:100%;">
                   <span class="email-brand-name" style="font-family:${FONT};font-size:15px;font-weight:700;color:${EMAIL_THEME.ink};letter-spacing:-0.02em;">${safeBrandName}</span>
                 </td>
               </tr>
@@ -208,15 +312,15 @@ ${preheaderText}
           </td>
         </tr>
         <tr>
-          <td class="card-body" style="padding:28px 32px 28px;">
+          <td class="card-body" style="padding:28px 28px 26px;">
             ${content}
           </td>
         </tr>
         <tr>
           <td class="email-footer-bg" style="background-color:${EMAIL_THEME.footerBg};border-top:1px solid ${EMAIL_THEME.footerBorder};">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;">
               <tr>
-                <td class="email-footer" style="padding:16px 32px 18px;text-align:center;">
+                <td class="email-footer" style="padding:16px 28px 18px;text-align:center;">
                   <p class="email-footer-text" style="font-family:${FONT};font-size:12px;line-height:1.5;color:${EMAIL_THEME.textMuted};margin:0 0 6px 0;">
                     <strong style="color:${EMAIL_THEME.textStrong};">${safeBrandName}</strong>
                     &nbsp;&middot;&nbsp;
@@ -233,6 +337,9 @@ ${preheaderText}
           </td>
         </tr>
       </table>
+      <!--[if mso]>
+      </td></tr></table>
+      <![endif]-->
     </td>
   </tr>
 </table>

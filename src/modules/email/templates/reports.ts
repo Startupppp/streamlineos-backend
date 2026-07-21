@@ -1,4 +1,5 @@
-﻿import { getEmailTemplate, escapeHtml } from "./base";
+﻿import { EMAIL_THEME } from "../branding";
+import { getEmailTemplate, escapeHtml } from "./base";
 import { renderCallout } from "./components";
 
 export interface MonthlyExpenseReportRow {
@@ -134,32 +135,32 @@ export function getWeeklyRecapEmailTemplate(data: WeeklyRecapData): string {
     : "";
 
   const kpiRows = `
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0;width:100%;">
       <tr>
-        <td width="50%" style="padding:0 6px 12px 0;">
+        <td class="email-stack-col" width="50%" style="padding:0 6px 12px 0;width:50%;">
           <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.newLeads}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">New leads</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:${EMAIL_THEME.font};">${data.newLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:${EMAIL_THEME.font};">New leads</p>
           </div>
         </td>
-        <td width="50%" style="padding:0 0 12px 6px;">
+        <td class="email-stack-col" width="50%" style="padding:0 0 12px 6px;width:50%;">
           <div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#166534;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.convertedLeads}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Conversions</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#166534;font-family:${EMAIL_THEME.font};">${data.convertedLeads}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:${EMAIL_THEME.font};">Conversions</p>
           </div>
         </td>
       </tr>
       <tr>
-        <td width="50%" style="padding:0 6px 0 0;">
+        <td class="email-stack-col" width="50%" style="padding:0 6px 0 0;width:50%;">
           <div style="background:#fefce8;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#92400e;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.totalActivities}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Activities logged</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#92400e;font-family:${EMAIL_THEME.font};">${data.totalActivities}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#4A5568;font-family:${EMAIL_THEME.font};">Activities logged</p>
           </div>
         </td>
-        <td width="50%" style="padding:0 0 0 6px;">
+        <td class="email-stack-col" width="50%" style="padding:0 0 0 6px;width:50%;">
           <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center;">
-            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${data.closedTickets}</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#475569;font-family:'Geist',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tickets closed</p>
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1e40af;font-family:${EMAIL_THEME.font};">${data.closedTickets}</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#475569;font-family:${EMAIL_THEME.font};">Tickets closed</p>
           </div>
         </td>
       </tr>

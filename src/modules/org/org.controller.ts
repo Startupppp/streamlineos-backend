@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -10,9 +10,7 @@ import { setupSchema, type SetupInput } from "./dto/org.schemas";
 import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import {
   orgSetupSkipSchema,
-  sessionPatchSchema,
   type OrgSetupSkipInput,
-  type SessionPatchInput,
 } from "../onboarding-flow/dto/onboarding-flow.schemas";
 
 @Controller("org")
@@ -37,29 +35,10 @@ export class OrgController {
     });
   }
 
-  // Legacy single-call setup — kept working for the current frontend wizard.
-  @Patch("setup")
-  @AllowNoOrg()
-  completeSetup(
-    @Body(new ZodValidationPipe(setupSchema)) body: SetupInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.setup.completeSetup(u, body);
-  }
-
   @Get("setup/session")
   @AllowNoOrg()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
     return this.setup.getSetupSession(u);
-  }
-
-  @Patch("setup/session")
-  @AllowNoOrg()
-  patchSetupSession(
-    @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.setup.patchSetupSession(u, body);
   }
 
   @Post("setup/complete")

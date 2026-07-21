@@ -11,7 +11,6 @@ const TIERS: Record<string, Tier> = {
   "api-key-ingest": { limit: 60, windowSecs: 60 },
   "auth:login": { limit: 5, windowSecs: 60 },
   "auth:register": { limit: 3, windowSecs: 60 },
-  "auth:forgot-password": { limit: 3, windowSecs: 60 },
   "auth:verify-email": { limit: 10, windowSecs: 60 },
   "auth:resend-verification": { limit: 3, windowSecs: 60 },
   "auth:magic-link": { limit: 3, windowSecs: 60 },

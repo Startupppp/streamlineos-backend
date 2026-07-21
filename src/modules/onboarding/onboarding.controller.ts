@@ -17,7 +17,6 @@ import {
 import type { Request } from "express";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { AllowNoOrg } from "../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
@@ -41,17 +40,14 @@ import {
   type PersonalDetailsInput,
   type UpdateTaskInput,
 } from "./dto/onboarding.schemas";
-import { ModuleRecommendationService } from "../onboarding-flow/module-recommendation.service";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
 import { GuidedTourService, HR_SETUP_TOUR_KEY } from "../onboarding-flow/guided-tour.service";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import {
   checklistItemSkipSchema,
-  moduleRecommendationInputSchema,
   sessionPatchSchema,
   tourProgressSchema,
   type ChecklistItemSkipInput,
-  type ModuleRecommendationInput,
   type SessionPatchInput,
   type TourProgressInput,
 } from "../onboarding-flow/dto/onboarding-flow.schemas";
@@ -61,7 +57,6 @@ import {
 export class OnboardingController {
   constructor(
     private readonly onboarding: OnboardingService,
-    private readonly moduleRecommendations: ModuleRecommendationService,
     private readonly checklists: ModuleChecklistService,
     private readonly tours: GuidedTourService,
     private readonly sessions: OnboardingSessionService,
@@ -107,15 +102,6 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sessions.patchSession(u.orgId, u.userId, "employee_onboarding", body);
-  }
-
-  @Post("module-recommendations")
-  @AllowNoOrg()
-  @HttpCode(200)
-  getModuleRecommendations(
-    @Body(new ZodValidationPipe(moduleRecommendationInputSchema)) body: ModuleRecommendationInput,
-  ) {
-    return this.moduleRecommendations.recommend(body);
   }
 
   @Get("module-checklists")

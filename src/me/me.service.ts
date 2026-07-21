@@ -155,7 +155,6 @@ export class MeService {
       loginsToday: loginsToday[0]?.count ?? 0,
       failedLoginsLast7Days: failedLoginsLast7Days[0]?.count ?? 0,
       activeSessions: activeSessions[0]?.count ?? 0,
-      passwordResetsLast7Days: 0,
     };
   }
 }

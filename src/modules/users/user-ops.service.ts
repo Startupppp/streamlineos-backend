@@ -212,7 +212,7 @@ export class UserOpsService {
     return { success: true, updated: scopedIds.length };
   }
 
-  async resetPassword(orgId: string, userId: string, actorUserId: string) {
+  async sendSigninLink(orgId: string, userId: string, actorUserId: string) {
     await this.usersSvc.getUser(orgId, userId);
 
     const user = await this.db.query.users.findFirst({

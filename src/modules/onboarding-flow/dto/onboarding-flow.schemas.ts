@@ -23,14 +23,6 @@ export const orgSetupSkipSchema = z.object({
 });
 export type OrgSetupSkipInput = z.infer<typeof orgSetupSkipSchema>;
 
-export const moduleRecommendationInputSchema = z.object({
-  goals: z.array(z.string().min(1).max(60)).default([]),
-  industry: z.string().min(1).max(80).optional(),
-  companySize: z.string().min(1).max(40).optional(),
-  country: z.string().min(1).max(80).optional(),
-});
-export type ModuleRecommendationInput = z.infer<typeof moduleRecommendationInputSchema>;
-
 export const checklistItemSkipSchema = z.object({
   reason: z.string().max(500).optional(),
 });

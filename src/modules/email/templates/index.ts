@@ -45,7 +45,7 @@ export {
   renderFallbackLink,
   renderOtpCode,
 } from "./components";
-export type { Tone } from "./components";
+export type { Tone, ButtonVariant } from "./components";
 
 export {
   getClientInvestmentEmailTemplate,
