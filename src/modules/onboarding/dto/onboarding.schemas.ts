@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  validateIBAN,
+  validateSWIFT,
+  validateSchemeCode,
+} from "../../payroll/payout/lib/bank-validation";
+import { resolveCountryRequirements } from "../onboarding-requirements.catalog";
 
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s'.-]{1,79}$/;
@@ -136,32 +142,83 @@ export const initiateSchema = z.object({
 });
 
 const BANK_NAME_REGEX = /^[A-Za-z][A-Za-z0-9.,'&()\-\s]*$/;
-const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const SSN_REGEX = /^\d{3}-?\d{2}-?\d{4}$/;
 
-export const bankDetailsSchema = z.object({
-  accountHolder: z.string().min(2, "Account holder name is required").max(100),
-  bankName: z
-    .string()
-    .min(2, "Bank name is required")
-    .max(100)
-    .regex(BANK_NAME_REGEX, "Enter a valid bank name"),
-  accountNumber: z
-    .string()
-    .min(8)
-    .max(18)
-    .regex(/^\d+$/, "Account number must contain only digits"),
-  ifsc: z.string().length(11).regex(IFSC_REGEX, "Enter a valid IFSC code"),
-  branch: z.string().optional(),
-  taxId: z
-    .string()
-    .optional()
-    .refine(
-      (val) => !val || PAN_REGEX.test(val.toUpperCase()) || SSN_REGEX.test(val),
-      "Enter a valid PAN or SSN",
-    ),
+export const requirementsQuerySchema = z.object({
+  country: z.string().trim().max(60).optional(),
 });
+
+export const ensureDocumentsSchema = z.object({
+  country: z.string().trim().max(60).optional(),
+});
+
+const optionalCode = z.string().trim().max(40).optional().default("");
+
+export const bankDetailsSchema = z
+  .object({
+    countryCode: z.string().trim().min(2).max(3).optional().default("IN"),
+    accountHolder: z.string().trim().min(2, "Account holder name is required").max(100),
+    bankName: z
+      .string()
+      .trim()
+      .min(2, "Bank name is required")
+      .max(100)
+      .regex(BANK_NAME_REGEX, "Enter a valid bank name"),
+    accountNumber: z.string().trim().max(34).optional().default(""),
+    routingCode: optionalCode,
+    iban: optionalCode,
+    swift: optionalCode,
+    branch: z.string().trim().max(100).optional(),
+    taxId: z.string().trim().max(40).optional(),
+    statutory: z.record(z.string(), z.string().trim().max(60)).optional().default({}),
+  })
+  .superRefine((val, ctx) => {
+    const req = resolveCountryRequirements(val.countryCode);
+
+    if (req.bankScheme === "IBAN") {
+      const result = validateIBAN(val.iban);
+      if (!result.valid) {
+        ctx.addIssue({ code: "custom", message: result.issue ?? "Enter a valid IBAN", path: ["iban"] });
+      }
+    } else if (req.bankScheme === "SWIFT_ACCOUNT") {
+      const result = validateSWIFT(val.swift);
+      if (!result.valid) {
+        ctx.addIssue({ code: "custom", message: result.issue ?? "Enter a valid SWIFT/BIC", path: ["swift"] });
+      }
+    } else if (req.bankScheme === "GENERIC") {
+      if (val.swift && !validateSWIFT(val.swift).valid) {
+        ctx.addIssue({ code: "custom", message: "Enter a valid SWIFT/BIC", path: ["swift"] });
+      }
+    } else {
+      const result = validateSchemeCode(req.bankScheme, val.routingCode);
+      if (!result.valid) {
+        ctx.addIssue({ code: "custom", message: result.issue ?? `Enter a valid ${result.label}`, path: ["routingCode"] });
+      }
+    }
+
+    if (req.bankScheme !== "IBAN" && !/^\d{6,20}$/.test(val.accountNumber)) {
+      ctx.addIssue({ code: "custom", message: "Enter a valid account number", path: ["accountNumber"] });
+    }
+
+    for (const field of req.statutoryFields) {
+      const raw = (val.statutory[field.key] ?? "").trim();
+      if (!raw) {
+        if (field.required) {
+          ctx.addIssue({ code: "custom", message: `${field.label} is required`, path: ["statutory", field.key] });
+        }
+        continue;
+      }
+      if (field.pattern) {
+        const value = field.uppercase ? raw.toUpperCase() : raw;
+        if (!new RegExp(field.pattern).test(value)) {
+          ctx.addIssue({
+            code: "custom",
+            message: field.patternMessage ?? `Enter a valid ${field.label}`,
+            path: ["statutory", field.key],
+          });
+        }
+      }
+    }
+  });
 
 export const templateStepSchema = z.object({
   title: z.string().min(1),
@@ -186,5 +243,7 @@ export const updateTaskSchema = z.object({
 export type InitiateInput = z.infer<typeof initiateSchema>;
 export type PersonalDetailsInput = z.infer<typeof personalDetailsSchema>;
 export type BankDetailsInput = z.infer<typeof bankDetailsSchema>;
+export type RequirementsQueryInput = z.infer<typeof requirementsQuerySchema>;
+export type EnsureDocumentsInput = z.infer<typeof ensureDocumentsSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;

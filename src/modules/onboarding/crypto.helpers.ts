@@ -36,6 +36,11 @@ export interface BankDetails {
   accountHolder: string;
   pfUanNumber?: string;
   bankCountry?: string;
+  routingCode?: string;
+  iban?: string;
+  swift?: string;
+  scheme?: string;
+  statutory?: Record<string, string>;
 }
 
 export function encryptBankDetails(details: BankDetails): string {
@@ -64,7 +69,12 @@ const bankDetailsDecodeSchema = z.object({
   ifsc: z.string(),
   accountHolder: z.string(),
   pfUanNumber: z.string().optional(),
-  bankCountry: z.string().length(2).optional(),
+  bankCountry: z.string().max(10).optional(),
+  routingCode: z.string().optional(),
+  iban: z.string().optional(),
+  swift: z.string().optional(),
+  scheme: z.string().optional(),
+  statutory: z.record(z.string(), z.string()).optional(),
 });
 
 export function decryptBankDetails(encrypted: string | null | undefined): BankDetails | null {

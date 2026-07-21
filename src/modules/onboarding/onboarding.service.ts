@@ -1,17 +1,22 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
-  departmentMembers,
+  users,
   documents,
-  leaveBalances,
   leaveTypes,
+  leaveBalances,
   notifications,
   onboardingSteps,
   onboardingTasks,
+  departmentMembers,
   onboardingTemplates,
   onboardingTemplateSteps,
   organizationMembers,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -31,6 +36,7 @@ import type {
   UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 import { encrypt, encryptBankDetails } from "./crypto.helpers";
+import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
@@ -45,13 +51,59 @@ type DefaultTask = {
 };
 
 const DEFAULT_TASKS: DefaultTask[] = [
-  { title: "IT Setup", description: "Set up workstation, email, and required software access.", ownerRole: "IT", dueOffsetDays: 1, isComplianceItem: false },
-  { title: "HR Orientation", description: "Attend HR orientation session covering company policies and benefits.", ownerRole: "HR", dueOffsetDays: 2, isComplianceItem: false },
-  { title: "Department Intro", description: "Meet with the department head and team for a role overview.", ownerRole: "MANAGER", dueOffsetDays: 3, isComplianceItem: false },
-  { title: "Policy Review", description: "Read and acknowledge the employee handbook and code of conduct.", ownerRole: "NEW_HIRE", dueOffsetDays: 5, isComplianceItem: true },
-  { title: "Manager Introduction", description: "One-on-one meeting with direct manager to align on goals.", ownerRole: "MANAGER", dueOffsetDays: 7, isComplianceItem: false },
-  { title: "POSH Training Acknowledgement", description: "Complete mandatory Prevention of Sexual Harassment (POSH) awareness training and sign acknowledgement.", ownerRole: "NEW_HIRE", dueOffsetDays: 3, isComplianceItem: true },
-  { title: "Code of Conduct Sign-Off", description: "Read and digitally sign the company Code of Conduct document.", ownerRole: "NEW_HIRE", dueOffsetDays: 5, isComplianceItem: true },
+  {
+    title: "IT Setup",
+    description: "Set up workstation, email, and required software access.",
+    ownerRole: "IT",
+    dueOffsetDays: 1,
+    isComplianceItem: false,
+  },
+  {
+    title: "HR Orientation",
+    description:
+      "Attend HR orientation session covering company policies and benefits.",
+    ownerRole: "HR",
+    dueOffsetDays: 2,
+    isComplianceItem: false,
+  },
+  {
+    title: "Department Intro",
+    description: "Meet with the department head and team for a role overview.",
+    ownerRole: "MANAGER",
+    dueOffsetDays: 3,
+    isComplianceItem: false,
+  },
+  {
+    title: "Policy Review",
+    description:
+      "Read and acknowledge the employee handbook and code of conduct.",
+    ownerRole: "NEW_HIRE",
+    dueOffsetDays: 5,
+    isComplianceItem: true,
+  },
+  {
+    title: "Manager Introduction",
+    description: "One-on-one meeting with direct manager to align on goals.",
+    ownerRole: "MANAGER",
+    dueOffsetDays: 7,
+    isComplianceItem: false,
+  },
+  {
+    title: "POSH Training Acknowledgement",
+    description:
+      "Complete mandatory Prevention of Sexual Harassment (POSH) awareness training and sign acknowledgement.",
+    ownerRole: "NEW_HIRE",
+    dueOffsetDays: 3,
+    isComplianceItem: true,
+  },
+  {
+    title: "Code of Conduct Sign-Off",
+    description:
+      "Read and digitally sign the company Code of Conduct document.",
+    ownerRole: "NEW_HIRE",
+    dueOffsetDays: 5,
+    isComplianceItem: true,
+  },
 ];
 
 export type InitiateResult =
@@ -91,7 +143,9 @@ export class OnboardingService {
         userName: users.name,
         totalTasks: sql<number>`count(*)::int`,
         completedTasks: sql<number>`sum(case when ${onboardingTasks.status} = 'COMPLETED' then 1 else 0 end)::int`,
-        lastCompletedAt: sql<string | null>`max(${onboardingTasks.completedAt})`,
+        lastCompletedAt: sql<
+          string | null
+        >`max(${onboardingTasks.completedAt})`,
       })
       .from(onboardingTasks)
       .leftJoin(users, eq(onboardingTasks.userId, users.id))
@@ -127,21 +181,34 @@ export class OnboardingService {
     }
 
     const [targetUser] = await this.db
-      .select({ id: users.id, joiningDate: users.joiningDate, email: users.email, name: users.name, designation: users.designation })
+      .select({
+        id: users.id,
+        joiningDate: users.joiningDate,
+        email: users.email,
+        name: users.name,
+        designation: users.designation,
+      })
       .from(users)
       .where(eq(users.id, input.userId));
 
     const existing = await this.db
       .select({ id: onboardingTasks.id })
       .from(onboardingTasks)
-      .where(and(eq(onboardingTasks.userId, input.userId), eq(onboardingTasks.orgId, orgId)))
+      .where(
+        and(
+          eq(onboardingTasks.userId, input.userId),
+          eq(onboardingTasks.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (existing.length > 0) {
       return { error: "already_initiated" };
     }
 
-    const baseDate = targetUser?.joiningDate ? new Date(targetUser.joiningDate) : new Date();
+    const baseDate = targetUser?.joiningDate
+      ? new Date(targetUser.joiningDate)
+      : new Date();
 
     const [deptMember] = await this.db
       .select({ departmentId: departmentMembers.departmentId })
@@ -152,7 +219,10 @@ export class OnboardingService {
     const employeeDeptId = deptMember?.departmentId ?? null;
 
     const allTemplates = await this.db
-      .select({ id: onboardingTemplates.id, departmentId: onboardingTemplates.departmentId })
+      .select({
+        id: onboardingTemplates.id,
+        departmentId: onboardingTemplates.departmentId,
+      })
       .from(onboardingTemplates)
       .where(
         and(
@@ -215,14 +285,25 @@ export class OnboardingService {
         });
         await this.db.insert(onboardingTasks).values(taskInserts);
         const ownerRoles = [...new Set(taskInserts.map((t) => t.ownerRole))];
-        void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, ownerRoles).catch(() => undefined);
-        void this.hrAutomation.emit(orgId, "employee.created", {
-          userId: input.userId,
-          employeeName: targetUser?.name ?? "",
-          employeeEmail: targetUser?.email ?? "",
-          createdAt: new Date().toISOString(),
-        }).catch(() => undefined);
-        return { success: true, tasksCreated: taskInserts.length, fromTemplate: true };
+        void this.dispatchOnboardingInitiatedEmails(
+          orgId,
+          input.userId,
+          targetUser,
+          ownerRoles,
+        ).catch(() => undefined);
+        void this.hrAutomation
+          .emit(orgId, "employee.created", {
+            userId: input.userId,
+            employeeName: targetUser?.name ?? "",
+            employeeEmail: targetUser?.email ?? "",
+            createdAt: new Date().toISOString(),
+          })
+          .catch(() => undefined);
+        return {
+          success: true,
+          tasksCreated: taskInserts.length,
+          fromTemplate: true,
+        };
       }
     }
 
@@ -240,27 +321,55 @@ export class OnboardingService {
       };
     });
     await this.db.insert(onboardingTasks).values(defaultInserts);
-    const defaultOwnerRoles = [...new Set(defaultInserts.map((t) => t.ownerRole))];
-    void this.dispatchOnboardingInitiatedEmails(orgId, input.userId, targetUser, defaultOwnerRoles).catch(() => undefined);
-    void this.hrAutomation.emit(orgId, "employee.created", {
-      userId: input.userId,
-      employeeName: targetUser?.name ?? "",
-      employeeEmail: targetUser?.email ?? "",
-      createdAt: new Date().toISOString(),
-    }).catch(() => undefined);
-    return { success: true, tasksCreated: defaultInserts.length, fromTemplate: false };
+    const defaultOwnerRoles = [
+      ...new Set(defaultInserts.map((t) => t.ownerRole)),
+    ];
+    void this.dispatchOnboardingInitiatedEmails(
+      orgId,
+      input.userId,
+      targetUser,
+      defaultOwnerRoles,
+    ).catch(() => undefined);
+    void this.hrAutomation
+      .emit(orgId, "employee.created", {
+        userId: input.userId,
+        employeeName: targetUser?.name ?? "",
+        employeeEmail: targetUser?.email ?? "",
+        createdAt: new Date().toISOString(),
+      })
+      .catch(() => undefined);
+    return {
+      success: true,
+      tasksCreated: defaultInserts.length,
+      fromTemplate: false,
+    };
   }
 
   private async dispatchOnboardingInitiatedEmails(
     orgId: string,
     employeeUserId: string,
-    targetUser: { email: string | null; name: string | null; designation: string | null; joiningDate: string | null } | undefined,
+    targetUser:
+      | {
+          email: string | null;
+          name: string | null;
+          designation: string | null;
+          joiningDate: string | null;
+        }
+      | undefined,
     ownerRoles: string[],
   ): Promise<void> {
     if (targetUser?.email) {
       const joiningDate = targetUser.joiningDate
-        ? new Date(targetUser.joiningDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
-        : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+        ? new Date(targetUser.joiningDate).toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : new Date().toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
       const taskCount = ownerRoles.length;
       await this.email.sendOnboardingWelcomeEmail(
         targetUser.email,
@@ -272,7 +381,10 @@ export class OnboardingService {
     }
 
     const ASSIGNABLE_TASK_ROLES = ["HR", "MANAGER"] as const;
-    const assignableRoles = ownerRoles.filter((r): r is (typeof ASSIGNABLE_TASK_ROLES)[number] => (ASSIGNABLE_TASK_ROLES as readonly string[]).includes(r));
+    const assignableRoles = ownerRoles.filter(
+      (r): r is (typeof ASSIGNABLE_TASK_ROLES)[number] =>
+        (ASSIGNABLE_TASK_ROLES as readonly string[]).includes(r),
+    );
     if (assignableRoles.length === 0) return;
 
     const tasksByRole = new Map<string, number>();
@@ -281,7 +393,12 @@ export class OnboardingService {
     }
 
     const membersRaw = await this.db
-      .select({ userId: organizationMembers.userId, role: organizationMembers.role, email: users.email, name: users.name })
+      .select({
+        userId: organizationMembers.userId,
+        role: organizationMembers.role,
+        email: users.email,
+        name: users.name,
+      })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
@@ -294,10 +411,21 @@ export class OnboardingService {
     const employeeName = targetUser?.name ?? "the new joiner";
     const seen = new Set<string>();
     for (const member of membersRaw) {
-      if (!member.email || member.userId === employeeUserId || seen.has(member.userId)) continue;
+      if (
+        !member.email ||
+        member.userId === employeeUserId ||
+        seen.has(member.userId)
+      )
+        continue;
       seen.add(member.userId);
       const count = tasksByRole.get(member.role) ?? 1;
-      await this.email.sendOnboardingTaskEmail(member.email, member.name ?? "there", employeeName, member.role, count);
+      await this.email.sendOnboardingTaskEmail(
+        member.email,
+        member.name ?? "there",
+        employeeName,
+        member.role,
+        count,
+      );
     }
   }
 
@@ -368,7 +496,11 @@ export class OnboardingService {
     });
   }
 
-  async savePersonalDetails(orgId: string, userId: string, input: PersonalDetailsInput) {
+  async savePersonalDetails(
+    orgId: string,
+    userId: string,
+    input: PersonalDetailsInput,
+  ) {
     const emergencyContact =
       input.emergencyName && input.emergencyRelation && input.emergencyPhone
         ? {
@@ -425,18 +557,37 @@ export class OnboardingService {
     };
   }
 
-  async saveBankDetails(orgId: string, userId: string, input: BankDetailsInput) {
+  async saveBankDetails(
+    orgId: string,
+    userId: string,
+    input: BankDetailsInput,
+  ) {
+    const req = resolveCountryRequirements(input.countryCode);
+    const statutory = input.statutory ?? {};
+    const primaryKey = req.statutoryFields[0]?.key;
+    const primaryTaxId =
+      input.taxId?.trim() ||
+      (primaryKey ? statutory[primaryKey]?.trim() : "") ||
+      "";
+
     await this.db
       .update(users)
       .set({
         bankDetails: encryptBankDetails({
-          accountNumber: input.accountNumber,
+          accountNumber: input.accountNumber ?? "",
           bankName: input.bankName,
           branch: input.branch ?? "",
-          ifsc: input.ifsc,
+          ifsc: req.bankScheme === "IFSC" ? (input.routingCode ?? "") : "",
           accountHolder: input.accountHolder,
+          bankCountry: req.countryCode,
+          scheme: req.bankScheme,
+          routingCode: input.routingCode?.trim() || undefined,
+          iban: input.iban?.trim() || undefined,
+          swift: input.swift?.trim() || undefined,
+          pfUanNumber: statutory["uan"]?.trim() || undefined,
+          statutory: Object.keys(statutory).length > 0 ? statutory : undefined,
         }),
-        ...(input.taxId ? { taxId: encrypt(input.taxId) } : {}),
+        ...(primaryTaxId ? { taxId: encrypt(primaryTaxId) } : {}),
       })
       .where(eq(users.id, userId));
 
@@ -459,7 +610,10 @@ export class OnboardingService {
 
     const currentYear = new Date().getFullYear();
     const existingBalance = await this.db.query.leaveBalances.findFirst({
-      where: and(eq(leaveBalances.userId, userId), eq(leaveBalances.year, currentYear)),
+      where: and(
+        eq(leaveBalances.userId, userId),
+        eq(leaveBalances.year, currentYear),
+      ),
     });
 
     if (!existingBalance) {
@@ -497,15 +651,26 @@ export class OnboardingService {
     return this.db
       .select()
       .from(onboardingTasks)
-      .where(and(eq(onboardingTasks.userId, userId), eq(onboardingTasks.orgId, u.orgId)))
+      .where(
+        and(
+          eq(onboardingTasks.userId, userId),
+          eq(onboardingTasks.orgId, u.orgId),
+        ),
+      )
       .orderBy(onboardingTasks.createdAt);
   }
 
-  async updateTask(u: CurrentUserContext, taskId: number, input: UpdateTaskInput) {
+  async updateTask(
+    u: CurrentUserContext,
+    taskId: number,
+    input: UpdateTaskInput,
+  ) {
     const [task] = await this.db
       .select()
       .from(onboardingTasks)
-      .where(and(eq(onboardingTasks.id, taskId), eq(onboardingTasks.orgId, u.orgId)));
+      .where(
+        and(eq(onboardingTasks.id, taskId), eq(onboardingTasks.orgId, u.orgId)),
+      );
 
     if (!task) throw new NotFoundException("Task not found");
 
@@ -536,7 +701,10 @@ export class OnboardingService {
     return { success: true };
   }
 
-  private dispatchOnboardingComplete(orgId: string, employeeUserId: string): void {
+  private dispatchOnboardingComplete(
+    orgId: string,
+    employeeUserId: string,
+  ): void {
     void (async () => {
       const pending = await this.db
         .select({ id: onboardingTasks.id })
@@ -553,7 +721,10 @@ export class OnboardingService {
       try {
         await this.probation.setupProbationForUser(orgId, employeeUserId);
       } catch {
-        logger.warn("onboarding probation setup failed", { orgId, employeeUserId });
+        logger.warn("onboarding probation setup failed", {
+          orgId,
+          employeeUserId,
+        });
       }
 
       const employee = await this.db.query.users.findFirst({
@@ -562,24 +733,43 @@ export class OnboardingService {
       });
 
       if (employee?.email) {
-        await this.email.sendOnboardingCompleteEmployeeEmail(employee.email, employee.name ?? "Team Member");
+        await this.email.sendOnboardingCompleteEmployeeEmail(
+          employee.email,
+          employee.name ?? "Team Member",
+        );
       }
 
       const hrMembers = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.role, [...HR_NOTIFY_ROLES])));
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            inArray(organizationMembers.role, [...HR_NOTIFY_ROLES]),
+          ),
+        );
       if (hrMembers.length === 0) return;
 
       const hrUsers = await this.db
         .select({ email: users.email, name: users.name })
         .from(users)
-        .where(inArray(users.id, hrMembers.map((m) => m.userId)));
+        .where(
+          inArray(
+            users.id,
+            hrMembers.map((m) => m.userId),
+          ),
+        );
 
-      const recipients = hrUsers.filter((m): m is { email: string; name: string | null } => Boolean(m.email));
+      const recipients = hrUsers.filter(
+        (m): m is { email: string; name: string | null } => Boolean(m.email),
+      );
       await Promise.all(
         recipients.map((m) =>
-          this.email.sendOnboardingCompleteHrEmail(m.email, m.name ?? "HR", employee?.name ?? "Employee"),
+          this.email.sendOnboardingCompleteHrEmail(
+            m.email,
+            m.name ?? "HR",
+            employee?.name ?? "Employee",
+          ),
         ),
       );
 
@@ -590,12 +780,19 @@ export class OnboardingService {
         totalTasks: 0,
         completedAt: new Date().toISOString(),
       };
-      void this.automation.runAutomationsForEvent(orgId, "onboarding.completed", onboardedPayload).catch(() => undefined);
-      void this.hrAutomation.emit(orgId, "employee.onboarded", onboardedPayload).catch(() => undefined);
+      void this.automation
+        .runAutomationsForEvent(orgId, "onboarding.completed", onboardedPayload)
+        .catch(() => undefined);
+      void this.hrAutomation
+        .emit(orgId, "employee.onboarded", onboardedPayload)
+        .catch(() => undefined);
     })().catch(() => undefined);
   }
 
-  async sendReminders(orgId: string, appUrl: string): Promise<{ sent: number; total: number }> {
+  async sendReminders(
+    orgId: string,
+    appUrl: string,
+  ): Promise<{ sent: number; total: number }> {
     const incompleteUsers = await this.db
       .select({
         userId: onboardingTasks.userId,
@@ -608,7 +805,9 @@ export class OnboardingService {
       .innerJoin(users, eq(onboardingTasks.userId, users.id))
       .where(eq(onboardingTasks.orgId, orgId))
       .groupBy(onboardingTasks.userId, users.name, users.email)
-      .having(sql`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END) > 0`);
+      .having(
+        sql`COUNT(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 END) > 0`,
+      );
 
     if (incompleteUsers.length === 0) {
       return { sent: 0, total: 0 };
@@ -631,18 +830,24 @@ export class OnboardingService {
           await this.email.sendEmail({
             to: user.userEmail,
             subject: "Onboarding reminder — pending tasks",
-            html: getOnboardingReminderEmailTemplate(user.userName ?? "there", user.pendingTasks, user.totalTasks),
+            html: getOnboardingReminderEmailTemplate(
+              user.userName ?? "there",
+              user.pendingTasks,
+              user.totalTasks,
+            ),
           });
           sentCount++;
-        } catch {
-        }
+        } catch {}
       }
     }
 
     return { sent: sentCount, total: incompleteUsers.length };
   }
 
-  async getStatus(userId: string, orgId: string): Promise<{
+  async getStatus(
+    userId: string,
+    orgId: string,
+  ): Promise<{
     personalDetails: boolean;
     bankDetails: boolean;
     documents: number;
@@ -650,9 +855,17 @@ export class OnboardingService {
   }> {
     const [stepsResult, docCountResult, userRow] = await Promise.all([
       this.db
-        .select({ stepName: onboardingSteps.stepName, status: onboardingSteps.status })
+        .select({
+          stepName: onboardingSteps.stepName,
+          status: onboardingSteps.status,
+        })
         .from(onboardingSteps)
-        .where(and(eq(onboardingSteps.userId, userId), eq(onboardingSteps.orgId, orgId))),
+        .where(
+          and(
+            eq(onboardingSteps.userId, userId),
+            eq(onboardingSteps.orgId, orgId),
+          ),
+        ),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(documents)
@@ -677,9 +890,16 @@ export class OnboardingService {
     };
   }
 
-  private async upsertOnboardingStep(userId: string, orgId: string, stepName: string) {
+  private async upsertOnboardingStep(
+    userId: string,
+    orgId: string,
+    stepName: string,
+  ) {
     const existing = await this.db.query.onboardingSteps.findFirst({
-      where: and(eq(onboardingSteps.userId, userId), eq(onboardingSteps.stepName, stepName)),
+      where: and(
+        eq(onboardingSteps.userId, userId),
+        eq(onboardingSteps.stepName, stepName),
+      ),
     });
     if (existing) {
       await this.db

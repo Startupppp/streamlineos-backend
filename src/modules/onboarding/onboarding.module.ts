@@ -1,15 +1,25 @@
 import { Module } from "@nestjs/common";
-import { AutomationModule } from "../automation/automation.module";
-import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
-import { HrPoliciesModule } from "../hr-policies/hr-policies.module";
-import { OnboardingController } from "./onboarding.controller";
 import { OnboardingService } from "./onboarding.service";
+import { OnboardingController } from "./onboarding.controller";
+import { AutomationModule } from "../automation/automation.module";
+import { HrPoliciesModule } from "../hr-policies/hr-policies.module";
 import { OnboardingProbationService } from "./onboarding-probation.service";
+import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
 import { OnboardingFlowModule } from "../onboarding-flow/onboarding-flow.module";
+import { OnboardingRequirementsService } from "./onboarding-requirements.service";
 
 @Module({
-  imports: [AutomationModule, HrAutomationsModule, OnboardingFlowModule, HrPoliciesModule],
+  imports: [
+    AutomationModule,
+    HrPoliciesModule,
+    HrAutomationsModule,
+    OnboardingFlowModule,
+  ],
+  providers: [
+    OnboardingService,
+    OnboardingProbationService,
+    OnboardingRequirementsService,
+  ],
   controllers: [OnboardingController],
-  providers: [OnboardingService, OnboardingProbationService],
 })
 export class OnboardingModule {}

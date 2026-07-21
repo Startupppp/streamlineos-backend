@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -28,20 +29,28 @@ import {
   isInitiateAlreadyDone,
   isInitiateUserNotFound,
 } from "./onboarding.service";
+import { OnboardingRequirementsService } from "./onboarding-requirements.service";
 import {
   bankDetailsSchema,
   createTemplateSchema,
+  ensureDocumentsSchema,
   initiateSchema,
   personalDetailsSchema,
+  requirementsQuerySchema,
   updateTaskSchema,
   type BankDetailsInput,
   type CreateTemplateInput,
+  type EnsureDocumentsInput,
   type InitiateInput,
   type PersonalDetailsInput,
+  type RequirementsQueryInput,
   type UpdateTaskInput,
 } from "./dto/onboarding.schemas";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
-import { GuidedTourService, HR_SETUP_TOUR_KEY } from "../onboarding-flow/guided-tour.service";
+import {
+  GuidedTourService,
+  HR_SETUP_TOUR_KEY,
+} from "../onboarding-flow/guided-tour.service";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import {
   checklistItemSkipSchema,
@@ -57,6 +66,7 @@ import {
 export class OnboardingController {
   constructor(
     private readonly onboarding: OnboardingService,
+    private readonly requirements: OnboardingRequirementsService,
     private readonly checklists: ModuleChecklistService,
     private readonly tours: GuidedTourService,
     private readonly sessions: OnboardingSessionService,
@@ -73,7 +83,10 @@ export class OnboardingController {
    * we layer an additional, existing-permission check on top for moduleKey === "HR" only,
    * matching the manual-OR-check idiom already used in hr-config/hr-document-types.controller.ts.
    */
-  private async assertHrChecklistAccess(u: CurrentUserContext, mode: "view" | "manage") {
+  private async assertHrChecklistAccess(
+    u: CurrentUserContext,
+    mode: "view" | "manage",
+  ) {
     if (u.isOrgOwner || u.isPlatformAdmin) return;
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     if (perms.has("hr:employees:manage")) return;
@@ -91,7 +104,11 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:view")
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
-    return this.sessions.getOrCreateSession(u.orgId, u.userId, "employee_onboarding");
+    return this.sessions.getOrCreateSession(
+      u.orgId,
+      u.userId,
+      "employee_onboarding",
+    );
   }
 
   @Patch("session")
@@ -101,7 +118,12 @@ export class OnboardingController {
     @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sessions.patchSession(u.orgId, u.userId, "employee_onboarding", body);
+    return this.sessions.patchSession(
+      u.orgId,
+      u.userId,
+      "employee_onboarding",
+      body,
+    );
   }
 
   @Get("module-checklists")
@@ -115,7 +137,10 @@ export class OnboardingController {
   @Get("module-checklists/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
-  async getModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+  async getModuleChecklist(
+    @Param("moduleKey") moduleKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "view");
     return this.checklists.getChecklist(u.orgId, moduleKey, u.enabledModules);
   }
@@ -129,7 +154,13 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.completeItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules);
+    return this.checklists.completeItem(
+      u.orgId,
+      moduleKey,
+      itemKey,
+      u.userId,
+      u.enabledModules,
+    );
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
@@ -138,27 +169,51 @@ export class OnboardingController {
   async skipChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
-    @Body(new ZodValidationPipe(checklistItemSkipSchema)) body: ChecklistItemSkipInput,
+    @Body(new ZodValidationPipe(checklistItemSkipSchema))
+    body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.skipItem(u.orgId, moduleKey, itemKey, u.userId, u.enabledModules, body.reason);
+    return this.checklists.skipItem(
+      u.orgId,
+      moduleKey,
+      itemKey,
+      u.userId,
+      u.enabledModules,
+      body.reason,
+    );
   }
 
   @Post("module-checklists/:moduleKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
-  async dismissModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+  async dismissModuleChecklist(
+    @Param("moduleKey") moduleKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.dismissChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
+    return this.checklists.dismissChecklist(
+      u.orgId,
+      moduleKey,
+      u.userId,
+      u.enabledModules,
+    );
   }
 
   @Post("module-checklists/:moduleKey/restart")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
-  async restartModuleChecklist(@Param("moduleKey") moduleKey: string, @CurrentUser() u: CurrentUserContext) {
+  async restartModuleChecklist(
+    @Param("moduleKey") moduleKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     if (moduleKey === "HR") await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.restartChecklist(u.orgId, moduleKey, u.userId, u.enabledModules);
+    return this.checklists.restartChecklist(
+      u.orgId,
+      moduleKey,
+      u.userId,
+      u.enabledModules,
+    );
   }
 
   /**
@@ -166,8 +221,13 @@ export class OnboardingController {
    * be HR-only for the same reason (task requirement) — every other tour stays covered by the
    * generic onboarding:tours:* baseline permission.
    */
-  private async assertTourAccess(tourKey: string, u: CurrentUserContext, mode: "view" | "manage") {
-    if (tourKey === HR_SETUP_TOUR_KEY) await this.assertHrChecklistAccess(u, mode);
+  private async assertTourAccess(
+    tourKey: string,
+    u: CurrentUserContext,
+    mode: "view" | "manage",
+  ) {
+    if (tourKey === HR_SETUP_TOUR_KEY)
+      await this.assertHrChecklistAccess(u, mode);
   }
 
   @Get("tours")
@@ -176,7 +236,9 @@ export class OnboardingController {
   async listTours(@CurrentUser() u: CurrentUserContext) {
     const tours = await this.tours.listToursForUser(u.orgId, u.userId, u.role);
     const includeHr = await this.hasHrChecklistAccess(u);
-    return includeHr ? tours : tours.filter((t) => t.tourKey !== HR_SETUP_TOUR_KEY);
+    return includeHr
+      ? tours
+      : tours.filter((t) => t.tourKey !== HR_SETUP_TOUR_KEY);
   }
 
   /**
@@ -193,13 +255,21 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertTourAccess(tourKey, u, "view");
-    return this.tours.saveProgress(u.orgId, u.userId, tourKey, body.currentStep);
+    return this.tours.saveProgress(
+      u.orgId,
+      u.userId,
+      tourKey,
+      body.currentStep,
+    );
   }
 
   @Post("tours/:tourKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  async completeTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+  async completeTour(
+    @Param("tourKey") tourKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     await this.assertTourAccess(tourKey, u, "view");
     return this.tours.completeTour(u.orgId, u.userId, tourKey);
   }
@@ -207,7 +277,10 @@ export class OnboardingController {
   @Post("tours/:tourKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
-  async dismissTour(@Param("tourKey") tourKey: string, @CurrentUser() u: CurrentUserContext) {
+  async dismissTour(
+    @Param("tourKey") tourKey: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     await this.assertTourAccess(tourKey, u, "view");
     return this.tours.dismissTour(u.orgId, u.userId, tourKey);
   }
@@ -250,7 +323,8 @@ export class OnboardingController {
   @RequirePermission("settings:onboarding:manage")
   @HttpCode(201)
   createTemplate(
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body(new ZodValidationPipe(createTemplateSchema))
+    body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
@@ -261,9 +335,12 @@ export class OnboardingController {
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   sendReminders(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    const protocol = req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
+    const protocol =
+      req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
     const host = req.headers["x-forwarded-host"] ?? req.headers.host;
-    const appUrl = host ? `${String(protocol)}://${String(host)}` : (process.env.APP_URL ?? "").replace(/\/$/, "");
+    const appUrl = host
+      ? `${String(protocol)}://${String(host)}`
+      : (process.env.APP_URL ?? "").replace(/\/$/, "");
     return this.onboarding.sendReminders(u.orgId, appUrl);
   }
 
@@ -271,7 +348,8 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:complete")
   savePersonalDetails(
-    @Body(new ZodValidationPipe(personalDetailsSchema)) body: PersonalDetailsInput,
+    @Body(new ZodValidationPipe(personalDetailsSchema))
+    body: PersonalDetailsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.savePersonalDetails(u.orgId, u.userId, body);
@@ -317,6 +395,29 @@ export class OnboardingController {
   @RequirePermission("hr:onboarding:tasks:view")
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getStatus(u.userId, u.orgId);
+  }
+
+  @Get("requirements")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:onboarding:tasks:view")
+  getRequirements(
+    @Query(new ZodValidationPipe(requirementsQuerySchema))
+    query: RequirementsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.requirements.getRequirements(u.orgId, query.country);
+  }
+
+  @Post("requirements/documents")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:onboarding:tasks:complete")
+  @HttpCode(200)
+  ensureRequirementDocuments(
+    @Body(new ZodValidationPipe(ensureDocumentsSchema))
+    body: EnsureDocumentsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.requirements.ensureDocumentTypes(u.orgId, body.country);
   }
 
   @Get(":userId")

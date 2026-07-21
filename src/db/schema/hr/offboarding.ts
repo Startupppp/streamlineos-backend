@@ -113,6 +113,7 @@ export const documentTypes = pgTable("document_types", {
   name: text("name").notNull(),
   slug: text("slug").notNull(),
   description: text("description"),
+  countryCode: text("country_code"),
   isMandatory: boolean("is_mandatory").default(true).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
@@ -121,6 +122,7 @@ export const documentTypes = pgTable("document_types", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_doc_types_org").on(table.orgId),
+  index("idx_doc_types_org_country").on(table.orgId, table.countryCode),
 ]);
 
 export const onboardingDocuments = pgTable("onboarding_documents", {
