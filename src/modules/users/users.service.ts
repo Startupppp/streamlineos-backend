@@ -29,10 +29,7 @@ export class UsersService {
     const { email, firstName, lastName, role, designation, phone, departmentId, branchId, sendInvite } = input;
 
     if (sendInvite) {
-      return this.invitationsSvc.invite(orgId, actorUserId, email, role, {
-        departmentId,
-        branchId,
-      });
+      return this.invitationsSvc.invite(orgId, actorUserId, email, role);
     }
 
     const existing = await this.db.query.users.findFirst({ where: eq(users.email, email) });

@@ -25,16 +25,6 @@ import {
 } from "../../db/schema";
 import type { AcceptInvitationInput } from "./dto/organization.schemas";
 
-type InviteExtra = {
-  employeeId?: string;
-  branchId?: number;
-  departmentId?: number;
-  teamId?: string;
-  managerUserId?: string;
-  startDate?: string;
-  welcomeMessage?: string;
-};
-
 @Injectable()
 export class InvitationsService {
   constructor(
@@ -50,7 +40,6 @@ export class InvitationsService {
     actorUserId: string,
     email: string,
     role: string,
-    extra?: InviteExtra,
   ): Promise<{ success: true; invitationId: string; organizationName: string; resent: boolean }> {
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, email),
@@ -122,7 +111,7 @@ export class InvitationsService {
         orgId,
         targetId: pendingInvitation.id,
         targetType: "invitation",
-        metadata: { email, role, ...extra },
+        metadata: { email, role },
       });
 
       return { success: true, invitationId: pendingInvitation.id, organizationName: org?.name ?? "", resent: true };
@@ -174,7 +163,7 @@ export class InvitationsService {
       orgId,
       targetId: invitationId,
       targetType: "invitation",
-      metadata: { email, role, ...extra },
+      metadata: { email, role },
     });
 
     return { success: true, invitationId, organizationName: org?.name ?? "", resent: false };

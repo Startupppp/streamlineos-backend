@@ -46,21 +46,22 @@ export const updateUserStatusSchema = z.object({
 });
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 
+const inviteEmailSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .email()
+  .max(254)
+  .transform((value) => value.toLowerCase());
+
 export const inviteUserSchema = z.object({
-  email: z.string().email(),
+  email: inviteEmailSchema,
   role: z.string().default("ENGINEERING"),
-  employeeId: z.string().optional(),
-  branchId: z.coerce.number().int().optional(),
-  departmentId: z.coerce.number().int().optional(),
-  teamId: z.string().optional(),
-  managerUserId: z.string().optional(),
-  startDate: z.string().optional(),
-  welcomeMessage: z.string().optional(),
 });
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
-  emails: z.array(z.string().email()).min(1).max(50),
+  emails: z.array(inviteEmailSchema).min(1).max(50),
   role: z.string().default("ENGINEERING"),
 });
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
