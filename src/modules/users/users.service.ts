@@ -46,15 +46,19 @@ export class UsersService {
     }
 
     const userId = randomUUID();
-    const fullName = firstName && lastName ? `${firstName} ${lastName}`.trim() : firstName ?? lastName ?? null;
+    const trimmedFirst = firstName?.trim() || null;
+    const trimmedLast = lastName?.trim() || null;
+    const fromNames = [trimmedFirst, trimmedLast].filter(Boolean).join(" ") || null;
+    const emailLocal = email.split("@")[0]?.trim() || null;
+    const fullName = fromNames ?? emailLocal;
 
     await this.db.transaction(async (tx) => {
       await tx.insert(users).values({
         id: userId,
         email,
         name: fullName,
-        firstName: firstName ?? null,
-        lastName: lastName ?? null,
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
         emailVerified: new Date(),
         designation: designation ?? null,
         phone: phone ?? null,

@@ -357,18 +357,19 @@ export class InvitationsService {
     }
 
     const userId = randomUUID();
-    const fullName =
-      input.firstName && input.lastName
-        ? `${input.firstName} ${input.lastName}`
-        : input.firstName || input.lastName || null;
+    const firstName = input.firstName?.trim() || null;
+    const lastName = input.lastName?.trim() || null;
+    const fromNames = [firstName, lastName].filter(Boolean).join(" ") || null;
+    const emailLocal = invitation.email.split("@")[0]?.trim() || null;
+    const fullName = fromNames ?? emailLocal;
 
     await this.db.transaction(async (tx) => {
       await tx.insert(users).values({
         id: userId,
         email: invitation.email,
         name: fullName,
-        firstName: input.firstName,
-        lastName: input.lastName,
+        firstName,
+        lastName,
         emailVerified: new Date(),
         role: invitation.role,
         hasDashboardAccess: true,
