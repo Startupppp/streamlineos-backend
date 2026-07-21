@@ -30,16 +30,16 @@ function buildBrandMark(brandName: string): string {
   const safeName = escapeHtml(brandName);
   if (logoUrl) {
     return (
-      `<td width="32" height="32" style="width:32px;height:32px;vertical-align:middle;">` +
-      `<img src="${logoUrl}" alt="${safeName}" width="32" height="32" style="display:block;border:0;width:32px;height:32px;border-radius:8px;">` +
+      `<td width="36" height="36" style="width:36px;height:36px;vertical-align:middle;">` +
+      `<img src="${escapeHtml(logoUrl)}" alt="${safeName}" width="36" height="36" style="display:block;border:0;outline:none;text-decoration:none;width:36px;height:36px;border-radius:9px;">` +
       `</td>`
     );
   }
 
   const initial = escapeHtml(brandName.charAt(0).toUpperCase() || "S");
   return (
-    `<td width="32" height="32" bgcolor="${EMAIL_THEME.ink}" style="width:32px;height:32px;background-color:${EMAIL_THEME.ink};border-radius:8px;text-align:center;vertical-align:middle;">` +
-    `<span style="font-family:${FONT};font-size:14px;font-weight:700;color:#ffffff;line-height:32px;display:inline-block;width:32px;text-align:center;">${initial}</span>` +
+    `<td width="36" height="36" bgcolor="${EMAIL_THEME.accent}" style="width:36px;height:36px;background-color:${EMAIL_THEME.accent};border-radius:9px;text-align:center;vertical-align:middle;">` +
+    `<span style="font-family:${FONT};font-size:15px;font-weight:700;color:#ffffff;line-height:36px;display:inline-block;width:36px;text-align:center;">${initial}</span>` +
     `</td>`
   );
 }
@@ -96,12 +96,14 @@ export function getEmailTemplate({
       max-width: 600px !important;
     }
     .email-btn-wrap-primary {
-      width: auto !important;
+      width: 100% !important;
       max-width: 100% !important;
     }
     .email-btn-table {
       width: auto !important;
       max-width: 100% !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
     }
     .email-btn-link-primary {
       display: inline-block !important;
@@ -267,7 +269,7 @@ export function getEmailTemplate({
     @media (prefers-color-scheme: dark) {
       body, .email-canvas { background-color: #070b14 !important; }
       .email-card { background-color: #111827 !important; border-color: #1f2937 !important; }
-      .email-brand-row { background-color: #111827 !important; border-color: #1f2937 !important; }
+      .email-brand-row { background-color: #0b1220 !important; }
       .email-brand-name { color: #f8fafc !important; }
       .email-title { color: #f8fafc !important; }
       .email-text { color: #cbd5e1 !important; }
@@ -300,12 +302,12 @@ ${preheaderText}
           </td>
         </tr>
         <tr>
-          <td class="brand-pad email-brand-row" style="background-color:${EMAIL_THEME.card};padding:22px 28px 18px;border-bottom:1px solid ${EMAIL_THEME.cardBorder};">
+          <td class="brand-pad email-brand-row" bgcolor="${EMAIL_THEME.ink}" style="background-color:${EMAIL_THEME.ink};padding:20px 28px;border-bottom:0;">
             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;">
               <tr>
                 ${brandMark}
-                <td style="vertical-align:middle;padding-left:11px;width:100%;">
-                  <span class="email-brand-name" style="font-family:${FONT};font-size:15px;font-weight:700;color:${EMAIL_THEME.ink};letter-spacing:-0.02em;">${safeBrandName}</span>
+                <td style="vertical-align:middle;padding-left:12px;width:100%;">
+                  <span class="email-brand-name" style="font-family:${FONT};font-size:16px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">${safeBrandName}</span>
                 </td>
               </tr>
             </table>

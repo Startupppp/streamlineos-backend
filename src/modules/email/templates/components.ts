@@ -35,9 +35,9 @@ export function renderButton(
   const fg = "#ffffff";
   const border = EMAIL_THEME.ink;
 
-  return `<table role="presentation" class="email-btn-wrap email-btn-wrap-primary" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0 10px 0;">
+  return `<table role="presentation" class="email-btn-wrap email-btn-wrap-primary" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:22px 0 10px 0;width:100%;">
   <tr>
-    <td align="left" style="padding:0;">
+    <td align="center" style="padding:0;text-align:center;">
       <!--[if mso]>
       <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="21%" strokecolor="${border}" strokeweight="1px" fillcolor="${bg}">
       <w:anchorlock/>
@@ -45,7 +45,7 @@ export function renderButton(
       </v:roundrect>
       <![endif]-->
       <!--[if !mso]><!-->
-      <table role="presentation" class="email-btn-table" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;">
+      <table role="presentation" class="email-btn-table" cellspacing="0" cellpadding="0" border="0" align="center" style="border-collapse:separate;margin:0 auto;">
         <tr>
           <td align="center" bgcolor="${bg}" class="email-btn-primary" style="border-radius:10px;background-color:${bg};border:1px solid ${border};">
             <a href="${url}" target="_blank" class="email-btn-link-primary" style="display:inline-block;box-sizing:border-box;padding:14px 28px;min-height:48px;line-height:20px;background-color:${bg};color:${fg};text-decoration:none;font-family:${FONT};font-size:15px;font-weight:600;border-radius:10px;letter-spacing:-0.01em;text-align:center;border:0;mso-padding-alt:0;">${safeLabel}</a>
