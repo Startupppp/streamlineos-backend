@@ -65,7 +65,7 @@ export class CronAttendanceService {
           .set({
             checkOut: checkOutTime,
             workHours: "0",
-            status: "PRESENT",
+            status: "CHECKED_OUT",
             autoCheckedOut: true,
             isOvertime: false,
           })
@@ -100,7 +100,7 @@ export class CronAttendanceService {
           workHours: workHours.toFixed(2),
           breakHours: effectiveBreakHours.toFixed(2),
           breaks,
-          status: "PRESENT",
+          status: "CHECKED_OUT",
           autoCheckedOut: true,
           isOvertime,
         })

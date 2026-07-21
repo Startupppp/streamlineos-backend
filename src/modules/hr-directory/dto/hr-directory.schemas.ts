@@ -171,9 +171,9 @@ export const updateBgvSchema = z
 const MIN_AGE_MS = 16 * 365.25 * 24 * 60 * 60 * 1000;
 
 export const updateEmployeeSchema = z.object({
-  name: z.string().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
+  name: z.string().trim().min(1).max(100).optional(),
+  firstName: z.string().trim().min(1).max(100).optional(),
+  lastName: z.string().trim().min(1).max(100).optional(),
   designation: z.string().optional(),
   departmentId: z.number().optional(),
   phone: z.string().optional(),

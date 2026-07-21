@@ -93,6 +93,7 @@ export class DashboardHrService {
             userId: attendance.userId,
             checkIn: attendance.checkIn,
             checkOut: attendance.checkOut,
+            createdAt: attendance.createdAt,
             userName: users.name,
             firstName: users.firstName,
             lastName: users.lastName,
@@ -102,7 +103,29 @@ export class DashboardHrService {
           .innerJoin(users, eq(attendance.userId, users.id))
           .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today)));
 
-        return todayAttendance.map((record) => ({
+        const byUser = new Map<string, (typeof todayAttendance)[number]>();
+        for (const record of todayAttendance) {
+          const existing = byUser.get(record.userId);
+          if (!existing) {
+            byUser.set(record.userId, record);
+            continue;
+          }
+          const recordOpen = Boolean(record.checkIn) && !record.checkOut;
+          const existingOpen = Boolean(existing.checkIn) && !existing.checkOut;
+          if (recordOpen && !existingOpen) {
+            byUser.set(record.userId, record);
+            continue;
+          }
+          if (recordOpen === existingOpen) {
+            const recordCreated = record.createdAt ? new Date(record.createdAt).getTime() : 0;
+            const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+            if (recordCreated > existingCreated) {
+              byUser.set(record.userId, record);
+            }
+          }
+        }
+
+        return [...byUser.values()].map((record) => ({
           userId: record.userId,
           name:
             record.firstName && record.lastName
@@ -143,21 +166,53 @@ export class DashboardHrService {
           checkIn: attendance.checkIn,
           checkOut: attendance.checkOut,
           status: attendance.status,
+          createdAt: attendance.createdAt,
         })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
         .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today))),
     ]);
 
-    const clockedIn = todayAttendance.filter((a) => a.checkIn && !a.checkOut).length;
+    const byUser = new Map<string, (typeof todayAttendance)[number]>();
+    for (const record of todayAttendance) {
+      const existing = byUser.get(record.userId);
+      if (!existing) {
+        byUser.set(record.userId, record);
+        continue;
+      }
+      const recordOpen = Boolean(record.checkIn) && !record.checkOut;
+      const existingOpen = Boolean(existing.checkIn) && !existing.checkOut;
+      if (recordOpen && !existingOpen) {
+        byUser.set(record.userId, record);
+        continue;
+      }
+      if (recordOpen === existingOpen) {
+        const recordCreated = record.createdAt ? new Date(record.createdAt).getTime() : 0;
+        const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        if (recordCreated > existingCreated) {
+          byUser.set(record.userId, record);
+        }
+      }
+    }
+
+    const latestRecords = [...byUser.values()].map((record) => ({
+      userId: record.userId,
+      userName: record.userName,
+      userImage: record.userImage,
+      userDesignation: record.userDesignation,
+      checkIn: record.checkIn,
+      checkOut: record.checkOut,
+      status: record.status,
+    }));
+    const clockedIn = latestRecords.filter((a) => a.checkIn && !a.checkOut).length;
     const total = totalMembersResult[0]?.count ?? 0;
 
     return {
       total,
-      present: todayAttendance.length,
+      present: latestRecords.length,
       clockedIn,
-      absent: total - todayAttendance.length,
-      records: todayAttendance,
+      absent: total - latestRecords.length,
+      records: latestRecords,
     };
   }
 

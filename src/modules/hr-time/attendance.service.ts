@@ -76,7 +76,25 @@ export class AttendanceService {
     }
 
     await this.db.transaction(async (tx) => {
-      const result = await tx
+      const openSessions = await tx
+        .select()
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.userId, userId),
+            eq(attendance.date, today),
+            eq(attendance.orgId, orgId),
+            isNull(attendance.checkOut),
+          ),
+        )
+        .limit(1)
+        .for("update");
+
+      if (openSessions[0]) {
+        throw new BadRequestException("Already checked in");
+      }
+
+      const latestClosed = await tx
         .select()
         .from(attendance)
         .where(
@@ -90,13 +108,8 @@ export class AttendanceService {
         .limit(1)
         .for("update");
 
-      const existing = result[0];
-
-      if (existing) {
-        if (!existing.checkOut) {
-          throw new BadRequestException("Already checked in");
-        }
-
+      const existing = latestClosed[0];
+      if (existing?.checkOut) {
         const lastCheckOut = new Date(existing.checkOut);
         const cooldownDiff = new Date().getTime() - lastCheckOut.getTime();
         const diffMinutes = cooldownDiff / (1000 * 60);
@@ -105,30 +118,6 @@ export class AttendanceService {
             `Please wait ${policy.minReclockInMinutes} minute${policy.minReclockInMinutes !== 1 ? "s" : ""} before clocking in again.`,
           );
         }
-
-        const now = new Date();
-        const gapMs = now.getTime() - lastCheckOut.getTime();
-        const gapHours = gapMs / (1000 * 60 * 60);
-
-        const currentBreaks = existing.breaks ?? [];
-        const newBreaks = [
-          ...currentBreaks,
-          { start: lastCheckOut.toISOString(), end: now.toISOString() },
-        ];
-        const newBreakHours = (Number(existing.breakHours) || 0) + gapHours;
-
-        await tx
-          .update(attendance)
-          .set({
-            status: "PRESENT",
-            checkOut: null,
-            breaks: newBreaks,
-            breakHours: newBreakHours.toFixed(2),
-            locationVerified,
-          })
-          .where(eq(attendance.id, existing.id));
-
-        return;
       }
 
       await tx.insert(attendance).values({
@@ -221,7 +210,7 @@ export class AttendanceService {
         .update(attendance)
         .set({
           checkOut: now,
-          status: "PRESENT",
+          status: "CHECKED_OUT",
           workHours: sessionWorkHours.toFixed(2),
           breakHours: totalBreakHours.toFixed(2),
           breaks: updatedBreaks,
@@ -308,7 +297,8 @@ export class AttendanceService {
       if (log.isOvertime) isDailyOvertime = true;
     }
 
-    const todayLog = todayLogs[0] ?? null;
+    const openLog = todayLogs.find((log) => !log.checkOut) ?? null;
+    const todayLog = openLog ?? todayLogs[0] ?? null;
 
     let status: AttendanceStatus = "OFFLINE";
     if (todayLog) {
@@ -527,8 +517,22 @@ export class AttendanceService {
     const logsByUser = new Map<string, (typeof todayLogs)[number]>();
     for (const log of todayLogs) {
       const existing = logsByUser.get(log.userId);
-      if (!existing || (log.createdAt && existing.createdAt && log.createdAt > existing.createdAt)) {
+      if (!existing) {
         logsByUser.set(log.userId, log);
+        continue;
+      }
+      const logOpen = !log.checkOut;
+      const existingOpen = !existing.checkOut;
+      if (logOpen && !existingOpen) {
+        logsByUser.set(log.userId, log);
+        continue;
+      }
+      if (logOpen === existingOpen) {
+        const logCreated = log.createdAt ? new Date(log.createdAt).getTime() : 0;
+        const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        if (logCreated > existingCreated) {
+          logsByUser.set(log.userId, log);
+        }
       }
     }
 

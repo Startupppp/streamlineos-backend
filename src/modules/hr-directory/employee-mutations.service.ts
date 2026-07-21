@@ -26,6 +26,7 @@ import { resolvePayrollDefaults } from "../hr-payroll/lib/payroll-defaults";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -284,6 +285,15 @@ export class EmployeeMutationsService {
       targetType: "employee",
       metadata: { changedFields: Object.keys(updateData) },
     });
+
+    if (
+      updateData.name !== undefined ||
+      updateData.firstName !== undefined ||
+      updateData.lastName !== undefined ||
+      updateData.image !== undefined
+    ) {
+      await this.cache.invalidate(CACHE_KEYS.userSession(targetUserId));
+    }
 
     void this.hrAutomation
       .emit(actor.orgId, "employee.updated", {

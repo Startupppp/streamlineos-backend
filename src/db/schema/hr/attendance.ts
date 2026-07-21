@@ -20,7 +20,6 @@ export const attendance = pgTable("attendance", {
   locationVerified: boolean("location_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("uniq_attendance_user_date").on(table.userId, table.date),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
   index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
 ]);

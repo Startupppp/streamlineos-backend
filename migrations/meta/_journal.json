@@ -8,6 +8,13 @@
       "when": 1784471248087,
       "tag": "0000_light_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784650000000,
+      "tag": "0004_attendance_multi_session",
+      "breakpoints": true
     }
   ]
 }
