@@ -1,4 +1,4 @@
-import { calcPayroll } from "../calculation-engine";
+import { calcPayroll, surchargeRate } from "../calculation-engine";
 import type { CalcEngineInput, ResolvedComponent } from "../calculation-engine";
 import { DEFAULT_PAYROLL_TOGGLES } from "../../../payroll.types";
 
@@ -460,5 +460,84 @@ describe("calculation engine", () => {
       expect(bonusLine).toBeDefined();
       expect(bonusLine!.taxable).toBe(true);
     });
+  });
+});
+
+describe("TDS surcharge (high earners)", () => {
+  it("no surcharge at or below ₹50L taxable", () => {
+    expect(surchargeRate(5_000_000, "NEW")).toBe(0);
+    expect(surchargeRate(4_000_000, "OLD")).toBe(0);
+  });
+
+  it("10% between ₹50L and ₹1Cr", () => {
+    expect(surchargeRate(7_500_000, "NEW")).toBe(0.1);
+    expect(surchargeRate(7_500_000, "OLD")).toBe(0.1);
+  });
+
+  it("15% between ₹1Cr and ₹2Cr", () => {
+    expect(surchargeRate(15_000_000, "NEW")).toBe(0.15);
+    expect(surchargeRate(15_000_000, "OLD")).toBe(0.15);
+  });
+
+  it("new regime caps at 25% above ₹2Cr; old regime rises to 37% above ₹5Cr", () => {
+    expect(surchargeRate(30_000_000, "NEW")).toBe(0.25);
+    expect(surchargeRate(60_000_000, "NEW")).toBe(0.25);
+    expect(surchargeRate(30_000_000, "OLD")).toBe(0.25);
+    expect(surchargeRate(60_000_000, "OLD")).toBe(0.37);
+  });
+
+  it("a high earner above the surcharge threshold pays surcharge-inflated TDS", () => {
+    const highConfig = {
+      ...baseConfig,
+      statutory: { ...baseConfig.statutory, tdsMode: "DECLARATION" as const, tdsFlatPercent: null },
+    };
+    // CTC 1.5Cr → basic+HRA gross ≈ 48% ≈ ₹72L/yr → taxable > ₹50L → surcharge applies.
+    const snap = calcPayroll({
+      ...baseInput,
+      annualCtcDecimal: "15000000.00",
+      taxRegime: "NEW" as const,
+      components: [basicComponent, hraComponent],
+      toggles: { ...DEFAULT_PAYROLL_TOGGLES, pf: false, tds: true },
+      config: highConfig,
+      pulls: { ...baseInput.pulls, taxDeclaration: null },
+    });
+    const monthlyTds = parseFloat(snap.lines.find((l) => l.code === "TDS")!.amount);
+    const annualGross = parseFloat(snap.totals.gross) * 12;
+    // Effective annual TDS rate ~0.29 here; the same income without surcharge is ~0.264.
+    // Exceeding 0.28 confirms surcharge is integrated (precise bands proven by the
+    // surchargeRate unit tests above).
+    expect((monthlyTds * 12) / annualGross).toBeGreaterThan(0.28);
+  });
+});
+
+describe("Contractor TDS — §194J and §206AA (no PAN)", () => {
+  const contractorBase = {
+    ...baseInput,
+    workerType: "CONTRACTOR" as const,
+    toggles: { ...DEFAULT_PAYROLL_TOGGLES, pf: false, esi: false, tds: true },
+  };
+
+  it("withholds 10% when PAN is on record (§194J)", () => {
+    const snap = calcPayroll({ ...contractorBase, pulls: { ...baseInput.pulls, panAvailable: true } });
+    const tds = snap.lines.find((l) => l.code === "TDS")!;
+    const gross = parseFloat(snap.totals.gross);
+    expect(parseFloat(tds.amount)).toBeCloseTo(gross * 0.1, 0);
+    expect(tds.explain.steps[0]).toContain("§194J");
+  });
+
+  it("withholds 20% when no PAN is on record (§206AA)", () => {
+    const withPan = calcPayroll({ ...contractorBase, pulls: { ...baseInput.pulls, panAvailable: true } });
+    const noPan = calcPayroll({ ...contractorBase, pulls: { ...baseInput.pulls, panAvailable: false } });
+    const tdsWith = parseFloat(withPan.lines.find((l) => l.code === "TDS")!.amount);
+    const tdsNo = parseFloat(noPan.lines.find((l) => l.code === "TDS")!.amount);
+    expect(tdsNo).toBeCloseTo(tdsWith * 2, 0);
+    expect(noPan.lines.find((l) => l.code === "TDS")!.explain.steps[0]).toContain("§206AA");
+  });
+
+  it("defaults to 10% when PAN availability is unspecified (back-compat)", () => {
+    const snap = calcPayroll({ ...contractorBase, pulls: { ...baseInput.pulls } });
+    const tds = snap.lines.find((l) => l.code === "TDS")!;
+    const gross = parseFloat(snap.totals.gross);
+    expect(parseFloat(tds.amount)).toBeCloseTo(gross * 0.1, 0);
   });
 });
