@@ -159,14 +159,43 @@ export class ProjectsTicketSubresourcesService {
   async listRelations(u: CurrentUserContext, projectId: number, ticketId: number) {
     await this.requireMember(projectId, u.userId);
 
+    const relatedTicketSelect = {
+      columns: {
+        id: true,
+        title: true,
+        ticketNumber: true,
+        status: true,
+        priority: true,
+        type: true,
+        points: true,
+        assigneeId: true,
+        projectId: true,
+      },
+      with: {
+        assignee: {
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            image: true,
+          },
+        },
+        project: {
+          columns: { key: true },
+        },
+      },
+    } as const;
+
     const relations = await this.db.query.workItemRelations.findMany({
       where: or(
         eq(workItemRelations.workItemId, ticketId),
         eq(workItemRelations.relatedWorkItemId, ticketId),
       ),
       with: {
-        workItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
-        relatedWorkItem: { columns: { id: true, title: true, ticketNumber: true, status: true, priority: true } },
+        workItem: relatedTicketSelect,
+        relatedWorkItem: relatedTicketSelect,
       },
       limit: 100,
     });
