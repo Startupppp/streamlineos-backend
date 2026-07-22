@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -170,6 +170,47 @@ export class PayrollJobsService {
           inArray(payrollJobs.status, ["FAILED", "DEAD_LETTER"]),
         ),
       )
+      .limit(limit);
+  }
+
+  /** Claim a batch of PENDING jobs for a worker (cross-process safe-ish via status flip). */
+  async claimPending(limit = 10): Promise<(typeof payrollJobs.$inferSelect)[]> {
+    const pending = await this.db
+      .select()
+      .from(payrollJobs)
+      .where(eq(payrollJobs.status, "PENDING"))
+      .orderBy(asc(payrollJobs.createdAt))
+      .limit(limit);
+
+    const claimed: (typeof payrollJobs.$inferSelect)[] = [];
+    for (const job of pending) {
+      const [row] = await this.db
+        .update(payrollJobs)
+        .set({
+          status: "RUNNING",
+          startedAt: new Date(),
+          attempt: (job.attempt ?? 0) + 1,
+          progress: 1,
+        })
+        .where(and(eq(payrollJobs.id, job.id), eq(payrollJobs.status, "PENDING")))
+        .returning();
+      if (row) claimed.push(row);
+    }
+    return claimed;
+  }
+
+  async listForResource(orgId: string, resourceType: string, resourceId: string, limit = 20) {
+    return this.db
+      .select()
+      .from(payrollJobs)
+      .where(
+        and(
+          eq(payrollJobs.orgId, orgId),
+          eq(payrollJobs.resourceType, resourceType),
+          eq(payrollJobs.resourceId, resourceId),
+        ),
+      )
+      .orderBy(asc(payrollJobs.createdAt))
       .limit(limit);
   }
 }
