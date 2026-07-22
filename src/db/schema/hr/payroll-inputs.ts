@@ -43,6 +43,7 @@ export const hrPayrollAdjustmentStatusEnum = pgEnum("hr_payroll_adjustment_statu
   "pending",
   "approved",
   "applied",
+  "rejected",
 ]);
 
 export const hrPayrollInputPeriods = pgTable(
@@ -128,6 +129,9 @@ export const hrPayrollAdjustments = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
     approvedAt: timestamp("approved_at"),
+    rejectedBy: text("rejected_by").references(() => users.id, { onDelete: "set null" }),
+    rejectedAt: timestamp("rejected_at"),
+    rejectionReason: text("rejection_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

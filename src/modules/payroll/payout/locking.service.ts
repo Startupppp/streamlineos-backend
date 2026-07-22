@@ -2,11 +2,27 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { payrollRuns, payrollRunEmployees, payrollRunEvents } from "../../../db/schema";
+import {
+  payrollRuns,
+  payrollRunEmployees,
+  payrollRunEvents,
+  payrollTdsYtdLedger,
+} from "../../../db/schema";
 import { canTransitionRun } from "../payroll.types";
+import type { CalculationSnapshot } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
 import { PayrollPostingService } from "../payroll-posting.service";
+import { toPaise } from "../runs/lib/money";
+
+function fiscalYearFromMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const year = y!;
+  const mon = m!;
+  // India FY: Apr–Mar
+  if (mon >= 4) return `${year}-${String(year + 1).slice(2)}`;
+  return `${year - 1}-${String(year).slice(2)}`;
+}
 
 @Injectable()
 export class LockingService {
@@ -61,6 +77,7 @@ export class LockingService {
       });
 
       await this.generate.postPayrollLock(orgId, runId, tx);
+      await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
     });
 
     this.audit.log({
@@ -83,6 +100,69 @@ export class LockingService {
     );
 
     return { success: true, lockedAt: now };
+  }
+
+  /**
+   * Persist per-employee TDS YTD ledger rows from locked calculation snapshots.
+   * Safe / idempotent via unique (org, user, fy, periodKey).
+   */
+  private async writeTdsYtdLedger(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    runId: number,
+    month: string,
+  ): Promise<void> {
+    const fy = fiscalYearFromMonth(month);
+    const emps = await tx
+      .select({
+        userId: payrollRunEmployees.userId,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        gross: payrollRunEmployees.gross,
+      })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+
+    for (const emp of emps) {
+      const snap = emp.calculationSnapshot as CalculationSnapshot | null;
+      const tdsLine = snap?.lines?.find(
+        (l) =>
+          l.code === "TDS" ||
+          l.code === "INCOME_TAX" ||
+          l.category === "TAX",
+      );
+      const tdsPaise = tdsLine ? toPaise(tdsLine.amount) : 0;
+      const taxablePaise = toPaise(emp.gross ?? "0");
+
+      await tx
+        .insert(payrollTdsYtdLedger)
+        .values({
+          orgId,
+          userId: emp.userId,
+          fiscalYear: fy,
+          periodKey: month,
+          runId,
+          taxableIncomePaise: taxablePaise,
+          tdsPaise,
+          previousEmployerIncomePaise: 0,
+          previousEmployerTdsPaise: 0,
+          perquisitesPaise: 0,
+          surchargePaise: 0,
+          rebatePaise: 0,
+        })
+        .onConflictDoUpdate({
+          target: [
+            payrollTdsYtdLedger.orgId,
+            payrollTdsYtdLedger.userId,
+            payrollTdsYtdLedger.fiscalYear,
+            payrollTdsYtdLedger.periodKey,
+          ],
+          set: {
+            runId,
+            taxableIncomePaise: taxablePaise,
+            tdsPaise,
+          },
+        });
+    }
   }
 
   async reopen(orgId: string, userId: string, runId: number, reason: string) {

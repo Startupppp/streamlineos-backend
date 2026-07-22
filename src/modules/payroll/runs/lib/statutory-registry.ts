@@ -1,0 +1,233 @@
+/**
+ * Canonical versioned India statutory rule registry.
+ * Single source of truth for PF/ESI/PT/LWF/gratuity/min-wage/HRA/TDS defaults.
+ *
+ * Historical note: a legacy config field was named `annualWageCeiling: 21600`.
+ * Arithmetic used it as the *monthly* wage ceiling in rupees for PF
+ * (₹15,000 × 12% = ₹1,800/mo → ₹21,600/yr max employee PF). We preserve
+ * that arithmetic via monthlyWageCeiling = 15000 and document the rename.
+ */
+
+export const STATUTORY_CALCULATION_VERSION = "1.0.0";
+export const IN_STATUTORY_RULE_BUNDLE_VERSION = "IN-2025.04";
+
+export interface PfRule {
+  version: string;
+  employeePercent: string;
+  employerPercent: string;
+  /** Correct field: monthly wage ceiling for PF base (₹15,000). */
+  monthlyWageCeiling: string;
+  /** Legacy misnamed value kept for migration diagnostics only. */
+  legacyMisnamedAnnualField: string;
+}
+
+export interface EsiRule {
+  version: string;
+  employeePercent: string;
+  employerPercent: string;
+  monthlyEligibilityCeiling: string;
+}
+
+export interface PtRule {
+  version: string;
+  defaultMonthly: string;
+  /** State → monthly amount overrides */
+  byState: Record<string, string>;
+}
+
+export interface LwfRule {
+  version: string;
+  employeeFixed: string;
+  employerFixed: string;
+  byState: Record<string, { employeeFixed: string; employerFixed: string }>;
+}
+
+export interface GratuityRule {
+  version: string;
+  provisionPercentOfBasic: string;
+  eligibilityYears: number;
+  wageBase: "last_drawn_basic_da";
+}
+
+export interface HraRule {
+  version: string;
+  metroCities: string[];
+  metroPercentOfBasic: string;
+  nonMetroPercentOfBasic: string;
+}
+
+export interface MinWageRule {
+  version: string;
+  basicDaMinPercentOfGross: string;
+  labourCodeWageDefinition: true;
+}
+
+export interface TdsRule {
+  version: string;
+  ruleYearLabel: string;
+  formLabels: { quarterlyReturn: string; annualCertificate: string };
+  newRegimeStandardDeductionPaise: number;
+  rebate87AMaxPaise: number;
+  rebate87AIncomeLimitPaise: number;
+  cessPercent: string;
+}
+
+export interface IndiaStatutoryBundle {
+  bundleVersion: string;
+  effectiveFrom: string;
+  pf: PfRule;
+  esi: EsiRule;
+  pt: PtRule;
+  lwf: LwfRule;
+  gratuity: GratuityRule;
+  hra: HraRule;
+  minWage: MinWageRule;
+  tds: TdsRule;
+}
+
+export const IN_STATUTORY_2025_04: IndiaStatutoryBundle = {
+  bundleVersion: IN_STATUTORY_RULE_BUNDLE_VERSION,
+  effectiveFrom: "2025-04-01",
+  pf: {
+    version: "IN-PF-2025.04",
+    employeePercent: "12",
+    employerPercent: "12",
+    monthlyWageCeiling: "15000.00",
+    legacyMisnamedAnnualField: "21600",
+  },
+  esi: {
+    version: "IN-ESI-2025.04",
+    employeePercent: "0.75",
+    employerPercent: "3.25",
+    monthlyEligibilityCeiling: "21000.00",
+  },
+  pt: {
+    version: "IN-PT-DEFAULT-2025.04",
+    defaultMonthly: "200.00",
+    byState: {
+      MH: "200.00",
+      KA: "200.00",
+      TN: "208.33",
+      WB: "150.00",
+      GJ: "200.00",
+      TL: "200.00",
+    },
+  },
+  lwf: {
+    version: "IN-LWF-DEFAULT-2025.04",
+    employeeFixed: "25.00",
+    employerFixed: "25.00",
+    byState: {
+      MH: { employeeFixed: "25.00", employerFixed: "75.00" },
+      KA: { employeeFixed: "20.00", employerFixed: "40.00" },
+    },
+  },
+  gratuity: {
+    version: "IN-GRATUITY-2025.04",
+    provisionPercentOfBasic: "4.81",
+    eligibilityYears: 5,
+    wageBase: "last_drawn_basic_da",
+  },
+  hra: {
+    version: "IN-HRA-2025.04",
+    metroCities: ["Mumbai", "Delhi", "Kolkata", "Chennai"],
+    metroPercentOfBasic: "50",
+    nonMetroPercentOfBasic: "40",
+  },
+  minWage: {
+    version: "IN-MINWAGE-LABOUR-CODE",
+    basicDaMinPercentOfGross: "50",
+    labourCodeWageDefinition: true,
+  },
+  tds: {
+    version: "IN-TDS-NEW-2025.04",
+    ruleYearLabel: "FY 2025-26",
+    formLabels: {
+      quarterlyReturn: "Form 24Q",
+      annualCertificate: "Form 16",
+    },
+    newRegimeStandardDeductionPaise: 7500000, // ₹75,000
+    rebate87AMaxPaise: 2500000, // ₹25,000
+    rebate87AIncomeLimitPaise: 70000000, // ₹7,00,000
+    cessPercent: "4",
+  },
+};
+
+/** Resolve PT monthly amount for a state (falls back to default). */
+export function resolvePtMonthly(bundle: IndiaStatutoryBundle, stateCode?: string | null): string {
+  if (stateCode && bundle.pt.byState[stateCode.toUpperCase()]) {
+    return bundle.pt.byState[stateCode.toUpperCase()]!;
+  }
+  return bundle.pt.defaultMonthly;
+}
+
+/** Resolve LWF fixed amounts for a state. */
+export function resolveLwf(
+  bundle: IndiaStatutoryBundle,
+  stateCode?: string | null,
+): { employeeFixed: string; employerFixed: string } {
+  if (stateCode && bundle.lwf.byState[stateCode.toUpperCase()]) {
+    return bundle.lwf.byState[stateCode.toUpperCase()]!;
+  }
+  return {
+    employeeFixed: bundle.lwf.employeeFixed,
+    employerFixed: bundle.lwf.employerFixed,
+  };
+}
+
+/**
+ * Labour Code wage-definition check: basic+DA should be ≥ 50% of gross wages.
+ * Returns null if valid, or a warning message if violated.
+ */
+export function validateLabourCodeWageDefinition(
+  basicPaise: number,
+  daPaise: number,
+  grossPaise: number,
+  minPercent = 50,
+): { ok: true } | { ok: false; basicDaPercent: number; message: string } {
+  if (grossPaise <= 0) return { ok: true };
+  const basicDa = basicPaise + daPaise;
+  const pct = (basicDa / grossPaise) * 100;
+  if (pct + 1e-9 >= minPercent) return { ok: true };
+  return {
+    ok: false,
+    basicDaPercent: Math.round(pct * 100) / 100,
+    message: `Labour Code wage definition: Basic+DA is ${pct.toFixed(1)}% of gross (minimum ${minPercent}%).`,
+  };
+}
+
+/**
+ * HRA exemption under s.10(13A) — min of:
+ * 1. Actual HRA received
+ * 2. Rent paid − 10% of basic
+ * 3. 50% (metro) or 40% (non-metro) of basic
+ */
+export function calcHraExemptionPaise(input: {
+  basicPaise: number;
+  hraReceivedPaise: number;
+  rentPaidPaise: number;
+  isMetro: boolean;
+  rule?: HraRule;
+}): { exemptionPaise: number; steps: string[] } {
+  const rule = input.rule ?? IN_STATUTORY_2025_04.hra;
+  const pct = input.isMetro ? rule.metroPercentOfBasic : rule.nonMetroPercentOfBasic;
+  const pctOfBasic = Math.round((input.basicPaise * parseFloat(pct)) / 100);
+  const rentMinus10 = Math.max(0, input.rentPaidPaise - Math.round(input.basicPaise * 0.1));
+  const exemptionPaise = Math.max(
+    0,
+    Math.min(input.hraReceivedPaise, rentMinus10, pctOfBasic),
+  );
+  const steps = [
+    `Actual HRA received = ₹${(input.hraReceivedPaise / 100).toFixed(2)}`,
+    `Rent − 10% of basic = ₹${(rentMinus10 / 100).toFixed(2)}`,
+    `${pct}% of basic (${input.isMetro ? "metro" : "non-metro"}) = ₹${(pctOfBasic / 100).toFixed(2)}`,
+    `HRA exemption = min(...) = ₹${(exemptionPaise / 100).toFixed(2)}`,
+  ];
+  return { exemptionPaise, steps };
+}
+
+export function getIndiaBundleForDate(asOf = new Date()): IndiaStatutoryBundle {
+  // Currently single versioned pack; extend with historical packs when needed.
+  void asOf;
+  return IN_STATUTORY_2025_04;
+}

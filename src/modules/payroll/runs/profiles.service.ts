@@ -1,4 +1,4 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
 import { and, eq, desc, ilike, or, count } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -6,6 +6,7 @@ import {
   employeeSalaryProfiles,
   employeeSalaryProfileComponents,
   salaryComponents,
+  organizationMembers,
 } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
@@ -117,6 +118,12 @@ export class ProfilesService {
   }
 
   async createProfile(orgId: string, employeeUserId: string, actorId: string, body: CreateProfileInput) {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, employeeUserId)),
+      columns: { id: true },
+    });
+    if (!membership) throw new ForbiddenException("Employee is not a member of this organization");
+
     return this.db.transaction(async (tx) => {
       const today = new Date().toISOString().slice(0, 10);
       const isFutureDated = body.effectiveFrom > today;

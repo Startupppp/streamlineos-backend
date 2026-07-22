@@ -8,6 +8,14 @@ import type {
 import { toPaise, fromPaise, pctOf, applyRounding } from "./money";
 import type { RoundingConfig } from "./money";
 import { getStatutoryPack, type StatutoryPackItem } from "./statutory-packs";
+import {
+  getIndiaBundleForDate,
+  resolvePtMonthly,
+  resolveLwf,
+  validateLabourCodeWageDefinition,
+  STATUTORY_CALCULATION_VERSION,
+  type IndiaStatutoryBundle,
+} from "./statutory-registry";
 
 interface StatutoryInput {
   workerType: PayrollWorkerType;
@@ -16,17 +24,20 @@ interface StatutoryInput {
   basicPaise: number;
   grossPaise: number;
   rounding: RoundingConfig;
+  /** Optional state for PT/LWF; falls back to policy/config. */
+  stateCode?: string | null;
+  daPaise?: number;
 }
 
 interface StatutoryResult {
   lines: CalculationSnapshotLine[];
   totalEmployeeDeductionPaise: number;
   totalEmployerContributionPaise: number;
+  ruleVersion?: string;
+  calculationVersion?: string;
+  wageDefinitionWarning?: string;
 }
 
-const LWF_EMPLOYEE_PAISE = 2500;
-const LWF_EMPLOYER_PAISE = 2500;
-const GRATUITY_PERCENT = "4.81";
 const SORT_BASE = 900;
 
 function applyPackBrackets(
@@ -177,32 +188,60 @@ function calcStatutoryFromPack(
 }
 
 export function calcStatutory(input: StatutoryInput): StatutoryResult {
-  const { workerType, toggles, config, basicPaise, grossPaise, rounding } = input;
+  const { workerType, toggles, config } = input;
 
   if (workerType === "CONTRACTOR" || workerType === "CONSULTANT") {
-    return { lines: [], totalEmployeeDeductionPaise: 0, totalEmployerContributionPaise: 0 };
+    return {
+      lines: [],
+      totalEmployeeDeductionPaise: 0,
+      totalEmployerContributionPaise: 0,
+      calculationVersion: STATUTORY_CALCULATION_VERSION,
+    };
   }
 
   if (config.statutoryPack && config.statutoryPack.country !== "IN") {
-    return calcStatutoryFromPack(input, config.statutoryPack);
+    return {
+      ...calcStatutoryFromPack(input, config.statutoryPack),
+      calculationVersion: STATUTORY_CALCULATION_VERSION,
+    };
   }
 
-  return calcStatutoryLegacyIN(input);
+  return calcStatutoryIndiaFromRegistry(input);
 }
 
-function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
-  const { workerType, toggles, config, basicPaise, grossPaise, rounding } = input;
+/**
+ * Canonical India path — all PF/ESI/PT/LWF/gratuity use the versioned registry.
+ * Policy config percents/ceilings may still override registry defaults for org customization.
+ */
+function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult {
+  const { toggles, config, basicPaise, grossPaise, rounding, stateCode, daPaise = 0 } = input;
+  const bundle: IndiaStatutoryBundle = getIndiaBundleForDate();
 
   const lines: CalculationSnapshotLine[] = [];
   let totalEmployeeDeductionPaise = 0;
   let totalEmployerContributionPaise = 0;
 
+  const wageCheck = validateLabourCodeWageDefinition(
+    basicPaise,
+    daPaise,
+    grossPaise,
+    parseFloat(bundle.minWage.basicDaMinPercentOfGross),
+  );
+  const wageDefinitionWarning = wageCheck.ok ? undefined : wageCheck.message;
+
   if (toggles.pf) {
-    const { pfEmployeePercent, pfEmployerPercent, pfWageCeiling } = config.statutory;
-    const ceilingPaise = pfWageCeiling != null ? toPaise(pfWageCeiling) : Infinity;
+    const empPct = config.statutory.pfEmployeePercent ?? bundle.pf.employeePercent;
+    const erPct = config.statutory.pfEmployerPercent ?? bundle.pf.employerPercent;
+    // Prefer policy ceiling if set; else registry monthlyWageCeiling (correct name).
+    // Policy may still pass the legacy 15000 monthly or misnamed 21600 — prefer explicit monthly.
+    const ceilingStr =
+      config.statutory.pfWageCeiling != null && config.statutory.pfWageCeiling !== ""
+        ? config.statutory.pfWageCeiling
+        : bundle.pf.monthlyWageCeiling;
+    const ceilingPaise = toPaise(ceilingStr);
     const pfBasePaise = Math.min(basicPaise, ceilingPaise);
-    const pfEmpPaise = applyRounding(pctOf(pfBasePaise, pfEmployeePercent), rounding);
-    const pfErPaise = applyRounding(pctOf(pfBasePaise, pfEmployerPercent), rounding);
+    const pfEmpPaise = applyRounding(pctOf(pfBasePaise, empPct), rounding);
+    const pfErPaise = applyRounding(pctOf(pfBasePaise, erPct), rounding);
 
     lines.push({
       code: "EPF_EMPLOYEE",
@@ -214,10 +253,15 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
       sortOrder: SORT_BASE + 1,
       explain: {
         method: "PERCENT_OF_BASIC",
-        inputs: { basic: basicPaise / 100, pfWageCeiling: pfBasePaise / 100, pfEmployeePercent: parseFloat(pfEmployeePercent) },
+        inputs: {
+          basic: basicPaise / 100,
+          monthlyWageCeiling: ceilingPaise / 100,
+          pfEmployeePercent: parseFloat(empPct),
+        },
         steps: [
-          `PF base = min(Basic ₹${(basicPaise / 100).toFixed(2)}, ceiling ₹${pfBasePaise === Infinity ? "∞" : (pfBasePaise / 100).toFixed(2)}) = ₹${(pfBasePaise / 100).toFixed(2)}`,
-          `EPF Employee = ₹${(pfBasePaise / 100).toFixed(2)} × ${pfEmployeePercent}% = ₹${(pfEmpPaise / 100).toFixed(2)}`,
+          `Rule ${bundle.pf.version}: monthly wage ceiling ₹${(ceilingPaise / 100).toFixed(2)} (legacy misnamed annual field was ${bundle.pf.legacyMisnamedAnnualField})`,
+          `PF base = min(Basic ₹${(basicPaise / 100).toFixed(2)}, ceiling ₹${(ceilingPaise / 100).toFixed(2)}) = ₹${(pfBasePaise / 100).toFixed(2)}`,
+          `EPF Employee = ₹${(pfBasePaise / 100).toFixed(2)} × ${empPct}% = ₹${(pfEmpPaise / 100).toFixed(2)}`,
         ],
       },
     });
@@ -232,10 +276,14 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
       sortOrder: SORT_BASE + 2,
       explain: {
         method: "PERCENT_OF_BASIC",
-        inputs: { basic: basicPaise / 100, pfWageCeiling: pfBasePaise / 100, pfEmployerPercent: parseFloat(pfEmployerPercent) },
+        inputs: {
+          basic: basicPaise / 100,
+          monthlyWageCeiling: ceilingPaise / 100,
+          pfEmployerPercent: parseFloat(erPct),
+        },
         steps: [
-          `PF base = min(Basic ₹${(basicPaise / 100).toFixed(2)}, ceiling ₹${pfBasePaise === Infinity ? "∞" : (pfBasePaise / 100).toFixed(2)}) = ₹${(pfBasePaise / 100).toFixed(2)}`,
-          `EPF Employer = ₹${(pfBasePaise / 100).toFixed(2)} × ${pfEmployerPercent}% = ₹${(pfErPaise / 100).toFixed(2)}`,
+          `PF base = min(Basic ₹${(basicPaise / 100).toFixed(2)}, ceiling ₹${(ceilingPaise / 100).toFixed(2)}) = ₹${(pfBasePaise / 100).toFixed(2)}`,
+          `EPF Employer = ₹${(pfBasePaise / 100).toFixed(2)} × ${erPct}% = ₹${(pfErPaise / 100).toFixed(2)}`,
         ],
       },
     });
@@ -245,11 +293,16 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
   }
 
   if (toggles.esi) {
-    const { esiEmployeePercent, esiEmployerPercent, esiWageCeiling } = config.statutory;
-    const esiCeilingPaise = esiWageCeiling != null ? toPaise(esiWageCeiling) : 999999999;
+    const empPct = config.statutory.esiEmployeePercent ?? bundle.esi.employeePercent;
+    const erPct = config.statutory.esiEmployerPercent ?? bundle.esi.employerPercent;
+    const ceilingStr =
+      config.statutory.esiWageCeiling != null && config.statutory.esiWageCeiling !== ""
+        ? config.statutory.esiWageCeiling
+        : bundle.esi.monthlyEligibilityCeiling;
+    const esiCeilingPaise = toPaise(ceilingStr);
     if (grossPaise <= esiCeilingPaise) {
-      const esiEmpPaise = applyRounding(pctOf(grossPaise, esiEmployeePercent), rounding);
-      const esiErPaise = applyRounding(pctOf(grossPaise, esiEmployerPercent), rounding);
+      const esiEmpPaise = applyRounding(pctOf(grossPaise, empPct), rounding);
+      const esiErPaise = applyRounding(pctOf(grossPaise, erPct), rounding);
 
       lines.push({
         code: "ESI_EMPLOYEE",
@@ -261,10 +314,14 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
         sortOrder: SORT_BASE + 3,
         explain: {
           method: "PERCENT_OF_GROSS",
-          inputs: { gross: grossPaise / 100, esiWageCeiling: esiCeilingPaise / 100, esiEmployeePercent: parseFloat(esiEmployeePercent) },
+          inputs: {
+            gross: grossPaise / 100,
+            monthlyEligibilityCeiling: esiCeilingPaise / 100,
+            esiEmployeePercent: parseFloat(empPct),
+            },
           steps: [
-            `Gross ₹${(grossPaise / 100).toFixed(2)} ≤ ESI ceiling ₹${(esiCeilingPaise / 100).toFixed(2)}`,
-            `ESI Employee = ₹${(grossPaise / 100).toFixed(2)} × ${esiEmployeePercent}% = ₹${(esiEmpPaise / 100).toFixed(2)}`,
+            `Rule ${bundle.esi.version}: Gross ₹${(grossPaise / 100).toFixed(2)} ≤ ESI ceiling ₹${(esiCeilingPaise / 100).toFixed(2)}`,
+            `ESI Employee = ₹${(grossPaise / 100).toFixed(2)} × ${empPct}% = ₹${(esiEmpPaise / 100).toFixed(2)}`,
           ],
         },
       });
@@ -279,9 +336,9 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
         sortOrder: SORT_BASE + 4,
         explain: {
           method: "PERCENT_OF_GROSS",
-          inputs: { gross: grossPaise / 100, esiEmployerPercent: parseFloat(esiEmployerPercent) },
+          inputs: { gross: grossPaise / 100, esiEmployerPercent: parseFloat(erPct) },
           steps: [
-            `ESI Employer = ₹${(grossPaise / 100).toFixed(2)} × ${esiEmployerPercent}% = ₹${(esiErPaise / 100).toFixed(2)}`,
+            `ESI Employer = ₹${(grossPaise / 100).toFixed(2)} × ${erPct}% = ₹${(esiErPaise / 100).toFixed(2)}`,
           ],
         },
       });
@@ -292,8 +349,11 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
   }
 
   if (toggles.professionalTax) {
-    const ptPaise = toPaise(config.statutory.professionalTaxMonthly);
-    const ptRounded = applyRounding(ptPaise, rounding);
+    const ptMonthly =
+      config.statutory.professionalTaxMonthly != null && config.statutory.professionalTaxMonthly !== ""
+        ? config.statutory.professionalTaxMonthly
+        : resolvePtMonthly(bundle, stateCode);
+    const ptRounded = applyRounding(toPaise(ptMonthly), rounding);
     lines.push({
       code: "PROFESSIONAL_TAX",
       name: "Professional Tax",
@@ -304,15 +364,21 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
       sortOrder: SORT_BASE + 5,
       explain: {
         method: "FIXED",
-        inputs: { professionalTaxMonthly: ptRounded / 100 },
-        steps: [`Professional Tax = ₹${(ptRounded / 100).toFixed(2)} (fixed monthly)`],
+        inputs: {
+          professionalTaxMonthly: ptRounded / 100,
+        },
+        steps: [
+          `Rule ${bundle.pt.version}${stateCode ? ` (state ${stateCode})` : ""}`,
+          `Professional Tax = ₹${(ptRounded / 100).toFixed(2)} (fixed monthly)`,
+        ],
       },
     });
     totalEmployeeDeductionPaise += ptRounded;
   }
 
   if (toggles.gratuity) {
-    const gratuityPaise = applyRounding(pctOf(basicPaise, GRATUITY_PERCENT), rounding);
+    const pct = bundle.gratuity.provisionPercentOfBasic;
+    const gratuityPaise = applyRounding(pctOf(basicPaise, pct), rounding);
     lines.push({
       code: "GRATUITY",
       name: "Gratuity",
@@ -323,16 +389,23 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
       sortOrder: SORT_BASE + 6,
       explain: {
         method: "PERCENT_OF_BASIC",
-        inputs: { basic: basicPaise / 100, gratuityPercent: parseFloat(GRATUITY_PERCENT) },
-        steps: [`Gratuity = Basic ₹${(basicPaise / 100).toFixed(2)} × 4.81% = ₹${(gratuityPaise / 100).toFixed(2)}`],
+        inputs: {
+          basic: basicPaise / 100,
+          gratuityPercent: parseFloat(pct),
+        },
+        steps: [
+          `Rule ${bundle.gratuity.version}: provision ${pct}% of basic (eligibility ${bundle.gratuity.eligibilityYears}y service for payout)`,
+          `Gratuity = Basic ₹${(basicPaise / 100).toFixed(2)} × ${pct}% = ₹${(gratuityPaise / 100).toFixed(2)}`,
+        ],
       },
     });
     totalEmployerContributionPaise += gratuityPaise;
   }
 
   if (toggles.lwf) {
-    const lwfEmpRounded = applyRounding(LWF_EMPLOYEE_PAISE, rounding);
-    const lwfErRounded = applyRounding(LWF_EMPLOYER_PAISE, rounding);
+    const lwf = resolveLwf(bundle, stateCode);
+    const lwfEmpRounded = applyRounding(toPaise(lwf.employeeFixed), rounding);
+    const lwfErRounded = applyRounding(toPaise(lwf.employerFixed), rounding);
 
     lines.push({
       code: "LWF_EMPLOYEE",
@@ -345,7 +418,10 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
       explain: {
         method: "FIXED",
         inputs: { lwfEmployee: lwfEmpRounded / 100 },
-        steps: [`LWF Employee = ₹${(lwfEmpRounded / 100).toFixed(2)} (fixed)`],
+        steps: [
+          `Rule ${bundle.lwf.version}${stateCode ? ` (state ${stateCode})` : ""}`,
+          `LWF Employee = ₹${(lwfEmpRounded / 100).toFixed(2)} (fixed)`,
+        ],
       },
     });
 
@@ -368,5 +444,12 @@ function calcStatutoryLegacyIN(input: StatutoryInput): StatutoryResult {
     totalEmployerContributionPaise += lwfErRounded;
   }
 
-  return { lines, totalEmployeeDeductionPaise, totalEmployerContributionPaise };
+  return {
+    lines,
+    totalEmployeeDeductionPaise,
+    totalEmployerContributionPaise,
+    ruleVersion: bundle.bundleVersion,
+    calculationVersion: STATUTORY_CALCULATION_VERSION,
+    wageDefinitionWarning,
+  };
 }

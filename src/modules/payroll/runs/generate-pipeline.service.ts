@@ -107,7 +107,12 @@ export class GeneratePipelineService {
   async pullCalcInputs(orgId: string, userId: string, runId: number, month: string, toggles: PayrollToggles): Promise<CalcInputPulls> {
     const approvedBonuses = toggles.bonuses
       ? await this.db
-          .select({ amount: bonuses.amount, type: bonuses.type, taxable: bonuses.taxable })
+          .select({
+            id: bonuses.id,
+            amount: bonuses.amount,
+            type: bonuses.type,
+            taxable: bonuses.taxable,
+          })
           .from(bonuses)
           .where(and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
       : [];
@@ -204,8 +209,9 @@ export class GeneratePipelineService {
       approvedBonuses: approvedBonuses.map((b) => ({ amount: b.amount, type: b.type, taxable: b.taxable })),
       approvedIncentives,
       approvedReimbursements: rawReimbursements.map((r) => ({ amount: r.amount, category: r.category })),
-      consumedReimbursementIds: rawReimbursements.map(r => r.id),
-      consumedIncentiveIds: rawIncentives.map(i => i.id),
+      consumedReimbursementIds: rawReimbursements.map((r) => r.id),
+      consumedIncentiveIds: rawIncentives.map((i) => i.id),
+      consumedBonusIds: approvedBonuses.map((b) => b.id),
       activeLoans,
       taxDeclaration,
     };

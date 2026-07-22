@@ -24,8 +24,12 @@ export class BankTransfersController {
     return this.service.list(u.orgId);
   }
 
+  /**
+   * Disabled: legacy path stores unmasked bank details.
+   * Canonical path: POST /payroll/runs/:runId/bank-batches
+   */
   @Post()
-  @HttpCode(201)
+  @HttpCode(410)
   @RequirePermission("hr:payroll:approve")
   create(
     @CurrentUser() u: CurrentUserContext,

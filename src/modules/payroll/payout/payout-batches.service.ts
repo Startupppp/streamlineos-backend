@@ -21,6 +21,7 @@ import { StorageService } from "../../storage/storage.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
+import { assertOrgMember } from "../lib/org-membership";
 
 function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
   if (currency === "INR") return "NEFT_CSV";
@@ -663,6 +664,8 @@ export class PayoutBatchesService {
   }
 
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {
+    await assertOrgMember(this.db, orgId, employeeUserId);
+
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, employeeUserId),
       columns: { id: true, bankDetails: true, name: true, email: true },

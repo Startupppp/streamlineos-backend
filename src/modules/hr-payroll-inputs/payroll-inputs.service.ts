@@ -406,6 +406,42 @@ export class PayrollInputsService {
     return updated;
   }
 
+  async rejectAdjustment(orgId: string, actorId: string, adjustmentId: number, reason: string) {
+    const adj = await this.db.query.hrPayrollAdjustments.findFirst({
+      where: and(
+        eq(hrPayrollAdjustments.id, adjustmentId),
+        eq(hrPayrollAdjustments.orgId, orgId),
+      ),
+    });
+
+    if (!adj) throw new NotFoundException("Adjustment not found");
+    if (adj.status !== "pending") throw new BadRequestException("Adjustment is not in pending status");
+
+    const [updated] = await this.db
+      .update(hrPayrollAdjustments)
+      .set({
+        status: "rejected",
+        rejectedBy: actorId,
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(hrPayrollAdjustments.id, adjustmentId))
+      .returning();
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_payroll_adjustment",
+      entityId: String(adjustmentId),
+      action: "adjustment.rejected",
+      before: { status: "pending" },
+      after: { status: "rejected", reason },
+    });
+
+    return updated;
+  }
+
   private nextMonthKey(periodKey: string): string {
     const [year, month] = periodKey.split("-").map(Number);
     const next = new Date(year!, (month ?? 1), 1);

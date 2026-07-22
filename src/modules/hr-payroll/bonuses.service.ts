@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { bonuses, users } from "../../db/schema";
+import { bonuses, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateBonusInput, PatchBonusInput } from "./dto/payroll.schemas";
@@ -43,6 +43,12 @@ export class BonusesService {
   }
 
   async createBonus(orgId: string, body: CreateBonusInput) {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.userId)),
+      columns: { id: true },
+    });
+    if (!member) throw new ForbiddenException("Employee is not a member of this organization");
+
     const [record] = await this.db
       .insert(bonuses)
       .values({

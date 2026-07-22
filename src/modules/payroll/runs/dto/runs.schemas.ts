@@ -1,8 +1,36 @@
 import { z } from "zod";
 
-export const createRunSchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/, "Month must be YYYY-MM"),
-});
+export const runTypeSchema = z.enum([
+  "REGULAR",
+  "BONUS",
+  "OFF_CYCLE",
+  "CORRECTION",
+  "FINAL_SETTLEMENT",
+]);
+
+export const createRunSchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-\d{2}$/, "Month must be YYYY-MM"),
+    runType: runTypeSchema.default("REGULAR"),
+    sourcePeriodKey: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+    sourceRunId: z.number().int().positive().optional(),
+    entityId: z.number().int().positive().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (
+      (val.runType === "OFF_CYCLE" ||
+        val.runType === "CORRECTION" ||
+        val.runType === "FINAL_SETTLEMENT") &&
+      !val.sourcePeriodKey &&
+      !val.sourceRunId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "sourcePeriodKey or sourceRunId is required for off-cycle, correction, and F&F runs",
+        path: ["sourcePeriodKey"],
+      });
+    }
+  });
 export type CreateRunInput = z.infer<typeof createRunSchema>;
 
 export const listRunsQuerySchema = z.object({

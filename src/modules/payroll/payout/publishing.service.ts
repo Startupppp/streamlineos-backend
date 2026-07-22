@@ -157,6 +157,7 @@ export class PublishingService {
 
       let pdfUrl: string | null = null;
       let renderedPdfBuffer: Buffer | null = null;
+      let failureReason: string | null = null;
       try {
         renderedPdfBuffer = await generatePayslipPdf(pdfData);
         if (this.storage.isConfigured()) {
@@ -168,11 +169,28 @@ export class PublishingService {
             "application/pdf",
           );
           pdfUrl = uploadResult.url;
+        } else if (!renderedPdfBuffer) {
+          failureReason = "PDF generation returned empty buffer";
         }
-      } catch {
+      } catch (err) {
         pdfUrl = null;
         renderedPdfBuffer = null;
+        failureReason = err instanceof Error ? err.message : "PDF generation failed";
       }
+
+      // Without storage, portal still marks published if PDF was generated (in-memory path).
+      // If generation failed, persist FAILED so operators can retry.
+      const pubStatus = failureReason ? "FAILED" : "PUBLISHED";
+      const now = new Date();
+
+      const existingPub = await this.db.query.payslipPublications.findFirst({
+        where: and(
+          eq(payslipPublications.runEmployeeId, emp.id),
+          eq(payslipPublications.orgId, orgId),
+        ),
+        columns: { id: true, attemptCount: true },
+      });
+      const nextAttempt = (existingPub?.attemptCount ?? 0) + 1;
 
       const [upsertedPub] = await this.db
         .insert(payslipPublications)
@@ -183,57 +201,72 @@ export class PublishingService {
           userId: emp.userId,
           payslipTemplateId: defaultTemplate?.id ?? null,
           pdfUrl,
-          publishedAt: new Date(),
+          publishedAt: pubStatus === "PUBLISHED" ? now : null,
           publishedBy: actorId,
           channel: "PORTAL",
-          status: "PUBLISHED",
+          status: pubStatus,
           snapshotHash,
+          failureReason,
+          attemptCount: nextAttempt,
+          lastAttemptAt: now,
         })
         .onConflictDoUpdate({
           target: payslipPublications.runEmployeeId,
           set: {
             pdfUrl,
-            publishedAt: new Date(),
+            publishedAt: pubStatus === "PUBLISHED" ? now : null,
             publishedBy: actorId,
-            status: "PUBLISHED",
+            status: pubStatus,
             snapshotHash,
             payslipTemplateId: defaultTemplate?.id ?? null,
+            failureReason,
+            attemptCount: nextAttempt,
+            lastAttemptAt: now,
           },
         })
         .returning({ id: payslipPublications.id });
 
-      published++;
-
-      if (upsertedPub) {
-        this.notifications
-          .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
-          .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
-      }
-
-      if (emailPayslips && emp.email && renderedPdfBuffer) {
-        try {
-          const monthLabel = fmtMonthYear(run.month);
-          const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-          const emailTemplate = getPayslipEmailTemplate({
-            employeeName: emp.name ?? emp.userId,
-            month: monthLabel,
-            netSalary: netAmount,
-            orgName,
-          });
-          void this.email.sendEmail({
-            to: emp.email,
-            subject: emailTemplate.subject,
-            html: emailTemplate.html,
-            attachments: [
-              {
-                filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
-                content: renderedPdfBuffer,
-                type: "application/pdf",
-              },
-            ],
-          });
-        } catch {
+      if (pubStatus === "PUBLISHED") {
+        published++;
+        if (upsertedPub) {
+          this.notifications
+            .notifyPayslipPublished(orgId, emp.userId, upsertedPub.id, run.month)
+            .catch(e => logger.error("notifyPayslipPublished failed", { error: e }));
         }
+
+        if (emailPayslips && emp.email && renderedPdfBuffer) {
+          try {
+            const monthLabel = fmtMonthYear(run.month);
+            const netAmount = parseFloat(snapshot.totals.net).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+            const emailTemplate = getPayslipEmailTemplate({
+              employeeName: emp.name ?? emp.userId,
+              month: monthLabel,
+              netSalary: netAmount,
+              orgName,
+            });
+            void this.email.sendEmail({
+              to: emp.email,
+              subject: emailTemplate.subject,
+              html: emailTemplate.html,
+              attachments: [
+                {
+                  filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
+                  content: renderedPdfBuffer,
+                  type: "application/pdf",
+                },
+              ],
+            });
+          } catch {
+            // Email is best-effort; PDF already published to portal.
+          }
+        }
+      } else {
+        logger.error("Payslip publication failed", {
+          orgId,
+          runId,
+          userId: emp.userId,
+          failureReason,
+        });
       }
     }
 
@@ -295,8 +328,48 @@ export class PublishingService {
         pdfUrl: true,
         publishedAt: true,
         snapshotHash: true,
+        failureReason: true,
+        attemptCount: true,
+        lastAttemptAt: true,
       },
     });
+  }
+
+  /**
+   * Retry FAILED payslip publications for a run.
+   * Remains FAILED until a durable PDF artifact is produced successfully.
+   */
+  async retryFailed(orgId: string, runId: number, actorId: string) {
+    const failed = await this.db.query.payslipPublications.findMany({
+      where: and(
+        eq(payslipPublications.runId, runId),
+        eq(payslipPublications.orgId, orgId),
+        eq(payslipPublications.status, "FAILED"),
+      ),
+      columns: { userId: true },
+    });
+    if (failed.length === 0) {
+      return { published: 0, total: 0, runStatus: null as string | null, retried: 0 };
+    }
+    const userIds = failed.map((f) => f.userId);
+    const result = await this.publish(orgId, runId, actorId, userIds);
+    return { ...result, retried: userIds.length };
+  }
+
+  async retryFailedPublication(orgId: string, publicationId: number, actorId: string) {
+    const pub = await this.db.query.payslipPublications.findFirst({
+      where: and(
+        eq(payslipPublications.id, publicationId),
+        eq(payslipPublications.orgId, orgId),
+      ),
+      columns: { id: true, runId: true, userId: true, status: true },
+    });
+    if (!pub) throw new NotFoundException("Payslip publication not found");
+    if (pub.status !== "FAILED") {
+      throw new BadRequestException("Only FAILED payslip publications can be retried");
+    }
+    const result = await this.publish(orgId, pub.runId, actorId, [pub.userId]);
+    return { ...result, retried: 1, publicationId };
   }
 
   async downloadPdf(

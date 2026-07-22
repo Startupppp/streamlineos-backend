@@ -33,6 +33,26 @@ export class PublishingController {
     return this.publishing.publish(u.orgId, runId, u.userId, body.userIds);
   }
 
+  @Post("runs/:runId/payslips/retry-failed")
+  @HttpCode(200)
+  @RequirePermission("payroll:payslips:manage")
+  retryFailed(
+    @Param("runId", ParseIntPipe) runId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.publishing.retryFailed(u.orgId, runId, u.userId);
+  }
+
+  @Post("payslips/:publicationId/retry")
+  @HttpCode(200)
+  @RequirePermission("payroll:payslips:manage")
+  retryOne(
+    @Param("publicationId", ParseIntPipe) publicationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.publishing.retryFailedPublication(u.orgId, publicationId, u.userId);
+  }
+
   @Get("runs/:runId/payslips")
   @RequirePermission("payroll:payslips:view")
   listPublications(

@@ -1,13 +1,18 @@
 import { Injectable, Inject, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { payrollCalendarEvents, organizationMembers } from "../../../db/schema";
+import {
+  payrollCalendarEvents,
+  organizationMembers,
+  payrollSchedulerState,
+} from "../../../db/schema";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REMINDER_WINDOW_DAYS = 3;
+const JOB_NAME = "payroll.calendar_reminders";
 
 function msUntilNextEightAM(): number {
   const now = new Date();
@@ -17,6 +22,12 @@ function msUntilNextEightAM(): number {
   return target.getTime() - now.getTime();
 }
 
+/**
+ * Durable-ish calendar reminder scheduler.
+ * Still uses process timers for wake-up (no BullMQ in repo), but persists
+ * last started/finished/success/error to payroll_scheduler_state so restarts
+ * and multi-instance ops can observe job health and avoid silent silent failures.
+ */
 @Injectable()
 export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleDestroy {
   private timeout: ReturnType<typeof setTimeout> | undefined;
@@ -41,7 +52,38 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
     clearInterval(this.interval);
   }
 
+  private async markStarted(): Promise<void> {
+    await this.db
+      .insert(payrollSchedulerState)
+      .values({
+        jobName: JOB_NAME,
+        lastStartedAt: new Date(),
+        runCount: 1,
+      })
+      .onConflictDoUpdate({
+        target: payrollSchedulerState.jobName,
+        set: {
+          lastStartedAt: new Date(),
+          lastError: null,
+          runCount: sql`${payrollSchedulerState.runCount} + 1`,
+        },
+      });
+  }
+
+  private async markFinished(error: string | null): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(payrollSchedulerState)
+      .set({
+        lastFinishedAt: now,
+        lastSuccessAt: error ? undefined : now,
+        lastError: error,
+      })
+      .where(eq(payrollSchedulerState.jobName, JOB_NAME));
+  }
+
   private async run(): Promise<void> {
+    await this.markStarted();
     try {
       const today = new Date();
       const todayStr = today.toISOString().slice(0, 10);
@@ -63,7 +105,10 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
           ),
         );
 
-      if (events.length === 0) return;
+      if (events.length === 0) {
+        await this.markFinished(null);
+        return;
+      }
 
       const orgIds = [...new Set(events.map((e) => e.orgId))];
 
@@ -99,10 +144,11 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
           );
         }
       }
+      await this.markFinished(null);
     } catch (error) {
-      logger.error("PayrollCalendarReminderScheduler: run failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error("PayrollCalendarReminderScheduler: run failed", { error: msg });
+      await this.markFinished(msg).catch(() => undefined);
     }
   }
 }

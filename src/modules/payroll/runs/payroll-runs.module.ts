@@ -15,6 +15,8 @@ import { LoanAdjustmentsController } from "./loan-adjustments.controller";
 import { LoanAdjustmentsService } from "./loan-adjustments.service";
 import { CommandCenterController } from "./command-center.controller";
 import { CommandCenterService } from "./command-center.service";
+import { PayrollCommandReceiptsService } from "../command-receipts.service";
+import { PayrollRunLockService } from "../run-lock.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule],
@@ -35,7 +37,9 @@ import { CommandCenterService } from "./command-center.service";
     ExceptionsService,
     LoanAdjustmentsService,
     CommandCenterService,
+    PayrollCommandReceiptsService,
+    PayrollRunLockService,
   ],
-  exports: [GenerateService],
+  exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })
 export class PayrollRunsModule {}

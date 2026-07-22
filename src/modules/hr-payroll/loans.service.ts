@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { salaryLoans, auditLogs } from "../../db/schema";
+import { salaryLoans, auditLogs, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
@@ -28,6 +28,14 @@ export class LoansService {
   async createLoan(orgId: string, userId: string, isAdmin: boolean, body: CreateLoanInput) {
     const emiAmount = body.amount / body.totalEmis;
     const targetUserId = isAdmin && body.userId ? body.userId : userId;
+
+    if (targetUserId !== userId) {
+      const member = await this.db.query.organizationMembers.findFirst({
+        where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
+        columns: { id: true },
+      });
+      if (!member) throw new ForbiddenException("Employee is not a member of this organization");
+    }
 
     const [loan] = await this.db
       .insert(salaryLoans)

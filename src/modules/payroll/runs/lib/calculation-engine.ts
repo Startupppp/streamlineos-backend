@@ -36,6 +36,7 @@ export interface CalcInputPulls {
   approvedReimbursements: { amount: MoneyString; category: string }[];
   consumedReimbursementIds?: number[];
   consumedIncentiveIds?: number[];
+  consumedBonusIds?: number[];
   activeLoans: {
     id: number;
     emiAmount: MoneyString | null;

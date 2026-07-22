@@ -147,11 +147,25 @@ export class RunsService {
     orgId: string,
     userId: string,
     month: string,
+    opts?: {
+      runType?: string;
+      sourcePeriodKey?: string | null;
+      sourceRunId?: number | null;
+      entityId?: number | null;
+    },
   ): Promise<{ ok: false; reason: "exists" } | { ok: true; runId: number }> {
+    const runType = opts?.runType ?? "REGULAR";
+
     const existing = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, month)))
+      .where(
+        and(
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRuns.month, month),
+          eq(payrollRuns.runType, runType),
+        ),
+      )
       .limit(1);
 
     if (existing.length > 0) return { ok: false, reason: "exists" };
@@ -176,6 +190,11 @@ export class RunsService {
       .values({
         orgId,
         month,
+        runType,
+        sourcePeriodKey: opts?.sourcePeriodKey ?? null,
+        sourceRunId: opts?.sourceRunId ?? null,
+        entityId: opts?.entityId ?? null,
+        calculationVersion: "1.0.0",
         status: "PREPARING",
         policyVersionId,
         createdBy: userId,

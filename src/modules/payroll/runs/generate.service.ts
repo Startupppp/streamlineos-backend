@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
+import { Injectable, Inject, Logger, ConflictException } from "@nestjs/common";
 import { and, eq, inArray, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -14,6 +14,7 @@ import {
   incentives,
   salaryLoans,
   users,
+  payrollRunAllocations,
 } from "../../../db/schema";
 import { decryptBankDetails } from "../../hr-payroll/lib/encryption";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
@@ -21,6 +22,7 @@ import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
+import { PayrollRunLockService } from "../run-lock.service";
 
 type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -32,6 +34,7 @@ export class GenerateService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly pipeline: GeneratePipelineService,
     private readonly notifications: PayrollNotificationsService,
+    private readonly runLocks: PayrollRunLockService,
   ) {}
 
   async generateRun(
@@ -53,6 +56,31 @@ export class GenerateService {
       return { ok: false, reason: "locked" };
     }
 
+    let lockToken: string;
+    try {
+      lockToken = await this.runLocks.acquire(orgId, runId);
+      await this.runLocks.assertNoOtherActiveGeneration(orgId, run.month, runId);
+    } catch (err) {
+      if (err instanceof ConflictException) {
+        return { ok: false, reason: "generation_in_progress" };
+      }
+      throw err;
+    }
+
+    try {
+      return await this.generateRunLocked(orgId, runId, actorId, isRecalc, run);
+    } finally {
+      await this.runLocks.release(orgId, runId, lockToken);
+    }
+  }
+
+  private async generateRunLocked(
+    orgId: string,
+    runId: number,
+    actorId: string,
+    isRecalc: boolean,
+    run: typeof payrollRuns.$inferSelect,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const policyResult = await this.loadPolicy(orgId, run.policyVersionId);
     if (!policyResult) return { ok: false, reason: "no_policy" };
 
@@ -65,6 +93,7 @@ export class GenerateService {
 
     if (isRecalc) {
       await this.clearPreviouslyConsumedReimbursements(orgId, runId);
+      await this.clearRunAllocations(orgId, runId);
     }
 
     let processedCount = 0;
@@ -117,6 +146,17 @@ export class GenerateService {
             .update(reimbursements)
             .set({ paidAt: new Date() })
             .where(inArray(reimbursements.id, consumedReimbIds));
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "REIMBURSEMENT",
+            consumedReimbIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedReimbursements[i]?.amount ?? "0",
+            })),
+          );
         }
 
         const consumedIncentiveIds = pulls.consumedIncentiveIds ?? [];
@@ -125,6 +165,46 @@ export class GenerateService {
             .update(incentives)
             .set({ status: "ADDED_TO_PAYROLL" })
             .where(inArray(incentives.id, consumedIncentiveIds));
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "INCENTIVE",
+            consumedIncentiveIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedIncentives[i]?.amount ?? "0",
+            })),
+          );
+        }
+
+        const consumedBonusIds = pulls.consumedBonusIds ?? [];
+        if (consumedBonusIds.length > 0) {
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "BONUS",
+            consumedBonusIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedBonuses[i]?.amount ?? "0",
+            })),
+          );
+        }
+
+        if (pulls.activeLoans.length > 0) {
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "LOAN",
+            pulls.activeLoans.map((loan) => ({
+              id: loan.id,
+              amount: loan.emiAmount ?? "0",
+            })),
+          );
         }
 
         grossTotal += parseFloat(snapshot.totals.gross);
@@ -159,6 +239,8 @@ export class GenerateService {
           employeeCount: processedCount,
           exceptionCount: openBlockers?.total ?? 0,
           policyVersionId,
+          calculationVersion: "1.0.0",
+          statutoryRuleVersion: "IN-2025.04",
         })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
@@ -284,6 +366,40 @@ export class GenerateService {
         .set({ paidAt: null })
         .where(and(inArray(reimbursements.id, prevIds), eq(reimbursements.orgId, orgId)));
     }
+  }
+
+  private async clearRunAllocations(orgId: string, runId: number): Promise<void> {
+    await this.db
+      .delete(payrollRunAllocations)
+      .where(and(eq(payrollRunAllocations.orgId, orgId), eq(payrollRunAllocations.runId, runId)));
+  }
+
+  /**
+   * Durable exactly-once allocation of source inputs to a run.
+   * Unique (org, sourceType, sourceId) prevents double-consumption across runs.
+   */
+  private async recordAllocations(
+    tx: PayrollTx,
+    orgId: string,
+    runId: number,
+    userId: string,
+    sourceType: "REIMBURSEMENT" | "INCENTIVE" | "BONUS" | "LOAN" | "ADJUSTMENT",
+    items: { id: number; amount: string }[],
+  ): Promise<void> {
+    if (items.length === 0) return;
+    await tx
+      .insert(payrollRunAllocations)
+      .values(
+        items.map((item) => ({
+          orgId,
+          runId,
+          userId,
+          sourceType,
+          sourceId: String(item.id),
+          amount: item.amount,
+        })),
+      )
+      .onConflictDoNothing();
   }
 
   private async getPreviousSnapshot(
