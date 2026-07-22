@@ -293,10 +293,18 @@ export class RunsService {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+    // "Current run" is the month's canonical REGULAR run; off-cycle/bonus/
+    // correction runs share the month and must not be returned here.
     const rows = await this.db
       .select()
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, currentMonth)))
+      .where(
+        and(
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRuns.month, currentMonth),
+          eq(payrollRuns.runType, "REGULAR"),
+        ),
+      )
       .limit(1);
 
     if (rows[0]) return rows[0];
@@ -304,7 +312,7 @@ export class RunsService {
     const recent = await this.db
       .select()
       .from(payrollRuns)
-      .where(eq(payrollRuns.orgId, orgId))
+      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.runType, "REGULAR")))
       .orderBy(desc(payrollRuns.month))
       .limit(1);
 

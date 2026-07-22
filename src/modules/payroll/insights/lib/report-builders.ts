@@ -39,10 +39,19 @@ export async function findRunForMonth(
   orgId: string,
   month: string,
 ): Promise<RunRow | null> {
+  // Reports reconcile the month's canonical REGULAR run only. Off-cycle/bonus/
+  // correction runs now share a month (unique index is org+month+runType), so an
+  // unfiltered limit(1) would non-deterministically pick a non-regular run.
   const rows = await db
     .select()
     .from(payrollRuns)
-    .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, month)))
+    .where(
+      and(
+        eq(payrollRuns.orgId, orgId),
+        eq(payrollRuns.month, month),
+        eq(payrollRuns.runType, "REGULAR"),
+      ),
+    )
     .limit(1);
   return rows[0] ?? null;
 }

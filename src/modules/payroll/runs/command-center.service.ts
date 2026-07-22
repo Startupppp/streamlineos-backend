@@ -28,10 +28,19 @@ export class CommandCenterService {
     const now = new Date();
     const month = query.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+    // The command center tracks the month's canonical REGULAR run. Off-cycle/
+    // bonus/correction runs coexist in the same month (unique org+month+runType),
+    // so filter on runType to avoid picking one of those up here.
     const runs = await this.db
       .select()
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, month)))
+      .where(
+        and(
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRuns.month, month),
+          eq(payrollRuns.runType, "REGULAR"),
+        ),
+      )
       .limit(1);
 
     const run = runs[0] ?? null;
