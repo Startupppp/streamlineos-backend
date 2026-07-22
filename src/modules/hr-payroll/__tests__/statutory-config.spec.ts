@@ -1,4 +1,5 @@
 import { getStatutoryConfig, calculateIncomeTax } from "../lib/statutory-config";
+import { IN_STATUTORY_2025_04, resolvePtMonthly } from "../../payroll/runs/lib/statutory-registry";
 
 describe("getStatutoryConfig", () => {
   it("returns India config for country IN", () => {
@@ -30,8 +31,8 @@ describe("getStatutoryConfig", () => {
       expect(cfg.pf.employerPercent).toBe(12);
     });
 
-    it("PF annual wage ceiling is 21600", () => {
-      expect(cfg.pf.annualWageCeiling).toBe(21600);
+    it("PF annual contribution ceiling is 21600", () => {
+      expect(cfg.pf.annualContributionCeiling).toBe(21600);
     });
 
     it("ESI employee percent is 0.75%", () => {
@@ -64,6 +65,34 @@ describe("getStatutoryConfig", () => {
 
     it("has 4 old regime slabs", () => {
       expect(cfg.incomeTax.oldRegimeSlabs).toHaveLength(4);
+    });
+  });
+
+  describe("consolidation — legacy analytics calculator derives from the canonical registry", () => {
+    const cfg = getStatutoryConfig("IN");
+
+    it("PF percents come from the registry bundle", () => {
+      expect(cfg.pf.employeePercent).toBe(Number(IN_STATUTORY_2025_04.pf.employeePercent));
+      expect(cfg.pf.employerPercent).toBe(Number(IN_STATUTORY_2025_04.pf.employerPercent));
+    });
+
+    it("PF annual contribution ceiling comes from the registry's documented legacy field", () => {
+      expect(cfg.pf.annualContributionCeiling).toBe(Number(IN_STATUTORY_2025_04.pf.legacyMisnamedAnnualField));
+    });
+
+    it("ESI percents and ceiling come from the registry bundle", () => {
+      expect(cfg.esi.employeePercent).toBe(Number(IN_STATUTORY_2025_04.esi.employeePercent));
+      expect(cfg.esi.employerPercent).toBe(Number(IN_STATUTORY_2025_04.esi.employerPercent));
+      expect(cfg.esi.monthlyWageCeiling).toBe(Number(IN_STATUTORY_2025_04.esi.monthlyEligibilityCeiling));
+    });
+
+    it("professional tax annual is registry monthly PT × 12", () => {
+      expect(cfg.professionalTaxAnnual).toBe(Number(resolvePtMonthly(IN_STATUTORY_2025_04)) * 12);
+    });
+
+    it("standard deduction and cess come from the registry TDS rule", () => {
+      expect(cfg.incomeTax.standardDeduction).toBe(IN_STATUTORY_2025_04.tds.newRegimeStandardDeductionPaise / 100);
+      expect(cfg.incomeTax.cessPercent).toBe(Number(IN_STATUTORY_2025_04.tds.cessPercent));
     });
   });
 });

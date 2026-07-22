@@ -290,8 +290,8 @@ export class CompensationService {
 
     const basic = (annualCtc * basicPercentage) / 100;
     const hra = (basic * hraPercentage) / 100;
-    const pfEmployee = pfOptOut ? 0 : Math.min(basic * (pf.employeePercent / 100), pf.annualWageCeiling);
-    const pfEmployer = pfOptOut ? 0 : Math.min(basic * (pf.employerPercent / 100), pf.annualWageCeiling);
+    const pfEmployee = pfOptOut ? 0 : Math.min(basic * (pf.employeePercent / 100), pf.annualContributionCeiling);
+    const pfEmployer = pfOptOut ? 0 : Math.min(basic * (pf.employerPercent / 100), pf.annualContributionCeiling);
     const esiMonthlyWageCeiling = esi.monthlyWageCeiling * 12;
     const esiEmployee = annualCtc <= esiMonthlyWageCeiling ? annualCtc * (esi.employeePercent / 100) : 0;
     const esiEmployer = annualCtc <= esiMonthlyWageCeiling ? annualCtc * (esi.employerPercent / 100) : 0;

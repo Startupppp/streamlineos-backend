@@ -1,3 +1,8 @@
+import {
+  IN_STATUTORY_2025_04,
+  resolvePtMonthly,
+} from "../../payroll/runs/lib/statutory-registry";
+
 export interface TaxSlab {
   min: number;
   max: number;
@@ -25,7 +30,11 @@ export interface CountryFiscalConfig {
   pf: {
     employeePercent: number;
     employerPercent: number;
-    annualWageCeiling: number;
+    /**
+     * Annual PF *contribution* cap (not a wage ceiling): ₹15,000/mo wage base
+     * × 12% × 12 = ₹21,600/yr. Renamed from the misleading `annualWageCeiling`.
+     */
+    annualContributionCeiling: number;
   };
   esi: {
     employeePercent: number;
@@ -35,6 +44,13 @@ export interface CountryFiscalConfig {
   professionalTaxAnnual: number;
   salaryBands: SalaryBand[];
 }
+
+// Single source of truth for shared statutory scalars: the canonical versioned
+// registry that the modern run engine also reads (PayrollOS PRD §8.2 — one rule
+// source, not three). Only the legacy-analytics presentation layer (regime slab
+// tables + salary bands, which the registry does not model for this read surface)
+// remains local. A rate change in the registry now flows through here too.
+const REG = IN_STATUTORY_2025_04;
 
 const IN_FY_2025_26: CountryFiscalConfig = {
   country: "IN",
@@ -57,20 +73,20 @@ const IN_FY_2025_26: CountryFiscalConfig = {
       { min: 1200000, max: 1500000, rate: 20 },
       { min: 1500000, max: Infinity, rate: 30 },
     ],
-    standardDeduction: 75000,
-    cessPercent: 4,
+    standardDeduction: REG.tds.newRegimeStandardDeductionPaise / 100,
+    cessPercent: Number(REG.tds.cessPercent),
   },
   pf: {
-    employeePercent: 12,
-    employerPercent: 12,
-    annualWageCeiling: 21600,
+    employeePercent: Number(REG.pf.employeePercent),
+    employerPercent: Number(REG.pf.employerPercent),
+    annualContributionCeiling: Number(REG.pf.legacyMisnamedAnnualField),
   },
   esi: {
-    employeePercent: 0.75,
-    employerPercent: 3.25,
-    monthlyWageCeiling: 21000,
+    employeePercent: Number(REG.esi.employeePercent),
+    employerPercent: Number(REG.esi.employerPercent),
+    monthlyWageCeiling: Number(REG.esi.monthlyEligibilityCeiling),
   },
-  professionalTaxAnnual: 2400,
+  professionalTaxAnnual: Number(resolvePtMonthly(REG)) * 12,
   salaryBands: [
     { label: "< 3L", min: 0, max: 300_000 },
     { label: "3–6L", min: 300_000, max: 600_000 },
