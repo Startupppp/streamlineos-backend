@@ -9,6 +9,7 @@ import { PayrollEntitiesService } from "./entities/entities.service";
 import { PayrollFilingsController } from "./filings/filings.controller";
 import { PayrollFilingsService } from "./filings/filings.service";
 import { PayrollJobsService } from "./jobs/payroll-jobs.service";
+import { PayrollJobsController } from "./jobs/jobs.controller";
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { PayrollJobsService } from "./jobs/payroll-jobs.service";
     PayrollPayoutModule,
     PayrollInsightsModule,
   ],
-  controllers: [PayrollEntitiesController, PayrollFilingsController],
+  controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController],
   providers: [
     PayrollCalendarReminderScheduler,
     PayrollEntitiesService,

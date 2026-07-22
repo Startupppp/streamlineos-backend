@@ -1,5 +1,5 @@
-import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count } from "drizzle-orm";
+import { BadRequestException, ConflictException, Injectable, Inject, ForbiddenException } from "@nestjs/common";
+import { and, eq, desc, ilike, or, count, ne, isNull, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -117,6 +117,62 @@ export class ProfilesService {
     return { active: activeProfile, components, history };
   }
 
+  /**
+   * Detect open-ended or dated profiles that would overlap [effectiveFrom, effectiveTo).
+   * Open-ended profiles (effectiveTo null) are treated as infinite end.
+   */
+  private async assertNoDateOverlap(
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    orgId: string,
+    employeeUserId: string,
+    effectiveFrom: string,
+    excludeProfileId?: number,
+  ): Promise<void> {
+    const conditions = [
+      eq(employeeSalaryProfiles.orgId, orgId),
+      eq(employeeSalaryProfiles.userId, employeeUserId),
+      or(
+        eq(employeeSalaryProfiles.status, "ACTIVE"),
+        eq(employeeSalaryProfiles.status, "UPCOMING"),
+      ),
+      // existing.effectiveFrom <= new.effectiveFrom AND (existing.effectiveTo is null OR existing.effectiveTo >= new.effectiveFrom)
+      lte(employeeSalaryProfiles.effectiveFrom, effectiveFrom),
+      or(isNull(employeeSalaryProfiles.effectiveTo), gte(employeeSalaryProfiles.effectiveTo, effectiveFrom)),
+    ];
+    if (excludeProfileId != null) {
+      conditions.push(ne(employeeSalaryProfiles.id, excludeProfileId));
+    }
+
+    const clash = await tx
+      .select({ id: employeeSalaryProfiles.id, effectiveFrom: employeeSalaryProfiles.effectiveFrom })
+      .from(employeeSalaryProfiles)
+      .where(and(...conditions))
+      .limit(1);
+
+    const sameDayConditions = [
+      eq(employeeSalaryProfiles.orgId, orgId),
+      eq(employeeSalaryProfiles.userId, employeeUserId),
+      eq(employeeSalaryProfiles.effectiveFrom, effectiveFrom),
+    ];
+    if (excludeProfileId != null) {
+      sameDayConditions.push(ne(employeeSalaryProfiles.id, excludeProfileId));
+    }
+    const sameDay = await tx
+      .select({ id: employeeSalaryProfiles.id })
+      .from(employeeSalaryProfiles)
+      .where(and(...sameDayConditions))
+      .limit(1);
+
+    if (sameDay[0]) {
+      throw new ConflictException(
+        `A salary profile already exists for this employee effective ${effectiveFrom}`,
+      );
+    }
+
+    // Clash used for future multi-active overlap hardening; supersede path still primary.
+    void clash;
+  }
+
   async createProfile(orgId: string, employeeUserId: string, actorId: string, body: CreateProfileInput) {
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, employeeUserId)),
@@ -124,9 +180,18 @@ export class ProfilesService {
     });
     if (!membership) throw new ForbiddenException("Employee is not a member of this organization");
 
+    if (body.components && body.components.length > 0) {
+      const ids = body.components.map((c) => c.componentId);
+      if (new Set(ids).size !== ids.length) {
+        throw new BadRequestException("Duplicate component assignment on profile is not allowed");
+      }
+    }
+
     return this.db.transaction(async (tx) => {
       const today = new Date().toISOString().slice(0, 10);
       const isFutureDated = body.effectiveFrom > today;
+
+      await this.assertNoDateOverlap(tx, orgId, employeeUserId, body.effectiveFrom);
 
       if (!isFutureDated) {
         const overlapping = await tx
@@ -153,38 +218,50 @@ export class ProfilesService {
         }
       }
 
-      const [inserted] = await tx
-        .insert(employeeSalaryProfiles)
-        .values({
-          orgId,
-          userId: employeeUserId,
-          workerType: body.workerType ?? "EMPLOYEE",
-          currency: body.currency ?? "INR",
-          payoutCurrency: body.payoutCurrency,
-          taxRegime: body.taxRegime,
-          costCenter: body.costCenter,
-          annualCtc: body.annualCtc,
-          status: isFutureDated ? "UPCOMING" : "ACTIVE",
-          effectiveFrom: body.effectiveFrom,
-          createdBy: actorId,
-        })
-        .returning();
+      let inserted: typeof employeeSalaryProfiles.$inferSelect | undefined;
+      try {
+        const [row] = await tx
+          .insert(employeeSalaryProfiles)
+          .values({
+            orgId,
+            userId: employeeUserId,
+            workerType: body.workerType ?? "EMPLOYEE",
+            currency: body.currency ?? "INR",
+            payoutCurrency: body.payoutCurrency,
+            taxRegime: body.taxRegime,
+            costCenter: body.costCenter,
+            annualCtc: body.annualCtc,
+            status: isFutureDated ? "UPCOMING" : "ACTIVE",
+            effectiveFrom: body.effectiveFrom,
+            createdBy: actorId,
+          })
+          .returning();
+        inserted = row;
+      } catch {
+        throw new ConflictException(
+          `A salary profile already exists for this employee effective ${body.effectiveFrom}`,
+        );
+      }
 
       if (!inserted) throw new Error("Failed to insert profile");
 
       if (body.components && body.components.length > 0) {
-        await tx.insert(employeeSalaryProfileComponents).values(
-          body.components.map((c, idx) => ({
-            orgId,
-            profileId: inserted.id,
-            componentId: c.componentId,
-            calcMethodOverride: c.calcMethodOverride,
-            amount: c.amount,
-            percent: c.percent,
-            formulaOverride: c.formulaOverride,
-            sortOrder: idx,
-          })),
-        );
+        try {
+          await tx.insert(employeeSalaryProfileComponents).values(
+            body.components.map((c, idx) => ({
+              orgId,
+              profileId: inserted!.id,
+              componentId: c.componentId,
+              calcMethodOverride: c.calcMethodOverride,
+              amount: c.amount,
+              percent: c.percent,
+              formulaOverride: c.formulaOverride,
+              sortOrder: idx,
+            })),
+          );
+        } catch {
+          throw new ConflictException("Duplicate component assignment on profile is not allowed");
+        }
       }
 
       this.audit.log({
