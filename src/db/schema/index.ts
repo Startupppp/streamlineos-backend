@@ -43,3 +43,5 @@ export * from "./ai-feedback";
 export * from "./ai-confirmation";
 export * from "./workspace-search";
 export * from "./ai-summaries";
+export * from "./comment-drafts";
+export * from "./project-teams";

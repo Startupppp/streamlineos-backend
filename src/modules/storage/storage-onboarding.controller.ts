@@ -56,7 +56,7 @@ export class OnboardingDocumentsController {
     }
     if (file.size > MAX_SIZE) throw new BadRequestException("File size must be under 5MB");
 
-    const result = await this.storage.uploadFile(
+    const result = await this.storage.uploadCompressed(
       file.buffer,
       "onboarding",
       file.originalname,
@@ -71,8 +71,8 @@ export class OnboardingDocumentsController {
         name: file.originalname,
         type,
         fileUrl: result.url,
-        fileSize: file.size,
-        mimeType: file.mimetype,
+        fileSize: result.size,
+        mimeType: result.mimeType,
         uploadedBy: u.userId,
       });
       const existing = await tx.query.onboardingSteps.findFirst({

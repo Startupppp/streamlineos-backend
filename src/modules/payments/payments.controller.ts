@@ -193,17 +193,17 @@ export class PaymentsController {
     return this.testTransactions.createTestTransaction(u.orgId, providerKey, body, this.actorContext(u, req));
   }
 
-  @Patch("providers/:providerKey/test-transactions/:id/verify")
+  @Patch("providers/:providerKey/test-transactions/:transactionId/verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
   verifyTestTransaction(
     @Param("providerKey") providerKey: string,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("transactionId", ParseIntPipe) transactionId: number,
     @Body(new ZodValidationPipe(verifyTestTransactionSchema)) body: VerifyTestTransactionInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.testTransactions.verifyTestTransaction(u.orgId, providerKey, id, body, this.actorContext(u, req));
+    return this.testTransactions.verifyTestTransaction(u.orgId, providerKey, transactionId, body, this.actorContext(u, req));
   }
 
   @Post("providers/:providerKey/webhooks/generate")
@@ -306,27 +306,27 @@ export class PaymentsController {
     return this.manualMethods.create(u.orgId, body, this.actorContext(u, req));
   }
 
-  @Patch("manual-methods/:id")
+  @Patch("manual-methods/:methodId")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   updateManualMethod(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("methodId", ParseIntPipe) methodId: number,
     @Body(new ZodValidationPipe(updateManualMethodSchema)) body: UpdateManualMethodInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.manualMethods.update(u.orgId, id, body, this.actorContext(u, req));
+    return this.manualMethods.update(u.orgId, methodId, body, this.actorContext(u, req));
   }
 
-  @Post("manual-methods/:id/disable")
+  @Post("manual-methods/:methodId/disable")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   disableManualMethod(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("methodId", ParseIntPipe) methodId: number,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.manualMethods.disable(u.orgId, id, this.actorContext(u, req));
+    return this.manualMethods.disable(u.orgId, methodId, this.actorContext(u, req));
   }
 }

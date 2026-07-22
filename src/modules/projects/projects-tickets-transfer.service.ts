@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
   projectMembers,
+  projects,
   projectStatuses,
   tickets,
   users,
@@ -175,26 +176,61 @@ export class ProjectsTicketsTransferService {
     }
     if (notifyIds.size === 0) return;
 
+    const notifyTargets = Array.from(notifyIds).filter((userId) => userId !== actingUserId);
+    if (notifyTargets.length === 0) return;
+
     const ticketData = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
-      columns: { title: true, projectId: true },
+      columns: {
+        title: true,
+        projectId: true,
+        ticketNumber: true,
+        priority: true,
+        status: true,
+        type: true,
+      },
     });
 
+    let ticketKey: string | undefined;
+    let ticketLink: string | undefined;
+    if (ticketData?.projectId) {
+      const [projectRow] = await this.db
+        .select({ key: projects.key })
+        .from(projects)
+        .where(and(eq(projects.id, ticketData.projectId), eq(projects.orgId, orgId)))
+        .limit(1);
+
+      ticketKey = projectRow?.key
+        ? `${projectRow.key}-${ticketData.ticketNumber}`
+        : String(ticketData.ticketNumber);
+      ticketLink = `/projects/${ticketData.projectId}/tickets/${encodeURIComponent(ticketKey)}`;
+    }
+
     await Promise.all(
-      Array.from(notifyIds)
-        .filter((userId) => userId !== actingUserId)
-        .map((userId) =>
-          this.notifications
-            .create({
-              orgId,
-              userId,
-              type: "INFO",
-              title: "Ticket Assigned to You",
-              message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
-              link: ticketData?.projectId ? `/projects/${ticketData.projectId}?ticket=${ticketId}` : undefined,
-            })
-            .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
-        ),
+      notifyTargets.map((userId) =>
+        this.notifications
+          .create({
+            orgId,
+            userId,
+            type: "INFO",
+            category: "PROJECTS",
+            sourceModule: "projects",
+            eventKey: "projects:ticket:assigned",
+            entityType: "ticket",
+            entityId: String(ticketId),
+            title: "Ticket Assigned to You",
+            message: `You have been assigned to ticket "${ticketData?.title ?? `#${ticketId}`}".`,
+            link: ticketLink,
+            metadata: {
+              ticketId,
+              ticketKey: ticketKey ?? null,
+              priority: ticketData?.priority ?? null,
+              status: ticketData?.status ?? null,
+              type: ticketData?.type ?? null,
+            },
+          })
+          .catch((error) => logger.error("Failed to create ticket assignment notification", { error })),
+      ),
     );
 
     void this.projectsEmail

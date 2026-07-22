@@ -26,6 +26,7 @@ import {
   movePageSchema,
   lockPageSchema,
   searchPagesSchema,
+  listPagesSchema,
   setVisibilitySchema,
   verifyPageSchema,
   type CreatePageInput,
@@ -33,6 +34,7 @@ import {
   type MovePageInput,
   type LockPageInput,
   type SearchPagesInput,
+  type ListPagesInput,
   type SetVisibilityInput,
   type VerifyPageInput,
 } from "./dto/kb-pages.schemas";
@@ -48,8 +50,11 @@ export class KbPagesController {
 
   @Get("pages/tree")
   @RequirePermission("kb:pages:view")
-  async getTree(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.tree.getTree(u);
+  async getTree(
+    @Query(new ZodValidationPipe(listPagesSchema)) query: ListPagesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    return this.tree.getTree(u, query.projectId);
   }
 
   @Get("pages/recent")

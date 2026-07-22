@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, count, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import {
   projectMembers,
@@ -198,13 +198,55 @@ export class ProjectsTicketsQueryService {
   }
 
   async bulkUpdate(u: CurrentUserContext, projectId: number, body: BulkUpdateInput) {
-    const member = await this.db.query.projectMembers.findFirst({
-      where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, u.userId)),
-    });
-    if (!member) throw new ForbiddenException("Not a project member.");
+    if (!u.isOrgOwner && !u.isPlatformAdmin) {
+      const member = await this.db.query.projectMembers.findFirst({
+        where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, u.userId)),
+      });
+      if (!member) throw new ForbiddenException("Not a project member.");
+    }
 
     if (body.status !== undefined) {
       await this.validateTicketStatus(projectId, u.orgId, body.status);
+    }
+
+    if (body.parentTicketId != null) {
+      const selectedSet = new Set(body.ticketIds);
+
+      if (selectedSet.has(body.parentTicketId)) {
+        throw new BadRequestException("Cannot set a ticket as its own parent.");
+      }
+
+      const parentRow = await this.db
+        .select({ id: tickets.id, projectId: tickets.projectId, parentTicketId: tickets.parentTicketId })
+        .from(tickets)
+        .where(and(eq(tickets.id, body.parentTicketId), eq(tickets.orgId, u.orgId)))
+        .limit(1);
+
+      if (parentRow.length === 0) {
+        throw new NotFoundException("Parent ticket not found.");
+      }
+
+      if (parentRow[0]?.projectId !== projectId) {
+        throw new BadRequestException("Parent ticket must belong to the same project.");
+      }
+
+      let current: { id: number; parentTicketId: number | null } | undefined = {
+        id: parentRow[0].id,
+        parentTicketId: parentRow[0].parentTicketId,
+      };
+      let hops = 0;
+      while (current?.parentTicketId != null && hops < 100) {
+        if (selectedSet.has(current.parentTicketId)) {
+          throw new BadRequestException("Cannot set parent: this would create a cycle.");
+        }
+        const ancestor = await this.db
+          .select({ id: tickets.id, parentTicketId: tickets.parentTicketId })
+          .from(tickets)
+          .where(and(eq(tickets.id, current.parentTicketId), eq(tickets.orgId, u.orgId)))
+          .limit(1);
+        current = ancestor[0];
+        hops++;
+      }
     }
 
     const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
@@ -212,6 +254,7 @@ export class ProjectsTicketsQueryService {
     if (body.status !== undefined) updateData.status = body.status;
     if (body.sprintId !== undefined) updateData.sprintId = body.sprintId;
     if (body.priority !== undefined) updateData.priority = body.priority;
+    if (body.parentTicketId !== undefined) updateData.parentTicketId = body.parentTicketId;
 
     const updated = await this.db
       .update(tickets)

@@ -14,19 +14,29 @@ const projectModulesSchema = z.object({
   wiki: z.boolean(),
 });
 
+const projectPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+
 export const createProjectSchema = z.object({
   name: z
     .string()
     .min(2, "Project name must be at least 2 characters")
     .max(100, "Project name must be 100 characters or fewer")
     .trim()
-    .refine((v) => v.trim().length > 0, { message: "Project name cannot be blank" }),
-  description: z.string().max(2000, "Description must be 2000 characters or fewer").optional(),
+    .refine((v) => v.trim().length > 0, {
+      message: "Project name cannot be blank",
+    }),
+  description: z
+    .string()
+    .max(2000, "Description must be 2000 characters or fewer")
+    .optional(),
   key: z
     .string()
     .min(2, "Project key must be at least 2 characters")
     .max(10, "Project key must be 10 characters or fewer")
-    .regex(/^[A-Z][A-Z0-9]*$/, "Key must start with a letter and contain only uppercase letters/numbers")
+    .regex(
+      /^[A-Z][A-Z0-9]*$/,
+      "Key must start with a letter and contain only uppercase letters/numbers",
+    )
     .optional(),
   managerId: z.string().optional(),
   clientId: z.string().optional(),
@@ -37,6 +47,7 @@ export const createProjectSchema = z.object({
   projectType: z.string().optional(),
   workflow: z.string().optional(),
   features: z.record(z.string(), z.boolean()).optional(),
+  priority: projectPrioritySchema.optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -52,6 +63,7 @@ export const updateProjectSchema = z.object({
   projectType: z.string().optional(),
   workflow: z.string().optional(),
   features: z.record(z.string(), z.boolean()).optional(),
+  priority: projectPrioritySchema.optional(),
 });
 
 export const updateBudgetSchema = z.object({
@@ -74,6 +86,12 @@ export const addMemberSchema = z.object({
 export const removeMemberSchema = z.object({
   userId: z.string().min(1),
 });
+
+export const updateProjectMemberRoleSchema = z.object({
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+});
+
+export type UpdateProjectMemberRoleInput = z.infer<typeof updateProjectMemberRoleSchema>;
 
 const columnNameSchema = z
   .string()
@@ -99,7 +117,10 @@ export const createStateSchema = z.object({
 
 export const updateCustomStateSchema = z.object({
   name: columnNameSchema.optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
   order: z.number().int().min(0).optional(),
   type: projectStatusTypeSchema.optional(),
 });
@@ -111,18 +132,35 @@ export const createLabelSchema = z.object({
 
 export const updateLabelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
 });
 
 const csvToStringArray = z
   .string()
   .optional()
-  .transform((v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined));
+  .transform((v) =>
+    v
+      ? v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined,
+  );
 
 const csvToIntArray = z
   .string()
   .optional()
-  .transform((v) => (v ? v.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n)) : undefined));
+  .transform((v) =>
+    v
+      ? v
+          .split(",")
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => !isNaN(n))
+      : undefined,
+  );
 
 export const ticketsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -162,7 +200,9 @@ export const ticketsListQuerySchema = z.object({
   epicId: z.coerce.number().int().positive().optional(),
   dueDateFrom: z.string().optional(),
   dueDateTo: z.string().optional(),
-  orderBy: z.enum(["created", "updated", "priority", "dueDate", "order"]).default("order"),
+  orderBy: z
+    .enum(["created", "updated", "priority", "dueDate", "order"])
+    .default("order"),
   orderDir: z.enum(["asc", "desc"]).optional(),
 });
 
@@ -204,7 +244,9 @@ export const allWorkQuerySchema = z.object({
   epicId: z.coerce.number().int().positive().optional(),
   dueDateFrom: z.string().optional(),
   dueDateTo: z.string().optional(),
-  orderBy: z.enum(["created", "updated", "priority", "dueDate", "order"]).default("order"),
+  orderBy: z
+    .enum(["created", "updated", "priority", "dueDate", "order"])
+    .default("order"),
   orderDir: z.enum(["asc", "desc"]).optional(),
   projectIds: csvToIntArray,
   scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
@@ -237,7 +279,9 @@ export const createTicketSchema = z.object({
     .trim()
     .min(3, "Title must be at least 3 characters")
     .max(500)
-    .refine((v) => /[a-zA-Z0-9]/.test(v), { message: "Title must contain at least one letter or number" }),
+    .refine((v) => /[a-zA-Z0-9]/.test(v), {
+      message: "Title must contain at least one letter or number",
+    }),
   description: z.string().optional(),
   type: z.enum(["TASK", "BUG", "STORY", "EPIC", "SUBTASK"]).default("TASK"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
@@ -262,7 +306,9 @@ export const updateTicketSchema = z.object({
     .trim()
     .min(3, "Title must be at least 3 characters")
     .max(500)
-    .refine((v) => /[a-zA-Z0-9]/.test(v), { message: "Title must contain at least one letter or number" })
+    .refine((v) => /[a-zA-Z0-9]/.test(v), {
+      message: "Title must contain at least one letter or number",
+    })
     .optional(),
   description: z.string().nullable().optional(),
   type: z.string().optional(),
@@ -281,6 +327,8 @@ export const updateTicketSchema = z.object({
   expectedUpdatedAt: z.string().optional(),
   isRecurring: z.boolean().optional(),
   recurrenceRule: recurrenceRuleSchema.nullable().optional(),
+  customerId: z.number().int().positive().nullable().optional(),
+  parentTicketId: z.number().int().positive().nullable().optional(),
 });
 
 export const bulkUpdateSchema = z
@@ -290,13 +338,15 @@ export const bulkUpdateSchema = z
     status: z.string().optional(),
     sprintId: z.number().int().positive().nullable().optional(),
     priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    parentTicketId: z.number().int().positive().nullable().optional(),
   })
   .refine(
     (data) =>
       data.assigneeId !== undefined ||
       data.status !== undefined ||
       data.sprintId !== undefined ||
-      data.priority !== undefined,
+      data.priority !== undefined ||
+      data.parentTicketId !== undefined,
     { message: "At least one field to update is required" },
   );
 
@@ -368,7 +418,9 @@ export const cfdQuerySchema = z.object({
 });
 
 export const roadmapListQuerySchema = z.object({
-  status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+  status: z
+    .enum(["planned", "in_progress", "completed", "cancelled"])
+    .optional(),
   search: z.string().trim().min(1).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -377,7 +429,9 @@ export const roadmapListQuerySchema = z.object({
 export const createRoadmapSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5000).optional(),
-  status: z.enum(["planned", "in_progress", "completed", "cancelled"]).default("planned"),
+  status: z
+    .enum(["planned", "in_progress", "completed", "cancelled"])
+    .default("planned"),
   category: z.string().trim().max(100).optional(),
   isPublic: z.boolean().default(true),
   projectId: z.number().int().positive().optional(),
@@ -389,7 +443,9 @@ export const createRoadmapSchema = z.object({
 export const updateRoadmapSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
-  status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(),
+  status: z
+    .enum(["planned", "in_progress", "completed", "cancelled"])
+    .optional(),
   category: z.string().trim().max(100).nullable().optional(),
   isPublic: z.boolean().optional(),
   projectId: z.number().int().positive().nullable().optional(),
@@ -399,7 +455,9 @@ export const updateRoadmapSchema = z.object({
 });
 
 export const feedbackListQuerySchema = z.object({
-  status: z.enum(["open", "planned", "in_progress", "completed", "declined"]).optional(),
+  status: z
+    .enum(["open", "planned", "in_progress", "completed", "declined"])
+    .optional(),
   search: z.string().trim().min(1).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -408,7 +466,9 @@ export const feedbackListQuerySchema = z.object({
 export const createFeedbackSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5000).optional(),
-  status: z.enum(["open", "planned", "in_progress", "completed", "declined"]).default("open"),
+  status: z
+    .enum(["open", "planned", "in_progress", "completed", "declined"])
+    .default("open"),
   category: z.string().trim().max(100).optional(),
   submittedByName: z.string().trim().max(120).optional(),
   submittedByEmail: z.string().trim().email().optional(),
@@ -418,7 +478,9 @@ export const createFeedbackSchema = z.object({
 export const updateFeedbackSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
-  status: z.enum(["open", "planned", "in_progress", "completed", "declined"]).optional(),
+  status: z
+    .enum(["open", "planned", "in_progress", "completed", "declined"])
+    .optional(),
   category: z.string().trim().max(100).nullable().optional(),
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
 });

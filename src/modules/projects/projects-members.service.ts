@@ -1,24 +1,40 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
-import { projectMembers, projects, projectStatuses, ticketAssignees, ticketLabels, tickets, users } from "../../db/schema";
+import {
+  projectMembers,
+  projects,
+  projectStatuses,
+  ticketAssignees,
+  ticketLabels,
+  tickets,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type {
   AddMemberInput,
   CreateLabelInput,
   CreateStateInput,
   UpdateLabelInput,
   UpdateCustomStateInput,
+  UpdateProjectMemberRoleInput,
 } from "./dto/projects.schemas";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 
-async function assertProjectOwnership(db: Db, orgId: string, projectId: number): Promise<void> {
+async function assertProjectOwnership(
+  db: Db,
+  orgId: string,
+  projectId: number,
+): Promise<void> {
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
     columns: { id: true },
@@ -35,7 +51,37 @@ export class ProjectsMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
+    private readonly access: AccessService,
   ) {}
+
+  async assertCanManageProject(
+    u: CurrentUserContext,
+    projectId: number,
+  ): Promise<void> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("projects:manage")) return;
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      columns: { managerId: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    if (project.managerId === u.userId) return;
+    const membership = await this.db
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, u.userId),
+        ),
+      )
+      .limit(1);
+    if (membership[0]?.role === "ADMIN") return;
+    throw new ForbiddenException(
+      "You do not have permission to manage this project",
+    );
+  }
 
   listMembers(orgId: string, projectId: number) {
     return this.db
@@ -51,19 +97,36 @@ export class ProjectsMembersService {
       })
       .from(projectMembers)
       .innerJoin(users, eq(projectMembers.userId, users.id))
-      .innerJoin(projects, and(eq(projects.id, projectMembers.projectId), eq(projects.orgId, orgId)))
+      .innerJoin(
+        projects,
+        and(
+          eq(projects.id, projectMembers.projectId),
+          eq(projects.orgId, orgId),
+        ),
+      )
       .where(eq(projectMembers.projectId, projectId))
       .orderBy(asc(projectMembers.joinedAt))
       .limit(100);
   }
 
-  async addMember(projectId: number, body: AddMemberInput, orgId: string, actorId: string) {
+  async addMember(
+    projectId: number,
+    body: AddMemberInput,
+    u: CurrentUserContext,
+  ) {
+    const orgId = u.orgId;
+    const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
+    await this.assertCanManageProject(u, projectId);
 
     const existing = await this.db.query.projectMembers.findFirst({
-      where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.userId)),
+      where: and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.userId, body.userId),
+      ),
     });
-    if (existing) throw new ConflictException("User is already a project member");
+    if (existing)
+      throw new ConflictException("User is already a project member");
 
     const [member] = await this.db
       .insert(projectMembers)
@@ -82,8 +145,11 @@ export class ProjectsMembersService {
     return member;
   }
 
-  async removeMember(projectId: number, userId: string, orgId: string, actorId: string) {
+  async removeMember(projectId: number, userId: string, u: CurrentUserContext) {
+    const orgId = u.orgId;
+    const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
+    await this.assertCanManageProject(u, projectId);
 
     await this.db
       .delete(projectMembers)
@@ -107,19 +173,17 @@ export class ProjectsMembersService {
         ),
       );
 
-    await this.db
-      .delete(ticketAssignees)
-      .where(
-        and(
-          eq(ticketAssignees.userId, userId),
-          sql`${ticketAssignees.ticketId} IN (
+    await this.db.delete(ticketAssignees).where(
+      and(
+        eq(ticketAssignees.userId, userId),
+        sql`${ticketAssignees.ticketId} IN (
             SELECT id FROM tickets
             WHERE project_id = ${projectId}
             AND org_id = ${orgId}
             AND status NOT IN ('DONE', 'CANCELLED')
           )`,
-        ),
-      );
+      ),
+    );
 
     this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
       id: projectId,
@@ -132,15 +196,67 @@ export class ProjectsMembersService {
     return { success: true };
   }
 
+  async updateMemberRole(
+    projectId: number,
+    memberUserId: string,
+    input: UpdateProjectMemberRoleInput,
+    u: CurrentUserContext,
+  ) {
+    const orgId = u.orgId;
+    const actorId = u.userId;
+    await assertProjectOwnership(this.db, orgId, projectId);
+    await this.assertCanManageProject(u, projectId);
+
+    const [updated] = await this.db
+      .update(projectMembers)
+      .set({ role: input.role })
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, memberUserId),
+        ),
+      )
+      .returning({
+        id: projectMembers.id,
+        userId: projectMembers.userId,
+        role: projectMembers.role,
+      });
+
+    if (!updated) throw new NotFoundException("Member not found");
+
+    this.webhooksDispatch.dispatch(orgId, projectId, "member.role_updated", {
+      id: updated.id,
+      projectId,
+      userId: memberUserId,
+      role: input.role,
+      actor: actorId,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  }
+
   listCustomStates(orgId: string, projectId: number) {
     return this.db
       .select()
       .from(projectStatuses)
-      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)))
+      .where(
+        and(
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, orgId),
+        ),
+      )
       .orderBy(projectStatuses.order);
   }
 
-  async createCustomState(orgId: string, projectId: number, body: CreateStateInput) {
+  async createCustomState(
+    u: CurrentUserContext,
+    projectId: number,
+    body: CreateStateInput,
+  ) {
+    const orgId = u.orgId;
+    await this.assertCanManageProject(u, projectId);
+
     const existing = await this.db
       .select({ id: projectStatuses.id })
       .from(projectStatuses)
@@ -153,14 +269,23 @@ export class ProjectsMembersService {
       )
       .limit(1);
     if (existing.length > 0) {
-      throw new ConflictException(`A column named "${body.name}" already exists in this project`);
+      throw new ConflictException(
+        `A column named "${body.name}" already exists in this project`,
+      );
     }
 
     const [maxResult] = await this.db
-      .select({ maxOrder: sql<number>`COALESCE(MAX(${projectStatuses.order}), -1)` })
+      .select({
+        maxOrder: sql<number>`COALESCE(MAX(${projectStatuses.order}), -1)`,
+      })
       .from(projectStatuses)
-      .where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
-    const nextOrder = body.order ?? ((maxResult?.maxOrder ?? -1) + 1);
+      .where(
+        and(
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, orgId),
+        ),
+      );
+    const nextOrder = body.order ?? (maxResult?.maxOrder ?? -1) + 1;
 
     const [state] = await this.db
       .insert(projectStatuses)
@@ -211,13 +336,21 @@ export class ProjectsMembersService {
     return { success: true };
   }
 
-  async updateCustomState(orgId: string, stateId: number, data: UpdateCustomStateInput) {
+  async updateCustomState(
+    u: CurrentUserContext,
+    stateId: number,
+    data: UpdateCustomStateInput,
+  ) {
+    const orgId = u.orgId;
     const [existing] = await this.db
       .select()
       .from(projectStatuses)
-      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
+      .where(
+        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
+      )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
+    await this.assertCanManageProject(u, existing.projectId);
 
     if (data.name !== undefined && data.name !== existing.name) {
       const [duplicate] = await this.db
@@ -233,7 +366,9 @@ export class ProjectsMembersService {
         )
         .limit(1);
       if (duplicate) {
-        throw new ConflictException(`A column named "${data.name}" already exists in this project`);
+        throw new ConflictException(
+          `A column named "${data.name}" already exists in this project`,
+        );
       }
     }
 
@@ -260,7 +395,12 @@ export class ProjectsMembersService {
       const [row] = await tx
         .update(projectStatuses)
         .set(updateData)
-        .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
+        .where(
+          and(
+            eq(projectStatuses.id, stateId),
+            eq(projectStatuses.orgId, orgId),
+          ),
+        )
         .returning();
       return row;
     });
@@ -269,13 +409,17 @@ export class ProjectsMembersService {
     return updated;
   }
 
-  async deleteCustomState(orgId: string, stateId: number) {
+  async deleteCustomState(u: CurrentUserContext, stateId: number) {
+    const orgId = u.orgId;
     const [existing] = await this.db
       .select()
       .from(projectStatuses)
-      .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)))
+      .where(
+        and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)),
+      )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
+    await this.assertCanManageProject(u, existing.projectId);
 
     const siblings = await this.db
       .select()
@@ -308,7 +452,8 @@ export class ProjectsMembersService {
     }
 
     const fallback =
-      remaining.find((s) => statusTypeOf(s.type) === "unstarted") ?? remaining[0];
+      remaining.find((s) => statusTypeOf(s.type) === "unstarted") ??
+      remaining[0];
     if (!fallback) {
       throw new BadRequestException("At least one workflow status is required");
     }
@@ -327,7 +472,12 @@ export class ProjectsMembersService {
 
       await tx
         .delete(projectStatuses)
-        .where(and(eq(projectStatuses.id, stateId), eq(projectStatuses.orgId, orgId)));
+        .where(
+          and(
+            eq(projectStatuses.id, stateId),
+            eq(projectStatuses.orgId, orgId),
+          ),
+        );
     });
 
     return { success: true };

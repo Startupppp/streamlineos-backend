@@ -75,7 +75,7 @@ export class StorageController {
     }
 
     try {
-      const result = await this.storage.uploadFile(
+      const result = await this.storage.uploadCompressed(
         file.buffer,
         folder,
         file.originalname,

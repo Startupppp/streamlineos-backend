@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/billing.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { UsersModule } from "../users/users.module";
 import { ProjectsController } from "./projects.controller";
 import { ProjectsTicketsController } from "./projects-tickets.controller";
 import { ProjectsReportsController } from "./projects-reports.controller";
@@ -11,6 +12,9 @@ import { ProjectsCustomFieldsController } from "./projects-custom-fields.control
 import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsWebhooksController } from "./projects-webhooks.controller";
 import { ProjectsAutomationsController } from "./projects-automations.controller";
+import { ProjectsWorkspaceMembersController } from "./projects-workspace-members.controller";
+import { ProjectsCustomersController } from "./projects-customers.controller";
+import { ProjectsCustomersService } from "./projects-customers.service";
 import { ProjectsService } from "./projects.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsEmailService } from "./projects-email.service";
@@ -35,7 +39,7 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
 @Module({
-  imports: [BillingModule, NotificationsModule],
+  imports: [BillingModule, NotificationsModule, UsersModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,
@@ -46,6 +50,8 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsReleasesController,
     ProjectsWebhooksController,
     ProjectsAutomationsController,
+    ProjectsWorkspaceMembersController,
+    ProjectsCustomersController,
     ProjectsController,
   ],
   providers: [
@@ -71,7 +77,14 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsWebhooksService,
     ProjectsWebhooksDispatchService,
     ProjectsAutomationsService,
+    ProjectsCustomersService,
   ],
-  exports: [ProjectsTicketsService, ProjectsWebhooksDispatchService, ProjectsService, ProjectsWorkQueryService, ProjectsTicketSubresourcesService],
+  exports: [
+    ProjectsTicketsService,
+    ProjectsWebhooksDispatchService,
+    ProjectsService,
+    ProjectsWorkQueryService,
+    ProjectsTicketSubresourcesService,
+  ],
 })
 export class ProjectsModule {}

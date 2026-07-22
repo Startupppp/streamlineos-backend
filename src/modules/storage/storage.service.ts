@@ -9,6 +9,7 @@ import {
   HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { MediaCompressionService } from "../../common/media/media-compression.service";
 
 interface R2Config {
   region: string;
@@ -46,6 +47,8 @@ const MIME_MAP: Record<string, string> = {
 
 @Injectable()
 export class StorageService {
+  constructor(private readonly compression: MediaCompressionService) {}
+
   private getConfig(): R2Config {
     return {
       region: process.env.R2_REGION || "auto",
@@ -113,6 +116,25 @@ export class StorageService {
     const publicUrl = publicBase ? `${publicBase}/${key}` : key;
 
     return { url: publicUrl, key, size: buffer.length, mimeType };
+  }
+
+  async uploadCompressed(
+    buffer: Buffer,
+    folder = "uploads",
+    fileName = "file",
+    mimeType = "application/octet-stream",
+    bucketOverride?: string,
+    publicUrlOverride?: string,
+  ): Promise<UploadResult> {
+    const compressed = await this.compression.compress(buffer, mimeType, fileName);
+    return this.uploadFile(
+      compressed.buffer,
+      folder,
+      compressed.fileName,
+      compressed.mimeType,
+      bucketOverride,
+      publicUrlOverride,
+    );
   }
 
   async getFileUrl(key: string, expiresIn = 3600): Promise<string> {

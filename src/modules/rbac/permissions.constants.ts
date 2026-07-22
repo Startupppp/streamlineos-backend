@@ -185,7 +185,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:sensitive:view",
     resource: "hr:sensitive",
     action: "view",
-    description: "View employee sensitive fields (salary, bank, tax, government ID, medical)",
+    description:
+      "View employee sensitive fields (salary, bank, tax, government ID, medical)",
   },
   {
     name: "hr:sensitive:manage",
@@ -455,7 +456,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:cases:manage",
     resource: "hr:cases",
     action: "manage",
-    description: "Create and manage HR cases, investigations, and disciplinary actions",
+    description:
+      "Create and manage HR cases, investigations, and disciplinary actions",
   },
   {
     name: "hr:cases:confidential",
@@ -575,7 +577,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:retention:manage",
     resource: "hr:retention",
     action: "manage",
-    description: "Manage data retention policies and deletion/anonymization requests",
+    description:
+      "Manage data retention policies and deletion/anonymization requests",
   },
   {
     name: "hr:positions:view",
@@ -605,7 +608,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:compensation:manage",
     resource: "hr:compensation",
     action: "manage",
-    description: "Manage compensation planning cycles, calibration, and budgets",
+    description:
+      "Manage compensation planning cycles, calibration, and budgets",
   },
   {
     name: "hr:equity:view",
@@ -617,7 +621,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:equity:manage",
     resource: "hr:equity",
     action: "manage",
-    description: "Manage ESOP/equity grants, vesting, and exercises (sensitive)",
+    description:
+      "Manage ESOP/equity grants, vesting, and exercises (sensitive)",
   },
   {
     name: "hr:accommodations:view",
@@ -823,7 +828,8 @@ const HR_PERMISSIONS: Permission[] = [
     name: "hr:export:manage",
     resource: "hr:export",
     action: "manage",
-    description: "Export HR entity data (employees, attendance, assets, leave balances, documents)",
+    description:
+      "Export HR entity data (employees, attendance, assets, leave balances, documents)",
   },
 ];
 
@@ -1103,25 +1109,29 @@ const CRM_PERMISSIONS: Permission[] = [
     name: "crm:customer360:view",
     resource: "crm:customer360",
     action: "view",
-    description: "View Customer 360 aggregated profile (respects per-module permissions)",
+    description:
+      "View Customer 360 aggregated profile (respects per-module permissions)",
   },
   {
     name: "crm:settings:view",
     resource: "crm:settings",
     action: "view",
-    description: "View CRM configuration (pipelines, stages, options, validation rules, blueprints)",
+    description:
+      "View CRM configuration (pipelines, stages, options, validation rules, blueprints)",
   },
   {
     name: "crm:settings:manage",
     resource: "crm:settings",
     action: "manage",
-    description: "Manage CRM configuration (pipelines, stages, options, validation rules, blueprints)",
+    description:
+      "Manage CRM configuration (pipelines, stages, options, validation rules, blueprints)",
   },
   {
     name: "crm:ai:use",
     resource: "crm:ai",
     action: "use",
-    description: "Use CRM AI features (scoring, enrichment, briefs, email generation)",
+    description:
+      "Use CRM AI features (scoring, enrichment, briefs, email generation)",
   },
   {
     name: "crm:tasks:view",
@@ -1584,7 +1594,8 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     name: "support:settings:manage",
     resource: "support:settings",
     action: "manage",
-    description: "Manage support SLA policies, business hours, and routing settings",
+    description:
+      "Manage support SLA policies, business hours, and routing settings",
   },
   {
     name: "support:reports:view",
@@ -1602,7 +1613,8 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     name: "support:ai:invoke",
     resource: "support:ai",
     action: "invoke",
-    description: "Use support AI features (reply/macro improvement, translation)",
+    description:
+      "Use support AI features (reply/macro improvement, translation)",
   },
   {
     name: "support:queues:manage",
@@ -1638,7 +1650,8 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     name: "support:channels:manage",
     resource: "support:channels",
     action: "manage",
-    description: "Configure support channels (email inbox, chat, WhatsApp, SMS)",
+    description:
+      "Configure support channels (email inbox, chat, WhatsApp, SMS)",
   },
   {
     name: "support:knowledge-gaps:view",
@@ -1650,7 +1663,8 @@ const SUPPORT_PERMISSIONS: Permission[] = [
     name: "support:knowledge-gaps:manage",
     resource: "support:knowledge-gaps",
     action: "manage",
-    description: "Trigger gap detection, draft KB articles from gaps, and dismiss gaps",
+    description:
+      "Trigger gap detection, draft KB articles from gaps, and dismiss gaps",
   },
 ];
 
@@ -2059,7 +2073,8 @@ const ACCOUNTING_PERMISSIONS: Permission[] = [
     name: "accounting:ai:use",
     resource: "accounting:ai",
     action: "use",
-    description: "Use AI features in the accounting module (variance narration, reconciliation explanation, document extraction)",
+    description:
+      "Use AI features in the accounting module (variance narration, reconciliation explanation, document extraction)",
   },
 ];
 
@@ -2194,30 +2209,150 @@ const INVENTORY_PERMISSIONS: Permission[] = [
     action: "read",
     description: "View inventory reports",
   },
-  { name: "inventory:stock:reserve", resource: "inventory:stock", action: "reserve", description: "Reserve stock against sales orders or transfers" },
-  { name: "inventory:stock:reconcile", resource: "inventory:stock", action: "reconcile", description: "Reconcile stock ledger discrepancies" },
-  { name: "inventory:purchase-orders:update", resource: "inventory:purchase-orders", action: "update", description: "Update purchase orders" },
-  { name: "inventory:vendor-returns:manage", resource: "inventory:vendor-returns", action: "manage", description: "Manage vendor returns" },
-  { name: "inventory:sales-orders:update", resource: "inventory:sales-orders", action: "update", description: "Update sales orders" },
-  { name: "inventory:customer-returns:manage", resource: "inventory:customer-returns", action: "manage", description: "Manage customer returns" },
-  { name: "inventory:valuation:read", resource: "inventory:valuation", action: "read", description: "View inventory valuation and costing reports" },
-  { name: "inventory:settings:manage", resource: "inventory:settings", action: "manage", description: "Manage inventory settings and configuration" },
-  { name: "inventory:import", resource: "inventory:import", action: "import", description: "Import inventory data" },
-  { name: "inventory:export", resource: "inventory:export", action: "export", description: "Export inventory data" },
-  { name: "inventory:webhooks:manage", resource: "inventory:webhooks", action: "manage", description: "Manage inventory webhooks" },
-  { name: "inventory:quality:read", resource: "inventory:quality", action: "read", description: "View quality inspections and holds" },
-  { name: "inventory:quality:inspect", resource: "inventory:quality", action: "inspect", description: "Perform quality inspections" },
-  { name: "inventory:quality:release", resource: "inventory:quality", action: "release", description: "Release quality holds" },
-  { name: "inventory:quality:scrap", resource: "inventory:quality", action: "scrap", description: "Scrap stock via quality disposition" },
-  { name: "inventory:quality:recall", resource: "inventory:quality", action: "recall", description: "Manage product recalls" },
-  { name: "inventory:packages:manage", resource: "inventory:packages", action: "manage", description: "Manage shipment packages" },
-  { name: "inventory:shipments:manage", resource: "inventory:shipments", action: "manage", description: "Manage outbound shipments" },
-  { name: "inventory:loads:manage", resource: "inventory:loads", action: "manage", description: "Manage loads and containers" },
-  { name: "inventory:channels:manage", resource: "inventory:channels", action: "manage", description: "Manage sales channel stock publications" },
-  { name: "inventory:3pl:manage", resource: "inventory:3pl", action: "manage", description: "Manage 3PL warehouse connections" },
-  { name: "inventory:replenishment:manage", resource: "inventory:replenishment", action: "manage", description: "Manage reorder rules and replenishment" },
-  { name: "inventory:ai:propose", resource: "inventory:ai", action: "propose", description: "Propose AI-generated reorder draft POs and confirm them" },
-  { name: "inventory:ai:manage", resource: "inventory:ai", action: "manage", description: "Dismiss or update AI-generated inventory insights" },
+  {
+    name: "inventory:stock:reserve",
+    resource: "inventory:stock",
+    action: "reserve",
+    description: "Reserve stock against sales orders or transfers",
+  },
+  {
+    name: "inventory:stock:reconcile",
+    resource: "inventory:stock",
+    action: "reconcile",
+    description: "Reconcile stock ledger discrepancies",
+  },
+  {
+    name: "inventory:purchase-orders:update",
+    resource: "inventory:purchase-orders",
+    action: "update",
+    description: "Update purchase orders",
+  },
+  {
+    name: "inventory:vendor-returns:manage",
+    resource: "inventory:vendor-returns",
+    action: "manage",
+    description: "Manage vendor returns",
+  },
+  {
+    name: "inventory:sales-orders:update",
+    resource: "inventory:sales-orders",
+    action: "update",
+    description: "Update sales orders",
+  },
+  {
+    name: "inventory:customer-returns:manage",
+    resource: "inventory:customer-returns",
+    action: "manage",
+    description: "Manage customer returns",
+  },
+  {
+    name: "inventory:valuation:read",
+    resource: "inventory:valuation",
+    action: "read",
+    description: "View inventory valuation and costing reports",
+  },
+  {
+    name: "inventory:settings:manage",
+    resource: "inventory:settings",
+    action: "manage",
+    description: "Manage inventory settings and configuration",
+  },
+  {
+    name: "inventory:import",
+    resource: "inventory:import",
+    action: "import",
+    description: "Import inventory data",
+  },
+  {
+    name: "inventory:export",
+    resource: "inventory:export",
+    action: "export",
+    description: "Export inventory data",
+  },
+  {
+    name: "inventory:webhooks:manage",
+    resource: "inventory:webhooks",
+    action: "manage",
+    description: "Manage inventory webhooks",
+  },
+  {
+    name: "inventory:quality:read",
+    resource: "inventory:quality",
+    action: "read",
+    description: "View quality inspections and holds",
+  },
+  {
+    name: "inventory:quality:inspect",
+    resource: "inventory:quality",
+    action: "inspect",
+    description: "Perform quality inspections",
+  },
+  {
+    name: "inventory:quality:release",
+    resource: "inventory:quality",
+    action: "release",
+    description: "Release quality holds",
+  },
+  {
+    name: "inventory:quality:scrap",
+    resource: "inventory:quality",
+    action: "scrap",
+    description: "Scrap stock via quality disposition",
+  },
+  {
+    name: "inventory:quality:recall",
+    resource: "inventory:quality",
+    action: "recall",
+    description: "Manage product recalls",
+  },
+  {
+    name: "inventory:packages:manage",
+    resource: "inventory:packages",
+    action: "manage",
+    description: "Manage shipment packages",
+  },
+  {
+    name: "inventory:shipments:manage",
+    resource: "inventory:shipments",
+    action: "manage",
+    description: "Manage outbound shipments",
+  },
+  {
+    name: "inventory:loads:manage",
+    resource: "inventory:loads",
+    action: "manage",
+    description: "Manage loads and containers",
+  },
+  {
+    name: "inventory:channels:manage",
+    resource: "inventory:channels",
+    action: "manage",
+    description: "Manage sales channel stock publications",
+  },
+  {
+    name: "inventory:3pl:manage",
+    resource: "inventory:3pl",
+    action: "manage",
+    description: "Manage 3PL warehouse connections",
+  },
+  {
+    name: "inventory:replenishment:manage",
+    resource: "inventory:replenishment",
+    action: "manage",
+    description: "Manage reorder rules and replenishment",
+  },
+  {
+    name: "inventory:ai:propose",
+    resource: "inventory:ai",
+    action: "propose",
+    description: "Propose AI-generated reorder draft POs and confirm them",
+  },
+  {
+    name: "inventory:ai:manage",
+    resource: "inventory:ai",
+    action: "manage",
+    description: "Dismiss or update AI-generated inventory insights",
+  },
 ];
 
 const KB_PERMISSIONS: Permission[] = [
@@ -2528,7 +2663,8 @@ const BLOG_PERMISSIONS: Permission[] = [
     name: "blog:ai:use",
     resource: "blog:ai",
     action: "use",
-    description: "Use AI assist on blog posts (improve, summarize, suggest title)",
+    description:
+      "Use AI assist on blog posts (improve, summarize, suggest title)",
   },
 ];
 
@@ -3273,7 +3409,8 @@ const PROJECTS_AI_PERMISSIONS: Permission[] = [
     name: "projects:ai:use",
     resource: "projects:ai",
     action: "use",
-    description: "Use AI features on projects (summary, risks, client update, plan, task extraction, Q&A)",
+    description:
+      "Use AI features on projects (summary, risks, client update, plan, task extraction, Q&A)",
   },
 ];
 
@@ -3322,6 +3459,73 @@ const PROJECT_FORMS_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECT_TEAMS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:teams:view",
+    resource: "projects:teams",
+    action: "view",
+    description: "View teams and their members",
+  },
+  {
+    name: "projects:teams:create",
+    resource: "projects:teams",
+    action: "create",
+    description: "Create teams",
+  },
+  {
+    name: "projects:teams:update",
+    resource: "projects:teams",
+    action: "update",
+    description: "Update team details",
+  },
+  {
+    name: "projects:teams:delete",
+    resource: "projects:teams",
+    action: "delete",
+    description: "Delete teams",
+  },
+  {
+    name: "projects:teams:manage",
+    resource: "projects:teams",
+    action: "manage",
+    description: "Add or remove team members",
+  },
+];
+
+const PROJECT_MEMBERS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:members:view",
+    resource: "projects:members",
+    action: "view",
+    description: "View workspace members list for project assignment",
+    scopable: false,
+  },
+  {
+    name: "projects:members:manage",
+    resource: "projects:members",
+    action: "manage",
+    description: "Manage workspace members on projects",
+    scopable: false,
+  },
+];
+
+const PROJECT_CUSTOMERS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:customers:view",
+    resource: "projects:customers",
+    action: "view",
+    description: "View CRM organizations for project customer linking",
+    scopable: false,
+  },
+  {
+    name: "projects:customers:manage",
+    resource: "projects:customers",
+    action: "manage",
+    description: "Manage CRM organization links on projects",
+    scopable: false,
+  },
+];
+
 const PROJECT_PORTFOLIO_PERMISSIONS: Permission[] = [
   {
     name: "projects:portfolios:view",
@@ -3360,7 +3564,8 @@ const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
     name: "projects:workflow:manage",
     resource: "projects:workflow",
     action: "manage",
-    description: "Create, update, and delete workflow transition rules and WIP limits",
+    description:
+      "Create, update, and delete workflow transition rules and WIP limits",
   },
 ];
 
@@ -3461,32 +3666,147 @@ const FEEDBUCKET_PERMISSIONS: Permission[] = [
 ];
 
 const NOTIFICATIONS_PERMISSIONS: Permission[] = [
-  { name: "notifications:events:view", resource: "notifications:events", action: "view", description: "View the notification event catalog" },
-  { name: "notifications:events:manage", resource: "notifications:events", action: "manage", description: "Edit event policy and emit test events" },
-  { name: "notifications:providers:view", resource: "notifications:providers", action: "view", description: "View notification providers" },
-  { name: "notifications:providers:manage", resource: "notifications:providers", action: "manage", description: "Configure, test, and remove notification providers" },
-  { name: "notifications:policy:view", resource: "notifications:policy", action: "view", description: "View notification policy defaults" },
-  { name: "notifications:policy:manage", resource: "notifications:policy", action: "manage", description: "Set organization notification policy defaults" },
-  { name: "notifications:templates:view", resource: "notifications:templates", action: "view", description: "View notification templates" },
-  { name: "notifications:templates:manage", resource: "notifications:templates", action: "manage", description: "Create, edit, and delete notification templates" },
-  { name: "notifications:broadcasts:view", resource: "notifications:broadcasts", action: "view", description: "View broadcasts" },
-  { name: "notifications:broadcasts:manage", resource: "notifications:broadcasts", action: "manage", description: "Create, schedule, send, and cancel broadcasts" },
+  {
+    name: "notifications:events:view",
+    resource: "notifications:events",
+    action: "view",
+    description: "View the notification event catalog",
+  },
+  {
+    name: "notifications:events:manage",
+    resource: "notifications:events",
+    action: "manage",
+    description: "Edit event policy and emit test events",
+  },
+  {
+    name: "notifications:providers:view",
+    resource: "notifications:providers",
+    action: "view",
+    description: "View notification providers",
+  },
+  {
+    name: "notifications:providers:manage",
+    resource: "notifications:providers",
+    action: "manage",
+    description: "Configure, test, and remove notification providers",
+  },
+  {
+    name: "notifications:policy:view",
+    resource: "notifications:policy",
+    action: "view",
+    description: "View notification policy defaults",
+  },
+  {
+    name: "notifications:policy:manage",
+    resource: "notifications:policy",
+    action: "manage",
+    description: "Set organization notification policy defaults",
+  },
+  {
+    name: "notifications:templates:view",
+    resource: "notifications:templates",
+    action: "view",
+    description: "View notification templates",
+  },
+  {
+    name: "notifications:templates:manage",
+    resource: "notifications:templates",
+    action: "manage",
+    description: "Create, edit, and delete notification templates",
+  },
+  {
+    name: "notifications:broadcasts:view",
+    resource: "notifications:broadcasts",
+    action: "view",
+    description: "View broadcasts",
+  },
+  {
+    name: "notifications:broadcasts:manage",
+    resource: "notifications:broadcasts",
+    action: "manage",
+    description: "Create, schedule, send, and cancel broadcasts",
+  },
 ];
 
 const SIGN_PERMISSIONS: Permission[] = [
-  { name: "sign:documents:upload", resource: "sign:documents", action: "upload", description: "Upload documents to a SignOS envelope" },
-  { name: "sign:documents:view", resource: "sign:documents", action: "view", description: "View SignOS documents" },
-  { name: "sign:envelope:create", resource: "sign:envelope", action: "create", description: "Create and edit SignOS envelopes" },
-  { name: "sign:envelope:view", resource: "sign:envelope", action: "view", description: "View SignOS envelopes you sent or were assigned" },
-  { name: "sign:envelope:view_all", resource: "sign:envelope", action: "view_all", description: "View all SignOS envelopes in the organization" },
-  { name: "sign:envelope:send", resource: "sign:envelope", action: "send", description: "Send and resend SignOS envelopes" },
-  { name: "sign:envelope:void", resource: "sign:envelope", action: "void", description: "Void a sent SignOS envelope" },
-  { name: "sign:envelope:correct", resource: "sign:envelope", action: "correct", description: "Correct recipients or extend expiration on a sent envelope" },
-  { name: "sign:template:manage", resource: "sign:template", action: "manage", description: "Create, publish, and manage SignOS templates" },
-  { name: "sign:bulk_send:run", resource: "sign:bulk_send", action: "run", description: "Run SignOS bulk send jobs" },
-  { name: "sign:admin:manage", resource: "sign:admin", action: "manage", description: "Manage SignOS admin settings, branding, and watermark policy" },
-  { name: "sign:audit:view", resource: "sign:audit", action: "view", description: "View the SignOS audit trail" },
-  { name: "sign:certificate:download", resource: "sign:certificate", action: "download", description: "Download SignOS certificates and final signed PDFs" },
+  {
+    name: "sign:documents:upload",
+    resource: "sign:documents",
+    action: "upload",
+    description: "Upload documents to a SignOS envelope",
+  },
+  {
+    name: "sign:documents:view",
+    resource: "sign:documents",
+    action: "view",
+    description: "View SignOS documents",
+  },
+  {
+    name: "sign:envelope:create",
+    resource: "sign:envelope",
+    action: "create",
+    description: "Create and edit SignOS envelopes",
+  },
+  {
+    name: "sign:envelope:view",
+    resource: "sign:envelope",
+    action: "view",
+    description: "View SignOS envelopes you sent or were assigned",
+  },
+  {
+    name: "sign:envelope:view_all",
+    resource: "sign:envelope",
+    action: "view_all",
+    description: "View all SignOS envelopes in the organization",
+  },
+  {
+    name: "sign:envelope:send",
+    resource: "sign:envelope",
+    action: "send",
+    description: "Send and resend SignOS envelopes",
+  },
+  {
+    name: "sign:envelope:void",
+    resource: "sign:envelope",
+    action: "void",
+    description: "Void a sent SignOS envelope",
+  },
+  {
+    name: "sign:envelope:correct",
+    resource: "sign:envelope",
+    action: "correct",
+    description: "Correct recipients or extend expiration on a sent envelope",
+  },
+  {
+    name: "sign:template:manage",
+    resource: "sign:template",
+    action: "manage",
+    description: "Create, publish, and manage SignOS templates",
+  },
+  {
+    name: "sign:bulk_send:run",
+    resource: "sign:bulk_send",
+    action: "run",
+    description: "Run SignOS bulk send jobs",
+  },
+  {
+    name: "sign:admin:manage",
+    resource: "sign:admin",
+    action: "manage",
+    description: "Manage SignOS admin settings, branding, and watermark policy",
+  },
+  {
+    name: "sign:audit:view",
+    resource: "sign:audit",
+    action: "view",
+    description: "View the SignOS audit trail",
+  },
+  {
+    name: "sign:certificate:download",
+    resource: "sign:certificate",
+    action: "download",
+    description: "Download SignOS certificates and final signed PDFs",
+  },
 ];
 
 export const PERMISSIONS: Permission[] = [
@@ -3519,14 +3839,37 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_INCIDENTS_PERMISSIONS,
   ...PROJECT_FORMS_PERMISSIONS,
   ...PROJECT_PORTFOLIO_PERMISSIONS,
+  ...PROJECT_TEAMS_PERMISSIONS,
+  ...PROJECT_MEMBERS_PERMISSIONS,
+  ...PROJECT_CUSTOMERS_PERMISSIONS,
   ...PROJECT_WORKFLOW_PERMISSIONS,
   ...FEEDBUCKET_PERMISSIONS,
   ...AI_SUMMARIES_PERMISSIONS,
   ...EXECUTIVE_BRIEF_PERMISSIONS,
-  { name: "mail:inbox:view", resource: "mail:inbox", action: "view", description: "View unified mail inbox and messages" },
-  { name: "mail:messages:send", resource: "mail:messages", action: "send", description: "Send and reply to emails" },
-  { name: "mail:messages:manage", resource: "mail:messages", action: "manage", description: "Archive, trash, star, and mark email messages" },
-  { name: "mail:ai:use", resource: "mail:ai", action: "use", description: "Use AI inbox summary, thread summary, and draft generation" },
+  {
+    name: "mail:inbox:view",
+    resource: "mail:inbox",
+    action: "view",
+    description: "View unified mail inbox and messages",
+  },
+  {
+    name: "mail:messages:send",
+    resource: "mail:messages",
+    action: "send",
+    description: "Send and reply to emails",
+  },
+  {
+    name: "mail:messages:manage",
+    resource: "mail:messages",
+    action: "manage",
+    description: "Archive, trash, star, and mark email messages",
+  },
+  {
+    name: "mail:ai:use",
+    resource: "mail:ai",
+    action: "use",
+    description: "Use AI inbox summary, thread summary, and draft generation",
+  },
 ];
 
 const SCOPABLE_PERMISSIONS = new Set(
@@ -3789,6 +4132,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -3877,6 +4223,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -3926,6 +4275,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -3969,6 +4321,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -4006,6 +4361,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -4047,6 +4405,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "projects:timesheets:view",
@@ -4143,6 +4504,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "reports:view",
@@ -4288,6 +4652,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "projects:incidents:view",
     "projects:forms:view",
     "projects:portfolios:view",
+    "projects:teams:view",
+    "projects:members:view",
+    "projects:customers:view",
     "projects:programs:view",
     "projects:workflow:view",
     "reports:view",

@@ -3,6 +3,7 @@ import { and, eq, ilike, inArray, or } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
+  projects,
   ticketActivityLog,
   ticketCommentMentions,
   users,
@@ -41,6 +42,7 @@ interface TicketChanges {
 interface ProcessMentionsInput {
   orgId: string;
   ticketId: number;
+  ticketNumber: number;
   ticketTitle: string;
   projectId: number | null;
   commentId: number;
@@ -275,9 +277,22 @@ export class ProjectsActivityService {
       return;
     }
 
-    const link = input.projectId
-      ? `/projects/${input.projectId}?ticket=${input.ticketId}&comment=${input.commentId}`
-      : undefined;
+    let ticketLink: string | undefined;
+    let ticketKey: string | undefined;
+    if (input.projectId) {
+      const [projectRow] = await this.db
+        .select({ key: projects.key })
+        .from(projects)
+        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId)))
+        .limit(1);
+
+      ticketKey = projectRow?.key
+        ? `${projectRow.key}-${input.ticketNumber}`
+        : String(input.ticketNumber);
+      const base = `/projects/${input.projectId}/tickets/${encodeURIComponent(ticketKey)}`;
+      ticketLink = `${base}?comment=${input.commentId}`;
+    }
+
     await Promise.all(
       mentioned.map((user) =>
         this.notifications
@@ -285,10 +300,19 @@ export class ProjectsActivityService {
             orgId: input.orgId,
             userId: user.id,
             type: "INFO",
+            category: "PROJECTS",
+            sourceModule: "projects",
+            eventKey: "projects:comment:mention",
+            entityType: "ticket",
+            entityId: String(input.ticketId),
             title: "You were mentioned",
             message: `${input.authorName} mentioned you in a comment on "${input.ticketTitle}".`,
-            link,
-            metadata: { ticketId: input.ticketId, commentId: input.commentId },
+            link: ticketLink,
+            metadata: {
+              ticketId: input.ticketId,
+              commentId: input.commentId,
+              ticketKey: ticketKey ?? null,
+            },
           })
           .catch((error) => logger.error("Failed to notify mentioned user", { error })),
       ),

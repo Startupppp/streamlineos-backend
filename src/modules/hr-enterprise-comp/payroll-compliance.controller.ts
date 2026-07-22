@@ -56,15 +56,15 @@ export class PayrollComplianceController {
     return this.service.createVarianceApproval(u.orgId, u.userId, body);
   }
 
-  @Patch("variance/:id/resolve")
+  @Patch("variance/:varianceId/resolve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   resolveVariance(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("varianceId", ParseIntPipe) varianceId: number,
     @Body(new ZodValidationPipe(resolveVarianceSchema)) body: ResolveVarianceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.resolveVarianceApproval(u.orgId, id, u.userId, body);
+    return this.service.resolveVarianceApproval(u.orgId, varianceId, u.userId, body);
   }
 
   @Get("arrears")
@@ -88,14 +88,14 @@ export class PayrollComplianceController {
     return this.service.createArrears(u.orgId, u.userId, body);
   }
 
-  @Patch("arrears/:id/apply")
+  @Patch("arrears/:arrearId/apply")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   applyArrears(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("arrearId", ParseIntPipe) arrearId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.applyArrears(u.orgId, id, u.userId);
+    return this.service.applyArrears(u.orgId, arrearId, u.userId);
   }
 
   @Get("tasks")
@@ -119,15 +119,15 @@ export class PayrollComplianceController {
     return this.service.createComplianceTask(u.orgId, u.userId, body);
   }
 
-  @Patch("tasks/:id")
+  @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   updateTask(
-    @Param("id", ParseIntPipe) id: number,
+    @Param("taskId", ParseIntPipe) taskId: number,
     @Body(new ZodValidationPipe(updateComplianceTaskSchema)) body: UpdateComplianceTaskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateComplianceTask(u.orgId, id, u.userId, body);
+    return this.service.updateComplianceTask(u.orgId, taskId, u.userId, body);
   }
 
   @Post("tasks/seed-presets")

@@ -8,6 +8,7 @@ export const createPageSchema = z.object({
   spaceId: z.coerce.number().int().positive().nullable().optional(),
   title: z.string().max(500).optional(),
   templateId: z.coerce.number().int().positive().nullable().optional(),
+  projectId: z.coerce.number().int().positive().nullable().optional(),
 });
 export type CreatePageInput = z.infer<typeof createPageSchema>;
 
@@ -56,6 +57,11 @@ export const searchPagesSchema = z.object({
   q: z.string().trim().max(200).default(""),
 });
 export type SearchPagesInput = z.infer<typeof searchPagesSchema>;
+
+export const listPagesSchema = z.object({
+  projectId: z.coerce.number().int().positive().optional(),
+});
+export type ListPagesInput = z.infer<typeof listPagesSchema>;
 
 export const setVisibilitySchema = z.object({
   visibility: z.enum(["private", "org", "public"]),

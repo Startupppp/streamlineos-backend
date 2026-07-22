@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, desc, ilike, inArray, or, sql } from "drizzle-orm";
-import { crmOrganizations, contacts, deals, leads } from "../../db/schema";
+import { crmOrganizations, contacts, deals, leads, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -65,6 +65,16 @@ export class CrmOrganizationsService {
       searchTerm ? ilike(crmOrganizations.name, `%${escapeLike(searchTerm)}%`) : undefined,
     );
 
+    const openRequestsSq = this.db
+      .select({
+        customerId: tickets.customerId,
+        openCount: count().as("open_count"),
+      })
+      .from(tickets)
+      .where(and(eq(tickets.orgId, orgId), sql`${tickets.customerId} IS NOT NULL`))
+      .groupBy(tickets.customerId)
+      .as("open_requests_sq");
+
     const [organizations, countRow] = await Promise.all([
       this.db
         .select({
@@ -77,8 +87,10 @@ export class CrmOrganizationsService {
           linkedinUrl: crmOrganizations.linkedinUrl,
           description: crmOrganizations.description,
           createdAt: crmOrganizations.createdAt,
+          openRequestCount: sql<number>`COALESCE(${openRequestsSq.openCount}, 0)`,
         })
         .from(crmOrganizations)
+        .leftJoin(openRequestsSq, eq(openRequestsSq.customerId, crmOrganizations.id))
         .where(where)
         .orderBy(desc(crmOrganizations.createdAt))
         .limit(limit)

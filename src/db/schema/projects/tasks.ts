@@ -9,6 +9,7 @@ import { organizations, users } from "../auth";
 import { projects, sprints, customStates, modules, cycles } from "./core";
 import { timesheetExports } from "./timesheet-payroll";
 import { timesheetPeriods, timerSessions } from "./timesheet-core";
+import { crmOrganizations } from "../crm/contacts";
 
 export const tickets = pgTable("tickets", {
   id: serial("id").primaryKey(),
@@ -49,6 +50,7 @@ export const tickets = pgTable("tickets", {
   }>(),
   recurrenceParentId: integer("recurrence_parent_id"),
   recurrenceNextRunAt: timestamp("recurrence_next_run_at", { withTimezone: true }),
+  customerId: integer("customer_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
@@ -64,6 +66,7 @@ export const tickets = pgTable("tickets", {
   index("idx_tickets_cycle").on(t.cycleId),
   index("idx_tickets_parent").on(t.parentTicketId),
   index("idx_tickets_recurrence_next").on(t.recurrenceNextRunAt).where(sql`is_recurring = true`),
+  index("idx_tickets_customer").on(t.customerId),
 ]);
 
 export const ticketAssignees = pgTable("ticket_assignees", {

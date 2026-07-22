@@ -11,6 +11,7 @@
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
+import { projects } from "../projects";
 import { kbSpaces } from "./spaces";
 
 export type KbPageContent =
@@ -48,9 +49,11 @@ export const kbPages = pgTable(
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
     sourceArticleId: integer("source_article_id"),
+    projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
+    index("idx_kb_pages_project_id").on(table.projectId),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),
     index("idx_kb_pages_org_updated").on(table.orgId, table.updatedAt),
     index("idx_kb_pages_parent").on(table.parentPageId),

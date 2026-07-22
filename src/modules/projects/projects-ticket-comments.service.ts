@@ -51,7 +51,7 @@ export class ProjectsTicketCommentsService {
   async addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)),
-      columns: { id: true, title: true, projectId: true },
+      columns: { id: true, title: true, projectId: true, ticketNumber: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -91,6 +91,7 @@ export class ProjectsTicketCommentsService {
       await this.activity.processCommentMentions({
         orgId: u.orgId,
         ticketId,
+        ticketNumber: ticket.ticketNumber,
         ticketTitle: ticket.title,
         projectId: ticket.projectId,
         commentId: comment.id,

@@ -30,33 +30,35 @@ export class ProjectsAutomationsController {
   }
 
   @Post(":projectId/automations")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(201)
   create(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.createAutomation(u.orgId, projectId, u.userId, body);
+    return this.automations.createAutomation(u, projectId, body);
   }
 
   @Patch(":projectId/automations/:automationId")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   update(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body(new ZodValidationPipe(updateAutomationSchema)) body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.updateAutomation(u.orgId, automationId, body);
+    return this.automations.updateAutomation(u, projectId, automationId, body);
   }
 
   @Delete(":projectId/automations/:automationId")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(204)
   delete(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("automationId", ParseIntPipe) automationId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.deleteAutomation(u.orgId, automationId);
+    return this.automations.deleteAutomation(u, projectId, automationId);
   }
 }

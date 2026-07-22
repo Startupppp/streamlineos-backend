@@ -38,7 +38,7 @@ export class ProjectsByIdController {
   }
 
   @Patch(":projectId")
-  @RequirePermission("projects:update")
+  @RequirePermission("projects:view")
   updateProject(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,

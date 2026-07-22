@@ -1,13 +1,85 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, sql, isNull, isNotNull, inArray, lt, ilike, or } from "drizzle-orm";
-import { notifications } from "../../db/schema";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  isNull,
+  isNotNull,
+  inArray,
+  lt,
+  ilike,
+  or,
+} from "drizzle-orm";
+import { notifications, tickets, projects, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListInput, SnoozeInput, BulkActionInput } from "./dto/notification.schemas";
+import type {
+  ListInput,
+  SnoozeInput,
+  BulkActionInput,
+} from "./dto/notification.schemas";
 import { NotificationEventService } from "./notification-event.service";
 import { WebPushService } from "../realtime/web-push.service";
+
+export interface NotificationTicketContext {
+  ticketId: number;
+  ticketKey: string;
+  priority: string | null;
+  status: string;
+  type: string;
+  assignee: {
+    id: string;
+    name: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    image: string | null;
+  } | null;
+}
+
+type NotificationListRow = {
+  id: number;
+  orgId: string;
+  userId: string | null;
+  type: string;
+  priority: string;
+  category: string;
+  sourceModule: string | null;
+  eventKey: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  reason: string | null;
+  title: string;
+  message: string;
+  link: string | null;
+  isRead: boolean;
+  pinned: boolean;
+  channel: string;
+  metadata: Record<string, unknown> | null;
+  archivedAt: Date | null;
+  snoozedUntil: Date | null;
+  createdAt: Date;
+};
+
+function extractTicketId(row: {
+  entityType: string | null;
+  entityId: string | null;
+  metadata: Record<string, unknown> | null;
+}): number | null {
+  if (row.entityType === "ticket" && row.entityId) {
+    const fromEntity = Number.parseInt(row.entityId, 10);
+    if (Number.isFinite(fromEntity)) return fromEntity;
+  }
+  const metaId = row.metadata?.ticketId;
+  if (typeof metaId === "number" && Number.isFinite(metaId)) return metaId;
+  if (typeof metaId === "string") {
+    const fromMeta = Number.parseInt(metaId, 10);
+    if (Number.isFinite(fromMeta)) return fromMeta;
+  }
+  return null;
+}
 
 export interface AnnounceInput {
   id: number;
@@ -23,8 +95,24 @@ export interface AnnounceInput {
 }
 
 export type NotificationCategoryValue =
-  | "SECURITY" | "CRM" | "HRMS" | "BILLING" | "AI" | "PROJECTS" | "WORKFLOW" | "MARKETING" | "SYSTEM"
-  | "CHAT" | "PAYROLL" | "RECRUITMENT" | "KNOWLEDGE" | "SIGN" | "INVENTORY" | "SURVEYS" | "CALENDAR" | "SUPPORT";
+  | "SECURITY"
+  | "CRM"
+  | "HRMS"
+  | "BILLING"
+  | "AI"
+  | "PROJECTS"
+  | "WORKFLOW"
+  | "MARKETING"
+  | "SYSTEM"
+  | "CHAT"
+  | "PAYROLL"
+  | "RECRUITMENT"
+  | "KNOWLEDGE"
+  | "SIGN"
+  | "INVENTORY"
+  | "SURVEYS"
+  | "CALENDAR"
+  | "SUPPORT";
 
 export interface CreateNotificationInput {
   orgId: string;
@@ -54,6 +142,8 @@ const LIST_COLUMNS = {
   category: notifications.category,
   sourceModule: notifications.sourceModule,
   eventKey: notifications.eventKey,
+  entityType: notifications.entityType,
+  entityId: notifications.entityId,
   reason: notifications.reason,
   title: notifications.title,
   message: notifications.message,
@@ -61,6 +151,7 @@ const LIST_COLUMNS = {
   isRead: notifications.isRead,
   pinned: notifications.pinned,
   channel: notifications.channel,
+  metadata: notifications.metadata,
   archivedAt: notifications.archivedAt,
   snoozedUntil: notifications.snoozedUntil,
   createdAt: notifications.createdAt,
@@ -171,12 +262,17 @@ export class NotificationsService {
     const key = `notifications:list:${userId}:${orgId}:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}:${filters.search ?? ""}`;
     return this.cache.cached(
       key,
-      () => this.queryNotifications(orgId, userId, { ...filters, limit, section }),
+      () =>
+        this.queryNotifications(orgId, userId, { ...filters, limit, section }),
       CACHE_TTL.SHORT,
     );
   }
 
-  private queryNotifications(orgId: string, userId: string, filters: ListInput & { section: string }) {
+  private async queryNotifications(
+    orgId: string,
+    userId: string,
+    filters: ListInput & { section: string },
+  ) {
     const conditions = [
       eq(notifications.orgId, orgId),
       eq(notifications.userId, userId),
@@ -215,7 +311,11 @@ export class NotificationsService {
         break;
     }
 
-    if (filters.category && filters.section !== "SYSTEM" && filters.section !== "APPROVALS") {
+    if (
+      filters.category &&
+      filters.section !== "SYSTEM" &&
+      filters.section !== "APPROVALS"
+    ) {
       conditions.push(eq(notifications.category, filters.category));
     }
     if (filters.priority) {
@@ -226,25 +326,105 @@ export class NotificationsService {
     }
     if (filters.search) {
       const term = `%${filters.search}%`;
-      const searchCondition = or(ilike(notifications.title, term), ilike(notifications.message, term));
+      const searchCondition = or(
+        ilike(notifications.title, term),
+        ilike(notifications.message, term),
+      );
       if (searchCondition) conditions.push(searchCondition);
     }
     if (filters.cursor) {
       conditions.push(lt(notifications.id, filters.cursor));
     }
 
-    return this.db
+    const rows = await this.db
       .select(LIST_COLUMNS)
       .from(notifications)
       .where(and(...conditions))
       .orderBy(desc(notifications.id))
       .limit(filters.limit);
+
+    return this.attachTicketContext(orgId, rows);
+  }
+
+  private async attachTicketContext(
+    orgId: string,
+    rows: NotificationListRow[],
+  ) {
+    const ticketIds = Array.from(
+      new Set(
+        rows
+          .map((row) => extractTicketId(row))
+          .filter((id): id is number => id != null),
+      ),
+    );
+    if (ticketIds.length === 0)
+      return rows.map((row) => ({
+        ...row,
+        ticketContext: null as NotificationTicketContext | null,
+      }));
+
+    const ticketRows = await this.db
+      .select({
+        id: tickets.id,
+        ticketNumber: tickets.ticketNumber,
+        priority: tickets.priority,
+        status: tickets.status,
+        type: tickets.type,
+        projectKey: projects.key,
+        assigneeId: users.id,
+        assigneeName: users.name,
+        assigneeFirstName: users.firstName,
+        assigneeLastName: users.lastName,
+        assigneeImage: users.image,
+      })
+      .from(tickets)
+      .leftJoin(projects, eq(projects.id, tickets.projectId))
+      .leftJoin(users, eq(users.id, tickets.assigneeId))
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketIds)));
+
+    const byId = new Map<number, NotificationTicketContext>();
+    for (const ticket of ticketRows) {
+      const ticketKey = ticket.projectKey
+        ? `${ticket.projectKey}-${ticket.ticketNumber}`
+        : String(ticket.ticketNumber);
+      byId.set(ticket.id, {
+        ticketId: ticket.id,
+        ticketKey,
+        priority: ticket.priority ?? null,
+        status: ticket.status,
+        type: ticket.type,
+        assignee: ticket.assigneeId
+          ? {
+              id: ticket.assigneeId,
+              name: ticket.assigneeName ?? null,
+              firstName: ticket.assigneeFirstName ?? null,
+              lastName: ticket.assigneeLastName ?? null,
+              image: ticket.assigneeImage ?? null,
+            }
+          : null,
+      });
+    }
+
+    return rows.map((row) => {
+      const ticketId = extractTicketId(row);
+      return {
+        ...row,
+        ticketContext: ticketId != null ? (byId.get(ticketId) ?? null) : null,
+      };
+    });
   }
 
   async approve(orgId: string, userId: string, notificationId: number) {
     await this.db
       .update(notifications)
-      .set({ isRead: true, metadata: { approved: true, approvedAt: new Date().toISOString(), approvedBy: userId } })
+      .set({
+        isRead: true,
+        metadata: {
+          approved: true,
+          approvedAt: new Date().toISOString(),
+          approvedBy: userId,
+        },
+      })
       .where(
         and(
           eq(notifications.id, notificationId),
@@ -260,7 +440,14 @@ export class NotificationsService {
   async reject(orgId: string, userId: string, notificationId: number) {
     await this.db
       .update(notifications)
-      .set({ isRead: true, metadata: { rejected: true, rejectedAt: new Date().toISOString(), rejectedBy: userId } })
+      .set({
+        isRead: true,
+        metadata: {
+          rejected: true,
+          rejectedAt: new Date().toISOString(),
+          rejectedBy: userId,
+        },
+      })
       .where(
         and(
           eq(notifications.id, notificationId),
@@ -413,7 +600,12 @@ export class NotificationsService {
     return { success: true };
   }
 
-  async snooze(orgId: string, userId: string, notificationId: number, input: SnoozeInput) {
+  async snooze(
+    orgId: string,
+    userId: string,
+    notificationId: number,
+    input: SnoozeInput,
+  ) {
     await this.db
       .update(notifications)
       .set({ snoozedUntil: new Date(input.snoozedUntil) })
@@ -484,7 +676,11 @@ export class NotificationsService {
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
-        and(eq(notifications.orgId, orgId), eq(notifications.userId, userId), isNull(notifications.deletedAt)),
+        and(
+          eq(notifications.orgId, orgId),
+          eq(notifications.userId, userId),
+          isNull(notifications.deletedAt),
+        ),
       );
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });

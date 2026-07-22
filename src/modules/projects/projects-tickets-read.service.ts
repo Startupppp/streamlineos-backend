@@ -278,6 +278,9 @@ export class ProjectsTicketsReadService {
         sprint: {
           columns: { id: true, name: true },
         },
+        customer: {
+          columns: { id: true, name: true },
+        },
         assignee: { columns: userCols },
         reporter: { columns: userCols },
         assignees: {

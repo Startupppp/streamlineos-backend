@@ -47,6 +47,8 @@ import { ProjectsApprovalsModule } from "./modules/projects-approvals/projects-a
 import { ProjectsGovernanceModule } from "./modules/projects-governance/projects-governance.module";
 import { ProjectsMeetingsModule } from "./modules/projects-meetings/projects-meetings.module";
 import { ProjectsPortfoliosModule } from "./modules/projects-portfolios/projects-portfolios.module";
+import { ProjectsTeamsModule } from "./modules/projects-teams/projects-teams.module";
+import { ProjectsCommentDraftsModule } from "./modules/projects-comment-drafts/projects-comment-drafts.module";
 import { ProjectsIncidentsModule } from "./modules/projects-incidents/projects-incidents.module";
 import { ProjectsWorkflowModule } from "./modules/projects-workflow/projects-workflow.module";
 import { ProjectsFormsModule } from "./modules/projects-forms/projects-forms.module";
@@ -203,6 +205,8 @@ import { MeService } from "./me/me.service";
     OrganizationModule,
     BranchesModule,
     ProjectsPortfoliosModule,
+    ProjectsTeamsModule,
+    ProjectsCommentDraftsModule,
     ProjectsExecutionModule,
     ProjectsQaModule,
     ProjectsClientPortalModule,

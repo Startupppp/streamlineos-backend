@@ -1,11 +1,13 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, max, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   auditLogs,
   organizationMembers,
+  projectTeamMembers,
+  projectTeams,
   userSessions,
   users,
 } from "../../db/schema";
@@ -120,6 +122,24 @@ export class UsersService {
           ? sortDir(users.isActive)
           : sortDir(organizationMembers.joinedAt);
 
+    const lastSeenSubquery = this.db
+      .select({ userId: userSessions.userId, lastSeenAt: max(userSessions.lastActive).as("last_seen_at") })
+      .from(userSessions)
+      .where(eq(userSessions.isRevoked, false))
+      .groupBy(userSessions.userId)
+      .as("last_seen");
+
+    const teamsSubquery = this.db
+      .select({
+        userId: projectTeamMembers.userId,
+        teamNames: sql<string>`string_agg(${projectTeams.name}, ',' ORDER BY ${projectTeams.name})`.as("team_names"),
+      })
+      .from(projectTeamMembers)
+      .innerJoin(projectTeams, eq(projectTeamMembers.teamId, projectTeams.id))
+      .where(eq(projectTeamMembers.orgId, orgId))
+      .groupBy(projectTeamMembers.userId)
+      .as("user_teams");
+
     const [data, countResult] = await Promise.all([
       this.db
         .select({
@@ -138,9 +158,13 @@ export class UsersService {
           phone: users.phone,
           createdAt: users.createdAt,
           joinedAt: organizationMembers.joinedAt,
+          lastSeenAt: lastSeenSubquery.lastSeenAt,
+          teamNames: teamsSubquery.teamNames,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(lastSeenSubquery, eq(lastSeenSubquery.userId, users.id))
+        .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
         .where(and(...conditions))
         .orderBy(sortExpr)
         .limit(limit)
@@ -155,7 +179,11 @@ export class UsersService {
     const total = countResult[0]?.total ?? 0;
 
     return {
-      data,
+      data: data.map((row) => ({
+        ...row,
+        lastSeenAt: row.lastSeenAt ?? null,
+        teams: row.teamNames ? row.teamNames.split(",") : [],
+      })),
       pagination: {
         page,
         limit,

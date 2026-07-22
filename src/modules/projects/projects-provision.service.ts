@@ -54,6 +54,7 @@ export class ProjectsProvisionService {
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,
           status: "ACTIVE",
+          priority: input.priority ?? null,
           settings: {
             modules: input.modules ?? { sprints: true, epics: true, timeTracking: true, wiki: true },
             ...(input.projectType !== undefined ? { projectType: input.projectType } : {}),

@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, isNotNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { kbPages, kbPageLinks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -51,10 +51,11 @@ export class KbPageTreeService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  async getTree(user: CurrentUserContext): Promise<{
+  async getTree(user: CurrentUserContext, projectId?: number): Promise<{
     id: number;
     parentPageId: number | null;
     spaceId: number | null;
+    projectId: number | null;
     title: string;
     icon: string | null;
     sortOrder: number;
@@ -64,11 +65,16 @@ export class KbPageTreeService {
     hasChildren: boolean;
   }[]> {
     const orgId = user.orgId;
+    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)];
+    if (projectId !== undefined) {
+      filters.push(eq(kbPages.projectId, projectId));
+    }
     const rows = await this.db
       .select({
         id: kbPages.id,
         parentPageId: kbPages.parentPageId,
         spaceId: kbPages.spaceId,
+        projectId: kbPages.projectId,
         title: kbPages.title,
         icon: kbPages.icon,
         sortOrder: kbPages.sortOrder,
@@ -77,7 +83,7 @@ export class KbPageTreeService {
         status: kbPages.status,
       })
       .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)))
+      .where(and(...filters))
       .orderBy(kbPages.sortOrder);
 
     const childSet = new Set(rows.map((r) => r.parentPageId).filter((id): id is number => id !== null));

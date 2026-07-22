@@ -128,15 +128,15 @@ export class HrAnalyticsPlusController {
     return this.svc.createHeadcountPlan(u.orgId, parsed);
   }
 
-  @Patch("workforce/plans/:id")
+  @Patch("workforce/plans/:planId")
   @RequirePermission("hr:workforce:manage")
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
-    @Param("id", ParseIntPipe) id: number,
+    @Param("planId", ParseIntPipe) planId: number,
     @Body() body: unknown,
   ) {
     const parsed = updatePlanSchema.parse(body);
-    return this.svc.updateHeadcountPlan(u.orgId, id, parsed);
+    return this.svc.updateHeadcountPlan(u.orgId, planId, parsed);
   }
 
   @Get("workforce/budget-vs-actual")

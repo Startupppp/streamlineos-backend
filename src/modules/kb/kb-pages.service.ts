@@ -98,6 +98,7 @@ export class KbPagesService {
         sortOrder: maxSort + 100,
         createdById: user.userId,
         lastEditedById: user.userId,
+        projectId: input.projectId ?? null,
       })
       .returning();
     if (!page) throw new Error("Failed to create page");

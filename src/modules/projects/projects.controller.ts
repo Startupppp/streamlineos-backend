@@ -29,6 +29,7 @@ import {
   removeMemberSchema,
   updateCustomStateSchema,
   updateLabelSchema,
+  updateProjectMemberRoleSchema,
   type AddMemberInput,
   type CreateLabelInput,
   type CreateProjectInput,
@@ -38,6 +39,7 @@ import {
   type RemoveMemberInput,
   type UpdateCustomStateInput,
   type UpdateLabelInput,
+  type UpdateProjectMemberRoleInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -125,25 +127,37 @@ export class ProjectsController {
   }
 
   @Post(":projectId/members")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(201)
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.addMember(projectId, body, u.orgId, u.userId);
+    return this.members.addMember(projectId, body, u);
   }
 
   @Delete(":projectId/members")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(204)
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.removeMember(projectId, body.userId, u.orgId, u.userId);
+    return this.members.removeMember(projectId, body.userId, u);
+  }
+
+  @Patch(":projectId/members/:memberUserId")
+  @RequirePermission("projects:view")
+  updateMemberRole(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("memberUserId") memberUserId: string,
+    @Body(new ZodValidationPipe(updateProjectMemberRoleSchema))
+    body: UpdateProjectMemberRoleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.updateMemberRole(projectId, memberUserId, body, u);
   }
 
   @Get(":projectId/custom-states")
@@ -156,18 +170,18 @@ export class ProjectsController {
   }
 
   @Post(":projectId/custom-states")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(201)
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createStateSchema)) body: CreateStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.createCustomState(u.orgId, projectId, body);
+    return this.members.createCustomState(u, projectId, body);
   }
 
   @Patch(":projectId/custom-states/:stateId")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   updateCustomState(
     @Param("projectId", ParseIntPipe) _projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
@@ -175,18 +189,18 @@ export class ProjectsController {
     body: UpdateCustomStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateCustomState(u.orgId, stateId, body);
+    return this.members.updateCustomState(u, stateId, body);
   }
 
   @Delete(":projectId/custom-states/:stateId")
-  @RequirePermission("projects:manage")
+  @RequirePermission("projects:view")
   @HttpCode(204)
   deleteCustomState(
     @Param("projectId", ParseIntPipe) _projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.deleteCustomState(u.orgId, stateId);
+    return this.members.deleteCustomState(u, stateId);
   }
 
   @Get(":projectId/labels")

@@ -4,6 +4,7 @@ import { StorageController } from "./storage.controller";
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import { StorageKbController } from "./storage-kb.controller";
 import { StorageVaultController } from "./storage-vault.controller";
+import { MediaCompressionService } from "../../common/media/media-compression.service";
 
 @Global()
 @Module({
@@ -13,7 +14,7 @@ import { StorageVaultController } from "./storage-vault.controller";
     StorageKbController,
     StorageVaultController,
   ],
-  providers: [StorageService],
+  providers: [MediaCompressionService, StorageService],
   exports: [StorageService],
 })
 export class StorageModule {}

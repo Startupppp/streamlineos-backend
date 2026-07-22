@@ -80,7 +80,9 @@ export class ProjectsService {
       const memberProjectIds = memberOf.map((m) => m.projectId);
       const memberScopeCondition = or(
         eq(projects.managerId, userId),
-        memberProjectIds.length > 0 ? inArray(projects.id, memberProjectIds) : sql`false`,
+        memberProjectIds.length > 0
+          ? inArray(projects.id, memberProjectIds)
+          : sql`false`,
       );
       if (memberScopeCondition) conditions.push(memberScopeCondition);
     }
@@ -99,7 +101,10 @@ export class ProjectsService {
 
     const whereClause = and(...conditions);
 
-    const [{ total }] = await this.db.select({ total: count() }).from(projects).where(whereClause);
+    const [{ total }] = await this.db
+      .select({ total: count() })
+      .from(projects)
+      .where(whereClause);
 
     const projectRows = await this.db
       .select({
@@ -108,6 +113,7 @@ export class ProjectsService {
         description: projects.description,
         key: projects.key,
         status: projects.status,
+        priority: projects.priority,
         startDate: projects.startDate,
         endDate: projects.endDate,
         managerId: projects.managerId,
@@ -139,7 +145,9 @@ export class ProjectsService {
         .select({
           projectId: tickets.projectId,
           total: count(),
-          done: sql<number>`count(*) filter (where ${tickets.status} = 'DONE')`.as("done"),
+          done: sql<number>`count(*) filter (where ${tickets.status} = 'DONE')`.as(
+            "done",
+          ),
         })
         .from(tickets)
         .where(inArray(tickets.projectId, projectIds))
@@ -157,35 +165,73 @@ export class ProjectsService {
         .where(inArray(projectMembers.projectId, projectIds)),
     ]);
 
-    const progressMap = new Map(progressRows.map((r) => [r.projectId, { total: r.total, done: r.done }]));
+    const progressMap = new Map(
+      progressRows.map((r) => [r.projectId, { total: r.total, done: r.done }]),
+    );
     const membersMap = new Map<
       number,
-      { id: string; firstName: string | null; lastName: string | null; image: string | null }[]
+      {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        image: string | null;
+      }[]
     >();
     for (const m of memberRows) {
       if (!membersMap.has(m.projectId)) membersMap.set(m.projectId, []);
       const arr = membersMap.get(m.projectId);
       if (arr && arr.length < 5) {
-        arr.push({ id: m.userId, firstName: m.firstName, lastName: m.lastName, image: m.image });
+        arr.push({
+          id: m.userId,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          image: m.image,
+        });
       }
     }
+
+    const now = new Date();
 
     const data = projectRows.map((p) => {
       const progress = progressMap.get(p.id) ?? { total: 0, done: 0 };
       const pct =
-        Number(progress.total) > 0 ? Math.round((Number(progress.done) / Number(progress.total)) * 100) : 0;
+        Number(progress.total) > 0
+          ? Math.round((Number(progress.done) / Number(progress.total)) * 100)
+          : 0;
+      const isOverdue = p.endDate ? p.endDate < now : false;
+      const terminal = p.status === "COMPLETED" || p.status === "ARCHIVED";
+      const health: "on_track" | "at_risk" | "off_track" = terminal
+        ? "on_track"
+        : isOverdue
+          ? "off_track"
+          : pct >= 70
+            ? "on_track"
+            : pct >= 30
+              ? "at_risk"
+              : "off_track";
       return {
         id: p.id,
         name: p.name,
         description: p.description,
         key: p.key,
         status: p.status,
+        priority: p.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null,
         startDate: p.startDate,
         endDate: p.endDate,
         manager: p.managerId
-          ? { id: p.managerId, firstName: p.managerFirstName, lastName: p.managerLastName, image: p.managerImage }
+          ? {
+              id: p.managerId,
+              firstName: p.managerFirstName,
+              lastName: p.managerLastName,
+              image: p.managerImage,
+            }
           : null,
-        progress: { total: Number(progress.total), done: Number(progress.done), percentage: pct },
+        progress: {
+          total: Number(progress.total),
+          done: Number(progress.done),
+          percentage: pct,
+        },
+        health,
         members: membersMap.get(p.id) ?? [],
       };
     });
@@ -199,7 +245,11 @@ export class ProjectsService {
     };
   }
 
-  async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
+  async createProject(
+    orgId: string,
+    creatorUserId: string,
+    input: CreateProjectInput,
+  ) {
     return this.provision.createProject(orgId, creatorUserId, input);
   }
 
@@ -244,7 +294,12 @@ export class ProjectsService {
         const memberOf = await this.db
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
-          .where(and(eq(projectMembers.userId, u.userId), eq(projectMembers.projectId, projectId)));
+          .where(
+            and(
+              eq(projectMembers.userId, u.userId),
+              eq(projectMembers.projectId, projectId),
+            ),
+          );
         if (memberOf.length === 0) {
           this.audit.log({
             action: "project.access_denied",
@@ -263,7 +318,11 @@ export class ProjectsService {
     return project;
   }
 
-  async updateProject(u: CurrentUserContext, projectId: number, body: UpdateProjectInput) {
+  async updateProject(
+    u: CurrentUserContext,
+    projectId: number,
+    body: UpdateProjectInput,
+  ) {
     const orgId = u.orgId;
 
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
@@ -275,8 +334,27 @@ export class ProjectsService {
           where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
           columns: { managerId: true },
         });
-        if (!project || project.managerId !== u.userId) {
-          throw new ForbiddenException("Only project managers or admins can update project settings.");
+        if (!project) {
+          throw new ForbiddenException(
+            "Only project managers or admins can update project settings.",
+          );
+        }
+        if (project.managerId !== u.userId) {
+          const membership = await this.db
+            .select({ role: projectMembers.role })
+            .from(projectMembers)
+            .where(
+              and(
+                eq(projectMembers.projectId, projectId),
+                eq(projectMembers.userId, u.userId),
+              ),
+            )
+            .limit(1);
+          if (membership[0]?.role !== "ADMIN") {
+            throw new ForbiddenException(
+              "Only project managers or admins can update project settings.",
+            );
+          }
         }
       }
     }
@@ -285,12 +363,19 @@ export class ProjectsService {
       .update(projects)
       .set({
         ...(body.name !== undefined && { name: body.name }),
-        ...(body.description !== undefined && { description: body.description }),
+        ...(body.description !== undefined && {
+          description: body.description,
+        }),
         ...(body.status !== undefined && { status: body.status }),
         ...(body.managerId !== undefined && { managerId: body.managerId }),
         ...(body.clientId !== undefined && { clientId: body.clientId }),
-        ...(body.startDate !== undefined && { startDate: body.startDate ? new Date(body.startDate) : null }),
-        ...(body.endDate !== undefined && { endDate: body.endDate ? new Date(body.endDate) : null }),
+        ...(body.startDate !== undefined && {
+          startDate: body.startDate ? new Date(body.startDate) : null,
+        }),
+        ...(body.endDate !== undefined && {
+          endDate: body.endDate ? new Date(body.endDate) : null,
+        }),
+        ...(body.priority !== undefined && { priority: body.priority }),
       })
       .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
 
@@ -304,16 +389,24 @@ export class ProjectsService {
           .where(eq(projectMembers.projectId, projectId));
         const existing = new Set(existingMembers.map((m) => m.userId));
 
-        await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
+        await tx
+          .delete(projectMembers)
+          .where(eq(projectMembers.projectId, projectId));
 
         if (memberIds.length > 0) {
           await tx.insert(projectMembers).values(
-            memberIds.map((userId) => ({ projectId, userId, role: "CONTRIBUTOR" })),
+            memberIds.map((userId) => ({
+              projectId,
+              userId,
+              role: "CONTRIBUTOR",
+            })),
           );
         }
 
         const newMemberSet = new Set(memberIds);
-        const removedMembers = [...existing].filter((id) => !newMemberSet.has(id));
+        const removedMembers = [...existing].filter(
+          (id) => !newMemberSet.has(id),
+        );
 
         if (removedMembers.length > 0 && reassignments) {
           const openTickets = await tx
@@ -330,13 +423,18 @@ export class ProjectsService {
             );
           const byNewAssignee = new Map<string | null, number[]>();
           for (const ticket of openTickets) {
-            const newAssignee = ticket.assigneeId ? (reassignments[ticket.assigneeId] ?? null) : null;
+            const newAssignee = ticket.assigneeId
+              ? (reassignments[ticket.assigneeId] ?? null)
+              : null;
             const ids = byNewAssignee.get(newAssignee) ?? [];
             ids.push(ticket.id);
             byNewAssignee.set(newAssignee, ids);
           }
           for (const [newAssignee, ids] of byNewAssignee) {
-            await tx.update(tickets).set({ assigneeId: newAssignee }).where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
+            await tx
+              .update(tickets)
+              .set({ assigneeId: newAssignee })
+              .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
           }
         } else if (removedMembers.length > 0) {
           await tx
@@ -371,7 +469,9 @@ export class ProjectsService {
     if (!u.isOrgOwner && !u.isPlatformAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("projects:delete")) {
-        throw new ForbiddenException("Only organization owners can delete projects");
+        throw new ForbiddenException(
+          "Only organization owners can delete projects",
+        );
       }
     }
     const orgId = u.orgId;
@@ -382,17 +482,45 @@ export class ProjectsService {
     if (!project) throw new NotFoundException("Project not found");
 
     await this.db.transaction(async (tx) => {
-      const subTickets = tx.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      await tx.delete(ticketAssignees).where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
-      await tx.delete(ticketComments).where(sql`${ticketComments.ticketId} IN (${subTickets})`);
-      await tx.delete(ticketAttachments).where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
-      await tx.delete(ticketLabelMappings).where(sql`${ticketLabelMappings.ticketId} IN (${subTickets})`);
-      await tx.delete(timesheets).where(sql`${timesheets.ticketId} IN (${subTickets})`);
-      await tx.delete(tickets).where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      await tx.delete(sprints).where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
-      await tx.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
-      await tx.delete(projectStatuses).where(and(eq(projectStatuses.projectId, projectId), eq(projectStatuses.orgId, orgId)));
-      await tx.delete(projects).where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
+      const subTickets = tx
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      await tx
+        .delete(ticketAssignees)
+        .where(sql`${ticketAssignees.ticketId} IN (${subTickets})`);
+      await tx
+        .delete(ticketComments)
+        .where(sql`${ticketComments.ticketId} IN (${subTickets})`);
+      await tx
+        .delete(ticketAttachments)
+        .where(sql`${ticketAttachments.ticketId} IN (${subTickets})`);
+      await tx
+        .delete(ticketLabelMappings)
+        .where(sql`${ticketLabelMappings.ticketId} IN (${subTickets})`);
+      await tx
+        .delete(timesheets)
+        .where(sql`${timesheets.ticketId} IN (${subTickets})`);
+      await tx
+        .delete(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      await tx
+        .delete(sprints)
+        .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
+      await tx
+        .delete(projectMembers)
+        .where(eq(projectMembers.projectId, projectId));
+      await tx
+        .delete(projectStatuses)
+        .where(
+          and(
+            eq(projectStatuses.projectId, projectId),
+            eq(projectStatuses.orgId, orgId),
+          ),
+        );
+      await tx
+        .delete(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
     });
 
     this.audit.log({

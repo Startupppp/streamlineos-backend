@@ -19,6 +19,7 @@ export const projects = pgTable("projects", {
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   status: projectStatusEnum("status").default("ACTIVE").notNull(),
+  priority: text("priority"),
   dealId: integer("deal_id").references(() => deals.id, { onDelete: "set null" }),
   budget: decimal("budget", { precision: 15, scale: 2 }),
   settings: jsonb("settings").$type<{
