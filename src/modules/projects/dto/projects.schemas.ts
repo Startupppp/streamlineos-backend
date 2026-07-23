@@ -136,7 +136,9 @@ export const updateProjectMemberRoleSchema = z.object({
   role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
 });
 
-export type UpdateProjectMemberRoleInput = z.infer<typeof updateProjectMemberRoleSchema>;
+export type UpdateProjectMemberRoleInput = z.infer<
+  typeof updateProjectMemberRoleSchema
+>;
 
 const columnNameSchema = z
   .string()
