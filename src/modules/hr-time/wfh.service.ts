@@ -7,8 +7,6 @@ import { formatDateOnly } from "./date.helpers";
 import type { CreateWfhInput, UpdateWfhInput } from "./dto/wfh.schemas";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 
-const DEFAULT_WFH_MONTHLY_QUOTA = 4;
-
 @Injectable()
 export class WfhService {
   constructor(
@@ -45,7 +43,7 @@ export class WfhService {
       );
 
     const usedCount = Number(used?.total ?? 0);
-    if (usedCount >= quota) {
+    if (quota !== null && usedCount >= quota) {
       throw new BadRequestException(
         `Monthly WFH quota of ${quota} days has been reached for this month.`,
       );
@@ -127,21 +125,16 @@ export class WfhService {
     return { success: true };
   }
 
-  private async resolveMonthlyQuota(orgId: string, userId: string): Promise<number> {
-    if (!this.policyEval) return DEFAULT_WFH_MONTHLY_QUOTA;
-    try {
-      const result = await this.policyEval.evaluatePolicy(
-        orgId,
-        userId,
-        "wfh",
-        new Date().toISOString().slice(0, 10),
-      );
-      if (!result) return DEFAULT_WFH_MONTHLY_QUOTA;
-      const rules = result.rules as Record<string, unknown>;
-      const quota = typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
-      return quota ?? DEFAULT_WFH_MONTHLY_QUOTA;
-    } catch {
-      return DEFAULT_WFH_MONTHLY_QUOTA;
-    }
+  private async resolveMonthlyQuota(orgId: string, userId: string): Promise<number | null> {
+    if (!this.policyEval) return null;
+    const result = await this.policyEval.evaluatePolicy(
+      orgId,
+      userId,
+      "wfh",
+      new Date().toISOString().slice(0, 10),
+    );
+    if (!result) return null;
+    const rules = result.rules as Record<string, unknown>;
+    return typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
   }
 }

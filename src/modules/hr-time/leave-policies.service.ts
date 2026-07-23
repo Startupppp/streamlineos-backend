@@ -5,7 +5,7 @@ import { hrPolicies, leavePolicies, leaveTypes } from "../../db/schema";
 import { and, desc, eq, isNull, lte, gte, or } from "drizzle-orm";
 
 export interface LeavePolicySummary {
-  wfhMonthlyQuota: number;
+  wfhMonthlyQuota: number | null;
   leaveTypes: Array<{
     name: string;
     daysPerYear: number;
@@ -32,8 +32,6 @@ export interface CreateLeavePolicyInput {
 }
 
 export type UpdateLeavePolicyInput = Partial<CreateLeavePolicyInput>;
-
-const DEFAULT_WFH_MONTHLY_QUOTA = 4;
 
 @Injectable()
 export class LeavePoliciesService {
@@ -133,26 +131,21 @@ export class LeavePoliciesService {
       .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));
   }
 
-  private async resolveOrgWfhQuota(orgId: string): Promise<number> {
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      const policyRow = await this.db.query.hrPolicies.findFirst({
-        where: and(
-          eq(hrPolicies.orgId, orgId),
-          eq(hrPolicies.policyType, "wfh"),
-          eq(hrPolicies.status, "active"),
-          isNull(hrPolicies.deletedAt),
-          lte(hrPolicies.effectiveFrom, today),
-          or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, today)),
-        ),
-        columns: { rules: true },
-      });
-      if (!policyRow) return DEFAULT_WFH_MONTHLY_QUOTA;
-      const rules = policyRow.rules as Record<string, unknown>;
-      const quota = typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
-      return quota ?? DEFAULT_WFH_MONTHLY_QUOTA;
-    } catch {
-      return DEFAULT_WFH_MONTHLY_QUOTA;
-    }
+  private async resolveOrgWfhQuota(orgId: string): Promise<number | null> {
+    const today = new Date().toISOString().slice(0, 10);
+    const policyRow = await this.db.query.hrPolicies.findFirst({
+      where: and(
+        eq(hrPolicies.orgId, orgId),
+        eq(hrPolicies.policyType, "wfh"),
+        eq(hrPolicies.status, "active"),
+        isNull(hrPolicies.deletedAt),
+        lte(hrPolicies.effectiveFrom, today),
+        or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, today)),
+      ),
+      columns: { rules: true },
+    });
+    if (!policyRow) return null;
+    const rules = policyRow.rules as Record<string, unknown>;
+    return typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
   }
 }
