@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { kbPages, kbPageLinks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -65,7 +66,8 @@ export class KbPageTreeService {
     hasChildren: boolean;
   }[]> {
     const orgId = user.orgId;
-    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)];
+    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const filters: SQL[] = [eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)];
     if (projectId !== undefined) {
       filters.push(eq(kbPages.projectId, projectId));
     }

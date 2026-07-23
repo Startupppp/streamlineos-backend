@@ -33,6 +33,7 @@ import {
   cancelInvitationSchema,
   createOrganizationSchema,
   createHolidaySchema,
+  deleteOrgSchema,
   inviteMemberSchema,
   listMembersSchema,
   securitySettingsSchema,
@@ -45,6 +46,7 @@ import {
   type CancelInvitationInput,
   type CreateHolidayInput,
   type CreateOrganizationInput,
+  type DeleteOrgInput,
   type InviteMemberInput,
   type ListMembersInput,
   type SecuritySettingsInput,
@@ -310,5 +312,23 @@ export class OrganizationController {
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
     return this.organization.transferOwnership(u.orgId, u.userId, body);
+  }
+
+  @Post("leave")
+  @HttpCode(200)
+  leaveOrg(@CurrentUser() u: CurrentUserContext) {
+    return this.organization.leaveOrg(u.orgId, u.userId);
+  }
+
+  @Delete()
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
+  deleteOrg(
+    @Body(new ZodValidationPipe(deleteOrgSchema)) body: DeleteOrgInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
   }
 }

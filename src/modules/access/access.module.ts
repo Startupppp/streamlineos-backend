@@ -5,12 +5,13 @@ import { EntitlementsController } from "./entitlements.controller";
 import { PermissionGuard } from "./permission.guard";
 import { ResourceGrantsService } from "./resource-grants.service";
 import { ResourceGrantsController } from "./resource-grants.controller";
+import { UserModuleAccessController } from "./user-module-access.controller";
 import { BillingModule } from "../billing/billing.module";
 
 @Global()
 @Module({
   imports: [BillingModule],
-  controllers: [EntitlementsController, ResourceGrantsController],
+  controllers: [EntitlementsController, ResourceGrantsController, UserModuleAccessController],
   providers: [AccessService, EntitlementsService, PermissionGuard, ResourceGrantsService],
   exports: [AccessService, EntitlementsService, PermissionGuard, ResourceGrantsService],
 })

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, max, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -122,13 +122,6 @@ export class UsersService {
           ? sortDir(users.isActive)
           : sortDir(organizationMembers.joinedAt);
 
-    const lastSeenSubquery = this.db
-      .select({ userId: userSessions.userId, lastSeenAt: max(userSessions.lastActive).as("last_seen_at") })
-      .from(userSessions)
-      .where(eq(userSessions.isRevoked, false))
-      .groupBy(userSessions.userId)
-      .as("last_seen");
-
     const teamsSubquery = this.db
       .select({
         userId: projectTeamMembers.userId,
@@ -158,12 +151,16 @@ export class UsersService {
           phone: users.phone,
           createdAt: users.createdAt,
           joinedAt: organizationMembers.joinedAt,
-          lastSeenAt: lastSeenSubquery.lastSeenAt,
+          lastSeenAt: sql<Date | null>`(
+            SELECT MAX(${userSessions.lastActive})
+            FROM ${userSessions}
+            WHERE ${userSessions.userId} = ${users.id}
+              AND ${userSessions.isRevoked} = false
+          )`.as("last_seen_at"),
           teamNames: teamsSubquery.teamNames,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(lastSeenSubquery, eq(lastSeenSubquery.userId, users.id))
         .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
         .where(and(...conditions))
         .orderBy(sortExpr)
@@ -194,22 +191,57 @@ export class UsersService {
   }
 
   async getUser(orgId: string, userId: string) {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-      ),
-    });
+    const rows = await this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        emailVerified: users.emailVerified,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        image: users.image,
+        role: users.role,
+        departmentId: users.departmentId,
+        designation: users.designation,
+        phone: users.phone,
+        whatsappNumber: users.whatsappNumber,
+        whatsappSameAsPhone: users.whatsappSameAsPhone,
+        employeeId: users.employeeId,
+        isActive: users.isActive,
+        userStatus: users.userStatus,
+        reportingTo: users.reportingTo,
+        team: users.team,
+        branchId: users.branchId,
+        emergencyContact: users.emergencyContact,
+        bio: users.bio,
+        linkedinUrl: users.linkedinUrl,
+        twitterUrl: users.twitterUrl,
+        githubUrl: users.githubUrl,
+        websiteUrl: users.websiteUrl,
+        hasDashboardAccess: users.hasDashboardAccess,
+        totpEnabled: users.totpEnabled,
+        joiningDate: users.joiningDate,
+        dateOfBirth: users.dateOfBirth,
+        gender: users.gender,
+        onboardingDocStatus: users.onboardingDocStatus,
+        onboardingCompletedAt: users.onboardingCompletedAt,
+        invitedAt: users.invitedAt,
+        activatedAt: users.activatedAt,
+        archivedAt: users.archivedAt,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+        isPlatformAdmin: users.isPlatformAdmin,
+        isProfilePictureRequired: users.isProfilePictureRequired,
+        memberRole: organizationMembers.role,
+        joinedAt: organizationMembers.joinedAt,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
 
-    if (!membership) throw new NotFoundException("User not found in this organization");
-
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
-
-    if (!user) throw new NotFoundException("User not found");
-
-    return { ...user, memberRole: membership.role, joinedAt: membership.joinedAt };
+    if (rows.length === 0) throw new NotFoundException("User not found in this organization");
+    return rows[0]!;
   }
 
   async updateUser(orgId: string, userId: string, data: UpdateUserInput, actorUserId: string) {

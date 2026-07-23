@@ -1,7 +1,17 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import {
+  auditLogs,
+  candidateOffers,
+  leaveBlackoutDates,
+  onboardingTasks,
   organizationMembers,
   organizations,
   users,
@@ -71,10 +81,17 @@ export class OrganizationService {
       ),
       columns: { role: true },
     });
-    if (!membership) throw new BadRequestException("You are not a member of this organization");
+    if (!membership)
+      throw new BadRequestException(
+        "You are not a member of this organization",
+      );
 
     const [org] = await this.db
-      .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+      })
       .from(organizations)
       .where(eq(organizations.id, targetOrgId))
       .limit(1);
@@ -89,7 +106,12 @@ export class OrganizationService {
 
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
 
-    return { orgId: org.id, name: org.name, slug: org.slug, role: membership.role };
+    return {
+      orgId: org.id,
+      name: org.name,
+      slug: org.slug,
+      role: membership.role,
+    };
   }
 
   async createOrganization(userId: string, input: CreateOrganizationInput) {
@@ -99,7 +121,8 @@ export class OrganizationService {
       .where(eq(organizations.slug, input.slug))
       .limit(1);
 
-    if (existing) throw new ConflictException("Organization slug already exists");
+    if (existing)
+      throw new ConflictException("Organization slug already exists");
 
     const orgId = randomUUID();
 
@@ -120,7 +143,9 @@ export class OrganizationService {
         slug: input.slug,
         billingEmail,
       });
-      await tx.insert(organizationMembers).values({ userId, orgId, role: "CEO" });
+      await tx
+        .insert(organizationMembers)
+        .values({ userId, orgId, role: "CEO" });
     });
 
     return { id: orgId, name: input.name, slug: input.slug };
@@ -157,7 +182,10 @@ export class OrganizationService {
       })
       .from(organizationMembers)
       .where(
-        and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+        and(
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+        ),
       );
 
     return {
@@ -173,7 +201,10 @@ export class OrganizationService {
     const searchConditions = search
       ? [
           ...baseConditions,
-          or(ilike(users.name, `%${search}%`), ilike(users.email, `%${search}%`)),
+          or(
+            ilike(users.name, `%${search}%`),
+            ilike(users.email, `%${search}%`),
+          ),
         ]
       : baseConditions;
 
@@ -309,7 +340,8 @@ export class OrganizationService {
         eq(organizationMembers.userId, input.newOwnerUserId),
       ),
     });
-    if (!member) throw new BadRequestException("New owner must be an existing org member");
+    if (!member)
+      throw new BadRequestException("New owner must be an existing org member");
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -343,6 +375,111 @@ export class OrganizationService {
       metadata: { from: currentOwnerId, to: input.newOwnerUserId },
     });
 
+    return { success: true };
+  }
+
+  async leaveOrg(orgId: string, userId: string) {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { isOwner: true },
+    });
+    if (!membership) {
+      throw new BadRequestException("You are not a member of this workspace");
+    }
+    if (membership.isOwner) {
+      throw new BadRequestException(
+        "Owners cannot leave. Transfer ownership to another member or delete the workspace.",
+      );
+    }
+
+    const nextOrgId = await this.db.transaction(async (tx) => {
+      await tx
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, userId),
+          ),
+        );
+      const [remaining] = await tx
+        .select({ orgId: organizationMembers.orgId })
+        .from(organizationMembers)
+        .where(eq(organizationMembers.userId, userId))
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(1);
+      const fallbackOrgId = remaining?.orgId ?? null;
+      await tx
+        .update(users)
+        .set({ lastActiveOrgId: fallbackOrgId })
+        .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
+      return fallbackOrgId;
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    this.audit.log({
+      action: "org.member_left",
+      userId,
+      orgId,
+      targetId: userId,
+      targetType: "user",
+    });
+    return { success: true, nextOrgId };
+  }
+
+  async deleteOrg(orgId: string, userId: string, confirmation: string) {
+    const [org] = await this.db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    if (!org) throw new NotFoundException("Workspace not found");
+
+    const provided = confirmation.trim().toLowerCase();
+    const matches =
+      provided === org.name.trim().toLowerCase() ||
+      (org.slug ? provided === org.slug.trim().toLowerCase() : false);
+    if (!matches) {
+      throw new BadRequestException(
+        "Confirmation text does not match the workspace name",
+      );
+    }
+
+    const members = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
+
+    await this.db.transaction(async (tx) => {
+      await tx.delete(candidateOffers).where(eq(candidateOffers.orgId, orgId));
+      await tx
+        .delete(leaveBlackoutDates)
+        .where(eq(leaveBlackoutDates.orgId, orgId));
+      await tx.delete(onboardingTasks).where(eq(onboardingTasks.orgId, orgId));
+      await tx
+        .update(auditLogs)
+        .set({ orgId: null })
+        .where(eq(auditLogs.orgId, orgId));
+      await tx.delete(organizations).where(eq(organizations.id, orgId));
+    });
+
+    for (const member of members) {
+      await this.cache.invalidate(CACHE_KEYS.userSession(member.userId));
+    }
+    this.audit.log({
+      action: "org.deleted",
+      userId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+      metadata: { name: org.name },
+    });
     return { success: true };
   }
 }

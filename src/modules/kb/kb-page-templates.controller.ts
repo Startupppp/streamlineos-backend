@@ -22,17 +22,17 @@ import {
 } from "./dto/kb-page-templates.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class KbPageTemplatesController {
   constructor(private readonly templates: KbPageTemplatesService) {}
 
   @Get("page-templates")
-  @RequirePermission("kb:pages:view")
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.templates.list(u.orgId);
   }
 
   @Post("page-templates")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:templates:manage")
   async create(
     @Body(new ZodValidationPipe(createPageTemplateSchema)) body: CreatePageTemplateInput,
@@ -42,6 +42,7 @@ export class KbPageTemplatesController {
   }
 
   @Delete("page-templates/:templateId")
+  @UseGuards(PermissionGuard)
   @HttpCode(204)
   @RequirePermission("kb:templates:manage")
   async remove(

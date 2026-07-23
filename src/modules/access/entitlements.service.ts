@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import { organizations, orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -9,7 +14,7 @@ import { PlanLimitsService } from "../billing/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 
-const MODULE_CATALOG = [
+export const MODULE_CATALOG = [
   "hr",
   "crm",
   "projects",
@@ -47,7 +52,15 @@ export interface ModuleStatus {
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
-  return "message" in error && typeof error.message === "string" && error.message.includes("does not exist");
+  if (
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.includes("does not exist")
+  ) {
+    return true;
+  }
+  if ("cause" in error) return isMissingRelationError(error.cause);
+  return false;
 }
 
 interface ModuleMapEntry {
@@ -75,9 +88,12 @@ export class EntitlementsService {
       if (!isMissingRelationError(error)) throw error;
       if (!this.missingTableLogged) {
         this.missingTableLogged = true;
-        logger.warn("entitlements: org_modules table missing, defaulting to allow", {
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.warn(
+          "entitlements: org_modules table missing, defaulting to allow",
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
       return fallback;
     }
@@ -88,16 +104,26 @@ export class EntitlementsService {
     if (local && local.expiresAt > Date.now()) return local.map;
 
     const key = `entitlements:modules:${orgId}`;
-    const map = await this.cache.cached(key, async () => {
-      const rows = await this.safeRead(
-        () => this.db.query.orgModules.findMany({ where: eq(orgModules.orgId, orgId) }),
-        [],
-      );
-      const result: Record<string, boolean> = {};
-      for (const row of rows) result[row.moduleKey] = row.enabled;
-      return result;
-    }, 30);
-    this.moduleMapCache.set(orgId, { map, expiresAt: Date.now() + MODULE_MAP_LOCAL_TTL_MS });
+    const map = await this.cache.cached(
+      key,
+      async () => {
+        const rows = await this.safeRead(
+          () =>
+            this.db.query.orgModules.findMany({
+              where: eq(orgModules.orgId, orgId),
+            }),
+          [],
+        );
+        const result: Record<string, boolean> = {};
+        for (const row of rows) result[row.moduleKey] = row.enabled;
+        return result;
+      },
+      30,
+    );
+    this.moduleMapCache.set(orgId, {
+      map,
+      expiresAt: Date.now() + MODULE_MAP_LOCAL_TTL_MS,
+    });
     return map;
   }
 
@@ -114,7 +140,9 @@ export class EntitlementsService {
     enabledBy: string,
   ): Promise<void> {
     if (CORE_MODULE_KEYS.has(moduleKey)) {
-      throw new BadRequestException(`Module "${moduleKey}" is always-on and cannot be toggled`);
+      throw new BadRequestException(
+        `Module "${moduleKey}" is always-on and cannot be toggled`,
+      );
     }
     if (enabled) {
       const { tier } = await this.planLimits.resolveTier(orgId);

@@ -25,12 +25,11 @@ import {
 } from "./dto/kb-page-record-links.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class KbPageRecordLinksController {
   constructor(private readonly service: KbPageRecordLinksService) {}
 
   @Get("pages/:pageId/record-links")
-  @RequirePermission("kb:pages:view")
   list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -39,6 +38,7 @@ export class KbPageRecordLinksController {
   }
 
   @Post("pages/:pageId/record-links")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
   add(
@@ -50,6 +50,7 @@ export class KbPageRecordLinksController {
   }
 
   @Delete("record-links/:linkId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   remove(
     @Param("linkId", ParseIntPipe) linkId: number,
@@ -59,7 +60,6 @@ export class KbPageRecordLinksController {
   }
 
   @Get("record-links/by-record")
-  @RequirePermission("kb:pages:view")
   listByRecord(
     @Query(new ZodValidationPipe(recordLinkByRecordQuerySchema)) query: RecordLinkByRecordQuery,
     @CurrentUser() user: CurrentUserContext,

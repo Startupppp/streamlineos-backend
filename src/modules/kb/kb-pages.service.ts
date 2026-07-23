@@ -18,6 +18,7 @@ import { extractMentionUserIds, extractPageLinkIds } from "./kb-page-content.uti
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "./kb-page-visibility";
+import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KbIndexingService } from "./kb-indexing.service";
@@ -111,8 +112,9 @@ export class KbPagesService {
     canManage: boolean,
   ): Promise<PageRow & { ancestors: Pick<PageRow, "id" | "title">[]; isFavorite: boolean }> {
     const orgId = user.orgId;
+    const projectIds = await this.getAccessibleProjectIds(user);
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user)),
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)),
     });
     if (!page) throw new NotFoundException("Page not found");
 
@@ -330,6 +332,7 @@ export class KbPagesService {
       return `${w}:*`;
     }).join(" & ");
     const tsquery = sql`to_tsquery('english', ${prefixQuery})`;
+    const projectIds = await this.getAccessibleProjectIds(user);
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -342,7 +345,7 @@ export class KbPagesService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user),
+          pageVisibleTo(user, projectIds),
           sql`${kbPages}.fts @@ ${tsquery}`,
         ),
       )
@@ -353,12 +356,15 @@ export class KbPagesService {
 
   async getRecent(user: CurrentUserContext): Promise<PageRow[]> {
     const orgId = user.orgId;
-    const visits = await this.db
-      .select({ pageId: kbPageVisits.pageId })
-      .from(kbPageVisits)
-      .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.userId, user.userId)))
-      .orderBy(desc(kbPageVisits.visitedAt))
-      .limit(20);
+    const [visits, projectIds] = await Promise.all([
+      this.db
+        .select({ pageId: kbPageVisits.pageId })
+        .from(kbPageVisits)
+        .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.userId, user.userId)))
+        .orderBy(desc(kbPageVisits.visitedAt))
+        .limit(20),
+      this.getAccessibleProjectIds(user),
+    ]);
 
     if (visits.length === 0) return [];
     const ids = visits.map((v) => v.pageId);
@@ -369,7 +375,7 @@ export class KbPagesService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user),
+          pageVisibleTo(user, projectIds),
           sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
         ),
       );
@@ -379,12 +385,15 @@ export class KbPagesService {
 
   async getFavorites(user: CurrentUserContext): Promise<PageRow[]> {
     const orgId = user.orgId;
-    const favs = await this.db
-      .select({ pageId: kbPageFavorites.pageId })
-      .from(kbPageFavorites)
-      .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.userId, user.userId)))
-      .orderBy(asc(kbPageFavorites.sortOrder), asc(kbPageFavorites.createdAt))
-      .limit(50);
+    const [favs, projectIds] = await Promise.all([
+      this.db
+        .select({ pageId: kbPageFavorites.pageId })
+        .from(kbPageFavorites)
+        .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.userId, user.userId)))
+        .orderBy(asc(kbPageFavorites.sortOrder), asc(kbPageFavorites.createdAt))
+        .limit(50),
+      this.getAccessibleProjectIds(user),
+    ]);
 
     if (favs.length === 0) return [];
     const ids = favs.map((f) => f.pageId);
@@ -395,7 +404,7 @@ export class KbPagesService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user),
+          pageVisibleTo(user, projectIds),
           sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
         ),
       );
@@ -443,10 +452,13 @@ export class KbPagesService {
   async getBacklinks(user: CurrentUserContext, pageId: number): Promise<Pick<PageRow, "id" | "title" | "icon">[]> {
     const orgId = user.orgId;
     await this.assertPageAccessible(user, pageId);
-    const links = await this.db
-      .select({ sourcePageId: kbPageLinks.sourcePageId })
-      .from(kbPageLinks)
-      .where(and(eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetPageId, pageId)));
+    const [links, projectIds] = await Promise.all([
+      this.db
+        .select({ sourcePageId: kbPageLinks.sourcePageId })
+        .from(kbPageLinks)
+        .where(and(eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetPageId, pageId))),
+      this.getAccessibleProjectIds(user),
+    ]);
 
     if (links.length === 0) return [];
     const ids = links.map((l) => l.sourcePageId);
@@ -457,7 +469,7 @@ export class KbPagesService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user),
+          pageVisibleTo(user, projectIds),
           sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
         ),
       );
@@ -618,16 +630,21 @@ export class KbPagesService {
   }
 
   private async assertPageAccessible(user: CurrentUserContext, pageId: number): Promise<void> {
+    const projectIds = await this.getAccessibleProjectIds(user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
         eq(kbPages.orgId, user.orgId),
         isNull(kbPages.deletedAt),
-        pageVisibleTo(user),
+        pageVisibleTo(user, projectIds),
       ),
       columns: { id: true },
     });
     if (!page) throw new NotFoundException("Page not found");
+  }
+
+  private getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
+    return getAccessibleProjectIds(this.db, user);
   }
 
   private async buildAncestors(orgId: string, parentId: number | null): Promise<Pick<PageRow, "id" | "title">[]> {

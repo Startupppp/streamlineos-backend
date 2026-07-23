@@ -49,6 +49,19 @@ export const accessVersions = pgTable("access_versions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 });
 
+export const userModuleAccess = pgTable("user_module_access", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  moduleKey: text("module_key").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("uniq_user_module_access_org_user_module").on(table.orgId, table.userId, table.moduleKey),
+  index("idx_user_module_access_org_user").on(table.orgId, table.userId),
+]);
+
 export const orgModules = pgTable(
   "org_modules",
   {

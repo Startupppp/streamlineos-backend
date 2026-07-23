@@ -26,7 +26,7 @@ import {
 } from "./dto/kb-page-comments.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard)
 export class KbPageCommentsController {
   constructor(
     private readonly comments: KbPageCommentsService,
@@ -34,7 +34,6 @@ export class KbPageCommentsController {
   ) {}
 
   @Get("pages/:pageId/comments")
-  @RequirePermission("kb:pages:view")
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -43,21 +42,25 @@ export class KbPageCommentsController {
   }
 
   @Post("pages/:pageId/comments")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(createPageCommentSchema)) body: CreatePageCommentInput,
+    @Body(new ZodValidationPipe(createPageCommentSchema))
+    body: CreatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.comments.create(u, pageId, body);
   }
 
   @Patch("page-comments/:commentId")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
-    @Body(new ZodValidationPipe(updatePageCommentSchema)) body: UpdatePageCommentInput,
+    @Body(new ZodValidationPipe(updatePageCommentSchema))
+    body: UpdatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const perms = await this.access.resolveUserPermissions(u.userId, u.orgId);
@@ -66,6 +69,7 @@ export class KbPageCommentsController {
   }
 
   @Delete("page-comments/:commentId")
+  @UseGuards(PermissionGuard)
   @HttpCode(204)
   @RequirePermission("kb:pages:update")
   async remove(
@@ -78,6 +82,7 @@ export class KbPageCommentsController {
   }
 
   @Post("page-comments/:commentId/resolve")
+  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   async resolve(

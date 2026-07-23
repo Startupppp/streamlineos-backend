@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   accessVersions,
@@ -8,6 +8,7 @@ import {
   organizationMembers,
   rolePermissionGrants,
   roles,
+  userModuleAccess,
   userPermissions,
   userRoles,
   users,
@@ -20,7 +21,9 @@ import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions.constants";
 import type { AccessSnapshot, DataScope } from "./access.types";
-import { EntitlementsService } from "./entitlements.service";
+import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
+
+const MANAGEABLE_MODULE_SET: ReadonlySet<string> = new Set(MODULE_CATALOG);
 
 export const SCOPE_RANK: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
@@ -40,7 +43,15 @@ const PERMS_CACHE_TTL_MS = 30_000;
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
-  return "message" in error && typeof error.message === "string" && error.message.includes("does not exist");
+  if (
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.includes("does not exist")
+  ) {
+    return true;
+  }
+  if ("cause" in error) return isMissingRelationError(error.cause);
+  return false;
 }
 
 export function broadest(a: DataScope, b: DataScope): DataScope {
@@ -69,6 +80,11 @@ export class AccessService {
   private missingAccessTablesLogged = false;
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
+  private readonly deniedModulesCache = new Map<
+    string,
+    { modules: Set<string>; expiresAt: number }
+  >();
+  private static readonly DENIED_MODULES_TTL_MS = 15_000;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -121,21 +137,102 @@ export class AccessService {
     const version = await this.getPermissionsVersion(orgId);
     const permsKey = `${orgId}:${userId}:${version}`;
     const local = this.permsCache.get(permsKey);
-    if (local && local.expiresAt > Date.now()) return new Map(Object.entries(local.perms));
+    let map: Map<string, DataScope>;
+    if (local && local.expiresAt > Date.now()) {
+      map = new Map(Object.entries(local.perms));
+    } else {
+      const resolved = await this.cache.cached<Record<string, DataScope>>(
+        CACHE_KEYS.accessPerms(orgId, userId, version),
+        () => this.computeUserPermissions(orgId, userId),
+        CACHE_TTL.LONG,
+      );
+      this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
+      if (this.permsCache.size > 5000) {
+        const now = Date.now();
+        for (const [key, entry] of this.permsCache) {
+          if (entry.expiresAt <= now) this.permsCache.delete(key);
+        }
+      }
+      map = new Map(Object.entries(resolved));
+    }
 
-    const resolved = await this.cache.cached<Record<string, DataScope>>(
-      CACHE_KEYS.accessPerms(orgId, userId, version),
-      () => this.computeUserPermissions(orgId, userId),
-      CACHE_TTL.LONG,
-    );
-    this.permsCache.set(permsKey, { perms: resolved, expiresAt: Date.now() + PERMS_CACHE_TTL_MS });
-    if (this.permsCache.size > 5000) {
-      const now = Date.now();
-      for (const [key, entry] of this.permsCache) {
-        if (entry.expiresAt <= now) this.permsCache.delete(key);
+    const denied = await this.getUserDeniedModules(orgId, userId);
+    if (denied.size > 0) {
+      for (const key of Array.from(map.keys())) {
+        if (denied.has(moduleOf(key))) map.delete(key);
       }
     }
-    return new Map(Object.entries(resolved));
+    return map;
+  }
+
+  async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
+    const cacheKey = `${orgId}:${userId}`;
+    const cached = this.deniedModulesCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.modules;
+
+    const rows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({ moduleKey: userModuleAccess.moduleKey })
+          .from(userModuleAccess)
+          .where(
+            and(
+              eq(userModuleAccess.orgId, orgId),
+              eq(userModuleAccess.userId, userId),
+              eq(userModuleAccess.enabled, false),
+            ),
+          ),
+      [] as { moduleKey: string }[],
+    );
+    const modules = new Set(rows.map((row) => row.moduleKey));
+    this.deniedModulesCache.set(cacheKey, {
+      modules,
+      expiresAt: Date.now() + AccessService.DENIED_MODULES_TTL_MS,
+    });
+    return modules;
+  }
+
+  async getUserModuleAccess(
+    orgId: string,
+    userId: string,
+  ): Promise<{ moduleKey: string; enabled: boolean }[]> {
+    const denied = await this.getUserDeniedModules(orgId, userId);
+    return MODULE_CATALOG.map((moduleKey) => ({
+      moduleKey,
+      enabled: !denied.has(moduleKey),
+    }));
+  }
+
+  async setUserModuleAccess(
+    orgId: string,
+    userId: string,
+    moduleKey: string,
+    enabled: boolean,
+    updatedBy: string,
+  ): Promise<{ moduleKey: string; enabled: boolean }[]> {
+    if (!MANAGEABLE_MODULE_SET.has(moduleKey)) {
+      throw new BadRequestException(`Unknown module "${moduleKey}"`);
+    }
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { userId: true },
+    });
+    if (!member) throw new NotFoundException("User is not a member of this workspace");
+
+    await this.db
+      .insert(userModuleAccess)
+      .values({ orgId, userId, moduleKey, enabled, updatedBy })
+      .onConflictDoUpdate({
+        target: [userModuleAccess.orgId, userModuleAccess.userId, userModuleAccess.moduleKey],
+        set: { enabled, updatedBy },
+      });
+
+    this.deniedModulesCache.delete(`${orgId}:${userId}`);
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    return this.getUserModuleAccess(orgId, userId);
   }
 
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
@@ -172,9 +269,12 @@ export class AccessService {
     }
 
     const moduleMap = await this.entitlements.getModuleMap(orgId);
+    const denied = await this.getUserDeniedModules(orgId, userId);
     const modules: Record<string, boolean> = {};
     for (const moduleKey of CATALOG_MODULES) {
-      modules[moduleKey] = isInternalModule(moduleKey) ? true : (moduleMap[moduleKey] ?? true);
+      modules[moduleKey] = isInternalModule(moduleKey)
+        ? true
+        : (moduleMap[moduleKey] ?? true) && !denied.has(moduleKey);
     }
 
     return { permissions, scopes, modules, isOrgOwner: ctx.isOrgOwner, version };
