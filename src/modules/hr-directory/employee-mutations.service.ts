@@ -10,7 +10,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
-  departments,
+  employeeSalaryProfiles,
   employeeSkills,
   magicLinkTokens,
   onboardingTasks,
@@ -22,6 +22,7 @@ import {
   users,
 } from "../../db/schema";
 import { hashToken } from "../../common/security/token.util";
+import { nextDepartmentCode, toDepartmentCode } from "../org-hierarchy/lib/department-code";
 import { resolvePayrollDefaults } from "../hr-payroll/lib/payroll-defaults";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -35,6 +36,7 @@ import { appUrl } from "../email/app-url";
 import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.service";
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
 import { differenceInDays, formatDateOnly } from "./date.helpers";
 import { userCan } from "./ability.helpers";
@@ -77,6 +79,7 @@ export class EmployeeMutationsService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly webhooks: WebhooksDispatchService,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
   ) {}
 
   async getEmployeeDetail(orgId: string, userId: string) {
@@ -95,6 +98,7 @@ export class EmployeeMutationsService {
             designation: true,
             employeeId: true,
             departmentId: true,
+            orgDepartmentId: true,
             image: true,
             isActive: true,
             joiningDate: true,
@@ -130,6 +134,7 @@ export class EmployeeMutationsService {
       designation: u.designation,
       employeeId: u.employeeId,
       departmentId: u.departmentId,
+      orgDepartmentId: u.orgDepartmentId,
       image: u.image,
       isActive: u.isActive,
       joiningDate: u.joiningDate,
@@ -205,7 +210,7 @@ export class EmployeeMutationsService {
       updateData.bankDetails = body.bankDetails ? encryptBankDetails(toBankDetails(body.bankDetails)) : null;
     }
     if (body.designation !== undefined) updateData.designation = body.designation;
-    if (body.departmentId !== undefined) updateData.departmentId = body.departmentId;
+    if (body.departmentId !== undefined) updateData.orgDepartmentId = body.departmentId;
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.image !== undefined) updateData.image = body.image;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
@@ -368,7 +373,7 @@ export class EmployeeMutationsService {
       const linkedUser = await this.db.transaction(async (tx) => {
         const updateData: Partial<typeof users.$inferInsert> = {
           designation: body.designation,
-          departmentId: body.departmentId,
+          orgDepartmentId: body.departmentId,
           role,
           employeeId: resolvedEmployeeId,
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
@@ -388,6 +393,9 @@ export class EmployeeMutationsService {
         if (body.monthlySalary && body.monthlySalary > 0) {
           const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
           const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
+          const effectiveFrom = body.joiningDate
+            ? formatDateOnly(new Date(body.joiningDate))
+            : formatDateOnly(new Date());
           await tx.insert(salaryStructures).values({
             orgId: actor.orgId,
             userId: existingUser.id,
@@ -395,10 +403,18 @@ export class EmployeeMutationsService {
             hraPercentage: String(payrollDefaults.defaultHraPercent),
             allowances: specialAllowance.toString(),
             deductions: "0",
-            effectiveFrom: body.joiningDate
-              ? formatDateOnly(new Date(body.joiningDate))
-              : formatDateOnly(new Date()),
+            effectiveFrom,
             isActive: true,
+          });
+          await tx.insert(employeeSalaryProfiles).values({
+            orgId: actor.orgId,
+            userId: existingUser.id,
+            workerType: "EMPLOYEE",
+            currency: "INR",
+            annualCtc: (body.monthlySalary * 12).toFixed(2),
+            status: "ACTIVE",
+            effectiveFrom,
+            createdBy: actor.userId,
           });
         }
 
@@ -438,6 +454,20 @@ export class EmployeeMutationsService {
         },
       });
 
+      await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
+        userId: linkedUser.id,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        workEmail: body.email,
+        employeeNumber: resolvedEmployeeId,
+        joiningDate: body.joiningDate
+          ? formatDateOnly(new Date(body.joiningDate))
+          : null,
+        designation: body.designation ?? null,
+        phone: body.phone ?? null,
+        lifecycleStatus: "ONBOARDING",
+      });
+
       return { success: true, userId: linkedUser.id };
     }
 
@@ -456,7 +486,7 @@ export class EmployeeMutationsService {
           whatsappNumber: body.whatsappSameAsPhone ? body.phone : body.whatsappNumber,
           gender: body.gender,
           designation: body.designation,
-          departmentId: body.departmentId,
+          orgDepartmentId: body.departmentId,
           role,
           employeeId: resolvedEmployeeId,
           joiningDate: body.joiningDate ? formatDateOnly(new Date(body.joiningDate)) : undefined,
@@ -478,6 +508,9 @@ export class EmployeeMutationsService {
       if (body.monthlySalary && body.monthlySalary > 0) {
         const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
         const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
+        const effectiveFrom = body.joiningDate
+          ? formatDateOnly(new Date(body.joiningDate))
+          : formatDateOnly(new Date());
         await tx.insert(salaryStructures).values({
           orgId: actor.orgId,
           userId: created.id,
@@ -485,10 +518,18 @@ export class EmployeeMutationsService {
           hraPercentage: String(payrollDefaults.defaultHraPercent),
           allowances: specialAllowance.toString(),
           deductions: "0",
-          effectiveFrom: body.joiningDate
-            ? formatDateOnly(new Date(body.joiningDate))
-            : formatDateOnly(new Date()),
+          effectiveFrom,
           isActive: true,
+        });
+        await tx.insert(employeeSalaryProfiles).values({
+          orgId: actor.orgId,
+          userId: created.id,
+          workerType: "EMPLOYEE",
+          currency: "INR",
+          annualCtc: (body.monthlySalary * 12).toFixed(2),
+          status: "ACTIVE",
+          effectiveFrom,
+          createdBy: actor.userId,
         });
       }
 
@@ -530,6 +571,20 @@ export class EmployeeMutationsService {
       },
     });
 
+    await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
+      userId: newUser.id,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      workEmail: body.email,
+      employeeNumber: resolvedEmployeeId,
+      joiningDate: body.joiningDate
+        ? formatDateOnly(new Date(body.joiningDate))
+        : null,
+      designation: body.designation ?? null,
+      phone: body.phone ?? null,
+      lifecycleStatus: "ONBOARDING",
+    });
+
     if (newUser.email) {
       try {
         const rawToken = randomBytes(32).toString("hex");
@@ -555,18 +610,9 @@ export class EmployeeMutationsService {
    * partial success is reported with per-row errors (row numbers are 1-based data rows).
    */
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
-    const deptRows = await this.db.query.departments.findMany({
-      where: eq(departments.orgId, actor.orgId),
-      columns: { id: true, name: true },
-    });
-    const deptByName = new Map(
-      deptRows.map((d) => [d.name.trim().toLowerCase(), d.id] as const),
-    );
-
-    // Org hierarchy departments (Organization → Departments UI) — sync into
-    // legacy `departments` when bulk rows reference them by name or code.
     const orgDeptRows = await this.db
       .select({
+        id: orgDepartments.id,
         name: orgDepartments.name,
         code: orgDepartments.code,
       })
@@ -579,44 +625,46 @@ export class EmployeeMutationsService {
         ),
       );
 
-    const orgDeptCanonicalName = new Map<string, string>();
+    const orgDeptByKey = new Map<string, string>();
+    const usedCodes = new Set<string>();
     for (const d of orgDeptRows) {
-      const name = d.name.trim();
-      if (!name) continue;
-      orgDeptCanonicalName.set(name.toLowerCase(), name);
-      if (d.code?.trim()) {
-        orgDeptCanonicalName.set(d.code.trim().toLowerCase(), name);
-      }
+      orgDeptByKey.set(d.name.trim().toLowerCase(), d.id);
+      if (d.code?.trim()) orgDeptByKey.set(d.code.trim().toLowerCase(), d.id);
+      usedCodes.add(d.code);
     }
 
-    const resolveDepartmentId = async (raw: string): Promise<number | undefined> => {
+    const resolveDepartmentId = async (raw: string): Promise<string | undefined> => {
       const key = raw.trim().toLowerCase();
       if (!key) return undefined;
 
-      const existing = deptByName.get(key);
-      if (existing != null) return existing;
+      const existing = orgDeptByKey.get(key);
+      if (existing) return existing;
 
-      const canonical = orgDeptCanonicalName.get(key);
-      if (!canonical) return undefined;
-
-      const byCanonical = deptByName.get(canonical.toLowerCase());
-      if (byCanonical != null) return byCanonical;
+      const name = raw.trim();
+      const base = toDepartmentCode(name);
+      let code = base;
+      let suffix = 2;
+      while (usedCodes.has(code)) {
+        code = nextDepartmentCode(base, suffix);
+        suffix += 1;
+      }
 
       const inserted = await this.db
-        .insert(departments)
-        .values({ orgId: actor.orgId, name: canonical })
-        .onConflictDoNothing({ target: [departments.orgId, departments.name] })
-        .returning({ id: departments.id, name: departments.name });
+        .insert(orgDepartments)
+        .values({ orgId: actor.orgId, name, code, status: "ACTIVE" })
+        .onConflictDoNothing({ target: [orgDepartments.orgId, orgDepartments.code] })
+        .returning({ id: orgDepartments.id, name: orgDepartments.name });
 
       let row = inserted[0];
       if (!row) {
         const [found] = await this.db
-          .select({ id: departments.id, name: departments.name })
-          .from(departments)
+          .select({ id: orgDepartments.id, name: orgDepartments.name })
+          .from(orgDepartments)
           .where(
             and(
-              eq(departments.orgId, actor.orgId),
-              sql`lower(${departments.name}) = ${canonical.toLowerCase()}`,
+              eq(orgDepartments.orgId, actor.orgId),
+              isNull(orgDepartments.deletedAt),
+              sql`lower(${orgDepartments.name}) = ${key}`,
             ),
           )
           .limit(1);
@@ -624,7 +672,8 @@ export class EmployeeMutationsService {
       }
       if (!row) return undefined;
 
-      deptByName.set(row.name.trim().toLowerCase(), row.id);
+      usedCodes.add(code);
+      orgDeptByKey.set(row.name.trim().toLowerCase(), row.id);
       return row.id;
     };
 

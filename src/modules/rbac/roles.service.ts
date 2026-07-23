@@ -50,6 +50,14 @@ export class RolesService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
+  async listAssignableDepartments(orgId: string) {
+    return this.db
+      .select({ id: departments.id, name: departments.name })
+      .from(departments)
+      .where(eq(departments.orgId, orgId))
+      .orderBy(asc(departments.name));
+  }
+
   async getRoles(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.rolesList(orgId),

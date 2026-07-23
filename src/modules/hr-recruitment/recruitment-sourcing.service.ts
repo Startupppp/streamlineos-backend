@@ -20,6 +20,7 @@ import {
   users,
   vendorCandidateSubmissions,
 } from "../../db/schema";
+import { orgDepartments } from "../../db/schema/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RECRUITMENT_MANAGER_ROLES } from "./recruitment-roles";
@@ -51,6 +52,7 @@ export class RecruitmentSourcingService {
         jobPosting: { columns: { id: true, title: true } },
       },
       orderBy: [desc(candidateReferrals.createdAt)],
+      limit: 200,
     });
   }
 
@@ -235,7 +237,8 @@ export class RecruitmentSourcingService {
       .leftJoin(candidates, eq(vendorCandidateSubmissions.candidateId, candidates.id))
       .leftJoin(jobPostings, eq(vendorCandidateSubmissions.jobPostingId, jobPostings.id))
       .where(eq(vendorCandidateSubmissions.vendorId, vendorId))
-      .orderBy(desc(vendorCandidateSubmissions.submittedAt));
+      .orderBy(desc(vendorCandidateSubmissions.submittedAt))
+      .limit(200);
 
     if (canViewFinancials) {
       return rows.map((r) => ({
@@ -299,6 +302,7 @@ export class RecruitmentSourcingService {
         id: headcountRequests.id,
         orgId: headcountRequests.orgId,
         departmentId: headcountRequests.departmentId,
+        orgDepartmentId: headcountRequests.orgDepartmentId,
         requestedBy: headcountRequests.requestedBy,
         requestedRole: headcountRequests.requestedRole,
         level: headcountRequests.level,
@@ -312,11 +316,13 @@ export class RecruitmentSourcingService {
         createdAt: headcountRequests.createdAt,
         updatedAt: headcountRequests.updatedAt,
         departmentName: departments.name,
+        orgDepartmentName: orgDepartments.name,
         requesterName: users.name,
         requesterEmail: users.email,
       })
       .from(headcountRequests)
       .leftJoin(departments, eq(headcountRequests.departmentId, departments.id))
+      .leftJoin(orgDepartments, eq(headcountRequests.orgDepartmentId, orgDepartments.id))
       .leftJoin(users, eq(headcountRequests.requestedBy, users.id))
       .where(and(...conditions))
       .orderBy(desc(headcountRequests.createdAt))
@@ -330,7 +336,7 @@ export class RecruitmentSourcingService {
       .values({
         orgId,
         requestedBy: userId,
-        departmentId: input.departmentId,
+        orgDepartmentId: input.departmentId,
         requestedRole: input.requestedRole,
         level: input.level,
         justification: input.justification,
@@ -406,6 +412,7 @@ export class RecruitmentSourcingService {
           orgId,
           title: request.requestedRole,
           departmentId: request.departmentId,
+          orgDepartmentId: request.orgDepartmentId,
           postedBy: userId,
           status: "DRAFT",
         })
@@ -429,6 +436,7 @@ export class RecruitmentSourcingService {
         jobPosting: { columns: { id: true, title: true } },
       },
       orderBy: [desc(externalReferrals.createdAt)],
+      limit: 200,
     });
   }
 
@@ -462,7 +470,8 @@ export class RecruitmentSourcingService {
       .leftJoin(externalReferrals, eq(externalReferrals.referrerId, externalReferrers.id))
       .where(eq(externalReferrers.orgId, orgId))
       .groupBy(externalReferrers.id)
-      .orderBy(desc(externalReferrers.createdAt));
+      .orderBy(desc(externalReferrers.createdAt))
+      .limit(200);
   }
 
   async updateExternalReferrerStatus(orgId: string, referrerId: number, input: UpdateExternalReferrerStatusInput) {

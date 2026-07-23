@@ -83,7 +83,7 @@ export const headcountListSchema = z.object({
 export type HeadcountListInput = z.infer<typeof headcountListSchema>;
 
 export const createHeadcountSchema = z.object({
-  departmentId: z.number().int().positive().optional(),
+  departmentId: z.string().min(1).optional(),
   requestedRole: z.string().min(1).max(200),
   level: z.string().max(100).optional(),
   justification: z.string().max(5000).optional(),

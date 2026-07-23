@@ -105,6 +105,13 @@ export class RolesController {
     return this.roles.listTemplates();
   }
 
+  @Get("departments")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  listAssignableDepartments(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.listAssignableDepartments(u.orgId);
+  }
+
   @Post("templates")
   @HttpCode(201)
   @UseGuards(PermissionGuard)

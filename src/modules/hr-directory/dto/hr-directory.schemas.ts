@@ -5,7 +5,7 @@ export const listEmployeesSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
   q: z.string().optional(),
-  departmentId: z.coerce.number().int().positive().optional(),
+  departmentId: z.string().min(1).optional(),
   /** "true" | "false" | "all" — default active-only for directory */
   isActive: z.enum(["true", "false", "all"]).optional().default("true"),
   /** Org/job role on the user record (e.g. ENGINEERING, HR). Omit for all roles. */
@@ -88,6 +88,12 @@ export const patchDeviceSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "LOST", "RETURNED"]).optional(),
   returnDate: z.string().optional(),
+});
+
+export const listAssetsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]).optional(),
 });
 
 export const createAssetSchema = z.object({
@@ -175,7 +181,7 @@ export const updateEmployeeSchema = z.object({
   firstName: z.string().trim().min(1).max(100).optional(),
   lastName: z.string().trim().min(1).max(100).optional(),
   designation: z.string().optional(),
-  departmentId: z.number().optional(),
+  departmentId: z.string().optional(),
   phone: z.string().optional(),
   image: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -212,7 +218,7 @@ export const onboardEmployeeSchema = z.object({
   whatsappNumber: z.string().optional(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
   designation: z.string(),
-  departmentId: z.number().optional(),
+  departmentId: z.string().optional(),
   role: z.string().optional(),
   employeeId: z.string().optional(),
   joiningDate: z.string().optional(),
@@ -254,11 +260,9 @@ export const patchAccessRequestSchema = z.object({
   grantedBy: z.string().optional(),
 });
 
-/** Row shape for spreadsheet bulk onboard — department can be name or numeric id. */
+/** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
 export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
-  .omit({ departmentId: true })
   .extend({
-    departmentId: z.coerce.number().int().positive().optional(),
     department: z.string().trim().min(1).optional(),
   })
   .superRefine((row, ctx) => {
@@ -293,6 +297,7 @@ export type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
 export type PatchDeviceInput = z.infer<typeof patchDeviceSchema>;
 export type CreateBgvInput = z.infer<typeof createBgvSchema>;
 export type UpdateBgvInput = z.infer<typeof updateBgvSchema>;
+export type ListAssetsQueryInput = z.infer<typeof listAssetsQuerySchema>;
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
 export type PatchAssetInput = z.infer<typeof patchAssetSchema>;

@@ -21,6 +21,12 @@ export class HrDepartmentsController {
     return this.departments.list(u.orgId);
   }
 
+  @Get("legacy")
+  @RequirePermission("hr:employees:view")
+  listLegacy(@CurrentUser() u: CurrentUserContext) {
+    return this.departments.listLegacy(u.orgId);
+  }
+
   @Post()
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
@@ -28,6 +34,6 @@ export class HrDepartmentsController {
     @Body(new ZodValidationPipe(createDepartmentSchema)) body: CreateDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.departments.create(u.orgId, body.name);
+    return this.departments.create(u.orgId, u.userId, body.name);
   }
 }

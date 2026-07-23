@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { candidateApplications, candidateSlaTracking, candidates, jobPostings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -9,6 +9,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { DiversityReportQueryInput } from "./dto/candidates.schemas";
 
 const PIPELINE_STAGES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const;
+const STAGE_CANDIDATE_LIMIT = 50;
 
 @Injectable()
 export class RecruitmentPipelineService {
@@ -18,54 +19,74 @@ export class RecruitmentPipelineService {
   ) {}
 
   async pipeline(orgId: string) {
-    const [allCandidates, slaRows] = await Promise.all([
-      this.db.query.candidates.findMany({
-        where: eq(candidates.orgId, orgId),
-        orderBy: [desc(candidates.createdAt)],
-        with: {
-          applications: {
-            with: { jobPosting: { columns: { id: true, title: true } } },
-            limit: 1,
-            orderBy: (apps, { desc: d }) => [d(apps.appliedAt)],
-          },
-        },
-      }),
+    const [stageCandidates, countRows] = await Promise.all([
+      Promise.all(
+        PIPELINE_STAGES.map((stage) =>
+          this.db.query.candidates.findMany({
+            where: and(eq(candidates.orgId, orgId), eq(candidates.status, stage)),
+            orderBy: [desc(candidates.createdAt)],
+            limit: STAGE_CANDIDATE_LIMIT,
+            with: {
+              applications: {
+                with: { jobPosting: { columns: { id: true, title: true } } },
+                limit: 1,
+                orderBy: (apps, { desc: d }) => [d(apps.appliedAt)],
+              },
+            },
+          }),
+        ),
+      ),
       this.db
-        .select({
-          candidateId: candidateSlaTracking.candidateId,
-          stage: candidateSlaTracking.stage,
-          status: candidateSlaTracking.status,
-        })
-        .from(candidateSlaTracking)
-        .where(eq(candidateSlaTracking.orgId, orgId)),
+        .select({ status: candidates.status, total: sql<number>`count(*)::int` })
+        .from(candidates)
+        .where(eq(candidates.orgId, orgId))
+        .groupBy(candidates.status),
     ]);
+
+    const totals = new Map<string, number>();
+    for (const row of countRows) {
+      totals.set(row.status, Number(row.total));
+    }
+
+    const candidateIds = stageCandidates.flat().map((c) => c.id);
+    const slaRows = candidateIds.length
+      ? await this.db
+          .select({
+            candidateId: candidateSlaTracking.candidateId,
+            stage: candidateSlaTracking.stage,
+            status: candidateSlaTracking.status,
+          })
+          .from(candidateSlaTracking)
+          .where(
+            and(eq(candidateSlaTracking.orgId, orgId), inArray(candidateSlaTracking.candidateId, candidateIds)),
+          )
+      : [];
 
     const slaLookup = new Map<string, string>();
     for (const row of slaRows) {
       slaLookup.set(`${row.candidateId}:${row.stage}`, row.status);
     }
 
-    const stages = PIPELINE_STAGES.map((stage) => ({
+    const stages = PIPELINE_STAGES.map((stage, index) => ({
       stage,
-      candidates: allCandidates
-        .filter((c) => c.status === stage)
-        .map((c) => {
-          const latestApp = c.applications?.[0] ?? null;
-          return {
-            id: c.id,
-            name: `${c.firstName} ${c.lastName}`,
-            email: c.email,
-            phone: c.phone ?? null,
-            source: c.source ?? null,
-            rating: c.rating ?? null,
-            jobTitle: latestApp?.jobPosting?.title ?? null,
-            applicationId: latestApp?.id ?? null,
-            appliedAt: c.createdAt ?? null,
-            slaStatus: slaLookup.get(`${c.id}:${stage}`) ?? null,
-            resumeUrl: c.resumeUrl ?? null,
-            notes: c.notes ?? null,
-          };
-        }),
+      total: totals.get(stage) ?? 0,
+      candidates: stageCandidates[index].map((c) => {
+        const latestApp = c.applications?.[0] ?? null;
+        return {
+          id: c.id,
+          name: `${c.firstName} ${c.lastName}`,
+          email: c.email,
+          phone: c.phone ?? null,
+          source: c.source ?? null,
+          rating: c.rating ?? null,
+          jobTitle: latestApp?.jobPosting?.title ?? null,
+          applicationId: latestApp?.id ?? null,
+          appliedAt: c.createdAt ?? null,
+          slaStatus: slaLookup.get(`${c.id}:${stage}`) ?? null,
+          resumeUrl: c.resumeUrl ?? null,
+          notes: c.notes ?? null,
+        };
+      }),
     }));
 
     return { stages };
@@ -73,7 +94,7 @@ export class RecruitmentPipelineService {
 
   async diversityReport(orgId: string, query: DiversityReportQueryInput) {
     const departmentIds = query.departmentIds
-      ? query.departmentIds.split(",").map(Number).filter((n) => !isNaN(n) && n > 0)
+      ? query.departmentIds.split(",").map((id) => id.trim()).filter(Boolean)
       : [];
 
     const conditions: SQL[] = [eq(candidates.orgId, orgId)];
@@ -87,10 +108,10 @@ export class RecruitmentPipelineService {
     if (query.to) conditions.push(lte(candidates.createdAt, new Date(query.to)));
     if (departmentIds.length > 0) {
       conditions.push(
-        sql`${candidates.id} IN (SELECT candidate_id FROM candidate_applications ca JOIN job_postings jp ON jp.id = ca.job_posting_id WHERE jp.department_id = ANY(ARRAY[${sql.join(
+        sql`${candidates.id} IN (SELECT candidate_id FROM candidate_applications ca JOIN job_postings jp ON jp.id = ca.job_posting_id WHERE jp.org_department_id = ANY(ARRAY[${sql.join(
           departmentIds.map((id) => sql`${id}`),
           sql`, `,
-        )}]::int[]))`,
+        )}]::text[]))`,
       );
     }
 

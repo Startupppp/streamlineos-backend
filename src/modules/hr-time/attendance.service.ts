@@ -1,13 +1,18 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { attendance, departments, geofences, organizationMembers, organizations, orgHolidays, users } from "../../db/schema";
+import { orgDepartments } from "../../db/schema/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { EmailService } from "../email/email.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "./date.helpers";
-import type { AttendanceEmailReportInput, CheckInInput } from "./dto/attendance.schemas";
+import type {
+  AttendanceEmailReportInput,
+  CheckInInput,
+  TeamStatusQuery,
+} from "./dto/attendance.schemas";
 import { resolveAttendanceScope } from "./attendance-scope";
 import { randomUUID } from "node:crypto";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
@@ -467,111 +472,123 @@ export class AttendanceService {
     return maxStreak;
   }
 
-  async teamStatus(u: CurrentUserContext) {
+  async teamStatus(u: CurrentUserContext, query: TeamStatusQuery) {
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all") throw new ForbiddenException("Only admins can view team attendance.");
 
     const today = getTodayString();
 
-    const members = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        userName: users.name,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        userEmail: users.email,
-        userImage: users.image,
-        isActive: users.isActive,
-        departmentId: users.departmentId,
+    const todayStatus = this.db
+      .selectDistinctOn([attendance.userId], {
+        userId: attendance.userId,
+        status: sql<string>`CASE WHEN ${attendance.checkOut} IS NOT NULL THEN 'CHECKED_OUT' WHEN ${attendance.status} = 'ON_BREAK' THEN 'ON_BREAK' ELSE 'PRESENT' END`.as(
+          "derived_status",
+        ),
+        checkIn: attendance.checkIn,
+        checkOut: attendance.checkOut,
+        workHours: attendance.workHours,
       })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(organizationMembers.orgId, u.orgId));
+      .from(attendance)
+      .where(and(eq(attendance.orgId, u.orgId), eq(attendance.date, today)))
+      .orderBy(attendance.userId, desc(sql`${attendance.checkOut} IS NULL`), desc(attendance.createdAt))
+      .as("today_status");
 
-    const activeMembers = members.filter((m) => m.isActive !== false);
+    const statusExpr = sql<AttendanceStatus>`COALESCE(${todayStatus.status}, 'OFFLINE')`;
 
-    const deptIds = [...new Set(activeMembers.map((m) => m.departmentId).filter(Boolean))].filter(
-      (id): id is number => id !== null,
-    );
-    const deptMap = new Map<number, string>();
-    if (deptIds.length > 0) {
-      const deptRows = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(inArray(departments.id, deptIds));
-      for (const d of deptRows) deptMap.set(d.id, d.name);
+    const baseConditions = [eq(organizationMembers.orgId, u.orgId), eq(users.isActive, true)];
+    if (query.departmentId !== undefined) {
+      baseConditions.push(eq(users.departmentId, query.departmentId));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      baseConditions.push(
+        sql`(${users.name} ILIKE ${term} OR ${users.email} ILIKE ${term} OR ${users.firstName} ILIKE ${term} OR ${users.lastName} ILIKE ${term})`,
+      );
     }
 
-    const userIds = activeMembers.map((m) => m.userId);
-    const todayLogs =
-      userIds.length > 0
-        ? await this.db.query.attendance.findMany({
-            where: and(
-              eq(attendance.orgId, u.orgId),
-              eq(attendance.date, today),
-              inArray(attendance.userId, userIds),
-            ),
-          })
-        : [];
+    const rowConditions = [...baseConditions];
+    if (query.status) rowConditions.push(sql`${statusExpr} = ${query.status}`);
 
-    const logsByUser = new Map<string, (typeof todayLogs)[number]>();
-    for (const log of todayLogs) {
-      const existing = logsByUser.get(log.userId);
-      if (!existing) {
-        logsByUser.set(log.userId, log);
-        continue;
-      }
-      const logOpen = !log.checkOut;
-      const existingOpen = !existing.checkOut;
-      if (logOpen && !existingOpen) {
-        logsByUser.set(log.userId, log);
-        continue;
-      }
-      if (logOpen === existingOpen) {
-        const logCreated = log.createdAt ? new Date(log.createdAt).getTime() : 0;
-        const existingCreated = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
-        if (logCreated > existingCreated) {
-          logsByUser.set(log.userId, log);
-        }
-      }
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, countRows] = await Promise.all([
+      this.db
+        .select({
+          userId: organizationMembers.userId,
+          userName: users.name,
+          userFirstName: users.firstName,
+          userLastName: users.lastName,
+          userEmail: users.email,
+          userImage: users.image,
+          departmentName: departments.name,
+          orgDepartmentName: orgDepartments.name,
+          status: statusExpr,
+          checkIn: todayStatus.checkIn,
+          checkOut: todayStatus.checkOut,
+          workHours: todayStatus.workHours,
+        })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
+        .leftJoin(departments, eq(departments.id, users.departmentId))
+        .leftJoin(orgDepartments, eq(orgDepartments.id, users.orgDepartmentId))
+        .where(and(...rowConditions))
+        .orderBy(
+          sql`CASE ${statusExpr} WHEN 'PRESENT' THEN 0 WHEN 'ON_BREAK' THEN 1 WHEN 'CHECKED_OUT' THEN 2 ELSE 3 END`,
+          asc(users.name),
+        )
+        .limit(query.limit)
+        .offset(offset),
+      this.db
+        .select({ status: statusExpr, count: sql<number>`count(*)::int` })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
+        .where(and(...baseConditions))
+        .groupBy(statusExpr),
+    ]);
+
+    const counts: Record<AttendanceStatus, number> = {
+      PRESENT: 0,
+      ON_BREAK: 0,
+      CHECKED_OUT: 0,
+      OFFLINE: 0,
+    };
+    for (const row of countRows) {
+      const status = row.status as AttendanceStatus;
+      if (status in counts) counts[status] = row.count;
     }
 
-    const result = activeMembers.map((m) => {
-      const log = logsByUser.get(m.userId);
-      let memberStatus: AttendanceStatus = "OFFLINE";
-      if (log) {
-        if (log.checkOut) memberStatus = "CHECKED_OUT";
-        else if (log.status === "ON_BREAK") memberStatus = "ON_BREAK";
-        else memberStatus = "PRESENT";
-      }
+    const total = query.status
+      ? counts[query.status]
+      : counts.PRESENT + counts.ON_BREAK + counts.CHECKED_OUT + counts.OFFLINE;
 
+    const data = rows.map((m) => {
       const name =
-        m.userName ||
-        [m.userFirstName, m.userLastName].filter(Boolean).join(" ") ||
-        m.userEmail;
-
+        m.userName || [m.userFirstName, m.userLastName].filter(Boolean).join(" ") || m.userEmail;
       return {
         userId: m.userId,
         name,
         email: m.userEmail,
         image: m.userImage,
-        department: m.departmentId ? (deptMap.get(m.departmentId) ?? null) : null,
-        status: memberStatus,
-        checkIn: log?.checkIn ?? null,
-        checkOut: log?.checkOut ?? null,
-        workHours: log?.workHours ?? null,
+        department: m.orgDepartmentName ?? m.departmentName ?? null,
+        status: m.status,
+        checkIn: m.checkIn ?? null,
+        checkOut: m.checkOut ?? null,
+        workHours: m.workHours ?? null,
       };
     });
 
-    const order: Record<AttendanceStatus, number> = {
-      PRESENT: 0,
-      ON_BREAK: 1,
-      CHECKED_OUT: 2,
-      OFFLINE: 3,
+    return {
+      data,
+      counts,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      },
     };
-    result.sort((a, b) => order[a.status] - order[b.status]);
-
-    return result;
   }
 
   async listHolidays(orgId: string) {

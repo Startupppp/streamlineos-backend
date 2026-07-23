@@ -318,6 +318,13 @@ export class OnboardingController {
     return this.onboarding.listTemplates(u.orgId);
   }
 
+  @Get("templates/departments")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:onboarding:manage")
+  listTemplateDepartments(@CurrentUser() u: CurrentUserContext) {
+    return this.onboarding.listTemplateDepartments(u.orgId);
+  }
+
   @Post("templates")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:onboarding:manage")

@@ -7,6 +7,7 @@ import {
 import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   users,
+  departments,
   documents,
   leaveTypes,
   leaveBalances,
@@ -427,6 +428,13 @@ export class OnboardingService {
         count,
       );
     }
+  }
+
+  async listTemplateDepartments(orgId: string) {
+    return this.db
+      .select({ id: departments.id, name: departments.name })
+      .from(departments)
+      .where(eq(departments.orgId, orgId));
   }
 
   async listTemplates(orgId: string) {

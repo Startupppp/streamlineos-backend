@@ -19,6 +19,7 @@
     "setup:r2": "node --env-file=.env -r ts-node/register src/scripts/setup-r2-buckets.ts",
     "backfill:rbac": "node --env-file=.env -r ts-node/register src/scripts/backfill-rbac-access.ts",
     "backfill:crm-metadata": "node --env-file=.env -r ts-node/register src/scripts/backfill-crm-metadata.ts",
+    "backfill:org-departments": "node --env-file=.env -r ts-node/register src/scripts/backfill-org-departments.ts",
     "seed:payroll-templates": "node --env-file=.env -r ts-node/register src/scripts/seed-payroll-templates.ts",
     "seed:enterprise": "node --env-file=.env -r ts-node/register src/scripts/seed-enterprise-workspace.ts",
     "seed:demo-coupons": "node --env-file=.env -r ts-node/register src/db/seeds/demo-coupons.seed.ts",
