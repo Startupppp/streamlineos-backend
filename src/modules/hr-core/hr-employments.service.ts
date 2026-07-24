@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, eq, isNull } from "drizzle-orm";
-import { hrEmployments, hrEmploymentHistory, type hrEmploymentLifecycleStatusEnum } from "../../db/schema/hr/core-people";
+import {
+  hrEmployments,
+  hrEmploymentHistory,
+  hrPeople,
+  type hrEmploymentLifecycleStatusEnum,
+} from "../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type {
@@ -190,11 +195,25 @@ export class HrEmploymentsService {
     const fromStatus = existing.lifecycleStatus as LifecycleStatus;
     const toStatus = input.toStatus as LifecycleStatus;
 
+    if (fromStatus === toStatus) {
+      return existing;
+    }
+
     const allowed = ALLOWED_TRANSITIONS[fromStatus] ?? [];
     if (!allowed.includes(toStatus)) {
       throw new BadRequestException(
         `Transition from ${fromStatus} to ${toStatus} is not allowed`,
       );
+    }
+
+    const extra: Partial<typeof hrEmployments.$inferInsert> = {
+      lifecycleStatus: toStatus,
+    };
+    if (toStatus === "CONFIRMED") {
+      extra.confirmationDate = input.effectiveDate ?? new Date().toISOString().slice(0, 10);
+    }
+    if (toStatus === "PROBATION" && input.effectiveDate) {
+      extra.probationEndDate = existing.probationEndDate ?? undefined;
     }
 
     const [updated] = await this.db.transaction(async (tx) => {
@@ -211,7 +230,7 @@ export class HrEmploymentsService {
 
       return tx
         .update(hrEmployments)
-        .set({ lifecycleStatus: toStatus })
+        .set(extra)
         .where(and(eq(hrEmployments.id, employmentId), eq(hrEmployments.orgId, orgId)))
         .returning();
     });
@@ -223,10 +242,37 @@ export class HrEmploymentsService {
       entityId: String(employmentId),
       action: `status.transition.${fromStatus}.to.${toStatus}`,
       before: { lifecycleStatus: fromStatus },
-      after: { lifecycleStatus: toStatus },
+      after: { lifecycleStatus: toStatus, reason: input.reason ?? null },
     });
 
     return updated;
+  }
+
+  async transitionByUserId(
+    orgId: string,
+    userId: string,
+    actorId: string,
+    input: TransitionStatusInput,
+  ) {
+    const [row] = await this.db
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundException("Primary employment not found for user");
+    }
+
+    return this.transition(orgId, row.id, actorId, input);
   }
 
   async remove(orgId: string, employmentId: number, actorId: string) {

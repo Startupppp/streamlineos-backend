@@ -42,6 +42,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { OnboardingSessionService } from "../onboarding-flow/onboarding-session.service";
 import { HR_NOTIFY_ROLES } from "../hr-lifecycle/hr-role-constants";
+import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.service";
+import { hrEmployments, hrPeople, hrEmploymentHistory } from "../../db/schema/hr/core-people";
 
 type DefaultTask = {
   title: string;
@@ -135,7 +137,57 @@ export class OnboardingService {
     private readonly sessions: OnboardingSessionService,
     private readonly probation: OnboardingProbationService,
     private readonly cache: CacheService,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
   ) {}
+
+  private async markEmploymentOnboarding(orgId: string, userId: string): Promise<void> {
+    await this.personEmploymentSync.ensureFromUserId(orgId, userId, userId);
+
+    const [row] = await this.db
+      .select({
+        employmentId: hrEmployments.id,
+        lifecycleStatus: hrEmployments.lifecycleStatus,
+      })
+      .from(hrPeople)
+      .innerJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.personId, hrPeople.id),
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(hrPeople.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          isNull(hrPeople.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return;
+
+    const fromStatus = row.lifecycleStatus;
+    if (fromStatus === "ONBOARDING") return;
+    if (fromStatus !== "CANDIDATE" && fromStatus !== "PRE_JOINING") return;
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(hrEmploymentHistory).values({
+        orgId,
+        employmentId: row.employmentId,
+        fromStatus,
+        toStatus: "ONBOARDING",
+        reason: "Onboarding checklist initiated",
+        createdBy: userId,
+      });
+      await tx
+        .update(hrEmployments)
+        .set({ lifecycleStatus: "ONBOARDING" })
+        .where(and(eq(hrEmployments.id, row.employmentId), eq(hrEmployments.orgId, orgId)));
+    });
+  }
 
   async getProgressSummary(orgId: string) {
     const rows = await this.db
@@ -206,6 +258,8 @@ export class OnboardingService {
     if (existing.length > 0) {
       return { error: "already_initiated" };
     }
+
+    await this.markEmploymentOnboarding(orgId, input.userId);
 
     const baseDate = targetUser?.joiningDate
       ? new Date(targetUser.joiningDate)

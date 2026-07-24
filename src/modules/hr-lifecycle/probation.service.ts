@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, lte, or, inArray } from "drizzle-orm";
+import { and, eq, inArray, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../db/schema/hr/core-people";
@@ -13,6 +13,7 @@ import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.serv
 import { HrTemplateRenderService } from "../hr-templates/hr-template-render.service";
 import { HrAutomationEngineService } from "../hr-automations/hr-automation-engine.service";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
+import { HrEmploymentsService } from "../hr-core/hr-employments.service";
 import type { StartReviewInput, ExtendProbationInput, ConfirmProbationInput } from "./dto/probation.schemas";
 
 @Injectable()
@@ -23,6 +24,7 @@ export class ProbationService {
     private readonly templateRender: HrTemplateRenderService,
     private readonly automation: HrAutomationEngineService,
     private readonly policyEvaluation: HrPolicyEvaluationService,
+    private readonly employments: HrEmploymentsService,
   ) {}
 
   async listDueForReview(orgId: string) {
@@ -200,7 +202,7 @@ export class ProbationService {
 
   async confirm(
     orgId: string,
-    _actorId: string,
+    actorId: string,
     reviewId: number,
     input: ConfirmProbationInput,
   ) {
@@ -224,6 +226,7 @@ export class ProbationService {
     }
 
     const confirmedAt = input.confirmedAt ? new Date(input.confirmedAt) : new Date();
+    const confirmedDate = confirmedAt.toISOString().slice(0, 10);
     const mergedNotes = input.notes
       ? { ...(review.reviewNotes ?? {}), confirmationNotes: input.notes }
       : review.reviewNotes;
@@ -234,10 +237,12 @@ export class ProbationService {
       .where(and(eq(hrProbationReviews.orgId, orgId), eq(hrProbationReviews.id, reviewId)))
       .returning();
 
-    await this.db
-      .update(hrEmployments)
-      .set({ lifecycleStatus: "CONFIRMED", updatedAt: new Date() })
-      .where(and(eq(hrEmployments.orgId, orgId), eq(hrEmployments.id, review.employmentId)));
+    await this.employments.transition(orgId, review.employmentId, actorId, {
+      toStatus: "CONFIRMED",
+      reason: "Probation confirmed",
+      notes: input.notes,
+      effectiveDate: confirmedDate,
+    });
 
     const [person] = await this.db
       .select({ userId: hrPeople.userId })
@@ -246,6 +251,8 @@ export class ProbationService {
 
     await this.automation.emit(orgId, "employee.confirmed", {
       employeeId: person?.userId ?? String(review.personId),
+      employmentId: review.employmentId,
+      confirmedAt: confirmedDate,
     });
 
     return updated;

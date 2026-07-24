@@ -4,20 +4,28 @@ import { hrEmployments, hrPeople } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
+import { HrEmploymentsService } from "../hr-core/hr-employments.service";
+import { ProbationService } from "../hr-lifecycle/probation.service";
 
 @Injectable()
 export class OnboardingProbationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policyEval: HrPolicyEvaluationService,
+    private readonly employments: HrEmploymentsService,
+    private readonly probationReviews: ProbationService,
   ) {}
 
-  async setupProbationForUser(orgId: string, userId: string): Promise<{ probationEndDate: Date | null }> {
+  async setupProbationForUser(
+    orgId: string,
+    userId: string,
+  ): Promise<{ probationEndDate: Date | null; lifecycleStatus: "PROBATION" | "ACTIVE" | null }> {
     const [employment] = await this.db
       .select({
         id: hrEmployments.id,
         personId: hrEmployments.personId,
         joiningDate: hrEmployments.joiningDate,
+        lifecycleStatus: hrEmployments.lifecycleStatus,
       })
       .from(hrEmployments)
       .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
@@ -25,13 +33,61 @@ export class OnboardingProbationService {
         and(
           eq(hrEmployments.orgId, orgId),
           eq(hrPeople.userId, userId),
+          eq(hrEmployments.isPrimary, true),
           isNull(hrEmployments.deletedAt),
         ),
       )
       .limit(1);
-    if (!employment) return { probationEndDate: null };
+    if (!employment) return { probationEndDate: null, lifecycleStatus: null };
+
     const joining = employment.joiningDate ? new Date(employment.joiningDate) : null;
-    return this.setupProbationFromPolicy(orgId, employment.id, employment.personId, userId, joining);
+    const result = await this.setupProbationFromPolicy(
+      orgId,
+      employment.id,
+      employment.personId,
+      userId,
+      joining,
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
+    let currentStatus = employment.lifecycleStatus;
+
+    if (currentStatus === "PRE_JOINING" || currentStatus === "CANDIDATE") {
+      await this.employments.transition(orgId, employment.id, userId, {
+        toStatus: "ONBOARDING",
+        reason: "Onboarding completion path — intermediate status",
+        effectiveDate: today,
+      });
+      currentStatus = "ONBOARDING";
+    }
+
+    if (result.probationEndDate) {
+      if (currentStatus === "ONBOARDING") {
+        await this.employments.transition(orgId, employment.id, userId, {
+          toStatus: "PROBATION",
+          reason: "Onboarding checklist completed — probation started",
+          effectiveDate: today,
+        });
+      }
+      await this.probationReviews.setupProbation(
+        orgId,
+        employment.id,
+        employment.personId,
+        result.probationEndDate,
+      );
+      return { probationEndDate: result.probationEndDate, lifecycleStatus: "PROBATION" };
+    }
+
+    if (currentStatus === "ONBOARDING") {
+      await this.employments.transition(orgId, employment.id, userId, {
+        toStatus: "ACTIVE",
+        reason: "Onboarding checklist completed — no probation policy",
+        effectiveDate: today,
+      });
+      return { probationEndDate: null, lifecycleStatus: "ACTIVE" };
+    }
+
+    return { probationEndDate: null, lifecycleStatus: null };
   }
 
   async setupProbationFromPolicy(
