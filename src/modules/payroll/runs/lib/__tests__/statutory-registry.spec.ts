@@ -20,6 +20,11 @@ describe("statutory registry (canonical India rules)", () => {
     expect(resolvePtMonthly(IN_STATUTORY_2025_04, "TN")).toBe("208.33");
     expect(resolvePtMonthly(IN_STATUTORY_2025_04, null)).toBe("200.00");
     expect(resolveLwf(IN_STATUTORY_2025_04, "MH").employerFixed).toBe("75.00");
+    // Expanded sample matrix (still not full India legal pack)
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "DL")).toBe("0.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "RJ")).toBe("200.00");
+    expect(resolveLwf(IN_STATUTORY_2025_04, "TN").employeeFixed).toBe("20.00");
+    expect(resolveLwf(IN_STATUTORY_2025_04, "GJ").employerFixed).toBe("12.00");
   });
 
   it("validates Labour Code 50% basic+DA wage definition", () => {

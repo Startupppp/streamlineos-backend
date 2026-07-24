@@ -104,6 +104,7 @@ export const IN_STATUTORY_2025_04: IndiaStatutoryBundle = {
   pt: {
     version: "IN-PT-DEFAULT-2025.04",
     defaultMonthly: "200.00",
+    /** Sample state map — not full India matrix; legal review required for production PT. */
     byState: {
       MH: "200.00",
       KA: "200.00",
@@ -111,15 +112,36 @@ export const IN_STATUTORY_2025_04: IndiaStatutoryBundle = {
       WB: "150.00",
       GJ: "200.00",
       TL: "200.00",
+      AP: "200.00",
+      TS: "200.00",
+      DL: "0.00",
+      HR: "200.00",
+      PB: "200.00",
+      RJ: "200.00",
+      MP: "200.00",
+      UP: "200.00",
+      BR: "0.00",
+      OR: "200.00",
+      KL: "0.00",
+      AS: "0.00",
     },
   },
   lwf: {
     version: "IN-LWF-DEFAULT-2025.04",
     employeeFixed: "25.00",
     employerFixed: "25.00",
+    /** Sample state map — not full India matrix; legal review required for production LWF. */
     byState: {
       MH: { employeeFixed: "25.00", employerFixed: "75.00" },
       KA: { employeeFixed: "20.00", employerFixed: "40.00" },
+      TN: { employeeFixed: "20.00", employerFixed: "40.00" },
+      WB: { employeeFixed: "3.00", employerFixed: "15.00" },
+      GJ: { employeeFixed: "6.00", employerFixed: "12.00" },
+      DL: { employeeFixed: "0.75", employerFixed: "2.25" },
+      HR: { employeeFixed: "25.00", employerFixed: "50.00" },
+      PB: { employeeFixed: "5.00", employerFixed: "20.00" },
+      KL: { employeeFixed: "20.00", employerFixed: "20.00" },
+      MP: { employeeFixed: "10.00", employerFixed: "30.00" },
     },
   },
   gratuity: {
