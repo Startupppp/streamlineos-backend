@@ -174,6 +174,22 @@ export class ProjectsAiController {
     return this.ticketAi.summarizeTicket(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 
+  @Post("tickets/:projectId/:ticketId/summarize-comments")
+  async summarizeTicketComments(
+    @Param("projectId") rawPid: string,
+    @Param("ticketId") rawTid: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.summarizeComments(
+      u.orgId,
+      u.userId,
+      parsePositiveInt(rawPid, "projectId"),
+      parsePositiveInt(rawTid, "ticketId"),
+    );
+  }
+
   @Post("tickets/:projectId/:ticketId/improve-description")
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
@@ -195,6 +211,22 @@ export class ProjectsAiController {
     requireFeature(u.plan, "ai.ticket-insights");
     this.ensureLlm();
     return this.ticketAi.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+  }
+
+  @Post("tickets/:projectId/:ticketId/generate-checklist")
+  async generateTicketChecklist(
+    @Param("projectId") rawPid: string,
+    @Param("ticketId") rawTid: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    requireFeature(u.plan, "ai.ticket-insights");
+    this.ensureLlm();
+    return this.ticketAi.generateChecklist(
+      u.orgId,
+      u.userId,
+      parsePositiveInt(rawPid, "projectId"),
+      parsePositiveInt(rawTid, "ticketId"),
+    );
   }
 
   @Post("projects/:projectId/weekly-update")

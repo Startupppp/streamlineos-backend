@@ -45,6 +45,13 @@ export const TicketSummaryOutputSchema = z.object({
 });
 export type TicketSummaryOutput = z.infer<typeof TicketSummaryOutputSchema>;
 
+export const TicketCommentsSummaryOutputSchema = z.object({
+  summary: z.string().describe("2-4 sentence summary of the comment thread"),
+  themes: z.array(z.string()).describe("Up to 5 recurring themes or topics from comments"),
+  openQuestions: z.array(z.string()).describe("Unresolved questions raised in comments, empty if none"),
+});
+export type TicketCommentsSummaryOutput = z.infer<typeof TicketCommentsSummaryOutputSchema>;
+
 const SubtaskSuggestionSchema = z.object({
   title: z.string().describe("Concise subtask title"),
 });
@@ -53,6 +60,18 @@ export const TicketSubtasksOutputSchema = z.object({
   subtasks: z.array(SubtaskSuggestionSchema).describe("3-7 suggested subtask titles, deduplicated against existing ones"),
 });
 export type TicketSubtasksOutput = z.infer<typeof TicketSubtasksOutputSchema>;
+
+const ChecklistItemSuggestionSchema = z.object({
+  text: z.string().describe("Concise checklist item, actionable and verifiable"),
+});
+
+export const TicketChecklistOutputSchema = z.object({
+  title: z.string().describe("Short checklist title summarizing the work, max 80 characters"),
+  items: z
+    .array(ChecklistItemSuggestionSchema)
+    .describe("4-10 checklist items tailored to the ticket, deduplicated against existing items"),
+});
+export type TicketChecklistOutput = z.infer<typeof TicketChecklistOutputSchema>;
 
 export const extractMeetingActionsBodySchema = z.object({});
 export type ExtractMeetingActionsBodyInput = z.infer<typeof extractMeetingActionsBodySchema>;

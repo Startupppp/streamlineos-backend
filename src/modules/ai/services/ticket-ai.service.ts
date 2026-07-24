@@ -6,6 +6,7 @@ import {
   tickets,
   ticketComments,
   ticketLabels,
+  ticketChecklists,
   projects,
   projectMeetings,
   meetingActionItems,
@@ -15,7 +16,9 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   TicketSummaryOutputSchema,
+  TicketCommentsSummaryOutputSchema,
   TicketSubtasksOutputSchema,
+  TicketChecklistOutputSchema,
   MeetingExtractActionsOutputSchema,
   TicketHandoffOutputSchema,
   TicketSuggestTitleOutputSchema,
@@ -105,6 +108,53 @@ Provide a summary, key points, and any blockers visible in the discussion.`;
     return data;
   }
 
+  async summarizeComments(orgId: string, userId: string, projectId: number, ticketId: number) {
+    await this.assertTicket(orgId, projectId, ticketId);
+
+    const comments = await this.db
+      .select({ content: ticketComments.content, createdAt: ticketComments.createdAt })
+      .from(ticketComments)
+      .where(and(eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)))
+      .orderBy(asc(ticketComments.createdAt))
+      .limit(50);
+
+    if (comments.length === 0) {
+      throw new BadRequestException("This ticket has no comments to summarize");
+    }
+
+    const commentBlock = comments
+      .map((c, i) => `Comment ${i + 1}: ${c.content.slice(0, 800)}`)
+      .join("\n\n");
+
+    const system =
+      "You are a project management assistant. Summarize a ticket comment thread for someone catching up. Be factual and concise.";
+    const user = `Ticket comment thread (${comments.length} comments, oldest to newest):
+${commentBlock}
+
+Summarize the discussion, key themes, and any open questions still unresolved.`;
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.summarize-comments",
+      prompt: { system, user },
+      schema: TicketCommentsSummaryOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: true,
+      dedupe: true,
+    });
+
+    const data = unwrapAiResult(result);
+    this.audit.log({
+      action: "ai.ticket.summarize-comments",
+      userId,
+      orgId,
+      resourceType: "ticket",
+      resourceId: String(ticketId),
+    });
+    return data;
+  }
+
   async improveDescription(orgId: string, userId: string, projectId: number, ticketId: number, draft?: string) {
     const ticket = await this.assertTicket(orgId, projectId, ticketId);
 
@@ -171,6 +221,82 @@ Suggest 3-7 subtask titles.`;
 
     this.audit.log({ action: "ai.ticket.suggest-subtasks", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
     return { subtasks: deduped };
+  }
+
+  async generateChecklist(orgId: string, userId: string, projectId: number, ticketId: number) {
+    const ticket = await this.assertTicket(orgId, projectId, ticketId);
+
+    const titlePlain = ticket.title.trim();
+    const descriptionPlain = stripHtml(ticket.description ?? "");
+    if (!titlePlain && !descriptionPlain) {
+      throw new BadRequestException("Add a title or description before generating a checklist");
+    }
+
+    const existingChecklists = await this.db.query.ticketChecklists.findMany({
+      where: and(eq(ticketChecklists.ticketId, ticketId), eq(ticketChecklists.orgId, orgId)),
+      columns: { title: true },
+      with: {
+        items: {
+          columns: { text: true },
+          limit: 50,
+        },
+      },
+      limit: 20,
+    });
+
+    const existingItemTexts = existingChecklists.flatMap((checklist) =>
+      checklist.items.map((item) => item.text),
+    );
+    const existingTitles = existingChecklists.map((checklist) => checklist.title);
+
+    const existingBlock =
+      existingItemTexts.length > 0
+        ? existingItemTexts.map((text) => `- ${text}`).join("\n")
+        : "None";
+
+    const system =
+      "You are a project management assistant. Generate a practical checklist to complete the given ticket. Items must be concrete, verifiable steps. Avoid duplicating existing checklist items.";
+    const user = `Ticket: "${ticket.title}"
+Description: ${(ticket.description ?? "(none)").slice(0, TEXT_LIMIT)}
+Type: ${ticket.type} | Priority: ${ticket.priority}
+${existingTitles.length > 0 ? `Existing checklist titles (avoid near-duplicates):\n${existingTitles.map((t) => `- ${t}`).join("\n")}` : "No existing checklists."}
+Existing checklist items (DO NOT duplicate):
+${existingBlock}
+
+Suggest a checklist title and 4-10 items.`;
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: "ticket.generate-checklist",
+      prompt: { system, user },
+      schema: TicketChecklistOutputSchema,
+      tier: "fast",
+      maxTokens: 768,
+      charge: true,
+    });
+
+    const data = unwrapAiResult(result);
+    const normalizedExisting = new Set(existingItemTexts.map((text) => text.trim().toLowerCase()));
+    const dedupedItems = data.items
+      .map((item) => ({ text: item.text.trim() }))
+      .filter((item) => item.text.length > 0)
+      .filter((item) => !normalizedExisting.has(item.text.toLowerCase()))
+      .slice(0, 10);
+
+    const title = data.title.trim().slice(0, 80) || "Checklist";
+
+    this.audit.log({
+      action: "ai.ticket.generate-checklist",
+      userId,
+      orgId,
+      resourceType: "ticket",
+      resourceId: String(ticketId),
+    });
+
+    return {
+      title,
+      items: dedupedItems,
+    };
   }
 
   async extractMeetingActions(orgId: string, userId: string, projectId: number, meetingId: number) {

@@ -365,8 +365,8 @@ export class ProjectsTicketsQueryService {
     await this.db
       .update(tickets)
       .set({
-        order: sql<number>`CASE ${tickets.id} ${orderWhen} END`,
-        status: sql<string>`CASE ${tickets.id} ${statusWhen} END`,
+        order: sql<number>`(CASE ${tickets.id} ${orderWhen} END)::integer`,
+        status: sql<string>`(CASE ${tickets.id} ${statusWhen} END)::text`,
         updatedAt: now,
       })
       .where(

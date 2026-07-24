@@ -11,8 +11,18 @@ import { ProjectsService } from "../projects/projects.service";
 import { ProjectsTicketsService } from "../projects/projects-tickets.service";
 import { ProjectsWorkQueryService } from "../projects/projects-work-query.service";
 import { ProjectsTicketSubresourcesService } from "../projects/projects-ticket-subresources.service";
-import { listProjectsSchema, type ListProjectsInput } from "../projects/dto/projects.schemas";
-import { allWorkQuerySchema, ticketsListQuerySchema, type AllWorkQuery, type TicketsListQuery } from "../projects/dto/projects.schemas";
+import {
+  listProjectsSchema,
+  createProjectSchema,
+  createTicketSchema,
+  allWorkQuerySchema,
+  ticketsListQuerySchema,
+  type ListProjectsInput,
+  type CreateProjectInput,
+  type CreateTicketInput,
+  type AllWorkQuery,
+  type TicketsListQuery,
+} from "../projects/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 
 @Public()
@@ -40,6 +50,27 @@ export class AgentController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projectsSvc.listProjects(u, query);
+  }
+
+  @Post("projects")
+  @RequirePermission("projects:create")
+  @HttpCode(201)
+  createProject(
+    @Body(new ZodValidationPipe(createProjectSchema)) body: CreateProjectInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.projectsSvc.createProject(u.orgId, u.userId, body);
+  }
+
+  @Post("projects/:projectId/tickets")
+  @RequirePermission("projects:tickets:create")
+  @HttpCode(201)
+  createTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ticketsSvc.createTicket(u, projectId, body);
   }
 
   @Get("work")
