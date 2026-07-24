@@ -9,12 +9,22 @@ import {
   payrollLineItems,
 } from "../../../db/schema";
 import { AiGatewayService } from "../../ai/gateway/ai-gateway.service";
+import {
+  PAYROLL_AI_CAPABILITY,
+  FORBIDDEN_PAYROLL_AI_ACTIONS,
+  buildPayslipEvidenceCitations,
+  type EvidenceCitation,
+} from "./payroll-ai-guardrails";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 
 export interface PayslipExplanation {
   explanation: string;
   evidenceSnapshot: Record<string, unknown>;
+  /** Engine field paths that grounded the narrative (Phase 11 citations). */
+  citations: EvidenceCitation[];
+  capability: typeof PAYROLL_AI_CAPABILITY;
+  forbiddenActions: typeof FORBIDDEN_PAYROLL_AI_ACTIONS;
 }
 
 function buildSystemPrompt(): string {
@@ -26,6 +36,7 @@ function buildSystemPrompt(): string {
     "3. Your only job is to narrate in plain language what each pre-computed section means for the employee.",
     "4. Keep the explanation to 4-6 sentences. Be empathetic and clear — the reader is the employee.",
     "5. Never mention taxes as an estimate. Only reference tax figures that are explicitly provided.",
+    "6. You MUST NOT approve, pay, file, lock, or change payroll. Explanation only.",
   ].join("\n");
 }
 
@@ -122,6 +133,27 @@ export class PayrollAiExplainService {
 
     if (!result.ok) throw new ServiceUnavailableException(result.message);
 
-    return { explanation: result.data, evidenceSnapshot: evidence };
+    return {
+      explanation: result.data,
+      evidenceSnapshot: evidence,
+      citations: buildPayslipEvidenceCitations(evidence),
+      capability: PAYROLL_AI_CAPABILITY,
+      forbiddenActions: FORBIDDEN_PAYROLL_AI_ACTIONS,
+    };
+  }
+
+  /** Public capability surface for ESS / admin honesty banners. */
+  capabilities() {
+    return {
+      ...PAYROLL_AI_CAPABILITY,
+      forbiddenActions: FORBIDDEN_PAYROLL_AI_ACTIONS,
+      features: [
+        {
+          key: FEATURE_KEY,
+          mode: "narrate_precomputed_payslip",
+          requiresPublishedPayslip: true,
+        },
+      ],
+    };
   }
 }
