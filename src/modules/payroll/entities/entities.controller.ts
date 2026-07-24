@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -29,6 +38,31 @@ export class PayrollEntitiesController {
   @RequirePermission("payroll:policies:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId);
+  }
+
+  /** Country pack catalog with maturity honesty labels. */
+  @Get("country-packs")
+  @RequirePermission("payroll:policies:view")
+  countryPacks() {
+    return this.service.listCountryPacks();
+  }
+
+  @Get(":entityId/context")
+  @RequirePermission("payroll:policies:view")
+  context(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("entityId", ParseIntPipe) entityId: number,
+  ) {
+    return this.service.getEntityContext(u.orgId, entityId);
+  }
+
+  @Get(":entityId")
+  @RequirePermission("payroll:policies:view")
+  get(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("entityId", ParseIntPipe) entityId: number,
+  ) {
+    return this.service.getEntity(u.orgId, entityId);
   }
 
   @Post()

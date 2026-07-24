@@ -1,12 +1,35 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
+import { getCountryPack } from "../../hr-global/country-packs";
+import {
+  assertEntityCountryIsolation,
+  buildEntityReadiness,
+  describeCountryPack,
+  entityReadinessScore,
+  listCountryPackDescriptors,
+} from "../../hr-global/lib/country-pack-registry";
 
 @Injectable()
 export class PayrollEntitiesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  listCountryPacks() {
+    return {
+      mode: "country_pack_catalog" as const,
+      honestyNote:
+        "Only India has a production payroll statutory calc baseline. Other packs seed HR compliance/holidays as pilot or template — not full local payroll engines.",
+      packs: listCountryPackDescriptors(),
+    };
+  }
 
   list(orgId: string) {
     return this.db
@@ -97,5 +120,41 @@ export class PayrollEntitiesService {
     });
     if (!row) throw new NotFoundException("Payroll entity not found");
     return row;
+  }
+
+  /**
+   * Entity context: country pack + readiness + isolation metadata.
+   * Used by multi-entity payroll setup UIs.
+   */
+  async getEntityContext(orgId: string, entityId: number) {
+    const entity = await this.getEntity(orgId, entityId);
+    const pack = getCountryPack(entity.countryCode);
+    const descriptor = describeCountryPack(entity.countryCode);
+    const readiness = buildEntityReadiness(entity, pack);
+    const score = entityReadinessScore(readiness);
+
+    return {
+      entity,
+      countryPack: descriptor,
+      readiness,
+      readinessScore: score,
+      isolation: {
+        note: "Statutory rule resolution is scoped by entity.countryCode. Applying another country's pack to this entity is blocked.",
+      },
+      honestyNote:
+        descriptor?.honestyLabel ??
+        "Country pack maturity unknown — treat as template only.",
+    };
+  }
+
+  /**
+   * Guard used by callers that resolve statutory rules for an entity.
+   */
+  assertNoCountryContamination(entityCountryCode: string, ruleCountryCode: string) {
+    const check = assertEntityCountryIsolation(entityCountryCode, ruleCountryCode);
+    if (!check.ok) {
+      throw new BadRequestException(check.message);
+    }
+    return check;
   }
 }
