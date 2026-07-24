@@ -13,7 +13,84 @@
       "idx": 1,
       "version": "7",
       "when": 1784650000000,
+      "tag": "0001_ai_token_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784650000001,
+      "tag": "0002_platform_admin_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784650000002,
+      "tag": "0003_document_types_country_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784650000003,
       "tag": "0004_attendance_multi_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784650000004,
+      "tag": "0005_projectos_teams_and_comment_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784650000005,
+      "tag": "0006_projectos_parity_gaps",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784651000000,
+      "tag": "0291_payroll_phase0_safety",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784651000001,
+      "tag": "0292_payroll_phase1_2_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784651000002,
+      "tag": "0293_payroll_prd_ship_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784651000003,
+      "tag": "0294_payroll_journal_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784651000004,
+      "tag": "0295_hrms_perf_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784651000005,
+      "tag": "0296_hrms_org_departments",
       "breakpoints": true
     }
   ]

@@ -50,6 +50,8 @@ export const leaveRequests = pgTable("leave_requests", {
   index("idx_leave_requests_org_status").on(table.orgId, table.status),
   index("idx_leave_requests_dates").on(table.startDate, table.endDate),
   index("idx_leave_requests_org_user_status").on(table.orgId, table.userId, table.status),
+  index("idx_leave_requests_org_created").on(table.orgId, table.createdAt),
+  index("idx_leave_requests_org_approver").on(table.orgId, table.approverId),
 ]);
 
 export const leaveBlackoutDates = pgTable("leave_blackout_dates", {
