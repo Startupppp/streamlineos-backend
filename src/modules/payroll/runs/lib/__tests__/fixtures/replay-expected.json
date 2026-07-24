@@ -12,19 +12,19 @@
       "code": "HRA",
       "name": "House Rent Allowance",
       "category": "EARNING",
-      "amount": "37419.35",
+      "amount": "74838.71",
       "calcMethod": "PERCENT_OF_BASIC",
       "taxable": true,
       "sortOrder": 2,
       "explain": {
         "method": "PERCENT_OF_BASIC",
         "inputs": {
-          "ctc": 100000,
+          "ctc": 200000,
           "percent": 40
         },
         "steps": [
-          "House Rent Allowance = 40% of monthly CTC ₹100000.00 = ₹40000.00",
-          "Prorated ₹40000.00 × 29/31 paid days = ₹37419.35"
+          "House Rent Allowance = 40% of monthly CTC ₹200000.00 = ₹80000.00",
+          "Prorated ₹80000.00 × 29/31 paid days = ₹74838.71"
         ]
       }
     },
@@ -39,7 +39,7 @@
       "explain": {
         "method": "FIXED",
         "inputs": {
-          "ctc": 100000,
+          "ctc": 200000,
           "percent": 0
         },
         "steps": [
@@ -52,18 +52,18 @@
       "code": "BASIC",
       "name": "Basic",
       "category": "EARNING",
-      "amount": "30629.56",
+      "amount": "48132.16",
       "calcMethod": "PERCENT_OF_GROSS",
       "taxable": true,
       "sortOrder": 1,
       "explain": {
         "method": "PERCENT_OF_GROSS",
         "inputs": {
-          "gross": 65483.87,
+          "gross": 102903.23,
           "percent": 50
         },
         "steps": [
-          "Basic = 50% of gross ₹65483.87 = ₹30629.56"
+          "Basic = 50% of gross ₹102903.23 = ₹48132.16"
         ]
       }
     },
@@ -119,7 +119,7 @@
           "pfEmployeePercent": 12
         },
         "steps": [
-          "Rule IN-PF-2025.04: monthly wage ceiling ₹15000.00 (legacy misnamed annual field was 21600)",
+          "Rule IN-PF-2026.04: monthly wage ceiling ₹15000.00 (legacy misnamed annual field was 21600)",
           "PF base = min(Basic ₹0.00, ceiling ₹15000.00) = ₹0.00",
           "EPF Employee = ₹0.00 × 12.00% = ₹0.00"
         ]
@@ -160,7 +160,7 @@
           "professionalTaxMonthly": 200
         },
         "steps": [
-          "Rule IN-PT-DEFAULT-2025.04",
+          "Rule IN-PT-DEFAULT-2026.04",
           "Professional Tax = ₹200.00 (fixed monthly)"
         ]
       }
@@ -180,7 +180,7 @@
           "gratuityPercent": 4.81
         },
         "steps": [
-          "Rule IN-GRATUITY-2025.04: provision 4.81% of basic (eligibility 5y service for payout)",
+          "Rule IN-GRATUITY-2026.04: provision 4.81% of basic (eligibility 5y service for payout)",
           "Gratuity = Basic ₹0.00 × 4.81% = ₹0.00"
         ]
       }
@@ -199,7 +199,7 @@
           "lwfEmployee": 25
         },
         "steps": [
-          "Rule IN-LWF-DEFAULT-2025.04",
+          "Rule IN-LWF-DEFAULT-2026.04",
           "LWF Employee = ₹25.00 (fixed)"
         ]
       }
@@ -247,27 +247,27 @@
       "code": "TDS",
       "name": "TDS",
       "category": "TAX",
-      "amount": "6912.03",
+      "amount": "14862.03",
       "calcMethod": "FORMULA",
       "taxable": false,
       "sortOrder": 950,
       "explain": {
         "method": "FORMULA",
         "inputs": {
-          "gross": 106113.43,
-          "annualGross": 1273361.16
+          "gross": 161035.39,
+          "annualGross": 1932424.68
         },
         "steps": [
-          "TDS (NEW regime, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹6912.03"
+          "TDS (NEW regime, FY 2026-27, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹14862.03"
         ]
       }
     }
   ],
   "totals": {
-    "gross": "106113.43",
-    "deductions": "11137.03",
+    "gross": "161035.39",
+    "deductions": "19087.03",
     "employerContributions": "25.00",
-    "net": "96776.40"
+    "net": "143748.36"
   },
   "variance": null,
   "wageDefinitionWarning": "Labour Code wage definition: Basic+DA is 0.0% of gross (minimum 50%)."

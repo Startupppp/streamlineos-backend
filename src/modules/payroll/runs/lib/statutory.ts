@@ -10,6 +10,7 @@ import type { RoundingConfig } from "./money";
 import { getStatutoryPack, type StatutoryPackItem } from "./statutory-packs";
 import {
   getIndiaBundleForDate,
+  getIndiaBundleForMonth,
   resolvePtMonthly,
   resolveLwf,
   validateLabourCodeWageDefinition,
@@ -27,6 +28,8 @@ interface StatutoryInput {
   /** Optional state for PT/LWF; falls back to policy/config. */
   stateCode?: string | null;
   daPaise?: number;
+  /** Payroll month "YYYY-MM"; selects the effective statutory bundle. */
+  month?: string;
 }
 
 interface StatutoryResult {
@@ -215,7 +218,9 @@ export function calcStatutory(input: StatutoryInput): StatutoryResult {
  */
 function calcStatutoryIndiaFromRegistry(input: StatutoryInput): StatutoryResult {
   const { toggles, config, basicPaise, grossPaise, rounding, stateCode, daPaise = 0 } = input;
-  const bundle: IndiaStatutoryBundle = getIndiaBundleForDate();
+  const bundle: IndiaStatutoryBundle = input.month
+    ? getIndiaBundleForMonth(input.month)
+    : getIndiaBundleForDate();
 
   const lines: CalculationSnapshotLine[] = [];
   let totalEmployeeDeductionPaise = 0;

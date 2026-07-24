@@ -20,10 +20,15 @@ const rounding = { mode: "NEAREST" as const, precision: 0 as const };
 
 describe("PRD E2E scenarios 1–12 (contract journey)", () => {
   it("1. Owner activates Indian Standard Payroll — registry bundle exists", () => {
-    const b = getIndiaBundleForDate();
-    expect(b.bundleVersion).toBe("IN-2025.04");
-    expect(b.pf.monthlyWageCeiling).toBe("15000.00");
-    expect(b.tds.formLabels.quarterlyReturn).toBe("Form 24Q");
+    const fy2025 = getIndiaBundleForDate(new Date("2026-03-15"));
+    expect(fy2025.bundleVersion).toBe("IN-2025.04");
+    expect(fy2025.tds.formLabels.quarterlyReturn).toBe("Form 24Q");
+
+    const current = getIndiaBundleForDate(new Date("2026-07-15"));
+    expect(current.bundleVersion).toBe("IN-2026.04");
+    expect(current.pf.monthlyWageCeiling).toBe("15000.00");
+    expect(current.tds.formLabels.quarterlyReturn).toBe("Form 138");
+    expect(current.tds.formLabels.annualCertificate).toBe("Form 130");
   });
 
   it("2–3. Regular run lifecycle transitions: preview → approve → lock → paid → publish → close", () => {

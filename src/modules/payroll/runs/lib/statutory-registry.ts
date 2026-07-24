@@ -8,8 +8,9 @@
  * that arithmetic via monthlyWageCeiling = 15000 and document the rename.
  */
 
-export const STATUTORY_CALCULATION_VERSION = "1.0.0";
+export const STATUTORY_CALCULATION_VERSION = "1.1.0";
 export const IN_STATUTORY_RULE_BUNDLE_VERSION = "IN-2025.04";
+export const IN_STATUTORY_RULE_BUNDLE_VERSION_2026 = "IN-2026.04";
 
 export interface PfRule {
   version: string;
@@ -62,13 +63,25 @@ export interface MinWageRule {
   labourCodeWageDefinition: true;
 }
 
+export interface TaxSlab {
+  /** Upper bound of the slab in rupees of taxable income; null = no upper bound. */
+  uptoRupees: number | null;
+  percent: number;
+}
+
+export interface TdsRegimeRule {
+  standardDeductionPaise: number;
+  slabs: TaxSlab[];
+  rebateMaxPaise: number;
+  rebateIncomeLimitPaise: number;
+}
+
 export interface TdsRule {
   version: string;
   ruleYearLabel: string;
   formLabels: { quarterlyReturn: string; annualCertificate: string };
-  newRegimeStandardDeductionPaise: number;
-  rebate87AMaxPaise: number;
-  rebate87AIncomeLimitPaise: number;
+  newRegime: TdsRegimeRule;
+  oldRegime: TdsRegimeRule;
   cessPercent: string;
 }
 
@@ -162,18 +175,101 @@ export const IN_STATUTORY_2025_04: IndiaStatutoryBundle = {
     labourCodeWageDefinition: true,
   },
   tds: {
-    version: "IN-TDS-NEW-2025.04",
+    version: "IN-TDS-2025.04",
     ruleYearLabel: "FY 2025-26",
     formLabels: {
       quarterlyReturn: "Form 24Q",
       annualCertificate: "Form 16",
     },
-    newRegimeStandardDeductionPaise: 7500000, // ₹75,000
-    rebate87AMaxPaise: 2500000, // ₹25,000
-    rebate87AIncomeLimitPaise: 70000000, // ₹7,00,000
+    newRegime: {
+      standardDeductionPaise: 7_500_000,
+      slabs: [
+        { uptoRupees: 300_000, percent: 0 },
+        { uptoRupees: 700_000, percent: 5 },
+        { uptoRupees: 1_000_000, percent: 10 },
+        { uptoRupees: 1_200_000, percent: 15 },
+        { uptoRupees: 1_500_000, percent: 20 },
+        { uptoRupees: null, percent: 30 },
+      ],
+      rebateMaxPaise: 2_500_000,
+      rebateIncomeLimitPaise: 70_000_000,
+    },
+    oldRegime: {
+      standardDeductionPaise: 5_000_000,
+      slabs: [
+        { uptoRupees: 250_000, percent: 0 },
+        { uptoRupees: 500_000, percent: 5 },
+        { uptoRupees: 1_000_000, percent: 20 },
+        { uptoRupees: null, percent: 30 },
+      ],
+      rebateMaxPaise: 1_250_000,
+      rebateIncomeLimitPaise: 50_000_000,
+    },
     cessPercent: "4",
   },
 };
+
+/**
+ * FY 2026-27 pack (Income-tax Act, 2025 effective 1 Apr 2026): revised new-regime
+ * slabs, §87A rebate ₹60,000 up to ₹12,00,000 taxable income, and renamed forms
+ * (quarterly salary TDS statement Form 138; annual certificate Form 130).
+ * PF/ESI ceilings unchanged; PT/LWF matrices carried forward and still require
+ * legal review before production filing claims.
+ */
+export const IN_STATUTORY_2026_04: IndiaStatutoryBundle = {
+  bundleVersion: IN_STATUTORY_RULE_BUNDLE_VERSION_2026,
+  effectiveFrom: "2026-04-01",
+  pf: { ...IN_STATUTORY_2025_04.pf, version: "IN-PF-2026.04" },
+  esi: { ...IN_STATUTORY_2025_04.esi, version: "IN-ESI-2026.04" },
+  pt: { ...IN_STATUTORY_2025_04.pt, version: "IN-PT-DEFAULT-2026.04" },
+  lwf: { ...IN_STATUTORY_2025_04.lwf, version: "IN-LWF-DEFAULT-2026.04" },
+  gratuity: { ...IN_STATUTORY_2025_04.gratuity, version: "IN-GRATUITY-2026.04" },
+  hra: { ...IN_STATUTORY_2025_04.hra, version: "IN-HRA-2026.04" },
+  minWage: IN_STATUTORY_2025_04.minWage,
+  tds: {
+    version: "IN-TDS-2026.04",
+    ruleYearLabel: "FY 2026-27",
+    formLabels: {
+      quarterlyReturn: "Form 138",
+      annualCertificate: "Form 130",
+    },
+    newRegime: {
+      standardDeductionPaise: 7_500_000,
+      slabs: [
+        { uptoRupees: 400_000, percent: 0 },
+        { uptoRupees: 800_000, percent: 5 },
+        { uptoRupees: 1_200_000, percent: 10 },
+        { uptoRupees: 1_600_000, percent: 15 },
+        { uptoRupees: 2_000_000, percent: 20 },
+        { uptoRupees: 2_400_000, percent: 25 },
+        { uptoRupees: null, percent: 30 },
+      ],
+      rebateMaxPaise: 6_000_000,
+      rebateIncomeLimitPaise: 120_000_000,
+    },
+    oldRegime: { ...IN_STATUTORY_2025_04.tds.oldRegime },
+    cessPercent: "4",
+  },
+};
+
+const IN_BUNDLES_DESC: IndiaStatutoryBundle[] = [IN_STATUTORY_2026_04, IN_STATUTORY_2025_04];
+
+/** Compute annual income tax in rupees from a regime rule (slabs + rebate, before surcharge/cess). */
+export function calcSlabTaxRupees(taxableRupees: number, regime: TdsRegimeRule): number {
+  let tax = 0;
+  let lower = 0;
+  for (const slab of regime.slabs) {
+    const upper = slab.uptoRupees ?? Number.POSITIVE_INFINITY;
+    if (taxableRupees > lower) {
+      tax += (Math.min(taxableRupees, upper) - lower) * (slab.percent / 100);
+    }
+    lower = upper;
+  }
+  if (taxableRupees * 100 <= regime.rebateIncomeLimitPaise) {
+    tax = Math.max(0, tax - regime.rebateMaxPaise / 100);
+  }
+  return tax;
+}
 
 /** Resolve PT monthly amount for a state (falls back to default). */
 export function resolvePtMonthly(bundle: IndiaStatutoryBundle, stateCode?: string | null): string {
@@ -249,7 +345,18 @@ export function calcHraExemptionPaise(input: {
 }
 
 export function getIndiaBundleForDate(asOf = new Date()): IndiaStatutoryBundle {
-  // Currently single versioned pack; extend with historical packs when needed.
-  void asOf;
-  return IN_STATUTORY_2025_04;
+  const asOfIso = asOf.toISOString().slice(0, 10);
+  for (const bundle of IN_BUNDLES_DESC) {
+    if (bundle.effectiveFrom <= asOfIso) return bundle;
+  }
+  return IN_BUNDLES_DESC[IN_BUNDLES_DESC.length - 1]!;
+}
+
+/** Resolve the India bundle for a payroll month ("YYYY-MM") using the month end. */
+export function getIndiaBundleForMonth(month: string): IndiaStatutoryBundle {
+  const [yearStr, monStr] = month.split("-");
+  const year = Number.parseInt(yearStr ?? "", 10);
+  const mon = Number.parseInt(monStr ?? "", 10);
+  if (!Number.isFinite(year) || !Number.isFinite(mon)) return getIndiaBundleForDate();
+  return getIndiaBundleForDate(new Date(Date.UTC(year, mon, 0)));
 }

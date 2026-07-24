@@ -5,6 +5,9 @@ import {
   validateLabourCodeWageDefinition,
   calcHraExemptionPaise,
   IN_STATUTORY_2025_04,
+  IN_STATUTORY_2026_04,
+  getIndiaBundleForMonth,
+  calcSlabTaxRupees,
 } from "../statutory-registry";
 import { calcStatutory } from "../statutory";
 import { calcHraForMonth, calcMonthlyTds } from "../hra-tds";
@@ -77,9 +80,10 @@ describe("statutory registry (canonical India rules)", () => {
       grossPaise: 5000000,
       rounding: { mode: "NEAREST", precision: 0 },
       stateCode: "KA",
+      month: "2026-03",
     });
     expect(emp.ruleVersion).toBe("IN-2025.04");
-    expect(emp.calculationVersion).toBe("1.0.0");
+    expect(emp.calculationVersion).toBe("1.1.0");
     expect(emp.lines.some((l) => l.code === "EPF_EMPLOYEE")).toBe(true);
     expect(emp.lines.some((l) => l.explain?.steps?.some((s) => s.includes("IN-PF-")))).toBe(true);
   });
@@ -113,8 +117,28 @@ describe("HRA / TDS helpers", () => {
       regime: "NEW",
       rounding: { mode: "NEAREST", precision: 0 },
     });
-    expect(r.formLabels.quarterlyReturn).toBe("Form 24Q");
     expect(r.ruleYearLabel).toContain("FY");
     expect(r.monthlyTdsPaise).toBeGreaterThanOrEqual(0);
+  });
+
+  it("pins form labels to the bundle in force: 24Q/16 for FY2025-26, 138/130 for FY2026-27", () => {
+    expect(IN_STATUTORY_2025_04.tds.formLabels).toEqual({
+      quarterlyReturn: "Form 24Q",
+      annualCertificate: "Form 16",
+    });
+    expect(IN_STATUTORY_2026_04.tds.formLabels).toEqual({
+      quarterlyReturn: "Form 138",
+      annualCertificate: "Form 130",
+    });
+    expect(getIndiaBundleForMonth("2026-03").bundleVersion).toBe("IN-2025.04");
+    expect(getIndiaBundleForMonth("2026-04").bundleVersion).toBe("IN-2026.04");
+    expect(getIndiaBundleForMonth("2027-01").bundleVersion).toBe("IN-2026.04");
+  });
+
+  it("FY2026-27 new-regime rebate zeroes tax up to ₹12L taxable income", () => {
+    const regime = IN_STATUTORY_2026_04.tds.newRegime;
+    expect(calcSlabTaxRupees(1_200_000, regime)).toBe(0);
+    expect(calcSlabTaxRupees(1_300_000, regime)).toBeGreaterThan(0);
+    expect(calcSlabTaxRupees(2_400_000, regime)).toBe(300_000);
   });
 });

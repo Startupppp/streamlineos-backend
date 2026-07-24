@@ -3,7 +3,9 @@ import type { RoundingConfig } from "./money";
 import {
   getIndiaBundleForDate,
   calcHraExemptionPaise,
+  calcSlabTaxRupees,
   type IndiaStatutoryBundle,
+  type TdsRegimeRule,
 } from "./statutory-registry";
 
 export interface TdsMonthlyInput {
@@ -38,27 +40,6 @@ export interface TdsMonthlyResult {
   steps: string[];
 }
 
-/** Simplified new-regime slab for FY 2025-26 (illustrative production defaults). */
-function newRegimeTaxPaise(annualTaxablePaise: number): number {
-  // Slabs: 0–3L nil, 3–7L 5%, 7–10L 10%, 10–12L 15%, 12–15L 20%, 15L+ 30%
-  const slabs: { upTo: number; rate: number }[] = [
-    { upTo: 30000000, rate: 0 },
-    { upTo: 70000000, rate: 5 },
-    { upTo: 100000000, rate: 10 },
-    { upTo: 120000000, rate: 15 },
-    { upTo: 150000000, rate: 20 },
-    { upTo: Infinity, rate: 30 },
-  ];
-  let tax = 0;
-  let prev = 0;
-  for (const s of slabs) {
-    if (annualTaxablePaise <= prev) break;
-    const band = Math.min(annualTaxablePaise, s.upTo) - prev;
-    if (band > 0) tax += Math.round((band * s.rate) / 100);
-    prev = s.upTo;
-  }
-  return tax;
-}
 
 export function calcMonthlyTds(input: TdsMonthlyInput): TdsMonthlyResult {
   const bundle = input.bundle ?? getIndiaBundleForDate();
@@ -75,10 +56,13 @@ export function calcMonthlyTds(input: TdsMonthlyInput): TdsMonthlyResult {
     `Projected annual taxable (pre-deductions) = YTD ${(input.ytdTaxablePaise / 100).toFixed(2)} + monthly × ${remaining} + prev employer + perqs = ₹${(projectedAnnual / 100).toFixed(2)}`,
   );
 
+  const regimeRule: TdsRegimeRule =
+    input.regime === "NEW" ? bundle.tds.newRegime : bundle.tds.oldRegime;
+
   let taxable = projectedAnnual;
   if (input.regime === "NEW") {
-    taxable -= bundle.tds.newRegimeStandardDeductionPaise;
-    steps.push(`Less standard deduction ₹${(bundle.tds.newRegimeStandardDeductionPaise / 100).toFixed(2)}`);
+    taxable -= regimeRule.standardDeductionPaise;
+    steps.push(`Less standard deduction ₹${(regimeRule.standardDeductionPaise / 100).toFixed(2)}`);
   } else {
     const chapterVia =
       input.section80cPaise +
@@ -91,12 +75,16 @@ export function calcMonthlyTds(input: TdsMonthlyInput): TdsMonthlyResult {
   }
   taxable = Math.max(0, taxable);
 
-  let tax = newRegimeTaxPaise(taxable);
-  steps.push(`Slab tax on ₹${(taxable / 100).toFixed(2)} = ₹${(tax / 100).toFixed(2)}`);
+  const slabOnlyRupees = calcSlabTaxRupees(taxable / 100, {
+    ...regimeRule,
+    rebateIncomeLimitPaise: -1,
+  });
+  let tax = Math.round(slabOnlyRupees * 100);
+  steps.push(`Slab tax (${bundle.tds.ruleYearLabel}) on ₹${(taxable / 100).toFixed(2)} = ₹${(tax / 100).toFixed(2)}`);
 
   let rebate = 0;
-  if (taxable <= bundle.tds.rebate87AIncomeLimitPaise) {
-    rebate = Math.min(tax, bundle.tds.rebate87AMaxPaise);
+  if (taxable <= regimeRule.rebateIncomeLimitPaise) {
+    rebate = Math.min(tax, regimeRule.rebateMaxPaise);
     tax -= rebate;
     steps.push(`Rebate u/s 87A = ₹${(rebate / 100).toFixed(2)}`);
   }

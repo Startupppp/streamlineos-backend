@@ -13,6 +13,11 @@ import type { SalaryComponentType, SalaryComponentCalcMethod } from "../../payro
 import { toPaise, fromPaise, pctOf, applyRounding, daysInMonth } from "./money";
 import { evalFormula } from "./formula-engine";
 import { calcStatutory } from "./statutory";
+import {
+  calcSlabTaxRupees,
+  getIndiaBundleForMonth,
+  type TdsRule,
+} from "./statutory-registry";
 
 export interface ResolvedComponent {
   id: number;
@@ -106,57 +111,23 @@ export function surchargeRate(taxableRupees: number, regime: "NEW" | "OLD"): num
   return 0.37;
 }
 
-function taxSlabNew(annualGrossPaise: number): number {
-  const STD_DEDUCTION_PAISE = 7_500_000;
-  const taxablePaise = Math.max(0, annualGrossPaise - STD_DEDUCTION_PAISE);
+function taxSlabNew(annualGrossPaise: number, tds: TdsRule): number {
+  const regime = tds.newRegime;
+  const taxablePaise = Math.max(0, annualGrossPaise - regime.standardDeductionPaise);
   const g = taxablePaise / 100;
-
-  let tax = 0;
-  if (g <= 300000) {
-    tax = 0;
-  } else if (g <= 700000) {
-    tax = (g - 300000) * 0.05;
-  } else if (g <= 1000000) {
-    tax = 20000 + (g - 700000) * 0.10;
-  } else if (g <= 1200000) {
-    tax = 50000 + (g - 1000000) * 0.15;
-  } else if (g <= 1500000) {
-    tax = 80000 + (g - 1200000) * 0.20;
-  } else {
-    tax = 140000 + (g - 1500000) * 0.30;
-  }
-
-  if (tax > 0 && tax <= 60000) {
-    tax = 0;
-  }
-
+  const tax = calcSlabTaxRupees(g, regime);
   const surcharge = tax * surchargeRate(g, "NEW");
-  return (tax + surcharge) * (1 + CESS_RATE);
+  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
 }
 
-function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number): number {
-  const STD_DEDUCTION_PAISE = 5_000_000;
-  const totalDeductionPaise = STD_DEDUCTION_PAISE + annualDeductionPaise;
+function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number, tds: TdsRule): number {
+  const regime = tds.oldRegime;
+  const totalDeductionPaise = regime.standardDeductionPaise + annualDeductionPaise;
   const taxablePaise = Math.max(0, annualGrossPaise - totalDeductionPaise);
   const g = taxablePaise / 100;
-
-  let tax = 0;
-  if (g <= 250000) {
-    tax = 0;
-  } else if (g <= 500000) {
-    tax = (g - 250000) * 0.05;
-  } else if (g <= 1000000) {
-    tax = 12500 + (g - 500000) * 0.20;
-  } else {
-    tax = 112500 + (g - 1000000) * 0.30;
-  }
-
-  if (tax > 0 && tax <= 12500) {
-    tax = 0;
-  }
-
+  const tax = calcSlabTaxRupees(g, regime);
   const surcharge = tax * surchargeRate(g, "OLD");
-  return (tax + surcharge) * (1 + CESS_RATE);
+  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
 }
 
 export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
@@ -606,6 +577,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     basicPaise,
     grossPaise,
     rounding,
+    month,
   });
   lines.push(...statResult.lines);
 
@@ -680,16 +652,17 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       const prevEmpTdsPaise = taxDecl ? Math.round(toPaise(taxDecl.previousEmployerTds)) : 0;
       const annualGrossPaise = grossPaise * 12 + prevEmpIncomePaise;
       const regime = taxRegime ?? "NEW";
+      const tdsRule = getIndiaBundleForMonth(month).tds;
 
       let annualTaxRupees: number;
       if (regime === "NEW") {
-        annualTaxRupees = taxSlabNew(annualGrossPaise);
+        annualTaxRupees = taxSlabNew(annualGrossPaise, tdsRule);
       } else {
         const oldDeductionsPaise = taxDecl
           ? toPaise(taxDecl.section80c) + toPaise(taxDecl.section80d) + toPaise(taxDecl.hra) +
             toPaise(taxDecl.lta) + toPaise(taxDecl.homeLoanInterest) + toPaise(taxDecl.section80g)
           : 0;
-        annualTaxRupees = taxSlabOld(annualGrossPaise, oldDeductionsPaise);
+        annualTaxRupees = taxSlabOld(annualGrossPaise, oldDeductionsPaise, tdsRule);
       }
 
       const annualTaxPaise = Math.round(annualTaxRupees * 100);
@@ -712,7 +685,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
           inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100 },
           steps: [
             tdsMode === "DECLARATION" && !isContractor
-              ? `TDS (${taxRegime ?? "NEW"} regime, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
+              ? `TDS (${taxRegime ?? "NEW"} regime, ${getIndiaBundleForMonth(month).tds.ruleYearLabel}, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
               : isContractor
                 ? `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${contractorRate}%${noPanUplift ? " (§206AA: no PAN on record)" : " (§194J)"} = ₹${(tdsRounded / 100).toFixed(2)}`
                 : `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${config.statutory.tdsFlatPercent ?? "10"}% = ₹${(tdsRounded / 100).toFixed(2)}`,

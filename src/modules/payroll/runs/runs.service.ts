@@ -22,6 +22,7 @@ import { toPaise, fromPaise } from "./lib/money";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
 import { describeCountryPack } from "../../hr-global/lib/country-pack-registry";
+import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 @Injectable()
 export class RunsService {
@@ -168,7 +169,10 @@ export class RunsService {
       const period = await this.entities.ensurePeriod(orgId, month, { entityId });
       periodId = period.id;
       const pack = describeCountryPack(entity.countryCode);
-      statutoryRuleVersion = pack?.payrollStatutoryBundle ?? null;
+      statutoryRuleVersion =
+        entity.countryCode === "IN"
+          ? getIndiaBundleForMonth(month).bundleVersion
+          : (pack?.payrollStatutoryBundle ?? null);
       // Isolation: statutory bundle country must match entity country when present.
       if (statutoryRuleVersion) {
         const ruleCountry = statutoryRuleVersion.split("-")[0] ?? "";

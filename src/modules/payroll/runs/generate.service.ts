@@ -27,7 +27,7 @@ import {
   buildPulledInputsFromSections,
   getLockedInputPeriodId,
 } from "./lib/input-puller";
-import { IN_STATUTORY_RULE_BUNDLE_VERSION } from "./lib/statutory-registry";
+import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -293,7 +293,7 @@ export class GenerateService {
           policyVersionId,
           calculationVersion: "1.0.0",
           // Preserve entity-stamped pack from createRun; India calc engine default otherwise.
-          statutoryRuleVersion: run.statutoryRuleVersion ?? IN_STATUTORY_RULE_BUNDLE_VERSION,
+          statutoryRuleVersion: run.statutoryRuleVersion ?? getIndiaBundleForMonth(run.month).bundleVersion,
         })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 

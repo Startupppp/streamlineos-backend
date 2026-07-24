@@ -4,7 +4,7 @@ import type { CalcEngineInput } from "../../calculation-engine";
 export const REPLAY_FIXTURE_INPUT: CalcEngineInput = {
   policyVersionId: 7,
   month: "2026-07",
-  annualCtcDecimal: "1200000.00",
+  annualCtcDecimal: "2400000.00",
   workerType: "EMPLOYEE",
   currency: "INR",
   payoutCurrency: null,

@@ -121,7 +121,7 @@ describe("PRD acceptance — launch gates", () => {
     expect(pf).toBeDefined();
     // 15000 * 12% = 1800
     expect(pf!.amount).toBe("1800.00");
-    expect(emp.ruleVersion).toBe("IN-2025.04");
+    expect(emp.ruleVersion).toBe(getIndiaBundleForDate().bundleVersion);
   });
 
   it("filing honesty: export status labels must not claim filed without acknowledgement", () => {
