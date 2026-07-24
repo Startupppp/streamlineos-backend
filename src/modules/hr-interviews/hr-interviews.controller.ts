@@ -41,6 +41,12 @@ export class HrInterviewsController {
     return this.interviews.list(u.orgId, query);
   }
 
+  @Get("stats")
+  @RequirePermission("hr:interviews:view")
+  stats(@CurrentUser() u: CurrentUserContext) {
+    return this.interviews.stats(u.orgId);
+  }
+
   @Get("slas")
   @RequirePermission("hr:interviews:view")
   listSlas(@CurrentUser() u: CurrentUserContext) {

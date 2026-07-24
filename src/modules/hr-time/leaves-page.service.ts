@@ -18,11 +18,9 @@ export class LeavesPageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async pageData(orgId: string, userId: string) {
-    await this.ensureUserBalances(orgId, userId);
-
     const year = new Date().getFullYear();
 
-    const [rawBalances, allTypes, requests, user, member] = await Promise.all([
+    const balanceQuery = () =>
       this.db
         .select({
           id: leaveBalances.id,
@@ -39,7 +37,10 @@ export class LeavesPageService {
             eq(leaveBalances.orgId, orgId),
             eq(leaveBalances.year, year),
           ),
-        ),
+        );
+
+    const [existingBalances, allTypes, requests, user, member] = await Promise.all([
+      balanceQuery(),
       this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) }),
       this.db.query.leaveRequests.findMany({
         where: and(eq(leaveRequests.userId, userId), eq(leaveRequests.orgId, orgId)),
@@ -59,6 +60,24 @@ export class LeavesPageService {
         columns: { role: true },
       }),
     ]);
+
+    const existingTypeIds = new Set(existingBalances.map((b) => b.leaveTypeId));
+    const joiningDate = user?.joiningDate ? new Date(user.joiningDate) : new Date();
+    const toInsert = allTypes
+      .filter((t) => !existingTypeIds.has(t.id))
+      .map((t) => ({
+        orgId,
+        userId,
+        leaveTypeId: t.id,
+        year,
+        balance: this.calculateInitialBalance(t.daysPerYear, joiningDate, year).toString(),
+      }));
+
+    let rawBalances = existingBalances;
+    if (toInsert.length > 0) {
+      await this.db.insert(leaveBalances).values(toInsert).onConflictDoNothing();
+      rawBalances = await balanceQuery();
+    }
 
     const seenTypeIds = new Set<number>();
     const balances = rawBalances.filter((b) => {
@@ -83,46 +102,6 @@ export class LeavesPageService {
       joiningDate: user?.joiningDate ?? null,
       approvers,
     };
-  }
-
-  private async ensureUserBalances(orgId: string, userId: string) {
-    const year = new Date().getFullYear();
-    const [orgTypes, existing, user] = await Promise.all([
-      this.db.query.leaveTypes.findMany({
-        where: eq(leaveTypes.orgId, orgId),
-        columns: { id: true, daysPerYear: true },
-      }),
-      this.db.query.leaveBalances.findMany({
-        where: and(
-          eq(leaveBalances.userId, userId),
-          eq(leaveBalances.orgId, orgId),
-          eq(leaveBalances.year, year),
-        ),
-        columns: { leaveTypeId: true },
-      }),
-      this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { joiningDate: true },
-      }),
-    ]);
-
-    if (orgTypes.length === 0) return;
-
-    const existingTypeIds = new Set(existing.map((b) => b.leaveTypeId));
-    const joiningDate = user?.joiningDate ? new Date(user.joiningDate) : new Date();
-
-    const toInsert = orgTypes
-      .filter((t) => !existingTypeIds.has(t.id))
-      .map((t) => ({
-        orgId,
-        userId,
-        leaveTypeId: t.id,
-        year,
-        balance: this.calculateInitialBalance(t.daysPerYear, joiningDate, year).toString(),
-      }));
-
-    if (toInsert.length === 0) return;
-    await this.db.insert(leaveBalances).values(toInsert).onConflictDoNothing();
   }
 
   private calculateInitialBalance(daysPerYear: number, joiningDate: Date, year: number): number {

@@ -101,25 +101,29 @@ export class EssService {
       this.getActiveWindow(orgId),
     ]);
 
+    const [ytdRows, declarations] = await Promise.all([
+      fyPubs.length > 0
+        ? this.db
+            .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
+            .from(payrollRunEmployees)
+            .where(and(eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
+        : Promise.resolve([]),
+      window ? this.taxService.listMine(orgId, userId) : Promise.resolve([]),
+    ]);
+
     let ytdGross = "0.00", ytdNet = "0.00";
-    if (fyPubs.length > 0) {
-      const [ytdRow] = await this.db
-        .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
-        .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))));
-      ytdGross = parseFloat(ytdRow?.gross ?? "0").toFixed(2);
-      ytdNet = parseFloat(ytdRow?.net ?? "0").toFixed(2);
+    if (ytdRows[0]) {
+      ytdGross = parseFloat(ytdRows[0].gross ?? "0").toFixed(2);
+      ytdNet = parseFloat(ytdRows[0].net ?? "0").toFixed(2);
     }
 
     const activeLoanBalance = activeLoans
       .reduce((acc, l) => acc + ((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0"), 0)
       .toFixed(2);
 
-    let declarationStatus: string | null = null;
-    if (window) {
-      const declarations = await this.taxService.listMine(orgId, userId);
-      declarationStatus = declarations.find((d) => d.financialYear === window.financialYear)?.status ?? null;
-    }
+    const declarationStatus: string | null = window
+      ? declarations.find((d) => d.financialYear === window.financialYear)?.status ?? null
+      : null;
 
     return {
       toggles,
@@ -235,10 +239,11 @@ export class EssService {
   }
 
   async getTaxDeclaration(orgId: string, userId: string) {
-    const toggles = await this.getActiveToggles(orgId);
+    const [toggles, window] = await Promise.all([
+      this.getActiveToggles(orgId),
+      this.getActiveWindow(orgId),
+    ]);
     if (!toggles.essAllowTaxDeclarations) throw new ForbiddenException("Tax declarations are disabled");
-
-    const window = await this.getActiveWindow(orgId);
     if (!window) return { windowStatus: null, declaration: null, proofs: [] };
 
     const declarations = await this.taxService.listMine(orgId, userId);
@@ -294,14 +299,15 @@ export class EssService {
     userId: string,
     body: { declarationId: number; category: string; amount: number; description?: string; proofUrl?: string },
   ) {
-    const toggles = await this.getActiveToggles(orgId);
+    const [toggles, declaration, window] = await Promise.all([
+      this.getActiveToggles(orgId),
+      this.db.query.taxDeclarations.findFirst({
+        where: and(eq(taxDeclarations.id, body.declarationId), eq(taxDeclarations.userId, userId), eq(taxDeclarations.orgId, orgId)),
+      }),
+      this.getActiveWindow(orgId),
+    ]);
     if (!toggles.essAllowTaxDeclarations) throw new ForbiddenException("Tax declarations are disabled");
-    const declaration = await this.db.query.taxDeclarations.findFirst({
-      where: and(eq(taxDeclarations.id, body.declarationId), eq(taxDeclarations.userId, userId), eq(taxDeclarations.orgId, orgId)),
-    });
     if (!declaration) throw new NotFoundException("Tax declaration not found");
-
-    const window = await this.getActiveWindow(orgId);
     if (!window) throw new ForbiddenException("Tax declaration window is not open");
     if (window.lockDate) {
       const todayIso = new Date().toISOString().slice(0, 10);

@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
   payrollRuns,
@@ -80,54 +80,26 @@ export async function getLineItemsForRun(
         profileId: payrollRunEmployees.profileId,
       },
       userName: users.name,
-      departmentId: users.departmentId,
-      profileId: payrollRunEmployees.profileId,
+      departmentName: departments.name,
+      costCenter: employeeSalaryProfiles.costCenter,
     })
     .from(payrollLineItems)
     .innerJoin(payrollRunEmployees, eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id))
     .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
+    .leftJoin(departments, eq(departments.id, users.departmentId))
+    .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
     .where(
       filters?.workerType
         ? and(eq(payrollLineItems.runId, runId), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
         : eq(payrollLineItems.runId, runId),
     );
 
-  const deptIds = [
-    ...new Set(
-      rows
-        .map((r) => r.departmentId)
-        .filter((d): d is number => d !== null),
-    ),
-  ];
-
-  const deptMap = new Map<number, string>();
-  if (deptIds.length > 0) {
-    const deptRows = await db
-      .select({ id: departments.id, name: departments.name })
-      .from(departments)
-      .where(inArray(departments.id, deptIds));
-    for (const d of deptRows) deptMap.set(d.id, d.name);
-  }
-
-  const profileIds = [
-    ...new Set(rows.map((r) => r.profileId).filter((p): p is number => p !== null)),
-  ];
-
-  const ccMap = new Map<number, string | null>();
-  if (profileIds.length > 0) {
-    const profiles = await db
-      .select({ id: employeeSalaryProfiles.id, costCenter: employeeSalaryProfiles.costCenter })
-      .from(employeeSalaryProfiles)
-      .where(inArray(employeeSalaryProfiles.id, profileIds));
-    for (const p of profiles) ccMap.set(p.id, p.costCenter ?? null);
-  }
-
   const enriched: EnrichedLineItem[] = rows.map((r) => ({
     lineItem: r.lineItem,
     runEmployee: r.runEmployee,
     userName: r.userName,
-    userDept: r.departmentId !== null ? (deptMap.get(r.departmentId) ?? null) : null,
-    costCenter: r.profileId !== null ? (ccMap.get(r.profileId) ?? null) : null,
+    userDept: r.departmentName ?? null,
+    costCenter: r.costCenter ?? null,
   }));
 
   if (filters?.department && filters.costCenter) {

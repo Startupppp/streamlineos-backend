@@ -155,14 +155,18 @@ export class ApprovalsService {
           ),
         );
 
-      for (const entry of billableEntries) {
-        const resolved = await this.rateResolver.resolve(u.orgId, {
+      const resolvedRates = await this.rateResolver.resolveMany(
+        u.orgId,
+        billableEntries.map((entry) => ({
           projectId: entry.projectId,
           userId: entry.userId,
           ticketId: entry.ticketId,
-        });
+        })),
+      );
 
-        if (resolved.billRate !== null) {
+      for (const [i, entry] of billableEntries.entries()) {
+        const resolved = resolvedRates[i];
+        if (resolved && resolved.billRate !== null) {
           await tx
             .update(timesheets)
             .set({
