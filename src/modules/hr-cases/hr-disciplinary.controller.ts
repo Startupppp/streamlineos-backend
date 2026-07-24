@@ -23,8 +23,10 @@ import { HrDisciplinaryService } from "./hr-disciplinary.service";
 import {
   createDisciplinaryActionSchema,
   listDisciplinarySchema,
+  acknowledgeDisciplinarySchema,
   type CreateDisciplinaryActionInput,
   type ListDisciplinaryInput,
+  type AcknowledgeDisciplinaryInput,
 } from "./dto/hr-cases.schemas";
 
 @RequireModule("hr")
@@ -40,6 +42,19 @@ export class HrDisciplinaryController {
     @Query(new ZodValidationPipe(listDisciplinarySchema)) query: ListDisciplinaryInput,
   ) {
     return this.disciplinary.list(user.orgId, query);
+  }
+
+  /** Employee: disciplinary actions issued to me. */
+  @Get("mine")
+  @RequirePermission("self:payroll")
+  listMine(@CurrentUser() user: CurrentUserContext) {
+    return this.disciplinary.listMine(user.orgId, user.userId);
+  }
+
+  @Get("mine/unacknowledged-count")
+  @RequirePermission("self:payroll")
+  unacknowledgedCount(@CurrentUser() user: CurrentUserContext) {
+    return this.disciplinary.listUnacknowledgedCount(user.orgId, user.userId);
   }
 
   @Get(":actionId")
@@ -60,6 +75,19 @@ export class HrDisciplinaryController {
     @Req() req: Request,
   ) {
     return this.disciplinary.create(user.orgId, user.userId, body, req.ip);
+  }
+
+  /** Employee acknowledges receipt (not agreement). */
+  @Post(":actionId/acknowledge")
+  @HttpCode(200)
+  @RequirePermission("self:payroll")
+  acknowledge(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("actionId", ParseIntPipe) actionId: number,
+    @Body(new ZodValidationPipe(acknowledgeDisciplinarySchema))
+    body: AcknowledgeDisciplinaryInput,
+  ) {
+    return this.disciplinary.acknowledge(user.orgId, user.userId, actionId, body.note);
   }
 
   @Delete(":actionId")
