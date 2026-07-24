@@ -289,36 +289,6 @@ export class RunsService {
     return { failedCount, heldCount };
   }
 
-  async getCurrentRun(orgId: string) {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-
-    // "Current run" is the month's canonical REGULAR run; off-cycle/bonus/
-    // correction runs share the month and must not be returned here.
-    const rows = await this.db
-      .select()
-      .from(payrollRuns)
-      .where(
-        and(
-          eq(payrollRuns.orgId, orgId),
-          eq(payrollRuns.month, currentMonth),
-          eq(payrollRuns.runType, "REGULAR"),
-        ),
-      )
-      .limit(1);
-
-    if (rows[0]) return rows[0];
-
-    const recent = await this.db
-      .select()
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.runType, "REGULAR")))
-      .orderBy(desc(payrollRuns.month))
-      .limit(1);
-
-    return recent[0] ?? null;
-  }
-
   async listRunEmployees(
     orgId: string,
     runId: number,
@@ -443,6 +413,9 @@ export class RunsService {
         userId: payrollRunEmployees.userId,
         net: payrollRunEmployees.net,
         userName: users.name,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        paidDays: payrollRunEmployees.paidDays,
+        lopDays: payrollRunEmployees.lopDays,
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
@@ -450,10 +423,40 @@ export class RunsService {
       .orderBy(desc(payrollRunEmployees.net))
       .limit(10);
 
+    const withBaselines = topMovers.map((m) => {
+      const snap = m.calculationSnapshot as {
+        variance?: {
+          baselineSource?: string | null;
+          inputBaseline?: {
+            lockedPaidDays: string | null;
+            lockedLopDays: string | null;
+            paidDaysDelta: number | null;
+            lopDaysDelta: number | null;
+          } | null;
+          netDeltaPercent?: number | null;
+        } | null;
+      } | null;
+      return {
+        userId: m.userId,
+        net: m.net,
+        userName: m.userName,
+        paidDays: m.paidDays,
+        lopDays: m.lopDays,
+        baselineSource: snap?.variance?.baselineSource ?? (prevRun[0] ? "PREVIOUS_RUN" : null),
+        inputBaseline: snap?.variance?.inputBaseline ?? null,
+        netDeltaPercent: snap?.variance?.netDeltaPercent ?? null,
+      };
+    });
+
     return {
       currentRun: run[0],
       previousRun: prevRun[0] ?? null,
-      topMovers,
+      topMovers: withBaselines,
+      lockedInputBaselinesUsed: withBaselines.some(
+        (m) =>
+          m.baselineSource === "LOCKED_INPUT_SNAPSHOT" ||
+          m.baselineSource === "PREVIOUS_RUN_AND_LOCKED_INPUTS",
+      ),
     };
   }
 

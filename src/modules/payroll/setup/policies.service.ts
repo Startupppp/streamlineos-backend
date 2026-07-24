@@ -39,6 +39,10 @@ import type {
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import { getStatutoryPack } from "../runs/lib/statutory-packs";
 import { addDays, format } from "date-fns";
+import {
+  DEFAULT_PAYROLL_CALENDAR as DEFAULT_CALENDAR,
+  DEFAULT_PAYROLL_STATUTORY as DEFAULT_STATUTORY,
+} from "./payroll-policy-defaults.constants";
 
 const RISKY_TOGGLES = new Set<PayrollToggleKey>([
   "pf",
@@ -183,27 +187,6 @@ function calendarEventsForMonth(
 
   return events;
 }
-
-const DEFAULT_CALENDAR = {
-  attendanceCutoffDay: 20,
-  reimbursementCutoffDay: 20,
-  declarationCutoffDay: 15,
-  previewDay: 22,
-  approvalDeadlineDay: 25,
-  publishOffsetDays: 1,
-} as const;
-
-const DEFAULT_STATUTORY = {
-  pfEmployeePercent: "12",
-  pfEmployerPercent: "12",
-  pfWageCeiling: "15000.00" as string | null,
-  esiEmployeePercent: "0.75",
-  esiEmployerPercent: "3.25",
-  esiWageCeiling: "21000.00" as string | null,
-  professionalTaxMonthly: "200.00",
-  tdsMode: "DECLARATION" as const,
-  tdsFlatPercent: null as string | null,
-};
 
 function buildPackConfig(country: string): StatutoryPackConfig {
   const pack = getStatutoryPack(country);

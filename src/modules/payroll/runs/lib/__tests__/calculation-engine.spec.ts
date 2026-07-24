@@ -541,3 +541,33 @@ describe("Contractor TDS — §194J and §206AA (no PAN)", () => {
     expect(parseFloat(tds.amount)).toBeCloseTo(gross * 0.1, 0);
   });
 });
+
+describe("Labour Code wage definition — snapshot surfacing", () => {
+  // A special allowance that dwarfs Basic is the classic way orgs suppress the
+  // PF base. Basic 40% + a flat allowance pushes Basic+DA under 50% of gross.
+  const bigAllowance: ResolvedComponent = {
+    id: 3, code: "SPECIAL", name: "Special Allowance", type: "EARNING" as const,
+    calcMethod: "FIXED" as const,
+    amount: "80000.00", percent: null, formula: null,
+    taxable: true, showOnPayslip: true, includeInCtc: true,
+    isStatutory: false, sortOrder: 3,
+  };
+
+  it("flags the snapshot when Basic+DA falls below 50% of gross", () => {
+    const snap = calcPayroll({
+      ...baseInput,
+      components: [basicComponent, hraComponent, bigAllowance],
+    });
+    const basic = parseFloat(snap.lines.find(l => l.code === "BASIC")!.amount);
+    const gross = parseFloat(snap.totals.gross);
+    expect(basic / gross).toBeLessThan(0.5);
+    expect(snap.wageDefinitionWarning).toContain("Labour Code wage definition");
+  });
+
+  it("leaves the snapshot clean for a compliant structure", () => {
+    const snap = calcPayroll(baseInput);
+    const basic = parseFloat(snap.lines.find(l => l.code === "BASIC")!.amount);
+    expect(basic / parseFloat(snap.totals.gross)).toBeGreaterThanOrEqual(0.5);
+    expect(snap.wageDefinitionWarning).toBeNull();
+  });
+});

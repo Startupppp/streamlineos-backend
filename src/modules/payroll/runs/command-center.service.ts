@@ -50,9 +50,13 @@ export class CommandCenterService {
     const todayStr = now.toISOString().slice(0, 10);
     const in14DaysStr = in14Days.toISOString().slice(0, 10);
 
-    const [toggles, packComplianceChecklist, upcomingCalendarEvents] = await Promise.all([
-      run?.policyVersionId ? this.loadToggles(orgId, run.policyVersionId) : Promise.resolve(null),
-      this.loadPackComplianceChecklist(orgId, run?.policyVersionId ?? null),
+    const [versionData, policyRows, upcomingCalendarEvents] = await Promise.all([
+      run?.policyVersionId ? this.loadVersionData(orgId, run.policyVersionId) : Promise.resolve(null),
+      this.db
+        .select({ country: payrollPolicies.country })
+        .from(payrollPolicies)
+        .where(eq(payrollPolicies.orgId, orgId))
+        .limit(1),
       this.db
         .select()
         .from(payrollCalendarEvents)
@@ -66,9 +70,17 @@ export class CommandCenterService {
         .orderBy(payrollCalendarEvents.date),
     ]);
 
-    const checklist = run ? await buildRunChecklist(this.db, orgId, run, toggles) : [];
+    const toggles = versionData?.toggles ?? null;
+    const packComplianceChecklist = this.buildPackComplianceChecklist(
+      policyRows[0]?.country ?? "IN",
+      versionData?.config ?? null,
+    );
 
-    const [exceptionCounts, topExceptions, pendingApprovals] = await Promise.all([
+    const [checklist, varianceSummary, exceptionCounts, topExceptions, pendingApprovals] = await Promise.all([
+      run ? buildRunChecklist(this.db, orgId, run, toggles) : Promise.resolve([]),
+      run
+        ? this.runsService.buildVarianceSummary(orgId, run.id, run.month, run.netTotal)
+        : Promise.resolve(null),
       run
         ? this.getExceptionCounts(orgId, run.id)
         : Promise.resolve({ BLOCKER: 0, WARNING: 0, INFO: 0 }),
@@ -120,9 +132,7 @@ export class CommandCenterService {
       panels: {
         runStatus: run?.status ?? null,
         topExceptions,
-        varianceSummary: run
-          ? await this.runsService.buildVarianceSummary(orgId, run.id, run.month, run.netTotal)
-          : null,
+        varianceSummary,
         pendingApprovals,
         payoutReadiness: run ? ["LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED"].includes(run.status) : false,
         statutoryReadiness: {
@@ -151,43 +161,33 @@ export class CommandCenterService {
     return result;
   }
 
-  private async loadToggles(orgId: string, policyVersionId: number): Promise<PayrollToggles | null> {
+  private async loadVersionData(
+    orgId: string,
+    policyVersionId: number,
+  ): Promise<{ toggles: PayrollToggles | null; config: PayrollPolicyConfig | null }> {
     const version = await this.db
-      .select({ toggles: payrollPolicyVersions.toggles })
+      .select({ toggles: payrollPolicyVersions.toggles, config: payrollPolicyVersions.config })
       .from(payrollPolicyVersions)
       .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
       .limit(1);
 
-    const raw = version[0]?.toggles;
-    return raw && typeof raw === "object" ? { ...DEFAULT_PAYROLL_TOGGLES, ...(raw as Partial<PayrollToggles>) } : null;
+    const rawToggles = version[0]?.toggles;
+    const rawConfig = version[0]?.config;
+    return {
+      toggles:
+        rawToggles && typeof rawToggles === "object"
+          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
+          : null,
+      config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null,
+    };
   }
 
-  private async loadPackComplianceChecklist(
-    orgId: string,
-    policyVersionId: number | null,
-  ): Promise<{ key: string; label: string; detail: string }[]> {
-    const policy = await this.db
-      .select({ country: payrollPolicies.country })
-      .from(payrollPolicies)
-      .where(eq(payrollPolicies.orgId, orgId))
-      .limit(1);
-
-    const country = policy[0]?.country ?? "IN";
+  private buildPackComplianceChecklist(
+    country: string,
+    config: PayrollPolicyConfig | null,
+  ): { key: string; label: string; detail: string }[] {
     if (country === "IN") return [];
-
-    if (policyVersionId != null) {
-      const version = await this.db
-        .select({ config: payrollPolicyVersions.config })
-        .from(payrollPolicyVersions)
-        .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
-        .limit(1);
-
-      const rawConfig = version[0]?.config;
-      const config: PayrollPolicyConfig | null = rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null;
-      const packCountry = config?.statutoryPack?.country ?? country;
-      return getStatutoryPack(packCountry).complianceChecklist;
-    }
-
-    return getStatutoryPack(country).complianceChecklist;
+    const packCountry = config?.statutoryPack?.country ?? country;
+    return getStatutoryPack(packCountry).complianceChecklist;
   }
 }

@@ -754,6 +754,8 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       netDelta: fromPaise(netDelta),
       netDeltaPercent,
       changedComponents,
+      baselineSource: "PREVIOUS_RUN",
+      inputBaseline: null,
     };
   }
 
@@ -775,6 +777,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       net: fromPaise(netPaise),
     },
     variance,
+    wageDefinitionWarning: statResult.wageDefinitionWarning ?? null,
   };
 }
 

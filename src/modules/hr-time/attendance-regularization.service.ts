@@ -1,12 +1,15 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations } from "../../db/schema";
+import { PayrollInputsService } from "../hr-payroll-inputs/payroll-inputs.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 import { AccessService } from "../access/access.service";
 import { resolveAttendanceScope } from "./attendance-scope";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { logger } from "../../common/logger/logger.service";
+import { AuditService } from "../../common/audit/audit.service";
 
 export interface CreateRegularizationInput {
   attendanceDate: string;
@@ -30,6 +33,8 @@ export class AttendanceRegularizationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly access: AccessService,
+    private readonly payrollInputs: PayrollInputsService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(u: CurrentUserContext, input: CreateRegularizationInput) {
@@ -143,16 +148,16 @@ export class AttendanceRegularizationService {
 
     await this.db.transaction(async (tx) => {
       if (reg.attendanceId) {
-        const updateSet: Record<string, unknown> = {};
+        const updateSet: Record<string, unknown> = {
+          status: "PRESENT",
+        };
         if (reg.requestedCheckIn) updateSet["checkIn"] = reg.requestedCheckIn;
         if (reg.requestedCheckOut) updateSet["checkOut"] = reg.requestedCheckOut;
 
-        if (Object.keys(updateSet).length > 0) {
-          await tx
-            .update(attendance)
-            .set(updateSet)
-            .where(and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)));
-        }
+        await tx
+          .update(attendance)
+          .set(updateSet)
+          .where(and(eq(attendance.id, reg.attendanceId), eq(attendance.orgId, u.orgId)));
       } else if (reg.requestedCheckIn) {
         await tx.insert(attendance).values({
           orgId: u.orgId,
@@ -174,7 +179,42 @@ export class AttendanceRegularizationService {
         .where(eq(hrAttendanceRegularizations.id, regularizationId));
     });
 
-    return { success: true };
+    const monthKey = reg.attendanceDate.slice(0, 7);
+
+    this.audit.log({
+      action: "hr.attendance_regularization.approved",
+      userId: u.userId,
+      orgId: u.orgId,
+      targetId: String(regularizationId),
+      targetType: "attendance_regularization",
+      metadata: {
+        employeeUserId: reg.userId,
+        attendanceDate: reg.attendanceDate,
+        monthKey,
+        feedsPayrollInputRebuild: true,
+      },
+    });
+
+    try {
+      const rebuild = await this.payrollInputs.rebuildOpenPeriodForMonth(
+        u.orgId,
+        u.userId,
+        monthKey,
+      );
+      return { success: true, monthKey, payrollInputRebuild: rebuild };
+    } catch (err) {
+      logger.warn("payroll input rebuild after regularization failed", {
+        orgId: u.orgId,
+        monthKey,
+        regularizationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return {
+        success: true,
+        monthKey,
+        payrollInputRebuild: { rebuilt: false, periodId: null, status: "error" },
+      };
+    }
   }
 
   async reject(u: CurrentUserContext, regularizationId: number, rejectionReason: string) {

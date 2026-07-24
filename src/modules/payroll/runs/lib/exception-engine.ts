@@ -26,6 +26,14 @@ export interface ExceptionInput {
   missingFxRate: boolean;
   isSalaryOnHold?: boolean;
   duplicateBankAccountUserIds?: string[];
+  /** Org requires freeze-before-pay and no locked hr_payroll_input period exists for the month. */
+  missingLockedInputPeriod?: boolean;
+  /** Attendance inputs were pulled live instead of from a locked snapshot. */
+  inputNotFromLockedSnapshot?: boolean;
+  /** PF contribution applies and UAN is missing on employee statutory details. */
+  missingPfUan?: boolean;
+  /** ESI contribution applies and ESI IP number is missing. */
+  missingEsiIp?: boolean;
 }
 
 export interface DetectedExceptions {
@@ -95,6 +103,38 @@ export function detectExceptions(input: ExceptionInput): DetectedExceptions[] {
     ));
   }
 
+  if (toggles.requireLockedPayrollInputs && input.missingLockedInputPeriod) {
+    results.push(makeException(
+      "MISSING_LOCKED_INPUT_PERIOD",
+      "Payroll requires a locked input period for this month before generate/pay. Build and lock attendance/leave inputs first.",
+    ));
+  }
+
+  if (
+    toggles.requireLockedPayrollInputs &&
+    !input.missingLockedInputPeriod &&
+    input.inputNotFromLockedSnapshot
+  ) {
+    results.push(makeException(
+      "INPUT_NOT_FROM_LOCKED_SNAPSHOT",
+      "Employee attendance/LOP was not taken from the locked payroll-input snapshot. Review freeze completeness.",
+    ));
+  }
+
+  if (toggles.pf && input.missingPfUan) {
+    results.push(makeException(
+      "MISSING_PF_UAN",
+      "PF is enabled but employee has no UAN (12-digit) on statutory/bank details. ECR export will omit UAN.",
+    ));
+  }
+
+  if (toggles.esi && input.missingEsiIp) {
+    results.push(makeException(
+      "MISSING_ESI_IP",
+      "ESI is enabled but employee has no ESI IP number on statutory/bank details. ESI export will omit IP number.",
+    ));
+  }
+
   if (lopDays > scheduledDays) {
     results.push(makeException(
       "LOP_EXCEEDS_SCHEDULED_DAYS",
@@ -134,6 +174,16 @@ export function detectExceptions(input: ExceptionInput): DetectedExceptions[] {
     results.push(makeException(
       "MISSING_FX_RATE",
       "Employee is paid in a foreign currency but no FX rate is configured for this period.",
+    ));
+  }
+
+  // Warning, not a blocker: the salary structure needs fixing, but withholding
+  // pay the employee is already owed would be the worse outcome.
+  if (snapshot.wageDefinitionWarning) {
+    results.push(makeException(
+      "BELOW_MINIMUM_WAGE",
+      snapshot.wageDefinitionWarning,
+      { basicDaShareOfGross: "below statutory minimum" },
     ));
   }
 
