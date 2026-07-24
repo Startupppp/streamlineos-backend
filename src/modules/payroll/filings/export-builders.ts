@@ -379,8 +379,8 @@ export function buildForm16SummaryExport(
   ];
   return finalize({
     ...baseMeta("FORM16", opts.periodMonth, opts.runId, opts.bundle, [
-      `${opts.bundle.tds.formLabels.annualCertificate} full certificate generation is not implemented.`,
-      "This export is a period summary for external Form 16 preparation only.",
+      `${opts.bundle.tds.formLabels.annualCertificate}: period-summary PDF available per employee (not official Part A/B).`,
+      "CSV + pilot PDF support external preparation only. TRACES XML and legal Form 16 certificates are not generated.",
     ]),
     columns,
     rows,

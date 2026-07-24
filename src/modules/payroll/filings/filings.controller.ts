@@ -70,6 +70,41 @@ export class PayrollFilingsController {
     res.send(file.body);
   }
 
+  /** Employees on a FORM16 filing (for period-summary PDF download). */
+  @Get(":filingId/form16/employees")
+  @RequirePermission("payroll:tax:view")
+  listForm16Employees(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("filingId", ParseIntPipe) filingId: number,
+  ) {
+    return this.service.listForm16Employees(u.orgId, filingId);
+  }
+
+  /**
+   * Period-summary Form 16 PDF for one employee.
+   * Not an official Part A/B certificate.
+   */
+  @Get(":filingId/form16/:userId")
+  @RequirePermission("payroll:tax:view")
+  async downloadForm16Pdf(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("filingId", ParseIntPipe) filingId: number,
+    @Param("userId") userId: string,
+    @Res() res: Response,
+  ) {
+    const file = await this.service.getForm16CertificatePdf(
+      u.orgId,
+      filingId,
+      userId,
+    );
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${file.filename}"`,
+    );
+    res.send(file.body);
+  }
+
   @Get(":filingId")
   @RequirePermission("payroll:tax:view")
   get(
