@@ -1,0 +1,274 @@
+{
+  "policyVersionId": 7,
+  "currency": "INR",
+  "fxRate": null,
+  "netPayoutCurrency": null,
+  "scheduledDays": "31",
+  "paidDays": "29",
+  "lopDays": "2.0",
+  "overtimeHours": "6.00",
+  "lines": [
+    {
+      "code": "HRA",
+      "name": "House Rent Allowance",
+      "category": "EARNING",
+      "amount": "37419.35",
+      "calcMethod": "PERCENT_OF_BASIC",
+      "taxable": true,
+      "sortOrder": 2,
+      "explain": {
+        "method": "PERCENT_OF_BASIC",
+        "inputs": {
+          "ctc": 100000,
+          "percent": 40
+        },
+        "steps": [
+          "House Rent Allowance = 40% of monthly CTC ₹100000.00 = ₹40000.00",
+          "Prorated ₹40000.00 × 29/31 paid days = ₹37419.35"
+        ]
+      }
+    },
+    {
+      "code": "SPECIAL",
+      "name": "Special Allowance",
+      "category": "EARNING",
+      "amount": "28064.52",
+      "calcMethod": "FIXED",
+      "taxable": true,
+      "sortOrder": 3,
+      "explain": {
+        "method": "FIXED",
+        "inputs": {
+          "ctc": 100000,
+          "percent": 0
+        },
+        "steps": [
+          "Special Allowance = ₹30000.00",
+          "Prorated ₹30000.00 × 29/31 paid days = ₹28064.52"
+        ]
+      }
+    },
+    {
+      "code": "BASIC",
+      "name": "Basic",
+      "category": "EARNING",
+      "amount": "30629.56",
+      "calcMethod": "PERCENT_OF_GROSS",
+      "taxable": true,
+      "sortOrder": 1,
+      "explain": {
+        "method": "PERCENT_OF_GROSS",
+        "inputs": {
+          "gross": 65483.87,
+          "percent": 50
+        },
+        "steps": [
+          "Basic = 50% of gross ₹65483.87 = ₹30629.56"
+        ]
+      }
+    },
+    {
+      "code": "BONUS_1",
+      "name": "Bonus (PERFORMANCE)",
+      "category": "EARNING",
+      "amount": "10000.00",
+      "calcMethod": "MANUAL",
+      "taxable": true,
+      "sortOrder": 810,
+      "explain": {
+        "method": "MANUAL",
+        "inputs": {
+          "amount": 10000
+        },
+        "steps": [
+          "Bonus PERFORMANCE = ₹10000.00"
+        ]
+      }
+    },
+    {
+      "code": "REIMBURSEMENT_1",
+      "name": "Reimbursement (TRAVEL)",
+      "category": "REIMBURSEMENT",
+      "amount": "1800.00",
+      "calcMethod": "MANUAL",
+      "taxable": false,
+      "sortOrder": 830,
+      "explain": {
+        "method": "MANUAL",
+        "inputs": {
+          "amount": 1800
+        },
+        "steps": [
+          "Reimbursement TRAVEL = ₹1800.00"
+        ]
+      }
+    },
+    {
+      "code": "EPF_EMPLOYEE",
+      "name": "EPF Employee",
+      "category": "DEDUCTION",
+      "amount": "0.00",
+      "calcMethod": "PERCENT_OF_BASIC",
+      "taxable": false,
+      "sortOrder": 901,
+      "explain": {
+        "method": "PERCENT_OF_BASIC",
+        "inputs": {
+          "basic": 0,
+          "monthlyWageCeiling": 15000,
+          "pfEmployeePercent": 12
+        },
+        "steps": [
+          "Rule IN-PF-2025.04: monthly wage ceiling ₹15000.00 (legacy misnamed annual field was 21600)",
+          "PF base = min(Basic ₹0.00, ceiling ₹15000.00) = ₹0.00",
+          "EPF Employee = ₹0.00 × 12.00% = ₹0.00"
+        ]
+      }
+    },
+    {
+      "code": "EPF_EMPLOYER",
+      "name": "EPF Employer",
+      "category": "EMPLOYER_CONTRIBUTION",
+      "amount": "0.00",
+      "calcMethod": "PERCENT_OF_BASIC",
+      "taxable": false,
+      "sortOrder": 902,
+      "explain": {
+        "method": "PERCENT_OF_BASIC",
+        "inputs": {
+          "basic": 0,
+          "monthlyWageCeiling": 15000,
+          "pfEmployerPercent": 13
+        },
+        "steps": [
+          "PF base = min(Basic ₹0.00, ceiling ₹15000.00) = ₹0.00",
+          "EPF Employer = ₹0.00 × 13.00% = ₹0.00"
+        ]
+      }
+    },
+    {
+      "code": "PROFESSIONAL_TAX",
+      "name": "Professional Tax",
+      "category": "DEDUCTION",
+      "amount": "200.00",
+      "calcMethod": "FIXED",
+      "taxable": false,
+      "sortOrder": 905,
+      "explain": {
+        "method": "FIXED",
+        "inputs": {
+          "professionalTaxMonthly": 200
+        },
+        "steps": [
+          "Rule IN-PT-DEFAULT-2025.04",
+          "Professional Tax = ₹200.00 (fixed monthly)"
+        ]
+      }
+    },
+    {
+      "code": "GRATUITY",
+      "name": "Gratuity",
+      "category": "EMPLOYER_CONTRIBUTION",
+      "amount": "0.00",
+      "calcMethod": "PERCENT_OF_BASIC",
+      "taxable": false,
+      "sortOrder": 906,
+      "explain": {
+        "method": "PERCENT_OF_BASIC",
+        "inputs": {
+          "basic": 0,
+          "gratuityPercent": 4.81
+        },
+        "steps": [
+          "Rule IN-GRATUITY-2025.04: provision 4.81% of basic (eligibility 5y service for payout)",
+          "Gratuity = Basic ₹0.00 × 4.81% = ₹0.00"
+        ]
+      }
+    },
+    {
+      "code": "LWF_EMPLOYEE",
+      "name": "LWF Employee",
+      "category": "DEDUCTION",
+      "amount": "25.00",
+      "calcMethod": "FIXED",
+      "taxable": false,
+      "sortOrder": 907,
+      "explain": {
+        "method": "FIXED",
+        "inputs": {
+          "lwfEmployee": 25
+        },
+        "steps": [
+          "Rule IN-LWF-DEFAULT-2025.04",
+          "LWF Employee = ₹25.00 (fixed)"
+        ]
+      }
+    },
+    {
+      "code": "LWF_EMPLOYER",
+      "name": "LWF Employer",
+      "category": "EMPLOYER_CONTRIBUTION",
+      "amount": "25.00",
+      "calcMethod": "FIXED",
+      "taxable": false,
+      "sortOrder": 908,
+      "explain": {
+        "method": "FIXED",
+        "inputs": {
+          "lwfEmployer": 25
+        },
+        "steps": [
+          "LWF Employer = ₹25.00 (fixed)"
+        ]
+      }
+    },
+    {
+      "code": "LOAN_EMI_9",
+      "name": "Loan EMI Recovery",
+      "category": "DEDUCTION",
+      "amount": "4000.00",
+      "calcMethod": "MANUAL",
+      "taxable": false,
+      "sortOrder": 850,
+      "explain": {
+        "method": "MANUAL",
+        "inputs": {
+          "emi": 4000,
+          "outstanding": 36000,
+          "paidEmis": 3
+        },
+        "steps": [
+          "Outstanding = ₹48000.00 - (3 × ₹4000.00) = ₹36000.00",
+          "Recovery = ₹4000.00"
+        ]
+      }
+    },
+    {
+      "code": "TDS",
+      "name": "TDS",
+      "category": "TAX",
+      "amount": "6912.03",
+      "calcMethod": "FORMULA",
+      "taxable": false,
+      "sortOrder": 950,
+      "explain": {
+        "method": "FORMULA",
+        "inputs": {
+          "gross": 106113.43,
+          "annualGross": 1273361.16
+        },
+        "steps": [
+          "TDS (NEW regime, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹6912.03"
+        ]
+      }
+    }
+  ],
+  "totals": {
+    "gross": "106113.43",
+    "deductions": "11137.03",
+    "employerContributions": "25.00",
+    "net": "96776.40"
+  },
+  "variance": null,
+  "wageDefinitionWarning": "Labour Code wage definition: Basic+DA is 0.0% of gross (minimum 50%)."
+}
