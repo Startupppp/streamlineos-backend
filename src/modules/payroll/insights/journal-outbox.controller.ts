@@ -21,16 +21,19 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
 import { JournalOutboxService } from "./journal-outbox.service";
+import { PeriodReconciliationService } from "./period-reconciliation.service";
 import { buildCsv } from "./lib/csv";
 import {
   journalBatchCreateSchema,
   journalBatchReverseSchema,
   journalBatchReconcileSchema,
   journalBatchListQuerySchema,
+  periodReconQuerySchema,
   type JournalBatchCreate,
   type JournalBatchReverse,
   type JournalBatchReconcile,
   type JournalBatchListQuery,
+  type PeriodReconQuery,
 } from "./dto/insights.schemas";
 
 const CSV_HEADERS = ["lineNo", "account", "description", "debit", "credit", "costCenter"] as const;
@@ -40,6 +43,7 @@ const CSV_HEADERS = ["lineNo", "account", "description", "debit", "credit", "cos
 export class JournalOutboxController {
   constructor(
     private readonly outbox: JournalOutboxService,
+    private readonly periodRecon: PeriodReconciliationService,
     private readonly access: AccessService,
   ) {}
 
@@ -50,6 +54,19 @@ export class JournalOutboxController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.outbox.list(u.orgId, query);
+  }
+
+  /**
+   * Period recon: run net ↔ payout paid ↔ journal outbox (manual/export honesty).
+   * Must be registered before :batchId routes.
+   */
+  @Get("period-reconciliation")
+  @RequirePermission("payroll:accounting:view")
+  async periodReconciliation(
+    @Query(new ZodValidationPipe(periodReconQuerySchema)) query: PeriodReconQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.periodRecon.getPeriodReconciliation(u.orgId, query.periodKey);
   }
 
   @Get(":batchId")

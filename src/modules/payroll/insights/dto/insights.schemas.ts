@@ -124,3 +124,8 @@ export const journalBatchListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 export type JournalBatchListQuery = z.infer<typeof journalBatchListQuerySchema>;
+
+export const periodReconQuerySchema = z.object({
+  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
+});
+export type PeriodReconQuery = z.infer<typeof periodReconQuerySchema>;
