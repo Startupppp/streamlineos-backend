@@ -10,20 +10,15 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
-  employeeSalaryProfiles,
   employeeSkills,
   magicLinkTokens,
   onboardingTasks,
   organizationMembers,
   orgDepartments,
-  payrollPolicies,
-  payrollPolicyVersions,
-  salaryStructures,
   users,
 } from "../../db/schema";
 import { hashToken } from "../../common/security/token.util";
 import { nextDepartmentCode, toDepartmentCode } from "../org-hierarchy/lib/department-code";
-import { resolvePayrollDefaults } from "../hr-payroll/lib/payroll-defaults";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -40,13 +35,18 @@ import { PersonEmploymentSyncService } from "../hr-core/person-employment-sync.s
 import { encrypt, encryptBankDetails, type BankDetails } from "../onboarding/crypto.helpers";
 import { differenceInDays, formatDateOnly } from "./date.helpers";
 import { userCan } from "./ability.helpers";
+import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type {
   BulkOnboardEmployeeRow,
   OnboardEmployeeInput,
   UpdateEmployeeInput,
 } from "./dto/hr-directory.schemas";
+import { hrEmployments, hrPeople } from "../../db/schema/hr/core-people";
 
-type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & { pfUanNumber?: string };
+type BankDetailsInput = NonNullable<UpdateEmployeeInput["bankDetails"]> & {
+  pfUanNumber?: string;
+  esiIpNumber?: string;
+};
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -66,6 +66,7 @@ function toBankDetails(input: BankDetailsInput): BankDetails {
     ifsc: input.ifsc ?? "",
     accountHolder: input.accountHolder ?? "",
     ...(input.pfUanNumber !== undefined ? { pfUanNumber: input.pfUanNumber } : {}),
+    ...(input.esiIpNumber !== undefined ? { esiIpNumber: input.esiIpNumber } : {}),
   };
 }
 
@@ -124,6 +125,37 @@ export class EmployeeMutationsService {
       .from(employeeSkills)
       .where(and(eq(employeeSkills.orgId, orgId), eq(employeeSkills.userId, userId)));
 
+    const [employment] = await this.db
+      .select({
+        id: hrEmployments.id,
+        personId: hrEmployments.personId,
+        employeeNumber: hrEmployments.employeeNumber,
+        lifecycleStatus: hrEmployments.lifecycleStatus,
+        workerType: hrEmployments.workerType,
+        designation: hrEmployments.designation,
+        joiningDate: hrEmployments.joiningDate,
+        probationEndDate: hrEmployments.probationEndDate,
+        confirmationDate: hrEmployments.confirmationDate,
+      })
+      .from(hrPeople)
+      .innerJoin(
+        hrEmployments,
+        and(
+          eq(hrEmployments.personId, hrPeople.id),
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(hrPeople.orgId, orgId),
+          eq(hrPeople.userId, userId),
+          isNull(hrPeople.deletedAt),
+        ),
+      )
+      .limit(1);
+
     return {
       id: u.id,
       name: u.name,
@@ -148,6 +180,20 @@ export class EmployeeMutationsService {
       websiteUrl: u.websiteUrl ?? null,
       skills: skillRows,
       phone: u.phone ?? null,
+      employmentStatus: employment?.lifecycleStatus ?? null,
+      employment: employment
+        ? {
+            id: employment.id,
+            personId: employment.personId,
+            employeeNumber: employment.employeeNumber,
+            lifecycleStatus: employment.lifecycleStatus,
+            workerType: employment.workerType,
+            designation: employment.designation,
+            joiningDate: employment.joiningDate,
+            probationEndDate: employment.probationEndDate,
+            confirmationDate: employment.confirmationDate,
+          }
+        : null,
     };
   }
 
@@ -311,23 +357,6 @@ export class EmployeeMutationsService {
     return { success: true };
   }
 
-  private async resolveOrgPayrollDefaults(orgId: string) {
-    try {
-      const policy = await this.db.query.payrollPolicies.findFirst({
-        where: eq(payrollPolicies.orgId, orgId),
-        columns: { activeVersionId: true },
-      });
-      if (!policy?.activeVersionId) return resolvePayrollDefaults(null);
-      const version = await this.db.query.payrollPolicyVersions.findFirst({
-        where: eq(payrollPolicyVersions.id, policy.activeVersionId),
-        columns: { config: true },
-      });
-      return resolvePayrollDefaults(version?.config ?? null);
-    } catch {
-      return resolvePayrollDefaults(null);
-    }
-  }
-
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.email, body.email.toLowerCase()),
@@ -367,7 +396,6 @@ export class EmployeeMutationsService {
     }
 
     const role = body.role || "ENGINEERING";
-    const payrollDefaults = await this.resolveOrgPayrollDefaults(actor.orgId);
 
     if (existingUser) {
       const linkedUser = await this.db.transaction(async (tx) => {
@@ -391,30 +419,15 @@ export class EmployeeMutationsService {
         await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: existingUser.id, role });
 
         if (body.monthlySalary && body.monthlySalary > 0) {
-          const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
-          const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
           const effectiveFrom = body.joiningDate
             ? formatDateOnly(new Date(body.joiningDate))
             : formatDateOnly(new Date());
-          await tx.insert(salaryStructures).values({
+          await seedEmployeeSalaryProfile(tx, {
             orgId: actor.orgId,
             userId: existingUser.id,
-            basicSalary: basicSalary.toString(),
-            hraPercentage: String(payrollDefaults.defaultHraPercent),
-            allowances: specialAllowance.toString(),
-            deductions: "0",
+            actorId: actor.userId,
+            monthlySalary: body.monthlySalary,
             effectiveFrom,
-            isActive: true,
-          });
-          await tx.insert(employeeSalaryProfiles).values({
-            orgId: actor.orgId,
-            userId: existingUser.id,
-            workerType: "EMPLOYEE",
-            currency: "INR",
-            annualCtc: (body.monthlySalary * 12).toFixed(2),
-            status: "ACTIVE",
-            effectiveFrom,
-            createdBy: actor.userId,
           });
         }
 
@@ -506,30 +519,15 @@ export class EmployeeMutationsService {
       await tx.insert(organizationMembers).values({ orgId: actor.orgId, userId: created.id, role });
 
       if (body.monthlySalary && body.monthlySalary > 0) {
-        const basicSalary = body.monthlySalary * (payrollDefaults.defaultBasicPercent / 100);
-        const specialAllowance = body.monthlySalary * (payrollDefaults.defaultAllowancePercent / 100);
         const effectiveFrom = body.joiningDate
           ? formatDateOnly(new Date(body.joiningDate))
           : formatDateOnly(new Date());
-        await tx.insert(salaryStructures).values({
+        await seedEmployeeSalaryProfile(tx, {
           orgId: actor.orgId,
           userId: created.id,
-          basicSalary: basicSalary.toString(),
-          hraPercentage: String(payrollDefaults.defaultHraPercent),
-          allowances: specialAllowance.toString(),
-          deductions: "0",
+          actorId: actor.userId,
+          monthlySalary: body.monthlySalary,
           effectiveFrom,
-          isActive: true,
-        });
-        await tx.insert(employeeSalaryProfiles).values({
-          orgId: actor.orgId,
-          userId: created.id,
-          workerType: "EMPLOYEE",
-          currency: "INR",
-          annualCtc: (body.monthlySalary * 12).toFixed(2),
-          status: "ACTIVE",
-          effectiveFrom,
-          createdBy: actor.userId,
         });
       }
 
