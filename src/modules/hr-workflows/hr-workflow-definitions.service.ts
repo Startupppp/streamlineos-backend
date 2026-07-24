@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { hrWorkflowDefinitions, hrWorkflowSteps } from "../../db/schema/hr/workflow-engine";
 import type { CreateWorkflowDefinitionDto, UpdateWorkflowDefinitionDto, WorkflowDefinitionQueryDto } from "./dto/workflow.schemas";
+import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 
 interface StepInput {
   stepOrder: number;
@@ -19,7 +20,10 @@ interface StepInput {
 
 @Injectable()
 export class HrWorkflowDefinitionsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly engine: HrWorkflowEngineService,
+  ) {}
 
   async list(orgId: string, query: WorkflowDefinitionQueryDto) {
     const conditions: SQL[] = [
@@ -198,6 +202,80 @@ export class HrWorkflowDefinitionsService {
     await this.db.update(hrWorkflowDefinitions)
       .set({ deletedAt: new Date() })
       .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId)));
+  }
+
+  async simulate(
+    orgId: string,
+    workflowId: number,
+    input: { subjectEmployeeId: string; context?: Record<string, unknown> },
+  ) {
+    const definition = await this.get(orgId, workflowId);
+    const steps = definition.steps.map((s) => ({
+      stepOrder: s.stepOrder,
+      name: s.name,
+      approverType: s.approverType,
+      approverValue: s.approverValue,
+      mode: s.mode,
+      slaHours: s.slaHours,
+      escalationApproverType: s.escalationApproverType,
+      escalationApproverValue: s.escalationApproverValue,
+      condition: s.condition as { field: string; operator: string; value: unknown } | null,
+    }));
+
+    const resolvedSteps = [];
+    for (const step of steps) {
+      const conditionPasses = this.evaluateStepCondition(step.condition, input.context ?? {});
+      const approvers = conditionPasses
+        ? await this.engine.resolveApprovers(step, input.subjectEmployeeId, orgId)
+        : [];
+      resolvedSteps.push({
+        stepOrder: step.stepOrder,
+        name: step.name,
+        mode: step.mode,
+        approverType: step.approverType,
+        conditionPasses,
+        resolvedApproverUserIds: approvers,
+        slaHours: step.slaHours,
+      });
+    }
+
+    return {
+      workflowId: definition.id,
+      name: definition.name,
+      objectType: definition.objectType,
+      status: definition.status,
+      version: definition.version,
+      subjectEmployeeId: input.subjectEmployeeId,
+      steps: resolvedSteps,
+      explanation:
+        definition.status !== "active"
+          ? "Definition is not active; simulation still resolves configured steps for preview"
+          : "Dry-run only — no workflow instance was created",
+    };
+  }
+
+  private evaluateStepCondition(
+    condition: { field: string; operator: string; value: unknown } | null | undefined,
+    context: Record<string, unknown>,
+  ): boolean {
+    if (!condition) return true;
+    const actual = context[condition.field];
+    switch (condition.operator) {
+      case "eq":
+        return actual === condition.value;
+      case "gt":
+        return Number(actual) > Number(condition.value);
+      case "lt":
+        return Number(actual) < Number(condition.value);
+      case "gte":
+        return Number(actual) >= Number(condition.value);
+      case "lte":
+        return Number(actual) <= Number(condition.value);
+      case "in":
+        return Array.isArray(condition.value) && condition.value.includes(actual);
+      default:
+        return true;
+    }
   }
 
   private async clearOtherDefaults(orgId: string, objectType: typeof hrWorkflowDefinitions.$inferSelect["objectType"], excludeId: number) {
