@@ -35,6 +35,8 @@ export interface BankDetails {
   ifsc: string;
   accountHolder: string;
   pfUanNumber?: string;
+  /** ESIC Insurance Person (IP) number when assigned */
+  esiIpNumber?: string;
   bankCountry?: string;
   routingCode?: string;
   iban?: string;
@@ -69,6 +71,7 @@ const bankDetailsDecodeSchema = z.object({
   ifsc: z.string(),
   accountHolder: z.string(),
   pfUanNumber: z.string().optional(),
+  esiIpNumber: z.string().optional(),
   bankCountry: z.string().max(10).optional(),
   routingCode: z.string().optional(),
   iban: z.string().optional(),

@@ -109,7 +109,12 @@ export const updateSensitiveSchema = z.object({
     ifsc: z.string().optional(),
     swift: z.string().optional(),
     accountHolder: z.string().optional(),
-    pfUanNumber: z.string().optional(),
+    pfUanNumber: z
+      .string()
+      .regex(/^\d{12}$/, "UAN must be 12 digits")
+      .optional()
+      .or(z.literal("")),
+    esiIpNumber: z.string().max(20).optional().or(z.literal("")),
     iban: z.string().optional(),
     routingNumber: z.string().optional(),
   }).optional(),
