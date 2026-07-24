@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
+import type { Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -15,6 +27,9 @@ const prepareSchema = z.object({
   fiscalYear: z.string().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
   ruleVersion: z.string().optional(),
+  /** Prefer month of REGULAR run when runId omitted. */
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  runId: z.number().int().positive().optional(),
 });
 
 const ackSchema = z.object({
@@ -31,6 +46,37 @@ export class PayrollFilingsController {
   @RequirePermission("payroll:tax:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId);
+  }
+
+  @Get("capabilities")
+  @RequirePermission("payroll:tax:view")
+  capabilities() {
+    return this.service.capabilities();
+  }
+
+  @Get(":filingId/export")
+  @RequirePermission("payroll:tax:view")
+  async downloadExport(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("filingId", ParseIntPipe) filingId: number,
+    @Res() res: Response,
+  ) {
+    const file = await this.service.getExportCsv(u.orgId, filingId);
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${file.filename}"`,
+    );
+    res.send(file.body);
+  }
+
+  @Get(":filingId")
+  @RequirePermission("payroll:tax:view")
+  get(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("filingId", ParseIntPipe) filingId: number,
+  ) {
+    return this.service.get(u.orgId, filingId);
   }
 
   @Post("export")

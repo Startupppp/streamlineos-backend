@@ -197,6 +197,12 @@ export const updateEmployeeSchema = z.object({
       branch: z.string().optional(),
       ifsc: z.string().optional(),
       accountHolder: z.string().optional(),
+      pfUanNumber: z
+        .string()
+        .regex(/^\d{12}$/, "UAN must be 12 digits")
+        .optional()
+        .or(z.literal("")),
+      esiIpNumber: z.string().max(20).optional().or(z.literal("")),
     })
     .optional(),
   skills: z.array(z.string()).optional(),
@@ -244,7 +250,16 @@ export const onboardEmployeeSchema = z.object({
       branch: z.string().optional(),
       ifsc: z.string().optional(),
       accountHolder: z.string().optional(),
-      pfUanNumber: z.string().optional(),
+      pfUanNumber: z
+        .string()
+        .regex(/^\d{12}$/, "UAN must be 12 digits")
+        .optional()
+        .or(z.literal("")),
+      esiIpNumber: z
+        .string()
+        .max(20)
+        .optional()
+        .or(z.literal("")),
     })
     .optional(),
 });
