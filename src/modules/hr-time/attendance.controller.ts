@@ -14,9 +14,11 @@ import {
   createOrgHolidaySchema,
   heatmapQuerySchema,
   monthlyQuerySchema,
+  teamStatusQuerySchema,
   updateOrgHolidaySchema,
   type AttendanceEmailReportInput,
   type AttendanceLogsQuery,
+  type TeamStatusQuery,
   type CheckInInput,
   type CheckOutInput,
   type CreateOrgHolidayInput,
@@ -94,8 +96,11 @@ export class AttendanceController {
 
   @Get("team-status")
   @RequirePermission("hr:attendance:view")
-  teamStatus(@CurrentUser() u: CurrentUserContext) {
-    return this.attendance.teamStatus(u);
+  teamStatus(
+    @Query(new ZodValidationPipe(teamStatusQuerySchema)) query: TeamStatusQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.attendance.teamStatus(u, query);
   }
 
   @Post("email-report")

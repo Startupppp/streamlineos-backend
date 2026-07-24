@@ -103,7 +103,8 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
             gte(payrollCalendarEvents.date, todayStr),
             lte(payrollCalendarEvents.date, windowEndStr),
           ),
-        );
+        )
+        .limit(5000);
 
       if (events.length === 0) {
         await this.markFinished(null);

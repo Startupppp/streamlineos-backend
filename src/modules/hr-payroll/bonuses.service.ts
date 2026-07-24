@@ -13,7 +13,7 @@ export type UpdateBonusResult =
 export class BonusesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listBonuses(orgId: string, userId: string, isAdmin: boolean) {
+  listBonuses(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
     return this.db
       .select({
         id: bonuses.id,
@@ -39,7 +39,8 @@ export class BonusesService {
           : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId)),
       )
       .orderBy(desc(bonuses.createdAt))
-      .limit(100);
+      .limit(limit)
+      .offset((page - 1) * limit);
   }
 
   async createBonus(orgId: string, body: CreateBonusInput) {

@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Query,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -23,6 +24,8 @@ import {
   patchFnfSchema,
   type CreateFnfInput,
   type PatchFnfInput,
+  listPageQuerySchema,
+  type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 
 @Controller("hr/fnf")
@@ -35,13 +38,16 @@ export class FnfController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
+  async list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+  ) {
     let isAdmin = u.isOrgOwner || u.isPlatformAdmin;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:payroll:approve");
     }
-    return this.fnf.listFnf(u.orgId, u.userId, isAdmin);
+    return this.fnf.listFnf(u.orgId, u.userId, isAdmin, query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()

@@ -23,7 +23,11 @@ export class RostersService {
       columns: { id: true },
     });
     if (!roster) throw new NotFoundException("Roster not found");
-    return this.db.select().from(rosterEntries).where(eq(rosterEntries.rosterId, rosterId));
+    return this.db
+      .select()
+      .from(rosterEntries)
+      .where(eq(rosterEntries.rosterId, rosterId))
+      .limit(5000);
   }
 
   async upsertRosterEntry(orgId: string, data: { rosterId: number; userId: string; shiftId?: number; date: string; isDayOff?: boolean; notes?: string }) {

@@ -9,7 +9,7 @@ import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
 export class LoansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listLoans(orgId: string, userId: string, isAdmin: boolean) {
+  listLoans(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
     const conditions = [eq(salaryLoans.orgId, orgId)];
     if (!isAdmin) conditions.push(eq(salaryLoans.userId, userId));
 
@@ -21,7 +21,8 @@ export class LoansService {
         },
       },
       orderBy: [desc(salaryLoans.createdAt)],
-      limit: 100,
+      limit,
+      offset: (page - 1) * limit,
     });
   }
 

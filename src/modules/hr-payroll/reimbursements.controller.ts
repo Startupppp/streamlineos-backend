@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Query,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -25,6 +26,8 @@ import {
   patchReimbursementSchema,
   type CreateReimbursementInput,
   type PatchReimbursementInput,
+  listPageQuerySchema,
+  type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 
 @Controller("hr/reimbursements")
@@ -37,9 +40,12 @@ export class ReimbursementsController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
+  async list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+  ) {
     const scope = await resolveReimbursementsScope(this.access, u);
-    return this.reimbursements.listReimbursements(u.orgId, u.userId, scope);
+    return this.reimbursements.listReimbursements(u.orgId, u.userId, scope, query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()

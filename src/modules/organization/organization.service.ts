@@ -167,9 +167,12 @@ export class OrganizationService {
     };
   }
 
-  async listMembers(orgId: string, { page, limit, search }: ListMembersInput) {
+  async listMembers(orgId: string, { page, limit, search, userIds }: ListMembersInput) {
     const offset = (page - 1) * limit;
     const baseConditions = [eq(organizationMembers.orgId, orgId)];
+    if (userIds && userIds.length > 0) {
+      baseConditions.push(inArray(organizationMembers.userId, userIds));
+    }
     const searchConditions = search
       ? [
           ...baseConditions,

@@ -85,6 +85,12 @@ export const updateLoanSchema = z.object({
 });
 export type UpdateLoanInput = z.infer<typeof updateLoanSchema>;
 
+export const listPageQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export type ListPageQueryInput = z.infer<typeof listPageQuerySchema>;
+
 export const incentivesQuerySchema = z.object({
   status: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),

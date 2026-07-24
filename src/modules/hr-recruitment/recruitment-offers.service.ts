@@ -12,12 +12,14 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildListResponse } from "../../common/pagination/pagination";
 import { AutomationService } from "../automation/automation.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
 import type {
   CreateOfferInput,
   CreateOfferNegotiationInput,
+  OfferListInput,
   UpdateOfferInput,
 } from "./dto/candidate-records.schemas";
 
@@ -41,30 +43,48 @@ export class RecruitmentOffersService {
     });
   }
 
-  async listAllOffers(orgId: string) {
-    return this.db
-      .select({
-        id: candidateOffers.id,
-        candidateId: candidateOffers.candidateId,
-        candidateFirstName: candidates.firstName,
-        candidateLastName: candidates.lastName,
-        candidateEmail: candidates.email,
-        jobPostingId: candidateOffers.jobPostingId,
-        jobTitle: jobPostings.title,
-        offerStatus: candidateOffers.offerStatus,
-        offeredSalary: candidateOffers.offeredSalary,
-        offeredDesignation: candidateOffers.offeredDesignation,
-        joiningDate: candidateOffers.joiningDate,
-        validUntil: candidateOffers.validUntil,
-        sentAt: candidateOffers.sentAt,
-        respondedAt: candidateOffers.respondedAt,
-        createdAt: candidateOffers.createdAt,
-      })
-      .from(candidateOffers)
-      .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
-      .leftJoin(jobPostings, eq(candidateOffers.jobPostingId, jobPostings.id))
-      .where(eq(candidateOffers.orgId, orgId))
-      .orderBy(desc(candidateOffers.createdAt));
+  async listAllOffers(orgId: string, query: OfferListInput) {
+    const conditions = [eq(candidateOffers.orgId, orgId)];
+    if (query.status) conditions.push(eq(candidateOffers.offerStatus, query.status));
+    const where = and(...conditions);
+
+    const [items, totalRow] = await Promise.all([
+      this.db
+        .select({
+          id: candidateOffers.id,
+          candidateId: candidateOffers.candidateId,
+          candidateFirstName: candidates.firstName,
+          candidateLastName: candidates.lastName,
+          candidateEmail: candidates.email,
+          jobPostingId: candidateOffers.jobPostingId,
+          jobTitle: jobPostings.title,
+          offerStatus: candidateOffers.offerStatus,
+          offeredSalary: candidateOffers.offeredSalary,
+          offeredDesignation: candidateOffers.offeredDesignation,
+          joiningDate: candidateOffers.joiningDate,
+          validUntil: candidateOffers.validUntil,
+          sentAt: candidateOffers.sentAt,
+          respondedAt: candidateOffers.respondedAt,
+          createdAt: candidateOffers.createdAt,
+        })
+        .from(candidateOffers)
+        .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
+        .leftJoin(jobPostings, eq(candidateOffers.jobPostingId, jobPostings.id))
+        .where(where)
+        .orderBy(desc(candidateOffers.createdAt))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize),
+      this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(candidateOffers)
+        .where(where)
+        .then((rows) => rows[0] ?? { total: 0 }),
+    ]);
+
+    return buildListResponse(items, Number(totalRow.total), {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
   }
 
   async createOffer(orgId: string, userId: string, candidateId: number, input: CreateOfferInput) {
