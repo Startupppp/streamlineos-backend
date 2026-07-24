@@ -24,11 +24,13 @@ import {
   markBatchPaidSchema,
   markItemFailedSchema,
   markItemPaidSchema,
+  bankReturnImportSchema,
   type BatchesQueryInput,
   type CreateBatchInput,
   type MarkBatchPaidInput,
   type MarkItemFailedInput,
   type MarkItemPaidInput,
+  type BankReturnImportInput,
 } from "./dto/payout.schemas";
 
 @Controller("payroll/runs/:runId/payout")
@@ -112,6 +114,21 @@ export class PayoutBatchesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.batches.markBatchPaid(u.orgId, batchId, body.transactionRef, u.userId);
+  }
+
+  /**
+   * Import bank return/ack CSV (manual). Does not call bank APIs.
+   * Columns: itemId|userId, status, transactionRef, failureReason
+   */
+  @Post("batches/:batchId/import-return")
+  @HttpCode(200)
+  @RequirePermission("payroll:bank:manage")
+  importReturn(
+    @Param("batchId", ParseIntPipe) batchId: number,
+    @Body(new ZodValidationPipe(bankReturnImportSchema)) body: BankReturnImportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.batches.importBankReturn(u.orgId, batchId, u.userId, body.csv);
   }
 
   @Post("batches/:batchId/items/:itemId/mark-paid")
