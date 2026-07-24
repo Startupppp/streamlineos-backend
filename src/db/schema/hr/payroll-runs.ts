@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
   salaryComponentCalcMethodEnum, payrollExceptionSeverityEnum,
@@ -51,10 +51,17 @@ export const payrollRuns = pgTable("payroll_runs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  // One REGULAR run per org/month; off-cycle/correction allowed via run_type differentiation
-  uniqueIndex("uniq_payroll_runs_org_month_type").on(table.orgId, table.month, table.runType),
+  // One run per (org, month, runType, entity). NULL entity → COALESCE 0 (org-level bucket).
+  // Migration 0298 replaces uniq_payroll_runs_org_month_type.
+  uniqueIndex("uniq_payroll_runs_org_month_type_entity").on(
+    table.orgId,
+    table.month,
+    table.runType,
+    sql`COALESCE(${table.entityId}, 0)`,
+  ),
   index("idx_payroll_runs_org_status").on(table.orgId, table.status),
   index("idx_payroll_runs_org_type").on(table.orgId, table.runType),
+  index("idx_payroll_runs_org_entity").on(table.orgId, table.entityId),
   index("idx_payroll_runs_source_run").on(table.sourceRunId),
 ]);
 

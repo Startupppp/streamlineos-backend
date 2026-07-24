@@ -76,13 +76,11 @@ export class RunsController {
         entityId: body.entityId,
       });
       if (!result.ok) {
-        await this.receipts.fail(
-          begin.receiptId,
-          `A ${body.runType ?? "REGULAR"} payroll run for this month already exists`,
-        );
-        throw new ConflictException(
-          `A ${body.runType ?? "REGULAR"} payroll run for this month already exists`,
-        );
+        const entitySuffix =
+          body.entityId != null ? ` for entity ${body.entityId}` : " (org-level, no entity)";
+        const msg = `A ${body.runType ?? "REGULAR"} payroll run for this month already exists${entitySuffix}`;
+        await this.receipts.fail(begin.receiptId, msg);
+        throw new ConflictException(msg);
       }
 
       const generated = await this.generateService.generateRun(u.orgId, result.runId, u.userId, false);

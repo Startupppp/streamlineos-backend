@@ -92,6 +92,20 @@
       "when": 1784651000005,
       "tag": "0296_hrms_org_departments",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784651000006,
+      "tag": "0297_hr_disciplinary_acknowledge",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784651000007,
+      "tag": "0298_payroll_runs_entity_uniqueness",
+      "breakpoints": true
     }
   ]
 }

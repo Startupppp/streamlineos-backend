@@ -36,6 +36,8 @@ export type CreateRunInput = z.infer<typeof createRunSchema>;
 export const listRunsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  /** Optional legal-entity filter for multi-entity orgs. */
+  entityId: z.coerce.number().int().positive().optional(),
 });
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
 
