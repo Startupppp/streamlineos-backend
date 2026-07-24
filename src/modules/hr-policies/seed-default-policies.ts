@@ -1,4 +1,8 @@
 import type { PolicyType } from "./hr-policy-types";
+import {
+  DEFAULT_OVERTIME_RULES,
+  DEFAULT_WFH_RULES,
+} from "./hr-policy-defaults.constants";
 
 interface DefaultPolicySpec {
   policyType: PolicyType;
@@ -71,26 +75,14 @@ export function buildDefaultPolicies(
       name: "Standard Overtime Policy",
       description: "Overtime threshold and comp-off conversion rules",
       priority: 0,
-      rules: {
-        dailyThresholdMinutes: 480,
-        weeklyThresholdMinutes: 2400,
-        minDurationMinutes: 30,
-        compOffConversion: false,
-        overtimeMultiplier: 1.5,
-      },
+      rules: { ...DEFAULT_OVERTIME_RULES },
     },
     {
       policyType: "wfh",
       name: "Standard WFH Policy",
-      description: "Default 4-day monthly WFH quota",
+      description: `Default ${DEFAULT_WFH_RULES.monthlyQuota}-day monthly WFH quota`,
       priority: 0,
-      rules: {
-        monthlyQuota: 4,
-        weeklyMax: 2,
-        requireApproval: true,
-        probationRestricted: true,
-        allowConsecutive: false,
-      },
+      rules: { ...DEFAULT_WFH_RULES },
     },
   ];
 }

@@ -25,8 +25,9 @@ import { resolveLeavesViewScope } from "./leaves-scope";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
+import { DEFAULT_COMP_OFF_MAX_ACCRUAL } from "../hr-policies/hr-policy-defaults.constants";
+
 const COMP_OFF_LEAVE_TYPE_NAME = "Compensatory Off";
-const DEFAULT_COMP_OFF_MAX_ACCRUAL = 30;
 const TEAM_LEAVES_CAP = 500;
 
 const TEAM_RELATIONS = {
@@ -116,10 +117,13 @@ export class LeavesService {
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
+    const historyStart = new Date();
+    historyStart.setFullYear(historyStart.getFullYear() - 1);
+
     const [pending, all] = await Promise.all([
       this.queryLeaves(pendingConditions, orgId, userId, isAll),
       this.db.query.leaveRequests.findMany({
-        where: and(...baseConditions),
+        where: and(...baseConditions, gte(leaveRequests.createdAt, historyStart)),
         with: TEAM_RELATIONS,
         orderBy: [desc(leaveRequests.createdAt)],
         limit: TEAM_LEAVES_CAP,
@@ -146,19 +150,21 @@ export class LeavesService {
 
     if (reportingUsers.length === 0) return base;
 
-    const reportingUserIds = new Set(reportingUsers.map((r) => r.id));
+    const reportingUserIds = reportingUsers.map((r) => r.id);
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({
-      where: and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")),
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        inArray(leaveRequests.userId, reportingUserIds),
+      ),
       with: TEAM_RELATIONS,
       orderBy: [desc(leaveRequests.createdAt)],
       limit: TEAM_LEAVES_CAP,
     });
 
-    const extra = reporteeRequests.filter(
-      (r) => !alreadyFetchedIds.has(r.id) && reportingUserIds.has(r.userId),
-    );
+    const extra = reporteeRequests.filter((r) => !alreadyFetchedIds.has(r.id));
 
     return [...base, ...extra];
   }

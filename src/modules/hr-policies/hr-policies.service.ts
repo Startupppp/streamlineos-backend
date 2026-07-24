@@ -20,6 +20,7 @@ import { validatePolicyRules, buildDefaultRules } from "./hr-policy-types";
 import type { PolicyType } from "./hr-policy-types";
 import { buildDefaultPolicies } from "./seed-default-policies";
 import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";
+import { HrPolicyConflictService } from "./hr-policy-conflict.service";
 
 const POLICIES_CACHE = (orgId: string) => `hr:policies:list:${orgId}`;
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
@@ -30,6 +31,7 @@ export class HrPoliciesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly evaluation: HrPolicyEvaluationService,
+    private readonly conflicts: HrPolicyConflictService,
   ) {}
 
   async list(orgId: string, query: PoliciesListQuery) {
@@ -202,11 +204,20 @@ export class HrPoliciesService {
     return this.getById(orgId, newPolicy.id);
   }
 
-  async activate(orgId: string, policyId: number) {
+  async activate(orgId: string, policyId: number, options?: { force?: boolean }) {
     const policy = await this.getById(orgId, policyId);
 
     if (!policy.effectiveFrom) {
       throw new BadRequestException("Policy must have an effective_from date before activation");
+    }
+
+    const conflictReport = await this.conflicts.detectConflicts(orgId, policyId);
+    if (!conflictReport.canActivate && !options?.force) {
+      throw new ConflictException({
+        code: "POLICY_CONFLICT",
+        message: "Policy has blocking conflicts with active policies of equal priority",
+        details: conflictReport.conflicts,
+      });
     }
 
     await this.db.transaction(async (tx) => {
@@ -247,6 +258,41 @@ export class HrPoliciesService {
       this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
     ]);
     return this.getById(orgId, policyId);
+  }
+
+  detectConflicts(orgId: string, policyId: number) {
+    return this.conflicts.detectConflicts(orgId, policyId);
+  }
+
+  detectOrgConflicts(orgId: string, policyType?: string) {
+    return this.conflicts.detectOrgConflicts(orgId, policyType);
+  }
+
+  async simulate(
+    orgId: string,
+    input: {
+      employeeId: string;
+      policyType: PolicyType;
+      date: string;
+      rules?: Record<string, unknown>;
+    },
+  ) {
+    const evaluation = await this.evaluation.evaluatePolicy(
+      orgId,
+      input.employeeId,
+      input.policyType,
+      input.date,
+    );
+    return {
+      date: input.date,
+      employeeId: input.employeeId,
+      policyType: input.policyType,
+      matched: evaluation,
+      simulatedRules: input.rules ?? evaluation?.rules ?? null,
+      explanation: evaluation
+        ? `Matched policy "${evaluation.policy.name}" v${evaluation.policy.version} via specificity ${evaluation.trace.maxSpecificity} and priority ${evaluation.trace.priority}`
+        : "No active policy matched this employee for the given date and type",
+    };
   }
 
   async archive(orgId: string, policyId: number) {
