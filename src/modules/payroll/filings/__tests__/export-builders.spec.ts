@@ -80,14 +80,16 @@ describe("statutory export builders", () => {
     expect(art.totals.totalContribution).toBe("720.00");
   });
 
-  it("FORM16 is period summary with explicit not-implemented note", () => {
+  it("FORM16 is period summary with an explicit not-official disclosure", () => {
     const art = buildForm16SummaryExport(employees, {
       periodMonth: "2026-07",
       runId: 9,
       bundle,
     });
     expect(art.filingType).toBe("FORM16");
-    expect(art.notes.join(" ")).toMatch(/not implemented/i);
+    const notes = art.notes.join(" ");
+    expect(notes).toMatch(/not official/i);
+    expect(notes).toMatch(/not generated/i);
     expect(art.rowCount).toBe(2);
   });
 
