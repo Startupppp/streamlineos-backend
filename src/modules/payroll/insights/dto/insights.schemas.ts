@@ -98,3 +98,29 @@ export type PatchCalendarEvent = z.infer<typeof patchCalendarEventSchema>;
 export type AccountingMappingCreate = z.infer<typeof accountingMappingCreateSchema>;
 export type AccountingMappingUpdate = z.infer<typeof accountingMappingUpdateSchema>;
 export type EssBank = z.output<typeof essBankSchema>;
+
+export const journalBatchCreateSchema = z.object({
+  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
+  allowProvisional: z.boolean().optional(),
+  note: z.string().max(500).optional(),
+});
+export type JournalBatchCreate = z.infer<typeof journalBatchCreateSchema>;
+
+export const journalBatchReverseSchema = z.object({
+  reason: z.string().min(1, "A reversal reason is required").max(500),
+});
+export type JournalBatchReverse = z.infer<typeof journalBatchReverseSchema>;
+
+export const journalBatchReconcileSchema = z.object({
+  status: z.enum(["UNRECONCILED", "RECONCILED", "DISPUTED"]),
+  note: z.string().max(500).optional(),
+});
+export type JournalBatchReconcile = z.infer<typeof journalBatchReconcileSchema>;
+
+export const journalBatchListQuerySchema = z.object({
+  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  status: z.enum(["DRAFT", "POSTED", "EXPORTED", "REVERSED", "FAILED"]).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export type JournalBatchListQuery = z.infer<typeof journalBatchListQuerySchema>;
