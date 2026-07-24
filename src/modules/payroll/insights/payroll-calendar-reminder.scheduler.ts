@@ -1,5 +1,5 @@
 import { Injectable, Inject, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -23,10 +23,9 @@ function msUntilNextEightAM(): number {
 }
 
 /**
- * Durable-ish calendar reminder scheduler.
- * Still uses process timers for wake-up (no BullMQ in repo), but persists
- * last started/finished/success/error to payroll_scheduler_state so restarts
- * and multi-instance ops can observe job health and avoid silent silent failures.
+ * Calendar reminder scheduler. Process timers only wake instances; the actual
+ * daily run is claimed atomically in payroll_scheduler_state, so exactly one
+ * instance sends reminders per day and a boot after a missed 8AM catches up.
  */
 @Injectable()
 export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleDestroy {
@@ -39,6 +38,7 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
   ) {}
 
   onModuleInit(): void {
+    void this.run();
     this.timeout = setTimeout(() => {
       void this.run();
       this.interval = setInterval(() => {
@@ -52,22 +52,35 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
     clearInterval(this.interval);
   }
 
-  private async markStarted(): Promise<void> {
+  private async claimDailyRun(): Promise<boolean> {
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
     await this.db
       .insert(payrollSchedulerState)
-      .values({
-        jobName: JOB_NAME,
-        lastStartedAt: new Date(),
-        runCount: 1,
+      .values({ jobName: JOB_NAME })
+      .onConflictDoNothing();
+
+    const claimed = await this.db
+      .update(payrollSchedulerState)
+      .set({
+        lastStartedAt: now,
+        lastError: null,
+        runCount: sql`${payrollSchedulerState.runCount} + 1`,
       })
-      .onConflictDoUpdate({
-        target: payrollSchedulerState.jobName,
-        set: {
-          lastStartedAt: new Date(),
-          lastError: null,
-          runCount: sql`${payrollSchedulerState.runCount} + 1`,
-        },
-      });
+      .where(
+        and(
+          eq(payrollSchedulerState.jobName, JOB_NAME),
+          or(
+            isNull(payrollSchedulerState.lastStartedAt),
+            lt(payrollSchedulerState.lastStartedAt, startOfDay),
+          ),
+        ),
+      )
+      .returning({ jobName: payrollSchedulerState.jobName });
+
+    return claimed.length > 0;
   }
 
   private async markFinished(error: string | null): Promise<void> {
@@ -82,8 +95,8 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
       .where(eq(payrollSchedulerState.jobName, JOB_NAME));
   }
 
-  private async run(): Promise<void> {
-    await this.markStarted();
+  async run(): Promise<void> {
+    if (!(await this.claimDailyRun())) return;
     try {
       const today = new Date();
       const todayStr = today.toISOString().slice(0, 10);
