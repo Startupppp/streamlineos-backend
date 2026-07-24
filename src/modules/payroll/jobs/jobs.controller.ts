@@ -109,10 +109,4 @@ export class PayrollJobsController {
     return row;
   }
 
-  @Post("flush")
-  @HttpCode(200)
-  @RequirePermission("payroll:runs:manage")
-  flush() {
-    return this.worker.flush(25);
-  }
 }

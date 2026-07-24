@@ -46,7 +46,6 @@ const mockEmployee = { id: 1, runId: 1, userId: "u1", status: "PENDING" };
 const mockRunsService = {
   createRun: jest.fn().mockResolvedValue({ ok: true, runId: 1 }),
   listRuns: jest.fn().mockResolvedValue({ items: [mockRun], total: 1 }),
-  getCurrentRun: jest.fn().mockResolvedValue(mockRun),
   getRunById: jest.fn().mockResolvedValue(mockRun),
   listRunEmployees: jest.fn().mockResolvedValue({ items: [mockEmployee], total: 1 }),
   getRunEmployee: jest.fn().mockResolvedValue(mockEmployee),
@@ -94,7 +93,6 @@ type Method = "get" | "post" | "patch" | "delete";
 const allProtectedRoutes: ReadonlyArray<[Method, string]> = [
   ["post", "/payroll/runs"],
   ["get", "/payroll/runs"],
-  ["get", "/payroll/runs/current"],
   ["get", "/payroll/runs/1"],
   ["post", "/payroll/runs/1/generate"],
   ["post", "/payroll/runs/1/recalculate"],
@@ -156,8 +154,7 @@ describe("payroll-runs RBAC — 403 when no permissions (e2e)", () => {
   const rbacProtectedRoutes: ReadonlyArray<[Method, string]> = [
     ["post", "/payroll/runs"],
     ["get", "/payroll/runs"],
-    ["get", "/payroll/runs/current"],
-    ["get", "/payroll/runs/1"],
+      ["get", "/payroll/runs/1"],
     ["post", "/payroll/runs/1/generate"],
     ["post", "/payroll/runs/1/recalculate"],
     ["get", "/payroll/runs/1/employees"],
@@ -240,14 +237,6 @@ describe("payroll-runs RBAC — 200 for permitted caller (e2e)", () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/payroll/runs")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(200);
-  });
-
-  it("GET /payroll/runs/current → 200", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
-    const res = await request(app.getHttpServer())
-      .get("/payroll/runs/current")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
   });

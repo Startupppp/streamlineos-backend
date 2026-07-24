@@ -116,14 +116,6 @@ export class RunsController {
     return this.runsService.listRuns(u.orgId, query);
   }
 
-  @Get("current")
-  @RequirePermission("payroll:runs:view")
-  async getCurrent(@CurrentUser() u: CurrentUserContext) {
-    const run = await this.runsService.getCurrentRun(u.orgId);
-    if (!run) throw new NotFoundException("No payroll run found");
-    return run;
-  }
-
   @Get(":runId")
   @RequirePermission("payroll:runs:view")
   async getOne(
