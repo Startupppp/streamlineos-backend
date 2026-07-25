@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { kbPages, kbPageLinks } from "../../db/schema";
@@ -467,21 +467,25 @@ export class KbPageTreeService {
     orgId: string,
     rootId: number,
   ): Promise<Map<number, PageRow>> {
-    const map = new Map<number, PageRow>();
-    const queue = [rootId];
-    while (queue.length > 0) {
-      const parentId = queue.shift()!;
-      const page = await tx.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, parentId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      });
-      if (!page) continue;
-      map.set(page.id, page);
-      const children = await tx
-        .select({ id: kbPages.id })
-        .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.parentPageId, parentId), isNull(kbPages.deletedAt)));
-      for (const child of children) queue.push(child.id);
-    }
-    return map;
+    const idRows = await tx.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id, parent_page_id, 1 AS depth
+        FROM kb_pages
+        WHERE id = ${rootId} AND org_id = ${orgId} AND deleted_at IS NULL
+        UNION ALL
+        SELECT p.id, p.parent_page_id, s.depth + 1
+        FROM kb_pages p
+        INNER JOIN subtree s ON p.parent_page_id = s.id AND s.depth < 1000
+        WHERE p.org_id = ${orgId} AND p.deleted_at IS NULL
+      )
+      SELECT id FROM subtree
+    `);
+    const ids = (idRows as Array<Record<string, unknown>>).map((row) => Number(row.id));
+    if (ids.length === 0) return new Map();
+    const pages = await tx
+      .select()
+      .from(kbPages)
+      .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids), isNull(kbPages.deletedAt)));
+    return new Map(pages.map((p) => [p.id, p]));
   }
 }
