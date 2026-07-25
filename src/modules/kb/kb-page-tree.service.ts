@@ -22,6 +22,8 @@ import type { MovePageInput } from "./dto/kb-pages.schemas";
 type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+const MAX_TREE_NODES = 2000;
+
 export function isDescendant(
   allPages: Pick<PageRow, "id" | "parentPageId">[],
   ancestorId: number,
@@ -86,7 +88,8 @@ export class KbPageTreeService {
       })
       .from(kbPages)
       .where(and(...filters))
-      .orderBy(kbPages.sortOrder);
+      .orderBy(kbPages.sortOrder)
+      .limit(MAX_TREE_NODES);
 
     const childSet = new Set(rows.map((r) => r.parentPageId).filter((id): id is number => id !== null));
     return rows.map((r) => ({ ...r, hasChildren: childSet.has(r.id) }));
@@ -226,32 +229,22 @@ export class KbPageTreeService {
 
   async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
     const orgId = user.orgId;
-    const trashedPages = await this.db
-      .select({ id: kbPages.id, title: kbPages.title })
-      .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)));
-
-    if (trashedPages.length === 0) return { purgedCount: 0 };
-
-    const ids = trashedPages.map((p) => p.id);
-    await this.db
+    const deleted = await this.db
       .delete(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+      .returning({ id: kbPages.id });
+
+    if (deleted.length === 0) return { purgedCount: 0 };
 
     this.audit.log({
       action: "kb.trash.emptied",
       userId: user.userId,
       orgId,
       resourceType: "kb_page",
-      metadata: { purgedCount: ids.length },
+      metadata: { purgedCount: deleted.length },
     });
 
-    return { purgedCount: ids.length };
+    return { purgedCount: deleted.length };
   }
 
   async purgeExpired(orgId: string, olderThan: Date): Promise<number> {
