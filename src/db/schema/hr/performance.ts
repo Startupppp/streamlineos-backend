@@ -71,6 +71,23 @@ export const oneOnOneMeetings = pgTable("one_on_one_meetings", {
   index("idx_one_on_ones_scheduled").on(table.scheduledAt),
 ]);
 
+export const oneOnOneActionItems = pgTable("one_on_one_action_items", {
+  id: serial("id").primaryKey(),
+  meetingId: integer("meeting_id").references(() => oneOnOneMeetings.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  done: boolean("done").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_one_on_one_action_items_meeting").on(table.meetingId),
+  index("idx_one_on_one_action_items_org").on(table.orgId),
+]);
+
+export const oneOnOneActionItemsRelations = relations(oneOnOneActionItems, ({ one }) => ({
+  meeting: one(oneOnOneMeetings, { fields: [oneOnOneActionItems.meetingId], references: [oneOnOneMeetings.id] }),
+}));
+
 export const goals = pgTable("goals", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
