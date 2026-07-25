@@ -29,6 +29,7 @@ import { formatDateOnly } from "./date.helpers";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
 import { PayrollInputsService } from "../hr-payroll-inputs/payroll-inputs.service";
+import { CacheService } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import type {
   ApproveLeaveInput,
@@ -57,7 +58,12 @@ export class LeavesWriteService {
     private readonly ledger: LeaveLedgerService,
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly payrollInputs: PayrollInputsService,
+    private readonly cache: CacheService,
   ) {}
+
+  private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
+    await this.cache.invalidatePattern(`hr:leave-analytics:${orgId}:*`);
+  }
 
   private rebuildPayrollInputsForLeaveRange(
     orgId: string,
@@ -179,6 +185,8 @@ export class LeavesWriteService {
       requestedDays,
     );
 
+    await this.invalidateLeaveAnalytics(u.orgId);
+
     return {
       success: true,
       conflictWarning:
@@ -215,6 +223,8 @@ export class LeavesWriteService {
     });
 
     void this.dispatchLeaveCancellation(u, existing);
+
+    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { ok: true as const };
   }
@@ -324,6 +334,8 @@ export class LeavesWriteService {
         existing.endDate,
       );
     }
+
+    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { ok: true as const };
   }
@@ -447,6 +459,8 @@ export class LeavesWriteService {
       existing.endDate,
     );
 
+    await this.invalidateLeaveAnalytics(u.orgId);
+
     return { success: true };
   }
 
@@ -501,6 +515,8 @@ export class LeavesWriteService {
     });
 
     void this.dispatchLeaveDecision(u, leaveId, existing, "REJECTED", reason);
+
+    await this.invalidateLeaveAnalytics(u.orgId);
 
     return { success: true };
   }

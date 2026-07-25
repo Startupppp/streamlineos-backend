@@ -357,11 +357,31 @@ export class RecruitmentCandidatesService {
       );
     }
 
-    const [updated] = await this.db
-      .update(candidates)
-      .set({ status: newStage, updatedAt: new Date() })
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
-      .returning();
+    const [updated] = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(candidates)
+        .set({ status: newStage, updatedAt: new Date() })
+        .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
+        .returning();
+
+      await tx
+        .insert(candidateSlaTracking)
+        .values({
+          orgId,
+          candidateId,
+          stage: newStage,
+          enteredAt: new Date(),
+          breachedAt: null,
+          status: "ON_TRACK",
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [candidateSlaTracking.candidateId, candidateSlaTracking.stage],
+          set: { enteredAt: new Date(), breachedAt: null, status: "ON_TRACK", updatedAt: new Date() },
+        });
+
+      return [row];
+    });
 
     this.audit.log({
       action: "CANDIDATE_STAGE_CHANGED",
@@ -394,22 +414,6 @@ export class RecruitmentCandidatesService {
         ).catch(() => undefined);
       }
     }
-
-    await this.db
-      .insert(candidateSlaTracking)
-      .values({
-        orgId,
-        candidateId,
-        stage: newStage,
-        enteredAt: new Date(),
-        breachedAt: null,
-        status: "ON_TRACK",
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [candidateSlaTracking.candidateId, candidateSlaTracking.stage],
-        set: { enteredAt: new Date(), breachedAt: null, status: "ON_TRACK", updatedAt: new Date() },
-      });
 
     void this.automation
       .runAutomationsForEvent(orgId, "candidate.stage_changed", {
