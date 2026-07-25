@@ -1,11 +1,11 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { hrPolicies, leavePolicies, leaveTypes } from "../../db/schema";
 import { and, desc, eq, isNull, lte, gte, or } from "drizzle-orm";
 
 export interface LeavePolicySummary {
-  wfhMonthlyQuota: number;
+  wfhMonthlyQuota: number | null;
   leaveTypes: Array<{
     name: string;
     daysPerYear: number;
@@ -32,8 +32,6 @@ export interface CreateLeavePolicyInput {
 }
 
 export type UpdateLeavePolicyInput = Partial<CreateLeavePolicyInput>;
-
-const DEFAULT_WFH_MONTHLY_QUOTA = 4;
 
 @Injectable()
 export class LeavePoliciesService {
@@ -92,7 +90,21 @@ export class LeavePoliciesService {
       .limit(100);
   }
 
+  private async assertLeaveTypeInOrg(orgId: string, leaveTypeId: number): Promise<void> {
+    const [type] = await this.db
+      .select({ id: leaveTypes.id })
+      .from(leaveTypes)
+      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
+      .limit(1);
+    if (!type) {
+      throw new BadRequestException(
+        "Leave type not found in this organization. Create the leave type first, then attach a policy to it.",
+      );
+    }
+  }
+
   async create(orgId: string, data: CreateLeavePolicyInput) {
+    await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
     const [policy] = await this.db
       .insert(leavePolicies)
       .values({
@@ -117,6 +129,9 @@ export class LeavePoliciesService {
   }
 
   async update(orgId: string, id: number, data: UpdateLeavePolicyInput) {
+    if (data.leaveTypeId != null) {
+      await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
+    }
     const [policy] = await this.db
       .update(leavePolicies)
       .set(data)
@@ -133,26 +148,21 @@ export class LeavePoliciesService {
       .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));
   }
 
-  private async resolveOrgWfhQuota(orgId: string): Promise<number> {
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      const policyRow = await this.db.query.hrPolicies.findFirst({
-        where: and(
-          eq(hrPolicies.orgId, orgId),
-          eq(hrPolicies.policyType, "wfh"),
-          eq(hrPolicies.status, "active"),
-          isNull(hrPolicies.deletedAt),
-          lte(hrPolicies.effectiveFrom, today),
-          or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, today)),
-        ),
-        columns: { rules: true },
-      });
-      if (!policyRow) return DEFAULT_WFH_MONTHLY_QUOTA;
-      const rules = policyRow.rules as Record<string, unknown>;
-      const quota = typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
-      return quota ?? DEFAULT_WFH_MONTHLY_QUOTA;
-    } catch {
-      return DEFAULT_WFH_MONTHLY_QUOTA;
-    }
+  private async resolveOrgWfhQuota(orgId: string): Promise<number | null> {
+    const today = new Date().toISOString().slice(0, 10);
+    const policyRow = await this.db.query.hrPolicies.findFirst({
+      where: and(
+        eq(hrPolicies.orgId, orgId),
+        eq(hrPolicies.policyType, "wfh"),
+        eq(hrPolicies.status, "active"),
+        isNull(hrPolicies.deletedAt),
+        lte(hrPolicies.effectiveFrom, today),
+        or(isNull(hrPolicies.effectiveTo), gte(hrPolicies.effectiveTo, today)),
+      ),
+      columns: { rules: true },
+    });
+    if (!policyRow) return null;
+    const rules = policyRow.rules as Record<string, unknown>;
+    return typeof rules["monthlyQuota"] === "number" ? rules["monthlyQuota"] : null;
   }
 }

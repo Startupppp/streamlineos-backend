@@ -1,21 +1,52 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { departments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { OrgHierarchyService } from "../org-hierarchy/org-hierarchy.service";
+import { nextDepartmentCode, toDepartmentCode } from "../org-hierarchy/lib/department-code";
 
 @Injectable()
 export class HrDepartmentsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly orgHierarchy: OrgHierarchyService,
+  ) {}
 
-  list(orgId: string) {
+  listLegacy(orgId: string) {
     return this.db.query.departments.findMany({
       where: eq(departments.orgId, orgId),
+      columns: { id: true, name: true },
     });
   }
 
-  async create(orgId: string, name: string) {
-    await this.db.insert(departments).values({ name: name.trim(), orgId });
-    return { success: true };
+  async list(orgId: string) {
+    const { data } = await this.orgHierarchy.listDepartments(orgId, {
+      page: 1,
+      limit: 100,
+      status: "ACTIVE",
+    });
+    return data.map((d) => ({ id: d.id, name: d.name }));
+  }
+
+  async create(orgId: string, userId: string, name: string) {
+    const trimmed = name.trim();
+    const base = toDepartmentCode(trimmed);
+    let code = base;
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      try {
+        const created = await this.orgHierarchy.createDepartment(orgId, userId, {
+          name: trimmed,
+          code,
+        });
+        return { id: created.id, name: created.name };
+      } catch (err) {
+        if (!(err instanceof ConflictException)) throw err;
+        code = nextDepartmentCode(base, attempt + 1);
+      }
+    }
+
+    throw new ConflictException("Could not generate a unique department code");
   }
 }

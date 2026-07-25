@@ -185,8 +185,12 @@ export class PlanLimitsService {
   }
 
   async assertWithinLimit(orgId: string, key: LimitKey, increment = 1): Promise<void> {
-    const { plan } = await this.resolveTier(orgId);
-    const limit = PLAN_LIMITS[key][plan];
+    const { tier, plan } = await this.resolveTier(orgId);
+    let limit = PLAN_LIMITS[key][plan];
+    if (key === "members" && tier === "ENTERPRISE") {
+      const negotiated = await this.fetchNegotiatedSeats(orgId);
+      if (negotiated !== null) limit = negotiated;
+    }
     if (limit === null) return;
 
     const used = await this.fetchCount(orgId, key);

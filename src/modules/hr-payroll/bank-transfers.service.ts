@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { GoneException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { bankTransfers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -13,6 +13,11 @@ function generateNeftCsv(transfer: typeof bankTransfers.$inferSelect): string {
   return [header, ...rows].join("\n");
 }
 
+/**
+ * Legacy bank transfer surface stores unmasked account/IFSC in JSONB with no idempotency.
+ * New writes are disabled (Phase 0). Use canonical `/payroll/payout/batches` instead.
+ * List / status / file generation remain available as a read-only migration surface.
+ */
 @Injectable()
 export class BankTransfersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -26,21 +31,10 @@ export class BankTransfersService {
       .limit(50);
   }
 
-  async create(orgId: string, userId: string, data: CreateBankTransferInput) {
-    const [item] = await this.db
-      .insert(bankTransfers)
-      .values({
-        orgId,
-        createdBy: userId,
-        month: data.month,
-        totalAmount: data.totalAmount,
-        employeeCount: data.employeeCount,
-        entries: data.entries,
-        bankFileUrl: data.bankFileUrl ?? null,
-        referenceNo: data.referenceNo ?? null,
-      })
-      .returning();
-    return item;
+  async create(_orgId: string, _userId: string, _data: CreateBankTransferInput): Promise<never> {
+    throw new GoneException(
+      "Legacy unmasked bank transfer creation is disabled. Use /payroll/runs/:runId/bank-batches (masked, idempotent) instead.",
+    );
   }
 
   async updateStatus(orgId: string, id: number, data: { status: string; referenceNo?: string }) {

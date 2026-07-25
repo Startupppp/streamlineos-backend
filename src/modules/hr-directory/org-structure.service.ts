@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import {
   departmentMembers,
   departments,
   organizationMembers,
   users,
 } from "../../db/schema";
+import { orgDepartments } from "../../db/schema/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -50,6 +51,7 @@ export class OrgStructureService {
         phone: users.phone,
         reportingTo: users.reportingTo,
         departmentId: users.departmentId,
+        orgDepartmentId: users.orgDepartmentId,
         employeeId: users.employeeId,
         isActive: users.isActive,
       })
@@ -61,10 +63,16 @@ export class OrgStructureService {
       .where(eq(users.isActive, true))
       .limit(1000);
 
-    const depts = await this.db.query.departments.findMany({
-      where: eq(departments.orgId, orgId),
-      columns: { id: true, name: true, managerId: true },
-    });
+    const [orgDepts, depts] = await Promise.all([
+      this.db.query.orgDepartments.findMany({
+        where: and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt)),
+        columns: { id: true, name: true },
+      }),
+      this.db.query.departments.findMany({
+        where: eq(departments.orgId, orgId),
+        columns: { id: true, name: true, managerId: true },
+      }),
+    ]);
 
     const deptMemberships =
       depts.length > 0
@@ -77,6 +85,7 @@ export class OrgStructureService {
           })
         : [];
 
+    const orgDeptById = new Map(orgDepts.map((d) => [d.id, d]));
     const deptById = new Map(depts.map((d) => [d.id, d]));
     const userDeptMap = new Map<string, number>();
     for (const dm of deptMemberships) {
@@ -84,8 +93,9 @@ export class OrgStructureService {
     }
 
     return members.map((m) => {
+      const orgDept = m.orgDepartmentId ? orgDeptById.get(m.orgDepartmentId) : null;
       const deptId = m.departmentId ?? userDeptMap.get(m.id) ?? null;
-      const dept = deptId ? deptById.get(deptId) : null;
+      const dept = !orgDept && deptId ? deptById.get(deptId) : null;
       return {
         id: m.id,
         name: (m.name ?? [m.firstName, m.lastName].filter(Boolean).join(" ")) || m.email,
@@ -98,7 +108,11 @@ export class OrgStructureService {
         phone: m.phone,
         reportingTo: m.reportingTo,
         employeeId: m.employeeId,
-        department: dept ? { id: dept.id, name: dept.name } : null,
+        department: orgDept
+          ? { id: orgDept.id, name: orgDept.name }
+          : dept
+            ? { id: String(dept.id), name: dept.name }
+            : null,
       };
     });
   }
@@ -108,7 +122,7 @@ export class OrgStructureService {
   }
 
   private async buildOrgChart(orgId: string) {
-    const [members, deptRows] = await Promise.all([
+    const [members, deptRows, orgDeptRows] = await Promise.all([
       this.db.query.organizationMembers.findMany({
         where: eq(organizationMembers.orgId, orgId),
         columns: { userId: true },
@@ -122,6 +136,7 @@ export class OrgStructureService {
               designation: true,
               image: true,
               departmentId: true,
+              orgDepartmentId: true,
               reportingTo: true,
               isActive: true,
             },
@@ -133,9 +148,14 @@ export class OrgStructureService {
         .select({ id: departments.id, name: departments.name })
         .from(departments)
         .where(eq(departments.orgId, orgId)),
+      this.db
+        .select({ id: orgDepartments.id, name: orgDepartments.name })
+        .from(orgDepartments)
+        .where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
     ]);
 
     const deptMap = new Map<number, string>(deptRows.map((d) => [d.id, d.name]));
+    const orgDeptMap = new Map<string, string>(orgDeptRows.map((d) => [d.id, d.name]));
     const seen = new Set<string>();
     const result: Array<{
       id: string;
@@ -144,7 +164,7 @@ export class OrgStructureService {
       role: string;
       designation: string | null;
       image: string | null;
-      departmentId: number | null;
+      departmentId: string | number | null;
       departmentName: string | null;
       reportingTo: string | null;
     }> = [];
@@ -153,6 +173,7 @@ export class OrgStructureService {
       const u = m.user;
       if (!u || seen.has(u.id) || u.isActive === false) continue;
       seen.add(u.id);
+      const orgDeptName = u.orgDepartmentId ? (orgDeptMap.get(u.orgDepartmentId) ?? null) : null;
       result.push({
         id: u.id,
         name: u.name,
@@ -160,8 +181,8 @@ export class OrgStructureService {
         role: toTitleCase(u.role ?? "Employee"),
         designation: u.designation,
         image: u.image,
-        departmentId: u.departmentId,
-        departmentName: u.departmentId ? (deptMap.get(u.departmentId) ?? null) : null,
+        departmentId: u.orgDepartmentId ?? u.departmentId,
+        departmentName: orgDeptName ?? (u.departmentId ? (deptMap.get(u.departmentId) ?? null) : null),
         reportingTo: u.reportingTo,
       });
     }
@@ -183,22 +204,39 @@ export class OrgStructureService {
 
     if (groupBy === "department") {
       const rows = await this.db
-        .select({ departmentId: users.departmentId, count: count() })
+        .select({
+          departmentId: users.departmentId,
+          orgDepartmentId: users.orgDepartmentId,
+          count: count(),
+        })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(users.departmentId);
+        .groupBy(users.departmentId, users.orgDepartmentId);
 
-      const allDepts = await this.db
-        .select({ id: departments.id, name: departments.name })
-        .from(departments)
-        .where(eq(departments.orgId, orgId));
+      const [allDepts, allOrgDepts] = await Promise.all([
+        this.db
+          .select({ id: departments.id, name: departments.name })
+          .from(departments)
+          .where(eq(departments.orgId, orgId)),
+        this.db
+          .select({ id: orgDepartments.id, name: orgDepartments.name })
+          .from(orgDepartments)
+          .where(and(eq(orgDepartments.orgId, orgId), isNull(orgDepartments.deletedAt))),
+      ]);
       const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
+      const orgDeptMap = new Map(allOrgDepts.map((d) => [d.id, d.name]));
 
-      groups = rows.map((r) => ({
-        label: r.departmentId ? (deptMap.get(r.departmentId) ?? "Other") : "Unassigned",
-        count: Number(r.count),
-      }));
+      const byLabel = new Map<string, number>();
+      for (const r of rows) {
+        const label = r.orgDepartmentId
+          ? (orgDeptMap.get(r.orgDepartmentId) ?? "Other")
+          : r.departmentId
+            ? (deptMap.get(r.departmentId) ?? "Other")
+            : "Unassigned";
+        byLabel.set(label, (byLabel.get(label) ?? 0) + Number(r.count));
+      }
+      groups = Array.from(byLabel, ([label, count]) => ({ label, count }));
     } else if (groupBy === "role") {
       const rows = await this.db
         .select({ role: users.role, count: count() })

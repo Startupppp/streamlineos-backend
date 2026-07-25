@@ -12,10 +12,12 @@ import {
   UpdateWorkflowDefinitionSchema,
   WorkflowDefinitionQuerySchema,
   WorkflowInstanceQuerySchema,
+  SimulateWorkflowSchema,
   type CreateWorkflowDefinitionDto,
   type UpdateWorkflowDefinitionDto,
   type WorkflowDefinitionQueryDto,
   type WorkflowInstanceQueryDto,
+  type SimulateWorkflowDto,
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 
@@ -110,6 +112,18 @@ export class HrWorkflowDefinitionsController {
     @Param("workflowId", ParseIntPipe) workflowId: number,
   ) {
     return this.definitionsService.duplicate(u.orgId, workflowId);
+  }
+
+  @Post(":workflowId/simulate")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:workflows:view")
+  @HttpCode(200)
+  simulate(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("workflowId", ParseIntPipe) workflowId: number,
+    @Body(new ZodValidationPipe(SimulateWorkflowSchema)) body: SimulateWorkflowDto,
+  ) {
+    return this.definitionsService.simulate(u.orgId, workflowId, body);
   }
 
   @Get(":workflowId/instances")

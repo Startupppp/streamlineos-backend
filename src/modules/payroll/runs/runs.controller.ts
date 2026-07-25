@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Query,
+  Headers,
   UseGuards,
   ConflictException,
   NotFoundException,
@@ -22,6 +23,7 @@ import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { RunsService } from "./runs.service";
 import { GenerateService } from "./generate.service";
+import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import {
   createRunSchema,
   listRunsQuerySchema,
@@ -42,6 +44,7 @@ export class RunsController {
     private readonly runsService: RunsService,
     private readonly generateService: GenerateService,
     private readonly access: AccessService,
+    private readonly receipts: PayrollCommandReceiptsService,
   ) {}
 
   @Post()
@@ -50,16 +53,56 @@ export class RunsController {
   async create(
     @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    const result = await this.runsService.createRun(u.orgId, u.userId, body.month);
-    if (!result.ok) throw new ConflictException("A payroll run for this month already exists");
-
-    const generated = await this.generateService.generateRun(u.orgId, result.runId, u.userId, false);
-    if (!generated.ok) {
-      return { runId: result.runId, warning: `Run created but generation failed: ${generated.reason}` };
+    const key = idempotencyKey?.trim() || `run.create:${u.orgId}:${body.month}`;
+    const begin = await this.receipts.begin({
+      orgId: u.orgId,
+      command: "run.create",
+      idempotencyKey: key,
+      actorId: u.userId,
+      requestHash: this.receipts.hashRequest(body),
+    });
+    if (begin.kind === "replay") return begin.response;
+    if (begin.kind === "inflight") {
+      throw new ConflictException("Run creation already in progress for this key");
     }
 
-    return { runId: result.runId };
+    try {
+      const result = await this.runsService.createRun(u.orgId, u.userId, body.month, {
+        runType: body.runType,
+        sourcePeriodKey: body.sourcePeriodKey,
+        sourceRunId: body.sourceRunId,
+        entityId: body.entityId,
+      });
+      if (!result.ok) {
+        const entitySuffix =
+          body.entityId != null ? ` for entity ${body.entityId}` : " (org-level, no entity)";
+        const msg = `A ${body.runType ?? "REGULAR"} payroll run for this month already exists${entitySuffix}`;
+        await this.receipts.fail(begin.receiptId, msg);
+        throw new ConflictException(msg);
+      }
+
+      const generated = await this.generateService.generateRun(u.orgId, result.runId, u.userId, false);
+      const response =
+        generated.ok
+          ? { runId: result.runId, correlationId: begin.correlationId }
+          : {
+              runId: result.runId,
+              warning: `Run created but generation failed: ${generated.reason}`,
+              correlationId: begin.correlationId,
+            };
+      await this.receipts.succeed(begin.receiptId, response);
+      return response;
+    } catch (err) {
+      if (!(err instanceof ConflictException)) {
+        await this.receipts.fail(
+          begin.receiptId,
+          err instanceof Error ? err.message : "run.create failed",
+        );
+      }
+      throw err;
+    }
   }
 
   @Get()
@@ -69,14 +112,6 @@ export class RunsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.runsService.listRuns(u.orgId, query);
-  }
-
-  @Get("current")
-  @RequirePermission("payroll:runs:view")
-  async getCurrent(@CurrentUser() u: CurrentUserContext) {
-    const run = await this.runsService.getCurrentRun(u.orgId);
-    if (!run) throw new NotFoundException("No payroll run found");
-    return run;
   }
 
   @Get(":runId")
@@ -96,14 +131,9 @@ export class RunsController {
   async generate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    const result = await this.generateService.generateRun(u.orgId, runId, u.userId, false);
-    if (!result.ok) {
-      if (result.reason === "not_found") throw new NotFoundException("Payroll run not found");
-      if (result.reason === "locked") throw new BadRequestException("Cannot generate a locked run");
-      throw new BadRequestException(result.reason);
-    }
-    return { ok: true };
+    return this.runGenerateCommand(u, runId, false, idempotencyKey);
   }
 
   @Post(":runId/recalculate")
@@ -112,14 +142,56 @@ export class RunsController {
   async recalculate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    const result = await this.generateService.generateRun(u.orgId, runId, u.userId, true);
-    if (!result.ok) {
-      if (result.reason === "not_found") throw new NotFoundException("Payroll run not found");
-      if (result.reason === "locked") throw new BadRequestException("Cannot recalculate a locked run");
-      throw new BadRequestException(result.reason);
+    return this.runGenerateCommand(u, runId, true, idempotencyKey);
+  }
+
+  private async runGenerateCommand(
+    u: CurrentUserContext,
+    runId: number,
+    isRecalc: boolean,
+    idempotencyKey: string | undefined,
+  ) {
+    const command = isRecalc ? "run.recalculate" : "run.generate";
+    const key = idempotencyKey?.trim() || `${command}:${u.orgId}:${runId}`;
+    const begin = await this.receipts.begin({
+      orgId: u.orgId,
+      command,
+      idempotencyKey: key,
+      actorId: u.userId,
+      runId,
+    });
+    if (begin.kind === "replay") return begin.response;
+    if (begin.kind === "inflight") {
+      throw new ConflictException("Generation already in progress for this key");
     }
-    return { ok: true };
+
+    try {
+      const result = await this.generateService.generateRun(u.orgId, runId, u.userId, isRecalc);
+      if (!result.ok) {
+        await this.receipts.fail(begin.receiptId, result.reason);
+        if (result.reason === "not_found") throw new NotFoundException("Payroll run not found");
+        if (result.reason === "locked") {
+          throw new BadRequestException(
+            isRecalc ? "Cannot recalculate a locked run" : "Cannot generate a locked run",
+          );
+        }
+        if (result.reason === "generation_in_progress") {
+          throw new ConflictException("Payroll run is already being generated or recalculated");
+        }
+        throw new BadRequestException(result.reason);
+      }
+      const response = { ok: true, correlationId: begin.correlationId };
+      await this.receipts.succeed(begin.receiptId, response);
+      return response;
+    } catch (err) {
+      // fail already called on known result.ok=false paths; catch unexpected
+      if (!(err instanceof NotFoundException || err instanceof BadRequestException || err instanceof ConflictException)) {
+        await this.receipts.fail(begin.receiptId, err instanceof Error ? err.message : "generate failed");
+      }
+      throw err;
+    }
   }
 
   @Get(":runId/employees")

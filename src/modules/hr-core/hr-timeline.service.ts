@@ -9,6 +9,7 @@ import {
 import { hrAuditLogs } from "../../db/schema/hr/core-audit";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { PersonEmploymentSyncService } from "./person-employment-sync.service";
 
 type TimelineEntry = {
   id: string;
@@ -21,7 +22,10 @@ type TimelineEntry = {
 
 @Injectable()
 export class HrTimelineService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
+  ) {}
 
   async getTimeline(orgId: string, employmentId: number, opts: { page: number; limit: number }) {
     const cappedLimit = Math.min(opts.limit, 100);
@@ -126,35 +130,50 @@ export class HrTimelineService {
   }
 
   async getEmploymentByUserId(orgId: string, userId: string) {
-    const [row] = await this.db
-      .select({
-        id: hrEmployments.id,
-        employeeNumber: hrEmployments.employeeNumber,
-        lifecycleStatus: hrEmployments.lifecycleStatus,
-        workerType: hrEmployments.workerType,
-        departmentId: hrEmployments.departmentId,
-        designation: hrEmployments.designation,
-        joiningDate: hrEmployments.joiningDate,
-      })
-      .from(hrPeople)
-      .innerJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.orgId, orgId),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .limit(1);
+    const load = async () => {
+      const [row] = await this.db
+        .select({
+          id: hrEmployments.id,
+          personId: hrEmployments.personId,
+          employeeNumber: hrEmployments.employeeNumber,
+          lifecycleStatus: hrEmployments.lifecycleStatus,
+          workerType: hrEmployments.workerType,
+          departmentId: hrEmployments.departmentId,
+          designation: hrEmployments.designation,
+          joiningDate: hrEmployments.joiningDate,
+          probationEndDate: hrEmployments.probationEndDate,
+          confirmationDate: hrEmployments.confirmationDate,
+          isPrimary: hrEmployments.isPrimary,
+          personFirstName: hrPeople.firstName,
+          personLastName: hrPeople.lastName,
+          personWorkEmail: hrPeople.workEmail,
+        })
+        .from(hrPeople)
+        .innerJoin(
+          hrEmployments,
+          and(
+            eq(hrEmployments.personId, hrPeople.id),
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(hrPeople.orgId, orgId),
+            eq(hrPeople.userId, userId),
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    };
 
+    let row = await load();
+    if (!row) {
+      await this.personEmploymentSync.ensureFromUserId(orgId, userId, userId);
+      row = await load();
+    }
     if (!row) throw new NotFoundException("Employee not found");
 
     return row;

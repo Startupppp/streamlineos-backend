@@ -3,12 +3,21 @@ import { z } from "zod";
 const READINESS = ["ready_now", "1_2_years", "3_plus"] as const;
 
 export const createSuccessionPlanSchema = z.object({
-  roleName: z.string().trim().min(1, "Role name is required").max(200, "Role name must be at most 200 characters"),
+  roleName: z
+    .string()
+    .trim()
+    .min(2, "Role name must be at least 2 characters")
+    .max(200, "Role name must be at most 200 characters")
+    .regex(/[a-zA-Z0-9]/, "Role name must contain at least one letter or number")
+    .refine((v) => !/\s{2,}/.test(v), "Cannot have consecutive spaces"),
   jobRoleId: z.coerce.number().int().positive().nullable().optional(),
   incumbentId: z.string().trim().min(1, "Incumbent is required").nullable().optional(),
   successorId: z.string().trim().min(1, "Successor is required"),
   readiness: z.enum(READINESS).optional().default("ready_now"),
   note: z.string().trim().max(2000, "Note must be at most 2000 characters").nullable().optional(),
+}).refine((d) => !d.incumbentId || d.incumbentId !== d.successorId, {
+  message: "Incumbent and successor must be different people",
+  path: ["incumbentId"],
 });
 
 export const updateSuccessionPlanSchema = z.object({

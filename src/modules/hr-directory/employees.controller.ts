@@ -26,7 +26,7 @@ import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { AccessService } from "../access/access.service";
 import { resolveEmployeesScope } from "./employees-scope";
-import { buildEmployeeProfileHtml } from "./profile-pdf.html";
+import { buildEmployeeProfilePdf } from "./profile-pdf";
 import {
   availabilitySchema,
   bulkOnboardEmployeesSchema,
@@ -180,10 +180,13 @@ export class EmployeesController {
     if (!employee) throw new NotFoundException("Employee not found");
 
     const { skills, ...employeeData } = employee;
-    const html = buildEmployeeProfileHtml(employeeData, skills);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="employee-profile-${employeeId}.html"`);
-    res.send(html);
+    const pdf = await buildEmployeeProfilePdf(employeeData, skills);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="employee-profile-${employeeId}.pdf"`,
+    );
+    res.send(pdf);
   }
 
   @Get(":employeeId")

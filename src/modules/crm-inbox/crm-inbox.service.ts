@@ -50,6 +50,11 @@ function endOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 }
 
+/** Product defaults for inbox scoring windows (not plan entitlements). */
+const INBOX_REPLY_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+const INBOX_ACTIVITY_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+const INBOX_SLA_HORIZON_MS = 4 * 60 * 60 * 1000;
+
 @Injectable()
 export class CrmInboxService {
   constructor(
@@ -61,9 +66,9 @@ export class CrmInboxService {
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    const fortyEightHoursAgo = new Date(now.getTime() - INBOX_REPLY_LOOKBACK_MS);
+    const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
+    const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
     const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
     const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });
@@ -388,9 +393,9 @@ export class CrmInboxService {
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+    const fortyEightHoursAgo = new Date(now.getTime() - INBOX_REPLY_LOOKBACK_MS);
+    const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
+    const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
     const scopeFilter = applyScope(scope, userId, { ownerColumn: tasks.assigneeId });
     const leadScopeFilter = applyScope(scope, userId, { ownerColumn: leads.assignedToId });

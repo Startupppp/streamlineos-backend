@@ -16,6 +16,16 @@ function chainable(terminal: unknown = undefined) {
   obj["limit"] = jest.fn().mockResolvedValue(terminal ?? []);
   obj["offset"] = jest.fn().mockResolvedValue(terminal ?? []);
   obj["catch"] = jest.fn().mockResolvedValue(undefined);
+  // Allow `await db.select().from().where(...)` freeze summary queries.
+  obj["where"] = jest.fn().mockImplementation(() => {
+    const next = Object.create(obj) as Record<string, jest.Mock> & PromiseLike<unknown>;
+    for (const m of methods) {
+      next[m] = obj[m];
+    }
+    next.then = ((onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>
+      Promise.resolve(terminal ?? []).then(onFulfilled, onRejected)) as never;
+    return next;
+  });
   return obj;
 }
 

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -19,6 +20,13 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayrollAiExplainController {
   constructor(private readonly explainService: PayrollAiExplainService) {}
+
+  /** Honesty contract: explain/draft only — no autonomous payroll actions. */
+  @Get("ai/capabilities")
+  @RequirePermission("self:payslips")
+  aiCapabilities() {
+    return this.explainService.capabilities();
+  }
 
   @Post(":publicationId/ai/explain")
   @HttpCode(200)

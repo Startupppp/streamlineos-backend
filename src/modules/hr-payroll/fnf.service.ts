@@ -42,7 +42,7 @@ const VALID_FNF_TRANSITIONS: Record<FnfStatus, FnfStatus[]> = {
 export class FnfService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listFnf(orgId: string, userId: string, isAdmin: boolean) {
+  listFnf(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
     return this.db.query.fnfSettlements.findMany({
       where: isAdmin
         ? eq(fnfSettlements.orgId, orgId)
@@ -52,7 +52,8 @@ export class FnfService {
           ),
       orderBy: [desc(fnfSettlements.createdAt)],
       with: { user: { columns: { name: true, email: true } } },
-      limit: 100,
+      limit,
+      offset: (page - 1) * limit,
     });
   }
 

@@ -40,6 +40,17 @@ export const updateDocumentSchema = z.object({
 export const listDocumentsSchema = z.object({
   userId: z.string().optional(),
   type: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const listRichDocumentsSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  isPublished: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
 });
 
 export const sendAckSchema = z.object({
@@ -81,6 +92,7 @@ export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
 export type ListDocumentsInput = z.infer<typeof listDocumentsSchema>;
+export type ListRichDocumentsInput = z.infer<typeof listRichDocumentsSchema>;
 export type SendAckInput = z.infer<typeof sendAckSchema>;
 export type AckInput = z.infer<typeof ackSchema>;
 export type CreateRichDocumentInput = z.infer<typeof createRichDocumentSchema>;

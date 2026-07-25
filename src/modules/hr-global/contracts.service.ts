@@ -225,21 +225,26 @@ export class ContractsService {
       search: "internship",
     });
 
-    const template = letterTemplates[0] ?? null;
-    if (!template) {
+    const listed = letterTemplates[0] ?? null;
+    if (!listed) {
       return {
         html: this.buildFallbackCertificate(contract),
         templateId: null,
       };
     }
 
+    const template = await this.templates.getById(orgId, listed.id);
     const ctx = await this.renderService.buildContext(orgId, actorId, undefined, {
       "contract.startDate": contract.startDate ?? "",
       "contract.endDate": contract.endDate ?? "",
       "contract.type": contract.contractType,
     }, false);
 
-    const body = (template.content as Record<string, unknown>)["bodyHtml"] as string | undefined;
+    const content =
+      template.content && typeof template.content === "object"
+        ? (template.content as Record<string, unknown>)
+        : {};
+    const body = typeof content.bodyHtml === "string" ? content.bodyHtml : undefined;
     const html = body ? this.renderService.renderHtml(body, ctx) : this.buildFallbackCertificate(contract);
 
     return { html, templateId: template.id };

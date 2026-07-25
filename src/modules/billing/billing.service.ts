@@ -36,13 +36,12 @@ import {
   type VerifyPaymentInput,
   type WebhookEvent,
 } from "./dto/billing.schemas";
-import { PLAN_LIMITS } from "./plan-entitlements.constants";
-
-const PLAN_PRICES: Record<Plan, number> = {
-  STARTER: 99900,
-  PROFESSIONAL: 249900,
-  ENTERPRISE: 499900,
-};
+import {
+  PLAN_LIMITS,
+  PLAN_PRICES_PAISE,
+  ANNUAL_DISCOUNT_PCT,
+  buildPlanCatalog,
+} from "./plan-entitlements.constants";
 
 interface WebhookResult {
   status: number;
@@ -82,11 +81,11 @@ export class BillingService {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const monthlyPrice = PLAN_PRICES[plan];
+    const monthlyPrice = PLAN_PRICES_PAISE[plan];
     if (!monthlyPrice) throw new BadRequestException("Invalid plan");
 
     let amount = billingCycle === "annual"
-      ? Math.round(monthlyPrice * 12 * 0.8)
+      ? Math.round(monthlyPrice * 12 * (1 - ANNUAL_DISCOUNT_PCT))
       : monthlyPrice;
 
     let couponDiscountAmount = 0;
@@ -134,7 +133,7 @@ export class BillingService {
       throw new BadRequestException("Payment verification failed: invalid signature");
     }
 
-    const amount = PLAN_PRICES[input.plan];
+    const amount = PLAN_PRICES_PAISE[input.plan];
     const now = new Date();
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -241,7 +240,7 @@ export class BillingService {
       return { valid: false, couponId: null, type: null, value: null, discountAmount: null, message: "This coupon has already been used by your organization" };
     }
 
-    const baseAmount = PLAN_PRICES[plan];
+    const baseAmount = PLAN_PRICES_PAISE[plan];
     const couponValue = parseFloat(coupon.value);
     const discountAmount =
       coupon.type === "PERCENTAGE"
@@ -353,33 +352,7 @@ export class BillingService {
   }
 
   getPlans() {
-    const plans = [
-      {
-        id: "STARTER" as Plan,
-        name: "Starter",
-        monthlyPrice: 999,
-        annualPrice: 799,
-        features: ["HR module", "Up to 25 employees", "Basic payroll", "Leave management"],
-        maxEmployees: 25,
-      },
-      {
-        id: "PROFESSIONAL" as Plan,
-        name: "Professional",
-        monthlyPrice: 1999,
-        annualPrice: 1599,
-        features: ["All Starter features", "Up to 200 employees", "Performance management", "Advanced analytics", "CRM module"],
-        maxEmployees: 200,
-      },
-      {
-        id: "ENTERPRISE" as Plan,
-        name: "Enterprise",
-        monthlyPrice: 3999,
-        annualPrice: 3199,
-        features: ["All Professional features", "Unlimited employees", "Custom integrations", "Dedicated support", "All modules"],
-        maxEmployees: null,
-      },
-    ];
-    return { plans };
+    return { plans: buildPlanCatalog() };
   }
 
   getMarketplace() {

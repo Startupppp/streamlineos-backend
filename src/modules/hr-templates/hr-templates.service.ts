@@ -46,7 +46,23 @@ export class HrTemplatesService {
 
     const [rows, [{ total }]] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: hrTemplates.id,
+          orgId: hrTemplates.orgId,
+          kind: hrTemplates.kind,
+          name: hrTemplates.name,
+          description: hrTemplates.description,
+          status: hrTemplates.status,
+          version: hrTemplates.version,
+          parentTemplateId: hrTemplates.parentTemplateId,
+          variablesUsed: hrTemplates.variablesUsed,
+          letterType: hrTemplates.letterType,
+          createdBy: hrTemplates.createdBy,
+          updatedBy: hrTemplates.updatedBy,
+          deletedAt: hrTemplates.deletedAt,
+          createdAt: hrTemplates.createdAt,
+          updatedAt: hrTemplates.updatedAt,
+        })
         .from(hrTemplates)
         .where(and(...conditions))
         .orderBy(desc(hrTemplates.updatedAt))

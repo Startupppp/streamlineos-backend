@@ -68,6 +68,65 @@ describe("exception engine", () => {
     expect(blockers).toHaveLength(0);
   });
 
+  it("detects MISSING_LOCKED_INPUT_PERIOD when freeze-before-pay is required", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: { ...DEFAULT_PAYROLL_TOGGLES, requireLockedPayrollInputs: true },
+      scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+      missingLockedInputPeriod: true,
+    });
+    expect(results.some(e => e.code === "MISSING_LOCKED_INPUT_PERIOD")).toBe(true);
+    expect(results.find(e => e.code === "MISSING_LOCKED_INPUT_PERIOD")?.severity).toBe("BLOCKER");
+  });
+
+  it("detects INPUT_NOT_FROM_LOCKED_SNAPSHOT when freeze required but live pull used", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: { ...DEFAULT_PAYROLL_TOGGLES, requireLockedPayrollInputs: true },
+      scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+      missingLockedInputPeriod: false,
+      inputNotFromLockedSnapshot: true,
+    });
+    expect(results.some(e => e.code === "INPUT_NOT_FROM_LOCKED_SNAPSHOT")).toBe(true);
+  });
+
+  it("detects MISSING_PF_UAN when PF enabled and UAN absent", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: { ...DEFAULT_PAYROLL_TOGGLES, pf: true },
+      scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+      missingPfUan: true,
+    });
+    expect(results.some(e => e.code === "MISSING_PF_UAN")).toBe(true);
+    expect(results.find(e => e.code === "MISSING_PF_UAN")?.severity).toBe("WARNING");
+  });
+
+  it("detects MISSING_ESI_IP when ESI enabled and IP absent", () => {
+    const results = detectExceptions({
+      orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+      hasProfile: true, hasBankAccount: true, snapshot: baseSnapshot,
+      toggles: { ...DEFAULT_PAYROLL_TOGGLES, esi: true },
+      scheduledDays: 30, lopDays: 2,
+      varianceThresholdPercent: 20, hasAttendanceInput: true,
+      hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+      missingFxRate: false,
+      missingEsiIp: true,
+    });
+    expect(results.some(e => e.code === "MISSING_ESI_IP")).toBe(true);
+  });
+
   it("detects HIGH_VARIANCE", () => {
     const snap = {
       ...baseSnapshot,
@@ -144,5 +203,49 @@ describe("exception engine", () => {
       missingFxRate: false,
     });
     expect(results.some(e => e.code === "DUPLICATE_BANK_ACCOUNT")).toBe(false);
+  });
+});
+
+describe("minimum wage (Labour Code wage definition)", () => {
+  const baseInput = {
+    orgId: "org1", runId: 1, runEmployeeId: 1, userId: "u1",
+    hasProfile: true, hasBankAccount: true,
+    toggles: DEFAULT_PAYROLL_TOGGLES, scheduledDays: 30, lopDays: 2,
+    varianceThresholdPercent: 20, hasAttendanceInput: true,
+    hasApprovedTaxDeclaration: true, isJoiningInMonth: false, isExitInMonth: false,
+    missingFxRate: false,
+  };
+
+  it("raises BELOW_MINIMUM_WAGE when the statutory engine flags the wage split", () => {
+    const snap: CalculationSnapshot = {
+      ...baseSnapshot,
+      wageDefinitionWarning:
+        "Labour Code wage definition: Basic+DA is 30.0% of gross (minimum 50%).",
+    };
+    const results = detectExceptions({ ...baseInput, snapshot: snap });
+    const found = results.find(e => e.code === "BELOW_MINIMUM_WAGE");
+    expect(found).toBeDefined();
+    expect(found?.message).toContain("30.0%");
+  });
+
+  it("is a WARNING, never a blocker — underpaying is worse than a bad structure", () => {
+    const snap: CalculationSnapshot = {
+      ...baseSnapshot,
+      wageDefinitionWarning: "Labour Code wage definition: Basic+DA is 40.0% of gross (minimum 50%).",
+    };
+    const results = detectExceptions({ ...baseInput, snapshot: snap });
+    expect(results.find(e => e.code === "BELOW_MINIMUM_WAGE")?.severity).toBe("WARNING");
+    expect(results.filter(e => e.severity === "BLOCKER")).toHaveLength(0);
+  });
+
+  it("stays silent when the wage split is compliant", () => {
+    const results = detectExceptions({ ...baseInput, snapshot: baseSnapshot });
+    expect(results.some(e => e.code === "BELOW_MINIMUM_WAGE")).toBe(false);
+  });
+
+  it("stays silent for snapshots written before the field existed", () => {
+    const legacy: CalculationSnapshot = { ...baseSnapshot, wageDefinitionWarning: undefined };
+    const results = detectExceptions({ ...baseInput, snapshot: legacy });
+    expect(results.some(e => e.code === "BELOW_MINIMUM_WAGE")).toBe(false);
   });
 });

@@ -162,5 +162,35 @@ describe("PlanLimitsService", () => {
         /Free.*members/,
       );
     });
+
+    it("uses negotiated enterprise seats when asserting members limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          // resolveTier
+          .fn()
+          .mockResolvedValueOnce([{ plan: "ENTERPRISE", status: "ACTIVE", trial_ends_at: null }])
+          // fetchNegotiatedSeats
+          .mockResolvedValueOnce([{ negotiated_seats: 1200 }])
+          // fetchCount members
+          .mockResolvedValueOnce([{ count: 1200 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toThrow(
+        /Enterprise.*members/,
+      );
+    });
+
+    it("allows members under negotiated enterprise seats", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "ENTERPRISE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ negotiated_seats: 1200 }])
+          .mockResolvedValueOnce([{ count: 500 }]),
+      });
+      service = await build(mockDb);
+      // Default ENTERPRISE catalog is 500; negotiated 1200 should allow 501st member
+      await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
+    });
   });
 });

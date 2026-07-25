@@ -20,6 +20,12 @@ export const listMembersSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(20),
   search: z.string().trim().optional(),
+  userIds: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((v) => v.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 50))
+    .optional(),
 });
 
 export const cancelInvitationSchema = z.object({

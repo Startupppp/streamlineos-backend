@@ -33,7 +33,7 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
-  listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
+  async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
     const conditions = [eq(documents.orgId, orgId), eq(documents.isActive, true)];
     conditions.push(applyScope(scope, userId, { ownerColumn: documents.userId }));
     if (filters.userId && scope === "all") {
@@ -43,11 +43,30 @@ export class DocumentsService {
       conditions.push(eq(documents.type, filters.type));
     }
 
-    return this.db.query.documents.findMany({
-      where: and(...conditions),
-      orderBy: [desc(documents.createdAt)],
-      limit: 100,
-    });
+    const whereClause = and(...conditions);
+    const offset = (filters.page - 1) * filters.limit;
+
+    const [rows, [countRow]] = await Promise.all([
+      this.db.query.documents.findMany({
+        where: whereClause,
+        orderBy: [desc(documents.createdAt)],
+        limit: filters.limit,
+        offset,
+      }),
+      this.db.select({ count: count() }).from(documents).where(whereClause),
+    ]);
+
+    const total = countRow?.count ?? 0;
+
+    return {
+      data: rows,
+      pagination: {
+        page: filters.page,
+        limit: filters.limit,
+        total,
+        totalPages: Math.ceil(total / filters.limit),
+      },
+    };
   }
 
   async createDocument(

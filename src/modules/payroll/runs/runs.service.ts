@@ -1,5 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, lt, sql, inArray } from "drizzle-orm";
+import { BadRequestException, Injectable, Inject } from "@nestjs/common";
+import { and, eq, desc, ilike, or, count, lt, sql, inArray, isNull, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -20,12 +20,16 @@ import type { PayrollChecklistItem, PayrollToggles, PayrollPolicyConfig, Varianc
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
 import { AuditService } from "../../../common/audit/audit.service";
+import { PayrollEntitiesService } from "../entities/entities.service";
+import { describeCountryPack } from "../../hr-global/lib/country-pack-registry";
+import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 @Injectable()
 export class RunsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly entities: PayrollEntitiesService,
   ) {}
 
   async setEmployeeHold(
@@ -147,11 +151,81 @@ export class RunsService {
     orgId: string,
     userId: string,
     month: string,
+    opts?: {
+      runType?: string;
+      sourcePeriodKey?: string | null;
+      sourceRunId?: number | null;
+      entityId?: number | null;
+    },
   ): Promise<{ ok: false; reason: "exists" } | { ok: true; runId: number }> {
+    const runType = opts?.runType ?? "REGULAR";
+    const entityId = opts?.entityId ?? null;
+
+    // Resolve legal entity → period + statutory pack (org-scoped ownership).
+    let periodId: number | null = null;
+    let statutoryRuleVersion: string | null = null;
+    if (entityId != null) {
+      const entity = await this.entities.getEntity(orgId, entityId);
+      const period = await this.entities.ensurePeriod(orgId, month, { entityId });
+      periodId = period.id;
+      const pack = describeCountryPack(entity.countryCode);
+      statutoryRuleVersion =
+        entity.countryCode === "IN"
+          ? getIndiaBundleForMonth(month).bundleVersion
+          : (pack?.payrollStatutoryBundle ?? null);
+      // Isolation: statutory bundle country must match entity country when present.
+      if (statutoryRuleVersion) {
+        const ruleCountry = statutoryRuleVersion.split("-")[0] ?? "";
+        if (ruleCountry.length === 2) {
+          this.entities.assertNoCountryContamination(entity.countryCode, ruleCountry);
+        }
+      }
+    }
+
+    // Source run must be same org and same entity scope (when both sides are entity-bound).
+    if (opts?.sourceRunId != null) {
+      const source = await this.db
+        .select({
+          id: payrollRuns.id,
+          entityId: payrollRuns.entityId,
+        })
+        .from(payrollRuns)
+        .where(and(eq(payrollRuns.id, opts.sourceRunId), eq(payrollRuns.orgId, orgId)))
+        .limit(1);
+      if (!source[0]) {
+        throw new BadRequestException("Source payroll run not found in this organization");
+      }
+      if (
+        entityId != null &&
+        source[0].entityId != null &&
+        source[0].entityId !== entityId
+      ) {
+        throw new BadRequestException(
+          `Source run belongs to entity ${source[0].entityId}, not entity ${entityId}`,
+        );
+      }
+    }
+
+    // Uniqueness: (org, month, runType, entity) — NULL entity is org-level bucket (migration 0298).
+    const existingWhere =
+      entityId != null
+        ? and(
+            eq(payrollRuns.orgId, orgId),
+            eq(payrollRuns.month, month),
+            eq(payrollRuns.runType, runType),
+            eq(payrollRuns.entityId, entityId),
+          )
+        : and(
+            eq(payrollRuns.orgId, orgId),
+            eq(payrollRuns.month, month),
+            eq(payrollRuns.runType, runType),
+            isNull(payrollRuns.entityId),
+          );
+
     const existing = await this.db
-      .select({ id: payrollRuns.id })
+      .select({ id: payrollRuns.id, entityId: payrollRuns.entityId })
       .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, month)))
+      .where(existingWhere)
       .limit(1);
 
     if (existing.length > 0) return { ok: false, reason: "exists" };
@@ -176,6 +250,13 @@ export class RunsService {
       .values({
         orgId,
         month,
+        runType,
+        sourcePeriodKey: opts?.sourcePeriodKey ?? null,
+        sourceRunId: opts?.sourceRunId ?? null,
+        entityId,
+        periodId,
+        statutoryRuleVersion,
+        calculationVersion: "1.0.0",
         status: "PREPARING",
         policyVersionId,
         createdBy: userId,
@@ -190,6 +271,11 @@ export class RunsService {
 
   async listRuns(orgId: string, query: ListRunsQuery) {
     const offset = (query.page - 1) * query.limit;
+    const conditions: SQL[] = [eq(payrollRuns.orgId, orgId)];
+    if (query.entityId != null) {
+      conditions.push(eq(payrollRuns.entityId, query.entityId));
+    }
+    const where = and(...conditions);
 
     const [rows, [totRow]] = await Promise.all([
       this.db
@@ -197,6 +283,9 @@ export class RunsService {
           id: payrollRuns.id,
           month: payrollRuns.month,
           status: payrollRuns.status,
+          runType: payrollRuns.runType,
+          entityId: payrollRuns.entityId,
+          statutoryRuleVersion: payrollRuns.statutoryRuleVersion,
           grossTotal: payrollRuns.grossTotal,
           netTotal: payrollRuns.netTotal,
           employeeCount: payrollRuns.employeeCount,
@@ -204,14 +293,14 @@ export class RunsService {
           createdAt: payrollRuns.createdAt,
         })
         .from(payrollRuns)
-        .where(eq(payrollRuns.orgId, orgId))
+        .where(where)
         .orderBy(desc(payrollRuns.month))
         .limit(query.limit)
         .offset(offset),
       this.db
         .select({ total: count() })
         .from(payrollRuns)
-        .where(eq(payrollRuns.orgId, orgId)),
+        .where(where),
     ]);
 
     return { data: rows, total: totRow?.total ?? 0, page: query.page, limit: query.limit };
@@ -268,28 +357,6 @@ export class RunsService {
     const heldCount = rows.find((r) => r.status === "HELD")?.total ?? 0;
     if (failedCount === 0 && heldCount === 0) return null;
     return { failedCount, heldCount };
-  }
-
-  async getCurrentRun(orgId: string) {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-
-    const rows = await this.db
-      .select()
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.orgId, orgId), eq(payrollRuns.month, currentMonth)))
-      .limit(1);
-
-    if (rows[0]) return rows[0];
-
-    const recent = await this.db
-      .select()
-      .from(payrollRuns)
-      .where(eq(payrollRuns.orgId, orgId))
-      .orderBy(desc(payrollRuns.month))
-      .limit(1);
-
-    return recent[0] ?? null;
   }
 
   async listRunEmployees(
@@ -416,6 +483,9 @@ export class RunsService {
         userId: payrollRunEmployees.userId,
         net: payrollRunEmployees.net,
         userName: users.name,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        paidDays: payrollRunEmployees.paidDays,
+        lopDays: payrollRunEmployees.lopDays,
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
@@ -423,10 +493,40 @@ export class RunsService {
       .orderBy(desc(payrollRunEmployees.net))
       .limit(10);
 
+    const withBaselines = topMovers.map((m) => {
+      const snap = m.calculationSnapshot as {
+        variance?: {
+          baselineSource?: string | null;
+          inputBaseline?: {
+            lockedPaidDays: string | null;
+            lockedLopDays: string | null;
+            paidDaysDelta: number | null;
+            lopDaysDelta: number | null;
+          } | null;
+          netDeltaPercent?: number | null;
+        } | null;
+      } | null;
+      return {
+        userId: m.userId,
+        net: m.net,
+        userName: m.userName,
+        paidDays: m.paidDays,
+        lopDays: m.lopDays,
+        baselineSource: snap?.variance?.baselineSource ?? (prevRun[0] ? "PREVIOUS_RUN" : null),
+        inputBaseline: snap?.variance?.inputBaseline ?? null,
+        netDeltaPercent: snap?.variance?.netDeltaPercent ?? null,
+      };
+    });
+
     return {
       currentRun: run[0],
       previousRun: prevRun[0] ?? null,
-      topMovers,
+      topMovers: withBaselines,
+      lockedInputBaselinesUsed: withBaselines.some(
+        (m) =>
+          m.baselineSource === "LOCKED_INPUT_SNAPSHOT" ||
+          m.baselineSource === "PREVIOUS_RUN_AND_LOCKED_INPUTS",
+      ),
     };
   }
 

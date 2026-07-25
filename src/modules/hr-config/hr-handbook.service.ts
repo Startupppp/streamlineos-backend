@@ -22,10 +22,21 @@ export class HrHandbookService {
 
   list(orgId: string) {
     return this.db
-      .select()
+      .select({
+        id: handbookVersions.id,
+        version: handbookVersions.version,
+        title: handbookVersions.title,
+        documentId: handbookVersions.documentId,
+        documentUrl: handbookVersions.documentUrl,
+        changelog: handbookVersions.changelog,
+        publishedAt: handbookVersions.publishedAt,
+        publishedBy: handbookVersions.publishedBy,
+        createdAt: handbookVersions.createdAt,
+      })
       .from(handbookVersions)
       .where(eq(handbookVersions.orgId, orgId))
-      .orderBy(desc(handbookVersions.createdAt));
+      .orderBy(desc(handbookVersions.createdAt))
+      .limit(100);
   }
 
   getById(orgId: string, id: number): Promise<HandbookExisting | null> {

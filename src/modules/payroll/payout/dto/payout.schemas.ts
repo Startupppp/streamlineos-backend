@@ -50,6 +50,12 @@ export const markBatchPaidSchema = z.object({
 });
 export type MarkBatchPaidInput = z.infer<typeof markBatchPaidSchema>;
 
+export const bankReturnImportSchema = z.object({
+  /** Raw CSV body (header + rows). Prefer itemId,status,transactionRef,failureReason */
+  csv: z.string().min(1).max(2_000_000),
+});
+export type BankReturnImportInput = z.infer<typeof bankReturnImportSchema>;
+
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(100),
   layout: z.enum(["CLASSIC", "MODERN", "COMPLIANCE"]),

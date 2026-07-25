@@ -47,6 +47,12 @@ import { AiGatewayService } from "../gateway/ai-gateway.service";
 
 import { unwrapAiResult } from "./gateway-result.util";
 import { redactSensitiveData } from "../redaction.util";
+import {
+  HR_POLICY_AI_CAPABILITY,
+  FORBIDDEN_HR_AI_ACTIONS,
+  sanitizePolicyCitations,
+  type PolicyEvidenceCitation,
+} from "../lib/hr-ai-guardrails";
 
 @Injectable()
 export class HrAiService {
@@ -292,7 +298,20 @@ export class HrAiService {
     return { accepted: true };
   }
 
-  async policyQa(orgId: string, userId: string, question: string): Promise<PolicyQaResult & { suggestTicket: boolean }> {
+  async policyQa(
+    orgId: string,
+    userId: string,
+    question: string,
+  ): Promise<
+    PolicyQaResult & {
+      suggestTicket: boolean;
+      citations: PolicyEvidenceCitation[];
+      capability: typeof HR_POLICY_AI_CAPABILITY;
+      forbiddenActions: typeof FORBIDDEN_HR_AI_ACTIONS;
+      advisory: true;
+      disclaimer: string;
+    }
+  > {
     const safeQuestion = redactSensitiveData(question);
 
     const rows = await this.db.execute(sql`
@@ -317,7 +336,7 @@ export class HrAiService {
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "hr.policy-qa",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.policy_qa", promptVersion: 1 },
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "hr.policy_qa", promptVersion: 2 },
       schema: PolicyQaSchema,
       tier: "fast",
       maxTokens: 1024,
@@ -325,8 +344,32 @@ export class HrAiService {
     });
 
     const data = unwrapAiResult(result);
+    // Only keep citations that match policies loaded as evidence (anti-hallucination).
+    const citations = sanitizePolicyCitations(data.citations ?? [], policies);
     const suggestTicket = data.confidence === "not_found" || data.shouldEscalate;
-    return { ...data, suggestTicket };
+    return {
+      ...data,
+      citations,
+      suggestTicket,
+      capability: HR_POLICY_AI_CAPABILITY,
+      forbiddenActions: FORBIDDEN_HR_AI_ACTIONS,
+      advisory: true,
+      disclaimer: HR_POLICY_AI_CAPABILITY.honestyLabel,
+    };
+  }
+
+  policyQaCapabilities() {
+    return {
+      ...HR_POLICY_AI_CAPABILITY,
+      forbiddenActions: FORBIDDEN_HR_AI_ACTIONS,
+      features: [
+        {
+          key: "hr.policy-qa",
+          mode: "answer_from_active_policies",
+          requiresHumanEscalationWhenNotFound: true,
+        },
+      ],
+    };
   }
 
   async generateInterviewKit(orgId: string, jobPostingId: number): Promise<InterviewKitResult | null> {

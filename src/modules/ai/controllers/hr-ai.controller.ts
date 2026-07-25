@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   NotFoundException,
   Post,
   ServiceUnavailableException,
@@ -124,6 +125,12 @@ export class HrAiController {
     }
     if (!result) throw new NotFoundException("Ticket not found or reply generation failed");
     return result;
+  }
+
+  @Get("hr/policy-qa/capabilities")
+  @RequirePermission("hr:policies:view")
+  policyQaCapabilities() {
+    return this.hr.policyQaCapabilities();
   }
 
   @Post("hr/policy-qa")

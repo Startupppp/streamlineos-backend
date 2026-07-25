@@ -18,6 +18,7 @@ export const richDocuments = pgTable("rich_documents", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_rich_documents_org").on(table.orgId),
+  index("idx_rich_documents_org_updated").on(table.orgId, table.updatedAt),
 ]);
 
 export const documents = pgTable("documents", {

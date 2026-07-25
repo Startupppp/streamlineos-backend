@@ -7,6 +7,8 @@ import { OnboardingProbationService } from "./onboarding-probation.service";
 import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
 import { OnboardingFlowModule } from "../onboarding-flow/onboarding-flow.module";
 import { OnboardingRequirementsService } from "./onboarding-requirements.service";
+import { HrCoreModule } from "../hr-core/hr-core.module";
+import { HrLifecycleModule } from "../hr-lifecycle/hr-lifecycle.module";
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { OnboardingRequirementsService } from "./onboarding-requirements.service
     HrPoliciesModule,
     HrAutomationsModule,
     OnboardingFlowModule,
+    HrCoreModule,
+    HrLifecycleModule,
   ],
   providers: [
     OnboardingService,

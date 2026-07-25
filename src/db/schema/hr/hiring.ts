@@ -6,6 +6,7 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
+import { orgDepartments } from "../organization";
 
 export interface ScreeningQuestion {
   id: string;
@@ -53,6 +54,9 @@ export const jobPostings = pgTable("job_postings", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   departmentId: integer("department_id").references(() => departments.id),
+  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+    onDelete: "set null",
+  }),
   hiringFlowId: integer("hiring_flow_id").references(() => hiringFlows.id),
   location: text("location"),
   type: text("type").default("FULL_TIME").notNull(),
@@ -75,6 +79,7 @@ export const jobPostings = pgTable("job_postings", {
 }, (table) => [
   index("idx_job_postings_org").on(table.orgId),
   index("idx_job_postings_status").on(table.status),
+  index("idx_job_postings_org_status").on(table.orgId, table.status),
 ]);
 
 export const candidateSources = pgTable("candidate_sources", {
@@ -133,6 +138,8 @@ export const candidates = pgTable("candidates", {
   index("idx_candidates_org").on(table.orgId),
   index("idx_candidates_status").on(table.status),
   index("idx_candidates_email").on(table.email),
+  index("idx_candidates_org_status").on(table.orgId, table.status),
+  index("idx_candidates_org_created").on(table.orgId, table.createdAt),
 ]);
 
 export const candidateApplications = pgTable("candidate_applications", {
@@ -178,6 +185,7 @@ export const interviews = pgTable("interviews", {
   index("idx_interviews_candidate").on(table.candidateId),
   index("idx_interviews_interviewer").on(table.interviewerId),
   index("idx_interviews_scheduled").on(table.scheduledAt),
+  index("idx_interviews_org_scheduled").on(table.orgId, table.scheduledAt),
 ]);
 
 export const scorecardTemplates = pgTable("scorecard_templates", {
@@ -434,6 +442,7 @@ export const candidateOffers = pgTable("candidate_offers", {
 }, (table) => [
   index("idx_candidate_offers_candidate").on(table.candidateId),
   index("idx_candidate_offers_org").on(table.orgId),
+  index("idx_candidate_offers_org_status").on(table.orgId, table.offerStatus),
 ]);
 
 export const offerVersions = pgTable("offer_versions", {
@@ -494,6 +503,7 @@ export const hiringFlowRoundsRelations = relations(hiringFlowRounds, ({ one }) =
 export const jobPostingsRelations = relations(jobPostings, ({ one, many }) => ({
   organization: one(organizations, { fields: [jobPostings.orgId], references: [organizations.id] }),
   department: one(departments, { fields: [jobPostings.departmentId], references: [departments.id] }),
+  orgDepartment: one(orgDepartments, { fields: [jobPostings.orgDepartmentId], references: [orgDepartments.id] }),
   hiringFlow: one(hiringFlows, { fields: [jobPostings.hiringFlowId], references: [hiringFlows.id] }),
   postedByUser: one(users, { fields: [jobPostings.postedBy], references: [users.id] }),
   applications: many(candidateApplications),
@@ -763,6 +773,9 @@ export const headcountRequests = pgTable("headcount_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   departmentId: integer("department_id").references((): AnyPgColumn => departments.id),
+  orgDepartmentId: text("org_department_id").references(() => orgDepartments.id, {
+    onDelete: "set null",
+  }),
   requestedBy: text("requested_by").references(() => users.id).notNull(),
   requestedRole: text("requested_role").notNull(),
   level: text("level"),
@@ -779,6 +792,7 @@ export const headcountRequests = pgTable("headcount_requests", {
   index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
   index("idx_headcount_requests_dept").on(table.departmentId),
+  index("idx_headcount_requests_org_dept").on(table.orgDepartmentId),
 ]);
 
 export const headcountRequestsRelations = relations(headcountRequests, ({ one }) => ({
@@ -786,6 +800,7 @@ export const headcountRequestsRelations = relations(headcountRequests, ({ one })
   requestedByUser: one(users, { fields: [headcountRequests.requestedBy], references: [users.id] }),
   approvedByUser: one(users, { fields: [headcountRequests.approvedBy], references: [users.id] }),
   department: one(departments, { fields: [headcountRequests.departmentId], references: [departments.id] }),
+  orgDepartment: one(orgDepartments, { fields: [headcountRequests.orgDepartmentId], references: [orgDepartments.id] }),
   linkedJob: one(jobPostings, { fields: [headcountRequests.linkedJobPostingId], references: [jobPostings.id] }),
 }));
 

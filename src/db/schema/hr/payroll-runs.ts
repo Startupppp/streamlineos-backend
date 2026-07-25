@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
   salaryComponentCalcMethodEnum, payrollExceptionSeverityEnum,
@@ -13,6 +13,16 @@ export const payrollRuns = pgTable("payroll_runs", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   policyVersionId: integer("policy_version_id").references(() => payrollPolicyVersions.id, { onDelete: "set null" }),
   month: text("month").notNull(),
+  /** REGULAR | BONUS | OFF_CYCLE | CORRECTION | FINAL_SETTLEMENT */
+  runType: text("run_type").default("REGULAR").notNull(),
+  /** Source period/run for off-cycle, correction, F&F */
+  sourcePeriodKey: text("source_period_key"),
+  sourceRunId: integer("source_run_id"),
+  entityId: integer("entity_id"),
+  periodId: integer("period_id"),
+  calculationVersion: text("calculation_version").default("1.0.0"),
+  statutoryRuleVersion: text("statutory_rule_version"),
+  inputSnapshotHash: text("input_snapshot_hash"),
   status: payrollRunStatusEnum("status").default("PREPARING").notNull(),
   payDate: date("pay_date"),
   grossTotal: decimal("gross_total", { precision: 15, scale: 2 }).default("0").notNull(),
@@ -34,12 +44,25 @@ export const payrollRuns = pgTable("payroll_runs", {
   reopenedAt: timestamp("reopened_at"),
   reopenedBy: text("reopened_by").references(() => users.id, { onDelete: "set null" }),
   reopenReason: text("reopen_reason"),
+  /** Soft processing lock for generate/recalculate concurrency (token + timestamp). */
+  generationLockToken: text("generation_lock_token"),
+  generationLockedAt: timestamp("generation_locked_at"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uniq_payroll_runs_org_month").on(table.orgId, table.month),
+  // One run per (org, month, runType, entity). NULL entity → COALESCE 0 (org-level bucket).
+  // Migration 0298 replaces uniq_payroll_runs_org_month_type.
+  uniqueIndex("uniq_payroll_runs_org_month_type_entity").on(
+    table.orgId,
+    table.month,
+    table.runType,
+    sql`COALESCE(${table.entityId}, 0)`,
+  ),
   index("idx_payroll_runs_org_status").on(table.orgId, table.status),
+  index("idx_payroll_runs_org_type").on(table.orgId, table.runType),
+  index("idx_payroll_runs_org_entity").on(table.orgId, table.entityId),
+  index("idx_payroll_runs_source_run").on(table.sourceRunId),
 ]);
 
 export const payrollRunEmployees = pgTable("payroll_run_employees", {

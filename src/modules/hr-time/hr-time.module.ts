@@ -1,10 +1,11 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
 import { HrPoliciesModule } from "../hr-policies/hr-policies.module";
 import { HrWorkflowsModule } from "../hr-workflows/hr-workflows.module";
+import { HrPayrollInputsModule } from "../hr-payroll-inputs/hr-payroll-inputs.module";
 import { LeaveCalendarController, LeavesController } from "./leaves.controller";
 import { AttendanceController } from "./attendance.controller";
 import { AttendanceRegularizationController } from "./attendance-regularization.controller";
@@ -36,7 +37,15 @@ import { LeavePoliciesService } from "./leave-policies.service";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
 @Module({
-  imports: [AutomationModule, WebhooksModule, NotificationsModule, HrAutomationsModule, HrPoliciesModule, HrWorkflowsModule],
+  imports: [
+    AutomationModule,
+    WebhooksModule,
+    NotificationsModule,
+    HrAutomationsModule,
+    HrPoliciesModule,
+    HrWorkflowsModule,
+    forwardRef(() => HrPayrollInputsModule),
+  ],
   controllers: [
     LeavesController,
     LeaveCalendarController,

@@ -18,7 +18,11 @@ import {
   salaryLoans,
   taxDeclarations,
   users,
+  leaveBalances,
+  leaveTypes,
 } from "../../../db/schema";
+import { hrBenefitEnrollments, hrBenefitPlans } from "../../../db/schema/hr/benefits";
+import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { LoansService } from "../../hr-payroll/loans.service";
 import { ReimbursementsService } from "../../hr-payroll/reimbursements.service";
 import { TaxService } from "../../hr-payroll/tax.service";
@@ -26,6 +30,7 @@ import { type BankDetails, decryptBankDetails, encryptBankDetails } from "../../
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
+import { buildTotalRewardsStatement } from "./lib/total-rewards";
 
 @Injectable()
 export class EssService {
@@ -101,36 +106,95 @@ export class EssService {
       this.getActiveWindow(orgId),
     ]);
 
+    const [ytdRows, declarations] = await Promise.all([
+      fyPubs.length > 0
+        ? this.db
+            .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
+            .from(payrollRunEmployees)
+            .where(and(eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
+        : Promise.resolve([]),
+      window ? this.taxService.listMine(orgId, userId) : Promise.resolve([]),
+    ]);
+
     let ytdGross = "0.00", ytdNet = "0.00";
-    if (fyPubs.length > 0) {
-      const [ytdRow] = await this.db
-        .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
-        .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))));
-      ytdGross = parseFloat(ytdRow?.gross ?? "0").toFixed(2);
-      ytdNet = parseFloat(ytdRow?.net ?? "0").toFixed(2);
+    if (ytdRows[0]) {
+      ytdGross = parseFloat(ytdRows[0].gross ?? "0").toFixed(2);
+      ytdNet = parseFloat(ytdRows[0].net ?? "0").toFixed(2);
     }
 
     const activeLoanBalance = activeLoans
       .reduce((acc, l) => acc + ((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0"), 0)
       .toFixed(2);
 
-    let declarationStatus: string | null = null;
-    if (window) {
-      const declarations = await this.taxService.listMine(orgId, userId);
-      declarationStatus = declarations.find((d) => d.financialYear === window.financialYear)?.status ?? null;
+    const declarationStatus: string | null = window
+      ? declarations.find((d) => d.financialYear === window.financialYear)?.status ?? null
+      : null;
+
+    const pendingReimbursementsCount = Number(pendingRow?.total ?? 0);
+    const actionRequired: {
+      key: string;
+      label: string;
+      severity: "info" | "warning";
+      href: string;
+    }[] = [];
+
+    if (pendingReimbursementsCount > 0) {
+      actionRequired.push({
+        key: "pending_reimbursements",
+        label: `${pendingReimbursementsCount} reimbursement claim(s) awaiting approval`,
+        severity: "info",
+        href: "/payroll/me#reimbursements",
+      });
+    }
+    if (window && (!declarationStatus || declarationStatus === "DRAFT")) {
+      actionRequired.push({
+        key: "tax_declaration_open",
+        label: `Tax declaration window open for ${window.financialYear}`,
+        severity: "warning",
+        href: "/payroll/me#tax",
+      });
+    }
+    if (!latestPub) {
+      actionRequired.push({
+        key: "no_payslip_yet",
+        label: "No published payslip yet — available after payroll publishes",
+        severity: "info",
+        href: "/payroll/me#payslips",
+      });
     }
 
     return {
       toggles,
+      capabilities: {
+        mode: "employee_self_service" as const,
+        honestyNote:
+          "ESS shows your own payroll data only. You cannot change locked payslips or approve your own claims.",
+        canViewSalaryStructure: Boolean(toggles.essShowSalaryStructure),
+        canUpdateBank: Boolean(toggles.essAllowBankUpdate),
+        canRequestLoans: Boolean(toggles.essAllowLoanRequests),
+        canDeclareTax: Boolean(toggles.essAllowTaxDeclarations),
+        canClaimReimbursements: Boolean(toggles.essAllowReimbursements),
+      },
       latestPayslip: latestPub
-        ? { publicationId: latestPub.id, month: latestPub.month, net: latestPub.net, downloadHref: `/payroll/payslips/${latestPub.id}/download` }
+        ? {
+            publicationId: latestPub.id,
+            month: latestPub.month,
+            net: latestPub.net,
+            downloadHref: `/payroll/payslips/${latestPub.id}/download`,
+          }
         : null,
       ytd: { gross: ytdGross, net: ytdNet },
       activeLoanBalance,
-      pendingReimbursementsCount: Number(pendingRow?.total ?? 0),
-      taxWindow: window ? { status: window.status, financialYear: window.financialYear, closesAt: window.closesAt } : null,
+      pendingReimbursementsCount,
+      taxWindow: window
+        ? {
+            status: window.status,
+            financialYear: window.financialYear,
+            closesAt: window.closesAt,
+          }
+        : null,
       declarationStatus,
+      actionRequired,
     };
   }
 
@@ -235,10 +299,11 @@ export class EssService {
   }
 
   async getTaxDeclaration(orgId: string, userId: string) {
-    const toggles = await this.getActiveToggles(orgId);
+    const [toggles, window] = await Promise.all([
+      this.getActiveToggles(orgId),
+      this.getActiveWindow(orgId),
+    ]);
     if (!toggles.essAllowTaxDeclarations) throw new ForbiddenException("Tax declarations are disabled");
-
-    const window = await this.getActiveWindow(orgId);
     if (!window) return { windowStatus: null, declaration: null, proofs: [] };
 
     const declarations = await this.taxService.listMine(orgId, userId);
@@ -294,14 +359,15 @@ export class EssService {
     userId: string,
     body: { declarationId: number; category: string; amount: number; description?: string; proofUrl?: string },
   ) {
-    const toggles = await this.getActiveToggles(orgId);
+    const [toggles, declaration, window] = await Promise.all([
+      this.getActiveToggles(orgId),
+      this.db.query.taxDeclarations.findFirst({
+        where: and(eq(taxDeclarations.id, body.declarationId), eq(taxDeclarations.userId, userId), eq(taxDeclarations.orgId, orgId)),
+      }),
+      this.getActiveWindow(orgId),
+    ]);
     if (!toggles.essAllowTaxDeclarations) throw new ForbiddenException("Tax declarations are disabled");
-    const declaration = await this.db.query.taxDeclarations.findFirst({
-      where: and(eq(taxDeclarations.id, body.declarationId), eq(taxDeclarations.userId, userId), eq(taxDeclarations.orgId, orgId)),
-    });
     if (!declaration) throw new NotFoundException("Tax declaration not found");
-
-    const window = await this.getActiveWindow(orgId);
     if (!window) throw new ForbiddenException("Tax declaration window is not open");
     if (window.lockDate) {
       const todayIso = new Date().toISOString().slice(0, 10);
@@ -403,5 +469,156 @@ export class EssService {
       .orderBy(desc(fnfSettlements.createdAt))
       .limit(1);
     return settlement ?? null;
+  }
+
+  /**
+   * Illustrative total rewards: salary CTC, YTD payslips, benefits, equity units, leave.
+   * Not a certified compensation statement; equity is not mark-to-market.
+   */
+  async getTotalRewards(orgId: string, userId: string) {
+    const now = new Date();
+    const yr = now.getFullYear();
+    const mo = now.getMonth() + 1;
+    const fyStart = mo >= 4 ? `${yr}-04` : `${yr - 1}-04`;
+    const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
+
+    const [profile, fyPubs, activeLoans, benefitRows, equityRows, leaveRows] =
+      await Promise.all([
+        this.db.query.employeeSalaryProfiles.findFirst({
+          where: and(
+            eq(employeeSalaryProfiles.userId, userId),
+            eq(employeeSalaryProfiles.orgId, orgId),
+            eq(employeeSalaryProfiles.status, "ACTIVE"),
+          ),
+          orderBy: (fields, { desc: d }) => [d(fields.effectiveFrom)],
+        }),
+        this.db
+          .select({ runId: payslipPublications.runId })
+          .from(payslipPublications)
+          .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
+          .where(
+            and(
+              eq(payslipPublications.userId, userId),
+              eq(payslipPublications.orgId, orgId),
+              eq(payslipPublications.status, "PUBLISHED"),
+              gte(payrollRuns.month, fyStart),
+              lte(payrollRuns.month, fyEnd),
+            ),
+          ),
+        this.db.query.salaryLoans.findMany({
+          where: and(
+            eq(salaryLoans.userId, userId),
+            eq(salaryLoans.orgId, orgId),
+            inArray(salaryLoans.status, ["APPROVED", "ACTIVE"]),
+          ),
+          columns: { totalEmis: true, paidEmis: true, emiAmount: true },
+        }),
+        this.db
+          .select({
+            planName: hrBenefitPlans.name,
+            category: hrBenefitPlans.category,
+            premiumCents: hrBenefitPlans.premiumCents,
+            employerContributionPct: hrBenefitPlans.employerContributionPct,
+            status: hrBenefitEnrollments.status,
+          })
+          .from(hrBenefitEnrollments)
+          .innerJoin(hrBenefitPlans, eq(hrBenefitPlans.id, hrBenefitEnrollments.planId))
+          .where(
+            and(
+              eq(hrBenefitEnrollments.orgId, orgId),
+              eq(hrBenefitEnrollments.userId, userId),
+              eq(hrBenefitEnrollments.status, "active"),
+            ),
+          ),
+        this.db
+          .select({
+            grantType: hrEquityGrants.grantType,
+            units: hrEquityGrants.units,
+            strikePriceCents: hrEquityGrants.strikePriceCents,
+            status: hrEquityGrants.status,
+            grantDate: hrEquityGrants.grantDate,
+          })
+          .from(hrEquityGrants)
+          .where(
+            and(
+              eq(hrEquityGrants.orgId, orgId),
+              eq(hrEquityGrants.userId, userId),
+              eq(hrEquityGrants.status, "active"),
+            ),
+          ),
+        this.db
+          .select({
+            leaveType: leaveTypes.name,
+            balance: leaveBalances.balance,
+          })
+          .from(leaveBalances)
+          .leftJoin(leaveTypes, eq(leaveTypes.id, leaveBalances.leaveTypeId))
+          .where(
+            and(
+              eq(leaveBalances.orgId, orgId),
+              eq(leaveBalances.userId, userId),
+              eq(leaveBalances.year, yr),
+            ),
+          ),
+      ]);
+
+    let ytdGross = 0;
+    let ytdNet = 0;
+    if (fyPubs.length > 0) {
+      const [ytd] = await this.db
+        .select({
+          gross: sum(payrollRunEmployees.gross),
+          net: sum(payrollRunEmployees.net),
+        })
+        .from(payrollRunEmployees)
+        .where(
+          and(
+            eq(payrollRunEmployees.userId, userId),
+            inArray(
+              payrollRunEmployees.runId,
+              fyPubs.map((p) => p.runId),
+            ),
+          ),
+        );
+      ytdGross = parseFloat(ytd?.gross ?? "0") || 0;
+      ytdNet = parseFloat(ytd?.net ?? "0") || 0;
+    }
+
+    const activeLoanBalance = activeLoans.reduce(
+      (acc, l) =>
+        acc + ((l.totalEmis ?? 0) - (l.paidEmis ?? 0)) * parseFloat(l.emiAmount ?? "0"),
+      0,
+    );
+
+    const annualCtc =
+      profile?.annualCtc != null ? parseFloat(profile.annualCtc) || null : null;
+
+    return buildTotalRewardsStatement({
+      asOf: now,
+      cash: {
+        annualCtc: annualCtc != null && !Number.isNaN(annualCtc) ? annualCtc : null,
+        ytdGross,
+        ytdNet,
+        activeLoanBalance,
+      },
+      benefits: benefitRows.map((b) => ({
+        planName: b.planName,
+        category: String(b.category),
+        premiumCents: b.premiumCents,
+        employerContributionPct: b.employerContributionPct ?? 0,
+        status: String(b.status),
+      })),
+      equity: equityRows.map((e) => ({
+        grantType: String(e.grantType),
+        units: e.units,
+        strikePriceCents: e.strikePriceCents,
+        status: String(e.status),
+        grantDate: e.grantDate,
+      })),
+      leave: leaveRows.map((l) => ({
+        leaveType: l.leaveType ?? "Leave",
+        balance: parseFloat(String(l.balance ?? 0)) || 0,
+      })),
+    });
   }
 }

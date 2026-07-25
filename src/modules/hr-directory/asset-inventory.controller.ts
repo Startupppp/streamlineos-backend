@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -19,9 +20,11 @@ import { AssetInventoryService } from "./asset-inventory.service";
 import {
   assignAssetSchema,
   createAssetSchema,
+  listAssetsQuerySchema,
   patchAssetSchema,
   type AssignAssetInput,
   type CreateAssetInput,
+  type ListAssetsQueryInput,
   type PatchAssetInput,
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -34,8 +37,11 @@ export class AssetInventoryController {
 
   @Get("assets")
   @RequirePermission("hr:assets:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.assets.list(u.orgId);
+  list(
+    @Query(new ZodValidationPipe(listAssetsQuerySchema)) query: ListAssetsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.assets.list(u.orgId, query);
   }
 
   @Post("assets")

@@ -28,6 +28,8 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { formatDateOnly } from "./date.helpers";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { HrWorkflowEngineService } from "../hr-workflows/hr-workflow-engine.service";
+import { PayrollInputsService } from "../hr-payroll-inputs/payroll-inputs.service";
+import { logger } from "../../common/logger/logger.service";
 import type {
   ApproveLeaveInput,
   CreateLeaveInput,
@@ -54,7 +56,30 @@ export class LeavesWriteService {
     private readonly access: AccessService,
     private readonly ledger: LeaveLedgerService,
     private readonly workflowEngine: HrWorkflowEngineService,
+    private readonly payrollInputs: PayrollInputsService,
   ) {}
+
+  private rebuildPayrollInputsForLeaveRange(
+    orgId: string,
+    actorId: string,
+    startDate: string,
+    endDate: string,
+  ): void {
+    const months = new Set<string>();
+    months.add(startDate.slice(0, 7));
+    months.add(endDate.slice(0, 7));
+    for (const monthKey of months) {
+      void this.payrollInputs
+        .rebuildOpenPeriodForMonth(orgId, actorId, monthKey)
+        .catch((err: unknown) => {
+          logger.warn("payroll input rebuild after leave decision failed", {
+            orgId,
+            monthKey,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }
+  }
 
   async create(u: CurrentUserContext, body: CreateLeaveInput) {
     const requestedDays = body.isHalfDay
@@ -288,6 +313,18 @@ export class LeavesWriteService {
       });
     }
 
+    if (
+      existing.status === "PENDING" &&
+      (body.status === "APPROVED" || body.status === "REJECTED")
+    ) {
+      this.rebuildPayrollInputsForLeaveRange(
+        u.orgId,
+        u.userId,
+        existing.startDate,
+        existing.endDate,
+      );
+    }
+
     return { ok: true as const };
   }
 
@@ -403,6 +440,13 @@ export class LeavesWriteService {
       leaveTypeId: existing.leaveTypeId,
     });
 
+    this.rebuildPayrollInputsForLeaveRange(
+      u.orgId,
+      u.userId,
+      existing.startDate,
+      existing.endDate,
+    );
+
     return { success: true };
   }
 
@@ -439,6 +483,13 @@ export class LeavesWriteService {
       message: `Your leave request has been rejected. Reason: ${reason}${comment ? ` — "${comment}"` : ""}`,
       link: "/hr/leaves",
     });
+
+    this.rebuildPayrollInputsForLeaveRange(
+      u.orgId,
+      u.userId,
+      existing.startDate,
+      existing.endDate,
+    );
 
     this.audit.log({
       action: "hr.leave_rejected",

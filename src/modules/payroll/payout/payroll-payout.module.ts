@@ -39,5 +39,6 @@ import { PayrollPostingService } from "../payroll-posting.service";
     PublishingService,
     PayrollPostingService,
   ],
+  exports: [PublishingService, LockingService, PayoutBatchesService],
 })
 export class PayrollPayoutModule {}

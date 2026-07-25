@@ -120,4 +120,11 @@ export class EssController {
   getOwnFnf(@CurrentUser() u: CurrentUserContext) {
     return this.essService.getOwnFnf(u.orgId, u.userId);
   }
+
+  /** Illustrative total rewards (salary + benefits + equity units + leave). */
+  @Get("total-rewards")
+  @RequirePermission("self:payroll")
+  getTotalRewards(@CurrentUser() u: CurrentUserContext) {
+    return this.essService.getTotalRewards(u.orgId, u.userId);
+  }
 }

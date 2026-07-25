@@ -33,6 +33,8 @@ export interface BankDetails {
   ifsc: string;
   accountHolder: string;
   pfUanNumber?: string;
+  /** ESIC Insurance Person (IP) number when assigned */
+  esiIpNumber?: string;
   bankCountry?: string;
 }
 

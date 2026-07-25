@@ -98,5 +98,12 @@ export type WorkflowInstanceQueryDto = z.infer<typeof WorkflowInstanceQuerySchem
 export type ActOnInstanceDto = z.infer<typeof ActOnInstanceSchema>;
 export type RejectInstanceDto = z.infer<typeof RejectInstanceSchema>;
 export type CreateDelegationDto = z.infer<typeof CreateDelegationSchema>;
+
+export const SimulateWorkflowSchema = z.object({
+  subjectEmployeeId: z.string().min(1),
+  context: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
+export type SimulateWorkflowDto = z.infer<typeof SimulateWorkflowSchema>;
 export type UpdateDelegationDto = z.infer<typeof UpdateDelegationSchema>;
 export type HrWorkflowStepDto = z.infer<typeof HrWorkflowStepSchema>;

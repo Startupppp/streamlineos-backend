@@ -45,6 +45,7 @@ export const PAYROLL_TEMPLATE_SEEDS: PayrollTemplateSeed[] = [
       approvalWorkflow: true,
       lockAfterApproval: true,
       payrollVarianceWarnings: true,
+      requireLockedPayrollInputs: true,
       essAllowReimbursements: false,
       essAllowTaxDeclarations: true,
     },

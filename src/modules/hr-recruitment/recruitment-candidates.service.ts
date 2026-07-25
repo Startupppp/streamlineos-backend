@@ -136,7 +136,8 @@ export class RecruitmentCandidatesService {
     const rows = await this.db.query.candidates.findMany({
       where: eq(candidates.orgId, orgId),
       columns: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true, createdAt: true, duplicateOfId: true },
-      orderBy: [desc(candidates.createdAt)],
+      orderBy: [desc(candidates.createdAt), desc(candidates.id)],
+      limit: 2000,
     });
 
     const groups = new Map<string, typeof rows>();

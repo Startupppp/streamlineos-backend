@@ -48,7 +48,8 @@ export class ExceptionsService {
       .from(payrollExceptions)
       .leftJoin(users, eq(users.id, payrollExceptions.userId))
       .where(and(...conditions))
-      .orderBy(payrollExceptions.severity, payrollExceptions.createdAt);
+      .orderBy(payrollExceptions.severity, payrollExceptions.createdAt)
+      .limit(1000);
 
     return rows;
   }

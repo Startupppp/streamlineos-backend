@@ -16,6 +16,7 @@ export const overtimeRequests = pgTable("overtime_requests", {
 }, (table) => [
   index("idx_overtime_org_status").on(table.orgId, table.status),
   index("idx_overtime_user").on(table.userId),
+  index("idx_overtime_org_created").on(table.orgId, table.createdAt),
 ]);
 
 export const compOffBalances = pgTable("comp_off_balances", {

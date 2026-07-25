@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Query,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -24,6 +25,8 @@ import {
   updateLoanSchema,
   type CreateLoanInput,
   type UpdateLoanInput,
+  listPageQuerySchema,
+  type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 
 @Controller("hr/loans")
@@ -42,8 +45,11 @@ export class LoansController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
-    return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u));
+  async list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+  ) {
+    return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u), query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()

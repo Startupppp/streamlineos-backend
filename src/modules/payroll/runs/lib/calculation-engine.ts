@@ -13,6 +13,11 @@ import type { SalaryComponentType, SalaryComponentCalcMethod } from "../../payro
 import { toPaise, fromPaise, pctOf, applyRounding, daysInMonth } from "./money";
 import { evalFormula } from "./formula-engine";
 import { calcStatutory } from "./statutory";
+import {
+  calcSlabTaxRupees,
+  getIndiaBundleForMonth,
+  type TdsRule,
+} from "./statutory-registry";
 
 export interface ResolvedComponent {
   id: number;
@@ -36,6 +41,7 @@ export interface CalcInputPulls {
   approvedReimbursements: { amount: MoneyString; category: string }[];
   consumedReimbursementIds?: number[];
   consumedIncentiveIds?: number[];
+  consumedBonusIds?: number[];
   activeLoans: {
     id: number;
     emiAmount: MoneyString | null;
@@ -54,6 +60,12 @@ export interface CalcInputPulls {
     previousEmploymentIncome: string;
     previousEmployerTds: string;
   } | null;
+  /**
+   * Whether a valid PAN is on record for this payee. Undefined = treated as present
+   * (preserves prior behaviour). When explicitly false, §206AA applies the higher
+   * 20% contractor withholding rate.
+   */
+  panAvailable?: boolean;
 }
 
 export interface CalcEngineInput {
@@ -79,55 +91,43 @@ export interface CalcEngineInput {
   previousSnapshot: CalculationSnapshot | null;
 }
 
-function taxSlabNew(annualGrossPaise: number): number {
-  const STD_DEDUCTION_PAISE = 7_500_000;
-  const taxablePaise = Math.max(0, annualGrossPaise - STD_DEDUCTION_PAISE);
-  const g = taxablePaise / 100;
+const CESS_RATE = 0.04;
 
-  let tax = 0;
-  if (g <= 300000) {
-    tax = 0;
-  } else if (g <= 700000) {
-    tax = (g - 300000) * 0.05;
-  } else if (g <= 1000000) {
-    tax = 20000 + (g - 700000) * 0.10;
-  } else if (g <= 1200000) {
-    tax = 50000 + (g - 1000000) * 0.15;
-  } else if (g <= 1500000) {
-    tax = 80000 + (g - 1200000) * 0.20;
-  } else {
-    tax = 140000 + (g - 1500000) * 0.30;
-  }
-
-  if (tax > 0 && tax <= 60000) {
-    tax = 0;
-  }
-
-  return tax * 1.04;
+/**
+ * Surcharge on income tax by total-income slab (long-standing Indian income-tax
+ * law, not a 2026 change). Applied on base tax before health-and-education cess.
+ * The new regime caps surcharge at 25% (the 37% top slab was removed for the new
+ * regime); the old regime retains the 37% slab above ₹5Cr. Marginal relief is not
+ * modelled here — a payroll TDS estimate rounds monthly and reconciles at filing;
+ * omitting relief slightly overstates within a narrow band just above each
+ * threshold, which is far more correct than applying no surcharge at all.
+ */
+export function surchargeRate(taxableRupees: number, regime: "NEW" | "OLD"): number {
+  if (taxableRupees <= 5_000_000) return 0;
+  if (taxableRupees <= 10_000_000) return 0.1;
+  if (taxableRupees <= 20_000_000) return 0.15;
+  if (regime === "NEW") return 0.25; // capped at 25% under the new regime
+  if (taxableRupees <= 50_000_000) return 0.25;
+  return 0.37;
 }
 
-function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number): number {
-  const STD_DEDUCTION_PAISE = 5_000_000;
-  const totalDeductionPaise = STD_DEDUCTION_PAISE + annualDeductionPaise;
+function taxSlabNew(annualGrossPaise: number, tds: TdsRule): number {
+  const regime = tds.newRegime;
+  const taxablePaise = Math.max(0, annualGrossPaise - regime.standardDeductionPaise);
+  const g = taxablePaise / 100;
+  const tax = calcSlabTaxRupees(g, regime);
+  const surcharge = tax * surchargeRate(g, "NEW");
+  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
+}
+
+function taxSlabOld(annualGrossPaise: number, annualDeductionPaise: number, tds: TdsRule): number {
+  const regime = tds.oldRegime;
+  const totalDeductionPaise = regime.standardDeductionPaise + annualDeductionPaise;
   const taxablePaise = Math.max(0, annualGrossPaise - totalDeductionPaise);
   const g = taxablePaise / 100;
-
-  let tax = 0;
-  if (g <= 250000) {
-    tax = 0;
-  } else if (g <= 500000) {
-    tax = (g - 250000) * 0.05;
-  } else if (g <= 1000000) {
-    tax = 12500 + (g - 500000) * 0.20;
-  } else {
-    tax = 112500 + (g - 1000000) * 0.30;
-  }
-
-  if (tax > 0 && tax <= 12500) {
-    tax = 0;
-  }
-
-  return tax * 1.04;
+  const tax = calcSlabTaxRupees(g, regime);
+  const surcharge = tax * surchargeRate(g, "OLD");
+  return (tax + surcharge) * (1 + parseFloat(tds.cessPercent) / 100);
 }
 
 export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
@@ -577,6 +577,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     basicPaise,
     grossPaise,
     rounding,
+    month,
   });
   lines.push(...statResult.lines);
 
@@ -636,9 +637,14 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     let tdsPaise = 0;
     const tdsMode = config.statutory.tdsMode;
     const taxDecl = pulls.taxDeclaration;
+    const isContractor = workerType === "CONTRACTOR" || workerType === "CONSULTANT";
+    // §194J professional-fee withholding at 10%; §206AA raises it to 20% when no
+    // valid PAN is on record (higher of the specified rate or 20%).
+    const contractorRate = pulls.panAvailable === false ? "20.00" : "10.00";
+    const noPanUplift = isContractor && pulls.panAvailable === false;
 
-    if (workerType === "CONTRACTOR" || workerType === "CONSULTANT") {
-      tdsPaise = pctOf(grossPaise, "10.00");
+    if (isContractor) {
+      tdsPaise = pctOf(grossPaise, contractorRate);
     } else if (tdsMode === "FLAT" && config.statutory.tdsFlatPercent != null) {
       tdsPaise = pctOf(grossPaise, config.statutory.tdsFlatPercent);
     } else if (tdsMode === "DECLARATION") {
@@ -646,16 +652,17 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       const prevEmpTdsPaise = taxDecl ? Math.round(toPaise(taxDecl.previousEmployerTds)) : 0;
       const annualGrossPaise = grossPaise * 12 + prevEmpIncomePaise;
       const regime = taxRegime ?? "NEW";
+      const tdsRule = getIndiaBundleForMonth(month).tds;
 
       let annualTaxRupees: number;
       if (regime === "NEW") {
-        annualTaxRupees = taxSlabNew(annualGrossPaise);
+        annualTaxRupees = taxSlabNew(annualGrossPaise, tdsRule);
       } else {
         const oldDeductionsPaise = taxDecl
           ? toPaise(taxDecl.section80c) + toPaise(taxDecl.section80d) + toPaise(taxDecl.hra) +
             toPaise(taxDecl.lta) + toPaise(taxDecl.homeLoanInterest) + toPaise(taxDecl.section80g)
           : 0;
-        annualTaxRupees = taxSlabOld(annualGrossPaise, oldDeductionsPaise);
+        annualTaxRupees = taxSlabOld(annualGrossPaise, oldDeductionsPaise, tdsRule);
       }
 
       const annualTaxPaise = Math.round(annualTaxRupees * 100);
@@ -670,16 +677,18 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         name: "TDS",
         category: "TAX",
         amount: fromPaise(tdsRounded),
-        calcMethod: tdsMode === "FLAT" || workerType === "CONTRACTOR" || workerType === "CONSULTANT" ? "PERCENT_OF_GROSS" : "FORMULA",
+        calcMethod: tdsMode === "FLAT" || isContractor ? "PERCENT_OF_GROSS" : "FORMULA",
         taxable: false,
         sortOrder: SORT_BASE_TAX,
         explain: {
-          method: tdsMode === "FLAT" || workerType === "CONTRACTOR" || workerType === "CONSULTANT" ? "PERCENT_OF_GROSS" : "FORMULA",
+          method: tdsMode === "FLAT" || isContractor ? "PERCENT_OF_GROSS" : "FORMULA",
           inputs: { gross: grossPaise / 100, annualGross: (grossPaise * 12) / 100 },
           steps: [
-            tdsMode === "DECLARATION"
-              ? `TDS (${taxRegime ?? "NEW"} regime) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
-              : `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${config.statutory.tdsFlatPercent ?? "10"}% = ₹${(tdsRounded / 100).toFixed(2)}`,
+            tdsMode === "DECLARATION" && !isContractor
+              ? `TDS (${taxRegime ?? "NEW"} regime, ${getIndiaBundleForMonth(month).tds.ruleYearLabel}, incl. surcharge + 4% cess) = Annual tax estimate / 12 = ₹${(tdsRounded / 100).toFixed(2)}`
+              : isContractor
+                ? `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${contractorRate}%${noPanUplift ? " (§206AA: no PAN on record)" : " (§194J)"} = ₹${(tdsRounded / 100).toFixed(2)}`
+                : `TDS = ₹${(grossPaise / 100).toFixed(2)} × ${config.statutory.tdsFlatPercent ?? "10"}% = ₹${(tdsRounded / 100).toFixed(2)}`,
           ],
         },
       });
@@ -718,6 +727,8 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       netDelta: fromPaise(netDelta),
       netDeltaPercent,
       changedComponents,
+      baselineSource: "PREVIOUS_RUN",
+      inputBaseline: null,
     };
   }
 
@@ -739,6 +750,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
       net: fromPaise(netPaise),
     },
     variance,
+    wageDefinitionWarning: statResult.wageDefinitionWarning ?? null,
   };
 }
 

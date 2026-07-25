@@ -97,7 +97,7 @@ export class RecruitmentJobsService {
       .values({
         orgId,
         title: input.title,
-        departmentId: input.departmentId,
+        orgDepartmentId: input.departmentId,
         hiringFlowId: input.hiringFlowId,
         location: input.location,
         type: input.type || "FULL_TIME",
@@ -137,7 +137,7 @@ export class RecruitmentJobsService {
 
     const updateData: Partial<typeof jobPostings.$inferInsert> = { updatedAt: new Date() };
     if (input.title !== undefined) updateData.title = input.title;
-    if (input.departmentId !== undefined) updateData.departmentId = input.departmentId;
+    if (input.departmentId !== undefined) updateData.orgDepartmentId = input.departmentId;
     if (input.location !== undefined) updateData.location = input.location;
     if (input.type !== undefined) updateData.type = input.type;
     if (input.experience !== undefined) updateData.experience = input.experience;
@@ -198,6 +198,7 @@ export class RecruitmentJobsService {
         orgId,
         title,
         departmentId: source.departmentId,
+        orgDepartmentId: source.orgDepartmentId,
         hiringFlowId: source.hiringFlowId,
         location: source.location,
         type: source.type ?? "FULL_TIME",
@@ -337,12 +338,14 @@ export class RecruitmentJobsService {
       where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
       with: {
         department: { columns: { id: true, name: true } },
+        orgDepartment: { columns: { id: true, name: true } },
         postedByUser: { columns: { id: true, name: true } },
       },
       columns: {
         id: true,
         title: true,
         departmentId: true,
+        orgDepartmentId: true,
         location: true,
         type: true,
         experience: true,

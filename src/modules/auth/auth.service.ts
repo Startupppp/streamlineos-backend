@@ -25,6 +25,10 @@ import { SessionService } from "./session.service";
 import { AuthTokensService } from "./auth-tokens.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
+import {
+  getTrialDays,
+  TRIAL_PLAN,
+} from "../billing/plan-entitlements.constants";
 
 function slugify(name: string): string {
   return (
@@ -92,13 +96,14 @@ export class AuthService {
         isOwner: true,
       });
 
+      const trialDays = getTrialDays();
       await tx.insert(subscriptions).values({
         orgId,
-        plan: "STARTER",
+        plan: TRIAL_PLAN,
         status: "TRIAL",
-        trialEndsAt: addDays(new Date(), 14),
+        trialEndsAt: addDays(new Date(), trialDays),
         currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), 14),
+        currentPeriodEnd: addDays(new Date(), trialDays),
       });
 
       const adminRole = { name: "Administrator", slug: "ADMIN", isSystem: false };

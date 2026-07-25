@@ -34,6 +34,8 @@ export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 
   @Get()
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:webhooks:manage")
   list(
     @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +55,8 @@ export class WebhooksController {
   }
 
   @Get(":webhookId")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:webhooks:manage")
   async get(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,

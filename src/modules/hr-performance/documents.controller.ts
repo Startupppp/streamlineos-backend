@@ -28,6 +28,7 @@ import {
   createDocumentSchema,
   createRichDocumentSchema,
   listDocumentsSchema,
+  listRichDocumentsSchema,
   renderLetterSchema,
   saveLetterSchema,
   sendAckSchema,
@@ -37,6 +38,7 @@ import {
   type CreateDocumentInput,
   type CreateRichDocumentInput,
   type ListDocumentsInput,
+  type ListRichDocumentsInput,
   type RenderLetterInput,
   type SaveLetterInput,
   type SendAckInput,
@@ -157,8 +159,11 @@ export class DocumentsController {
 
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
-  listRichDocuments(@CurrentUser() u: CurrentUserContext) {
-    return this.richDocuments.list(u.orgId);
+  listRichDocuments(
+    @Query(new ZodValidationPipe(listRichDocumentsSchema)) query: ListRichDocumentsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.richDocuments.list(u.orgId, query);
   }
 
   @Post("rich-documents")
