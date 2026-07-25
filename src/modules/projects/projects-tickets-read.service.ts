@@ -3,6 +3,8 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL
 import {
   projectMembers,
   projects,
+  projectTeamAssignments,
+  projectTeamMembers,
   ticketComments,
   tickets,
 } from "../../db/schema";
@@ -54,8 +56,26 @@ export class ProjectsTicketsReadService {
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
-    if (membership.length === 0) return { hasAccess: false, role: null };
-    return { hasAccess: true, role: membership[0]?.role ?? null };
+    if (membership.length > 0) {
+      return { hasAccess: true, role: membership[0]?.role ?? null };
+    }
+    const teamAccess = await this.db
+      .select({ id: projectTeamMembers.id })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeamMembers,
+        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.projectId, projectId),
+          eq(projectTeamAssignments.orgId, orgId),
+          eq(projectTeamMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (teamAccess.length > 0) return { hasAccess: true, role: "MEMBER" };
+    return { hasAccess: false, role: null };
   }
 
   async listTickets(u: CurrentUserContext, projectId: number, query: TicketsListQuery) {
