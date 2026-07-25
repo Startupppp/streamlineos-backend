@@ -20,6 +20,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { formatDateOnly } from "./date.util";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
 
@@ -36,6 +37,7 @@ export class RecruitmentJobsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async list(orgId: string, input: JobListInput) {
@@ -75,6 +77,8 @@ export class RecruitmentJobsService {
   }
 
   async create(orgId: string, userId: string, input: CreateJobInput) {
+    await this.planLimits.assertWithinLimit(orgId, "hrJobPostings");
+
     const normalizedTitle = input.title.trim().toLowerCase();
     const normalizedLocation = (input.location ?? "").trim().toLowerCase();
     const normalizedType = input.type ?? "FULL_TIME";

@@ -28,7 +28,9 @@ export type LimitKey =
   | "automations"
   | "signEnvelopes"
   | "surveys"
-  | "acctInvoices";
+  | "acctInvoices"
+  | "hrCandidates"
+  | "hrJobPostings";
 
 export interface PlanLimitEntry {
   FREE: number | null;
@@ -51,6 +53,8 @@ export const PLAN_LIMITS: Record<LimitKey, PlanLimitEntry> = {
   signEnvelopes:  { FREE: 3,   STARTER: 50,   PROFESSIONAL: 250,   ENTERPRISE: null },
   surveys:        { FREE: 3,   STARTER: 25,   PROFESSIONAL: null,  ENTERPRISE: null },
   acctInvoices:   { FREE: 10,  STARTER: null, PROFESSIONAL: null,  ENTERPRISE: null },
+  hrCandidates:   { FREE: 50,  STARTER: 2000, PROFESSIONAL: 50000, ENTERPRISE: null },
+  hrJobPostings:  { FREE: 3,   STARTER: 25,   PROFESSIONAL: 200,   ENTERPRISE: null },
 };
 
 export interface PlanFeatureFlags {
@@ -93,6 +97,8 @@ export const LIMIT_HUMAN_LABELS: Record<LimitKey, string> = {
   signEnvelopes:  "sign envelopes",
   surveys:        "surveys",
   acctInvoices:   "invoices",
+  hrCandidates:   "candidates",
+  hrJobPostings:  "job postings",
 };
 
 // ---------------------------------------------------------------------------

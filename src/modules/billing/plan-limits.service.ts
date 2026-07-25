@@ -153,7 +153,9 @@ export class PlanLimitsService {
           ((SELECT COUNT(*) FROM automation_rules WHERE org_id = ${orgId}) + (SELECT COUNT(*) FROM project_automations WHERE org_id = ${orgId}))::int AS automations,
           (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
           (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
-          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                    AS "acctInvoices"
+          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                    AS "acctInvoices",
+          (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
+          (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
       const row = rows[0];
       if (!row) return this.zeroCounts();
@@ -170,6 +172,8 @@ export class PlanLimitsService {
         signEnvelopes:  Number(row["signEnvelopes"] ?? 0),
         surveys:        Number(row["surveys"] ?? 0),
         acctInvoices:   Number(row["acctInvoices"] ?? 0),
+        hrCandidates:   Number(row["hrCandidates"] ?? 0),
+        hrJobPostings:  Number(row["hrJobPostings"] ?? 0),
       };
     } catch {
       return this.zeroCounts();
@@ -181,6 +185,7 @@ export class PlanLimitsService {
       members: 0, projects: 0, kbPages: 0, chatChannels: 0,
       crmLeads: 0, crmContacts: 0, crmDeals: 0, supportTickets: 0,
       automations: 0, signEnvelopes: 0, surveys: 0, acctInvoices: 0,
+      hrCandidates: 0, hrJobPostings: 0,
     };
   }
 
@@ -291,6 +296,18 @@ export class PlanLimitsService {
       case "acctInvoices": {
         const rows = await this.db.execute(
           sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
+        );
+        return Number(rows[0]?.["count"] ?? 0);
+      }
+      case "hrCandidates": {
+        const rows = await this.db.execute(
+          sql`SELECT COUNT(*)::int AS count FROM candidates WHERE org_id = ${orgId}`,
+        );
+        return Number(rows[0]?.["count"] ?? 0);
+      }
+      case "hrJobPostings": {
+        const rows = await this.db.execute(
+          sql`SELECT COUNT(*)::int AS count FROM job_postings WHERE org_id = ${orgId}`,
         );
         return Number(rows[0]?.["count"] ?? 0);
       }

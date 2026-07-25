@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
 import { AiModule } from "../ai/ai.module";
+import { BillingModule } from "../billing/billing.module";
 import { RecruitmentCandidatesController } from "./recruitment-candidates.controller";
 import { RecruitmentPipelineController } from "./recruitment-pipeline.controller";
 import { RecruitmentCandidateRecordsController } from "./recruitment-candidate-records.controller";
@@ -30,7 +31,7 @@ import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.servic
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AiModule],
+  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule],
   controllers: [
     RecruitmentCandidatesController,
     RecruitmentPipelineController,

@@ -23,6 +23,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EmailService } from "../email/email.service";
 import { AutomationService } from "../automation/automation.service";
+import { PlanLimitsService } from "../billing/plan-limits.service";
 import { getCandidateRejectionEmail } from "../email/templates/recruitment";
 import type {
   CandidateListInput,
@@ -68,6 +69,7 @@ export class RecruitmentCandidatesService {
     private readonly notifications: NotificationsService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
@@ -182,6 +184,8 @@ export class RecruitmentCandidatesService {
   }
 
   async create(orgId: string, input: CreateCandidateInput) {
+    await this.planLimits.assertWithinLimit(orgId, "hrCandidates");
+
     const existing = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.orgId, orgId), ilike(candidates.email, input.email.trim())),
       columns: { id: true },
