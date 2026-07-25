@@ -53,7 +53,7 @@ export class TerminationService {
     if (params.status) conditions.push(eq(terminations.status, params.status));
     const where = and(...conditions);
 
-    const [data, countRows] = await Promise.all([
+    const [data, statusRows] = await Promise.all([
       this.db
         .select({
           id: terminations.id,
@@ -88,11 +88,27 @@ export class TerminationService {
         .orderBy(desc(terminations.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ total: sql<number>`count(*)` }).from(terminations).where(where),
+      this.db
+        .select({ status: terminations.status, count: sql<number>`count(*)` })
+        .from(terminations)
+        .where(eq(terminations.orgId, orgId))
+        .groupBy(terminations.status),
     ]);
 
-    const total = Number(countRows[0]?.total ?? 0);
-    return { data, pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const statusCounts: Record<string, number> = {};
+    let orgTotal = 0;
+    for (const row of statusRows) {
+      const rowCount = Number(row.count ?? 0);
+      if (row.status) statusCounts[row.status] = rowCount;
+      orgTotal += rowCount;
+    }
+    const total = params.status ? (statusCounts[params.status] ?? 0) : orgTotal;
+
+    return {
+      data,
+      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+      statusCounts: { ...statusCounts, ALL: orgTotal },
+    };
   }
 
   async create(orgId: string, actorUserId: string, actorRole: string, input: TerminationCreateInput) {
