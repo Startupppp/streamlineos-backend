@@ -113,7 +113,9 @@ export const employeeDevices = pgTable("employee_devices", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  index("idx_employee_devices_org_user").on(table.orgId, table.userId),
+]);
 
 export const holidaysRelations = relations(holidays, ({ one }) => ({
   organization: one(organizations, { fields: [holidays.orgId], references: [organizations.id] }),

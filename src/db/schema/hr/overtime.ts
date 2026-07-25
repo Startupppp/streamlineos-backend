@@ -29,4 +29,5 @@ export const compOffBalances = pgTable("comp_off_balances", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_comp_off_user").on(table.userId),
+  index("idx_comp_off_org_user").on(table.orgId, table.userId),
 ]);
