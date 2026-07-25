@@ -15,6 +15,11 @@ export const askSchema = z.object({
 });
 export type AskInput = z.infer<typeof askSchema>;
 
+export const kbAiAskBodySchema = z.object({
+  question: z.string().trim().min(3).max(500),
+});
+export type KbAiAskBodyInput = z.infer<typeof kbAiAskBodySchema>;
+
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),

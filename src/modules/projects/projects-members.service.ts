@@ -84,7 +84,35 @@ export class ProjectsMembersService {
     );
   }
 
-  listMembers(orgId: string, projectId: number) {
+  async assertProjectAccess(
+    u: CurrentUserContext,
+    projectId: number,
+  ): Promise<void> {
+    if (u.isOrgOwner || u.isPlatformAdmin) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("projects:manage")) return;
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)),
+      columns: { managerId: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    if (project.managerId === u.userId) return;
+    const membership = await this.db
+      .select({ id: projectMembers.id })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, projectId),
+          eq(projectMembers.userId, u.userId),
+        ),
+      )
+      .limit(1);
+    if (membership.length > 0) return;
+    throw new ForbiddenException("You do not have access to this project");
+  }
+
+  async listMembers(u: CurrentUserContext, projectId: number) {
+    await this.assertProjectAccess(u, projectId);
     return this.db
       .select({
         id: users.id,
@@ -102,7 +130,7 @@ export class ProjectsMembersService {
         projects,
         and(
           eq(projects.id, projectMembers.projectId),
-          eq(projects.orgId, orgId),
+          eq(projects.orgId, u.orgId),
         ),
       )
       .where(eq(projectMembers.projectId, projectId))
@@ -168,39 +196,41 @@ export class ProjectsMembersService {
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
 
-    await this.db
-      .delete(projectMembers)
-      .where(
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(projectMembers)
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.userId, userId),
+          ),
+        );
+
+      await tx
+        .update(tickets)
+        .set({ assigneeId: null })
+        .where(
+          and(
+            eq(tickets.projectId, projectId),
+            eq(tickets.orgId, orgId),
+            eq(tickets.assigneeId, userId),
+            ne(tickets.status, "DONE"),
+            ne(tickets.status, "CANCELLED"),
+          ),
+        );
+
+      await tx.delete(ticketAssignees).where(
         and(
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, userId),
+          eq(ticketAssignees.userId, userId),
+          sql`${ticketAssignees.ticketId} IN (
+              SELECT id FROM tickets
+              WHERE project_id = ${projectId}
+              AND org_id = ${orgId}
+              AND status NOT IN ('DONE', 'CANCELLED')
+            )`,
         ),
       );
-
-    await this.db
-      .update(tickets)
-      .set({ assigneeId: null })
-      .where(
-        and(
-          eq(tickets.projectId, projectId),
-          eq(tickets.orgId, orgId),
-          eq(tickets.assigneeId, userId),
-          ne(tickets.status, "DONE"),
-          ne(tickets.status, "CANCELLED"),
-        ),
-      );
-
-    await this.db.delete(ticketAssignees).where(
-      and(
-        eq(ticketAssignees.userId, userId),
-        sql`${ticketAssignees.ticketId} IN (
-            SELECT id FROM tickets
-            WHERE project_id = ${projectId}
-            AND org_id = ${orgId}
-            AND status NOT IN ('DONE', 'CANCELLED')
-          )`,
-      ),
-    );
+    });
 
     this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
       id: projectId,
@@ -253,14 +283,15 @@ export class ProjectsMembersService {
     return updated;
   }
 
-  listCustomStates(orgId: string, projectId: number) {
+  async listCustomStates(u: CurrentUserContext, projectId: number) {
+    await this.assertProjectAccess(u, projectId);
     return this.db
       .select()
       .from(projectStatuses)
       .where(
         and(
           eq(projectStatuses.projectId, projectId),
-          eq(projectStatuses.orgId, orgId),
+          eq(projectStatuses.orgId, u.orgId),
         ),
       )
       .orderBy(projectStatuses.order);

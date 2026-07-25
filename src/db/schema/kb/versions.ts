@@ -4,6 +4,7 @@ import {
   text,
   integer,
   timestamp,
+  index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -26,6 +27,7 @@ export const kbArticleVersions = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_article_versions").on(table.articleId, table.versionNumber),
+    index("idx_kb_article_versions_org_article").on(table.orgId, table.articleId),
   ],
 );
 

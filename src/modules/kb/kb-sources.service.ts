@@ -21,6 +21,8 @@ import type { CreateKbSourceNoteInput } from "./dto/kb-sources.schemas";
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+const MAX_SOURCES = 100;
+
 @Injectable()
 export class KbSourcesService {
   private readonly logger = new Logger(KbSourcesService.name);
@@ -48,7 +50,8 @@ export class KbSourcesService {
       })
       .from(kbSources)
       .where(and(eq(kbSources.orgId, orgId), isNull(kbSources.deletedAt)))
-      .orderBy(desc(kbSources.createdAt));
+      .orderBy(desc(kbSources.createdAt))
+      .limit(MAX_SOURCES);
   }
 
   async createNote(

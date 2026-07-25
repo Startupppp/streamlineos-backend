@@ -123,7 +123,7 @@ export class ProjectsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listMembers(u.orgId, projectId);
+    return this.members.listMembers(u, projectId);
   }
 
   @Post(":projectId/members")
@@ -166,7 +166,7 @@ export class ProjectsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listCustomStates(u.orgId, projectId);
+    return this.members.listCustomStates(u, projectId);
   }
 
   @Post(":projectId/custom-states")

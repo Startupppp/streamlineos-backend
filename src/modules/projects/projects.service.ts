@@ -377,94 +377,100 @@ export class ProjectsService {
       ...(body.priority !== undefined && { priority: body.priority }),
     };
 
-    if (Object.keys(projectFields).length > 0)
-      await this.db
-        .update(projects)
-        .set(projectFields)
-        .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
+    const hasFieldChanges = Object.keys(projectFields).length > 0;
 
-    if (body.memberIds !== undefined) {
-      const memberIds = body.memberIds;
-      const reassignments = body.reassignments;
+    if (hasFieldChanges || body.memberIds !== undefined) {
       await this.db.transaction(async (tx) => {
-        const existingMembers = await tx
-          .select({ userId: projectMembers.userId })
-          .from(projectMembers)
-          .where(eq(projectMembers.projectId, projectId));
-        const existing = new Set(existingMembers.map((m) => m.userId));
-
-        await tx
-          .delete(projectMembers)
-          .where(eq(projectMembers.projectId, projectId));
-
-        if (memberIds.length > 0) {
-          const validMembers = await tx
-            .select({ userId: organizationMembers.userId })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                inArray(organizationMembers.userId, memberIds),
-              ),
-            );
-          const validMemberIds = validMembers.map((m) => m.userId);
-          if (validMemberIds.length > 0) {
-            await tx.insert(projectMembers).values(
-              validMemberIds.map((userId) => ({
-                projectId,
-                userId,
-                role: "CONTRIBUTOR",
-              })),
-            );
-          }
+        if (hasFieldChanges) {
+          await tx
+            .update(projects)
+            .set(projectFields)
+            .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
         }
 
-        const newMemberSet = new Set(memberIds);
-        const removedMembers = [...existing].filter(
-          (id) => !newMemberSet.has(id),
-        );
+        if (body.memberIds !== undefined) {
+          const memberIds = body.memberIds;
+          const reassignments = body.reassignments;
 
-        if (removedMembers.length > 0 && reassignments) {
-          const openTickets = await tx
-            .select({ id: tickets.id, assigneeId: tickets.assigneeId })
-            .from(tickets)
-            .where(
-              and(
-                eq(tickets.orgId, orgId),
-                eq(tickets.projectId, projectId),
-                inArray(tickets.assigneeId, removedMembers),
-                ne(tickets.status, "DONE"),
-                ne(tickets.status, "CANCELLED"),
-              ),
-            );
-          const byNewAssignee = new Map<string | null, number[]>();
-          for (const ticket of openTickets) {
-            const newAssignee = ticket.assigneeId
-              ? (reassignments[ticket.assigneeId] ?? null)
-              : null;
-            const ids = byNewAssignee.get(newAssignee) ?? [];
-            ids.push(ticket.id);
-            byNewAssignee.set(newAssignee, ids);
+          const existingMembers = await tx
+            .select({ userId: projectMembers.userId })
+            .from(projectMembers)
+            .where(eq(projectMembers.projectId, projectId));
+          const existing = new Set(existingMembers.map((m) => m.userId));
+
+          await tx
+            .delete(projectMembers)
+            .where(eq(projectMembers.projectId, projectId));
+
+          if (memberIds.length > 0) {
+            const validMembers = await tx
+              .select({ userId: organizationMembers.userId })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.orgId, orgId),
+                  inArray(organizationMembers.userId, memberIds),
+                ),
+              );
+            const validMemberIds = validMembers.map((m) => m.userId);
+            if (validMemberIds.length > 0) {
+              await tx.insert(projectMembers).values(
+                validMemberIds.map((userId) => ({
+                  projectId,
+                  userId,
+                  role: "CONTRIBUTOR",
+                })),
+              );
+            }
           }
-          for (const [newAssignee, ids] of byNewAssignee) {
+
+          const newMemberSet = new Set(memberIds);
+          const removedMembers = [...existing].filter(
+            (id) => !newMemberSet.has(id),
+          );
+
+          if (removedMembers.length > 0 && reassignments) {
+            const openTickets = await tx
+              .select({ id: tickets.id, assigneeId: tickets.assigneeId })
+              .from(tickets)
+              .where(
+                and(
+                  eq(tickets.orgId, orgId),
+                  eq(tickets.projectId, projectId),
+                  inArray(tickets.assigneeId, removedMembers),
+                  ne(tickets.status, "DONE"),
+                  ne(tickets.status, "CANCELLED"),
+                ),
+              );
+            const byNewAssignee = new Map<string | null, number[]>();
+            for (const ticket of openTickets) {
+              const newAssignee = ticket.assigneeId
+                ? (reassignments[ticket.assigneeId] ?? null)
+                : null;
+              const ids = byNewAssignee.get(newAssignee) ?? [];
+              ids.push(ticket.id);
+              byNewAssignee.set(newAssignee, ids);
+            }
+            for (const [newAssignee, ids] of byNewAssignee) {
+              await tx
+                .update(tickets)
+                .set({ assigneeId: newAssignee })
+                .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
+            }
+          } else if (removedMembers.length > 0) {
             await tx
               .update(tickets)
-              .set({ assigneeId: newAssignee })
-              .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
+              .set({ assigneeId: null })
+              .where(
+                and(
+                  eq(tickets.orgId, orgId),
+                  eq(tickets.projectId, projectId),
+                  inArray(tickets.assigneeId, removedMembers),
+                  ne(tickets.status, "DONE"),
+                  ne(tickets.status, "CANCELLED"),
+                ),
+              );
           }
-        } else if (removedMembers.length > 0) {
-          await tx
-            .update(tickets)
-            .set({ assigneeId: null })
-            .where(
-              and(
-                eq(tickets.orgId, orgId),
-                eq(tickets.projectId, projectId),
-                inArray(tickets.assigneeId, removedMembers),
-                ne(tickets.status, "DONE"),
-                ne(tickets.status, "CANCELLED"),
-              ),
-            );
         }
       });
     }
@@ -477,6 +483,8 @@ export class ProjectsService {
       targetType: "project",
       metadata: { changedFields: Object.keys(body) },
     });
+
+    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
 
     return this.getProject(u, projectId);
   }
@@ -547,6 +555,8 @@ export class ProjectsService {
       targetType: "project",
       metadata: { name: project.name },
     });
+
+    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
 
     return { success: true };
   }

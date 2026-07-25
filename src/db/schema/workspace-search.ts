@@ -28,6 +28,8 @@ export const workspaceSearchChunks = pgTable(
   (table) => [
     uniqueIndex("idx_wsc_org_entity").on(table.orgId, table.entityType, table.entityId),
     index("idx_wsc_org_type").on(table.orgId, table.entityType),
+    index("idx_wsc_embedding_hnsw").using("hnsw", table.embedding.op("vector_cosine_ops")),
+    index("idx_wsc_fts_gin").using("gin", table.fts),
   ],
 );
 

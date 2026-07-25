@@ -57,6 +57,7 @@ export const kbSpaceMembers = pgTable(
     index("idx_kb_space_members_space").on(table.spaceId),
     index("idx_kb_space_members_user").on(table.userId),
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
+    index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
   ],
 );
 

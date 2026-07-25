@@ -16,7 +16,8 @@ export class ProjectsAutomationsService {
     private readonly members: ProjectsMembersService,
   ) {}
 
-  listAutomations(orgId: string, projectId: number) {
+  async listAutomations(u: CurrentUserContext, projectId: number) {
+    await this.members.assertProjectAccess(u, projectId);
     return this.db
       .select({
         id: projectAutomations.id,
@@ -27,7 +28,7 @@ export class ProjectsAutomationsService {
         updatedAt: projectAutomations.updatedAt,
       })
       .from(projectAutomations)
-      .where(and(eq(projectAutomations.orgId, orgId), eq(projectAutomations.projectId, projectId)))
+      .where(and(eq(projectAutomations.orgId, u.orgId), eq(projectAutomations.projectId, projectId)))
       .orderBy(desc(projectAutomations.createdAt))
       .limit(100);
   }

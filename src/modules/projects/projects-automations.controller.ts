@@ -26,7 +26,7 @@ export class ProjectsAutomationsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.listAutomations(u.orgId, projectId);
+    return this.automations.listAutomations(u, projectId);
   }
 
   @Post(":projectId/automations")

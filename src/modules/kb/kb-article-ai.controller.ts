@@ -8,7 +8,6 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -17,10 +16,7 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { KbArticleAiService } from "./kb-article-ai.service";
-
-const askBodySchema = z.object({
-  question: z.string().trim().min(3).max(500),
-});
+import { kbAiAskBodySchema } from "./dto/kb-ai.schemas";
 
 @Controller("kb/articles/:articleId/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -46,7 +42,7 @@ export class KbArticleAiController {
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const parsed = askBodySchema.safeParse(body);
+    const parsed = kbAiAskBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
     return this.svc.ask(u, articleId, parsed.data.question);
   }

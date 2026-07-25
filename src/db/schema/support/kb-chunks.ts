@@ -50,6 +50,10 @@ export const kbArticleChunks = pgTable(
     index("idx_kb_chunks_org_article").on(table.orgId, table.articleId),
     index("idx_kb_chunks_org_page").on(table.orgId, table.pageId),
     index("idx_kb_chunks_org_source").on(table.orgId, table.sourceId),
+    index("idx_kb_chunks_embedding_hnsw").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
   ],
 );
 
