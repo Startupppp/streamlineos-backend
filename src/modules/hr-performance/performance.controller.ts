@@ -90,12 +90,12 @@ export class PerformanceController {
 
   @Patch("goals/:goalId")
   @RequirePermission("hr:performance:view")
-  updateGoal(
+  async updateGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @Body(new ZodValidationPipe(updateGoalItemSchema)) body: UpdateGoalItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goalsService.updateGoalItem(u.orgId, goalId, body);
+    return this.goalsService.updateGoalItem(u.orgId, u.userId, await this.canManagePerformance(u), goalId, body);
   }
 
   @Delete("goals/:goalId")
@@ -122,11 +122,11 @@ export class PerformanceController {
   @Post("key-results")
   @HttpCode(201)
   @RequirePermission("hr:performance:view")
-  createKeyResult(
+  async createKeyResult(
     @Body(new ZodValidationPipe(createKeyResultSchema)) body: CreateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goalsService.createKeyResult(u.orgId, body);
+    return this.goalsService.createKeyResult(u.orgId, u.userId, await this.canManagePerformance(u), body);
   }
 
   @Patch("key-results")
@@ -159,12 +159,12 @@ export class PerformanceController {
 
   @Patch("one-on-ones/:meetingId")
   @RequirePermission("hr:performance:view")
-  updateOneOnOne(
+  async updateOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @Body(new ZodValidationPipe(updateOneOnOneSchema)) body: UpdateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reviewsService.updateOneOnOne(u.orgId, meetingId, body);
+    return this.reviewsService.updateOneOnOne(u.orgId, u.userId, await this.canManagePerformance(u), meetingId, body);
   }
 
   @Delete("one-on-ones/:meetingId")
@@ -174,7 +174,7 @@ export class PerformanceController {
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.reviewsService.deleteOneOnOne(u.orgId, meetingId);
+    await this.reviewsService.deleteOneOnOne(u.orgId, u.userId, await this.canManagePerformance(u), meetingId);
   }
 
   @Get("pip")
@@ -255,12 +255,12 @@ export class PerformanceController {
 
   @Patch("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
-  updateReview(
+  async updateReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body(new ZodValidationPipe(updatePerformanceReviewSchema)) body: UpdatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reviewsService.updateReview(u.orgId, reviewId, body);
+    return this.reviewsService.updateReview(u.orgId, u.userId, await this.canManagePerformance(u), reviewId, body);
   }
 
   @Get("cycles")
@@ -306,5 +306,11 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.reviewsService.deleteCycle(u.orgId, cycleId);
+  }
+
+  private async canManagePerformance(user: CurrentUserContext): Promise<boolean> {
+    if (user.isOrgOwner || user.isPlatformAdmin) return true;
+    const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);
+    return perms.has("hr:performance:manage");
   }
 }

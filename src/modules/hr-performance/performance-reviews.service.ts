@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -190,6 +191,8 @@ export class PerformanceReviewsService {
   }
 
   async createOneOnOne(orgId: string, managerId: string, input: CreateOneOnOneInput) {
+    await this.assertOrgMember(orgId, input.employeeId);
+
     const scheduledTime = new Date(input.scheduledAt);
     const duplicate = await this.db.query.oneOnOneMeetings.findFirst({
       where: and(
@@ -222,11 +225,21 @@ export class PerformanceReviewsService {
     return meeting;
   }
 
-  async updateOneOnOne(orgId: string, meetingId: number, input: UpdateOneOnOneInput) {
+  async updateOneOnOne(
+    orgId: string,
+    actorId: string,
+    canManage: boolean,
+    meetingId: number,
+    input: UpdateOneOnOneInput,
+  ) {
     const existing = await this.db.query.oneOnOneMeetings.findFirst({
       where: and(eq(oneOnOneMeetings.id, meetingId), eq(oneOnOneMeetings.orgId, orgId)),
+      columns: { id: true, managerId: true, employeeId: true },
     });
     if (!existing) throw new NotFoundException("Meeting not found.");
+    if (!canManage && existing.managerId !== actorId && existing.employeeId !== actorId) {
+      throw new ForbiddenException("You can only modify your own 1-on-1 meetings.");
+    }
 
     await this.db
       .update(oneOnOneMeetings)
@@ -245,7 +258,16 @@ export class PerformanceReviewsService {
     return { success: true };
   }
 
-  async deleteOneOnOne(orgId: string, meetingId: number) {
+  async deleteOneOnOne(orgId: string, actorId: string, canManage: boolean, meetingId: number) {
+    const existing = await this.db.query.oneOnOneMeetings.findFirst({
+      where: and(eq(oneOnOneMeetings.id, meetingId), eq(oneOnOneMeetings.orgId, orgId)),
+      columns: { id: true, managerId: true, employeeId: true },
+    });
+    if (!existing) throw new NotFoundException("Meeting not found.");
+    if (!canManage && existing.managerId !== actorId && existing.employeeId !== actorId) {
+      throw new ForbiddenException("You can only delete your own 1-on-1 meetings.");
+    }
+
     await this.db
       .delete(oneOnOneMeetings)
       .where(and(eq(oneOnOneMeetings.id, meetingId), eq(oneOnOneMeetings.orgId, orgId)));
@@ -271,6 +293,8 @@ export class PerformanceReviewsService {
   }
 
   async createPip(orgId: string, managerId: string, input: CreatePipInput) {
+    await this.assertOrgMember(orgId, input.userId);
+
     const [pip] = await this.db
       .insert(performanceImprovementPlans)
       .values({
@@ -371,11 +395,20 @@ export class PerformanceReviewsService {
     return { success: true };
   }
 
-  async updateReview(orgId: string, reviewId: number, input: UpdatePerformanceReviewInput) {
+  async updateReview(
+    orgId: string,
+    actorId: string,
+    canManage: boolean,
+    reviewId: number,
+    input: UpdatePerformanceReviewInput,
+  ) {
     const existing = await this.db.query.performanceReviews.findFirst({
       where: and(eq(performanceReviews.id, reviewId), eq(performanceReviews.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Review not found.");
+    if (!canManage && existing.reviewerId !== actorId && existing.userId !== actorId) {
+      throw new ForbiddenException("You can only edit reviews you are a participant in.");
+    }
 
     if (existing.status === "COMPLETED") {
       if (
@@ -431,10 +464,30 @@ export class PerformanceReviewsService {
   async getCycle(orgId: string, cycleId: number) {
     const cycle = await this.db.query.reviewCycles.findFirst({
       where: and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)),
-      with: { reviews: true },
     });
     if (!cycle) throw new NotFoundException("Review cycle not found.");
-    return cycle;
+
+    const reviews = await this.db.query.performanceReviews.findMany({
+      where: and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.cycleId, cycleId)),
+      columns: {
+        id: true,
+        userId: true,
+        reviewerId: true,
+        status: true,
+        overallRating: true,
+        periodStart: true,
+        periodEnd: true,
+        createdAt: true,
+      },
+      with: {
+        user: { columns: { id: true, name: true, image: true } },
+        reviewer: { columns: { id: true, name: true } },
+      },
+      orderBy: [desc(performanceReviews.createdAt)],
+      limit: 100,
+    });
+
+    return { ...cycle, reviews };
   }
 
   async updateCycle(orgId: string, cycleId: number, input: UpdateReviewCycleInput) {
@@ -465,5 +518,13 @@ export class PerformanceReviewsService {
       .delete(reviewCycles)
       .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)));
     return { success: true };
+  }
+
+  private async assertOrgMember(orgId: string, userId: string): Promise<void> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("Employee not found in your organization.");
   }
 }

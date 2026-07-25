@@ -93,6 +93,12 @@ export const terminationReviewSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const listTerminationsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(["DRAFT", "PENDING_CEO", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
+});
+
 export const terminationLetterQuerySchema = z.object({
   format: z.string().optional(),
 });
@@ -144,5 +150,6 @@ export type AlumniCreateInput = z.infer<typeof alumniCreateSchema>;
 export type ExperienceLetterInput = z.infer<typeof experienceLetterSchema>;
 export type TerminationCreateInput = z.infer<typeof terminationCreateSchema>;
 export type TerminationReviewInput = z.infer<typeof terminationReviewSchema>;
+export type ListTerminationsQueryInput = z.infer<typeof listTerminationsQuerySchema>;
 export type TerminationLetterQuery = z.infer<typeof terminationLetterQuerySchema>;
 export type AttendanceAnalyticsQuery = z.infer<typeof attendanceAnalyticsQuerySchema>;

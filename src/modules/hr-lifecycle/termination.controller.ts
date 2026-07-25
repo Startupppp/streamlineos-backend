@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -19,8 +20,10 @@ import { TerminationService } from "./termination.service";
 import {
   terminationCreateSchema,
   terminationReviewSchema,
+  listTerminationsQuerySchema,
   type TerminationCreateInput,
   type TerminationReviewInput,
+  type ListTerminationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -32,8 +35,11 @@ export class TerminationController {
 
   @Get()
   @RequirePermission("hr:exit:manage")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.termination.list(u.orgId);
+  list(
+    @Query(new ZodValidationPipe(listTerminationsQuerySchema)) query: ListTerminationsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.termination.list(u.orgId, query);
   }
 
   @Post()

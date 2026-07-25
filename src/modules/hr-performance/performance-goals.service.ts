@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
-import { goals, keyResults } from "../../db/schema";
+import { goals, keyResults, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { applyScope } from "../access/apply-scope";
@@ -50,6 +50,8 @@ export class PerformanceGoalsService {
   }
 
   async createGoal(orgId: string, input: CreateGoalInput) {
+    await this.assertOrgMember(orgId, input.userId);
+
     const [goal] = await this.db
       .insert(goals)
       .values({
@@ -89,11 +91,21 @@ export class PerformanceGoalsService {
     return { success: true };
   }
 
-  async updateGoalItem(orgId: string, goalId: number, input: UpdateGoalItemInput) {
+  async updateGoalItem(
+    orgId: string,
+    actorId: string,
+    canManage: boolean,
+    goalId: number,
+    input: UpdateGoalItemInput,
+  ) {
     const existing = await this.db.query.goals.findFirst({
       where: and(eq(goals.id, goalId), eq(goals.orgId, orgId)),
+      columns: { id: true, userId: true },
     });
     if (!existing) throw new NotFoundException("Goal not found.");
+    if (!canManage && existing.userId !== actorId) {
+      throw new ForbiddenException("You can only update your own goals.");
+    }
 
     await this.db
       .update(goals)
@@ -130,11 +142,15 @@ export class PerformanceGoalsService {
     });
   }
 
-  async createKeyResult(orgId: string, input: CreateKeyResultInput) {
+  async createKeyResult(orgId: string, actorId: string, canManage: boolean, input: CreateKeyResultInput) {
     const goal = await this.db.query.goals.findFirst({
       where: and(eq(goals.id, input.goalId), eq(goals.orgId, orgId)),
+      columns: { id: true, userId: true },
     });
     if (!goal) throw new NotFoundException("Goal not found.");
+    if (!canManage && goal.userId !== actorId) {
+      throw new ForbiddenException("You can only add key results to your own goals.");
+    }
 
     const [kr] = await this.db
       .insert(keyResults)
@@ -183,5 +199,13 @@ export class PerformanceGoalsService {
       .where(and(...conditions))
       .limit(500);
     return overdueGoals;
+  }
+
+  private async assertOrgMember(orgId: string, userId: string): Promise<void> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("Employee not found in your organization.");
   }
 }

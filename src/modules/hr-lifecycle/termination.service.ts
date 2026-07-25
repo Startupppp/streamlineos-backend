@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import {
   terminations,
   users,
@@ -27,7 +27,11 @@ import { HrTemplateRenderService } from "../hr-templates/hr-template-render.serv
 import { SessionsService } from "../sessions/sessions.service";
 import { getTerminationEmailTemplate } from "../email/templates/hr";
 import { formatDdMmmYyyy } from "./date.helpers";
-import type { TerminationCreateInput, TerminationReviewInput } from "./dto/hr-lifecycle.schemas";
+import type {
+  TerminationCreateInput,
+  TerminationReviewInput,
+  ListTerminationsQueryInput,
+} from "./dto/hr-lifecycle.schemas";
 
 @Injectable()
 export class TerminationService {
@@ -42,40 +46,53 @@ export class TerminationService {
     private readonly sessions: SessionsService,
   ) {}
 
-  list(orgId: string) {
-    return this.db
-      .select({
-        id: terminations.id,
-        orgId: terminations.orgId,
-        userId: terminations.userId,
-        status: terminations.status,
-        reasons: terminations.reasons,
-        detailedExplanation: terminations.detailedExplanation,
-        effectiveDate: terminations.effectiveDate,
-        severanceAmount: terminations.severanceAmount,
-        noticePeriodWaived: terminations.noticePeriodWaived,
-        internalNotes: terminations.internalNotes,
-        createdAt: terminations.createdAt,
-        updatedAt: terminations.updatedAt,
-        ceoRemarks: terminations.ceoRemarks,
-        ceoReviewedBy: terminations.ceoReviewedBy,
-        ceoReviewedAt: terminations.ceoReviewedAt,
-        emailSentAt: terminations.emailSentAt,
-        emailStatus: terminations.emailStatus,
-        initiatedBy: terminations.initiatedBy,
-        employee: {
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          designation: users.designation,
-          employeeId: users.employeeId,
-        },
-      })
-      .from(terminations)
-      .leftJoin(users, eq(terminations.userId, users.id))
-      .where(eq(terminations.orgId, orgId))
-      .orderBy(desc(terminations.createdAt))
-      .limit(500);
+  async list(orgId: string, params: ListTerminationsQueryInput) {
+    const limit = Math.min(params.limit, 100);
+    const offset = (params.page - 1) * limit;
+    const conditions = [eq(terminations.orgId, orgId)];
+    if (params.status) conditions.push(eq(terminations.status, params.status));
+    const where = and(...conditions);
+
+    const [data, countRows] = await Promise.all([
+      this.db
+        .select({
+          id: terminations.id,
+          orgId: terminations.orgId,
+          userId: terminations.userId,
+          status: terminations.status,
+          reasons: terminations.reasons,
+          detailedExplanation: terminations.detailedExplanation,
+          effectiveDate: terminations.effectiveDate,
+          severanceAmount: terminations.severanceAmount,
+          noticePeriodWaived: terminations.noticePeriodWaived,
+          internalNotes: terminations.internalNotes,
+          createdAt: terminations.createdAt,
+          updatedAt: terminations.updatedAt,
+          ceoRemarks: terminations.ceoRemarks,
+          ceoReviewedBy: terminations.ceoReviewedBy,
+          ceoReviewedAt: terminations.ceoReviewedAt,
+          emailSentAt: terminations.emailSentAt,
+          emailStatus: terminations.emailStatus,
+          initiatedBy: terminations.initiatedBy,
+          employee: {
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            designation: users.designation,
+            employeeId: users.employeeId,
+          },
+        })
+        .from(terminations)
+        .leftJoin(users, eq(terminations.userId, users.id))
+        .where(where)
+        .orderBy(desc(terminations.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: sql<number>`count(*)` }).from(terminations).where(where),
+    ]);
+
+    const total = Number(countRows[0]?.total ?? 0);
+    return { data, pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async create(orgId: string, actorUserId: string, actorRole: string, input: TerminationCreateInput) {

@@ -194,6 +194,7 @@ export class EmployeeSkillsService {
         const allSkills = await this.db.query.employeeSkills.findMany({
           where: eq(employeeSkills.orgId, orgId),
           with: { user: { columns: { id: true, name: true, image: true } } },
+          limit: 5000,
         });
 
         const members = await this.db

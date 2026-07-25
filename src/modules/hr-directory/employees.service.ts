@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
+import { SQL, and, avg, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   attendance,
   departments,
@@ -185,53 +185,58 @@ export class EmployeesService {
     const startOfYear = `${year}-01-01`;
     const endOfYear = `${year}-12-31`;
 
-    const [leaveData, attendanceData] = await Promise.all([
-      this.db.query.leaveRequests.findMany({
-        where: and(
-          eq(leaveRequests.userId, userId),
-          eq(leaveRequests.orgId, orgId),
-          gte(leaveRequests.startDate, startOfYear),
-          lte(leaveRequests.startDate, endOfYear),
-        ),
-      }),
-      this.db.query.attendance.findMany({
-        where: and(
-          eq(attendance.userId, userId),
-          eq(attendance.orgId, orgId),
-          gte(attendance.date, startOfYear),
-          lte(attendance.date, endOfYear),
-        ),
-      }),
+    const leaveWhere = and(
+      eq(leaveRequests.userId, userId),
+      eq(leaveRequests.orgId, orgId),
+      gte(leaveRequests.startDate, startOfYear),
+      lte(leaveRequests.startDate, endOfYear),
+    );
+    const attendanceWhere = and(
+      eq(attendance.userId, userId),
+      eq(attendance.orgId, orgId),
+      gte(attendance.date, startOfYear),
+      lte(attendance.date, endOfYear),
+    );
+
+    const [[leaveAgg], byTypeRows, [attendanceAgg]] = await Promise.all([
+      this.db
+        .select({
+          total: sql<string>`COUNT(*)`,
+          approved: sql<string>`COUNT(*) FILTER (WHERE ${leaveRequests.status} = 'APPROVED')`,
+          pending: sql<string>`COUNT(*) FILTER (WHERE ${leaveRequests.status} = 'PENDING')`,
+          rejected: sql<string>`COUNT(*) FILTER (WHERE ${leaveRequests.status} = 'REJECTED')`,
+        })
+        .from(leaveRequests)
+        .where(leaveWhere),
+      this.db
+        .select({ leaveTypeId: leaveRequests.leaveTypeId, count: sql<string>`COUNT(*)` })
+        .from(leaveRequests)
+        .where(leaveWhere)
+        .groupBy(leaveRequests.leaveTypeId),
+      this.db
+        .select({
+          daysPresent: sql<string>`COUNT(*) FILTER (WHERE ${attendance.checkIn} IS NOT NULL)`,
+          totalHours: sql<string>`COALESCE(SUM(${attendance.workHours}) FILTER (WHERE ${attendance.checkIn} IS NOT NULL), 0)`,
+        })
+        .from(attendance)
+        .where(attendanceWhere),
     ]);
 
     const byType: Record<string, number> = {};
-    let approved = 0;
-    let pending = 0;
-    let rejected = 0;
-
-    for (const lr of leaveData) {
-      if (lr.status === "APPROVED") approved++;
-      else if (lr.status === "PENDING") pending++;
-      else if (lr.status === "REJECTED") rejected++;
-      const typeKey = lr.leaveTypeId?.toString() ?? "unknown";
-      byType[typeKey] = (byType[typeKey] ?? 0) + 1;
+    for (const row of byTypeRows) {
+      const typeKey = row.leaveTypeId?.toString() ?? "unknown";
+      byType[typeKey] = Number(row.count ?? 0);
     }
 
-    let totalHours = 0;
-    let daysPresent = 0;
-    for (const log of attendanceData) {
-      if (log.checkIn) {
-        daysPresent++;
-        totalHours += Number(log.workHours || 0);
-      }
-    }
+    const daysPresent = Number(attendanceAgg?.daysPresent ?? 0);
+    const totalHours = Number(attendanceAgg?.totalHours ?? 0);
 
     return {
       leaves: {
-        total: leaveData.length,
-        approved,
-        pending,
-        rejected,
+        total: Number(leaveAgg?.total ?? 0),
+        approved: Number(leaveAgg?.approved ?? 0),
+        pending: Number(leaveAgg?.pending ?? 0),
+        rejected: Number(leaveAgg?.rejected ?? 0),
         byType,
       },
       attendance:
