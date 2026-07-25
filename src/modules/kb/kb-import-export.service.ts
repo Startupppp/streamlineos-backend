@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, max } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, inArray, isNull, max } from "drizzle-orm";
 import { kbPages, kbImportJobs, kbExportJobs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -101,6 +101,25 @@ export class KbImportExportService {
         return i.parentPageId ?? null;
       })),
     ];
+
+    const nonNullParentIds = parentIds.filter((id): id is number => id !== null);
+    if (nonNullParentIds.length > 0) {
+      const ownedParents = await this.db
+        .select({ id: kbPages.id })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            inArray(kbPages.id, nonNullParentIds),
+            isNull(kbPages.deletedAt),
+          ),
+        );
+      const ownedParentIds = new Set(ownedParents.map((r) => r.id));
+      const foreignParentIds = nonNullParentIds.filter((id) => !ownedParentIds.has(id));
+      if (foreignParentIds.length > 0) {
+        throw new BadRequestException(`Unknown parent page(s): ${foreignParentIds.join(", ")}`);
+      }
+    }
 
     const sortOffsets = new Map<number | null, number>();
     for (const parentId of parentIds) {
