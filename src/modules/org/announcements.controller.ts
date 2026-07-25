@@ -4,14 +4,14 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import type { announcements } from "../../db/schema";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AnnouncementsService } from "./announcements.service";
-
-type AnnouncementInsert = typeof announcements.$inferInsert;
-type CreateBody = Omit<AnnouncementInsert, "id" | "orgId" | "authorId" | "readCount" | "createdAt" | "updatedAt"> & {
-  targetIds?: string[];
-};
-type UpdateBody = Partial<AnnouncementInsert> & { targetIds?: string[] };
+import {
+  createHrAnnouncementSchema,
+  updateHrAnnouncementSchema,
+  type CreateHrAnnouncementInput,
+  type UpdateHrAnnouncementInput,
+} from "./dto/announcements.schemas";
 
 @UseGuards(JwtAuthGuard)
 @Controller("hr/announcements")
@@ -33,9 +33,16 @@ export class AnnouncementsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
-  create(@CurrentUser() u: CurrentUserContext, @Body() body: CreateBody) {
-    const { targetIds = [], ...rest } = body;
-    return this.service.create(u.orgId, u.userId, targetIds, rest);
+  create(
+    @CurrentUser() u: CurrentUserContext,
+    @Body(new ZodValidationPipe(createHrAnnouncementSchema)) body: CreateHrAnnouncementInput,
+  ) {
+    const { targetIds = [], publishAt, expiresAt, ...rest } = body;
+    return this.service.create(u.orgId, u.userId, targetIds, {
+      ...rest,
+      publishAt: publishAt ? new Date(publishAt) : null,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+    });
   }
 
   @Patch(":announcementId")
@@ -44,10 +51,18 @@ export class AnnouncementsController {
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
-    @Body() body: UpdateBody,
+    @Body(new ZodValidationPipe(updateHrAnnouncementSchema)) body: UpdateHrAnnouncementInput,
   ) {
-    const { targetIds, ...rest } = body;
-    return this.service.update(u.orgId, id, targetIds, rest);
+    const { targetIds, publishAt, expiresAt, ...rest } = body;
+    return this.service.update(u.orgId, id, targetIds, {
+      ...rest,
+      ...(publishAt !== undefined
+        ? { publishAt: publishAt ? new Date(publishAt) : null }
+        : {}),
+      ...(expiresAt !== undefined
+        ? { expiresAt: expiresAt ? new Date(expiresAt) : null }
+        : {}),
+    });
   }
 
   @Delete(":announcementId")

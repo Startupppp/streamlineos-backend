@@ -5,7 +5,6 @@ import {
   leaveRequests,
   leaveTypes,
   reviewCycles,
-  trainingPrograms,
   travelRequests,
   interviews,
   users,
@@ -22,7 +21,6 @@ export type CalendarEventType =
   | "BIRTHDAY"
   | "ANNIVERSARY"
   | "REVIEW_CYCLE"
-  | "TRAINING"
   | "TRAVEL"
   | "INTERVIEW";
 
@@ -66,7 +64,6 @@ export class HrCalendarService {
       "BIRTHDAY",
       "ANNIVERSARY",
       "REVIEW_CYCLE",
-      "TRAINING",
       "TRAVEL",
       "INTERVIEW",
     ];
@@ -203,39 +200,6 @@ export class HrCalendarService {
                 date: r.deadline ?? r.periodEnd,
                 endDate: r.periodEnd,
                 meta: { cycleId: r.id },
-              });
-            }
-          }),
-      );
-    }
-
-    if (types.includes("TRAINING")) {
-      fetches.push(
-        this.db
-          .select({
-            id: trainingPrograms.id,
-            name: trainingPrograms.name,
-            startDate: trainingPrograms.startDate,
-            endDate: trainingPrograms.endDate,
-          })
-          .from(trainingPrograms)
-          .where(
-            and(
-              eq(trainingPrograms.orgId, user.orgId),
-              lte(trainingPrograms.startDate, toStr),
-            ),
-          )
-          .limit(100)
-          .then((rows) => {
-            for (const r of rows) {
-              const endDate = r.endDate ?? r.startDate;
-              if (endDate < fromStr) return;
-              events.push({
-                id: `training-${r.id}`,
-                type: "TRAINING",
-                title: r.name,
-                date: r.startDate,
-                endDate: r.endDate ?? undefined,
               });
             }
           }),

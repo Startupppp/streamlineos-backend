@@ -650,6 +650,35 @@ export class RolesService {
     };
   }
 
+  async seedDefaultRoles(actor: CurrentUserContext) {
+    const starterTemplateIds = [
+      "engineering",
+      "sales_rep",
+      "customer_support",
+      "digital_marketing",
+      "hr_admin",
+      "accountant",
+    ];
+
+    const created: string[] = [];
+    const skipped: string[] = [];
+    for (const templateId of starterTemplateIds) {
+      const template = ROLE_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) continue;
+      const existing = await this.db.query.roles.findFirst({
+        where: and(eq(roles.slug, template.slug), eq(roles.orgId, actor.orgId)),
+        columns: { id: true },
+      });
+      if (existing) {
+        skipped.push(template.slug);
+        continue;
+      }
+      await this.cloneTemplate(actor, { templateId });
+      created.push(template.slug);
+    }
+    return { created, skipped };
+  }
+
   async cloneTemplate(actor: CurrentUserContext, input: CloneTemplateInput) {
     const template = ROLE_TEMPLATES.find((t) => t.id === input.templateId);
     if (!template) throw new NotFoundException("Template not found");

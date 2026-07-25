@@ -5,7 +5,7 @@ import {
   onboardingDocumentStatusEnum, docAuditActionEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
-import { departments } from "./employees";
+import { orgDepartments } from "../organization";
 import { candidates } from "./hiring";
 
 export const documentTemplates = pgTable("document_templates", {
@@ -66,7 +66,7 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  departmentId: text("department_id").references(() => orgDepartments.id, { onDelete: "set null" }),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by").notNull().references(() => users.id),

@@ -106,6 +106,13 @@
       "when": 1784651000007,
       "tag": "0298_payroll_runs_entity_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784651000008,
+      "tag": "0299_onboarding_template_org_departments",
+      "breakpoints": true
     }
   ]
 }

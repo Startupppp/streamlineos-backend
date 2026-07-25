@@ -4,20 +4,19 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, or, sql, asc } from "drizzle-orm";
 import {
   users,
-  departments,
   documents,
   leaveTypes,
   leaveBalances,
   notifications,
   onboardingSteps,
   onboardingTasks,
-  departmentMembers,
   onboardingTemplates,
   onboardingTemplateSteps,
   organizationMembers,
+  orgDepartments,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -240,6 +239,7 @@ export class OnboardingService {
         email: users.email,
         name: users.name,
         designation: users.designation,
+        orgDepartmentId: users.orgDepartmentId,
       })
       .from(users)
       .where(eq(users.id, input.userId));
@@ -265,13 +265,7 @@ export class OnboardingService {
       ? new Date(targetUser.joiningDate)
       : new Date();
 
-    const [deptMember] = await this.db
-      .select({ departmentId: departmentMembers.departmentId })
-      .from(departmentMembers)
-      .where(eq(departmentMembers.userId, input.userId))
-      .limit(1);
-
-    const employeeDeptId = deptMember?.departmentId ?? null;
+    const employeeDeptId = targetUser?.orgDepartmentId ?? null;
 
     const allTemplates = await this.db
       .select({
@@ -486,9 +480,16 @@ export class OnboardingService {
 
   async listTemplateDepartments(orgId: string) {
     return this.db
-      .select({ id: departments.id, name: departments.name })
-      .from(departments)
-      .where(eq(departments.orgId, orgId));
+      .select({ id: orgDepartments.id, name: orgDepartments.name })
+      .from(orgDepartments)
+      .where(
+        and(
+          eq(orgDepartments.orgId, orgId),
+          isNull(orgDepartments.deletedAt),
+          eq(orgDepartments.status, "ACTIVE"),
+        ),
+      )
+      .orderBy(asc(orgDepartments.name));
   }
 
   async listTemplates(orgId: string) {

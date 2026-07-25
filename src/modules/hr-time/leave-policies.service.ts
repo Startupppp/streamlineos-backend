@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { hrPolicies, leavePolicies, leaveTypes } from "../../db/schema";
@@ -90,7 +90,21 @@ export class LeavePoliciesService {
       .limit(100);
   }
 
+  private async assertLeaveTypeInOrg(orgId: string, leaveTypeId: number): Promise<void> {
+    const [type] = await this.db
+      .select({ id: leaveTypes.id })
+      .from(leaveTypes)
+      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
+      .limit(1);
+    if (!type) {
+      throw new BadRequestException(
+        "Leave type not found in this organization. Create the leave type first, then attach a policy to it.",
+      );
+    }
+  }
+
   async create(orgId: string, data: CreateLeavePolicyInput) {
+    await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
     const [policy] = await this.db
       .insert(leavePolicies)
       .values({
@@ -115,6 +129,9 @@ export class LeavePoliciesService {
   }
 
   async update(orgId: string, id: number, data: UpdateLeavePolicyInput) {
+    if (data.leaveTypeId != null) {
+      await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
+    }
     const [policy] = await this.db
       .update(leavePolicies)
       .set(data)

@@ -75,3 +75,19 @@ export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
 export type RejectLeaveInput = z.infer<typeof rejectLeaveSchema>;
 export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
 export type CompOffInput = z.infer<typeof compOffSchema>;
+
+export const createLeaveTypeSchema = z.object({
+  name: z.string().min(1).max(100),
+  daysPerYear: z.number().int().min(0).max(365),
+  carryForward: z.boolean().optional(),
+});
+export type CreateLeaveTypeInput = z.infer<typeof createLeaveTypeSchema>;
+
+export const updateLeaveTypeSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    daysPerYear: z.number().int().min(0).max(365).optional(),
+    carryForward: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update");
+export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
