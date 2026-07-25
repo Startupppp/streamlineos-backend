@@ -648,21 +648,24 @@ export class KbPagesService {
   }
 
   private async buildAncestors(orgId: string, parentId: number | null): Promise<Pick<PageRow, "id" | "title">[]> {
-    const ancestors: Pick<PageRow, "id" | "title">[] = [];
-    let currentId = parentId;
-    const visited = new Set<number>();
-    while (currentId !== null && currentId !== undefined) {
-      if (visited.has(currentId)) break;
-      visited.add(currentId);
-      const parent = await this.db.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, currentId), eq(kbPages.orgId, orgId)),
-        columns: { id: true, title: true, parentPageId: true },
-      });
-      if (!parent) break;
-      ancestors.unshift({ id: parent.id, title: parent.title });
-      currentId = parent.parentPageId;
-    }
-    return ancestors;
+    if (parentId === null) return [];
+    const rows = await this.db.execute(sql`
+      WITH RECURSIVE ancestors AS (
+        SELECT id, title, parent_page_id, 1 AS depth
+        FROM kb_pages
+        WHERE id = ${parentId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT p.id, p.title, p.parent_page_id, a.depth + 1
+        FROM kb_pages p
+        INNER JOIN ancestors a ON p.id = a.parent_page_id AND a.depth < 100
+        WHERE p.org_id = ${orgId}
+      )
+      SELECT id, title FROM ancestors ORDER BY depth DESC
+    `);
+    return (rows as Array<Record<string, unknown>>).map((row) => ({
+      id: Number(row.id),
+      title: String(row.title ?? ""),
+    }));
   }
 
   private async snapshotIfNeeded(
