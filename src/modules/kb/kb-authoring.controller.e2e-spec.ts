@@ -46,7 +46,6 @@ describe("KB Authoring auth/RBAC (e2e)", () => {
     ["post", "/kb/ai/draft"],
     ["post", "/kb/ai/improve"],
     ["post", "/kb/ai/summarize"],
-    ["post", "/kb/ai/translate"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {

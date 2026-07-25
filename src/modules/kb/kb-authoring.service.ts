@@ -2,7 +2,7 @@ import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbEventsService } from "./kb-events.service";
 import { LlmService } from "../ai/providers/llm.service";
-import type { DraftInput, ImproveInput, SummarizeInput, TranslateInput } from "./dto/kb-authoring.schemas";
+import type { DraftInput, ImproveInput, SummarizeInput } from "./dto/kb-authoring.schemas";
 
 const COST = 1;
 
@@ -58,10 +58,5 @@ export class KbAuthoringService {
     const system =
       "Summarize the following article into a concise 1–2 sentence excerpt (max ~300 chars). Return only the excerpt.";
     return this.run(orgId, userId, "summarize", system, input.text);
-  }
-
-  translate(orgId: string, userId: string, input: TranslateInput): Promise<{ content: string }> {
-    const system = `Translate the following knowledge base content into the locale "${input.locale}". Preserve Markdown formatting. Return only the translation.`;
-    return this.run(orgId, userId, "translate", system, input.text);
   }
 }

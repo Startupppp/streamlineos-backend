@@ -16,9 +16,3 @@ export const summarizeSchema = z.object({
   text: z.string().trim().min(1).max(20000),
 });
 export type SummarizeInput = z.infer<typeof summarizeSchema>;
-
-export const translateSchema = z.object({
-  text: z.string().trim().min(1).max(20000),
-  locale: z.string().trim().min(2).max(10),
-});
-export type TranslateInput = z.infer<typeof translateSchema>;
