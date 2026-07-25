@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { kbPageReviews, kbPages, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -23,6 +23,14 @@ type ReviewWithContext = ReviewRow & {
   reviewerName: string | null;
 };
 
+export function reviewerCanSeeAllReviews(user: CurrentUserContext): boolean {
+  return (
+    user.isOrgOwner ||
+    user.isPlatformAdmin ||
+    user.permissions.includes("kb:reviews:manage")
+  );
+}
+
 @Injectable()
 export class KbPageReviewsService {
   constructor(
@@ -32,19 +40,26 @@ export class KbPageReviewsService {
   ) {}
 
   async list(
-    orgId: string,
+    user: CurrentUserContext,
     status: string | undefined,
     type: string | undefined,
   ): Promise<ReviewWithContext[]> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
 
-    const conditions = [eq(kbPageReviews.orgId, orgId)];
+    const conditions = [eq(kbPageReviews.orgId, user.orgId)];
     if (status && REVIEW_STATUSES.includes(status as ReviewRow["status"])) {
       conditions.push(eq(kbPageReviews.status, status as ReviewRow["status"]));
     }
     if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
       conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
+    }
+    if (!reviewerCanSeeAllReviews(user)) {
+      const ownOnly = or(
+        eq(kbPageReviews.reviewerId, user.userId),
+        eq(kbPageReviews.requestedById, user.userId),
+      );
+      if (ownOnly) conditions.push(ownOnly);
     }
 
     return this.db
@@ -140,7 +155,7 @@ export class KbPageReviewsService {
         decisionNote: input.note ?? null,
       })
       .returning();
-    if (!review) throw new Error("Failed to create review");
+    if (!review) throw new InternalServerErrorException("Failed to create review");
 
     this.audit.log({
       action: "kb.review.created",

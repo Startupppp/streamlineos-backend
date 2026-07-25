@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, max } from "drizzle-orm";
 import { kbPages, kbImportJobs, kbExportJobs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -64,7 +64,7 @@ export class KbImportExportService {
         createdById: user.userId,
       })
       .returning();
-    if (!job) throw new Error("Failed to create export job");
+    if (!job) throw new InternalServerErrorException("Failed to create export job");
 
     this.audit.log({
       action: "kb.page.exported",
@@ -185,7 +185,7 @@ export class KbImportExportService {
         createdById: user.userId,
       })
       .returning();
-    if (!job) throw new Error("Failed to record import job");
+    if (!job) throw new InternalServerErrorException("Failed to record import job");
 
     this.audit.log({
       action: "kb.pages.imported",

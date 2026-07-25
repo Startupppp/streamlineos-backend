@@ -37,7 +37,7 @@ export class KbPageReviewsController {
     @Query("type") type: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.reviews.list(u.orgId, status, type);
+    return this.reviews.list(u, status, type);
   }
 
   @Get("page-reviews/due")

@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ResourceGrantsService } from "../access/resource-grants.service";
+import { CacheService } from "../../common/cache/cache.service";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
 const KB_SPACE_RESOURCE_TYPE = "kb:space";
@@ -20,6 +21,7 @@ export class KbAccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly resourceGrants: ResourceGrantsService,
+    private readonly cache: CacheService,
   ) {}
 
   isAdmin(user: CurrentUserContext): boolean {
@@ -28,7 +30,23 @@ export class KbAccessService {
     );
   }
 
+  private accessibleSpacesKey(orgId: string, userId: string): string {
+    return `kb:acc-spaces:${orgId}:${userId}`;
+  }
+
   async getAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
+    return this.cache.cached(
+      this.accessibleSpacesKey(user.orgId, user.userId),
+      () => this.computeAccessibleSpaceIds(user),
+      60,
+    );
+  }
+
+  async invalidateAccessibleSpaceIds(orgId: string): Promise<void> {
+    await this.cache.invalidatePattern(`kb:acc-spaces:${orgId}:*`);
+  }
+
+  private async computeAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
     const spaces = await this.db
       .select({ id: kbSpaces.id, audience: kbSpaces.audience })
       .from(kbSpaces)

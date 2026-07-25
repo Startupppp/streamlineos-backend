@@ -9,6 +9,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { kbSpaces, kbSpaceMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { KbAccessService } from "./kb-access.service";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
@@ -21,7 +22,10 @@ type MemberListItem = MemberRow & {
 
 @Injectable()
 export class KbMembersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: KbAccessService,
+  ) {}
 
   private async assertSpaceExists(orgId: string, spaceId: number): Promise<void> {
     const space = await this.db.query.kbSpaces.findFirst({
@@ -79,6 +83,7 @@ export class KbMembersService {
         spaceRole: input.spaceRole,
       })
       .returning();
+    await this.access.invalidateAccessibleSpaceIds(orgId);
     return member;
   }
 
@@ -113,6 +118,7 @@ export class KbMembersService {
           eq(kbSpaceMembers.orgId, orgId),
         ),
       );
+    await this.access.invalidateAccessibleSpaceIds(orgId);
     return { success: true };
   }
 }
