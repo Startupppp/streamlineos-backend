@@ -1,5 +1,4 @@
-﻿import {
-  ConflictException,
+import {
   HttpException,
   HttpStatus,
   Inject,
@@ -7,14 +6,14 @@
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces, users } from "../../db/schema";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces } from "../../db/schema";
 import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import { extractMentionUserIds, extractPageLinkIds } from "./kb-page-content.util";
+import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "./kb-page-visibility";
@@ -22,16 +21,9 @@ import { getAccessibleProjectIds } from "./kb-project-access.util";
 import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { KbIndexingService } from "./kb-indexing.service";
-
-const VERSION_WINDOW_MS = 10 * 60 * 1000;
-const MAX_VERSIONS = 100;
+import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 
 type PageRow = typeof kbPages.$inferSelect;
-type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-const { content: _content, contentText: _contentText, fts: _fts, ...KB_PAGE_LIST_COLUMNS } =
-  getTableColumns(kbPages);
-type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 @Injectable()
 export class KbPagesService {
@@ -188,8 +180,8 @@ export class KbPagesService {
       if (!updated) throw new NotFoundException("Page not found");
 
       if (contentChanged && input.content !== undefined) {
-        await this.snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null);
-        await this.resyncLinks(tx, orgId, pageId, input.content);
+        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null);
+        await resyncPageLinks(tx, orgId, pageId, input.content);
 
         const oldMentions = new Set(extractMentionUserIds(current.content));
         const newMentions = extractMentionUserIds(input.content);
@@ -358,229 +350,6 @@ export class KbPagesService {
     return rows;
   }
 
-  async getRecent(user: CurrentUserContext): Promise<KbPageListItem[]> {
-    const orgId = user.orgId;
-    const [visits, projectIds] = await Promise.all([
-      this.db
-        .select({ pageId: kbPageVisits.pageId })
-        .from(kbPageVisits)
-        .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.userId, user.userId)))
-        .orderBy(desc(kbPageVisits.visitedAt))
-        .limit(20),
-      this.getAccessibleProjectIds(user),
-    ]);
-
-    if (visits.length === 0) return [];
-    const ids = visits.map((v) => v.pageId);
-    const pages = await this.db
-      .select(KB_PAGE_LIST_COLUMNS)
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
-          pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
-    const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
-  }
-
-  async getFavorites(user: CurrentUserContext): Promise<KbPageListItem[]> {
-    const orgId = user.orgId;
-    const [favs, projectIds] = await Promise.all([
-      this.db
-        .select({ pageId: kbPageFavorites.pageId })
-        .from(kbPageFavorites)
-        .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.userId, user.userId)))
-        .orderBy(asc(kbPageFavorites.sortOrder), asc(kbPageFavorites.createdAt))
-        .limit(50),
-      this.getAccessibleProjectIds(user),
-    ]);
-
-    if (favs.length === 0) return [];
-    const ids = favs.map((f) => f.pageId);
-    const pages = await this.db
-      .select(KB_PAGE_LIST_COLUMNS)
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
-          pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
-    const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
-  }
-
-  async addFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
-    const orgId = user.orgId;
-    await this.assertPageAccessible(user, pageId);
-    await this.db
-      .insert(kbPageFavorites)
-      .values({ orgId, pageId, userId: user.userId })
-      .onConflictDoNothing();
-    return { success: true };
-  }
-
-  async removeFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
-    const orgId = user.orgId;
-    await this.db
-      .delete(kbPageFavorites)
-      .where(
-        and(
-          eq(kbPageFavorites.pageId, pageId),
-          eq(kbPageFavorites.userId, user.userId),
-          eq(kbPageFavorites.orgId, orgId),
-        ),
-      );
-    return { success: true };
-  }
-
-  async recordVisit(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
-    const orgId = user.orgId;
-    await this.assertPageAccessible(user, pageId);
-    await this.db
-      .insert(kbPageVisits)
-      .values({ orgId, pageId, userId: user.userId, visitedAt: new Date() })
-      .onConflictDoUpdate({
-        target: [kbPageVisits.pageId, kbPageVisits.userId],
-        set: { visitedAt: new Date() },
-      });
-    return { success: true };
-  }
-
-  async getBacklinks(user: CurrentUserContext, pageId: number): Promise<Pick<PageRow, "id" | "title" | "icon">[]> {
-    const orgId = user.orgId;
-    await this.assertPageAccessible(user, pageId);
-    const [links, projectIds] = await Promise.all([
-      this.db
-        .select({ sourcePageId: kbPageLinks.sourcePageId })
-        .from(kbPageLinks)
-        .where(and(eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetPageId, pageId))),
-      this.getAccessibleProjectIds(user),
-    ]);
-
-    if (links.length === 0) return [];
-    const ids = links.map((l) => l.sourcePageId);
-    return this.db
-      .select({ id: kbPages.id, title: kbPages.title, icon: kbPages.icon })
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
-          pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
-  }
-
-  async listVersions(user: CurrentUserContext, pageId: number) {
-    const orgId = user.orgId;
-    await this.assertPageAccessible(user, pageId);
-    return this.db
-      .select({
-        id: kbPageVersions.id,
-        orgId: kbPageVersions.orgId,
-        pageId: kbPageVersions.pageId,
-        versionNumber: kbPageVersions.versionNumber,
-        title: kbPageVersions.title,
-        content: kbPageVersions.content,
-        contentText: kbPageVersions.contentText,
-        changeSummary: kbPageVersions.changeSummary,
-        authorId: kbPageVersions.authorId,
-        authorName: users.name,
-        createdAt: kbPageVersions.createdAt,
-      })
-      .from(kbPageVersions)
-      .leftJoin(users, eq(kbPageVersions.authorId, users.id))
-      .where(and(eq(kbPageVersions.pageId, pageId), eq(kbPageVersions.orgId, orgId)))
-      .orderBy(desc(kbPageVersions.versionNumber));
-  }
-
-  async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number) {
-    const orgId = user.orgId;
-    await this.assertPageAccessible(user, pageId);
-    const rows = await this.db
-      .select({
-        id: kbPageVersions.id,
-        orgId: kbPageVersions.orgId,
-        pageId: kbPageVersions.pageId,
-        versionNumber: kbPageVersions.versionNumber,
-        title: kbPageVersions.title,
-        content: kbPageVersions.content,
-        contentText: kbPageVersions.contentText,
-        changeSummary: kbPageVersions.changeSummary,
-        authorId: kbPageVersions.authorId,
-        authorName: users.name,
-        createdAt: kbPageVersions.createdAt,
-      })
-      .from(kbPageVersions)
-      .leftJoin(users, eq(kbPageVersions.authorId, users.id))
-      .where(
-        and(
-          eq(kbPageVersions.pageId, pageId),
-          eq(kbPageVersions.versionNumber, versionNumber),
-          eq(kbPageVersions.orgId, orgId),
-        ),
-      );
-    const version = rows[0];
-    if (!version) throw new NotFoundException("Version not found");
-    return version;
-  }
-
-  async restoreVersion(user: CurrentUserContext, pageId: number, versionNumber: number, canManage: boolean): Promise<PageRow> {
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-    });
-    if (!current) throw new NotFoundException("Page not found");
-
-    if (current.isLocked && !canManage) {
-      throw new HttpException({ message: "Page is locked", code: "PAGE_LOCKED" }, HttpStatus.CONFLICT);
-    }
-
-    const version = await this.db.query.kbPageVersions.findFirst({
-      where: and(
-        eq(kbPageVersions.pageId, pageId),
-        eq(kbPageVersions.versionNumber, versionNumber),
-        eq(kbPageVersions.orgId, orgId),
-      ),
-    });
-    if (!version) throw new NotFoundException("Version not found");
-
-    return this.db.transaction(async (tx) => {
-      await this.snapshotIfNeeded(tx, orgId, current, user.userId, null, true);
-
-      const [updated] = await tx
-        .update(kbPages)
-        .set({
-          title: version.title,
-          content: version.content,
-          contentText: version.contentText,
-          lastEditedById: user.userId,
-        })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
-      if (!updated) throw new NotFoundException("Page not found");
-
-      await this.snapshotIfNeeded(
-        tx, orgId, updated, user.userId,
-        `Restored from version ${versionNumber}`, true,
-      );
-
-      if (version.content) {
-        await this.resyncLinks(tx, orgId, pageId, version.content);
-      }
-
-      return updated;
-    });
-  }
-
   async setVisibility(
     user: CurrentUserContext,
     pageId: number,
@@ -633,20 +402,6 @@ export class KbPagesService {
     return page;
   }
 
-  private async assertPageAccessible(user: CurrentUserContext, pageId: number): Promise<void> {
-    const projectIds = await this.getAccessibleProjectIds(user);
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.id, pageId),
-        eq(kbPages.orgId, user.orgId),
-        isNull(kbPages.deletedAt),
-        pageVisibleTo(user, projectIds),
-      ),
-      columns: { id: true },
-    });
-    if (!page) throw new NotFoundException("Page not found");
-  }
-
   private getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
     return getAccessibleProjectIds(this.db, user);
   }
@@ -670,89 +425,6 @@ export class KbPagesService {
       id: Number(row.id),
       title: String(row.title ?? ""),
     }));
-  }
-
-  private async snapshotIfNeeded(
-    tx: KbTransaction,
-    orgId: string,
-    page: { id: number; title: string; content: typeof kbPageVersions.$inferSelect["content"]; contentText: string | null | undefined },
-    authorId: string,
-    changeSummary: string | null = null,
-    force = false,
-  ): Promise<void> {
-    if (!page.content) return;
-
-    const newest = await tx.query.kbPageVersions.findFirst({
-      where: and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)),
-      orderBy: [desc(kbPageVersions.versionNumber)],
-      columns: { versionNumber: true, createdAt: true },
-    });
-
-    const windowPassed =
-      force || !newest || Date.now() - newest.createdAt.getTime() > VERSION_WINDOW_MS;
-
-    if (!windowPassed) return;
-
-    const [countRow] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(kbPageVersions)
-      .where(and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)));
-    const total = countRow?.count ?? 0;
-
-    if (total >= MAX_VERSIONS) {
-      const oldest = await tx.query.kbPageVersions.findFirst({
-        where: and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)),
-        orderBy: [asc(kbPageVersions.versionNumber)],
-        columns: { id: true },
-      });
-      if (oldest) {
-        await tx.delete(kbPageVersions).where(eq(kbPageVersions.id, oldest.id));
-      }
-    }
-
-    const nextVer = (newest?.versionNumber ?? 0) + 1;
-    await tx.insert(kbPageVersions).values({
-      orgId,
-      pageId: page.id,
-      versionNumber: nextVer,
-      title: page.title,
-      content: page.content,
-      contentText: page.contentText ?? null,
-      changeSummary,
-      authorId,
-    });
-  }
-
-  private async resyncLinks(
-    tx: KbTransaction,
-    orgId: string,
-    pageId: number,
-    content: unknown,
-  ): Promise<void> {
-    const linkIds = extractPageLinkIds(content);
-
-    await tx
-      .delete(kbPageLinks)
-      .where(and(eq(kbPageLinks.sourcePageId, pageId), eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetType, "page")));
-
-    if (linkIds.length === 0) return;
-
-    const validPages = await tx
-      .select({ id: kbPages.id })
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          isNull(kbPages.deletedAt),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(linkIds.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
-
-    if (validPages.length === 0) return;
-    await tx
-      .insert(kbPageLinks)
-      .values(validPages.map((p) => ({ orgId, sourcePageId: pageId, targetPageId: p.id })))
-      .onConflictDoNothing();
   }
 
   private async fireMentionNotifications(

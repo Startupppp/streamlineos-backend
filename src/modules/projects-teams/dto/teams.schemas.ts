@@ -40,9 +40,14 @@ export const updateTeamMemberRoleSchema = z.object({
   role: z.enum(["member", "lead"]),
 });
 
+export const addTeamProjectSchema = z.object({
+  projectId: z.number().int().positive(),
+});
+
 export type ListTeamsQuery = z.infer<typeof listTeamsQuerySchema>;
 export type CreateTeamInput = z.infer<typeof createTeamSchema>;
 export type UpdateTeamInput = z.infer<typeof updateTeamSchema>;
 export type AddTeamMemberInput = z.infer<typeof addTeamMemberSchema>;
 export type ListTeamMembersQuery = z.infer<typeof listTeamMembersQuerySchema>;
 export type UpdateTeamMemberRoleInput = z.infer<typeof updateTeamMemberRoleSchema>;
+export type AddTeamProjectInput = z.infer<typeof addTeamProjectSchema>;

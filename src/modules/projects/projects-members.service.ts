@@ -6,12 +6,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   organizationMembers,
   projectMembers,
   projects,
   projectStatuses,
+  projectTeamAssignments,
+  projectTeamMembers,
+  projectTeams,
   ticketAssignees,
   ticketLabels,
   tickets,
@@ -108,6 +111,24 @@ export class ProjectsMembersService {
       )
       .limit(1);
     if (membership.length > 0) return;
+
+    const teamAccess = await this.db
+      .select({ id: projectTeamMembers.id })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeamMembers,
+        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.projectId, projectId),
+          eq(projectTeamAssignments.orgId, u.orgId),
+          eq(projectTeamMembers.userId, u.userId),
+        ),
+      )
+      .limit(1);
+    if (teamAccess.length > 0) return;
+
     throw new ForbiddenException("You do not have access to this project");
   }
 
@@ -136,6 +157,71 @@ export class ProjectsMembersService {
       .where(eq(projectMembers.projectId, projectId))
       .orderBy(asc(projectMembers.joinedAt))
       .limit(100);
+  }
+
+  async getProjectRoster(u: CurrentUserContext, projectId: number) {
+    await this.assertProjectAccess(u, projectId);
+
+    const assignments = await this.db
+      .select({
+        teamId: projectTeamAssignments.teamId,
+        teamName: projectTeams.name,
+        teamKey: projectTeams.key,
+      })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeams,
+        and(
+          eq(projectTeams.id, projectTeamAssignments.teamId),
+          isNull(projectTeams.deletedAt),
+        ),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.projectId, projectId),
+          eq(projectTeamAssignments.orgId, u.orgId),
+        ),
+      );
+
+    if (assignments.length === 0) {
+      return { teams: [], members: [] };
+    }
+
+    const teamIds = assignments.map((a) => a.teamId);
+
+    const memberRows = await this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        image: users.image,
+      })
+      .from(projectTeamMembers)
+      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .where(
+        and(
+          eq(projectTeamMembers.orgId, u.orgId),
+          inArray(projectTeamMembers.teamId, teamIds),
+        ),
+      )
+      .orderBy(asc(users.firstName))
+      .limit(500);
+
+    const membersById = new Map<string, (typeof memberRows)[number]>();
+    for (const m of memberRows) {
+      if (!membersById.has(m.id)) membersById.set(m.id, m);
+    }
+
+    return {
+      teams: assignments.map((a) => ({
+        id: a.teamId,
+        name: a.teamName,
+        key: a.teamKey,
+      })),
+      members: [...membersById.values()],
+    };
   }
 
   async addMember(

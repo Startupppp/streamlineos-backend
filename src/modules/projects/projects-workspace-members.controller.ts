@@ -1,4 +1,14 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -6,9 +16,11 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { UsersService } from "../users/users.service";
+import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import {
+  addWorkspaceMemberSchema,
   listWorkspaceMembersSchema,
+  type AddWorkspaceMemberInput,
   type ListWorkspaceMembersInput,
 } from "./dto/projects-workspace-members.schemas";
 
@@ -16,7 +28,7 @@ import {
 @Controller("projects/members")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsWorkspaceMembersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly workspace: ProjectsWorkspaceMembersService) {}
 
   @Get()
   @RequirePermission("projects:members:view")
@@ -25,13 +37,27 @@ export class ProjectsWorkspaceMembersController {
     query: ListWorkspaceMembersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.usersService.listUsers(u.orgId, {
-      page: query.page,
-      limit: query.limit,
-      search: query.search,
-      status: query.status,
-      sortBy: "joinedAt",
-      sortOrder: "desc",
-    });
+    return this.workspace.list(u.orgId, query);
+  }
+
+  @Post()
+  @RequirePermission("projects:members:manage")
+  @HttpCode(201)
+  add(
+    @Body(new ZodValidationPipe(addWorkspaceMemberSchema))
+    body: AddWorkspaceMemberInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workspace.add(u.orgId, u.userId, body);
+  }
+
+  @Delete(":userId")
+  @RequirePermission("projects:members:manage")
+  @HttpCode(204)
+  remove(
+    @Param("userId") userId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workspace.remove(u.orgId, u.userId, userId);
   }
 }

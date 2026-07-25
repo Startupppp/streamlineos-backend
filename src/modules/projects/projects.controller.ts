@@ -126,6 +126,15 @@ export class ProjectsController {
     return this.members.listMembers(u, projectId);
   }
 
+  @Get(":projectId/roster")
+  @RequirePermission("projects:view")
+  getRoster(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.getProjectRoster(u, projectId);
+  }
+
   @Post(":projectId/members")
   @RequirePermission("projects:view")
   @HttpCode(201)

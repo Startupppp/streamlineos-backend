@@ -8,6 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
+import { projects } from "./projects/core";
 
 export const projectTeams = pgTable(
   "project_teams",
@@ -54,5 +55,53 @@ export const projectTeamMembers = pgTable(
     uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.userId),
     index("idx_project_team_members_org").on(t.orgId),
     index("idx_project_team_members_user").on(t.userId),
+  ],
+);
+
+export const projectWorkspaceMembers = pgTable(
+  "project_workspace_members",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: text("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    role: text("role").notNull().default("member"),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_project_workspace_members_org_user").on(
+      t.orgId,
+      t.userId,
+    ),
+    index("idx_project_workspace_members_org").on(t.orgId),
+  ],
+);
+
+export const projectTeamAssignments = pgTable(
+  "project_team_assignments",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    projectId: integer("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    teamId: integer("team_id")
+      .references(() => projectTeams.id, { onDelete: "cascade" })
+      .notNull(),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_project_team_assignments_project_team").on(
+      t.projectId,
+      t.teamId,
+    ),
+    index("idx_project_team_assignments_org").on(t.orgId),
+    index("idx_project_team_assignments_team").on(t.teamId),
+    index("idx_project_team_assignments_project").on(t.projectId),
   ],
 );

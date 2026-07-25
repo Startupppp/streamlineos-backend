@@ -13,6 +13,7 @@ import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsWebhooksController } from "./projects-webhooks.controller";
 import { ProjectsAutomationsController } from "./projects-automations.controller";
 import { ProjectsWorkspaceMembersController } from "./projects-workspace-members.controller";
+import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import { ProjectsCustomersController } from "./projects-customers.controller";
 import { ProjectsCustomersService } from "./projects-customers.service";
 import { ProjectsService } from "./projects.service";
@@ -78,6 +79,7 @@ import { ProjectsAutomationsService } from "./projects-automations.service";
     ProjectsWebhooksDispatchService,
     ProjectsAutomationsService,
     ProjectsCustomersService,
+    ProjectsWorkspaceMembersService,
   ],
   exports: [
     ProjectsTicketsService,

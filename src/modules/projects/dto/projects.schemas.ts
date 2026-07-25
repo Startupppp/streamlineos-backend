@@ -385,7 +385,10 @@ export const updateTicketSchema = z
 
 export const bulkUpdateSchema = z
   .object({
-    ticketIds: z.array(z.number().int().positive()).min(1),
+    ticketIds: z
+      .array(z.number().int().positive())
+      .min(1)
+      .max(100, "Cannot update more than 100 tickets at once"),
     assigneeId: z.string().optional(),
     status: z.string().optional(),
     sprintId: z.number().int().positive().nullable().optional(),

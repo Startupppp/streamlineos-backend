@@ -12,6 +12,9 @@ import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   organizationMembers,
   projectMembers,
+  projectTeamAssignments,
+  projectTeamMembers,
+  projectTeams,
   projects,
   projectStatuses,
   sprints,
@@ -74,15 +77,35 @@ export class ProjectsService {
     const conditions = [eq(projects.orgId, orgId)];
 
     if (scope !== "all") {
-      const memberOf = await this.db
-        .select({ projectId: projectMembers.projectId })
-        .from(projectMembers)
-        .where(eq(projectMembers.userId, userId));
-      const memberProjectIds = memberOf.map((m) => m.projectId);
+      const [memberOf, teamProjectsOf] = await Promise.all([
+        this.db
+          .select({ projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(eq(projectMembers.userId, userId)),
+        this.db
+          .select({ projectId: projectTeamAssignments.projectId })
+          .from(projectTeamAssignments)
+          .innerJoin(
+            projectTeamMembers,
+            eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+          )
+          .where(
+            and(
+              eq(projectTeamAssignments.orgId, orgId),
+              eq(projectTeamMembers.userId, userId),
+            ),
+          ),
+      ]);
+      const accessibleProjectIds = Array.from(
+        new Set([
+          ...memberOf.map((m) => m.projectId),
+          ...teamProjectsOf.map((t) => t.projectId),
+        ]),
+      );
       const memberScopeCondition = or(
         eq(projects.managerId, userId),
-        memberProjectIds.length > 0
-          ? inArray(projects.id, memberProjectIds)
+        accessibleProjectIds.length > 0
+          ? inArray(projects.id, accessibleProjectIds)
           : sql`false`,
       );
       if (memberScopeCondition) conditions.push(memberScopeCondition);
@@ -141,7 +164,7 @@ export class ProjectsService {
 
     const projectIds = projectRows.map((p) => p.id);
 
-    const [progressRows, memberRows] = await Promise.all([
+    const [progressRows, memberRows, teamRows] = await Promise.all([
       this.db
         .select({
           projectId: tickets.projectId,
@@ -164,6 +187,19 @@ export class ProjectsService {
         .from(projectMembers)
         .innerJoin(users, eq(projectMembers.userId, users.id))
         .where(inArray(projectMembers.projectId, projectIds)),
+      this.db
+        .select({
+          projectId: projectMembers.projectId,
+          teamName: projectTeams.name,
+        })
+        .from(projectMembers)
+        .innerJoin(
+          projectTeamMembers,
+          eq(projectTeamMembers.userId, projectMembers.userId),
+        )
+        .innerJoin(projectTeams, eq(projectTeams.id, projectTeamMembers.teamId))
+        .where(inArray(projectMembers.projectId, projectIds))
+        .groupBy(projectMembers.projectId, projectTeams.name),
     ]);
 
     const progressMap = new Map(
@@ -189,6 +225,13 @@ export class ProjectsService {
           image: m.image,
         });
       }
+    }
+
+    const teamsMap = new Map<number, string[]>();
+    for (const t of teamRows) {
+      if (!teamsMap.has(t.projectId)) teamsMap.set(t.projectId, []);
+      const existing = teamsMap.get(t.projectId)!;
+      if (!existing.includes(t.teamName)) existing.push(t.teamName);
     }
 
     const now = new Date();
@@ -234,6 +277,7 @@ export class ProjectsService {
         },
         health,
         members: membersMap.get(p.id) ?? [],
+        teams: teamsMap.get(p.id) ?? [],
       };
     });
 
@@ -302,16 +346,33 @@ export class ProjectsService {
             ),
           );
         if (memberOf.length === 0) {
-          this.audit.log({
-            action: "project.access_denied",
-            userId: u.userId,
-            orgId,
-            targetId: String(projectId),
-            targetType: "project",
-            metadata: { reason: "NOT_A_MEMBER", projectId },
-            result: "FAILURE",
-          });
-          throw new ProjectsForbiddenProjectException(projectId);
+          const teamAccess = await this.db
+            .select({ id: projectTeamMembers.id })
+            .from(projectTeamAssignments)
+            .innerJoin(
+              projectTeamMembers,
+              eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+            )
+            .where(
+              and(
+                eq(projectTeamAssignments.projectId, projectId),
+                eq(projectTeamAssignments.orgId, orgId),
+                eq(projectTeamMembers.userId, u.userId),
+              ),
+            )
+            .limit(1);
+          if (teamAccess.length === 0) {
+            this.audit.log({
+              action: "project.access_denied",
+              userId: u.userId,
+              orgId,
+              targetId: String(projectId),
+              targetType: "project",
+              metadata: { reason: "NOT_A_MEMBER", projectId },
+              result: "FAILURE",
+            });
+            throw new ProjectsForbiddenProjectException(projectId);
+          }
         }
       }
     }

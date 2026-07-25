@@ -26,7 +26,9 @@ import {
   listTeamsQuerySchema,
   updateTeamMemberRoleSchema,
   updateTeamSchema,
+  addTeamProjectSchema,
   type AddTeamMemberInput,
+  type AddTeamProjectInput,
   type CreateTeamInput,
   type ListTeamMembersQuery,
   type ListTeamsQuery,
@@ -137,5 +139,36 @@ export class TeamsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.removeMember(u.orgId, u.userId, teamId, memberId);
+  }
+
+  @Get(":teamId/projects")
+  @RequirePermission("projects:teams:view")
+  listTeamProjects(
+    @Param("teamId", ParseIntPipe) teamId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listTeamProjects(u.orgId, teamId);
+  }
+
+  @Post(":teamId/projects")
+  @HttpCode(201)
+  @RequirePermission("projects:teams:manage")
+  addProject(
+    @Param("teamId", ParseIntPipe) teamId: number,
+    @Body(new ZodValidationPipe(addTeamProjectSchema)) body: AddTeamProjectInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.addProject(u.orgId, u.userId, teamId, body.projectId);
+  }
+
+  @Delete(":teamId/projects/:projectId")
+  @HttpCode(204)
+  @RequirePermission("projects:teams:manage")
+  removeProject(
+    @Param("teamId", ParseIntPipe) teamId: number,
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.removeProject(u.orgId, u.userId, teamId, projectId);
   }
 }

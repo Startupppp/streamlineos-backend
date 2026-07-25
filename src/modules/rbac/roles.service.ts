@@ -330,6 +330,7 @@ export class RolesService {
         userId: userRoles.userId,
         name: users.name,
         email: users.email,
+        image: users.image,
       })
       .from(userRoles)
       .innerJoin(users, eq(userRoles.userId, users.id))
@@ -350,6 +351,9 @@ export class RolesService {
       .limit(100);
 
     const departmentIds = departmentRows.map((row) => row.departmentId);
+    const departmentNameById = new Map(
+      departmentRows.map((row) => [row.departmentId, row.name] as const),
+    );
     const viaDepartment =
       departmentIds.length > 0
         ? await this.db
@@ -357,6 +361,7 @@ export class RolesService {
               userId: departmentMembers.userId,
               name: users.name,
               email: users.email,
+              image: users.image,
               departmentId: departmentMembers.departmentId,
             })
             .from(departmentMembers)
@@ -365,26 +370,61 @@ export class RolesService {
             .limit(500)
         : [];
 
-    const effective = new Map<
-      string,
-      { userId: string; name: string | null; email: string }
-    >();
-    for (const member of direct) effective.set(member.userId, member);
-    for (const member of viaDepartment) {
-      if (!effective.has(member.userId)) {
-        effective.set(member.userId, {
-          userId: member.userId,
-          name: member.name,
-          email: member.email,
-        });
-      }
+    const members: Array<{
+      id: string;
+      principalType: "user" | "department";
+      principalId: string;
+      name: string | null;
+      email: string | null;
+      image: string | null;
+      via: "direct" | "department";
+      departmentId: number | null;
+      departmentName: string | null;
+    }> = [];
+
+    for (const member of direct) {
+      members.push({
+        id: `user:${member.userId}`,
+        principalType: "user",
+        principalId: member.userId,
+        name: member.name,
+        email: member.email,
+        image: member.image,
+        via: "direct",
+        departmentId: null,
+        departmentName: null,
+      });
     }
 
-    return {
-      direct,
-      departments: departmentRows,
-      effective: Array.from(effective.values()),
-    };
+    for (const row of departmentRows) {
+      members.push({
+        id: `department:${row.departmentId}`,
+        principalType: "department",
+        principalId: String(row.departmentId),
+        name: row.name,
+        email: null,
+        image: null,
+        via: "direct",
+        departmentId: row.departmentId,
+        departmentName: row.name,
+      });
+    }
+
+    for (const member of viaDepartment) {
+      members.push({
+        id: `user:${member.userId}:dept:${member.departmentId}`,
+        principalType: "user",
+        principalId: member.userId,
+        name: member.name,
+        email: member.email,
+        image: member.image,
+        via: "department",
+        departmentId: member.departmentId,
+        departmentName: departmentNameById.get(member.departmentId) ?? null,
+      });
+    }
+
+    return members;
   }
 
   async addRoleMember(
