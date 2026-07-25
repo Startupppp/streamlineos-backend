@@ -4,12 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { SQL, and, count, desc, eq } from "drizzle-orm";
 import { richDocuments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
   CreateRichDocumentInput,
+  ListRichDocumentsInput,
   UpdateRichDocumentInput,
 } from "./dto/documents.schemas";
 
@@ -17,12 +18,48 @@ import type {
 export class RichDocumentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string) {
-    return this.db.query.richDocuments.findMany({
-      where: eq(richDocuments.orgId, orgId),
-      orderBy: [desc(richDocuments.updatedAt)],
-      limit: 100,
-    });
+  async list(orgId: string, query: ListRichDocumentsInput) {
+    const conditions: SQL[] = [eq(richDocuments.orgId, orgId)];
+    if (query.isPublished !== undefined) {
+      conditions.push(eq(richDocuments.isPublished, query.isPublished));
+    }
+
+    const whereClause = and(...conditions);
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          id: richDocuments.id,
+          orgId: richDocuments.orgId,
+          title: richDocuments.title,
+          templateType: richDocuments.templateType,
+          isPublished: richDocuments.isPublished,
+          version: richDocuments.version,
+          createdBy: richDocuments.createdBy,
+          updatedBy: richDocuments.updatedBy,
+          createdAt: richDocuments.createdAt,
+          updatedAt: richDocuments.updatedAt,
+        })
+        .from(richDocuments)
+        .where(whereClause)
+        .orderBy(desc(richDocuments.updatedAt))
+        .limit(query.limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(richDocuments).where(whereClause),
+    ]);
+
+    const total = countRow?.total ?? 0;
+
+    return {
+      data: rows,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
   }
 
   async create(orgId: string, userId: string, input: CreateRichDocumentInput) {

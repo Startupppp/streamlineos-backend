@@ -57,6 +57,7 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
 }, (table) => [
   index("idx_employee_salary_profiles_org_user_effective").on(table.orgId, table.userId, table.effectiveFrom),
   index("idx_employee_salary_profiles_org_status").on(table.orgId, table.status),
+  uniqueIndex("uniq_esp_org_user_effective_from").on(table.orgId, table.userId, table.effectiveFrom),
 ]);
 
 export const employeeSalaryProfileComponents = pgTable("employee_salary_profile_components", {
@@ -74,6 +75,7 @@ export const employeeSalaryProfileComponents = pgTable("employee_salary_profile_
 }, (table) => [
   index("idx_employee_salary_profile_components_profile").on(table.profileId),
   index("idx_employee_salary_profile_components_org").on(table.orgId),
+  uniqueIndex("uniq_esp_components_profile_component").on(table.profileId, table.componentId),
 ]);
 
 export const payrollLoanAdjustments = pgTable("payroll_loan_adjustments", {

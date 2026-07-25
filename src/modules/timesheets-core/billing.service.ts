@@ -71,6 +71,17 @@ export class BillingService {
       { hours: number; amount: number; currency: string; count: number; missingRate: boolean }
     >();
 
+    const unratedEntries = entries.filter((entry) => entry.billRate === null);
+    const resolvedRates = await this.rateResolver.resolveMany(
+      u.orgId,
+      unratedEntries.map((entry) => ({
+        projectId: entry.projectId,
+        userId: entry.userId,
+        ticketId: entry.ticketId,
+      })),
+    );
+    const resolvedByEntryId = new Map(unratedEntries.map((entry, i) => [entry.id, resolvedRates[i]]));
+
     for (const entry of entries) {
       const pid = entry.projectId ?? 0;
       const hours = parseFloat(entry.hours);
@@ -80,12 +91,8 @@ export class BillingService {
       if (entry.billRate !== null) {
         amount = round2(hours * parseFloat(entry.billRate));
       } else {
-        const resolved = await this.rateResolver.resolve(u.orgId, {
-          projectId: entry.projectId,
-          userId: entry.userId,
-          ticketId: entry.ticketId,
-        });
-        if (resolved.billRate !== null) {
+        const resolved = resolvedByEntryId.get(entry.id);
+        if (resolved && resolved.billRate !== null) {
           amount = round2(hours * resolved.billRate);
         } else {
           missingRate = true;

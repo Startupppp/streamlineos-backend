@@ -4,6 +4,13 @@ import { PayrollRunsModule } from "./runs/payroll-runs.module";
 import { PayrollPayoutModule } from "./payout/payroll-payout.module";
 import { PayrollInsightsModule } from "./insights/payroll-insights.module";
 import { PayrollCalendarReminderScheduler } from "./insights/payroll-calendar-reminder.scheduler";
+import { PayrollEntitiesController } from "./entities/entities.controller";
+import { PayrollEntitiesModule } from "./entities/payroll-entities.module";
+import { PayrollFilingsController } from "./filings/filings.controller";
+import { PayrollFilingsService } from "./filings/filings.service";
+import { PayrollJobsService } from "./jobs/payroll-jobs.service";
+import { PayrollJobsController } from "./jobs/jobs.controller";
+import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
 
 @Module({
   imports: [
@@ -11,7 +18,20 @@ import { PayrollCalendarReminderScheduler } from "./insights/payroll-calendar-re
     PayrollRunsModule,
     PayrollPayoutModule,
     PayrollInsightsModule,
+    PayrollEntitiesModule,
   ],
-  providers: [PayrollCalendarReminderScheduler],
+  controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController],
+  providers: [
+    PayrollCalendarReminderScheduler,
+    PayrollFilingsService,
+    PayrollJobsService,
+    PayrollJobsWorkerService,
+  ],
+  exports: [
+    PayrollJobsService,
+    PayrollEntitiesModule,
+    PayrollFilingsService,
+    PayrollJobsWorkerService,
+  ],
 })
 export class PayrollModule {}

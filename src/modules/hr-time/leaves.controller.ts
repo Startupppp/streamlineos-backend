@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   NotFoundException,
@@ -37,6 +38,10 @@ import {
   type LeaveCalendarQuery,
   type RejectLeaveInput,
   type UpdateLeaveInput,
+  createLeaveTypeSchema,
+  type CreateLeaveTypeInput,
+  updateLeaveTypeSchema,
+  type UpdateLeaveTypeInput,
 } from "./dto/leaves.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 
@@ -97,6 +102,48 @@ export class LeavesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.leavesWrite.create(u, body);
+  }
+
+  @Get("types")
+  @RequirePermission("hr:leaves:view")
+  listLeaveTypes(@CurrentUser() u: CurrentUserContext) {
+    return this.leaves.listLeaveTypes(u.orgId);
+  }
+
+  @Post("types/seed-defaults")
+  @HttpCode(200)
+  @RequirePermission("hr:leaves:manage")
+  seedDefaultLeaveTypes(@CurrentUser() u: CurrentUserContext) {
+    return this.leaves.seedDefaultLeaveTypes(u.orgId);
+  }
+
+  @Patch("types/:leaveTypeId")
+  @RequirePermission("hr:leaves:manage")
+  updateLeaveType(
+    @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
+    @Body(new ZodValidationPipe(updateLeaveTypeSchema)) body: UpdateLeaveTypeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leaves.updateLeaveType(u.orgId, leaveTypeId, body);
+  }
+
+  @Delete("types/:leaveTypeId")
+  @RequirePermission("hr:leaves:manage")
+  deleteLeaveType(
+    @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leaves.deleteLeaveType(u.orgId, leaveTypeId);
+  }
+
+  @Post("types")
+  @HttpCode(201)
+  @RequirePermission("hr:leaves:manage")
+  createLeaveType(
+    @Body(new ZodValidationPipe(createLeaveTypeSchema)) body: CreateLeaveTypeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.leaves.createLeaveType(u.orgId, body);
   }
 
   @Post("comp-off")

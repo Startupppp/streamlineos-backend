@@ -104,6 +104,16 @@ export const attendanceAnalyticsQuerySchema = z.object({
 
 export const listOnboardingDocsQuerySchema = z.object({
   userId: z.string().optional(),
+  status: z.enum(["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const onboardingDocsSummaryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(["PENDING", "IN_PROGRESS", "SUBMITTED", "APPROVED"]).optional(),
+  search: z.string().max(200).optional(),
 });
 
 export const createOnboardingDocSchema = z.object({
@@ -121,6 +131,7 @@ export const reviewOnboardingDocSchema = z.object({
 });
 
 export type ListOnboardingDocsQueryInput = z.infer<typeof listOnboardingDocsQuerySchema>;
+export type OnboardingDocsSummaryQueryInput = z.infer<typeof onboardingDocsSummaryQuerySchema>;
 export type CreateOnboardingDocInput = z.infer<typeof createOnboardingDocSchema>;
 export type ReviewOnboardingDocInput = z.infer<typeof reviewOnboardingDocSchema>;
 

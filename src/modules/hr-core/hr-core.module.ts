@@ -16,6 +16,7 @@ import { HrSensitiveService } from "./hr-sensitive.service";
 import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
+import { PersonEmploymentSyncService } from "./person-employment-sync.service";
 
 @Module({
   imports: [HrWorkflowsModule],
@@ -38,7 +39,15 @@ import { HrCustomFieldsService } from "./hr-custom-fields.service";
     HrAuditService,
     HrOrgCatalogService,
     HrCustomFieldsService,
+    PersonEmploymentSyncService,
   ],
-  exports: [HrAuditService, HrEffectiveChangesService, HrPeopleService, HrEmploymentsService, HrSensitiveService],
+  exports: [
+    HrAuditService,
+    HrEffectiveChangesService,
+    HrPeopleService,
+    HrEmploymentsService,
+    HrSensitiveService,
+    PersonEmploymentSyncService,
+  ],
 })
 export class HrCoreModule {}

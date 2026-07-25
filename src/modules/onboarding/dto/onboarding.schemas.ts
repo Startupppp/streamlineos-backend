@@ -231,7 +231,7 @@ export const templateStepSchema = z.object({
 
 export const createTemplateSchema = z.object({
   name: z.string().min(1),
-  departmentId: z.number().int().optional(),
+  departmentId: z.string().min(1).optional(),
   description: z.string().optional(),
   steps: z.array(templateStepSchema).default([]),
 });

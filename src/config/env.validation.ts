@@ -103,6 +103,11 @@ const schema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    /** Override default STARTER trial length (days). Defaults to 14 when unset. */
+    TRIAL_DAYS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(1).max(365).optional(),
+    ),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV !== "production") return;

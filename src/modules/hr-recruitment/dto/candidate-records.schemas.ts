@@ -85,6 +85,25 @@ export const addVaultDocumentSchema = z.object({
 });
 export type AddVaultDocumentInput = z.infer<typeof addVaultDocumentSchema>;
 
+const OFFER_STATUSES = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVAL_REJECTED",
+  "SENT",
+  "VIEWED",
+  "ACCEPTED",
+  "DECLINED",
+  "COUNTERED",
+  "EXPIRED",
+] as const;
+
+export const offerListSchema = z.object({
+  status: z.enum(OFFER_STATUSES).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type OfferListInput = z.infer<typeof offerListSchema>;
+
 export const createOfferSchema = z
   .object({
     jobPostingId: z.number().int().positive().optional(),

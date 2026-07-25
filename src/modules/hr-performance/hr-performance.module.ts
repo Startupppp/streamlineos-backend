@@ -7,13 +7,8 @@ import { EngagementExtrasController } from "./engagement-extras.controller";
 import { DocumentsController } from "./documents.controller";
 import { KpisController } from "./kpis.controller";
 import { FeedbackController } from "./feedback.controller";
-import { CoursesController } from "./courses.controller";
-import { TrainingController } from "./training.controller";
-import { CareerController } from "./career.controller";
 import { CalibrationController } from "./calibration.controller";
 import { SuccessionController } from "./succession.controller";
-import { MentorshipController } from "./mentorship.controller";
-import { SkillGapController } from "./skill-gap.controller";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformanceReviewsService } from "./performance-reviews.service";
 import { EngagementService } from "./engagement.service";
@@ -24,13 +19,8 @@ import { RichDocumentsService } from "./rich-documents.service";
 import { LettersService } from "./letters.service";
 import { KpisService } from "./kpis.service";
 import { FeedbackService } from "./feedback.service";
-import { CoursesService } from "./courses.service";
-import { TrainingService } from "./training.service";
-import { CareerService } from "./career.service";
 import { CalibrationService } from "./calibration.service";
 import { SuccessionService } from "./succession.service";
-import { MentorshipService } from "./mentorship.service";
-import { SkillGapService } from "./skill-gap.service";
 
 @Module({
   imports: [AutomationModule, HrAutomationsModule],
@@ -41,13 +31,8 @@ import { SkillGapService } from "./skill-gap.service";
     DocumentsController,
     KpisController,
     FeedbackController,
-    CoursesController,
-    TrainingController,
-    CareerController,
     CalibrationController,
     SuccessionController,
-    MentorshipController,
-    SkillGapController,
   ],
   providers: [
     PerformanceGoalsService,
@@ -60,14 +45,8 @@ import { SkillGapService } from "./skill-gap.service";
     LettersService,
     KpisService,
     FeedbackService,
-    CoursesService,
-    TrainingService,
-    CareerService,
     CalibrationService,
     SuccessionService,
-    MentorshipService,
-    SkillGapService,
   ],
-  exports: [CoursesService],
 })
 export class HrPerformanceModule {}

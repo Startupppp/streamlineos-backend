@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  DEFAULT_REMOTE_WORK_NOTICE_DAYS,
+  DEFAULT_WFH_RULES,
+} from "./hr-policy-defaults.constants";
 
 const leaveRulesSchema = z.object({
   accrualFrequency: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
@@ -121,18 +125,18 @@ const assetRulesSchema = z.object({
 });
 
 const wfhRulesSchema = z.object({
-  monthlyQuota: z.number().int().min(0).default(4),
-  weeklyMax: z.number().int().min(0).default(2),
-  requireApproval: z.boolean().default(true),
-  probationRestricted: z.boolean().default(true),
-  allowConsecutive: z.boolean().default(false),
+  monthlyQuota: z.number().int().min(0).default(DEFAULT_WFH_RULES.monthlyQuota),
+  weeklyMax: z.number().int().min(0).default(DEFAULT_WFH_RULES.weeklyMax),
+  requireApproval: z.boolean().default(DEFAULT_WFH_RULES.requireApproval),
+  probationRestricted: z.boolean().default(DEFAULT_WFH_RULES.probationRestricted),
+  allowConsecutive: z.boolean().default(DEFAULT_WFH_RULES.allowConsecutive),
 });
 
 const remoteWorkRulesSchema = z.object({
   allowedCountries: z.array(z.string()).optional(),
   maxDurationDays: z.number().int().min(1).optional(),
   requireApproval: z.boolean().default(true),
-  noticeDays: z.number().int().min(0).default(7),
+  noticeDays: z.number().int().min(0).default(DEFAULT_REMOTE_WORK_NOTICE_DAYS),
 });
 
 const payrollEligibilityRulesSchema = z.object({

@@ -6,7 +6,6 @@ export const CALENDAR_EVENT_TYPES = [
   "BIRTHDAY",
   "ANNIVERSARY",
   "REVIEW_CYCLE",
-  "TRAINING",
   "TRAVEL",
   "INTERVIEW",
 ] as const;

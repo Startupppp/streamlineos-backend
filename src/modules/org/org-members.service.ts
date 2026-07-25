@@ -52,10 +52,7 @@ export class OrgMembersService {
       .where(and(...conditions))
       .orderBy(asc(users.firstName));
 
-    if (term || options.limit !== undefined) {
-      const limit = Math.min(options.limit ?? 50, MAX_MEMBER_RESULTS);
-      return query.limit(limit);
-    }
-    return query;
+    const limit = Math.min(options.limit ?? MAX_MEMBER_RESULTS, MAX_MEMBER_RESULTS);
+    return query.limit(limit);
   }
 }

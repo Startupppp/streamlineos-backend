@@ -309,4 +309,43 @@ export class HrSafetyService {
         checkCount: r.checkCount,
       }));
   }
+
+  /**
+   * K-anonymized org wellness pulse (last 7 days).
+   * Never returns individual scores; suppresses when respondents < threshold.
+   */
+  async wellnessPulse(orgId: string) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const [agg] = await this.db
+      .select({
+        respondents: count(hrWellnessCheckins.userId),
+        avgScore: avg(hrWellnessCheckins.score),
+        checkins: count(hrWellnessCheckins.id),
+      })
+      .from(hrWellnessCheckins)
+      .where(
+        and(eq(hrWellnessCheckins.orgId, orgId), gte(hrWellnessCheckins.date, cutoffStr)),
+      );
+
+    const respondents = Number(agg?.respondents ?? 0);
+    const suppressed = respondents < WELLNESS_MIN_GROUP_SIZE;
+
+    return {
+      mode: "k_anonymized_pulse" as const,
+      honestyNote: `Wellness pulse is k-anonymized (minimum ${WELLNESS_MIN_GROUP_SIZE} respondents). Individual scores are never shown. Not a clinical assessment.`,
+      windowDays: 7,
+      minGroupSize: WELLNESS_MIN_GROUP_SIZE,
+      suppressed,
+      respondents: suppressed ? null : respondents,
+      avgScore:
+        suppressed || agg?.avgScore == null
+          ? null
+          : Math.round(parseFloat(String(agg.avgScore)) * 10) / 10,
+      checkins: suppressed ? null : Number(agg?.checkins ?? 0),
+      burnoutThreshold: BURNOUT_SCORE_THRESHOLD,
+    };
+  }
 }

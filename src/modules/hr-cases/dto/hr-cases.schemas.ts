@@ -69,7 +69,14 @@ export const createDisciplinaryActionSchema = z.object({
   generateLetter: z.boolean().optional(),
   letterTemplateId: z.number().int().positive().optional(),
   letterContext: z.record(z.string(), z.string()).optional(),
+  /** Skip progressive ladder check (audited). */
+  forceEscalate: z.boolean().optional(),
 });
+
+export const acknowledgeDisciplinarySchema = z.object({
+  note: z.string().max(1000).optional(),
+});
+export type AcknowledgeDisciplinaryInput = z.infer<typeof acknowledgeDisciplinarySchema>;
 
 export const listDisciplinarySchema = paginationSchema.extend({
   employeeId: z.string().optional(),

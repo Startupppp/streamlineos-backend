@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
+import { Injectable, Inject, Logger, ConflictException } from "@nestjs/common";
 import { and, eq, inArray, count, desc, lt, lte, or, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -14,6 +14,7 @@ import {
   incentives,
   salaryLoans,
   users,
+  payrollRunAllocations,
 } from "../../../db/schema";
 import { decryptBankDetails } from "../../hr-payroll/lib/encryption";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
@@ -21,6 +22,12 @@ import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import { GeneratePipelineService, type ProfileData } from "./generate-pipeline.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
+import { PayrollRunLockService } from "../run-lock.service";
+import {
+  buildPulledInputsFromSections,
+  getLockedInputPeriodId,
+} from "./lib/input-puller";
+import { getIndiaBundleForMonth } from "./lib/statutory-registry";
 
 type PayrollTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -32,6 +39,7 @@ export class GenerateService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly pipeline: GeneratePipelineService,
     private readonly notifications: PayrollNotificationsService,
+    private readonly runLocks: PayrollRunLockService,
   ) {}
 
   async generateRun(
@@ -53,6 +61,31 @@ export class GenerateService {
       return { ok: false, reason: "locked" };
     }
 
+    let lockToken: string;
+    try {
+      lockToken = await this.runLocks.acquire(orgId, runId);
+      await this.runLocks.assertNoOtherActiveGeneration(orgId, run.month, runId);
+    } catch (err) {
+      if (err instanceof ConflictException) {
+        return { ok: false, reason: "generation_in_progress" };
+      }
+      throw err;
+    }
+
+    try {
+      return await this.generateRunLocked(orgId, runId, actorId, isRecalc, run);
+    } finally {
+      await this.runLocks.release(orgId, runId, lockToken);
+    }
+  }
+
+  private async generateRunLocked(
+    orgId: string,
+    runId: number,
+    actorId: string,
+    isRecalc: boolean,
+    run: typeof payrollRuns.$inferSelect,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const policyResult = await this.loadPolicy(orgId, run.policyVersionId);
     if (!policyResult) return { ok: false, reason: "no_policy" };
 
@@ -60,12 +93,25 @@ export class GenerateService {
 
     const profiles = await this.loadEligibleProfiles(orgId, run.month, toggles);
     const eligibleUserIds = profiles.map((p) => p.userId);
-    const heldUserIds = await this.loadHeldUserIds(orgId, runId, eligibleUserIds);
-    const duplicateBankAccountUserIds = await this.findDuplicateBankAccounts(eligibleUserIds);
+    const [heldUserIds, duplicateBankAccountUserIds, lockedPeriodId, statutoryFlags] =
+      await Promise.all([
+        this.loadHeldUserIds(orgId, runId, eligibleUserIds),
+        this.findDuplicateBankAccounts(eligibleUserIds),
+        getLockedInputPeriodId(this.db, orgId, run.month),
+        this.loadStatutoryIdFlags(eligibleUserIds),
+      ]);
+    const periodLocked = lockedPeriodId != null;
 
     if (isRecalc) {
       await this.clearPreviouslyConsumedReimbursements(orgId, runId);
+      await this.clearRunAllocations(orgId, runId);
     }
+
+    const [batch, prevSnapshotByUser, existingEmpIdByUser] = await Promise.all([
+      this.pipeline.loadRunBatchData(orgId, runId, run.month, toggles, profiles, lockedPeriodId),
+      this.loadPreviousSnapshots(orgId, eligibleUserIds, run.month),
+      this.loadExistingRunEmployeeIds(orgId, runId),
+    ]);
 
     let processedCount = 0;
     let grossTotal = 0;
@@ -76,14 +122,27 @@ export class GenerateService {
 
     await this.db.transaction(async (tx) => {
       for (const profile of profiles) {
-        const [components, inputs, pulls] = await Promise.all([
-          this.pipeline.loadComponents(orgId, profile.id),
-          this.pipeline.pullInputs(orgId, runId, profile.userId, run.month, toggles),
-          this.pipeline.pullCalcInputs(orgId, profile.userId, runId, run.month, toggles),
-        ]);
+        const components = batch.componentsByProfileId.get(profile.id) ?? [];
+        const inputs = this.pipeline.buildInputsFromBatch(profile.userId, run.month, toggles, batch);
+        const pulls = this.pipeline.buildCalcInputsFromBatch(profile.userId, toggles, batch);
 
-        const hasAttendanceInput = inputs.source === "ATTENDANCE";
-        const prevSnap = await this.getPreviousSnapshot(orgId, profile.userId, runId, run.month);
+        const hasAttendanceInput =
+          inputs.source === "ATTENDANCE" ||
+          inputs.source === "UPLOAD" ||
+          inputs.source === "LEAVE" ||
+          inputs.source === "TIMESHEET";
+        const fromLockedSnapshot =
+          inputs.overrideReason === "Locked payroll input period snapshot" ||
+          (inputs.source === "UPLOAD" && Boolean(inputs.overrideReason));
+        const prevSnap = prevSnapshotByUser.get(profile.userId) ?? null;
+
+        const lockedBaselinePull = periodLocked
+          ? buildPulledInputsFromSections(
+              profile.userId,
+              run.month,
+              batch.lockedSectionsByUser.get(profile.userId),
+            )
+          : null;
 
         const { snapshot, exceptions } = this.pipeline.runCalcAndDetect(
           profile,
@@ -99,6 +158,20 @@ export class GenerateService {
           {
             isSalaryOnHold: heldUserIds.has(profile.userId),
             duplicateBankAccountUserIds,
+            missingLockedInputPeriod:
+              Boolean(toggles.requireLockedPayrollInputs) && !periodLocked,
+            inputNotFromLockedSnapshot:
+              Boolean(toggles.requireLockedPayrollInputs) &&
+              periodLocked &&
+              !fromLockedSnapshot,
+            missingPfUan: statutoryFlags.get(profile.userId)?.missingPfUan ?? false,
+            missingEsiIp: statutoryFlags.get(profile.userId)?.missingEsiIp ?? false,
+            lockedInputBaseline: lockedBaselinePull
+              ? {
+                  paidDays: lockedBaselinePull.paidDays,
+                  lopDays: lockedBaselinePull.lopDays,
+                }
+              : null,
           },
         );
 
@@ -107,7 +180,15 @@ export class GenerateService {
           consumedReimbursementIds: pulls.consumedReimbursementIds ?? [],
         };
 
-        const empId = await this.pipeline.upsertRunEmployee(tx, orgId, runId, profile, inputsWithConsumed, snapshot);
+        const empId = await this.pipeline.upsertRunEmployee(
+          tx,
+          orgId,
+          runId,
+          profile,
+          inputsWithConsumed,
+          snapshot,
+          existingEmpIdByUser.get(profile.userId) ?? null,
+        );
         await this.pipeline.replaceLineItems(tx, orgId, runId, empId, snapshot);
         await this.pipeline.upsertExceptions(tx, orgId, runId, empId, profile.userId, exceptions);
 
@@ -117,6 +198,17 @@ export class GenerateService {
             .update(reimbursements)
             .set({ paidAt: new Date() })
             .where(inArray(reimbursements.id, consumedReimbIds));
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "REIMBURSEMENT",
+            consumedReimbIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedReimbursements[i]?.amount ?? "0",
+            })),
+          );
         }
 
         const consumedIncentiveIds = pulls.consumedIncentiveIds ?? [];
@@ -125,6 +217,46 @@ export class GenerateService {
             .update(incentives)
             .set({ status: "ADDED_TO_PAYROLL" })
             .where(inArray(incentives.id, consumedIncentiveIds));
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "INCENTIVE",
+            consumedIncentiveIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedIncentives[i]?.amount ?? "0",
+            })),
+          );
+        }
+
+        const consumedBonusIds = pulls.consumedBonusIds ?? [];
+        if (consumedBonusIds.length > 0) {
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "BONUS",
+            consumedBonusIds.map((id, i) => ({
+              id,
+              amount: pulls.approvedBonuses[i]?.amount ?? "0",
+            })),
+          );
+        }
+
+        if (pulls.activeLoans.length > 0) {
+          await this.recordAllocations(
+            tx,
+            orgId,
+            runId,
+            profile.userId,
+            "LOAN",
+            pulls.activeLoans.map((loan) => ({
+              id: loan.id,
+              amount: loan.emiAmount ?? "0",
+            })),
+          );
         }
 
         grossTotal += parseFloat(snapshot.totals.gross);
@@ -159,6 +291,9 @@ export class GenerateService {
           employeeCount: processedCount,
           exceptionCount: openBlockers?.total ?? 0,
           policyVersionId,
+          calculationVersion: "1.0.0",
+          // Preserve entity-stamped pack from createRun; India calc engine default otherwise.
+          statutoryRuleVersion: run.statutoryRuleVersion ?? getIndiaBundleForMonth(run.month).bundleVersion,
         })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
@@ -220,6 +355,31 @@ export class GenerateService {
     return [...duplicates];
   }
 
+  /** PF UAN / ESI IP presence from encrypted user bank details (onboarding path). */
+  private async loadStatutoryIdFlags(
+    userIds: string[],
+  ): Promise<Map<string, { missingPfUan: boolean; missingEsiIp: boolean }>> {
+    const map = new Map<string, { missingPfUan: boolean; missingEsiIp: boolean }>();
+    if (userIds.length === 0) return map;
+    const rows = await this.db
+      .select({ id: users.id, bankDetails: users.bankDetails })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    for (const row of rows) {
+      const bank = decryptBankDetails(row.bankDetails ?? null);
+      const uan = bank?.pfUanNumber?.trim() ?? "";
+      const ip = bank?.esiIpNumber?.trim() ?? "";
+      map.set(row.id, {
+        missingPfUan: !/^\d{12}$/.test(uan),
+        missingEsiIp: ip.length === 0,
+      });
+    }
+    for (const id of userIds) {
+      if (!map.has(id)) map.set(id, { missingPfUan: true, missingEsiIp: true });
+    }
+    return map;
+  }
+
   async postPayrollLock(orgId: string, runId: number, tx?: PayrollTx): Promise<void> {
     if (tx) {
       await this.applyLoanRecovery(orgId, runId, tx);
@@ -245,16 +405,13 @@ export class GenerateService {
 
     if (loanIdSet.size === 0) return;
 
+    const loans = await tx
+      .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
+      .from(salaryLoans)
+      .where(and(inArray(salaryLoans.id, [...loanIdSet]), eq(salaryLoans.orgId, orgId)));
+
     const now = new Date();
-    for (const loanId of loanIdSet) {
-      const [loan] = await tx
-        .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
-        .from(salaryLoans)
-        .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)))
-        .limit(1);
-
-      if (!loan) continue;
-
+    for (const loan of loans) {
       const newPaidEmis = loan.paidEmis + 1;
       const isRepaid = loan.totalEmis != null && newPaidEmis >= loan.totalEmis;
 
@@ -264,7 +421,7 @@ export class GenerateService {
         loanUpdate.closedAt = now;
       }
 
-      await tx.update(salaryLoans).set(loanUpdate).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
+      await tx.update(salaryLoans).set(loanUpdate).where(and(eq(salaryLoans.id, loan.id), eq(salaryLoans.orgId, orgId)));
     }
   }
 
@@ -286,12 +443,48 @@ export class GenerateService {
     }
   }
 
-  private async getPreviousSnapshot(
+  private async clearRunAllocations(orgId: string, runId: number): Promise<void> {
+    await this.db
+      .delete(payrollRunAllocations)
+      .where(and(eq(payrollRunAllocations.orgId, orgId), eq(payrollRunAllocations.runId, runId)));
+  }
+
+  /**
+   * Durable exactly-once allocation of source inputs to a run.
+   * Unique (org, sourceType, sourceId) prevents double-consumption across runs.
+   */
+  private async recordAllocations(
+    tx: PayrollTx,
     orgId: string,
+    runId: number,
     userId: string,
-    currentRunId: number,
+    sourceType: "REIMBURSEMENT" | "INCENTIVE" | "BONUS" | "LOAN" | "ADJUSTMENT",
+    items: { id: number; amount: string }[],
+  ): Promise<void> {
+    if (items.length === 0) return;
+    await tx
+      .insert(payrollRunAllocations)
+      .values(
+        items.map((item) => ({
+          orgId,
+          runId,
+          userId,
+          sourceType,
+          sourceId: String(item.id),
+          amount: item.amount,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  private async loadPreviousSnapshots(
+    orgId: string,
+    userIds: string[],
     currentMonth: string,
-  ): Promise<CalculationSnapshot | null> {
+  ): Promise<Map<string, CalculationSnapshot>> {
+    const result = new Map<string, CalculationSnapshot>();
+    if (userIds.length === 0) return result;
+
     const [prevRun] = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
@@ -305,23 +498,41 @@ export class GenerateService {
       .orderBy(desc(payrollRuns.month))
       .limit(1);
 
-    if (!prevRun) return null;
+    if (!prevRun) return result;
 
-    const [prevEmp] = await this.db
-      .select({ calculationSnapshot: payrollRunEmployees.calculationSnapshot })
+    const prevEmps = await this.db
+      .select({
+        userId: payrollRunEmployees.userId,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+      })
       .from(payrollRunEmployees)
       .where(
         and(
           eq(payrollRunEmployees.runId, prevRun.id),
-          eq(payrollRunEmployees.userId, userId),
+          inArray(payrollRunEmployees.userId, userIds),
         ),
-      )
-      .limit(1);
+      );
 
-    if (!prevEmp?.calculationSnapshot) return null;
+    for (const prevEmp of prevEmps) {
+      const rawSnap = prevEmp.calculationSnapshot;
+      if (rawSnap && typeof rawSnap === "object" && !result.has(prevEmp.userId)) {
+        result.set(prevEmp.userId, rawSnap as CalculationSnapshot);
+      }
+    }
+    return result;
+  }
 
-    const rawSnap = prevEmp.calculationSnapshot;
-    return rawSnap && typeof rawSnap === "object" ? (rawSnap as CalculationSnapshot) : null;
+  private async loadExistingRunEmployeeIds(orgId: string, runId: number): Promise<Map<string, number>> {
+    const rows = await this.db
+      .select({ id: payrollRunEmployees.id, userId: payrollRunEmployees.userId })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.orgId, orgId), eq(payrollRunEmployees.runId, runId)));
+
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      if (!map.has(row.userId)) map.set(row.userId, row.id);
+    }
+    return map;
   }
 
   private async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{

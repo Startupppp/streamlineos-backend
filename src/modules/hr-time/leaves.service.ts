@@ -1,18 +1,19 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
-  Optional,
+  Optional,  NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
   departmentMembers,
   departments,
   leaveBalances,
   leaveRequests,
   leaveTypes,
-  users,
+  users,  leavePolicies,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -25,8 +26,9 @@ import { resolveLeavesViewScope } from "./leaves-scope";
 import { HrPolicyEvaluationService } from "../hr-policies/hr-policy-evaluation.service";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
+import { DEFAULT_COMP_OFF_MAX_ACCRUAL } from "../hr-policies/hr-policy-defaults.constants";
+
 const COMP_OFF_LEAVE_TYPE_NAME = "Compensatory Off";
-const DEFAULT_COMP_OFF_MAX_ACCRUAL = 30;
 const TEAM_LEAVES_CAP = 500;
 
 const TEAM_RELATIONS = {
@@ -116,10 +118,13 @@ export class LeavesService {
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
+    const historyStart = new Date();
+    historyStart.setFullYear(historyStart.getFullYear() - 1);
+
     const [pending, all] = await Promise.all([
       this.queryLeaves(pendingConditions, orgId, userId, isAll),
       this.db.query.leaveRequests.findMany({
-        where: and(...baseConditions),
+        where: and(...baseConditions, gte(leaveRequests.createdAt, historyStart)),
         with: TEAM_RELATIONS,
         orderBy: [desc(leaveRequests.createdAt)],
         limit: TEAM_LEAVES_CAP,
@@ -146,19 +151,21 @@ export class LeavesService {
 
     if (reportingUsers.length === 0) return base;
 
-    const reportingUserIds = new Set(reportingUsers.map((r) => r.id));
+    const reportingUserIds = reportingUsers.map((r) => r.id);
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({
-      where: and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")),
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        inArray(leaveRequests.userId, reportingUserIds),
+      ),
       with: TEAM_RELATIONS,
       orderBy: [desc(leaveRequests.createdAt)],
       limit: TEAM_LEAVES_CAP,
     });
 
-    const extra = reporteeRequests.filter(
-      (r) => !alreadyFetchedIds.has(r.id) && reportingUserIds.has(r.userId),
-    );
+    const extra = reporteeRequests.filter((r) => !alreadyFetchedIds.has(r.id));
 
     return [...base, ...extra];
   }
@@ -386,6 +393,113 @@ export class LeavesService {
   async leaveSummary(orgId: string, periodStart: string, periodEnd: string) {
     if (!this.ledger) return [];
     return this.ledger.buildLeaveSummary(orgId, periodStart, periodEnd);
+  }
+
+  async listLeaveTypes(orgId: string) {
+    return this.db.query.leaveTypes.findMany({
+      where: eq(leaveTypes.orgId, orgId),
+      orderBy: [asc(leaveTypes.name)],
+    });
+  }
+
+  async seedDefaultLeaveTypes(orgId: string) {
+    const defaults = [
+      { name: "Casual Leave", daysPerYear: 12, carryForward: false },
+      { name: "Sick Leave", daysPerYear: 12, carryForward: false },
+      { name: "Earned Leave", daysPerYear: 15, carryForward: true },
+      { name: "Maternity Leave", daysPerYear: 182, carryForward: false },
+      { name: "Paternity Leave", daysPerYear: 5, carryForward: false },
+    ];
+    const inserted = await this.db
+      .insert(leaveTypes)
+      .values(defaults.map((d) => ({ orgId, ...d })))
+      .onConflictDoNothing()
+      .returning({ id: leaveTypes.id, name: leaveTypes.name });
+    return { seeded: inserted.length, skipped: defaults.length - inserted.length };
+  }
+
+  async updateLeaveType(
+    orgId: string,
+    leaveTypeId: number,
+    patch: { name?: string; daysPerYear?: number; carryForward?: boolean },
+  ) {
+    if (patch.name) {
+      const clash = await this.db.query.leaveTypes.findFirst({
+        where: and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, patch.name.trim())),
+        columns: { id: true },
+      });
+      if (clash && clash.id !== leaveTypeId) {
+        throw new ConflictException("A leave type with this name already exists");
+      }
+    }
+    const [updated] = await this.db
+      .update(leaveTypes)
+      .set({
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.daysPerYear !== undefined ? { daysPerYear: patch.daysPerYear } : {}),
+        ...(patch.carryForward !== undefined ? { carryForward: patch.carryForward } : {}),
+      })
+      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Leave type not found");
+    return updated;
+  }
+
+  async deleteLeaveType(orgId: string, leaveTypeId: number) {
+    const [type] = await this.db
+      .select({ id: leaveTypes.id })
+      .from(leaveTypes)
+      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)))
+      .limit(1);
+    if (!type) throw new NotFoundException("Leave type not found");
+
+    const request = await this.db.query.leaveRequests.findFirst({
+      where: and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.leaveTypeId, leaveTypeId)),
+      columns: { id: true },
+    });
+    if (request) {
+      throw new ConflictException(
+        "This leave type has leave requests and cannot be deleted. Edit it instead.",
+      );
+    }
+
+    const policy = await this.db.query.leavePolicies.findFirst({
+      where: and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.leaveTypeId, leaveTypeId)),
+      columns: { id: true },
+    });
+    if (policy) {
+      throw new ConflictException(
+        "This leave type has policies attached. Delete or reassign the policies first.",
+      );
+    }
+
+    await this.db
+      .delete(leaveTypes)
+      .where(and(eq(leaveTypes.id, leaveTypeId), eq(leaveTypes.orgId, orgId)));
+    return { success: true };
+  }
+
+  async createLeaveType(
+    orgId: string,
+    input: { name: string; daysPerYear: number; carryForward?: boolean },
+  ) {
+    const existing = await this.db.query.leaveTypes.findFirst({
+      where: and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, input.name.trim())),
+      columns: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException("A leave type with this name already exists");
+    }
+    const [created] = await this.db
+      .insert(leaveTypes)
+      .values({
+        orgId,
+        name: input.name.trim(),
+        daysPerYear: input.daysPerYear,
+        carryForward: input.carryForward ?? false,
+      })
+      .returning();
+    return created;
   }
 
   async compOff(u: CurrentUserContext, input: CompOffInput) {

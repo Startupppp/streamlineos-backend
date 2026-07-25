@@ -11,8 +11,30 @@ import {
   bonuses,
   salaryLoans,
 } from "../../../../db/schema";
+import { hrPayrollInputPeriods } from "../../../../db/schema/hr/payroll-inputs";
 import type { PayrollChecklistItem, PayrollToggles } from "../../payroll.types";
 import type { payrollRuns } from "../../../../db/schema";
+
+/**
+ * Pure freeze-before-pay checklist item.
+ * When requireLockedPayrollInputs is on, period must be locked for generate/pay readiness.
+ */
+export function buildInputsLockedChecklistItem(
+  requireLockedInputs: boolean,
+  inputsLocked: boolean,
+): PayrollChecklistItem {
+  return {
+    key: "inputs_locked",
+    label: "Payroll inputs locked (freeze before pay)",
+    done: !requireLockedInputs || inputsLocked,
+    href: "/payroll/inputs",
+    detail: requireLockedInputs
+      ? inputsLocked
+        ? "Period inputs are locked and immutable for this month"
+        : "Build and lock attendance/leave inputs before generate/pay"
+      : "Optional — enable Require Locked Inputs on payroll policy",
+  };
+}
 
 export async function buildRunChecklist(
   db: Db,
@@ -36,6 +58,7 @@ export async function buildRunChecklist(
     taxWindow,
     openExceptions,
     bankBatch,
+    lockedInputPeriod,
   ] = await Promise.all([
     db
       .select({ total: count() })
@@ -90,6 +113,17 @@ export async function buildRunChecklist(
       .from(payrollBankBatches)
       .where(and(eq(payrollBankBatches.runId, runId), eq(payrollBankBatches.orgId, orgId)))
       .limit(1),
+    db
+      .select({ id: hrPayrollInputPeriods.id, status: hrPayrollInputPeriods.status })
+      .from(hrPayrollInputPeriods)
+      .where(
+        and(
+          eq(hrPayrollInputPeriods.orgId, orgId),
+          eq(hrPayrollInputPeriods.periodKey, month),
+          eq(hrPayrollInputPeriods.status, "locked"),
+        ),
+      )
+      .limit(1),
   ]);
 
   const runStatus = run.status;
@@ -98,6 +132,7 @@ export async function buildRunChecklist(
   const isPublished = ["PAYSLIPS_PUBLISHED", "CLOSED"].includes(runStatus);
 
   const lopEnabled = toggles?.lopFromAttendance ?? false;
+  const requireLockedInputs = toggles?.requireLockedPayrollInputs ?? false;
   const loansEnabled = toggles?.loans ?? false;
   const hasInputs = (inputsCount[0]?.total ?? 0) > 0;
   const hasMissingProfile = (missingProfileExceptions[0]?.total ?? 0) > 0;
@@ -106,6 +141,7 @@ export async function buildRunChecklist(
   const taxLocked = taxWindow[0]?.status === "LOCKED";
   const hasOpenBlockers = (openExceptions[0]?.total ?? 0) > 0;
   const hasBankBatch = (bankBatch[0]?.id ?? null) !== null;
+  const inputsLocked = (lockedInputPeriod[0]?.id ?? null) !== null;
 
   let loansApplied = true;
   let loansDetail: string | null = null;
@@ -174,10 +210,14 @@ export async function buildRunChecklist(
     {
       key: "attendance_imported",
       label: "Attendance imported",
-      done: !lopEnabled || hasInputs,
+      done: !lopEnabled || hasInputs || inputsLocked,
       href: `/payroll/runs/${runId}/inputs`,
-      detail: lopEnabled && !hasInputs ? "LOP from attendance is enabled but no inputs imported" : null,
+      detail:
+        lopEnabled && !hasInputs && !inputsLocked
+          ? "LOP from attendance is enabled but no inputs imported"
+          : null,
     },
+    buildInputsLockedChecklistItem(requireLockedInputs, inputsLocked),
     {
       key: "reimbursements_approved",
       label: "Reimbursements approved",

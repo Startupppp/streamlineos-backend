@@ -50,6 +50,14 @@ export class RolesService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
+  async listAssignableDepartments(orgId: string) {
+    return this.db
+      .select({ id: departments.id, name: departments.name })
+      .from(departments)
+      .where(eq(departments.orgId, orgId))
+      .orderBy(asc(departments.name));
+  }
+
   async getRoles(orgId: string) {
     return this.cache.cached(
       CACHE_KEYS.rolesList(orgId),
@@ -640,6 +648,35 @@ export class RolesService {
       usersAssigned: Number(assignedRow.value),
       recentChanges: Number(changesRow.value),
     };
+  }
+
+  async seedDefaultRoles(actor: CurrentUserContext) {
+    const starterTemplateIds = [
+      "engineering",
+      "sales_rep",
+      "customer_support",
+      "digital_marketing",
+      "hr_admin",
+      "accountant",
+    ];
+
+    const created: string[] = [];
+    const skipped: string[] = [];
+    for (const templateId of starterTemplateIds) {
+      const template = ROLE_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) continue;
+      const existing = await this.db.query.roles.findFirst({
+        where: and(eq(roles.slug, template.slug), eq(roles.orgId, actor.orgId)),
+        columns: { id: true },
+      });
+      if (existing) {
+        skipped.push(template.slug);
+        continue;
+      }
+      await this.cloneTemplate(actor, { templateId });
+      created.push(template.slug);
+    }
+    return { created, skipped };
   }
 
   async cloneTemplate(actor: CurrentUserContext, input: CloneTemplateInput) {

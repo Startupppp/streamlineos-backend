@@ -8,15 +8,19 @@ export const createGoalSchema = z
       .trim()
       .min(2, "Title must be at least 2 characters")
       .max(100, "Title must be at most 100 characters")
-      .regex(/[a-zA-Z]/, "Title must contain at least one letter"),
-    description: z.string().max(1000).optional(),
+      .regex(/[a-zA-Z]/, "Title must contain at least one letter")
+      .refine((v) => !/\s{2,}/.test(v), "Cannot have consecutive spaces"),
+    description: z
+      .string()
+      .trim()
+      .max(1000, "Description must be at most 1000 characters")
+      .optional(),
     type: z.string().optional(),
     targetValue: z
       .number()
-      .min(0, "Target value must be non-negative")
+      .positive("Target value must be greater than 0")
       .max(1000000, "Target value cannot exceed 1,000,000")
-      .multipleOf(0.01)
-      .optional(),
+      .multipleOf(0.01),
     currentValue: z.number().min(0).optional().default(0),
     unit: z.string().max(50).optional(),
     startDate: z.string().min(1, "Start date is required"),
@@ -73,7 +77,11 @@ export const createOneOnOneSchema = z
       .max(480, "Duration cannot exceed 480 minutes")
       .optional()
       .default(30),
-    agenda: z.string().min(1, "Agenda is required").max(1000),
+    agenda: z
+      .string()
+      .trim()
+      .min(5, "Agenda must be at least 5 characters")
+      .max(1000, "Agenda must be at most 1000 characters"),
     meetingLink: z.string().url("Enter a valid URL").optional().or(z.literal("")),
   })
   .refine((d) => new Date(d.scheduledAt) > new Date(), {
@@ -94,20 +102,41 @@ export const updateOneOnOneSchema = z.object({
 });
 
 const pipObjectiveSchema = z.object({
-  objective: z.string().min(1),
-  metric: z.string().min(1),
-  deadline: z.string().min(1),
+  objective: z
+    .string()
+    .trim()
+    .min(3, "Objective must be at least 3 characters")
+    .max(500, "Objective must be at most 500 characters"),
+  metric: z
+    .string()
+    .trim()
+    .min(3, "Success metric must be at least 3 characters")
+    .max(200, "Success metric must be at most 200 characters"),
+  deadline: z.string().min(1, "Deadline is required"),
 });
 
-export const createPipSchema = z.object({
-  userId: z.string().min(1),
-  hrRepId: z.string().optional(),
-  reason: z.string().min(1).max(1000),
-  objectives: z.array(pipObjectiveSchema).min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().min(1),
-  notes: z.string().max(2000).optional(),
-});
+export const createPipSchema = z
+  .object({
+    userId: z.string().min(1, "Employee is required"),
+    hrRepId: z.string().optional(),
+    reason: z
+      .string()
+      .trim()
+      .min(10, "Reason must be at least 10 characters")
+      .max(1000, "Reason must be at most 1000 characters"),
+    objectives: z.array(pipObjectiveSchema).min(1, "At least one objective is required"),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+    notes: z.string().max(2000).optional(),
+  })
+  .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
+    message: "End date must be after start date",
+    path: ["endDate"],
+  })
+  .refine((d) => !d.hrRepId || d.hrRepId !== d.userId, {
+    message: "HR representative cannot be the same as the employee",
+    path: ["hrRepId"],
+  });
 
 export const updatePipSchema = z.object({
   status: z.enum(["ACTIVE", "EXTENDED", "COMPLETED", "TERMINATED"]).optional(),
@@ -123,6 +152,7 @@ export const createReviewCycleSchema = z
   .object({
     name: z
       .string()
+      .trim()
       .min(3, "Cycle name must be at least 3 characters")
       .max(100, "Cycle name must be at most 100 characters")
       .refine((v) => /[a-zA-Z0-9]/.test(v), "Cycle name must contain at least one letter or number")
@@ -130,14 +160,14 @@ export const createReviewCycleSchema = z
     type: z.enum(["QUARTERLY", "HALF_YEARLY", "ANNUAL", "CUSTOM"]).optional().default("QUARTERLY"),
     periodStart: z.string().min(1, "Start date is required"),
     periodEnd: z.string().min(1, "End date is required"),
-    deadline: z.string().optional(),
+    deadline: z.string().min(1, "Deadline is required"),
     description: z.string().max(500).optional(),
   })
   .refine((d) => new Date(d.periodEnd) > new Date(d.periodStart), {
     message: "Period end must be after period start",
     path: ["periodEnd"],
   })
-  .refine((d) => !d.deadline || new Date(d.deadline) >= new Date(d.periodEnd), {
+  .refine((d) => new Date(d.deadline) >= new Date(d.periodEnd), {
     message: "Submission deadline must be on or after period end",
     path: ["deadline"],
   });

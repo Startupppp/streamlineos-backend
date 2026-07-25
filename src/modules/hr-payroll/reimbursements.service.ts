@@ -19,7 +19,7 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  listReimbursements(orgId: string, userId: string, scope: DataScope) {
+  listReimbursements(orgId: string, userId: string, scope: DataScope, page = 1, limit = 100) {
     const conditions = [eq(reimbursements.orgId, orgId), applyScope(scope, userId, { ownerColumn: reimbursements.userId })];
 
     return this.db.query.reimbursements.findMany({
@@ -30,7 +30,8 @@ export class ReimbursementsService {
         },
       },
       orderBy: [desc(reimbursements.createdAt)],
-      limit: 100,
+      limit,
+      offset: (page - 1) * limit,
     });
   }
 

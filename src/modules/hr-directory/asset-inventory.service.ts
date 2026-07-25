@@ -1,11 +1,16 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { SQL, and, count, desc, eq, ne, sql } from "drizzle-orm";
 import { assets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { EmailService } from "../email/email.service";
 import { formatDateOnly } from "./date.helpers";
-import type { AssignAssetInput, CreateAssetInput, PatchAssetInput } from "./dto/hr-directory.schemas";
+import type {
+  AssignAssetInput,
+  CreateAssetInput,
+  ListAssetsQueryInput,
+  PatchAssetInput,
+} from "./dto/hr-directory.schemas";
 
 @Injectable()
 export class AssetInventoryService {
@@ -14,12 +19,48 @@ export class AssetInventoryService {
     private readonly email: EmailService,
   ) {}
 
-  list(orgId: string) {
-    return this.db.query.assets.findMany({
-      where: eq(assets.orgId, orgId),
-      orderBy: [desc(assets.createdAt)],
-      limit: 500,
-    });
+  async list(orgId: string, query: ListAssetsQueryInput) {
+    const conditions: SQL[] = [eq(assets.orgId, orgId)];
+    if (query.status) conditions.push(eq(assets.status, query.status));
+
+    const whereClause = and(...conditions);
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, [countRow], statusRows] = await Promise.all([
+      this.db.query.assets.findMany({
+        where: whereClause,
+        orderBy: [desc(assets.createdAt)],
+        limit: query.limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(assets).where(whereClause),
+      this.db
+        .select({ status: assets.status, total: count() })
+        .from(assets)
+        .where(eq(assets.orgId, orgId))
+        .groupBy(assets.status),
+    ]);
+
+    const total = countRow?.total ?? 0;
+    const counts = { total: 0, available: 0, assigned: 0, maintenance: 0, retired: 0 };
+    for (const row of statusRows) {
+      counts.total += row.total;
+      if (row.status === "AVAILABLE") counts.available = row.total;
+      if (row.status === "ASSIGNED") counts.assigned = row.total;
+      if (row.status === "MAINTENANCE") counts.maintenance = row.total;
+      if (row.status === "RETIRED") counts.retired = row.total;
+    }
+
+    return {
+      data: rows,
+      counts,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
   }
 
   async create(orgId: string, body: CreateAssetInput) {

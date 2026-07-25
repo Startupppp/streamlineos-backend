@@ -158,6 +158,8 @@ export class PayrollInputsService {
       throw new BadRequestException("Period must be in 'built' status before locking");
     }
 
+    const freezeSummary = await this.buildFreezeSummary(orgId, periodId);
+
     const [locked] = await this.db.transaction(async (tx) => {
       const result = await tx
         .update(hrPayrollInputPeriods)
@@ -208,16 +210,52 @@ export class PayrollInputsService {
       entityType: "hr_payroll_input_period",
       entityId: String(periodId),
       action: "period.locked",
-      after: { status: "locked" },
+      after: { status: "locked", freeze: freezeSummary },
     });
 
     void this.hrAutomation.emit(orgId, "payroll.inputs_locked", {
       periodKey: period.periodKey,
       periodId,
       lockedBy: actorId,
+      freeze: freezeSummary,
     });
 
-    return locked;
+    return {
+      ...locked,
+      freeze: freezeSummary,
+      immutable: true,
+      contract: "attendance_leave_overtime_compensation_snapshots_frozen",
+    };
+  }
+
+  /**
+   * Rebuild any non-locked period that covers the given calendar month (YYYY-MM).
+   * Used when attendance/leave source data changes after build.
+   */
+  async rebuildOpenPeriodForMonth(
+    orgId: string,
+    actorId: string,
+    monthKey: string,
+  ): Promise<{ rebuilt: boolean; periodId: number | null; status: string | null }> {
+    const period = await this.db.query.hrPayrollInputPeriods.findFirst({
+      where: and(
+        eq(hrPayrollInputPeriods.orgId, orgId),
+        eq(hrPayrollInputPeriods.periodKey, monthKey),
+      ),
+    });
+
+    if (!period) {
+      return { rebuilt: false, periodId: null, status: null };
+    }
+    if (period.status === "locked") {
+      return { rebuilt: false, periodId: period.id, status: "locked" };
+    }
+    if (period.status === "building") {
+      return { rebuilt: false, periodId: period.id, status: "building" };
+    }
+
+    await this.buildPeriod(orgId, actorId, period.id);
+    return { rebuilt: true, periodId: period.id, status: "built" };
   }
 
   async unlockPeriod(orgId: string, actorId: string, periodId: number) {
@@ -226,11 +264,30 @@ export class PayrollInputsService {
       throw new BadRequestException("Period is not locked");
     }
 
-    const [unlocked] = await this.db
-      .update(hrPayrollInputPeriods)
-      .set({ status: "built", lockedAt: null, lockedBy: null, updatedAt: new Date() })
-      .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)))
-      .returning();
+    const { start, end } = periodBoundsFrom(period.periodKey);
+
+    const [unlocked] = await this.db.transaction(async (tx) => {
+      const result = await tx
+        .update(hrPayrollInputPeriods)
+        .set({ status: "built", lockedAt: null, lockedBy: null, updatedAt: new Date() })
+        .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)))
+        .returning();
+
+      await tx
+        .update(hrLeaveLedger)
+        .set({ payrollStatus: "pending" })
+        .where(
+          and(
+            eq(hrLeaveLedger.orgId, orgId),
+            eq(hrLeaveLedger.payrollStatus, "locked"),
+            gte(hrLeaveLedger.effectiveDate, start),
+            lte(hrLeaveLedger.effectiveDate, end),
+          ),
+        )
+        .catch(() => undefined);
+
+      return result;
+    });
 
     await this.audit.log({
       orgId,
@@ -243,6 +300,66 @@ export class PayrollInputsService {
     });
 
     return unlocked;
+  }
+
+  private async buildFreezeSummary(orgId: string, periodId: number) {
+    const empty = {
+      sections: {} as Record<string, number>,
+      employeeCount: 0,
+      attendanceRows: 0,
+      leaveRows: 0,
+      overtimeRows: 0,
+      compensationRows: 0,
+      approvedRegularizations: 0,
+    };
+
+    try {
+      const rows = await this.db
+        .select({
+          section: hrPayrollInputSnapshots.section,
+          userId: hrPayrollInputSnapshots.userId,
+          payload: hrPayrollInputSnapshots.payload,
+        })
+        .from(hrPayrollInputSnapshots)
+        .where(
+          and(
+            eq(hrPayrollInputSnapshots.orgId, orgId),
+            eq(hrPayrollInputSnapshots.periodId, periodId),
+          ),
+        );
+
+      if (!Array.isArray(rows)) return empty;
+
+      const sections: Record<string, number> = {};
+      const uniqueUsers = new Set<string>();
+      let approvedRegularizations = 0;
+
+      for (const row of rows) {
+        sections[row.section] = (sections[row.section] ?? 0) + 1;
+        uniqueUsers.add(row.userId);
+        if (
+          row.section === "attendance" &&
+          row.payload &&
+          typeof row.payload === "object"
+        ) {
+          const n = (row.payload as Record<string, unknown>).approvedRegularizations;
+          if (typeof n === "number") approvedRegularizations += n;
+          else if (typeof n === "string") approvedRegularizations += Number(n) || 0;
+        }
+      }
+
+      return {
+        sections,
+        employeeCount: uniqueUsers.size,
+        attendanceRows: sections.attendance ?? 0,
+        leaveRows: sections.leave ?? 0,
+        overtimeRows: sections.overtime ?? 0,
+        compensationRows: sections.compensation ?? 0,
+        approvedRegularizations,
+      };
+    } catch {
+      return empty;
+    }
   }
 
   async getSectionSnapshot(
@@ -401,6 +518,42 @@ export class PayrollInputsService {
       action: "adjustment.approved",
       before: { status: "pending" },
       after: { status: "approved" },
+    });
+
+    return updated;
+  }
+
+  async rejectAdjustment(orgId: string, actorId: string, adjustmentId: number, reason: string) {
+    const adj = await this.db.query.hrPayrollAdjustments.findFirst({
+      where: and(
+        eq(hrPayrollAdjustments.id, adjustmentId),
+        eq(hrPayrollAdjustments.orgId, orgId),
+      ),
+    });
+
+    if (!adj) throw new NotFoundException("Adjustment not found");
+    if (adj.status !== "pending") throw new BadRequestException("Adjustment is not in pending status");
+
+    const [updated] = await this.db
+      .update(hrPayrollAdjustments)
+      .set({
+        status: "rejected",
+        rejectedBy: actorId,
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(hrPayrollAdjustments.id, adjustmentId))
+      .returning();
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_payroll_adjustment",
+      entityId: String(adjustmentId),
+      action: "adjustment.rejected",
+      before: { status: "pending" },
+      after: { status: "rejected", reason },
     });
 
     return updated;

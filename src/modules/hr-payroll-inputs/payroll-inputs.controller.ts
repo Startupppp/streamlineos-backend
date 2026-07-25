@@ -20,6 +20,7 @@ import {
   listPeriodsSchema,
   sectionQuerySchema,
   createAdjustmentSchema,
+  rejectAdjustmentSchema,
 } from "./dto/payroll-inputs.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -150,5 +151,16 @@ export class PayrollInputsController {
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
   ) {
     return this.service.approveAdjustment(req.user.orgId, req.user.userId, adjustmentId);
+  }
+
+  @Patch("adjustments/:adjustmentId/reject")
+  @RequirePermission("hr:payroll:approve")
+  async rejectAdjustment(
+    @Req() req: RequestWithUser,
+    @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
+    @Body() body: unknown,
+  ) {
+    const input = rejectAdjustmentSchema.parse(body);
+    return this.service.rejectAdjustment(req.user.orgId, req.user.userId, adjustmentId, input.reason);
   }
 }

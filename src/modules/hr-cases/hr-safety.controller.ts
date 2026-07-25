@@ -130,6 +130,13 @@ export class HrSafetyController {
     return this.safety.burnoutFlags(user.orgId);
   }
 
+  /** K-anonymized 7-day wellness pulse for ops dashboards. */
+  @Get("wellness/pulse")
+  @RequirePermission("hr:safety:manage")
+  wellnessPulse(@CurrentUser() user: CurrentUserContext) {
+    return this.safety.wellnessPulse(user.orgId);
+  }
+
   private async canSensitive(user: CurrentUserContext): Promise<boolean> {
     if (user.isOrgOwner || user.isPlatformAdmin) return true;
     const perms = await this.access.resolveUserPermissions(user.orgId, user.userId);

@@ -24,6 +24,10 @@ import { randomUUID, randomBytes, createHash } from "node:crypto";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ModuleChecklistService } from "../onboarding-flow/module-checklist.service";
+import {
+  getTrialDays,
+  TRIAL_PLAN,
+} from "../billing/plan-entitlements.constants";
 
 const DEFAULT_SKIP_MODULES = ["HR", "CRM", "PROJECTS"];
 
@@ -119,13 +123,14 @@ export class OrgSetupService {
         role: "owner",
         isOwner: true,
       });
+      const trialDays = getTrialDays();
       await tx.insert(subscriptions).values({
         orgId,
-        plan: "STARTER",
+        plan: TRIAL_PLAN,
         status: "TRIAL",
-        trialEndsAt: addDays(new Date(), 14),
+        trialEndsAt: addDays(new Date(), trialDays),
         currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), 14),
+        currentPeriodEnd: addDays(new Date(), trialDays),
       });
       const [adminRole] = await tx
         .insert(roles)

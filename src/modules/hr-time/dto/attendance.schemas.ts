@@ -38,6 +38,14 @@ export const attendanceLogsQuerySchema = z.object({
   month: z.coerce.number().int().optional(),
 });
 
+export const teamStatusQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  search: z.string().trim().min(1).max(200).optional(),
+  status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
+  departmentId: z.coerce.number().int().positive().optional(),
+});
+
 export const attendanceEmailReportSchema = z.object({
   to: z.array(z.string().email()).min(1),
   cc: z.array(z.string().email()).default([]),
@@ -84,6 +92,7 @@ export type CheckOutInput = z.infer<typeof checkOutSchema>;
 export type MonthlyQuery = z.infer<typeof monthlyQuerySchema>;
 export type HeatmapQuery = z.infer<typeof heatmapQuerySchema>;
 export type AttendanceLogsQuery = z.infer<typeof attendanceLogsQuerySchema>;
+export type TeamStatusQuery = z.infer<typeof teamStatusQuerySchema>;
 export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;
 export type CreateOrgHolidayInput = z.infer<typeof createOrgHolidaySchema>;
 export type UpdateOrgHolidayInput = z.infer<typeof updateOrgHolidaySchema>;

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { aliasedTable, and, desc, eq } from "drizzle-orm";
+import { SQL, aliasedTable, and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   documentAuditLogs,
   documentTypes,
@@ -13,6 +13,7 @@ import { AutomationService } from "../automation/automation.service";
 import type {
   CreateOnboardingDocInput,
   ListOnboardingDocsQueryInput,
+  OnboardingDocsSummaryQueryInput,
   ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
 
@@ -25,102 +26,102 @@ export class OnboardingViewsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async summary(orgId: string) {
-    const mandatoryTypes = await this.db
-      .select({ id: documentTypes.id, name: documentTypes.name })
-      .from(documentTypes)
-      .where(
-        and(
-          eq(documentTypes.orgId, orgId),
-          eq(documentTypes.isActive, true),
-          eq(documentTypes.isMandatory, true),
-        ),
+  async summary(orgId: string, query: OnboardingDocsSummaryQueryInput) {
+    const conditions: SQL[] = [eq(users.isActive, true)];
+    if (query.status) conditions.push(eq(users.onboardingDocStatus, query.status));
+    if (query.search) {
+      const searchClause = or(
+        ilike(users.name, `%${query.search}%`),
+        ilike(users.designation, `%${query.search}%`),
       );
+      if (searchClause) conditions.push(searchClause);
+    }
 
-    const totalRequired = mandatoryTypes.length;
-
-    const employees = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        image: users.image,
-        designation: users.designation,
-        employeeId: users.employeeId,
-        onboardingDocStatus: users.onboardingDocStatus,
-      })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
-      )
-      .where(eq(users.isActive, true));
-
-    if (employees.length === 0) return [];
-
-    const employeeIds = employees.map((e) => e.id);
-
-    const allDocs = await this.db
-      .select({
+    const latestDocs = this.db
+      .selectDistinctOn([onboardingDocuments.userId, onboardingDocuments.documentTypeId], {
         userId: onboardingDocuments.userId,
         documentTypeId: onboardingDocuments.documentTypeId,
         status: onboardingDocuments.status,
-        id: onboardingDocuments.id,
       })
       .from(onboardingDocuments)
       .where(eq(onboardingDocuments.orgId, orgId))
-      .orderBy(desc(onboardingDocuments.id));
+      .orderBy(onboardingDocuments.userId, onboardingDocuments.documentTypeId, desc(onboardingDocuments.id))
+      .as("latest_docs");
 
-    const userDocMap = new Map<string, Map<number, string>>();
+    const offset = (query.page - 1) * query.limit;
 
-    for (const doc of allDocs) {
-      if (!employeeIds.includes(doc.userId)) continue;
+    const [[mandatoryCountRow], rows, [countRow]] = await Promise.all([
+      this.db
+        .select({ total: count() })
+        .from(documentTypes)
+        .where(
+          and(
+            eq(documentTypes.orgId, orgId),
+            eq(documentTypes.isActive, true),
+            eq(documentTypes.isMandatory, true),
+          ),
+        ),
+      this.db
+        .select({
+          userId: users.id,
+          userName: users.name,
+          userImage: users.image,
+          designation: users.designation,
+          employeeId: users.employeeId,
+          onboardingDocStatus: users.onboardingDocStatus,
+          totalSubmitted: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} in ('SUBMITTED', 'RE_UPLOAD_REQUESTED', 'APPROVED', 'REJECTED'))::int`,
+          totalApproved: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'APPROVED')::int`,
+          totalRejected: sql<number>`count(${latestDocs.status}) filter (where ${latestDocs.status} = 'REJECTED')::int`,
+        })
+        .from(users)
+        .innerJoin(
+          organizationMembers,
+          and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+        )
+        .leftJoin(latestDocs, eq(latestDocs.userId, users.id))
+        .where(and(...conditions))
+        .groupBy(users.id, users.name, users.image, users.designation, users.employeeId, users.onboardingDocStatus)
+        .orderBy(users.name)
+        .limit(query.limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(users)
+        .innerJoin(
+          organizationMembers,
+          and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+        )
+        .where(and(...conditions)),
+    ]);
 
-      if (!userDocMap.has(doc.userId)) {
-        userDocMap.set(doc.userId, new Map());
-      }
-      const typeMap = userDocMap.get(doc.userId);
-      if (typeMap && !typeMap.has(doc.documentTypeId)) {
-        typeMap.set(doc.documentTypeId, doc.status);
-      }
-    }
+    const totalRequired = mandatoryCountRow?.total ?? 0;
+    const total = countRow?.total ?? 0;
 
-    return employees.map((emp) => {
-      const typeMap = userDocMap.get(emp.id) ?? new Map<number, string>();
-
-      let totalSubmitted = 0;
-      let totalApproved = 0;
-      let totalRejected = 0;
-
-      for (const [, status] of typeMap) {
-        if (status === "SUBMITTED" || status === "RE_UPLOAD_REQUESTED" || status === "APPROVED" || status === "REJECTED") {
-          totalSubmitted++;
-        }
-        if (status === "APPROVED") totalApproved++;
-        if (status === "REJECTED") totalRejected++;
-      }
-
-      return {
-        userId: emp.id,
-        userName: emp.name,
-        userImage: emp.image,
-        designation: emp.designation,
-        employeeId: emp.employeeId,
-        totalRequired,
-        totalSubmitted,
-        totalApproved,
-        totalRejected,
-        onboardingDocStatus: emp.onboardingDocStatus,
-      };
-    });
+    return {
+      data: rows.map((row) => ({ ...row, totalRequired })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
   }
 
   async list(orgId: string, userId: string, isAdmin: boolean, query: ListOnboardingDocsQueryInput) {
+    const conditions: SQL[] = [eq(onboardingDocuments.orgId, orgId)];
     if (isAdmin) {
-      const conditions = query.userId
-        ? and(eq(onboardingDocuments.orgId, orgId), eq(onboardingDocuments.userId, query.userId))
-        : eq(onboardingDocuments.orgId, orgId);
+      if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
+    } else {
+      conditions.push(eq(onboardingDocuments.userId, userId));
+    }
+    if (query.status) conditions.push(eq(onboardingDocuments.status, query.status));
 
-      return this.db
+    const whereClause = and(...conditions);
+    const offset = (query.page - 1) * query.limit;
+
+    const [rows, [countRow]] = await Promise.all([
+      this.db
         .select({
           id: onboardingDocuments.id,
           orgId: onboardingDocuments.orgId,
@@ -146,38 +147,27 @@ export class OnboardingViewsService {
         .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
         .innerJoin(users, eq(onboardingDocuments.userId, users.id))
         .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-        .where(conditions)
+        .where(whereClause)
         .orderBy(desc(onboardingDocuments.createdAt))
-        .limit(500);
-    }
+        .limit(query.limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(onboardingDocuments)
+        .where(whereClause),
+    ]);
 
-    return this.db
-      .select({
-        id: onboardingDocuments.id,
-        orgId: onboardingDocuments.orgId,
-        userId: onboardingDocuments.userId,
-        documentTypeId: onboardingDocuments.documentTypeId,
-        documentTypeName: documentTypes.name,
-        isMandatory: documentTypes.isMandatory,
-        fileUrl: onboardingDocuments.fileUrl,
-        fileName: onboardingDocuments.fileName,
-        fileSize: onboardingDocuments.fileSize,
-        mimeType: onboardingDocuments.mimeType,
-        version: onboardingDocuments.version,
-        status: onboardingDocuments.status,
-        reviewedBy: onboardingDocuments.reviewedBy,
-        reviewedAt: onboardingDocuments.reviewedAt,
-        remarks: onboardingDocuments.remarks,
-        createdAt: onboardingDocuments.createdAt,
-        updatedAt: onboardingDocuments.updatedAt,
-        reviewerName: reviewerUsers.name,
-      })
-      .from(onboardingDocuments)
-      .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
-      .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-      .where(and(eq(onboardingDocuments.orgId, orgId), eq(onboardingDocuments.userId, userId)))
-      .orderBy(desc(onboardingDocuments.createdAt))
-      .limit(100);
+    const total = countRow?.total ?? 0;
+
+    return {
+      data: rows,
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
   }
 
   async create(orgId: string, userId: string, isAdmin: boolean, body: CreateOnboardingDocInput) {

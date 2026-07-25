@@ -4,6 +4,7 @@ import { and, eq, inArray, count } from 'drizzle-orm';
 import * as schema from '../../../db/schema';
 import {
   organizations,
+  organizationMembers,
   users,
   auditLogs,
   payrollPolicies,
@@ -21,9 +22,11 @@ import {
 import { encryptBankDetails } from '../../onboarding/crypto.helpers';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
+import { ProfilesService } from '../runs/profiles.service';
 import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
 import type { PayrollPostingService } from '../payroll-posting.service';
+import { ForbiddenException } from '@nestjs/common';
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
@@ -80,6 +83,7 @@ async function cleanupStaleData(db: TestDb): Promise<void> {
   await db.delete(payrollPolicies).where(inArray(payrollPolicies.orgId, orgIds));
   await db.delete(employeeSalaryProfiles).where(inArray(employeeSalaryProfiles.orgId, orgIds));
   await db.delete(auditLogs).where(inArray(auditLogs.userId, userIds));
+  await db.delete(organizationMembers).where(inArray(organizationMembers.orgId, orgIds));
   await db.delete(users).where(inArray(users.id, userIds));
   await db.delete(organizations).where(inArray(organizations.id, orgIds));
 }
@@ -125,6 +129,11 @@ d('Payroll DB Integration', () => {
     await db.insert(users).values([
       { id: USER_A, email: `${P}user-a@example.com`, bankDetails: encryptedBank },
       { id: USER_B, email: `${P}user-b@example.com` },
+    ]);
+
+    await db.insert(organizationMembers).values([
+      { userId: USER_A, orgId: ORG_A },
+      { userId: USER_B, orgId: ORG_B },
     ]);
 
     const [policy] = await db
@@ -395,6 +404,44 @@ d('Payroll DB Integration', () => {
     });
 
     it('returns no salary profiles for org B employee queried with org A orgId', async () => {
+      const rows = await db
+        .select({ id: employeeSalaryProfiles.id })
+        .from(employeeSalaryProfiles)
+        .where(and(
+          eq(employeeSalaryProfiles.userId, USER_B),
+          eq(employeeSalaryProfiles.orgId, ORG_A),
+        ));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('rejects fetching another org member bank details for a user outside the caller org', async () => {
+      const auditSvc = new AuditService(db);
+      const storageSvc = new StorageService();
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+
+      await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows fetching bank details for a confirmed member of the caller org', async () => {
+      const auditSvc = new AuditService(db);
+      const storageSvc = new StorageService();
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+
+      const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);
+      expect(result.accountNumber).toBe('1234567890');
+    });
+
+    it('rejects creating a salary profile for a user who is not a member of the caller org', async () => {
+      const auditSvc = new AuditService(db);
+      const svc = new ProfilesService(db, auditSvc);
+
+      await expect(
+        svc.createProfile(ORG_A, USER_B, USER_A, {
+          effectiveFrom: '2025-08-01',
+          annualCtc: '1200000.00',
+        } as never),
+      ).rejects.toThrow(ForbiddenException);
+
       const rows = await db
         .select({ id: employeeSalaryProfiles.id })
         .from(employeeSalaryProfiles)

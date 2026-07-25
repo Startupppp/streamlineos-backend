@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, lt, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { buildListResponse } from "../../common/pagination/pagination";
 import {
   candidateSlaTracking,
@@ -73,7 +73,30 @@ export class HrInterviewsService {
     return this.db.query.interviewSlas.findMany({
       where: eq(interviewSlas.orgId, orgId),
       orderBy: (t, { asc }) => [asc(t.stage)],
+      limit: 200,
     });
+  }
+
+  async stats(orgId: string) {
+    const rows = await this.db
+      .select({ result: interviews.result, count: sql<number>`count(*)::int` })
+      .from(interviews)
+      .where(eq(interviews.orgId, orgId))
+      .groupBy(interviews.result);
+
+    let total = 0;
+    let pending = 0;
+    let passed = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const value = Number(row.count);
+      total += value;
+      if (row.result === "PENDING") pending = value;
+      if (row.result === "PASSED") passed = value;
+      if (row.result === "FAILED") failed = value;
+    }
+
+    return { total, pending, passed, failed };
   }
 
   async upsertSla(orgId: string, input: UpsertSlaInput) {
@@ -102,33 +125,31 @@ export class HrInterviewsService {
   }
 
   async slaReport(orgId: string) {
-    const records = await this.db
+    const now = new Date();
+    const windowStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const monthExpr = sql`date_trunc('month', ${candidateSlaTracking.enteredAt})`;
+    const rows = await this.db
       .select({
+        month: sql<string>`to_char(${monthExpr}, 'YYYY-MM')`,
         stage: candidateSlaTracking.stage,
-        status: candidateSlaTracking.status,
-        enteredAt: candidateSlaTracking.enteredAt,
+        total: sql<number>`count(*)::int`,
+        breached: sql<number>`sum(case when ${candidateSlaTracking.status} = 'BREACHED' then 1 else 0 end)::int`,
       })
       .from(candidateSlaTracking)
-      .where(eq(candidateSlaTracking.orgId, orgId))
-      .orderBy(desc(candidateSlaTracking.enteredAt));
+      .where(and(eq(candidateSlaTracking.orgId, orgId), gte(candidateSlaTracking.enteredAt, windowStart)))
+      .groupBy(monthExpr, candidateSlaTracking.stage);
 
     const grouped: Record<string, Record<string, MonthStage>> = {};
 
-    for (const record of records) {
-      const month = record.enteredAt.toISOString().slice(0, 7);
-      if (!grouped[month]) grouped[month] = {};
-      if (!grouped[month][record.stage]) grouped[month][record.stage] = { total: 0, breached: 0 };
-      grouped[month][record.stage].total++;
-      if (record.status === "BREACHED") {
-        grouped[month][record.stage].breached++;
-      }
+    for (const row of rows) {
+      if (!grouped[row.month]) grouped[row.month] = {};
+      grouped[row.month][row.stage] = { total: Number(row.total), breached: Number(row.breached) };
     }
 
-    const now = new Date();
     const months: string[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(d.toISOString().slice(0, 7));
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     }
 
     const allStages = Array.from(

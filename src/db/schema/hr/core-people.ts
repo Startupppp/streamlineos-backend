@@ -191,6 +191,7 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
     swift?: string;
     accountHolder?: string;
     pfUanNumber?: string;
+    esiIpNumber?: string;
     iban?: string;
     routingNumber?: string;
   }>(),

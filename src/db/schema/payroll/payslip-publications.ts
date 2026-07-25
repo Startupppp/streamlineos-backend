@@ -21,6 +21,9 @@ export const payslipPublications = pgTable("payslip_publications", {
   channel: payslipPublishChannelEnum("channel").notNull().default("PORTAL"),
   status: payslipPublicationStatusEnum("status").notNull().default("PENDING"),
   snapshotHash: text("snapshot_hash"),
+  failureReason: text("failure_reason"),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  lastAttemptAt: timestamp("last_attempt_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

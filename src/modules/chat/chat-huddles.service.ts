@@ -14,14 +14,15 @@ import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
-import { PLAN_FEATURE_FLAGS } from "../billing/plan-entitlements.constants";
+import {
+  PLAN_FEATURE_FLAGS,
+  FREE_HUDDLE_MAX_PARTICIPANTS,
+  FREE_HUDDLE_UPGRADE_MESSAGE,
+  HUDDLE_MESH_MAX_PARTICIPANTS,
+} from "../billing/plan-entitlements.constants";
 import type { HuddleSignalInput } from "./dto/huddle.schemas";
 
-const FREE_HUDDLE_MAX_PARTICIPANTS = 2;
-const FREE_HUDDLE_UPGRADE_MESSAGE =
-  "Huddles are one-to-one on the Free plan. Upgrade to start group huddles.";
-
-export const HUDDLE_MESH_MAX_PARTICIPANTS = 10;
+export { HUDDLE_MESH_MAX_PARTICIPANTS };
 
 @Injectable()
 export class ChatHuddlesService {

@@ -109,7 +109,7 @@ const IN_PACK: CountryPack = {
       key: "esi_ip_number",
       label: "ESI IP Number",
       dbColumn: null,
-      note: "Gap: not in hr_employee_sensitive_fields — store in work_authorizations note or extend schema",
+      note: "Stored in bank_details JSONB as esiIpNumber (onboarding + sensitive tab)",
     },
     {
       key: "pt_registration",
@@ -169,8 +169,109 @@ const GENERIC_PACK: CountryPack = {
   ],
 };
 
+/** Pilot packs — HR compliance seeds only; payroll calc remains India-first. */
+const AE_PACK: CountryPack = {
+  countryCode: "AE",
+  countryName: "United Arab Emirates",
+  currency: "AED",
+  defaultHolidays: [
+    { name: "New Year's Day", date: "01-01", isPublic: true },
+    { name: "Eid al-Fitr", date: "04-10", isPublic: true },
+    { name: "Arafat Day", date: "06-16", isPublic: true },
+    { name: "National Day", date: "12-02", isPublic: true },
+  ],
+  complianceRequirements: [
+    {
+      name: "WPS Salary Payment File",
+      category: "statutory_filing",
+      frequency: "monthly",
+      dueRule: { day: 28 },
+      reminderDaysBefore: 5,
+    },
+    {
+      name: "MOL / MOHRE Establishment Card Renewal",
+      category: "registration",
+      frequency: "yearly",
+      dueRule: { month: 12, day: 31 },
+      reminderDaysBefore: 45,
+    },
+  ],
+  sensitiveFieldKeys: [
+    { key: "national_id", label: "Emirates ID", dbColumn: "national_id" },
+    { key: "passport_number", label: "Passport Number", dbColumn: "passport_number" },
+  ],
+};
+
+const SG_PACK: CountryPack = {
+  countryCode: "SG",
+  countryName: "Singapore",
+  currency: "SGD",
+  defaultHolidays: [
+    { name: "New Year's Day", date: "01-01", isPublic: true },
+    { name: "Chinese New Year", date: "01-29", isPublic: true },
+    { name: "National Day", date: "08-09", isPublic: true },
+    { name: "Deepavali", date: "11-08", isPublic: true },
+    { name: "Christmas Day", date: "12-25", isPublic: true },
+  ],
+  complianceRequirements: [
+    {
+      name: "CPF Contribution Submission",
+      category: "statutory_filing",
+      frequency: "monthly",
+      dueRule: { day: 14 },
+      reminderDaysBefore: 7,
+    },
+    {
+      name: "IR8A Annual Submission",
+      category: "statutory_filing",
+      frequency: "yearly",
+      dueRule: { month: 3, day: 1 },
+      reminderDaysBefore: 30,
+    },
+  ],
+  sensitiveFieldKeys: [
+    { key: "national_id", label: "NRIC / FIN", dbColumn: "national_id" },
+    { key: "tax_id", label: "Tax Reference", dbColumn: "tax_id" },
+  ],
+};
+
+const US_PACK: CountryPack = {
+  countryCode: "US",
+  countryName: "United States",
+  currency: "USD",
+  defaultHolidays: [
+    { name: "New Year's Day", date: "01-01", isPublic: true },
+    { name: "Independence Day", date: "07-04", isPublic: true },
+    { name: "Thanksgiving", date: "11-26", isPublic: true },
+    { name: "Christmas Day", date: "12-25", isPublic: true },
+  ],
+  complianceRequirements: [
+    {
+      name: "Federal Payroll Tax Deposit",
+      category: "statutory_filing",
+      frequency: "monthly",
+      dueRule: { day: 15 },
+      reminderDaysBefore: 5,
+    },
+    {
+      name: "Form 941 Quarterly Filing",
+      category: "statutory_filing",
+      frequency: "quarterly",
+      dueRule: { offsetDays: 30 },
+      reminderDaysBefore: 14,
+    },
+  ],
+  sensitiveFieldKeys: [
+    { key: "national_id", label: "SSN (masked)", dbColumn: "national_id" },
+    { key: "tax_id", label: "ITIN / EIN (context)", dbColumn: "tax_id" },
+  ],
+};
+
 export const COUNTRY_PACKS: Record<string, CountryPack> = {
   IN: IN_PACK,
+  AE: AE_PACK,
+  SG: SG_PACK,
+  US: US_PACK,
   GENERIC: GENERIC_PACK,
 };
 

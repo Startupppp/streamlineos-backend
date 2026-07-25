@@ -78,6 +78,7 @@ export const PAYROLL_TOGGLE_KEYS = [
   "multiCurrency",
   "employeeDeclarations",
   "payrollVarianceWarnings",
+  "requireLockedPayrollInputs",
   "countryComplianceChecklist",
   "globalPaymentReport",
   "bankPayoutFile",
@@ -118,6 +119,7 @@ export const DEFAULT_PAYROLL_TOGGLES: PayrollToggles = {
   multiCurrency: false,
   employeeDeclarations: false,
   payrollVarianceWarnings: true,
+  requireLockedPayrollInputs: false,
   countryComplianceChecklist: false,
   globalPaymentReport: false,
   bankPayoutFile: true,
@@ -251,6 +253,15 @@ export interface RunEmployeeVariance {
   netDelta: MoneyString | null;
   netDeltaPercent: number | null;
   changedComponents: { code: string; previous: MoneyString | null; current: MoneyString | null }[];
+  /** Where net variance baseline came from (previous locked run and/or frozen input period). */
+  baselineSource?: "PREVIOUS_RUN" | "LOCKED_INPUT_SNAPSHOT" | "PREVIOUS_RUN_AND_LOCKED_INPUTS" | null;
+  /** Day-level variance vs locked payroll-input attendance/leave snapshots. */
+  inputBaseline?: {
+    lockedPaidDays: string | null;
+    lockedLopDays: string | null;
+    paidDaysDelta: number | null;
+    lopDaysDelta: number | null;
+  } | null;
 }
 
 export interface CalculationSnapshot {
@@ -271,6 +282,12 @@ export interface CalculationSnapshot {
     net: MoneyString;
   };
   variance: RunEmployeeVariance | null;
+  /**
+   * Set when the statutory engine finds the Basic+DA share of gross below the
+   * Labour Code minimum-wage definition. Surfaced as a BELOW_MINIMUM_WAGE
+   * exception; optional so snapshots written before this field stay readable.
+   */
+  wageDefinitionWarning?: string | null;
 }
 
 export interface VarianceSummary {
@@ -333,13 +350,20 @@ export const PAYROLL_EXCEPTION_CODES = {
   ZERO_NET_PAY: "WARNING",
   SALARY_ON_HOLD: "WARNING",
   MISSING_ATTENDANCE_INPUT: "WARNING",
+  MISSING_LOCKED_INPUT_PERIOD: "BLOCKER",
+  INPUT_NOT_FROM_LOCKED_SNAPSHOT: "WARNING",
   LOP_EXCEEDS_SCHEDULED_DAYS: "BLOCKER",
   FORMULA_ERROR: "BLOCKER",
   HIGH_VARIANCE: "WARNING",
   MISSING_FX_RATE: "BLOCKER",
+  BELOW_MINIMUM_WAGE: "WARNING",
   PENDING_TAX_DECLARATION: "INFO",
   MID_PERIOD_JOINER: "INFO",
   MID_PERIOD_EXIT: "INFO",
+  /** PF enabled but employee has no 12-digit UAN on statutory/bank details. */
+  MISSING_PF_UAN: "WARNING",
+  /** ESI enabled but employee has no ESI IP number on statutory/bank details. */
+  MISSING_ESI_IP: "WARNING",
 } as const satisfies Record<string, PayrollExceptionSeverity>;
 export type PayrollExceptionCode = keyof typeof PAYROLL_EXCEPTION_CODES;
 
@@ -347,6 +371,7 @@ export interface PayrollChecklistItem {
   key:
     | "employees_verified"
     | "attendance_imported"
+    | "inputs_locked"
     | "reimbursements_approved"
     | "variable_pay_approved"
     | "loans_applied"

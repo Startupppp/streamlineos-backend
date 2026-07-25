@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
 import { HrAutomationsModule } from "../hr-automations/hr-automations.module";
+import { HrCoreModule } from "../hr-core/hr-core.module";
 import { EmployeesController } from "./employees.controller";
 import { OrgStructureController } from "./org-structure.controller";
 import { TeamEventsController } from "./team-events.controller";
@@ -22,7 +23,7 @@ import { BackgroundVerificationService } from "./background-verification.service
 import { AccessRequestsService } from "./access-requests.service";
 
 @Module({
-  imports: [AutomationModule, WebhooksModule, HrAutomationsModule],
+  imports: [AutomationModule, WebhooksModule, HrAutomationsModule, HrCoreModule],
   controllers: [
     EmployeesController,
     OrgStructureController,

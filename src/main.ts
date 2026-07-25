@@ -9,6 +9,7 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/http/all-exceptions.filter";
+import { correlationIdMiddleware } from "./common/http/correlation-id.middleware";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 
 setDefaultResultOrder("ipv4first");
@@ -29,6 +30,7 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
   app.use(helmet());
   app.use(compression());
+  app.use(correlationIdMiddleware);
   const isLocalDevOrigin = (origin: string): boolean =>
     /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
   app.enableCors({

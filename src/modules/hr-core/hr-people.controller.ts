@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { HrPeopleService } from "./hr-people.service";
+import { PersonEmploymentSyncService } from "./person-employment-sync.service";
 import {
   createPersonSchema,
   paginationSchema,
@@ -36,7 +37,10 @@ const listPeopleSchema = paginationSchema.extend({
 @Controller("hr/people")
 @UseGuards(JwtAuthGuard)
 export class HrPeopleController {
-  constructor(private readonly people: HrPeopleService) {}
+  constructor(
+    private readonly people: HrPeopleService,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -46,6 +50,14 @@ export class HrPeopleController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.people.list(u.orgId, { page: query.page, limit: query.limit, search: query.search });
+  }
+
+  @Post("backfill-from-members")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:employees:manage")
+  @HttpCode(200)
+  backfillFromMembers(@CurrentUser() u: CurrentUserContext) {
+    return this.personEmploymentSync.backfillOrg(u.orgId, u.userId);
   }
 
   @Get(":personId")

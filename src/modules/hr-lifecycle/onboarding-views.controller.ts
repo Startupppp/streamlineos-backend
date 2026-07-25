@@ -20,9 +20,11 @@ import { OnboardingViewsService } from "./onboarding-views.service";
 import {
   createOnboardingDocSchema,
   listOnboardingDocsQuerySchema,
+  onboardingDocsSummaryQuerySchema,
   reviewOnboardingDocSchema,
   type CreateOnboardingDocInput,
   type ListOnboardingDocsQueryInput,
+  type OnboardingDocsSummaryQueryInput,
   type ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -35,8 +37,11 @@ export class OnboardingViewsController {
 
   @Get("summary")
   @RequirePermission("hr:onboarding:manage")
-  summary(@CurrentUser() u: CurrentUserContext) {
-    return this.onboardingViews.summary(u.orgId);
+  summary(
+    @Query(new ZodValidationPipe(onboardingDocsSummaryQuerySchema)) query: OnboardingDocsSummaryQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.onboardingViews.summary(u.orgId, query);
   }
 
   @Get()

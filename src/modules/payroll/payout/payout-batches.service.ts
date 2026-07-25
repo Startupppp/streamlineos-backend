@@ -3,7 +3,9 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -21,6 +23,9 @@ import { StorageService } from "../../storage/storage.service";
 import { decryptBankDetails } from "../../../modules/hr-payroll/lib/encryption";
 import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { PayrollPostingService } from "../payroll-posting.service";
+import { assertOrgMember } from "../lib/org-membership";
+import { JournalOutboxService } from "../insights/journal-outbox.service";
+import { parseBankReturnCsv } from "./lib/bank-return";
 
 function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
   if (currency === "INR") return "NEFT_CSV";
@@ -70,11 +75,14 @@ function csvRow(
 
 @Injectable()
 export class PayoutBatchesService {
+  private readonly logger = new Logger(PayoutBatchesService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
     private readonly payrollPosting: PayrollPostingService,
+    @Optional() private readonly journalOutbox?: JournalOutboxService,
   ) {}
 
   async createBatch(
@@ -300,7 +308,20 @@ export class PayoutBatchesService {
     }
 
     const allReplayed = results.length > 0 && results.every(r => r.replayed);
-    return { batches: results, replayed: allReplayed };
+    const currencies = [...new Set(results.map((r) => r.currencyCode))];
+    return {
+      batches: results,
+      replayed: allReplayed,
+      multiCurrency: {
+        currencyCount: currencies.length,
+        currencies,
+        batchCount: results.length,
+        honestyNote:
+          currencies.length > 1
+            ? "One bank export file per payout currency. Amounts use stored netPayoutCurrency/net — this endpoint does not re-apply FX rates at batch time."
+            : "Single-currency batch. Amounts use stored netPayoutCurrency/net.",
+      },
+    };
   }
 
   async listBatches(orgId: string, runId?: number) {
@@ -423,6 +444,7 @@ export class PayoutBatchesService {
       });
     }
 
+    await this.refreshBatchPaidStatus(orgId, batchId);
     await this.checkRunCompletion(orgId, batchId, actorId);
     return { success: true };
   }
@@ -470,6 +492,8 @@ export class PayoutBatchesService {
       });
     }
 
+    await this.refreshBatchPaidStatus(orgId, batchId);
+    await this.checkRunCompletion(orgId, batchId, actorId);
     return { success: true };
   }
 
@@ -644,7 +668,199 @@ export class PayoutBatchesService {
           paidRun[0].month,
           paidRun[0].netTotal ?? "0",
         );
+        void this.autoSnapshotJournal(orgId, actorId, paidRun[0].month, runId);
       }
+    }
+  }
+
+  /**
+   * Best-effort immutable journal outbox snapshot when a run is fully paid.
+   * Never blocks payout; failures are logged only.
+   */
+  private async autoSnapshotJournal(
+    orgId: string,
+    actorId: string,
+    periodKey: string,
+    runId: number,
+  ): Promise<void> {
+    if (!this.journalOutbox) return;
+    try {
+      const batch = await this.journalOutbox.createBatch(orgId, actorId, {
+        periodKey,
+        note: `Auto-snapshot after run #${runId} marked paid`,
+      });
+      this.logger.log(
+        `Journal outbox auto-snapshot batch #${batch.id} v${batch.version} for ${periodKey}`,
+      );
+      this.audit.log({
+        action: "payroll.journal_batch_auto_created",
+        userId: actorId,
+        orgId,
+        targetId: String(batch.id),
+        targetType: "payroll_journal_batch",
+        metadata: { periodKey, runId, version: batch.version, status: batch.status },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Journal auto-snapshot skipped for ${periodKey}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Apply bank return CSV to a batch (mark items paid/failed).
+   * Provider-independent manual workflow.
+   */
+  async importBankReturn(
+    orgId: string,
+    batchId: number,
+    actorId: string,
+    csvText: string,
+  ) {
+    const batch = await this.db.query.payrollBankBatches.findFirst({
+      where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
+      columns: { id: true, status: true, runId: true },
+    });
+    if (!batch) throw new NotFoundException("Batch not found");
+    if (batch.status === "GENERATED" || batch.status === "DRAFT") {
+      throw new BadRequestException(
+        "Mark the batch as sent before importing bank returns",
+      );
+    }
+
+    const parsed = parseBankReturnCsv(csvText);
+    if (parsed.lines.length === 0 && parsed.errors.length > 0) {
+      throw new BadRequestException({
+        message: "Bank return CSV could not be parsed",
+        errors: parsed.errors,
+        honestyNote: parsed.honestyNote,
+      });
+    }
+
+    const items = await this.db
+      .select({
+        id: payrollBankBatchItems.id,
+        userId: payrollBankBatchItems.userId,
+        status: payrollBankBatchItems.status,
+      })
+      .from(payrollBankBatchItems)
+      .where(
+        and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)),
+      );
+
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const byUser = new Map<string, typeof items>();
+    for (const it of items) {
+      const list = byUser.get(it.userId) ?? [];
+      list.push(it);
+      byUser.set(it.userId, list);
+    }
+
+    let paid = 0;
+    let failed = 0;
+    let skipped = 0;
+    const applyErrors: { line: number; message: string }[] = [...parsed.errors];
+
+    for (const line of parsed.lines) {
+      let target =
+        line.itemId != null ? byId.get(line.itemId) : undefined;
+      if (!target && line.userId) {
+        const candidates = byUser.get(line.userId) ?? [];
+        target =
+          candidates.find((c) => c.status !== "PAID" && c.status !== "FAILED") ??
+          candidates[0];
+      }
+      if (!target) {
+        applyErrors.push({
+          line: line.rawLine,
+          message: `No matching item for itemId=${line.itemId ?? "—"} userId=${line.userId ?? "—"}`,
+        });
+        skipped++;
+        continue;
+      }
+      if (target.status === "PAID" || target.status === "FAILED") {
+        skipped++;
+        continue;
+      }
+
+      if (line.status === "PAID") {
+        await this.markItemPaid(
+          orgId,
+          batchId,
+          target.id,
+          line.transactionRef ?? "RETURN",
+          actorId,
+        );
+        paid++;
+      } else {
+        await this.markItemFailed(
+          orgId,
+          batchId,
+          target.id,
+          line.failureReason ?? "Bank return failed",
+          actorId,
+        );
+        failed++;
+      }
+    }
+
+    await this.refreshBatchPaidStatus(orgId, batchId);
+    await this.checkRunCompletion(orgId, batchId, actorId);
+
+    this.audit.log({
+      action: "payroll.bank_return_imported",
+      userId: actorId,
+      orgId,
+      targetId: String(batch.runId),
+      targetType: "payroll_run",
+      metadata: { batchId, paid, failed, skipped, errorCount: applyErrors.length },
+    });
+
+    return {
+      success: true,
+      paid,
+      failed,
+      skipped,
+      parseErrors: applyErrors,
+      honestyNote: parsed.honestyNote,
+      mode: "export_manual" as const,
+    };
+  }
+
+  /** Recompute batch status from item PAID/FAILED mix after bulk updates. */
+  private async refreshBatchPaidStatus(orgId: string, batchId: number): Promise<void> {
+    const rows = await this.db
+      .select({
+        status: payrollBankBatchItems.status,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(payrollBankBatchItems)
+      .where(
+        and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)),
+      )
+      .groupBy(payrollBankBatchItems.status);
+
+    let paid = 0;
+    let failed = 0;
+    let other = 0;
+    for (const r of rows) {
+      if (r.status === "PAID") paid += r.n;
+      else if (r.status === "FAILED") failed += r.n;
+      else other += r.n;
+    }
+
+    let status: "PAID" | "PARTIALLY_PAID" | "FAILED" | "SENT" | null = null;
+    if (other === 0 && failed === 0 && paid > 0) status = "PAID";
+    else if (other === 0 && paid === 0 && failed > 0) status = "FAILED";
+    else if (paid > 0 || failed > 0) status = "PARTIALLY_PAID";
+
+    if (status) {
+      await this.db
+        .update(payrollBankBatches)
+        .set({ status })
+        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
     }
   }
 
@@ -663,6 +879,8 @@ export class PayoutBatchesService {
   }
 
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {
+    await assertOrgMember(this.db, orgId, employeeUserId);
+
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, employeeUserId),
       columns: { id: true, bankDetails: true, name: true, email: true },

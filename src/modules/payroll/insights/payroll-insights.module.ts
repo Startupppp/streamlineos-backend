@@ -6,6 +6,13 @@ import { ReportsController } from "./reports.controller";
 import { ReportsService } from "./reports.service";
 import { JournalController } from "./journal.controller";
 import { JournalService } from "./journal.service";
+import { JournalOutboxController } from "./journal-outbox.controller";
+import { JournalOutboxService } from "./journal-outbox.service";
+import { PeriodReconciliationService } from "./period-reconciliation.service";
+import { ManagerInboxController } from "./manager-inbox.controller";
+import { ManagerInboxService } from "./manager-inbox.service";
+import { TeamRewardsService } from "./team-rewards.service";
+import { PayAnalyticsController } from "./pay-analytics.controller";
 import { AccountingMappingsController } from "./accounting-mappings.controller";
 import { AccountingMappingsService } from "./accounting-mappings.service";
 import { CalendarController } from "./calendar.controller";
@@ -26,17 +33,24 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
   controllers: [
     ReportsController,
     JournalController,
+    JournalOutboxController,
     AccountingMappingsController,
     CalendarController,
     TaxWindowsController,
     TaxAdminController,
     FnfController,
     EssController,
+    ManagerInboxController,
+    PayAnalyticsController,
     PayrollAiExplainController,
   ],
   providers: [
     ReportsService,
     JournalService,
+    JournalOutboxService,
+    PeriodReconciliationService,
+    ManagerInboxService,
+    TeamRewardsService,
     AccountingMappingsService,
     CalendarService,
     TaxWindowsService,
@@ -45,6 +59,6 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
     PayrollNotificationsService,
     PayrollAiExplainService,
   ],
-  exports: [PayrollNotificationsService],
+  exports: [PayrollNotificationsService, JournalOutboxService, PeriodReconciliationService],
 })
 export class PayrollInsightsModule {}

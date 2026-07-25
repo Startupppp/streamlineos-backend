@@ -100,9 +100,24 @@ export class RolesController {
     return { userId: targetUserId, permissions, scopes, isOrgOwner: false };
   }
 
+  @Post("seed-defaults")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  seedDefaults(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.seedDefaultRoles(u);
+  }
+
   @Get("templates")
   templates() {
     return this.roles.listTemplates();
+  }
+
+  @Get("departments")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:rbac:manage")
+  listAssignableDepartments(@CurrentUser() u: CurrentUserContext) {
+    return this.roles.listAssignableDepartments(u.orgId);
   }
 
   @Post("templates")

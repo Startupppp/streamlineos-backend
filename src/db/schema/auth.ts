@@ -94,6 +94,7 @@ export const users = pgTable("users", {
   image: text("image"),
   role: text("role").default("ENGINEERING").notNull(),
   departmentId: integer("department_id"),
+  orgDepartmentId: text("org_department_id"),
   designation: text("designation"),
   phone: text("phone"),
   whatsappNumber: text("whatsapp_number"),
@@ -138,6 +139,9 @@ export const users = pgTable("users", {
 }, (table) => [
   index("idx_users_email").on(table.email),
   index("idx_users_last_active_org").on(table.lastActiveOrgId),
+  index("idx_users_reporting_to").on(table.reportingTo),
+  index("idx_users_department").on(table.departmentId),
+  index("idx_users_org_department").on(table.orgDepartmentId),
   foreignKey({ columns: [table.reportingTo], foreignColumns: [table.id] }),
 ]);
 

@@ -59,7 +59,7 @@ export const createJobSchema = z
       .refine((v) => !/[^a-zA-Z0-9\s\-',]/.test(v.trim()), "Job Title may only contain letters, numbers, hyphens, apostrophes, and commas")
       .refine((v) => !/(.)\1{3,}/.test(v.trim()), "Job Title cannot have 4 or more consecutive identical characters")
       .refine((v) => !/\s{2,}/.test(v), "Job Title cannot have multiple consecutive spaces"),
-    departmentId: z.number().int().positive().optional(),
+    departmentId: z.string().min(1).optional(),
     hiringFlowId: z.number().int().positive().optional(),
     location: z
       .string()
@@ -99,7 +99,7 @@ export type CreateJobInput = z.infer<typeof createJobSchema>;
 export const updateJobSchema = z
   .object({
     title: z.string().min(1).max(200),
-    departmentId: z.number().int().positive(),
+    departmentId: z.string().min(1),
     hiringFlowId: z.number().int().positive().nullable(),
     location: z.string().max(200),
     type: z.string().max(50),

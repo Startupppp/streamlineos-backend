@@ -108,6 +108,9 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   effectiveDate: timestamp("effective_date").notNull(),
   issuedBy: text("issued_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   note: text("note"),
+  /** Employee acknowledgment of receipt (not agreement). */
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedBy: text("acknowledged_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [

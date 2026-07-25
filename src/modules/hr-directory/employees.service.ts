@@ -11,6 +11,7 @@ import {
   tickets,
   users,
 } from "../../db/schema";
+import { orgDepartments } from "../../db/schema/organization";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -19,31 +20,6 @@ import { branchIdFilter, type BranchContext } from "../leads/branch-filter";
 import { formatDateOnly, subDays } from "./date.helpers";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-
-const EMPLOYEE_USER_COLUMNS = {
-  id: true,
-  name: true,
-  firstName: true,
-  lastName: true,
-  email: true,
-  role: true,
-  designation: true,
-  employeeId: true,
-  departmentId: true,
-  image: true,
-  isActive: true,
-  joiningDate: true,
-  hasDashboardAccess: true,
-  reportingTo: true,
-  monthlySalary: true,
-  bio: true,
-  linkedinUrl: true,
-  twitterUrl: true,
-  githubUrl: true,
-  websiteUrl: true,
-  phone: true,
-  branchId: true,
-} as const;
 
 @Injectable()
 export class EmployeesService {
@@ -59,7 +35,7 @@ export class EmployeesService {
       page?: number;
       limit?: number;
       search?: string;
-      departmentId?: number;
+      departmentId?: string;
       isActive?: "true" | "false" | "all";
       role?: string;
     },
@@ -93,59 +69,6 @@ export class EmployeesService {
     );
   }
 
-  private async getEmployeesAll(orgId: string, branch: BranchContext, scope: DataScope) {
-    const members = await this.db.query.organizationMembers.findMany({
-      where: eq(organizationMembers.orgId, orgId),
-      with: {
-        user: {
-          columns: EMPLOYEE_USER_COLUMNS,
-          with: { department: { columns: { id: true, name: true } } },
-        },
-      },
-      limit: 1000,
-    });
-
-    return members
-      .map((m) => ({ member: m, user: m.user }))
-      .filter(({ member, user }) => {
-        if (user.isActive === false) return false;
-        if (scope === "none") return false;
-        if (scope === "own" && member.userId !== branch.userId) return false;
-        if (
-          branch.branchId !== null &&
-          branch.branchId !== undefined &&
-          ["BRANCH_MANAGER", "BRANCH_HR"].includes(branch.role)
-        ) {
-          return user.branchId === branch.branchId;
-        }
-        return true;
-      })
-      .map(({ user: u }) => ({
-        id: u.id,
-        name: u.name,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        email: u.email,
-        role: u.role ?? "EMPLOYEE",
-        designation: u.designation,
-        employeeId: u.employeeId,
-        departmentId: u.departmentId,
-        department: u.department ? { id: u.department.id, name: u.department.name } : null,
-        image: u.image,
-        isActive: u.isActive ?? true,
-        joiningDate: u.joiningDate,
-        hasDashboardAccess: u.hasDashboardAccess ?? false,
-        reportingTo: u.reportingTo,
-        monthlySalary: u.monthlySalary,
-        bio: u.bio ?? null,
-        linkedinUrl: u.linkedinUrl ?? null,
-        twitterUrl: u.twitterUrl ?? null,
-        githubUrl: u.githubUrl ?? null,
-        websiteUrl: u.websiteUrl ?? null,
-        phone: u.phone ?? null,
-      }));
-  }
-
   private async getEmployeesPaginated(
     orgId: string,
     page: number,
@@ -153,7 +76,7 @@ export class EmployeesService {
     search: string | undefined,
     branch: BranchContext,
     scope: DataScope,
-    departmentId?: number,
+    departmentId?: string,
     isActive: "true" | "false" | "all" = "true",
     role?: string,
   ) {
@@ -165,7 +88,7 @@ export class EmployeesService {
     ];
     if (isActive === "true") baseConditions.push(eq(users.isActive, true));
     else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
-    if (departmentId != null) baseConditions.push(eq(users.departmentId, departmentId));
+    if (departmentId != null) baseConditions.push(eq(users.orgDepartmentId, departmentId));
     if (role) baseConditions.push(eq(users.role, role));
 
     const branchCond = branchIdFilter(users.branchId, branch);
@@ -198,6 +121,8 @@ export class EmployeesService {
           departmentId: users.departmentId,
           departmentIdJoin: departments.id,
           departmentName: departments.name,
+          orgDepartmentId: orgDepartments.id,
+          orgDepartmentName: orgDepartments.name,
           image: users.image,
           isActive: users.isActive,
           joiningDate: users.joiningDate,
@@ -208,6 +133,7 @@ export class EmployeesService {
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .leftJoin(departments, eq(users.departmentId, departments.id))
+        .leftJoin(orgDepartments, eq(users.orgDepartmentId, orgDepartments.id))
         .where(where)
         .orderBy(users.name)
         .limit(limit)
@@ -233,9 +159,11 @@ export class EmployeesService {
         employeeId: row.employeeId,
         departmentId: row.departmentId,
         department:
-          row.departmentIdJoin != null && row.departmentName
-            ? { id: row.departmentIdJoin, name: row.departmentName }
-            : null,
+          row.orgDepartmentId != null && row.orgDepartmentName
+            ? { id: row.orgDepartmentId, name: row.orgDepartmentName }
+            : row.departmentIdJoin != null && row.departmentName
+              ? { id: String(row.departmentIdJoin), name: row.departmentName }
+              : null,
         image: row.image,
         isActive: row.isActive,
         joiningDate: row.joiningDate,
