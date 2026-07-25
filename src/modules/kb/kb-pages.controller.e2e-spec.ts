@@ -88,6 +88,12 @@ describe("KB Pages auth/RBAC (e2e)", () => {
 
   const moduleCheckRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/kb/pages/tree"],
+    ["get", "/kb/pages/recent"],
+    ["get", "/kb/pages/favorites"],
+    ["get", "/kb/pages/search"],
+    ["get", "/kb/pages/1"],
+    ["get", "/kb/pages/1/backlinks"],
+    ["get", "/kb/pages/1/versions"],
     ["post", "/kb/pages"],
     ["patch", "/kb/pages/1"],
     ["delete", "/kb/pages/1"],

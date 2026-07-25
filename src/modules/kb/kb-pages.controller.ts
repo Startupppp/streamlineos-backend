@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Delete,
@@ -14,6 +14,7 @@
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -40,7 +41,8 @@ import {
 } from "./dto/kb-pages.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard)
+@RequireModule("kb")
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPagesController {
   constructor(
     private readonly pages: KbPagesService,
@@ -49,6 +51,7 @@ export class KbPagesController {
   ) {}
 
   @Get("pages/tree")
+  @RequirePermission("kb:pages:view")
   async getTree(
     @Query(new ZodValidationPipe(listPagesSchema)) query: ListPagesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -57,21 +60,25 @@ export class KbPagesController {
   }
 
   @Get("pages/recent")
+  @RequirePermission("kb:pages:view")
   async getRecent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.pages.getRecent(u);
   }
 
   @Get("pages/favorites")
+  @RequirePermission("kb:pages:view")
   async getFavorites(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.pages.getFavorites(u);
   }
 
   @Get("pages/trash")
+  @RequirePermission("kb:pages:view")
   async getTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.tree.getTrash(u);
   }
 
   @Get("pages/search")
+  @RequirePermission("kb:pages:view")
   async search(
     @Query(new ZodValidationPipe(searchPagesSchema)) query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +88,7 @@ export class KbPagesController {
 
   @Post("pages")
   @HttpCode(201)
+  @RequirePermission("kb:pages:create")
   async create(
     @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +97,7 @@ export class KbPagesController {
   }
 
   @Get("pages/:pageId")
+  @RequirePermission("kb:pages:view")
   async get(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,7 +107,6 @@ export class KbPagesController {
   }
 
   @Patch("pages/:pageId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   async update(
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -110,7 +118,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/move")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   async move(
@@ -122,7 +129,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/duplicate")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
   async duplicate(
@@ -133,7 +139,6 @@ export class KbPagesController {
   }
 
   @Delete("pages/:pageId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:delete")
   async remove(
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -143,7 +148,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/restore")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   async restore(
@@ -154,7 +158,6 @@ export class KbPagesController {
   }
 
   @Delete("pages/trash/empty")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:purge")
   async emptyTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
@@ -162,7 +165,6 @@ export class KbPagesController {
   }
 
   @Delete("pages/:pageId/permanent")
-  @UseGuards(PermissionGuard)
   @HttpCode(204)
   @RequirePermission("kb:pages:purge")
   async hardDelete(
@@ -174,6 +176,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/favorite")
   @HttpCode(200)
+  @RequirePermission("kb:pages:view")
   async addFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +185,7 @@ export class KbPagesController {
   }
 
   @Delete("pages/:pageId/favorite")
+  @RequirePermission("kb:pages:view")
   async removeFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -191,6 +195,7 @@ export class KbPagesController {
 
   @Post("pages/:pageId/visit")
   @HttpCode(200)
+  @RequirePermission("kb:pages:view")
   async recordVisit(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -199,6 +204,7 @@ export class KbPagesController {
   }
 
   @Get("pages/:pageId/backlinks")
+  @RequirePermission("kb:pages:view")
   async backlinks(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -207,6 +213,7 @@ export class KbPagesController {
   }
 
   @Get("pages/:pageId/versions")
+  @RequirePermission("kb:pages:view")
   async listVersions(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -215,6 +222,7 @@ export class KbPagesController {
   }
 
   @Get("pages/:pageId/versions/:versionNumber")
+  @RequirePermission("kb:pages:view")
   async getVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -224,7 +232,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/versions/:versionNumber/restore")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   async restoreVersion(
@@ -237,7 +244,6 @@ export class KbPagesController {
   }
 
   @Patch("pages/:pageId/lock")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:manage")
   async lock(
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -248,7 +254,6 @@ export class KbPagesController {
   }
 
   @Patch("pages/:pageId/visibility")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   async setVisibility(
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -260,7 +265,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/publish")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   async publish(
@@ -271,7 +275,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/archive")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   async archive(
@@ -282,7 +285,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/unarchive")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   async unarchive(
@@ -293,7 +295,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/verify")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
   async verify(
@@ -305,7 +306,6 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/mark-stale")
-  @UseGuards(PermissionGuard)
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
   async markStale(
@@ -317,7 +317,7 @@ export class KbPagesController {
 
   private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {
     if (u.isOrgOwner || u.isPlatformAdmin) return true;
-    const perms = await this.access.resolveUserPermissions(u.userId, u.orgId);
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
     return perms.has("kb:pages:manage");
   }
 }
