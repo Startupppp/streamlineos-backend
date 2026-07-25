@@ -96,33 +96,6 @@ export const emailTemplates = pgTable("hr_email_templates", {
   index("idx_email_templates_org").on(table.orgId),
 ]);
 
-export const careerLadders = pgTable("career_ladders", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  title: text("title").notNull(),
-  department: text("department"),
-  description: text("description"),
-  levels: jsonb("levels").$type<{ level: number; title: string; description: string; minExperience: number; skills: string[] }[]>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_career_ladders_org").on(table.orgId),
-]);
-
-export const learningPaths = pgTable("learning_paths", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  title: text("title").notNull(),
-  description: text("description"),
-  targetRole: text("target_role"),
-  level: text("level"),
-  estimatedHours: integer("estimated_hours"),
-  steps: jsonb("steps").$type<{ order: number; type: "assessment" | "certification"; referenceId: number; title: string }[]>(),
-  createdBy: text("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_learning_paths_org").on(table.orgId),
-]);
-
 export const teamEvents = pgTable("team_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -170,10 +143,6 @@ export const policyAcknowledgmentsRelations = relations(policyAcknowledgments, (
 
 export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
   creator: one(users, { fields: [emailTemplates.createdBy], references: [users.id] }),
-}));
-
-export const learningPathsRelations = relations(learningPaths, ({ one }) => ({
-  creator: one(users, { fields: [learningPaths.createdBy], references: [users.id] }),
 }));
 
 export const teamEventsRelations = relations(teamEvents, ({ one, many }) => ({

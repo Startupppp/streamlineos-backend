@@ -28,7 +28,6 @@ export * from "./hr/requisitions";
 export * from "./hr/kpis";
 export * from "./hr/feedback";
 export * from "./hr/travel";
-export * from "./hr/career";
 export * from "./hr/leave-policies";
 export * from "./hr/announcements";
 export * from "./hr/salary-structure-templates";
