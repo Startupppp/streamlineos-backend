@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -25,11 +26,13 @@ import {
 } from "./dto/kb-page-record-links.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard)
+@RequireModule("kb")
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPageRecordLinksController {
   constructor(private readonly service: KbPageRecordLinksService) {}
 
   @Get("pages/:pageId/record-links")
+  @RequirePermission("kb:pages:view")
   list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -38,7 +41,6 @@ export class KbPageRecordLinksController {
   }
 
   @Post("pages/:pageId/record-links")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
   add(
@@ -50,7 +52,6 @@ export class KbPageRecordLinksController {
   }
 
   @Delete("record-links/:linkId")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   remove(
     @Param("linkId", ParseIntPipe) linkId: number,
@@ -60,6 +61,7 @@ export class KbPageRecordLinksController {
   }
 
   @Get("record-links/by-record")
+  @RequirePermission("kb:pages:view")
   listByRecord(
     @Query(new ZodValidationPipe(recordLinkByRecordQuerySchema)) query: RecordLinkByRecordQuery,
     @CurrentUser() user: CurrentUserContext,

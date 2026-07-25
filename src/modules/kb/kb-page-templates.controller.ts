@@ -12,6 +12,7 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -22,17 +23,18 @@ import {
 } from "./dto/kb-page-templates.schemas";
 
 @Controller("kb")
-@UseGuards(JwtAuthGuard)
+@RequireModule("kb")
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPageTemplatesController {
   constructor(private readonly templates: KbPageTemplatesService) {}
 
   @Get("page-templates")
+  @RequirePermission("kb:pages:view")
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.templates.list(u.orgId);
   }
 
   @Post("page-templates")
-  @UseGuards(PermissionGuard)
   @RequirePermission("kb:templates:manage")
   async create(
     @Body(new ZodValidationPipe(createPageTemplateSchema)) body: CreatePageTemplateInput,
@@ -42,7 +44,6 @@ export class KbPageTemplatesController {
   }
 
   @Delete("page-templates/:templateId")
-  @UseGuards(PermissionGuard)
   @HttpCode(204)
   @RequirePermission("kb:templates:manage")
   async remove(
