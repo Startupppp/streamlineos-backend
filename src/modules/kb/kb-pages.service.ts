@@ -7,7 +7,7 @@
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { kbPages, kbPageFavorites, kbPageLinks, kbPageVersions, kbPageVisits, kbPageTemplates, kbSpaces, users } from "../../db/schema";
 import type { KbPageContent } from "../../db/schema/kb/pages";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -28,6 +28,10 @@ const MAX_VERSIONS = 100;
 
 type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+const { content: _content, contentText: _contentText, fts: _fts, ...KB_PAGE_LIST_COLUMNS } =
+  getTableColumns(kbPages);
+type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 @Injectable()
 export class KbPagesService {
@@ -354,7 +358,7 @@ export class KbPagesService {
     return rows;
   }
 
-  async getRecent(user: CurrentUserContext): Promise<PageRow[]> {
+  async getRecent(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
     const [visits, projectIds] = await Promise.all([
       this.db
@@ -369,7 +373,7 @@ export class KbPagesService {
     if (visits.length === 0) return [];
     const ids = visits.map((v) => v.pageId);
     const pages = await this.db
-      .select()
+      .select(KB_PAGE_LIST_COLUMNS)
       .from(kbPages)
       .where(
         and(
@@ -380,10 +384,10 @@ export class KbPagesService {
         ),
       );
     const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is PageRow => p !== undefined);
+    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
   }
 
-  async getFavorites(user: CurrentUserContext): Promise<PageRow[]> {
+  async getFavorites(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
     const [favs, projectIds] = await Promise.all([
       this.db
@@ -398,7 +402,7 @@ export class KbPagesService {
     if (favs.length === 0) return [];
     const ids = favs.map((f) => f.pageId);
     const pages = await this.db
-      .select()
+      .select(KB_PAGE_LIST_COLUMNS)
       .from(kbPages)
       .where(
         and(
@@ -409,7 +413,7 @@ export class KbPagesService {
         ),
       );
     const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is PageRow => p !== undefined);
+    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
   }
 
   async addFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
