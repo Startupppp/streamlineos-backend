@@ -92,7 +92,7 @@ export const updateProjectSchema = z
     name: z.string().min(1).optional(),
     description: z.string().optional(),
     status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED"]).optional(),
-    managerId: z.string().optional(),
+    managerId: z.string().nullable().optional(),
     clientId: z.string().optional(),
     startDate: z.string().nullable().optional(),
     endDate: z.string().nullable().optional(),
@@ -296,6 +296,7 @@ export const allWorkQuerySchema = z.object({
     .default("order"),
   orderDir: z.enum(["asc", "desc"]).optional(),
   projectIds: csvToIntArray,
+  excludeStatus: csvToStringArray,
   scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
 });
 

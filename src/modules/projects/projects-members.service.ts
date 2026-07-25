@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import {
+  organizationMembers,
   projectMembers,
   projects,
   projectStatuses,
@@ -118,6 +119,22 @@ export class ProjectsMembersService {
     const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
+
+    const [orgMember] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, body.userId),
+        ),
+      )
+      .limit(1);
+    if (!orgMember) {
+      throw new BadRequestException(
+        "Cannot add this user to the project — they are not a member of this organization.",
+      );
+    }
 
     const existing = await this.db.query.projectMembers.findFirst({
       where: and(

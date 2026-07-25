@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import {
   projectMembers,
   projects,
@@ -131,6 +131,7 @@ export class ProjectsWorkQueryService {
       orderBy,
       orderDir,
       projectIds: filterProjectIds,
+      excludeStatus,
       scope,
     } = query;
     const offset = (page - 1) * limit;
@@ -222,6 +223,10 @@ export class ProjectsWorkQueryService {
 
     if (status && status.length > 0) {
       conditions.push(inArray(tickets.status, status));
+    }
+
+    if (excludeStatus && excludeStatus.length > 0) {
+      conditions.push(notInArray(tickets.status, excludeStatus));
     }
 
     if (priority && priority.length > 0) {

@@ -10,6 +10,7 @@ import {
 } from "../../common/http/api-exceptions";
 import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
+  organizationMembers,
   projectMembers,
   projects,
   projectStatuses,
@@ -359,25 +360,28 @@ export class ProjectsService {
       }
     }
 
-    await this.db
-      .update(projects)
-      .set({
-        ...(body.name !== undefined && { name: body.name }),
-        ...(body.description !== undefined && {
-          description: body.description,
-        }),
-        ...(body.status !== undefined && { status: body.status }),
-        ...(body.managerId !== undefined && { managerId: body.managerId }),
-        ...(body.clientId !== undefined && { clientId: body.clientId }),
-        ...(body.startDate !== undefined && {
-          startDate: body.startDate ? new Date(body.startDate) : null,
-        }),
-        ...(body.endDate !== undefined && {
-          endDate: body.endDate ? new Date(body.endDate) : null,
-        }),
-        ...(body.priority !== undefined && { priority: body.priority }),
-      })
-      .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
+    const projectFields = {
+      ...(body.name !== undefined && { name: body.name }),
+      ...(body.description !== undefined && {
+        description: body.description,
+      }),
+      ...(body.status !== undefined && { status: body.status }),
+      ...(body.managerId !== undefined && { managerId: body.managerId }),
+      ...(body.clientId !== undefined && { clientId: body.clientId }),
+      ...(body.startDate !== undefined && {
+        startDate: body.startDate ? new Date(body.startDate) : null,
+      }),
+      ...(body.endDate !== undefined && {
+        endDate: body.endDate ? new Date(body.endDate) : null,
+      }),
+      ...(body.priority !== undefined && { priority: body.priority }),
+    };
+
+    if (Object.keys(projectFields).length > 0)
+      await this.db
+        .update(projects)
+        .set(projectFields)
+        .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
 
     if (body.memberIds !== undefined) {
       const memberIds = body.memberIds;
@@ -394,13 +398,25 @@ export class ProjectsService {
           .where(eq(projectMembers.projectId, projectId));
 
         if (memberIds.length > 0) {
-          await tx.insert(projectMembers).values(
-            memberIds.map((userId) => ({
-              projectId,
-              userId,
-              role: "CONTRIBUTOR",
-            })),
-          );
+          const validMembers = await tx
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.userId, memberIds),
+              ),
+            );
+          const validMemberIds = validMembers.map((m) => m.userId);
+          if (validMemberIds.length > 0) {
+            await tx.insert(projectMembers).values(
+              validMemberIds.map((userId) => ({
+                projectId,
+                userId,
+                role: "CONTRIBUTOR",
+              })),
+            );
+          }
         }
 
         const newMemberSet = new Set(memberIds);
@@ -462,7 +478,7 @@ export class ProjectsService {
       metadata: { changedFields: Object.keys(body) },
     });
 
-    return { success: true };
+    return this.getProject(u, projectId);
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
