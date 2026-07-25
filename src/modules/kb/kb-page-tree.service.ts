@@ -446,20 +446,20 @@ export class KbPageTreeService {
     orgId: string,
     rootId: number,
   ): Promise<number[]> {
-    const allIds: number[] = [rootId];
-    const queue = [rootId];
-    while (queue.length > 0) {
-      const parentId = queue.shift()!;
-      const children = await tx
-        .select({ id: kbPages.id })
-        .from(kbPages)
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.parentPageId, parentId)));
-      for (const child of children) {
-        allIds.push(child.id);
-        queue.push(child.id);
-      }
-    }
-    return allIds;
+    const rows = await tx.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id, parent_page_id, 1 AS depth
+        FROM kb_pages
+        WHERE id = ${rootId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT p.id, p.parent_page_id, s.depth + 1
+        FROM kb_pages p
+        INNER JOIN subtree s ON p.parent_page_id = s.id AND s.depth < 1000
+        WHERE p.org_id = ${orgId}
+      )
+      SELECT id FROM subtree
+    `);
+    return (rows as Array<Record<string, unknown>>).map((row) => Number(row.id));
   }
 
   private async buildSubtreeMap(
