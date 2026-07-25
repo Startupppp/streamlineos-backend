@@ -38,6 +38,7 @@ export const kbArticleChunks = pgTable(
     source: text("source").notNull(),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
+    contentHash: text("content_hash"),
     tokens: integer("tokens"),
     embedding: vector("embedding", {
       dimensions: KB_EMBEDDING_DIMENSIONS,

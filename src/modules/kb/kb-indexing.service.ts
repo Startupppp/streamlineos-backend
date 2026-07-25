@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { Readable } from "stream";
-import { and, asc, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   kbArticles,
   kbArticleAttachments,
@@ -57,8 +57,8 @@ export class KbIndexingService {
         ? eq(kbArticleChunks.articleId, filter.articleId)
         : eq(kbArticleChunks.pageId, filter.pageId);
 
-    const existing = await this.db
-      .select({ content: kbArticleChunks.content })
+    const [existing] = await this.db
+      .select({ contentHash: kbArticleChunks.contentHash })
       .from(kbArticleChunks)
       .where(
         and(
@@ -67,13 +67,10 @@ export class KbIndexingService {
           eq(kbArticleChunks.source, source),
         ),
       )
-      .orderBy(asc(kbArticleChunks.chunkIndex));
+      .limit(1);
 
-    if (existing.length === 0) return false;
-
-    const existingHash = this.sha256(existing.map((r) => r.content).join(""));
-    const newHash = this.sha256(newText);
-    return existingHash === newHash;
+    if (!existing?.contentHash) return false;
+    return existing.contentHash === this.sha256(newText);
   }
 
   private chunkText(text: string): string[] {
@@ -137,6 +134,7 @@ export class KbIndexingService {
     if (unchanged) return;
 
     const chunks = this.chunkText(article.contentText);
+    const contentHash = this.sha256(article.contentText);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -163,6 +161,7 @@ export class KbIndexingService {
         source: "article_body" as const,
         chunkIndex: index,
         content: chunk,
+        contentHash,
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
@@ -202,6 +201,7 @@ export class KbIndexingService {
     if (unchanged) return;
 
     const chunks = this.chunkText(page.contentText);
+    const contentHash = this.sha256(page.contentText);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -228,6 +228,7 @@ export class KbIndexingService {
         source: "page_body" as const,
         chunkIndex: index,
         content: chunk,
+        contentHash,
         tokens: Math.ceil(chunk.length / 4),
         embedding: embeddings[index],
         embeddingModel: EMBEDDING_MODEL,
