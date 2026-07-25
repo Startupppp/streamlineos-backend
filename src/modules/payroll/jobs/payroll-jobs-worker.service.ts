@@ -6,6 +6,7 @@ import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service"
 import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
+import { isTransientDbError } from "../../../common/db/transient-error";
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
@@ -20,6 +21,7 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PayrollJobsWorkerService.name);
   private timer: ReturnType<typeof setInterval> | undefined;
   private running = false;
+  private transientStreak = 0;
 
   constructor(
     private readonly jobs: PayrollJobsService,
@@ -76,10 +78,25 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     try {
       await this.flush(BATCH_SIZE);
+      if (this.transientStreak > 0) {
+        this.logger.log(
+          `Payroll jobs worker recovered after ${this.transientStreak} transient DB connection failure(s)`,
+        );
+        this.transientStreak = 0;
+      }
     } catch (err) {
-      this.logger.error("Payroll jobs worker tick failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (isTransientDbError(err)) {
+        this.transientStreak += 1;
+        if (this.transientStreak === 1) {
+          this.logger.warn(
+            "Payroll jobs worker: transient DB connection issue (retrying each poll; suppressing repeats until recovery)",
+          );
+        }
+      } else {
+        this.logger.error("Payroll jobs worker tick failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     } finally {
       this.running = false;
     }

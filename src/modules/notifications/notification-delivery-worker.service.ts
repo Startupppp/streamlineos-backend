@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
 import type { NotificationChannel } from "./notification.types";
+import { isTransientDbError } from "../../common/db/transient-error";
 
 const BATCH_SIZE = 50;
 const BACKOFF_MINUTES = [1, 5, 15, 60, 360];
@@ -24,6 +25,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   private readonly workerId = `${process.pid}-${randomUUID().slice(0, 8)}`;
   private drainTimer: NodeJS.Timeout | null = null;
   private draining = false;
+  private transientStreak = 0;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -49,10 +51,25 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     this.draining = true;
     try {
       await this.processQueue();
+      if (this.transientStreak > 0) {
+        this.logger.log(
+          `Notification delivery worker recovered after ${this.transientStreak} transient DB connection failure(s)`,
+        );
+        this.transientStreak = 0;
+      }
     } catch (error) {
-      this.logger.error(
-        `in-process delivery drain failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      if (isTransientDbError(error)) {
+        this.transientStreak += 1;
+        if (this.transientStreak === 1) {
+          this.logger.warn(
+            "Notification delivery worker: transient DB connection issue (retrying each tick; suppressing repeats until recovery)",
+          );
+        }
+      } else {
+        this.logger.error(
+          `in-process delivery drain failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     } finally {
       this.draining = false;
     }
