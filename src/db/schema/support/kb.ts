@@ -9,13 +9,16 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  customType,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { kbSpaces } from "../kb/spaces";
 
 export const kbArticleStatusEnum = pgEnum("kb_article_status", ["draft", "in_review", "published", "archived"]);
 export const kbArticleVisibilityEnum = pgEnum("kb_article_visibility", ["public", "internal"]);
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const kbCategories = pgTable(
   "kb_categories",
@@ -65,6 +68,9 @@ export const kbArticles = pgTable(
     helpfulCount: integer("helpful_count").default(0).notNull(),
     notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
     tags: text("tags").array(),
+    fts: tsvector("fts").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(excerpt, '')), 'B') || setweight(to_tsvector('english', coalesce(content_text, '')), 'C')`,
+    ),
     seoTitle: text("seo_title"),
     seoDescription: text("seo_description"),
     reviewIntervalDays: integer("review_interval_days"),
@@ -81,6 +87,7 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_space").on(table.spaceId),
     index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),
     index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
+    index("idx_kb_articles_fts").using("gin", table.fts),
   ],
 );
 

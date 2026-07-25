@@ -8,6 +8,7 @@
   timestamp,
   index,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -17,6 +18,8 @@ import { kbSpaces } from "./spaces";
 export type KbPageContent =
   | Record<string, unknown>
   | Record<string, unknown>[];
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const kbPages = pgTable(
   "kb_pages",
@@ -30,6 +33,9 @@ export const kbPages = pgTable(
     coverImage: text("cover_image"),
     content: jsonb("content").$type<KbPageContent>(),
     contentText: text("content_text"),
+    fts: tsvector("fts").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(content_text, '')), 'B')`,
+    ),
     sortOrder: integer("sort_order").notNull().default(0),
     isLocked: boolean("is_locked").default(false).notNull(),
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
@@ -62,6 +68,7 @@ export const kbPages = pgTable(
     index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt),
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
+    index("idx_kb_pages_fts").using("gin", table.fts),
   ],
 );
 
