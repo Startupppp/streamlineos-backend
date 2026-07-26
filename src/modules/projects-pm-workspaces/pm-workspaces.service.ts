@@ -243,8 +243,20 @@ export class PmWorkspacesService {
     );
     const [rows, [totalRow]] = await Promise.all([
       this.db
-        .select()
+        .select({
+          pmWorkspaceMembershipId: pmWorkspaceMemberships.pmWorkspaceMembershipId,
+          orgId: pmWorkspaceMemberships.orgId,
+          pmWorkspaceId: pmWorkspaceMemberships.pmWorkspaceId,
+          organizationMembershipId: pmWorkspaceMemberships.organizationMembershipId,
+          userId: organizationMembers.userId,
+          role: pmWorkspaceMemberships.role,
+          addedAt: pmWorkspaceMemberships.addedAt,
+        })
         .from(pmWorkspaceMemberships)
+        .innerJoin(
+          organizationMembers,
+          eq(pmWorkspaceMemberships.organizationMembershipId, organizationMembers.id),
+        )
         .where(conditions)
         .limit(limit)
         .offset(offset),
@@ -262,7 +274,7 @@ export class PmWorkspacesService {
 
   async addMember(
     orgId: string,
-    userId: string,
+    actorUserId: string,
     pmWorkspaceId: string,
     input: AddWorkspaceMemberInput,
   ) {
@@ -272,14 +284,15 @@ export class PmWorkspacesService {
       .from(organizationMembers)
       .where(
         and(
-          eq(organizationMembers.id, input.organizationMembershipId),
+          eq(organizationMembers.userId, input.userId),
           eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
       )
       .limit(1);
     if (!member) {
       throw new NotFoundException(
-        "Organization membership not found in this organization",
+        "User is not an active member of this organization",
       );
     }
     const [row] = await this.db
@@ -287,7 +300,7 @@ export class PmWorkspacesService {
       .values({
         orgId,
         pmWorkspaceId,
-        organizationMembershipId: input.organizationMembershipId,
+        organizationMembershipId: member.id,
         role: input.role,
       })
       .returning()
@@ -302,16 +315,13 @@ export class PmWorkspacesService {
     if (!row) throw new NotFoundException("Failed to add workspace member");
     this.audit.log({
       action: "pm_workspace.member.added",
-      userId,
+      userId: actorUserId,
       orgId,
       resourceType: "pm_workspace_membership",
       resourceId: row.pmWorkspaceMembershipId,
-      metadata: {
-        pmWorkspaceId,
-        organizationMembershipId: input.organizationMembershipId,
-      },
+      metadata: { pmWorkspaceId, userId: input.userId },
     });
-    return row;
+    return { ...row, userId: input.userId };
   }
 
   async removeMember(

@@ -26,7 +26,7 @@ export const updateWorkspaceSchema = z.object({
 });
 
 export const addWorkspaceMemberSchema = z.object({
-  organizationMembershipId: z.number().int().positive(),
+  userId: z.string().uuid(),
   role: z.enum(["member", "admin"]).default("member"),
 });
 

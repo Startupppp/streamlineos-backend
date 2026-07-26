@@ -12,6 +12,7 @@ const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
 const USER_ID = "user-1";
 const WORKSPACE_ID = "pmw-1";
+const MEMBER_USER_ID = "11111111-1111-1111-1111-111111111111";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -164,12 +165,12 @@ describe("PmWorkspacesService", () => {
   });
 
   describe("addMember — validates org membership + tenant isolation", () => {
-    it("throws 404 when the organization membership is not in the org", async () => {
+    it("throws 404 when the user is not an active member of the org", async () => {
       mockSelectOnce([makeWorkspace()]); // loadWorkspace
-      mockSelectOnce([]); // organizationMembers lookup → none
+      mockSelectOnce([]); // active organizationMembers lookup → none
       await expect(
         svc.addMember(ORG_ID, USER_ID, WORKSPACE_ID, {
-          organizationMembershipId: 42,
+          userId: MEMBER_USER_ID,
           role: "member",
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -187,7 +188,7 @@ describe("PmWorkspacesService", () => {
 
       await expect(
         svc.addMember(ORG_ID, USER_ID, WORKSPACE_ID, {
-          organizationMembershipId: 42,
+          userId: MEMBER_USER_ID,
           role: "member",
         }),
       ).rejects.toBeInstanceOf(ConflictException);
@@ -210,11 +211,14 @@ describe("PmWorkspacesService", () => {
       });
 
       const result = await svc.addMember(ORG_ID, USER_ID, WORKSPACE_ID, {
-        organizationMembershipId: 42,
+        userId: MEMBER_USER_ID,
         role: "member",
       });
 
-      expect(result).toMatchObject({ pmWorkspaceMembershipId: "pmwm-1" });
+      expect(result).toMatchObject({
+        pmWorkspaceMembershipId: "pmwm-1",
+        userId: MEMBER_USER_ID,
+      });
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "pm_workspace.member.added",
