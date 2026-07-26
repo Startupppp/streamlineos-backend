@@ -49,9 +49,20 @@ function makeDb(pubRow: typeof PUBLISHED_PUB | null = PUBLISHED_PUB) {
 
 function makeGateway(ok: boolean = true) {
   return {
-    invokeText: jest.fn().mockResolvedValue(
+    invokeTextWithUsage: jest.fn().mockResolvedValue(
       ok
-        ? { ok: true, data: "Your net pay of ₹55,000 for June 2026 includes ₹60,000 gross earnings minus ₹5,000 deductions." }
+        ? {
+            ok: true,
+            data: "Your net pay of ₹55,000 for June 2026 includes ₹60,000 gross earnings minus ₹5,000 deductions.",
+            aiUsage: {
+              model: "fast",
+              promptTokens: 320,
+              completionTokens: 90,
+              totalTokens: 410,
+              credits: 0.62,
+              costUsd: 0.0062,
+            },
+          }
         : { ok: false, message: "Provider unavailable" },
     ),
   };
@@ -92,8 +103,8 @@ describe("PayrollAiExplainService", () => {
 
     await svc.explainPayslip("org-A", "user-A", 1);
 
-    expect(gateway.invokeText).toHaveBeenCalledTimes(1);
-    const call = (gateway.invokeText as jest.Mock).mock.calls[0][0] as {
+    expect(gateway.invokeTextWithUsage).toHaveBeenCalledTimes(1);
+    const call = (gateway.invokeTextWithUsage as jest.Mock).mock.calls[0][0] as {
       prompt: { system: string; user: string };
     };
     expect(call.prompt.system).toMatch(/MUST NOT compute|DO NOT compute|never.*compute/i);
@@ -102,10 +113,6 @@ describe("PayrollAiExplainService", () => {
   });
 
   it("throws ForbiddenException when a different-org user attempts access (BOLA check)", async () => {
-    const db = makeDb();
-    const gateway = makeGateway();
-    const svc = await buildService(db, gateway);
-
     const dbWithNoRow = makeDb(null);
     const svcB = await buildService(dbWithNoRow, makeGateway());
     await expect(svcB.explainPayslip("org-B", "user-B", 1)).rejects.toThrow(NotFoundException);
@@ -117,7 +124,7 @@ describe("PayrollAiExplainService", () => {
     const svc = await buildService(db, gateway);
 
     await expect(svc.explainPayslip("org-A", "user-EVIL", 1)).rejects.toThrow(ForbiddenException);
-    expect(gateway.invokeText).not.toHaveBeenCalled();
+    expect(gateway.invokeTextWithUsage).not.toHaveBeenCalled();
   });
 
   it("throws ServiceUnavailableException when AI gateway fails", async () => {

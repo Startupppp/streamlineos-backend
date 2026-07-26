@@ -15,6 +15,7 @@ import {
   buildPayslipEvidenceCitations,
   type EvidenceCitation,
 } from "./payroll-ai-guardrails";
+import type { AiUsageMeta } from "../../ai/gateway/ai-gateway.types";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 
@@ -25,6 +26,8 @@ export interface PayslipExplanation {
   citations: EvidenceCitation[];
   capability: typeof PAYROLL_AI_CAPABILITY;
   forbiddenActions: typeof FORBIDDEN_PAYROLL_AI_ACTIONS;
+  /** Token/credit usage for this call — surfaced via the shared AiUsageChip (§16). */
+  aiUsage: AiUsageMeta;
 }
 
 function buildSystemPrompt(): string {
@@ -116,7 +119,7 @@ export class PayrollAiExplainService {
       employerContributions: employerContribs.map((c) => ({ name: c.name, amount: c.amount })),
     };
 
-    const result = await this.gateway.invokeText({
+    const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId, userId },
       feature: FEATURE_KEY,
       tier: "fast",
@@ -139,6 +142,7 @@ export class PayrollAiExplainService {
       citations: buildPayslipEvidenceCitations(evidence),
       capability: PAYROLL_AI_CAPABILITY,
       forbiddenActions: FORBIDDEN_PAYROLL_AI_ACTIONS,
+      aiUsage: result.aiUsage,
     };
   }
 
