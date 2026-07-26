@@ -1,7 +1,104 @@
-import { ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { AiGatewayService } from "../ai/gateway/ai-gateway.service";
 import { PeriodsService } from "./periods.service";
+import { BillingService, type BillingNarrativeWorkItem } from "./billing.service";
+import { ReportsService } from "./reports.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
+import { throwOnAiFailure } from "../ai/services/gateway-result.util";
+import type { DescribeEntryInput, BillingNarrativeInput } from "./dto/ai.schemas";
+import type { OverviewQuery } from "./dto/reports.schemas";
+
+const DESCRIBE_FEATURE_KEY = "timesheets.describe-entry" as const;
+const NARRATIVE_FEATURE_KEY = "timesheets.billing-narrative" as const;
+const REPORTS_FEATURE_KEY = "timesheets.reports-narrative" as const;
+
+function buildReportsSystemPrompt(): string {
+  return [
+    "You are a timesheet analyst. Narrate the pre-computed team timesheet overview for a manager in plain language.",
+    "RULES:",
+    "1. You MUST NOT compute, recalculate, or invent any numbers — every figure is provided in the evidence block.",
+    "2. Cover: total hours logged, the billable vs non-billable split (billable ratio), the approval backlog (pending periods and pending hours), the number of active contributors, and the busiest projects and days.",
+    "3. Flag anything a manager should act on: a low billable ratio, a large approval backlog, or a heavy concentration of hours on one project or day.",
+    "4. Keep it to 3-6 sentences of plain prose. No markdown bullets, no preamble.",
+  ].join("\n");
+}
+
+function buildReportsUserPrompt(evidence: unknown): string {
+  return [
+    "Team timesheet overview evidence — all numbers are pre-computed, do not modify them:",
+    JSON.stringify(evidence, null, 2),
+    "",
+    "Write a 3-6 sentence plain-language narrative for a manager following the rules.",
+  ].join("\n");
+}
+
+function buildNarrativeEvidence(items: BillingNarrativeWorkItem[]) {
+  const byProject = new Map<string, { totalHours: number; notes: string[] }>();
+  for (const item of items) {
+    const group = byProject.get(item.projectName) ?? { totalHours: 0, notes: [] };
+    group.totalHours += parseFloat(item.hours);
+    const note = item.description?.trim();
+    if (note) group.notes.push(note);
+    byProject.set(item.projectName, group);
+  }
+  return [...byProject.entries()].map(([project, group]) => ({
+    project,
+    totalHours: Math.round(group.totalHours * 10) / 10,
+    workItems: group.notes.slice(0, 60),
+  }));
+}
+
+function buildNarrativeSystemPrompt(): string {
+  return [
+    "You are a billing assistant. Write a concise, professional, client-facing invoice narrative that summarises the work performed.",
+    "RULES:",
+    "1. Ground every statement ONLY in the provided work items — never invent deliverables, outcomes, or scope that is not present.",
+    "2. If there are multiple projects, organise the narrative by project with a short heading per project.",
+    "3. Summarise deliverables in clear business language; group similar items. Do not list every raw note verbatim and do not include internal jargon.",
+    "4. Do not fabricate or recompute totals. You may reference the provided hours per project, but keep the focus on the work delivered.",
+    "5. Keep it tight: a short paragraph (or 3-5 bullet points) per project. Plain prose or simple bullets, no invoice numbers, no pricing.",
+  ].join("\n");
+}
+
+function buildNarrativeUserPrompt(evidence: unknown): string {
+  return [
+    "Work performed (grounded evidence — do not add anything not present here):",
+    JSON.stringify(evidence, null, 2),
+    "",
+    "Write the client-facing invoice narrative following the rules.",
+  ].join("\n");
+}
+
+function buildDescribeSystemPrompt(): string {
+  return [
+    "You are a timesheet assistant. Rewrite a worker's rough time-entry note into a clear, concise, professional description suitable for a client-facing invoice line or a manager's review.",
+    "RULES:",
+    "1. Stay grounded ONLY in the note and context provided — never invent work, deliverables, or outcomes that were not described.",
+    "2. Do not restate the hours, project name, or billable flag — those are shown separately.",
+    "3. Output one or two sentences of plain prose. No markdown, no bullet points, no preamble, no quotes.",
+    "4. Use past tense, active voice (e.g. 'Implemented…', 'Reviewed…', 'Fixed…').",
+  ].join("\n");
+}
+
+function buildDescribeUserPrompt(input: DescribeEntryInput): string {
+  const context = [
+    input.projectName ? `Project: ${input.projectName}` : null,
+    input.ticketTitle ? `Ticket: ${input.ticketTitle}` : null,
+    input.hours != null ? `Hours logged: ${input.hours}` : null,
+    input.billable != null ? `Billable: ${input.billable ? "yes" : "no"}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return [
+    context ? `Context:\n${context}` : "Context: (none)",
+    "",
+    `Rough note:\n${input.description}`,
+    "",
+    "Rewrite the rough note as a polished description following the rules.",
+  ].join("\n");
+}
 
 const FEATURE_KEY = "timesheets.period-summary" as const;
 
@@ -91,6 +188,8 @@ export class TimesheetsAiService {
   constructor(
     private readonly gateway: AiGatewayService,
     private readonly periods: PeriodsService,
+    private readonly billing: BillingService,
+    private readonly reports: ReportsService,
   ) {}
 
   async summarizePeriod(u: CurrentUserContext, periodId: number): Promise<{ narration: string; evidence: Record<string, unknown> }> {
@@ -126,5 +225,92 @@ export class TimesheetsAiService {
     }
 
     return { narration: result.data, evidence: evidenceRecord };
+  }
+
+  async describeEntry(
+    u: CurrentUserContext,
+    input: DescribeEntryInput,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const result = await this.gateway.invokeTextWithUsage({
+      actor: { orgId: u.orgId, userId: u.userId },
+      feature: DESCRIBE_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 200,
+      charge: true,
+      prompt: {
+        system: buildDescribeSystemPrompt(),
+        user: buildDescribeUserPrompt(input),
+        promptKey: DESCRIBE_FEATURE_KEY,
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) return throwOnAiFailure(result);
+    return { text: result.data, aiUsage: result.aiUsage };
+  }
+
+  async reportsNarrative(
+    u: CurrentUserContext,
+    query: OverviewQuery,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const overview = await this.reports.getOverview(u, query);
+    if (overview.totalHours === 0) {
+      throw new BadRequestException(
+        "No timesheet data found for the selected range.",
+      );
+    }
+
+    const evidence = {
+      ...overview,
+      byDay: overview.byDay.slice(-60),
+      byProject: overview.byProject.slice(0, 40),
+      dateRange: { start: query.startDate ?? null, end: query.endDate ?? null },
+    };
+
+    const result = await this.gateway.invokeTextWithUsage({
+      actor: { orgId: u.orgId, userId: u.userId },
+      feature: REPORTS_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 500,
+      charge: true,
+      prompt: {
+        system: buildReportsSystemPrompt(),
+        user: buildReportsUserPrompt(evidence),
+        promptKey: REPORTS_FEATURE_KEY,
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) return throwOnAiFailure(result);
+    return { text: result.data, aiUsage: result.aiUsage };
+  }
+
+  async billingNarrative(
+    u: CurrentUserContext,
+    input: BillingNarrativeInput,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const items = await this.billing.getBillableWorkForNarrative(u, input);
+    if (items.length === 0) {
+      throw new BadRequestException(
+        "No uninvoiced billable work found for the selected range.",
+      );
+    }
+
+    const result = await this.gateway.invokeTextWithUsage({
+      actor: { orgId: u.orgId, userId: u.userId },
+      feature: NARRATIVE_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 600,
+      charge: true,
+      prompt: {
+        system: buildNarrativeSystemPrompt(),
+        user: buildNarrativeUserPrompt(buildNarrativeEvidence(items)),
+        promptKey: NARRATIVE_FEATURE_KEY,
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) return throwOnAiFailure(result);
+    return { text: result.data, aiUsage: result.aiUsage };
   }
 }

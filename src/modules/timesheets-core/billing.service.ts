@@ -15,7 +15,15 @@ import type {
   CreateInvoiceDraftInput,
   RatePreviewQuery,
 } from "./dto/billing.schemas";
+import type { BillingNarrativeInput } from "./dto/ai.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+export interface BillingNarrativeWorkItem {
+  projectName: string;
+  date: string;
+  hours: string;
+  description: string | null;
+}
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -317,5 +325,41 @@ export class BillingService {
       ticketId: query.ticketId,
     });
     return resolved;
+  }
+
+  async getBillableWorkForNarrative(
+    u: CurrentUserContext,
+    input: BillingNarrativeInput,
+  ): Promise<BillingNarrativeWorkItem[]> {
+    const conditions = [
+      eq(timesheets.orgId, u.orgId),
+      eq(timesheets.status, "APPROVED"),
+      eq(timesheets.isBillable, true),
+      isNull(timesheets.voidedAt),
+      eq(timesheets.invoicingStatus, "UNINVOICED"),
+      gte(timesheets.date, input.startDate),
+      lte(timesheets.date, input.endDate),
+    ];
+    if (input.projectId) conditions.push(eq(timesheets.projectId, input.projectId));
+
+    const rows = await this.db
+      .select({
+        projectName: projects.name,
+        date: timesheets.date,
+        hours: timesheets.hours,
+        description: timesheets.description,
+      })
+      .from(timesheets)
+      .leftJoin(projects, eq(timesheets.projectId, projects.id))
+      .where(and(...conditions))
+      .orderBy(timesheets.date)
+      .limit(200);
+
+    return rows.map((r) => ({
+      projectName: r.projectName ?? "Unassigned",
+      date: r.date,
+      hours: r.hours,
+      description: r.description,
+    }));
   }
 }
