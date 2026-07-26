@@ -51,6 +51,7 @@ describe("RecruitmentCandidatesService.moveStage — transactional", () => {
       undefined as never,
       undefined as never,
       automation as never,
+      undefined as never,
     );
 
     const result = await service.moveStage("org-1", "user-1", 1, { stage: "SCREENING" } as never);

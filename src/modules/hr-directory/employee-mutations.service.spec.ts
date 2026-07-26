@@ -43,6 +43,7 @@ describe("EmployeeMutationsService.updateEmployee — termination shortcut is bl
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
     );
 
     await expect(

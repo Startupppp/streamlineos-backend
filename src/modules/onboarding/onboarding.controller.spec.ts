@@ -62,6 +62,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     // module eagerly tries to resolve on .compile() even when unused by the methods under test.
     controller = new OnboardingController(
       onboarding as never,
+      undefined as never,
       checklists as unknown as ModuleChecklistService,
       tours as unknown as GuidedTourService,
       undefined as never,
