@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -26,6 +27,7 @@ export const kbArticleAttachments = pgTable(
   },
   (table) => [
     index("idx_kb_article_attachments_article").on(table.articleId),
+    unique("uniq_kb_article_attachments_org_id").on(table.orgId, table.id),
   ],
 );
 

@@ -8,6 +8,7 @@ import {
   jsonb,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -36,7 +37,10 @@ export const supportBusinessHours = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
-  (table) => [index("idx_support_business_hours_org").on(table.orgId)],
+  (table) => [
+    index("idx_support_business_hours_org").on(table.orgId),
+    unique("uniq_support_business_hours_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const supportSlaPolicies = pgTable(
@@ -58,6 +62,7 @@ export const supportSlaPolicies = pgTable(
   },
   (table) => [
     index("idx_support_sla_policies_org_enabled").on(table.orgId, table.isEnabled),
+    unique("uniq_support_sla_policies_org_id").on(table.orgId, table.id),
   ],
 );
 

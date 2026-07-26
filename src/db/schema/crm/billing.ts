@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invoiceStatusEnum, supportTicketStatusEnum, supportTicketPriorityEnum, quoteStatusEnum,
@@ -54,6 +54,7 @@ export const invoices = pgTable("invoices", {
   index("idx_invoices_project").on(table.projectId),
   index("idx_invoices_due_date").on(table.dueDate),
   index("idx_invoices_collection_owner").on(table.collectionOwnerId),
+  unique("uniq_invoices_org_id").on(table.orgId, table.id),
 ]);
 
 export const invoiceItems = pgTable("invoice_items", {
@@ -84,6 +85,7 @@ export const payments = pgTable("payments", {
 }, (table) => [
   index("idx_payments_invoice").on(table.invoiceId),
   index("idx_payments_org_date").on(table.orgId, table.paymentDate),
+  unique("uniq_payments_org_id").on(table.orgId, table.id),
 ]);
 
 export const purchaseBills = pgTable("purchase_bills", {
@@ -121,6 +123,7 @@ export const purchaseBills = pgTable("purchase_bills", {
   index("idx_purchase_bills_org_status").on(table.orgId, table.status),
   index("idx_purchase_bills_vendor").on(table.vendorId),
   index("idx_purchase_bills_due_date").on(table.dueDate),
+  unique("uniq_purchase_bills_org_id").on(table.orgId, table.id),
 ]);
 
 export const purchaseBillItems = pgTable("purchase_bill_items", {
@@ -151,6 +154,7 @@ export const vendorPayments = pgTable("vendor_payments", {
 }, (table) => [
   index("idx_vendor_payments_bill").on(table.billId),
   index("idx_vendor_payments_org_date").on(table.orgId, table.paymentDate),
+  unique("uniq_vendor_payments_org_id").on(table.orgId, table.id),
 ]);
 
 export const supportTickets = pgTable("support_tickets", {
@@ -191,6 +195,7 @@ export const supportTickets = pgTable("support_tickets", {
   index("idx_support_tickets_queue").on(table.queueId),
   index("idx_support_tickets_source_message").on(table.sourceMessageId),
   index("idx_support_tickets_snoozed_until").on(table.snoozedUntil),
+  unique("uniq_support_tickets_org_id").on(table.orgId, table.id),
 ]);
 
 export const supportTicketMessages = pgTable("support_ticket_messages", {
@@ -251,6 +256,7 @@ export const quotes = pgTable("quotes", {
   uniqueIndex("idx_quotes_number").on(table.orgId, table.quoteNumber),
   index("idx_quotes_pricebook").on(table.pricebookId),
   index("idx_quotes_converted_invoice").on(table.convertedInvoiceId),
+  unique("uniq_quotes_org_id").on(table.orgId, table.id),
 ]);
 
 export const quoteLineItems = pgTable("quote_line_items", {

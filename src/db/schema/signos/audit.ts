@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { signActorTypeEnum, signAuditEventTypeEnum } from "./enums";
@@ -32,6 +32,7 @@ export const signAuditEvents = pgTable(
     index("idx_sign_audit_events_org_envelope_created").on(table.orgId, table.envelopeId, table.createdAt),
     index("idx_sign_audit_events_recipient").on(table.recipientId),
     index("idx_sign_audit_events_type").on(table.eventType),
+    unique("uniq_sign_audit_events_org_id").on(table.orgId, table.id),
   ],
 );
 

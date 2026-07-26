@@ -9,6 +9,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "./auth";
@@ -118,6 +119,7 @@ export const feedbucketWidgets = pgTable(
   (t) => [
     uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey),
     index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt),
+    unique("uniq_feedbucket_widgets_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -158,6 +160,7 @@ export const feedbucketSubmissions = pgTable(
     index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt),
     index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt),
     index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeId),
+    unique("uniq_feedbucket_submissions_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -178,7 +181,10 @@ export const feedbucketAttachments = pgTable(
     mimeType: text("mime_type"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [index("idx_feedbucket_attachments_submission").on(t.orgId, t.submissionId)],
+  (t) => [
+    index("idx_feedbucket_attachments_submission").on(t.orgId, t.submissionId),
+    unique("uniq_feedbucket_attachments_org_id").on(t.orgId, t.id),
+  ],
 );
 
 export const feedbucketWidgetsRelations = relations(feedbucketWidgets, ({ one, many }) => ({

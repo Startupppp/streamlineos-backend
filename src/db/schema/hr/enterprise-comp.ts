@@ -12,6 +12,7 @@ import {
   index,
   uniqueIndex,
   numeric,
+  unique,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
@@ -56,6 +57,7 @@ export const hrTimeDevices = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_time_devices_org_id").on(t.orgId, t.id),
     index("idx_hr_time_devices_org_status").on(t.orgId, t.status),
     uniqueIndex("uniq_hr_time_devices_org_serial").on(t.orgId, t.serialNumber),
   ],
@@ -77,6 +79,7 @@ export const hrDeviceSyncLogs = pgTable(
     syncedAt: timestamp("synced_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_device_sync_logs_org_id").on(t.orgId, t.id),
     index("idx_hr_device_sync_logs_org_device").on(t.orgId, t.deviceId),
     index("idx_hr_device_sync_logs_status").on(t.orgId, t.status),
   ],
@@ -101,6 +104,7 @@ export const hrDeviceEmployeeMappings = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_device_employee_mappings_org_id").on(t.orgId, t.id),
     index("idx_hr_device_emp_mappings_org_device").on(t.orgId, t.deviceId),
     index("idx_hr_device_emp_mappings_org_user").on(t.orgId, t.userId),
   ],
@@ -141,6 +145,7 @@ export const hrPayrollVarianceApprovals = pgTable(
     resolvedAt: timestamp("resolved_at"),
   },
   (t) => [
+    unique("uniq_hr_payroll_variance_approvals_org_id").on(t.orgId, t.id),
     index("idx_hr_payroll_variance_org_period").on(t.orgId, t.payrollPeriodKey),
     index("idx_hr_payroll_variance_status").on(t.orgId, t.status),
   ],
@@ -166,6 +171,7 @@ export const hrArrearsAdjustments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_arrears_adjustments_org_id").on(t.orgId, t.id),
     index("idx_hr_arrears_org_user").on(t.orgId, t.userId),
     index("idx_hr_arrears_org_status").on(t.orgId, t.status),
   ],
@@ -188,6 +194,7 @@ export const hrPayrollComplianceTasks = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_payroll_compliance_tasks_org_id").on(t.orgId, t.id),
     index("idx_hr_compliance_tasks_org_country").on(t.orgId, t.countryCode),
     index("idx_hr_compliance_tasks_org_status").on(t.orgId, t.status),
   ],
@@ -225,6 +232,7 @@ export const hrCompCycles = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_comp_cycles_org_id").on(t.orgId, t.id),
     index("idx_hr_comp_cycles_org_status").on(t.orgId, t.status),
     uniqueIndex("uniq_hr_comp_cycles_org_year_name").on(t.orgId, t.fiscalYear, t.name),
   ],
@@ -257,6 +265,7 @@ export const hrCompRecommendations = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_comp_recommendations_org_id").on(t.orgId, t.id),
     index("idx_hr_comp_recs_org_cycle").on(t.orgId, t.cycleId),
     index("idx_hr_comp_recs_org_user").on(t.orgId, t.userId),
     uniqueIndex("uniq_hr_comp_recs_cycle_user").on(t.cycleId, t.userId),
@@ -281,6 +290,7 @@ export const hrCompBudgetPools = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_comp_budget_pools_org_id").on(t.orgId, t.id),
     index("idx_hr_comp_budget_pools_org_cycle").on(t.orgId, t.cycleId),
   ],
 );
@@ -326,6 +336,7 @@ export const hrEquityGrants = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_equity_grants_org_id").on(t.orgId, t.id),
     index("idx_hr_equity_grants_org_user").on(t.orgId, t.userId),
     index("idx_hr_equity_grants_org_status").on(t.orgId, t.status),
   ],
@@ -347,6 +358,7 @@ export const hrEquityVestingEvents = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_equity_vesting_events_org_id").on(t.orgId, t.id),
     index("idx_hr_equity_vesting_events_grant").on(t.grantId),
     index("idx_hr_equity_vesting_events_org_grant").on(t.orgId, t.grantId),
   ],
@@ -370,6 +382,7 @@ export const hrEquityExercises = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_equity_exercises_org_id").on(t.orgId, t.id),
     index("idx_hr_equity_exercises_org_grant").on(t.orgId, t.grantId),
   ],
 );

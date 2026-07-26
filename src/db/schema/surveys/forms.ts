@@ -23,6 +23,7 @@ export const surveyForms = pgTable("survey_forms", {
   archivedAt: timestamp("archived_at"),
 }, (table) => [
   index("idx_survey_forms_org_status_mode").on(table.orgId, table.status, table.mode),
+  unique("uniq_survey_forms_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyVersions = pgTable("survey_versions", {
@@ -37,6 +38,7 @@ export const surveyVersions = pgTable("survey_versions", {
 }, (table) => [
   index("idx_survey_versions_survey").on(table.surveyId),
   unique("uq_survey_versions_survey_number").on(table.surveyId, table.versionNumber),
+  unique("uniq_survey_versions_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyFormsRelations = relations(surveyForms, ({ one, many }) => ({

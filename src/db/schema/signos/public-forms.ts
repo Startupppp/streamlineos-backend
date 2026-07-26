@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { signPublicFormStatusEnum } from "./enums";
@@ -26,6 +26,7 @@ export const signPublicForms = pgTable(
   (table) => [
     uniqueIndex("uniq_sign_public_forms_slug").on(table.slug),
     index("idx_sign_public_forms_org_status").on(table.orgId, table.status),
+    unique("uniq_sign_public_forms_org_id").on(table.orgId, table.id),
   ],
 );
 

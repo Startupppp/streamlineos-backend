@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invReservationStrategyEnum, invCostingMethodEnum, invExpiryPolicyEnum,
@@ -26,6 +26,7 @@ export const invSettings = pgTable("inv_settings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_settings_org_id").on(table.orgId, table.id),
   index("idx_inv_settings_org").on(table.orgId),
 ]);
 
@@ -40,6 +41,7 @@ export const invNumberSequences = pgTable("inv_number_sequences", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_numseq_org_doctype").on(table.orgId, table.docType),
+  unique("uniq_inv_number_sequences_org_id").on(table.orgId, table.id),
 ]);
 
 export const invIdempotencyKeys = pgTable("inv_idempotency_keys", {
@@ -53,6 +55,7 @@ export const invIdempotencyKeys = pgTable("inv_idempotency_keys", {
   expiresAt: timestamp("expires_at").notNull(),
 }, (table) => [
   uniqueIndex("uniq_inv_idempotency_org_key").on(table.orgId, table.idempotencyKey),
+  unique("uniq_inv_idempotency_keys_org_id").on(table.orgId, table.id),
   index("idx_inv_idempotency_expires").on(table.expiresAt),
 ]);
 
@@ -71,6 +74,7 @@ export const invImportJobs = pgTable("inv_import_jobs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_import_jobs_org_id").on(table.orgId, table.id),
   index("idx_inv_import_org_status").on(table.orgId, table.status),
 ]);
 
@@ -89,6 +93,7 @@ export const invExportJobs = pgTable("inv_export_jobs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_export_jobs_org_id").on(table.orgId, table.id),
   index("idx_inv_export_org_status").on(table.orgId, table.status),
 ]);
 
@@ -104,6 +109,7 @@ export const invWebhooks = pgTable("inv_webhooks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_webhooks_org_id").on(table.orgId, table.id),
   index("idx_inv_webhooks_org").on(table.orgId),
 ]);
 
@@ -118,6 +124,7 @@ export const invWebhookEvents = pgTable("inv_webhook_events", {
   deliveredAt: timestamp("delivered_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_inv_webhook_events_org_id").on(table.orgId, table.id),
   index("idx_inv_whe_org_status").on(table.orgId, table.status),
 ]);
 
@@ -133,6 +140,7 @@ export const invAuditEvents = pgTable("inv_audit_events", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_inv_audit_events_org_id").on(table.orgId, table.id),
   index("idx_inv_audit_org_type_created").on(table.orgId, table.resourceType, table.createdAt),
   index("idx_inv_audit_org_created").on(table.orgId, table.createdAt),
 ]);

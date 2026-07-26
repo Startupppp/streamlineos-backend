@@ -6,6 +6,7 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -42,6 +43,7 @@ export const supportTicketActivity = pgTable(
   },
   (table) => [
     index("idx_support_ticket_activity_ticket").on(table.supportTicketId),
+    unique("uniq_support_ticket_activity_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -61,6 +63,7 @@ export const kbArticleComments = pgTable(
   (table) => [
     index("idx_kb_article_comments_article").on(table.articleId),
     index("idx_kb_comments_org_article").on(table.orgId, table.articleId),
+    unique("uniq_kb_article_comments_org_id").on(table.orgId, table.id),
   ],
 );
 

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { projects } from "./core";
@@ -15,6 +15,7 @@ export const projectDailySnapshots = pgTable("project_daily_snapshots", {
 }, (table) => [
   uniqueIndex("uniq_project_daily_snapshots_project_date_group").on(table.projectId, table.snapshotDate, table.stateGroup),
   index("idx_project_daily_snapshots_org_project").on(table.orgId, table.projectId),
+  unique("uniq_project_daily_snapshots_org_id").on(table.orgId, table.id),
 ]);
 
 export const projectDailySnapshotsRelations = relations(projectDailySnapshots, ({ one }) => ({

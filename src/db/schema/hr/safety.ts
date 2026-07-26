@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -53,6 +54,7 @@ export const hrSafetyIncidents = pgTable("hr_safety_incidents", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  unique("uniq_hr_safety_incidents_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_safety_incidents_org_number").on(table.orgId, table.incidentNumber),
   index("idx_hr_safety_incidents_org_status").on(table.orgId, table.status),
   index("idx_hr_safety_incidents_org_type").on(table.orgId, table.type),
@@ -68,6 +70,7 @@ export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   flags: jsonb("flags").$type<string[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_wellness_checkins_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_wellness_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_hr_wellness_org_date").on(table.orgId, table.date),
   index("idx_hr_wellness_org_user").on(table.orgId, table.userId),

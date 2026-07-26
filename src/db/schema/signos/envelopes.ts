@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { signEnvelopeStatusEnum, signRoutingModeEnum, signCcTimingEnum } from "./enums";
@@ -61,6 +61,7 @@ export const signEnvelopes = pgTable(
     index("idx_sign_envelopes_source").on(table.sourceModule, table.sourceEntityType, table.sourceEntityId),
     index("idx_sign_envelopes_expires").on(table.expiresAt),
     uniqueIndex("uniq_sign_envelopes_finalization_key").on(table.finalizationKey),
+    unique("uniq_sign_envelopes_org_id").on(table.orgId, table.id),
   ],
 );
 

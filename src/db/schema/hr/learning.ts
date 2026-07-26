@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const courseCategories = pgTable("course_categories", {
@@ -8,6 +8,7 @@ export const courseCategories = pgTable("course_categories", {
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_course_categories_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_course_categories_org_name").on(table.orgId, table.name),
 ]);
 
@@ -30,6 +31,7 @@ export const courses = pgTable("courses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_courses_org_id").on(table.orgId, table.id),
   index("idx_courses_org_status").on(table.orgId, table.status),
 ]);
 

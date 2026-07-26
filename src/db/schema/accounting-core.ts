@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { ledgerAccounts } from "./accounting";
@@ -33,6 +33,7 @@ export const accountingPeriods = pgTable("accounting_periods", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_accounting_periods_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_periods_org_start").on(table.orgId, table.startDate),
   index("idx_accounting_periods_org_status").on(table.orgId, table.status),
 ]);
@@ -46,6 +47,7 @@ export const accountingDimensions = pgTable("accounting_dimensions", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_accounting_dimensions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_dimensions_org_key").on(table.orgId, table.key),
 ]);
 
@@ -58,6 +60,7 @@ export const accountingDimensionValues = pgTable("accounting_dimension_values", 
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_accounting_dim_values_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_dim_values_org_dim_code").on(table.orgId, table.dimensionId, table.code),
   index("idx_accounting_dim_values_org_dim").on(table.orgId, table.dimensionId),
 ]);
@@ -83,6 +86,7 @@ export const accountingSettings = pgTable("accounting_settings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_accounting_settings_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_settings_org").on(table.orgId),
 ]);
 
@@ -95,6 +99,7 @@ export const accNumberSequences = pgTable("acc_number_sequences", {
   padding: integer("padding").default(4).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_acc_number_sequences_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_number_sequences_org_entity").on(table.orgId, table.entityType),
 ]);
 
@@ -106,6 +111,7 @@ export const accSystemAccountMap = pgTable("acc_system_account_map", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_acc_system_account_map_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_system_account_map_org_purpose").on(table.orgId, table.purpose),
   index("idx_acc_system_account_map_org").on(table.orgId),
 ]);
@@ -119,6 +125,7 @@ export const finExchangeRates = pgTable("fin_exchange_rates", {
   asOfDate: date("as_of_date").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_exchange_rates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_exchange_rates_org_pair_date").on(table.orgId, table.fromCurrency, table.toCurrency, table.asOfDate),
   index("idx_fin_exchange_rates_org_date").on(table.orgId, table.asOfDate),
 ]);
@@ -134,6 +141,7 @@ export const finApprovalPolicies = pgTable("fin_approval_policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_approval_policies_org_id").on(table.orgId, table.id),
   index("idx_fin_approval_policies_org_type").on(table.orgId, table.recordType),
 ]);
 
@@ -150,6 +158,7 @@ export const finApprovalRequests = pgTable("fin_approval_requests", {
   decisionComment: text("decision_comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_approval_requests_org_id").on(table.orgId, table.id),
   index("idx_fin_approval_requests_org_status").on(table.orgId, table.status),
   index("idx_fin_approval_requests_org_type_record").on(table.orgId, table.recordType, table.recordId),
 ]);
@@ -169,6 +178,7 @@ export const finRecurringJournalTemplates = pgTable("fin_recurring_journal_templ
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_recur_journal_tmpls_org_id").on(table.orgId, table.id),
   index("idx_fin_recurring_journal_templates_org").on(table.orgId),
 ]);
 

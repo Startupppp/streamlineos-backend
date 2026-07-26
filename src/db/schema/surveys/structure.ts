@@ -38,6 +38,7 @@ export const surveySections = pgTable("survey_sections", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_survey_sections_version").on(table.surveyId, table.versionId, table.sortOrder),
+  unique("uniq_survey_sections_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyQuestions = pgTable("survey_questions", {
@@ -61,6 +62,7 @@ export const surveyQuestions = pgTable("survey_questions", {
 }, (table) => [
   index("idx_survey_questions_section").on(table.surveyId, table.versionId, table.sectionId, table.sortOrder),
   unique("uq_survey_questions_version_key").on(table.versionId, table.questionKey),
+  unique("uniq_survey_questions_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyQuestionChoices = pgTable("survey_question_choices", {
@@ -77,6 +79,7 @@ export const surveyQuestionChoices = pgTable("survey_question_choices", {
 }, (table) => [
   index("idx_survey_question_choices_question").on(table.questionId, table.sortOrder),
   unique("uq_survey_question_choices_question_key").on(table.questionId, table.choiceKey),
+  unique("uniq_survey_question_choices_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyLogicRules = pgTable("survey_logic_rules", {
@@ -92,6 +95,7 @@ export const surveyLogicRules = pgTable("survey_logic_rules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_survey_logic_rules_source").on(table.surveyId, table.versionId, table.sourceQuestionId),
+  unique("uniq_survey_logic_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveySectionsRelations = relations(surveySections, ({ one, many }) => ({

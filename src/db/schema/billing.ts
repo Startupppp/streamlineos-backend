@@ -10,6 +10,7 @@ import {
   serial,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -47,7 +48,10 @@ export const billingProfiles = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [index("billing_profiles_org_idx").on(t.orgId)],
+  (t) => [
+    index("billing_profiles_org_idx").on(t.orgId),
+    unique("uniq_billing_profiles_org_id").on(t.orgId, t.id),
+  ],
 );
 
 export const marketplaceApps = pgTable(
@@ -92,6 +96,7 @@ export const appInstallations = pgTable(
   (t) => [
     index("app_installations_org_app_idx").on(t.orgId, t.appId),
     index("app_installations_org_idx").on(t.orgId),
+    unique("uniq_app_installations_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -123,7 +128,10 @@ export const orgAiCredits = pgTable(
     autoTopUpThreshold: integer("auto_top_up_threshold").default(100000),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [index("org_ai_credits_org_idx").on(t.orgId)],
+  (t) => [
+    index("org_ai_credits_org_idx").on(t.orgId),
+    unique("uniq_org_ai_credits_org_id").on(t.orgId, t.id),
+  ],
 );
 
 export const aiCreditTransactions = pgTable(
@@ -149,6 +157,7 @@ export const aiCreditTransactions = pgTable(
     index("ai_credit_txns_org_idx").on(t.orgId),
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
     uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
+    unique("uniq_ai_credit_transactions_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -174,6 +183,7 @@ export const aiCreditReservations = pgTable(
     uniqueIndex("uq_ai_credit_res_org_idem_key")
       .on(t.orgId, t.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),
+    unique("uniq_ai_credit_reservations_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -198,6 +208,7 @@ export const affiliates = pgTable(
   (t) => [
     index("affiliates_code_idx").on(t.referralCode),
     index("affiliates_user_idx").on(t.userId),
+    unique("uniq_affiliates_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -261,6 +272,7 @@ export const revenueEvents = pgTable(
     index("revenue_events_type_idx").on(t.type),
     index("revenue_events_created_idx").on(t.createdAt),
     index("revenue_events_org_idx").on(t.orgId),
+    unique("uniq_revenue_events_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -317,6 +329,7 @@ export const enterpriseQuotes = pgTable("enterprise_quotes", {
   index("idx_ent_quotes_deal").on(t.dealId),
   index("idx_ent_quotes_client").on(t.clientId),
   uniqueIndex("idx_ent_quotes_ref").on(t.orgId, t.quoteRef),
+  unique("uniq_enterprise_quotes_org_id").on(t.orgId, t.id),
 ]);
 
 export const enterpriseQuotesRelations = relations(enterpriseQuotes, ({ one }) => ({

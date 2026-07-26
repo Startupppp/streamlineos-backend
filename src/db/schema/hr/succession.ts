@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, date, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, date, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { hrJobRoles } from "./core-org";
@@ -14,6 +14,7 @@ export const hrRoleSkillRequirements = pgTable("hr_role_skill_requirements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_role_skill_requirements_org_id").on(table.orgId, table.id),
   index("idx_role_skill_req_org").on(table.orgId),
   index("idx_role_skill_req_job_role").on(table.jobRoleId),
 ]);
@@ -30,6 +31,7 @@ export const hrMentorships = pgTable("hr_mentorships", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_mentorships_org_id").on(table.orgId, table.id),
   index("idx_mentorships_org").on(table.orgId),
   index("idx_mentorships_mentor").on(table.mentorId),
   index("idx_mentorships_mentee").on(table.menteeId),
@@ -48,6 +50,7 @@ export const hrSuccessionPlans = pgTable("hr_succession_plans", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_succession_plans_org_id").on(table.orgId, table.id),
   index("idx_succession_org").on(table.orgId),
   index("idx_succession_role").on(table.orgId, table.jobRoleId),
 ]);

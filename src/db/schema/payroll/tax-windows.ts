@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, text, timestamp, date, index, uniqueIndex,
+  pgTable, serial, text, timestamp, date, index, uniqueIndex, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -17,6 +17,7 @@ export const payrollTaxWindows = pgTable("payroll_tax_windows", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_tax_windows_org_id").on(table.orgId, table.id),
   index("idx_payroll_tax_windows_org").on(table.orgId),
   uniqueIndex("uniq_payroll_tax_windows_org_year").on(table.orgId, table.financialYear),
 ]);

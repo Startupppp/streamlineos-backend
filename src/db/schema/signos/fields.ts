@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { signFieldTypeEnum } from "./enums";
@@ -44,6 +44,7 @@ export const signFields = pgTable(
     index("idx_sign_fields_org_envelope").on(table.orgId, table.envelopeId),
     index("idx_sign_fields_document").on(table.documentId),
     index("idx_sign_fields_recipient").on(table.recipientId),
+    unique("uniq_sign_fields_org_id").on(table.orgId, table.id),
   ],
 );
 

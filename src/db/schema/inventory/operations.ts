@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
@@ -26,6 +26,7 @@ export const invVendorReturns = pgTable("inv_vendor_returns", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_vret_org_number").on(table.orgId, table.returnNumber),
+  unique("uniq_inv_vendor_returns_org_id").on(table.orgId, table.id),
   index("idx_inv_vret_org_status").on(table.orgId, table.status),
 ]);
 
@@ -60,6 +61,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_cret_org_number").on(table.orgId, table.returnNumber),
+  unique("uniq_inv_customer_returns_org_id").on(table.orgId, table.id),
   index("idx_inv_cret_org_status").on(table.orgId, table.status),
 ]);
 
@@ -90,6 +92,7 @@ export const invPickLists = pgTable("inv_pick_lists", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_pick_org_number").on(table.orgId, table.pickNumber),
+  unique("uniq_inv_pick_lists_org_id").on(table.orgId, table.id),
   index("idx_inv_pick_org_status").on(table.orgId, table.status),
 ]);
 
@@ -124,6 +127,7 @@ export const invCycleCounts = pgTable("inv_cycle_counts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_cc_org_number").on(table.orgId, table.countNumber),
+  unique("uniq_inv_cycle_counts_org_id").on(table.orgId, table.id),
   index("idx_inv_cc_org_status").on(table.orgId, table.status),
 ]);
 
@@ -155,6 +159,7 @@ export const invPhysicalAudits = pgTable("inv_physical_audits", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_pa_org_number").on(table.orgId, table.auditNumber),
+  unique("uniq_inv_physical_audits_org_id").on(table.orgId, table.id),
   index("idx_inv_pa_org_status").on(table.orgId, table.status),
 ]);
 

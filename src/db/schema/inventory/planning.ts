@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invAiInsightStatusEnum } from "../enums";
 import { organizations } from "../auth";
@@ -21,6 +21,7 @@ export const invReorderRules = pgTable("inv_reorder_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_reorder_org_variant_wh").on(table.orgId, table.productVariantId, table.warehouseId),
+  unique("uniq_inv_reorder_rules_org_id").on(table.orgId, table.id),
   index("idx_inv_reorder_org").on(table.orgId),
   index("idx_inv_reorder_variant").on(table.productVariantId),
 ]);
@@ -36,6 +37,7 @@ export const invAiInsights = pgTable("inv_ai_insights", {
   status: invAiInsightStatusEnum("status").default("NEW").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_inv_ai_insights_org_id").on(table.orgId, table.id),
   index("idx_inv_ai_insights_org_status").on(table.orgId, table.status),
 ]);
 

@@ -6,6 +6,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -30,6 +31,7 @@ export const kbArticleTranslations = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_article_translations").on(table.articleId, table.locale),
     index("idx_kb_article_translations_org_article").on(table.orgId, table.articleId),
+    unique("uniq_kb_article_translations_org_id").on(table.orgId, table.id),
   ],
 );
 

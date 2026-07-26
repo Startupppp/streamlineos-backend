@@ -1,4 +1,4 @@
-import { pgTable, text, uuid, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, uuid, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
@@ -14,6 +14,7 @@ export const hrAccessRequests = pgTable("hr_access_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_access_requests_org_id").on(table.orgId, table.id),
   index("idx_hr_access_requests_org").on(table.orgId),
   index("idx_hr_access_requests_employee").on(table.employeeId),
 ]);

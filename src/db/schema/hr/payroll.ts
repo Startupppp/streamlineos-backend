@@ -11,6 +11,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
@@ -70,6 +71,7 @@ export const payrolls = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_payrolls_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payrolls_user_month").on(table.userId, table.month),
     index("idx_payrolls_org_month_status").on(
       table.orgId,
@@ -109,6 +111,7 @@ export const salaryStructures = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_salary_structures_org_id").on(table.orgId, table.id),
     index("idx_salary_structures_user_active").on(table.userId, table.isActive),
   ],
 );
@@ -131,6 +134,7 @@ export const expenseCategories = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_expense_categories_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_expense_categories_org_name").on(table.orgId, table.name),
   ],
 );
@@ -183,6 +187,7 @@ export const expenses = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_expenses_org_id").on(table.orgId, table.id),
     index("idx_expenses_user_id").on(table.userId),
     index("idx_expenses_org_status_date").on(
       table.orgId,
@@ -223,6 +228,7 @@ export const reimbursements = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_reimbursements_org_id").on(table.orgId, table.id),
     index("idx_reimbursements_org").on(table.orgId),
     index("idx_reimbursements_user").on(table.userId),
   ],
@@ -257,6 +263,7 @@ export const salaryLoans = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_salary_loans_org_id").on(table.orgId, table.id),
     index("idx_loans_org").on(table.orgId),
     index("idx_loans_user").on(table.userId),
     index("idx_loans_org_status").on(table.orgId, table.status),
@@ -287,6 +294,7 @@ export const bonuses = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_bonuses_org_id").on(table.orgId, table.id),
     index("idx_bonuses_user").on(table.userId),
     index("idx_bonuses_org_status").on(table.orgId, table.status),
   ],
@@ -351,6 +359,7 @@ export const fnfSettlements = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_fnf_settlements_org_id").on(table.orgId, table.id),
     index("idx_fnf_user").on(table.userId),
     index("idx_fnf_settlements_org_status").on(table.orgId, table.status),
   ],
@@ -375,6 +384,7 @@ export const assetReturns = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_asset_returns_org_id").on(table.orgId, table.id),
     index("idx_asset_returns_user").on(table.userId),
     index("idx_asset_returns_org_status").on(table.orgId, table.status),
   ],

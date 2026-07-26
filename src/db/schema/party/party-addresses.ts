@@ -5,6 +5,7 @@ import {
   timestamp,
   index,
   foreignKey,
+  unique,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../auth";
@@ -46,5 +47,6 @@ export const partyAddresses = pgTable(
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_party_addresses_org_party",
     }).onDelete("cascade"),
+    unique("uniq_party_addresses_org_id").on(table.organizationId, table.partyAddressId),
   ],
 );

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
@@ -53,6 +53,7 @@ export const crmAutomationRules = pgTable("crm_automation_rules", {
 }, (table) => [
   index("idx_crm_automation_rules_org").on(table.orgId, table.isActive, table.createdAt),
   index("idx_crm_automation_rules_deleted").on(table.deletedAt),
+  unique("uniq_crm_automation_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmAutomationRulesRelations = relations(crmAutomationRules, ({ one }) => ({

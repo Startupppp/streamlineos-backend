@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { signBulkJobStatusEnum, signBulkRowStatusEnum } from "./enums";
@@ -24,6 +24,7 @@ export const signBulkSendJobs = pgTable(
   },
   (table) => [
     index("idx_sign_bulk_send_jobs_org_status").on(table.orgId, table.status),
+    unique("uniq_sign_bulk_send_jobs_org_id").on(table.orgId, table.id),
   ],
 );
 

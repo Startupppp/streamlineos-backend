@@ -8,6 +8,7 @@
   timestamp,
   index,
   uniqueIndex,
+  unique,
   customType,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
@@ -69,6 +70,7 @@ export const kbPages = pgTable(
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
     index("idx_kb_pages_fts").using("gin", table.fts),
+    unique("uniq_kb_pages_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -85,6 +87,7 @@ export const kbPageFavorites = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_favorites_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_favorites_org_user").on(table.orgId, table.userId),
+    unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -100,6 +103,7 @@ export const kbPageVisits = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_visits_page_user").on(table.pageId, table.userId),
     index("idx_kb_page_visits_org_user_visited").on(table.orgId, table.userId, table.visitedAt),
+    unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -118,6 +122,7 @@ export const kbPageLinks = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId),
     index("idx_kb_page_links_org_target").on(table.orgId, table.targetPageId),
+    unique("uniq_kb_page_links_org_id").on(table.orgId, table.id),
   ],
 );
 

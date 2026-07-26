@@ -8,6 +8,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -66,6 +67,7 @@ export const hrCases = pgTable("hr_cases", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  unique("uniq_hr_cases_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_cases_org_number").on(table.orgId, table.caseNumber),
   index("idx_hr_cases_org_status").on(table.orgId, table.status),
   index("idx_hr_cases_org_category").on(table.orgId, table.category),
@@ -81,6 +83,7 @@ export const hrCaseNotes = pgTable("hr_case_notes", {
   isConfidential: boolean("is_confidential").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_case_notes_org_id").on(table.orgId, table.id),
   index("idx_hr_case_notes_case").on(table.caseId),
   index("idx_hr_case_notes_org").on(table.orgId),
 ]);
@@ -95,6 +98,7 @@ export const hrCaseDocuments = pgTable("hr_case_documents", {
   uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_case_documents_org_id").on(table.orgId, table.id),
   index("idx_hr_case_documents_case").on(table.caseId),
 ]);
 
@@ -114,6 +118,7 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_disciplinary_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_disciplinary_org_employee").on(table.orgId, table.employeeId),
   index("idx_hr_disciplinary_org_case").on(table.orgId, table.caseId),
 ]);

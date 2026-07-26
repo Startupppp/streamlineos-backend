@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex, index, customType, vector } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, unique, uniqueIndex, index, customType, vector } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "./auth";
 
@@ -30,6 +30,7 @@ export const workspaceSearchChunks = pgTable(
     index("idx_wsc_org_type").on(table.orgId, table.entityType),
     index("idx_wsc_embedding_hnsw").using("hnsw", table.embedding.op("vector_cosine_ops")),
     index("idx_wsc_fts_gin").using("gin", table.fts),
+    unique("uniq_workspace_search_chunks_org_id").on(table.orgId, table.id),
   ],
 );
 

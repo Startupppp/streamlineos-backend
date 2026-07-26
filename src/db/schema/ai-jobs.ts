@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, varchar, integer, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, varchar, integer, jsonb, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "./auth";
 
@@ -29,6 +29,7 @@ export const aiJobs = pgTable("ai_jobs", {
   index("idx_ai_jobs_status_run_at_priority").on(table.status, table.runAt, table.priority),
   index("idx_ai_jobs_org_created_at").on(table.orgId, table.createdAt),
   index("idx_ai_jobs_org_type_status").on(table.orgId, table.type, table.status),
+  unique("uniq_ai_jobs_org_id").on(table.orgId, table.id),
 ]);
 
 export type AiJob = typeof aiJobs.$inferSelect;

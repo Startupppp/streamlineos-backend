@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, text, integer, jsonb, timestamp, index,
+  pgTable, serial, text, integer, jsonb, timestamp, index, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -16,6 +16,7 @@ export const payrollRunEvents = pgTable("payroll_run_events", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_payroll_run_events_org_id").on(table.orgId, table.id),
   index("idx_payroll_run_events_run").on(table.runId),
   index("idx_payroll_run_events_org_type").on(table.orgId, table.type),
   index("idx_payroll_run_events_org_created").on(table.orgId, table.createdAt),

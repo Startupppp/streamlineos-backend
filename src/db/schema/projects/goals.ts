@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, numeric, date, integer, foreignKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, numeric, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
@@ -29,6 +29,7 @@ export const okrGoals = pgTable("okr_goals", {
   index("idx_okr_goals_org").on(table.orgId),
   index("idx_okr_goals_org_status").on(table.orgId, table.status),
   index("idx_okr_goals_parent").on(table.parentGoalId),
+  unique("uniq_okr_goals_org_id").on(table.orgId, table.id),
 ]);
 
 export const okrKeyResults = pgTable("okr_key_results", {
@@ -46,6 +47,7 @@ export const okrKeyResults = pgTable("okr_key_results", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_okr_key_results_goal").on(table.goalId),
+  unique("uniq_okr_key_results_org_id").on(table.orgId, table.id),
 ]);
 
 export const okrUpdates = pgTable("okr_updates", {
@@ -60,6 +62,7 @@ export const okrUpdates = pgTable("okr_updates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_okr_updates_goal").on(table.goalId),
+  unique("uniq_okr_updates_org_id").on(table.orgId, table.id),
 ]);
 
 export const okrLinks = pgTable("okr_links", {
@@ -72,6 +75,7 @@ export const okrLinks = pgTable("okr_links", {
 }, (table) => [
   uniqueIndex("uniq_okr_links_goal_ticket").on(table.goalId, table.ticketId),
   index("idx_okr_links_goal").on(table.goalId),
+  unique("uniq_okr_links_org_id").on(table.orgId, table.id),
 ]);
 
 export const okrGoalsRelations = relations(okrGoals, ({ one, many }) => ({

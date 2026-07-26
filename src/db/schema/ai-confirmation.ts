@@ -1,5 +1,5 @@
 ﻿import { sql } from "drizzle-orm";
-import { index, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
 
 export const aiProposalStatusEnum = pgEnum("ai_proposal_status", [
@@ -33,6 +33,7 @@ export const aiActionProposals = pgTable(
     uniqueIndex("uq_ai_proposals_org_idem_key")
       .on(t.orgId, t.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),
+    unique("uniq_ai_action_proposals_org_id").on(t.orgId, t.id),
   ],
 );
 

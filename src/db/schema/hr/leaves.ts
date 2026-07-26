@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { leaveStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -10,6 +10,7 @@ export const leaveTypes = pgTable("leave_types", {
   daysPerYear: integer("days_per_year").notNull(),
   carryForward: boolean("carry_forward").default(false).notNull(),
 }, (table) => [
+  unique("uniq_leave_types_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_leave_types_org_name").on(table.orgId, table.name),
 ]);
 
@@ -21,6 +22,7 @@ export const leaveBalances = pgTable("leave_balances", {
   balance: decimal("balance", { precision: 6, scale: 2 }).default("0").notNull(),
   year: integer("year").notNull(),
 }, (table) => [
+  unique("uniq_leave_balances_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_leave_balances_user_type_year").on(table.userId, table.leaveTypeId, table.year),
   index("idx_leave_balances_org_year").on(table.orgId, table.year),
   check("chk_leave_balance_non_negative", sql`${table.balance} >= 0`),
@@ -46,6 +48,7 @@ export const leaveRequests = pgTable("leave_requests", {
   lopDays: decimal("lop_days", { precision: 5, scale: 1 }).default("0").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_leave_requests_org_id").on(table.orgId, table.id),
   index("idx_leave_requests_user_id").on(table.userId),
   index("idx_leave_requests_org_status").on(table.orgId, table.status),
   index("idx_leave_requests_dates").on(table.startDate, table.endDate),
@@ -64,6 +67,7 @@ export const leaveBlackoutDates = pgTable("leave_blackout_dates", {
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_leave_blackout_dates_org_id").on(table.orgId, table.id),
   index("idx_leave_blackout_org").on(table.orgId, table.startDate),
 ]);
 

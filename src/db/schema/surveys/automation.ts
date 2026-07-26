@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { surveyForms } from "./forms";
@@ -18,6 +18,7 @@ export const surveyAutomationEvents = pgTable("survey_automation_events", {
   processedAt: timestamp("processed_at"),
 }, (table) => [
   index("idx_survey_automation_events_org_survey_type").on(table.orgId, table.surveyId, table.eventType),
+  unique("uniq_survey_automation_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyAutomationEventsRelations = relations(surveyAutomationEvents, ({ one }) => ({

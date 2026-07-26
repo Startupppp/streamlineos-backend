@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../auth";
 import { supportTickets } from "../crm/billing";
 
@@ -28,5 +28,6 @@ export const supportTicketExternalLinks = pgTable(
       table.entityId,
     ),
     index("idx_support_ticket_external_links_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_ticket_ext_links_org_id").on(table.orgId, table.id),
   ],
 );

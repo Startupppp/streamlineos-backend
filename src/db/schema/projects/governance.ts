@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -29,6 +29,7 @@ export const projectRisks = pgTable("project_risks", {
   index("idx_project_risks_org_project_status").on(t.orgId, t.projectId, t.status),
   uniqueIndex("uq_project_risks_project_number").on(t.projectId, t.riskNumber),
   index("idx_project_risks_owner").on(t.ownerId),
+  unique("uniq_project_risks_org_id").on(t.orgId, t.id),
 ]);
 
 export const projectDecisions = pgTable("project_decisions", {
@@ -52,4 +53,5 @@ export const projectDecisions = pgTable("project_decisions", {
 }, (t) => [
   index("idx_project_decisions_org_project_status").on(t.orgId, t.projectId, t.status),
   uniqueIndex("uq_project_decisions_project_number").on(t.projectId, t.decisionNumber),
+  unique("uniq_project_decisions_org_id").on(t.orgId, t.id),
 ]);

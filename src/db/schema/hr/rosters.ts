@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, integer, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, integer, index, unique, jsonb } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { shiftTemplates } from "./shifts";
 
@@ -13,6 +13,7 @@ export const rosters = pgTable("rosters", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_rosters_org_id").on(table.orgId, table.id),
   index("idx_rosters_org_week").on(table.orgId, table.weekStart),
 ]);
 

@@ -30,6 +30,7 @@ export const userIntegrationConnections = pgTable(
   (table) => [
     unique("uq_integration_connections_composio_account").on(table.composioConnectedAccountId),
     index("idx_integration_connections_org_user").on(table.orgId, table.userId),
+    unique("uniq_user_integration_connections_org_id").on(table.orgId, table.id),
   ],
 );
 

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   notificationTypeEnum,
@@ -42,6 +42,7 @@ export const notificationEvents = pgTable("notification_events", {
   uniqueIndex("uq_notification_events_org_key").on(table.orgId, table.eventKey),
   index("idx_notification_events_module").on(table.sourceModule),
   index("idx_notification_events_category").on(table.category),
+  unique("uniq_notification_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationDeliveries = pgTable("notification_deliveries", {
@@ -80,6 +81,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   index("idx_notification_deliveries_notification").on(table.notificationId),
   index("idx_notification_deliveries_user_channel").on(table.orgId, table.userId, table.channel, table.createdAt),
   index("idx_notification_deliveries_event").on(table.orgId, table.eventKey, table.createdAt),
+  unique("uniq_notification_deliveries_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationQueue = pgTable("notification_queue", {
@@ -99,6 +101,7 @@ export const notificationQueue = pgTable("notification_queue", {
   index("idx_notification_queue_due").on(table.status, table.runAt),
   index("idx_notification_queue_delivery").on(table.deliveryId),
   index("idx_notification_queue_org").on(table.orgId),
+  unique("uniq_notification_queue_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationPolicyDefaults = pgTable("notification_policy_defaults", {
@@ -118,6 +121,7 @@ export const notificationPolicyDefaults = pgTable("notification_policy_defaults"
 }, (table) => [
   uniqueIndex("uq_notification_policy_scope").on(table.orgId, table.scopeType, table.scopeId),
   index("idx_notification_policy_org_scope").on(table.orgId, table.scopeType),
+  unique("uniq_notif_policy_defaults_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationProviderAccounts = pgTable("notification_provider_accounts", {
@@ -140,6 +144,7 @@ export const notificationProviderAccounts = pgTable("notification_provider_accou
 }, (table) => [
   uniqueIndex("uq_notification_provider_name").on(table.orgId, table.provider, table.displayName),
   index("idx_notification_provider_channel").on(table.orgId, table.channel, table.enabled),
+  unique("uniq_notif_provider_accounts_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationSuppressionRules = pgTable("notification_suppression_rules", {
@@ -157,6 +162,7 @@ export const notificationSuppressionRules = pgTable("notification_suppression_ru
 }, (table) => [
   index("idx_notification_suppression_lookup").on(table.orgId, table.userId, table.scopeType, table.scopeKey),
   index("idx_notification_suppression_expiry").on(table.orgId, table.expiresAt),
+  unique("uniq_notif_suppression_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationDeliveriesRelations = relations(notificationDeliveries, ({ one }) => ({

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const KB_RESEARCH_BRIEF_STATUSES = ["queued", "running", "completed", "failed"] as const;
@@ -26,5 +26,6 @@ export const kbResearchBriefs = pgTable(
     index("idx_kb_research_briefs_org").on(table.orgId),
     index("idx_kb_research_briefs_org_user").on(table.orgId, table.userId),
     index("idx_kb_research_briefs_job").on(table.jobId),
+    unique("uniq_kb_research_briefs_org_id").on(table.orgId, table.id),
   ],
 );

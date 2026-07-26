@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   clientAccountStatusEnum, branchStatusEnum, orgSizeEnum, crmHealthEnum,
@@ -26,6 +26,7 @@ export const branches = pgTable("branches", {
 }, (table) => [
   index("idx_branches_org").on(table.orgId),
   uniqueIndex("uniq_branch_code_org").on(table.orgId, table.code),
+  unique("uniq_branches_org_id").on(table.orgId, table.id),
 ]);
 
 export const clients = pgTable("clients", {
@@ -56,6 +57,7 @@ export const clients = pgTable("clients", {
 }, (table) => [
   index("idx_clients_org_status").on(table.orgId, table.status),
   index("idx_clients_account_manager").on(table.accountManagerId),
+  unique("uniq_clients_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientAccounts = pgTable("client_accounts", {
@@ -87,6 +89,7 @@ export const clientAccounts = pgTable("client_accounts", {
   index("idx_client_accounts_org").on(table.orgId),
   index("idx_client_accounts_sales_rep").on(table.salesRepId),
   index("idx_client_accounts_status").on(table.orgId, table.status),
+  unique("uniq_client_accounts_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientAccountActivities = pgTable("client_account_activities", {
@@ -124,6 +127,7 @@ export const crmOrganizations = pgTable("crm_organizations", {
   index("idx_crm_organizations_org").on(table.orgId),
   index("idx_crm_organizations_parent").on(table.orgId, table.parentId),
   foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
+  unique("uniq_crm_organizations_org_id").on(table.orgId, table.id),
 ]);
 
 export const contacts = pgTable("contacts", {
@@ -151,6 +155,7 @@ export const contacts = pgTable("contacts", {
   index("idx_contacts_org").on(table.orgId),
   index("idx_contacts_organization").on(table.organizationId),
   index("idx_contacts_name_email").on(table.orgId, table.name, table.email),
+  unique("uniq_contacts_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientOpportunities = pgTable("client_opportunities", {
@@ -169,6 +174,7 @@ export const clientOpportunities = pgTable("client_opportunities", {
 }, (table) => [
   index("idx_client_opps_org").on(table.orgId),
   index("idx_client_opps_client").on(table.clientId),
+  unique("uniq_client_opportunities_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientOnboardingTemplates = pgTable("client_onboarding_templates", {
@@ -182,6 +188,7 @@ export const clientOnboardingTemplates = pgTable("client_onboarding_templates", 
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_client_onboarding_templates_org").on(table.orgId),
+  unique("uniq_client_onboarding_tmpls_org_id").on(table.orgId, table.id),
 ]);
 
 export const clientOnboardingItems = pgTable("client_onboarding_items", {
@@ -201,6 +208,7 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
 }, (table) => [
   index("idx_onboarding_items_client").on(table.clientId),
   index("idx_onboarding_items_org").on(table.orgId),
+  unique("uniq_client_onboarding_items_org_id").on(table.orgId, table.id),
 ]);
 
 export const csatSurveys = pgTable("csat_surveys", {
@@ -220,6 +228,7 @@ export const csatSurveys = pgTable("csat_surveys", {
 }, (table) => [
   index("idx_csat_surveys_org").on(table.orgId),
   uniqueIndex("idx_csat_surveys_token").on(table.publicToken),
+  unique("uniq_csat_surveys_org_id").on(table.orgId, table.id),
 ]);
 
 export const csatResponses = pgTable("csat_responses", {
@@ -233,6 +242,7 @@ export const csatResponses = pgTable("csat_responses", {
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_csat_responses_survey").on(table.surveyId),
+  unique("uniq_csat_responses_org_id").on(table.orgId, table.id),
 ]);
 
 export const branchesRelations = relations(branches, ({ one }) => ({

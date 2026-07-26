@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   resignationStatusEnum, terminationStatusEnum, exitChecklistStatusEnum,
@@ -22,6 +22,7 @@ export const documentTemplates = pgTable("document_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_document_templates_org_id").on(table.orgId, table.id),
   index("idx_doc_templates_org").on(table.orgId, table.type),
 ]);
 
@@ -43,6 +44,7 @@ export const candidateDocuments = pgTable("candidate_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_candidate_documents_org_id").on(table.orgId, table.id),
   index("idx_candidate_docs_candidate").on(table.candidateId),
   index("idx_candidate_docs_external").on(table.externalDocId),
 ]);
@@ -59,6 +61,7 @@ export const documentTemplateVersions = pgTable("document_template_versions", {
   archivedAt: timestamp("archived_at").defaultNow().notNull(),
   archivedBy: text("archived_by").notNull().references(() => users.id),
 }, (table) => [
+  unique("uniq_document_template_versions_org_id").on(table.orgId, table.id),
   index("idx_dtv_template_id").on(table.templateId),
 ]);
 
@@ -73,6 +76,7 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_onboarding_templates_org_id").on(table.orgId, table.id),
   index("idx_onboarding_templates_org").on(table.orgId),
 ]);
 
@@ -103,6 +107,7 @@ export const onboardingTasks = pgTable("onboarding_tasks", {
   dependsOnTaskIds: jsonb("depends_on_task_ids").$type<number[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_onboarding_tasks_org_id").on(table.orgId, table.id),
   index("idx_onboarding_tasks_user").on(table.userId, table.orgId),
   index("idx_onboarding_tasks_status").on(table.orgId, table.status),
 ]);
@@ -121,6 +126,7 @@ export const documentTypes = pgTable("document_types", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_document_types_org_id").on(table.orgId, table.id),
   index("idx_doc_types_org").on(table.orgId),
   index("idx_doc_types_org_country").on(table.orgId, table.countryCode),
 ]);
@@ -142,6 +148,7 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_onboarding_documents_org_id").on(table.orgId, table.id),
   index("idx_onboarding_docs_user").on(table.userId),
   index("idx_onboarding_docs_org").on(table.orgId),
 ]);
@@ -155,7 +162,9 @@ export const documentAuditLogs = pgTable("document_audit_logs", {
   remarks: text("remarks"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("uniq_document_audit_logs_org_id").on(table.orgId, table.id),
+]);
 
 export const resignations = pgTable("resignations", {
   id: serial("id").primaryKey(),
@@ -184,6 +193,7 @@ export const resignations = pgTable("resignations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_resignations_org_id").on(table.orgId, table.id),
   index("idx_resignations_org").on(table.orgId),
   index("idx_resignations_user").on(table.userId),
 ]);
@@ -220,6 +230,7 @@ export const terminations = pgTable("terminations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_terminations_org_id").on(table.orgId, table.id),
   index("idx_terminations_org").on(table.orgId),
   index("idx_terminations_user").on(table.userId),
   index("idx_terminations_status").on(table.status),
@@ -238,6 +249,7 @@ export const alumniProfiles = pgTable("alumni_profiles", {
   rehireEligibility: boolean("rehire_eligibility").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_alumni_profiles_org_id").on(table.orgId, table.id),
   index("idx_alumni_org").on(table.orgId),
 ]);
 
@@ -255,6 +267,7 @@ export const backgroundVerifications = pgTable("background_verifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_background_verifications_org_id").on(table.orgId, table.id),
   index("idx_bgv_user").on(table.userId),
 ]);
 
@@ -272,6 +285,7 @@ export const certifications = pgTable("certifications", {
   reminderSent: boolean("reminder_sent").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_certifications_org_id").on(table.orgId, table.id),
   index("idx_certifications_user").on(table.userId),
   index("idx_certifications_expiry").on(table.expiryDate),
 ]);

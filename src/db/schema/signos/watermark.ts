@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { signWatermarkScopeEnum } from "./enums";
@@ -29,6 +29,7 @@ export const signWatermarkPolicies = pgTable(
   },
   (table) => [
     index("idx_sign_watermark_policies_org_scope").on(table.orgId, table.scopeType, table.scopeId),
+    unique("uniq_sign_watermark_policies_org_id").on(table.orgId, table.id),
   ],
 );
 

@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -43,6 +44,7 @@ export const supportQueues = pgTable(
   },
   (table) => [
     index("idx_support_queues_org_sort").on(table.orgId, table.sortOrder),
+    unique("uniq_support_queues_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -61,6 +63,7 @@ export const supportSavedViews = pgTable(
   },
   (table) => [
     index("idx_support_saved_views_org_owner").on(table.orgId, table.ownerId),
+    unique("uniq_support_saved_views_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -76,6 +79,7 @@ export const supportTicketWatchers = pgTable(
   (table) => [
     uniqueIndex("uniq_support_ticket_watchers_ticket_user").on(table.ticketId, table.userId),
     index("idx_support_ticket_watchers_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_ticket_watchers_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -90,6 +94,7 @@ export const supportTags = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_support_tags_org_name").on(table.orgId, table.name),
+    unique("uniq_support_tags_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -120,6 +125,7 @@ export const supportTicketLinks = pgTable(
   (table) => [
     uniqueIndex("uniq_support_ticket_links_ticket_linked").on(table.ticketId, table.linkedTicketId),
     index("idx_support_ticket_links_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_ticket_links_org_id").on(table.orgId, table.id),
   ],
 );
 

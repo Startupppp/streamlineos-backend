@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -29,6 +30,7 @@ export const kbArticleRestrictions = pgTable(
     index("idx_kb_article_restrictions_article").on(table.articleId),
     index("idx_kb_article_restrictions_user").on(table.userId),
     index("idx_kb_article_restrictions_org_article").on(table.orgId, table.articleId),
+    unique("uniq_kb_article_restrictions_org_id").on(table.orgId, table.id),
   ],
 );
 

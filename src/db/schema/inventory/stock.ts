@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -28,6 +28,7 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   index("idx_inv_stock_lot").on(table.lotId),
   index("idx_inv_stock_serial").on(table.serialId),
   uniqueIndex("uniq_inv_stock_levels_natural_key").on(table.orgId, table.productVariantId, table.locationId, sql`coalesce(${table.lotId}, 0)`, sql`coalesce(${table.serialId}, 0)`),
+  unique("uniq_inv_stock_levels_org_id").on(table.orgId, table.id),
 ]);
 
 export const invStockTransactions = pgTable("inv_stock_transactions", {
@@ -59,6 +60,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_created").on(table.createdAt),
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
+  unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),
 ]);
 
 export const invStockAdjustments = pgTable("inv_stock_adjustments", {
@@ -77,6 +79,7 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_inv_adj_org_ref").on(table.orgId, table.referenceNumber),
+  unique("uniq_inv_stock_adjustments_org_id").on(table.orgId, table.id),
   index("idx_inv_adj_org").on(table.orgId),
 ]);
 
@@ -110,6 +113,7 @@ export const invStockTransfers = pgTable("inv_stock_transfers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_inv_transfer_org_ref").on(table.orgId, table.referenceNumber),
+  unique("uniq_inv_stock_transfers_org_id").on(table.orgId, table.id),
   index("idx_inv_transfers_org_status").on(table.orgId, table.status),
 ]);
 

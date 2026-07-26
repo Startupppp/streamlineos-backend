@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
 import { tickets, projectReleases } from "./tasks";
@@ -40,4 +40,5 @@ export const bugs = pgTable("bugs", {
   index("idx_bugs_org_project_severity").on(table.orgId, table.projectId, table.severity),
   uniqueIndex("uq_bugs_project_number").on(table.projectId, table.bugNumber),
   index("idx_bugs_assignee").on(table.assigneeId),
+  unique("uniq_bugs_org_id").on(table.orgId, table.id),
 ]);

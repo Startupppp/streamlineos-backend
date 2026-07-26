@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, type AnyPgColumn, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   incentiveStatusEnum, taskEntityTypeEnum, taskStatusEnum,
@@ -44,6 +44,7 @@ export const deals = pgTable("deals", {
   index("idx_deals_lead").on(table.leadId),
   index("idx_deals_close_date").on(table.expectedCloseDate),
   index("idx_deals_org_pipeline_stage").on(table.orgId, table.pipelineId, table.stage),
+  unique("uniq_deals_org_id").on(table.orgId, table.id),
 ]);
 
 export const dealActivities = pgTable("deal_activities", {
@@ -61,6 +62,7 @@ export const dealActivities = pgTable("deal_activities", {
 }, (table) => [
   index("idx_deal_activities_deal").on(table.dealId),
   index("idx_deal_activities_org").on(table.orgId),
+  unique("uniq_deal_activities_org_id").on(table.orgId, table.id),
 ]);
 
 export const dealMeetings = pgTable("deal_meetings", {
@@ -81,6 +83,7 @@ export const dealMeetings = pgTable("deal_meetings", {
 }, (table) => [
   index("idx_deal_meetings_deal").on(table.dealId),
   index("idx_deal_meetings_org").on(table.orgId),
+  unique("uniq_deal_meetings_org_id").on(table.orgId, table.id),
 ]);
 
 export const dealMeetingAttendees = pgTable("deal_meeting_attendees", {
@@ -91,6 +94,7 @@ export const dealMeetingAttendees = pgTable("deal_meeting_attendees", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_deal_meeting_attendees_unique").on(table.meetingId, table.attendeeId),
+  unique("uniq_deal_meeting_attendees_org_id").on(table.orgId, table.id),
 ]);
 
 export const dealApprovalRules = pgTable("deal_approval_rules", {
@@ -102,7 +106,9 @@ export const dealApprovalRules = pgTable("deal_approval_rules", {
   approverUserId: text("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_deal_approval_rules_org_id").on(t.orgId, t.id),
+]);
 
 export const dealApprovals = pgTable("deal_approvals", {
   id: serial("id").primaryKey(),
@@ -118,6 +124,7 @@ export const dealApprovals = pgTable("deal_approvals", {
 }, (table) => [
   index("idx_deal_approvals_org").on(table.orgId, table.status),
   index("idx_deal_approvals_deal").on(table.dealId),
+  unique("uniq_deal_approvals_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmDealCompetitors = pgTable("crm_deal_competitors", {
@@ -133,6 +140,7 @@ export const crmDealCompetitors = pgTable("crm_deal_competitors", {
   uniqueIndex("uq_crm_deal_competitors_deal_key").on(table.orgId, table.dealId, table.competitorKey),
   index("idx_crm_deal_competitors_deal").on(table.dealId),
   index("idx_crm_deal_competitors_org").on(table.orgId),
+  unique("uniq_crm_deal_competitors_org_id").on(table.orgId, table.id),
 ]);
 
 export interface ForecastSnapshotData {
@@ -157,6 +165,7 @@ export const crmForecastSnapshots = pgTable("crm_forecast_snapshots", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_forecast_snapshots_org_period").on(table.orgId, table.period, table.capturedAt),
+  unique("uniq_crm_forecast_snapshots_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmDealStakeholders = pgTable("crm_deal_stakeholders", {
@@ -174,6 +183,7 @@ export const crmDealStakeholders = pgTable("crm_deal_stakeholders", {
   uniqueIndex("uq_crm_deal_stakeholders_deal_contact").on(table.orgId, table.dealId, table.contactId),
   index("idx_crm_deal_stakeholders_deal").on(table.orgId, table.dealId),
   index("idx_crm_deal_stakeholders_contact").on(table.orgId, table.contactId),
+  unique("uniq_crm_deal_stakeholders_org_id").on(table.orgId, table.id),
 ]);
 
 export const salesQuotas = pgTable("sales_quotas", {
@@ -191,6 +201,7 @@ export const salesQuotas = pgTable("sales_quotas", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_sales_quotas_org_user").on(table.orgId, table.userId),
+  unique("uniq_sales_quotas_org_id").on(table.orgId, table.id),
 ]);
 
 export const commissionRules = pgTable("commission_rules", {
@@ -204,7 +215,9 @@ export const commissionRules = pgTable("commission_rules", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (t) => [
+  unique("uniq_commission_rules_org_id").on(t.orgId, t.id),
+]);
 
 export const commissions = pgTable("commissions", {
   id: serial("id").primaryKey(),
@@ -221,6 +234,7 @@ export const commissions = pgTable("commissions", {
 }, (table) => [
   index("idx_commissions_org_user").on(table.orgId, table.userId),
   index("idx_commissions_deal").on(table.dealId),
+  unique("uniq_commissions_org_id").on(table.orgId, table.id),
 ]);
 
 export const targets = pgTable("targets", {
@@ -244,6 +258,7 @@ export const targets = pgTable("targets", {
   index("idx_targets_user_period").on(table.userId, table.period),
   index("idx_targets_branch").on(table.branchId),
   index("idx_targets_parent").on(table.parentTargetId),
+  unique("uniq_targets_org_id").on(table.orgId, table.id),
 ]);
 
 export const targetHistory = pgTable("target_history", {
@@ -258,6 +273,7 @@ export const targetHistory = pgTable("target_history", {
 }, (table) => [
   index("idx_target_history_target").on(table.targetId),
   index("idx_target_history_org_created").on(table.orgId, table.createdAt),
+  unique("uniq_target_history_org_id").on(table.orgId, table.id),
 ]);
 
 export const incentiveConfig = pgTable("incentive_config", {
@@ -270,7 +286,9 @@ export const incentiveConfig = pgTable("incentive_config", {
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_incentive_config_org_id").on(t.orgId, t.id),
+]);
 
 export const incentives = pgTable("incentives", {
   id: serial("id").primaryKey(),
@@ -293,6 +311,7 @@ export const incentives = pgTable("incentives", {
   index("idx_incentives_org").on(table.orgId),
   index("idx_incentives_sales_rep").on(table.salesRepId),
   index("idx_incentives_status").on(table.status),
+  unique("uniq_incentives_org_id").on(table.orgId, table.id),
 ]);
 
 export const tasks = pgTable("tasks", {
@@ -328,6 +347,7 @@ export const tasks = pgTable("tasks", {
   index("idx_tasks_due_date").on(table.dueDate),
   index("idx_tasks_entity").on(table.entityType, table.entityId),
   index("idx_tasks_parent").on(table.parentTaskId),
+  unique("uniq_tasks_org_id").on(table.orgId, table.id),
 ]);
 
 export const taskSequences = pgTable("task_sequences", {
@@ -337,7 +357,9 @@ export const taskSequences = pgTable("task_sequences", {
   description: text("description"),
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  unique("uniq_task_sequences_org_id").on(t.orgId, t.id),
+]);
 
 export const taskSequenceSteps = pgTable("task_sequence_steps", {
   id: serial("id").primaryKey(),
@@ -376,6 +398,7 @@ export const territories = pgTable("territories", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("territories_org_id_idx").on(table.orgId),
+  unique("uniq_territories_org_id").on(table.orgId, table.id),
 ]);
 
 export const crmSlaBreachLog = pgTable("crm_sla_breach_log", {
@@ -409,6 +432,7 @@ export const customFieldDefinitions = pgTable("custom_field_definitions", {
 }, (table) => [
   index("cfd_org_entity_name_idx").on(table.orgId, table.entityType, table.name),
   index("idx_cfd_org_entity").on(table.orgId, table.entityType),
+  unique("uniq_custom_field_defs_org_id").on(table.orgId, table.id),
 ]);
 
 export const contactsRelations = relations(contacts, ({ one }) => ({

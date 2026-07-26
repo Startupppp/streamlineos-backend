@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { supportTickets, supportTicketMessages } from "../crm/billing";
 
@@ -14,6 +14,7 @@ export const supportMessageMentions = pgTable(
   (table) => [
     uniqueIndex("uniq_support_message_mentions_message_user").on(table.messageId, table.mentionedUserId),
     index("idx_support_message_mentions_message").on(table.messageId),
+    unique("uniq_support_message_mentions_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -28,5 +29,8 @@ export const supportTicketDrafts = pgTable(
     isInternal: boolean("is_internal").default(false).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
-  (table) => [uniqueIndex("uniq_support_ticket_drafts_ticket_user").on(table.ticketId, table.userId)],
+  (table) => [
+    uniqueIndex("uniq_support_ticket_drafts_ticket_user").on(table.ticketId, table.userId),
+    unique("uniq_support_ticket_drafts_org_id").on(table.orgId, table.id),
+  ],
 );

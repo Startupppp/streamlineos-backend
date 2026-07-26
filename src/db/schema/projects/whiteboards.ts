@@ -8,6 +8,7 @@ import {
   integer,
   boolean,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -57,6 +58,7 @@ export const projectWhiteboards = pgTable(
   (table) => [
     index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId),
     uniqueIndex("uniq_project_whiteboards_share_token").on(table.shareToken),
+    unique("uniq_project_whiteboards_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -80,6 +82,7 @@ export const projectWhiteboardShares = pgTable(
   (table) => [
     uniqueIndex("uniq_whiteboard_shares_board_user").on(table.whiteboardId, table.userId),
     index("idx_whiteboard_shares_org_board").on(table.orgId, table.whiteboardId),
+    unique("uniq_project_whiteboard_shares_org_id").on(table.orgId, table.id),
   ],
 );
 

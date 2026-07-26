@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { documentTypeEnum, ackStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -17,6 +17,7 @@ export const richDocuments = pgTable("rich_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_rich_documents_org_id").on(table.orgId, table.id),
   index("idx_rich_documents_org").on(table.orgId),
   index("idx_rich_documents_org_updated").on(table.orgId, table.updatedAt),
 ]);
@@ -46,6 +47,7 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_documents_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.parentDocumentId], foreignColumns: [table.id] }).onDelete("cascade"),
   index("idx_documents_org_type").on(table.orgId, table.type),
   index("idx_documents_user").on(table.userId),
@@ -64,6 +66,7 @@ export const handbookVersions = pgTable("handbook_versions", {
   publishedBy: text("published_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_handbook_versions_org_id").on(table.orgId, table.id),
   index("idx_handbook_org").on(table.orgId),
 ]);
 
@@ -77,6 +80,7 @@ export const policyAcknowledgments = pgTable("policy_acknowledgments", {
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_policy_acknowledgments_org_id").on(table.orgId, table.id),
   index("idx_policy_ack_doc").on(table.documentId),
   index("idx_policy_ack_user").on(table.userId),
 ]);
@@ -93,6 +97,7 @@ export const emailTemplates = pgTable("hr_email_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_email_templates_org_id").on(table.orgId, table.id),
   index("idx_email_templates_org").on(table.orgId),
 ]);
 
@@ -109,6 +114,7 @@ export const teamEvents = pgTable("team_events", {
   organizedBy: text("organized_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_team_events_org_id").on(table.orgId, table.id),
   index("idx_team_events_org").on(table.orgId),
 ]);
 

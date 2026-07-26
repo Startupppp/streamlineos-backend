@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
@@ -48,6 +48,7 @@ export const projectForms = pgTable("project_forms", {
   index("idx_project_forms_org_project").on(t.orgId, t.projectId),
   uniqueIndex("uq_project_forms_project_number").on(t.projectId, t.formNumber),
   index("idx_project_forms_public_token").on(t.publicToken),
+  unique("uniq_project_forms_org_id").on(t.orgId, t.id),
 ]);
 
 export const formSubmissions = pgTable("form_submissions", {
@@ -67,4 +68,5 @@ export const formSubmissions = pgTable("form_submissions", {
 }, (t) => [
   index("idx_form_submissions_form").on(t.formId),
   index("idx_form_submissions_org_project_status").on(t.orgId, t.projectId, t.status),
+  unique("uniq_form_submissions_org_id").on(t.orgId, t.id),
 ]);

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const jobRequisitions = pgTable("job_requisitions", {
@@ -24,6 +24,7 @@ export const jobRequisitions = pgTable("job_requisitions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_job_requisitions_org_id").on(table.orgId, table.id),
   index("idx_requisitions_org_status").on(table.orgId, table.status),
   index("idx_requisitions_hiring_manager").on(table.hiringManagerId),
 ]);

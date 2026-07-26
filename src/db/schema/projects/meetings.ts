@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, boolean, date, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects, sprints } from "./core";
 import { tickets } from "./tasks";
@@ -31,6 +31,7 @@ export const projectMeetings = pgTable("project_meetings", {
   index("idx_project_meetings_org_project_status").on(t.orgId, t.projectId, t.status),
   uniqueIndex("uq_project_meetings_project_number").on(t.projectId, t.meetingNumber),
   index("idx_project_meetings_scheduled").on(t.scheduledAt),
+  unique("uniq_project_meetings_org_id").on(t.orgId, t.id),
 ]);
 
 export const meetingAttendees = pgTable("meeting_attendees", {
@@ -43,6 +44,7 @@ export const meetingAttendees = pgTable("meeting_attendees", {
 }, (t) => [
   uniqueIndex("uq_meeting_attendees_meeting_user").on(t.meetingId, t.userId),
   index("idx_meeting_attendees_user").on(t.userId),
+  unique("uniq_meeting_attendees_org_id").on(t.orgId, t.id),
 ]);
 
 export const meetingActionItems = pgTable("meeting_action_items", {
@@ -64,6 +66,7 @@ export const meetingActionItems = pgTable("meeting_action_items", {
   index("idx_meeting_action_items_meeting").on(t.meetingId),
   index("idx_meeting_action_items_org_project_status").on(t.orgId, t.projectId, t.status),
   index("idx_meeting_action_items_assignee").on(t.assigneeId),
+  unique("uniq_meeting_action_items_org_id").on(t.orgId, t.id),
 ]);
 
 export const meetingStandupEntries = pgTable("meeting_standup_entries", {
@@ -78,4 +81,5 @@ export const meetingStandupEntries = pgTable("meeting_standup_entries", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
   uniqueIndex("uq_meeting_standup_meeting_user").on(t.meetingId, t.userId),
+  unique("uniq_meeting_standup_entries_org_id").on(t.orgId, t.id),
 ]);

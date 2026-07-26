@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum } from "./enums";
 
@@ -81,7 +81,7 @@ export const organizationMembers = pgTable("organization_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
-  uniqueIndex("uniq_org_members_org_id").on(table.orgId, table.id),
+  unique("uniq_org_members_org_id").on(table.orgId, table.id),
   index("idx_org_members_org_role").on(table.orgId, table.role),
   index("idx_org_members_owner").on(table.orgId, table.isOwner),
   index("idx_org_members_org_status").on(table.orgId, table.status),

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, decimal, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, decimal, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { candidates, jobPostings } from "./hiring";
@@ -16,6 +16,7 @@ export const externalReferrers = pgTable("external_referrers", {
   emailVerifiedAt: timestamp("email_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_external_referrers_org_id").on(table.orgId, table.id),
   uniqueIndex("idx_external_referrers_org_email").on(table.orgId, table.email),
   uniqueIndex("idx_external_referrers_token").on(table.referralToken),
 ]);
@@ -42,6 +43,7 @@ export const externalReferrals = pgTable("external_referrals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_external_referrals_org_id").on(table.orgId, table.id),
   uniqueIndex("idx_external_referrals_referrer_candidate").on(table.referrerId, table.candidateId),
   index("idx_external_referrals_org").on(table.orgId),
   index("idx_external_referrals_candidate").on(table.candidateId),

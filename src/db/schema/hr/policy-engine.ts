@@ -7,6 +7,7 @@ import {
   jsonb,
   date,
   index,
+  unique,
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core";
@@ -76,6 +77,7 @@ export const hrPolicies = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_hr_policies_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_policies_org_type_name_version").on(
       table.orgId,
       table.policyType,
@@ -105,6 +107,7 @@ export const hrPolicyScopes = pgTable(
     scopeValue: text("scope_value").notNull(),
   },
   (table) => [
+    unique("uniq_hr_policy_scopes_org_id").on(table.orgId, table.id),
     index("idx_hr_policy_scopes_org_policy").on(table.orgId, table.policyId),
     index("idx_hr_policy_scopes_org_type_value").on(
       table.orgId,
@@ -132,6 +135,7 @@ export const hrPolicyAssignments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_policy_assignments_org_id").on(table.orgId, table.id),
     index("idx_hr_policy_assignments_org_policy").on(
       table.orgId,
       table.policyId,

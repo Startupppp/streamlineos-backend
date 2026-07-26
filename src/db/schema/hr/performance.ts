@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, numeric } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, numeric } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   reviewStatusEnum, reviewCycleStatusEnum, meetingStatusEnum,
@@ -26,6 +26,7 @@ export const reviewCycles = pgTable("review_cycles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_review_cycles_org_id").on(table.orgId, table.id),
   index("idx_review_cycles_org").on(table.orgId),
 ]);
 
@@ -47,6 +48,7 @@ export const performanceReviews = pgTable("performance_reviews", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_performance_reviews_org_id").on(table.orgId, table.id),
   index("idx_perf_reviews_org_cycle").on(table.orgId, table.cycleId),
   index("idx_perf_reviews_user").on(table.userId),
 ]);
@@ -66,6 +68,7 @@ export const oneOnOneMeetings = pgTable("one_on_one_meetings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_one_on_one_meetings_org_id").on(table.orgId, table.id),
   index("idx_one_on_ones_org").on(table.orgId),
   index("idx_one_on_ones_manager").on(table.managerId),
   index("idx_one_on_ones_scheduled").on(table.scheduledAt),
@@ -80,6 +83,7 @@ export const oneOnOneActionItems = pgTable("one_on_one_action_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_one_on_one_action_items_org_id").on(table.orgId, table.id),
   index("idx_one_on_one_action_items_meeting").on(table.meetingId),
   index("idx_one_on_one_action_items_org").on(table.orgId),
 ]);
@@ -106,6 +110,7 @@ export const goals = pgTable("goals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_goals_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.parentGoalId], foreignColumns: [table.id] }).onDelete("set null"),
   index("idx_goals_user_status").on(table.userId, table.status),
   index("idx_goals_org_status").on(table.orgId, table.status),
@@ -141,6 +146,7 @@ export const performanceImprovementPlans = pgTable("performance_improvement_plan
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_performance_improvement_plans_org_id").on(table.orgId, table.id),
   index("idx_pip_user").on(table.userId),
 ]);
 
@@ -155,6 +161,7 @@ export const pulseSurveys = pgTable("pulse_surveys", {
   closesAt: timestamp("closes_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_pulse_surveys_org_id").on(table.orgId, table.id),
   index("idx_surveys_org").on(table.orgId),
 ]);
 
@@ -183,6 +190,7 @@ export const feedbackRequests = pgTable("feedback_requests", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_feedback_requests_org_id").on(table.orgId, table.id),
   index("idx_feedback_subject").on(table.subjectUserId),
   index("idx_feedback_reviewer").on(table.reviewerUserId),
 ]);
@@ -197,6 +205,7 @@ export const enpsScores = pgTable("enps_scores", {
   period: text("period"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_enps_scores_org_id").on(table.orgId, table.id),
   index("idx_enps_org_period").on(table.orgId, table.period),
 ]);
 
@@ -210,6 +219,7 @@ export const recognitions = pgTable("recognitions", {
   isPublic: boolean("is_public").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_recognitions_org_id").on(table.orgId, table.id),
   index("idx_recognitions_org").on(table.orgId),
   index("idx_recognitions_to_user").on(table.toUserId),
 ]);
@@ -224,6 +234,7 @@ export const employeeSkills = pgTable("employee_skills", {
   verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_employee_skills_org_id").on(table.orgId, table.id),
   index("idx_employee_skills_user").on(table.userId),
   index("idx_employee_skills_name").on(table.skillName),
 ]);
@@ -239,6 +250,7 @@ export const skillAssessments = pgTable("skill_assessments", {
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_skill_assessments_org_id").on(table.orgId, table.id),
   index("idx_skill_assessments_org").on(table.orgId),
 ]);
 
@@ -335,6 +347,7 @@ export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_calibration_entries_org_id").on(table.orgId, table.id),
   index("idx_calibration_entries_org").on(table.orgId),
   index("idx_calibration_entries_cycle").on(table.cycleId),
   uniqueIndex("uniq_calibration_cycle_employee").on(table.cycleId, table.employeeId),

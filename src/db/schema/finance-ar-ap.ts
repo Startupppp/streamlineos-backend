@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { invoices, payments, purchaseBills, vendorPayments } from "./crm/billing";
@@ -35,6 +35,7 @@ export const creditNotes = pgTable("credit_notes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_credit_notes_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_credit_notes_org_number").on(table.orgId, table.creditNoteNumber),
   index("idx_credit_notes_org_status").on(table.orgId, table.status),
   index("idx_credit_notes_client").on(table.clientId),
@@ -63,6 +64,7 @@ export const finPaymentAllocations = pgTable("fin_payment_allocations", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_payment_allocations_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_payment_allocations_pay_inv").on(table.paymentId, table.invoiceId),
   index("idx_fin_payment_allocations_org").on(table.orgId),
   index("idx_fin_payment_allocations_invoice").on(table.invoiceId),
@@ -86,6 +88,7 @@ export const vendorCredits = pgTable("vendor_credits", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_vendor_credits_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_vendor_credits_org_number").on(table.orgId, table.vendorCreditNumber),
   index("idx_vendor_credits_org_status").on(table.orgId, table.status),
   index("idx_vendor_credits_vendor").on(table.vendorId),
@@ -113,6 +116,7 @@ export const finVendorPaymentAllocations = pgTable("fin_vendor_payment_allocatio
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_vendor_pay_alloc_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_vendor_pay_alloc_pay_bill").on(table.vendorPaymentId, table.billId),
   index("idx_fin_vendor_payment_allocations_org").on(table.orgId),
   index("idx_fin_vendor_payment_allocations_bill").on(table.billId),
@@ -133,6 +137,7 @@ export const finRecurringInvoiceTemplates = pgTable("fin_recurring_invoice_templ
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_recur_inv_tmpls_org_id").on(table.orgId, table.id),
   index("idx_fin_recurring_invoice_templates_org").on(table.orgId),
 ]);
 
@@ -151,6 +156,7 @@ export const finRecurringBillTemplates = pgTable("fin_recurring_bill_templates",
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_recur_bill_tmpls_org_id").on(table.orgId, table.id),
   index("idx_fin_recurring_bill_templates_org").on(table.orgId),
 ]);
 
@@ -165,6 +171,7 @@ export const finReminderPolicies = pgTable("fin_reminder_policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_reminder_policies_org_id").on(table.orgId, table.id),
   index("idx_fin_reminder_policies_org").on(table.orgId),
 ]);
 
@@ -177,6 +184,7 @@ export const finReminderLog = pgTable("fin_reminder_log", {
   offsetDays: integer("offset_days").notNull(),
   status: text("status").notNull(),
 }, (table) => [
+  unique("uniq_fin_reminder_log_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_reminder_log_org_inv_offset").on(table.orgId, table.invoiceId, table.offsetDays),
   index("idx_fin_reminder_log_org_invoice").on(table.orgId, table.invoiceId),
 ]);
@@ -192,6 +200,7 @@ export const finCollectionActivities = pgTable("fin_collection_activities", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_collection_activities_org_id").on(table.orgId, table.id),
   index("idx_fin_collection_activities_org_client").on(table.orgId, table.clientId),
   index("idx_fin_collection_activities_invoice").on(table.invoiceId),
 ]);
@@ -209,6 +218,7 @@ export const finPaymentRuns = pgTable("fin_payment_runs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_payment_runs_org_id").on(table.orgId, table.id),
   index("idx_fin_payment_runs_org_status").on(table.orgId, table.status),
 ]);
 

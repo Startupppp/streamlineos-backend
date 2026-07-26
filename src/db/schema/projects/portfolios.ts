@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
 
@@ -30,6 +30,7 @@ export const projectPortfolios = pgTable("project_portfolios", {
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
   index("idx_project_portfolios_org_status").on(t.orgId, t.status),
+  unique("uniq_project_portfolios_org_id").on(t.orgId, t.id),
 ]);
 
 export const projectPrograms = pgTable("project_programs", {
@@ -48,6 +49,7 @@ export const projectPrograms = pgTable("project_programs", {
 }, (t) => [
   index("idx_project_programs_org_status").on(t.orgId, t.status),
   index("idx_project_programs_portfolio").on(t.portfolioId),
+  unique("uniq_project_programs_org_id").on(t.orgId, t.id),
 ]);
 
 export const portfolioProjects = pgTable("portfolio_projects", {
@@ -59,6 +61,7 @@ export const portfolioProjects = pgTable("portfolio_projects", {
 }, (t) => [
   uniqueIndex("uq_portfolio_projects").on(t.portfolioId, t.projectId),
   index("idx_portfolio_projects_project").on(t.projectId),
+  unique("uniq_portfolio_projects_org_id").on(t.orgId, t.id),
 ]);
 
 export const programProjects = pgTable("program_projects", {
@@ -70,4 +73,5 @@ export const programProjects = pgTable("program_projects", {
 }, (t) => [
   uniqueIndex("uq_program_projects").on(t.programId, t.projectId),
   index("idx_program_projects_project").on(t.projectId),
+  unique("uniq_program_projects_org_id").on(t.orgId, t.id),
 ]);

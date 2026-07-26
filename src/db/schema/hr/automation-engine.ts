@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -42,6 +43,7 @@ export const hrAutomationRules = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_hr_automation_rules_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_automation_rules_org_name").on(table.orgId, table.name),
     index("idx_hr_automation_rules_org_event").on(table.orgId, table.triggerEvent),
     index("idx_hr_automation_rules_org_enabled").on(table.orgId, table.isEnabled),
@@ -67,6 +69,7 @@ export const hrAutomationRuns = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_automation_runs_org_id").on(table.orgId, table.id),
     index("idx_hr_automation_runs_org_rule_created").on(table.orgId, table.ruleId, table.createdAt),
     index("idx_hr_automation_runs_org_status").on(table.orgId, table.status),
   ],

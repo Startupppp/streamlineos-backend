@@ -7,6 +7,7 @@ import {
   boolean,
   jsonb,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -108,6 +109,7 @@ export const platformSubscriptions = pgTable(
   (table) => [
     uniqueIndex("uniq_platform_subscriptions_org").on(table.orgId),
     index("idx_platform_subscriptions_status").on(table.status),
+    unique("uniq_platform_subscriptions_org_id").on(table.orgId, table.id),
   ],
 );
 

@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -78,6 +79,7 @@ export const hrLegalHolds = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_legal_holds_org_id").on(table.orgId, table.id),
     index("idx_hr_legal_holds_org_status").on(table.orgId, table.status),
     index("idx_hr_legal_holds_org_subject").on(table.orgId, table.subjectUserId),
   ],
@@ -99,6 +101,7 @@ export const hrLegalHoldItems = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_legal_hold_items_org_id").on(table.orgId, table.id),
     index("idx_hr_legal_hold_items_hold").on(table.holdId),
     index("idx_hr_legal_hold_items_org_subject").on(table.orgId, table.itemType, table.itemRef),
   ],
@@ -120,6 +123,7 @@ export const hrRetentionPolicies = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_retention_policies_org_id").on(table.orgId, table.id),
     index("idx_hr_retention_policies_org").on(table.orgId),
     uniqueIndex("uniq_hr_retention_policy_org_type_country").on(
       table.orgId,
@@ -150,6 +154,7 @@ export const hrDataRequests = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_data_requests_org_id").on(table.orgId, table.id),
     index("idx_hr_data_requests_org_status").on(table.orgId, table.status),
     index("idx_hr_data_requests_org_subject").on(table.orgId, table.subjectUserId),
   ],
@@ -179,6 +184,7 @@ export const hrProxyAccess = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_proxy_access_org_id").on(table.orgId, table.id),
     index("idx_hr_proxy_access_org_grantor").on(table.orgId, table.grantorUserId),
     index("idx_hr_proxy_access_org_proxy").on(table.orgId, table.proxyUserId),
   ],
@@ -204,6 +210,7 @@ export const hrPositions = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_positions_org_id").on(table.orgId, table.id),
     index("idx_hr_positions_org_status").on(table.orgId, table.status),
     index("idx_hr_positions_org_dept").on(table.orgId, table.departmentId),
     index("idx_hr_positions_org").on(table.orgId),
@@ -226,6 +233,7 @@ export const hrReorgScenarios = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_reorg_scenarios_org_id").on(table.orgId, table.id),
     index("idx_hr_reorg_scenarios_org_status").on(table.orgId, table.status),
   ],
 );
@@ -248,6 +256,7 @@ export const hrUnionMemberships = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_union_memberships_org_id").on(table.orgId, table.id),
     index("idx_hr_union_memberships_org").on(table.orgId),
     index("idx_hr_union_memberships_org_user").on(table.orgId, table.userId),
   ],
@@ -271,6 +280,7 @@ export const hrCollectiveAgreements = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_collective_agreements_org_id").on(table.orgId, table.id),
     index("idx_hr_collective_agreements_org_status").on(table.orgId, table.status),
     index("idx_hr_collective_agreements_org_union").on(table.orgId, table.unionName),
   ],
@@ -293,6 +303,7 @@ export const hrLaborCases = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    unique("uniq_hr_labor_cases_org_id").on(table.orgId, table.id),
     index("idx_hr_labor_cases_org_status").on(table.orgId, table.status),
     index("idx_hr_labor_cases_org_union").on(table.orgId, table.unionName),
   ],

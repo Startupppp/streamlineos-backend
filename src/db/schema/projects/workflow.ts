@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
@@ -22,4 +22,5 @@ export const workflowTransitions = pgTable("workflow_transitions", {
   index("idx_workflow_transitions_org_project").on(t.orgId, t.projectId),
   index("idx_workflow_transitions_from").on(t.fromStatusId),
   index("idx_workflow_transitions_to").on(t.toStatusId),
+  unique("uniq_workflow_transitions_org_id").on(t.orgId, t.id),
 ]);

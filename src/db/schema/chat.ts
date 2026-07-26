@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { chatMessageTypeEnum } from "./enums";
 import { organizations, users } from "./auth";
@@ -25,6 +25,7 @@ export const chatChannels = pgTable("chat_channels", {
 }, (table) => [
   index("idx_chat_channels_org").on(table.orgId),
   index("idx_chat_channels_last_msg").on(table.orgId, table.lastMessageAt),
+  unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
 ]);
 
 export const chatChannelMembers = pgTable("chat_channel_members", {
@@ -88,6 +89,7 @@ export const chatUserPresence = pgTable("chat_user_presence", {
   uniqueIndex("uniq_chat_presence_user").on(table.userId),
   index("idx_chat_presence_org").on(table.orgId, table.status),
   index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
+  unique("uniq_chat_user_presence_org_id").on(table.orgId, table.id),
 ]);
 
 export const chatPinnedMessages = pgTable("chat_pinned_messages", {
@@ -126,6 +128,7 @@ export const chatReplyReminders = pgTable("chat_reply_reminders", {
   uniqueIndex("uniq_chat_reply_reminder").on(table.messageId, table.recipientUserId),
   index("idx_chat_reply_reminders_due").on(table.remindAt),
   index("idx_chat_reply_reminders_recipient").on(table.recipientUserId, table.channelId),
+  unique("uniq_chat_reply_reminders_org_id").on(table.orgId, table.id),
 ]);
 
 export const chatChannelsRelations = relations(chatChannels, ({ many, one }) => ({
@@ -223,6 +226,7 @@ export const chatOrgSettings = pgTable("chat_org_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_chat_org_settings_org").on(table.orgId),
+  unique("uniq_chat_org_settings_org_id").on(table.orgId, table.id),
 ]);
 
 export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({

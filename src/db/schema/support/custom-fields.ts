@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../auth";
 import { supportTickets } from "../crm/billing";
 
@@ -24,6 +24,7 @@ export const supportCustomFields = pgTable(
   (table) => [
     uniqueIndex("uniq_support_custom_fields_org_key").on(table.orgId, table.key),
     index("idx_support_custom_fields_org_active").on(table.orgId, table.isActive),
+    unique("uniq_support_custom_fields_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -41,5 +42,6 @@ export const supportTicketCustomFieldValues = pgTable(
   (table) => [
     uniqueIndex("uniq_support_ticket_custom_field_values_ticket_field").on(table.ticketId, table.fieldId),
     index("idx_support_ticket_custom_field_values_org_ticket").on(table.orgId, table.ticketId),
+    unique("uniq_support_tcfv_org_id").on(table.orgId, table.id),
   ],
 );

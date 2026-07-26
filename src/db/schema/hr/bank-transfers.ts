@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export type BankTransferEntry = {
@@ -24,6 +24,7 @@ export const bankTransfers = pgTable("bank_transfers", {
   entries: jsonb("entries").$type<BankTransferEntry[]>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_bank_transfers_org_id").on(table.orgId, table.id),
   index("idx_bank_transfers_org_month").on(table.orgId, table.month),
   index("idx_bank_transfers_org_status").on(table.orgId, table.status),
 ]);

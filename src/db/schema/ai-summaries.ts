@@ -1,4 +1,4 @@
-import { pgTable, serial, text, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
 
 interface SummaryStructured {
@@ -36,6 +36,7 @@ export const aiSummarySnapshots = pgTable(
       table.entityId,
       table.createdAt,
     ),
+    unique("uniq_ai_summary_snapshots_org_id").on(table.orgId, table.id),
   ],
 );
 

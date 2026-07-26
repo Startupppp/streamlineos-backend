@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, text, integer, boolean, decimal, timestamp, index, uniqueIndex,
+  pgTable, serial, text, integer, boolean, decimal, timestamp, index, uniqueIndex, unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -26,6 +26,7 @@ export const payrollInputs = pgTable("payroll_inputs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_inputs_org_id").on(table.orgId, table.id),
   index("idx_payroll_inputs_run").on(table.runId),
   index("idx_payroll_inputs_org_user").on(table.orgId, table.userId),
   uniqueIndex("uniq_payroll_inputs_run_user").on(table.runId, table.userId),

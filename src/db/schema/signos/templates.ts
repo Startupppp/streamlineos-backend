@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { signTemplateStatusEnum } from "./enums";
@@ -24,6 +24,7 @@ export const signTemplates = pgTable(
   (table) => [
     index("idx_sign_templates_org_status").on(table.orgId, table.status),
     uniqueIndex("uniq_sign_templates_org_name_version").on(table.orgId, table.name, table.version),
+    unique("uniq_sign_templates_org_id").on(table.orgId, table.id),
   ],
 );
 

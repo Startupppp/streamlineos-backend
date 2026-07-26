@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import {
   intakeStatusEnum,
   intakeSourceEnum,
@@ -21,6 +21,7 @@ export const projectStatuses = pgTable("project_statuses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_project_statuses_project").on(table.projectId),
+  unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
 ]);
 
 export const projectMembers = pgTable("project_members", {
@@ -55,6 +56,7 @@ export const projectViews = pgTable("project_views", {
   index("idx_project_views_project").on(table.projectId),
   index("idx_project_views_org").on(table.orgId),
   index("idx_project_views_org_scope").on(table.orgId, table.scope),
+  unique("uniq_project_views_org_id").on(table.orgId, table.id),
 ]);
 
 export const intakeItems = pgTable("intake_items", {
@@ -76,6 +78,7 @@ export const intakeItems = pgTable("intake_items", {
 }, (table) => [
   index("idx_intake_items_project").on(table.projectId),
   index("idx_intake_items_org_status").on(table.orgId, table.status),
+  unique("uniq_intake_items_org_id").on(table.orgId, table.id),
 ]);
 
 export const pages = pgTable("pages", {
@@ -97,6 +100,7 @@ export const pages = pgTable("pages", {
   index("idx_pages_project").on(table.projectId),
   index("idx_pages_org").on(table.orgId),
   index("idx_pages_parent").on(table.parentPageId),
+  unique("uniq_pages_org_id").on(table.orgId, table.id),
 ]);
 
 export const projectMilestones = pgTable("project_milestones", {
@@ -114,4 +118,5 @@ export const projectMilestones = pgTable("project_milestones", {
 }, (table) => [
   index("idx_project_milestones_project").on(table.projectId),
   index("idx_project_milestones_org").on(table.orgId),
+  unique("uniq_project_milestones_org_id").on(table.orgId, table.id),
 ]);

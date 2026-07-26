@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, jsonb, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
@@ -49,6 +49,7 @@ export const signOrgSettings = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_sign_org_settings_org").on(table.orgId),
+    unique("uniq_sign_org_settings_org_id").on(table.orgId, table.id),
   ],
 );
 

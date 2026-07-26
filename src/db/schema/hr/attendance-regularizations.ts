@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const hrAttendanceRegularizations = pgTable("hr_attendance_regularizations", {
@@ -20,6 +20,7 @@ export const hrAttendanceRegularizations = pgTable("hr_attendance_regularization
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_attendance_regularizations_org_id").on(table.orgId, table.id),
   index("idx_att_reg_org_user").on(table.orgId, table.userId),
   index("idx_att_reg_org_date").on(table.orgId, table.attendanceDate),
   index("idx_att_reg_status").on(table.orgId, table.status),

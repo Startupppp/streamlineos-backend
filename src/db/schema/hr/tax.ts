@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const taxDeclarations = pgTable("tax_declarations", {
@@ -22,6 +22,7 @@ export const taxDeclarations = pgTable("tax_declarations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_tax_declarations_org_id").on(table.orgId, table.id),
   index("idx_tax_declarations_org_year").on(table.orgId, table.financialYear),
   index("idx_tax_declarations_user").on(table.userId),
 ]);
@@ -37,5 +38,6 @@ export const investmentProofs = pgTable("investment_proofs", {
   status: text("status").default("PENDING").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_investment_proofs_org_id").on(table.orgId, table.id),
   index("idx_investment_proofs_declaration").on(table.declarationId),
 ]);

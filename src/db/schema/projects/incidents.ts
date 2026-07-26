@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
@@ -33,6 +33,7 @@ export const projectIncidents = pgTable("project_incidents", {
   index("idx_project_incidents_org_project_status").on(t.orgId, t.projectId, t.status),
   uniqueIndex("uq_project_incidents_project_number").on(t.projectId, t.incidentNumber),
   index("idx_project_incidents_severity").on(t.severity),
+  unique("uniq_project_incidents_org_id").on(t.orgId, t.id),
 ]);
 
 export const incidentUpdates = pgTable("incident_updates", {
@@ -45,4 +46,5 @@ export const incidentUpdates = pgTable("incident_updates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_incident_updates_incident").on(t.incidentId),
+  unique("uniq_incident_updates_org_id").on(t.orgId, t.id),
 ]);

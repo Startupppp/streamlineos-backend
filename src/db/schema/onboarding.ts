@@ -35,6 +35,7 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
 }, (table) => [
   index("idx_onb_flow_sessions_org_user_type").on(table.orgId, table.userId, table.type),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
+  unique("uniq_onb_flow_sessions_org_id").on(table.orgId, table.id),
 ]);
 
 export const moduleSetupChecklists = pgTable("module_setup_checklists", {
@@ -49,6 +50,7 @@ export const moduleSetupChecklists = pgTable("module_setup_checklists", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_module_setup_checklists_org_module").on(table.orgId, table.moduleKey),
+  unique("uniq_module_setup_checklists_org_id").on(table.orgId, table.id),
 ]);
 
 export const moduleSetupChecklistItems = pgTable("module_setup_checklist_items", {
@@ -67,6 +69,7 @@ export const moduleSetupChecklistItems = pgTable("module_setup_checklist_items",
 }, (table) => [
   index("idx_module_checklist_items_checklist").on(table.checklistId),
   unique("uq_module_checklist_items_checklist_key").on(table.checklistId, table.itemKey),
+  unique("uniq_module_checklist_items_org_id").on(table.orgId, table.id),
 ]);
 
 export const guidedTours = pgTable("guided_tours", {
@@ -95,6 +98,7 @@ export const userTourProgress = pgTable("user_tour_progress", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_user_tour_progress_org_user_tour").on(table.orgId, table.userId, table.tourKey),
+  unique("uniq_user_tour_progress_org_id").on(table.orgId, table.id),
 ]);
 
 export const onboardingAnalyticsEvents = pgTable("onboarding_analytics_events", {
@@ -110,6 +114,7 @@ export const onboardingAnalyticsEvents = pgTable("onboarding_analytics_events", 
 }, (table) => [
   index("idx_onb_analytics_org_event").on(table.orgId, table.eventType),
   index("idx_onb_analytics_org_created").on(table.orgId, table.createdAt),
+  unique("uniq_onb_analytics_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const onboardingFlowSessionsRelations = relations(onboardingFlowSessions, ({ one }) => ({

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { signSignatureAssetTypeEnum, signSignatureMethodEnum } from "./enums";
@@ -22,6 +22,7 @@ export const signSignatureAssets = pgTable(
   (table) => [
     index("idx_sign_signature_assets_recipient").on(table.recipientId),
     index("idx_sign_signature_assets_org_envelope").on(table.orgId, table.envelopeId),
+    unique("uniq_sign_signature_assets_org_id").on(table.orgId, table.id),
   ],
 );
 

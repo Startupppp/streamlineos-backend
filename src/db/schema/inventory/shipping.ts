@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -16,6 +16,7 @@ export const invCarriers = pgTable("inv_carriers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_carriers_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_carriers_org_id").on(table.orgId, table.id),
   index("idx_inv_carriers_org").on(table.orgId),
 ]);
 
@@ -36,6 +37,7 @@ export const invShipments = pgTable("inv_shipments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_shipments_org_number").on(table.orgId, table.shipmentNumber),
+  unique("uniq_inv_shipments_org_id").on(table.orgId, table.id),
   index("idx_inv_shipments_org_status").on(table.orgId, table.status),
 ]);
 
@@ -67,6 +69,7 @@ export const invPackages = pgTable("inv_packages", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_packages_org_number").on(table.orgId, table.packageNumber),
+  unique("uniq_inv_packages_org_id").on(table.orgId, table.id),
   index("idx_inv_packages_org_status").on(table.orgId, table.status),
 ]);
 
@@ -99,6 +102,7 @@ export const invLoads = pgTable("inv_loads", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_loads_org_number").on(table.orgId, table.loadNumber),
+  unique("uniq_inv_loads_org_id").on(table.orgId, table.id),
   index("idx_inv_loads_org_status").on(table.orgId, table.status),
 ]);
 

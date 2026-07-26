@@ -31,6 +31,7 @@ export const paymentProviders = pgTable("payment_providers", {
 }, (table) => [
   unique("uq_payment_providers_org_provider_key").on(table.orgId, table.providerKey),
   index("idx_payment_providers_org").on(table.orgId),
+  unique("uniq_payment_providers_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentProviderAccounts = pgTable("payment_provider_accounts", {
@@ -50,6 +51,7 @@ export const paymentProviderAccounts = pgTable("payment_provider_accounts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_payment_provider_accounts_provider").on(table.providerId),
+  unique("uniq_payment_provider_accounts_org_id").on(table.orgId, table.id),
 ]);
 
 // Never stores raw secrets — secretRef/webhookSecretRef point at an encrypted-at-rest value
@@ -71,6 +73,7 @@ export const paymentProviderCredentials = pgTable("payment_provider_credentials"
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_payment_provider_credentials_provider_env").on(table.providerId, table.environment),
+  unique("uniq_payment_provider_creds_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentWebhookEndpoints = pgTable("payment_webhook_endpoints", {
@@ -88,6 +91,7 @@ export const paymentWebhookEndpoints = pgTable("payment_webhook_endpoints", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_payment_webhook_endpoints_provider_env").on(table.providerId, table.environment),
+  unique("uniq_payment_webhook_endpoints_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentWebhookEvents = pgTable("payment_webhook_events", {
@@ -109,6 +113,7 @@ export const paymentWebhookEvents = pgTable("payment_webhook_events", {
 }, (table) => [
   unique("uq_payment_webhook_events_provider_env_event").on(table.providerId, table.environment, table.providerEventId),
   index("idx_payment_webhook_events_org").on(table.orgId, table.receivedAt),
+  unique("uniq_payment_webhook_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentTestTransactions = pgTable("payment_test_transactions", {
@@ -128,6 +133,7 @@ export const paymentTestTransactions = pgTable("payment_test_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_payment_test_transactions_org").on(table.orgId, table.providerId),
+  unique("uniq_payment_test_transactions_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentAuditEvents = pgTable("payment_audit_events", {
@@ -144,6 +150,7 @@ export const paymentAuditEvents = pgTable("payment_audit_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_payment_audit_events_org").on(table.orgId, table.createdAt),
+  unique("uniq_payment_audit_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentManualMethods = pgTable("payment_manual_methods", {
@@ -164,6 +171,7 @@ export const paymentManualMethods = pgTable("payment_manual_methods", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_payment_manual_methods_org_type").on(table.orgId, table.methodType),
+  unique("uniq_payment_manual_methods_org_id").on(table.orgId, table.id),
 ]);
 
 export const paymentProvidersRelations = relations(paymentProviders, ({ one, many }) => ({

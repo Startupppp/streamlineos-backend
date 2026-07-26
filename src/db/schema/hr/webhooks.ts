@@ -7,6 +7,7 @@ import {
   jsonb,
   integer,
   index,
+  unique,
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core";
@@ -38,6 +39,7 @@ export const hrWebhookSubscriptions = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    unique("uniq_hr_webhook_subscriptions_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_webhook_subscriptions_org_name").on(table.orgId, table.name),
     index("idx_hr_webhook_subscriptions_org_active").on(table.orgId, table.isActive),
   ],
@@ -63,6 +65,7 @@ export const hrWebhookDeliveries = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_webhook_deliveries_org_id").on(table.orgId, table.id),
     index("idx_hr_webhook_deliveries_org_sub_created").on(
       table.orgId,
       table.subscriptionId,

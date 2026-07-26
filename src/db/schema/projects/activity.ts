@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { tickets, ticketComments } from "./tasks";
@@ -32,6 +32,7 @@ export const ticketActivityLog = pgTable("ticket_activity_log", {
 }, (table) => [
   index("idx_ticket_activity_log_ticket_recent").on(table.ticketId, table.id),
   index("idx_ticket_activity_log_org_ticket").on(table.orgId, table.ticketId, table.id),
+  unique("uniq_ticket_activity_log_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketCommentMentions = pgTable("ticket_comment_mentions", {
@@ -43,6 +44,7 @@ export const ticketCommentMentions = pgTable("ticket_comment_mentions", {
 }, (table) => [
   index("idx_ticket_comment_mentions_comment").on(table.commentId),
   uniqueIndex("uniq_ticket_comment_mentions_comment_user").on(table.commentId, table.mentionedUserId),
+  unique("uniq_ticket_comment_mentions_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketActivityLogRelations = relations(ticketActivityLog, ({ one }) => ({

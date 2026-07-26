@@ -9,6 +9,7 @@ import {
   date,
   integer,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
@@ -69,6 +70,7 @@ export const projects = pgTable(
     index("idx_projects_manager").on(table.managerId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
+    unique("uniq_projects_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -95,6 +97,7 @@ export const sprints = pgTable(
   },
   (table) => [
     index("idx_sprints_project_status").on(table.projectId, table.status),
+    unique("uniq_sprints_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -118,6 +121,7 @@ export const customStates = pgTable(
   (table) => [
     index("idx_custom_states_project").on(table.projectId),
     index("idx_custom_states_org").on(table.orgId),
+    unique("uniq_custom_states_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -148,6 +152,7 @@ export const cycles = pgTable(
   (table) => [
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
+    unique("uniq_cycles_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -179,6 +184,7 @@ export const modules = pgTable(
   (table) => [
     index("idx_modules_project").on(table.projectId),
     index("idx_modules_org").on(table.orgId),
+    unique("uniq_modules_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -209,7 +215,10 @@ export const reports = pgTable(
       .notNull()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index("idx_reports_org_type").on(table.orgId, table.type)],
+  (table) => [
+    index("idx_reports_org_type").on(table.orgId, table.type),
+    unique("uniq_reports_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const projectTemplates = pgTable(
@@ -227,7 +236,10 @@ export const projectTemplates = pgTable(
     }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("idx_project_templates_org").on(table.orgId)],
+  (table) => [
+    index("idx_project_templates_org").on(table.orgId),
+    unique("uniq_project_templates_org_id").on(table.orgId, table.id),
+  ],
 );
 
 export const projectTemplateTickets = pgTable(

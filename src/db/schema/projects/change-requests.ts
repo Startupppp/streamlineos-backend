@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
 
@@ -37,4 +37,5 @@ export const changeRequests = pgTable("change_requests", {
   index("idx_change_requests_org_project_status").on(t.orgId, t.projectId, t.status),
   uniqueIndex("uq_change_requests_project_number").on(t.projectId, t.crNumber),
   index("idx_change_requests_requested_by").on(t.requestedById),
+  unique("uniq_change_requests_org_id").on(t.orgId, t.id),
 ]);

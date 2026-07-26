@@ -5,6 +5,7 @@ import {
   boolean,
   timestamp,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
@@ -33,6 +34,7 @@ export const projectTeams = pgTable(
   (t) => [
     uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
     index("idx_project_teams_org").on(t.orgId),
+    unique("uniq_project_teams_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -56,6 +58,7 @@ export const projectTeamMembers = pgTable(
     uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.userId),
     index("idx_project_team_members_org").on(t.orgId),
     index("idx_project_team_members_user").on(t.userId),
+    unique("uniq_project_team_members_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -79,6 +82,7 @@ export const projectWorkspaceMembers = pgTable(
       t.userId,
     ),
     index("idx_project_workspace_members_org").on(t.orgId),
+    unique("uniq_project_workspace_members_org_id").on(t.orgId, t.id),
   ],
 );
 
@@ -105,5 +109,6 @@ export const projectTeamAssignments = pgTable(
     index("idx_project_team_assignments_org").on(t.orgId),
     index("idx_project_team_assignments_team").on(t.teamId),
     index("idx_project_team_assignments_project").on(t.projectId),
+    unique("uniq_project_team_assignments_org_id").on(t.orgId, t.id),
   ],
 );

@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
@@ -28,6 +28,7 @@ export const finBankAccounts = pgTable("fin_bank_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_bank_accounts_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_bank_accounts_org_name").on(table.orgId, table.name),
   index("idx_fin_bank_accounts_org_active").on(table.orgId, table.isActive),
 ]);
@@ -46,6 +47,7 @@ export const finBankImports = pgTable("fin_bank_imports", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_bank_imports_org_id").on(table.orgId, table.id),
   index("idx_fin_bank_imports_org_account").on(table.orgId, table.bankAccountId),
 ]);
 
@@ -65,6 +67,7 @@ export const finBankTransactions = pgTable("fin_bank_transactions", {
   matchedJournalEntryId: integer("matched_journal_entry_id").references(() => journalEntries.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_bank_transactions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_bank_txn_org_account_fp").on(table.orgId, table.bankAccountId, table.fingerprint),
   index("idx_fin_bank_txn_org_account_status").on(table.orgId, table.bankAccountId, table.status),
   index("idx_fin_bank_txn_org_date").on(table.orgId, table.txnDate),
@@ -84,6 +87,7 @@ export const finReconciliationMatches = pgTable("fin_reconciliation_matches", {
   confirmedAt: timestamp("confirmed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_recon_matches_org_id").on(table.orgId, table.id),
   index("idx_fin_recon_matches_org_txn").on(table.orgId, table.bankTransactionId),
   index("idx_fin_recon_matches_org_je").on(table.orgId, table.journalEntryId),
 ]);
@@ -99,6 +103,7 @@ export const finReconciliationRules = pgTable("fin_reconciliation_rules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_recon_rules_org_id").on(table.orgId, table.id),
   index("idx_fin_reconciliation_rules_org_priority").on(table.orgId, table.priority),
 ]);
 
@@ -114,6 +119,7 @@ export const finBankTransfers = pgTable("fin_bank_transfers", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_fin_bank_transfers_org_id").on(table.orgId, table.id),
   index("idx_fin_bank_transfers_org_date").on(table.orgId, table.transferDate),
   index("idx_fin_bank_transfers_from").on(table.fromBankAccountId),
   index("idx_fin_bank_transfers_to").on(table.toBankAccountId),

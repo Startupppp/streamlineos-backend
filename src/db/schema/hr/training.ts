@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const trainingPrograms = pgTable("training_programs", {
@@ -19,6 +19,7 @@ export const trainingPrograms = pgTable("training_programs", {
   status: text("status").default("SCHEDULED").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_training_programs_org_id").on(table.orgId, table.id),
   index("idx_training_programs_org_status").on(table.orgId, table.status),
 ]);
 

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const SETTINGS_AUDIT_ENTITY_TYPES = [
@@ -32,5 +32,6 @@ export const supportSettingsAuditLog = pgTable(
   (table) => [
     index("idx_support_settings_audit_log_org_created").on(table.orgId, table.createdAt),
     index("idx_support_settings_audit_log_org_entity").on(table.orgId, table.entityType),
+    unique("uniq_support_settings_audit_org_id").on(table.orgId, table.id),
   ],
 );

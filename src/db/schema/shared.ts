@@ -46,6 +46,7 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_org_category").on(table.orgId, table.category),
   index("idx_notifications_priority").on(table.priority),
   index("idx_notifications_dedupe").on(table.orgId, table.eventKey, table.entityType, table.entityId),
+  unique("uniq_notifications_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationTemplates = pgTable("notification_templates", {
@@ -69,6 +70,7 @@ export const notificationTemplates = pgTable("notification_templates", {
   index("idx_notification_templates_org").on(table.orgId),
   index("idx_notification_templates_channel").on(table.channel),
   index("idx_notification_templates_active").on(table.isActive),
+  unique("uniq_notification_templates_org_id").on(table.orgId, table.id),
 ]);
 
 export const broadcasts = pgTable("broadcasts", {
@@ -98,6 +100,7 @@ export const broadcasts = pgTable("broadcasts", {
   index("idx_broadcasts_org_status").on(table.orgId, table.status),
   index("idx_broadcasts_scheduled").on(table.scheduledAt),
   index("idx_broadcasts_created_by").on(table.createdBy),
+  unique("uniq_broadcasts_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationAuditLogs = pgTable("notification_audit_logs", {
@@ -117,6 +120,7 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   index("idx_notif_audit_org_action").on(table.orgId, table.action),
   index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
   index("idx_notif_audit_notification").on(table.notificationId),
+  unique("uniq_notification_audit_logs_org_id").on(table.orgId, table.id),
 ]);
 
 export const auditLogs = pgTable("audit_logs", {
@@ -153,6 +157,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_push_subs_user").on(table.userId),
+  unique("uniq_push_subscriptions_org_id").on(table.orgId, table.id),
 ]);
 
 export const calendarEvents = pgTable("calendar_events", {
@@ -187,6 +192,7 @@ export const calendarEvents = pgTable("calendar_events", {
   index("idx_calendar_events_category").on(table.category),
   index("idx_calendar_events_created_by").on(table.createdBy),
   index("idx_calendar_events_external").on(table.integrationConnectionId, table.externalEventId),
+  unique("uniq_calendar_events_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationPreferences = pgTable("notification_preferences", {
@@ -212,7 +218,9 @@ export const notificationPreferences = pgTable("notification_preferences", {
   updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-});
+}, (table) => [
+  unique("uniq_notification_preferences_org_id").on(table.orgId, table.id),
+]);
 
 export const webhookEndpoints = pgTable("webhook_endpoints", {
   id: serial("id").primaryKey(),
@@ -227,6 +235,7 @@ export const webhookEndpoints = pgTable("webhook_endpoints", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_webhook_endpoints_org").on(table.orgId),
+  unique("uniq_webhook_endpoints_org_id").on(table.orgId, table.id),
 ]);
 
 export const webhookLogs = pgTable("webhook_logs", {
@@ -243,6 +252,7 @@ export const webhookLogs = pgTable("webhook_logs", {
 }, (table) => [
   index("idx_webhook_logs_endpoint").on(table.endpointId),
   index("idx_webhook_logs_org_event").on(table.orgId, table.event),
+  unique("uniq_webhook_logs_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
@@ -312,6 +322,7 @@ export const subscriptions = pgTable("subscriptions", {
   index("idx_subscriptions_org").on(table.orgId),
   index("idx_subscriptions_status").on(table.status),
   index("idx_subscriptions_razorpay").on(table.razorpaySubscriptionId),
+  unique("uniq_subscriptions_org_id").on(table.orgId, table.id),
 ]);
 
 export const subscriptionPayments = pgTable("subscription_payments", {
@@ -329,6 +340,7 @@ export const subscriptionPayments = pgTable("subscription_payments", {
 }, (table) => [
   index("idx_sub_payments_org").on(table.orgId),
   index("idx_sub_payments_sub").on(table.subscriptionId),
+  unique("uniq_subscription_payments_org_id").on(table.orgId, table.id),
 ]);
 
 export const subscriptionsRelations = relations(subscriptions, ({ one, many }) => ({
@@ -371,6 +383,7 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
   index("idx_coupon_redemptions_coupon").on(table.couponId),
   index("idx_coupon_redemptions_org").on(table.orgId),
+  unique("uniq_coupon_redemptions_org_id").on(table.orgId, table.id),
 ]);
 
 export const couponsRelations = relations(coupons, ({ one, many }) => ({
@@ -407,4 +420,5 @@ export const aiUsageLogs = pgTable("ai_usage_logs", {
   index("idx_ai_usage_org_feature").on(table.orgId, table.feature),
   index("idx_ai_usage_org_created").on(table.orgId, table.createdAt),
   index("idx_ai_usage_user").on(table.userId),
+  unique("uniq_ai_usage_logs_org_id").on(table.orgId, table.id),
 ]);

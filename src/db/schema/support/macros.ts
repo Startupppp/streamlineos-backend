@@ -7,6 +7,7 @@ import {
   jsonb,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -41,6 +42,7 @@ export const supportMacros = pgTable(
   },
   (table) => [
     index("idx_support_macros_org").on(table.orgId),
+    unique("uniq_support_macros_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -64,6 +66,7 @@ export const supportRoutingRules = pgTable(
   },
   (table) => [
     index("idx_support_routing_rules_org_enabled").on(table.orgId, table.isEnabled),
+    unique("uniq_support_routing_rules_org_id").on(table.orgId, table.id),
   ],
 );
 

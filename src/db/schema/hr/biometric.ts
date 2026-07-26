@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, jsonb, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const biometricDevices = pgTable("biometric_devices", {
@@ -13,6 +13,7 @@ export const biometricDevices = pgTable("biometric_devices", {
   lastSyncAt: timestamp("last_sync_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_biometric_devices_org_id").on(table.orgId, table.id),
   index("idx_biometric_devices_org").on(table.orgId),
 ]);
 
@@ -28,6 +29,7 @@ export const biometricLogs = pgTable("biometric_logs", {
   processed: boolean("processed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_biometric_logs_org_id").on(table.orgId, table.id),
   index("idx_biometric_logs_org_device").on(table.orgId, table.deviceId),
   index("idx_biometric_logs_user_time").on(table.userId, table.punchTime),
 ]);

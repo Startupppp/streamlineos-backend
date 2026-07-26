@@ -25,6 +25,7 @@ export const ledgerAccounts = pgTable("ledger_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_ledger_accounts_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.parentAccountId], foreignColumns: [table.id] }).onDelete("set null"),
   unique("uniq_ledger_accounts_org_code").on(table.orgId, table.code),
   index("idx_ledger_accounts_org_type_active").on(table.orgId, table.accountType, table.isActive),
@@ -52,6 +53,7 @@ export const journalEntries = pgTable("journal_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_journal_entries_org_id").on(table.orgId, table.id),
   unique("uniq_je_org_number").on(table.orgId, table.entryNumber),
   unique("uniq_je_idempotency").on(table.orgId, table.sourceType, table.sourceId, table.sourceEvent),
   index("idx_je_org_date").on(table.orgId, table.entryDate),

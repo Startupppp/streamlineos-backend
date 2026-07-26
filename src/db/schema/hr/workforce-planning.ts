@@ -1,4 +1,4 @@
-import { pgTable, text, integer, serial, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, serial, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { departments } from "./employees";
@@ -19,6 +19,7 @@ export const hrHeadcountPlans = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_headcount_plans_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_headcount_plans_org_year_dept").on(table.orgId, table.fiscalYear, table.departmentId),
     index("idx_hr_headcount_plans_org").on(table.orgId),
   ],
@@ -43,6 +44,7 @@ export const hrHiringPlanItems = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_hiring_plan_items_org_id").on(table.orgId, table.id),
     index("idx_hr_hiring_plan_items_plan").on(table.planId),
     index("idx_hr_hiring_plan_items_org").on(table.orgId),
   ],

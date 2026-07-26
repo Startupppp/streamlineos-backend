@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const announcements = pgTable("announcements", {
@@ -17,6 +17,7 @@ export const announcements = pgTable("announcements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_announcements_org_id").on(table.orgId, table.id),
   index("idx_announcements_org_status").on(table.orgId, table.status),
   index("idx_announcements_org_pinned").on(table.orgId, table.isPinned),
 ]);
@@ -29,6 +30,7 @@ export const announcementTargets = pgTable("announcement_targets", {
   targetId: text("target_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_announcement_targets_org_id").on(table.orgId, table.id),
   index("idx_announcement_targets_announcement").on(table.announcementId),
   index("idx_announcement_targets_org_type_target").on(table.orgId, table.targetType, table.targetId),
 ]);

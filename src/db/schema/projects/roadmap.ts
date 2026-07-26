@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { projects } from "./core";
@@ -26,6 +26,7 @@ export const roadmapItems = pgTable("roadmap_items", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_roadmap_items_org_status").on(table.orgId, table.status),
+  unique("uniq_roadmap_items_org_id").on(table.orgId, table.id),
 ]);
 
 export const roadmapVotes = pgTable("roadmap_votes", {
@@ -36,6 +37,7 @@ export const roadmapVotes = pgTable("roadmap_votes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_roadmap_votes_item_voter").on(table.roadmapItemId, table.voterKey),
+  unique("uniq_roadmap_votes_org_id").on(table.orgId, table.id),
 ]);
 
 export const feedbackPosts = pgTable("feedback_posts", {
@@ -54,6 +56,7 @@ export const feedbackPosts = pgTable("feedback_posts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_feedback_posts_org_status").on(table.orgId, table.status),
+  unique("uniq_feedback_posts_org_id").on(table.orgId, table.id),
 ]);
 
 export const feedbackVotes = pgTable("feedback_votes", {
@@ -64,6 +67,7 @@ export const feedbackVotes = pgTable("feedback_votes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_feedback_votes_post_voter").on(table.feedbackPostId, table.voterKey),
+  unique("uniq_feedback_votes_org_id").on(table.orgId, table.id),
 ]);
 
 export const changelogEntries = pgTable("changelog_entries", {
@@ -81,6 +85,7 @@ export const changelogEntries = pgTable("changelog_entries", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_changelog_entries_org_published").on(table.orgId, table.isPublished),
+  unique("uniq_changelog_entries_org_id").on(table.orgId, table.id),
 ]);
 
 export const roadmapItemsRelations = relations(roadmapItems, ({ one, many }) => ({

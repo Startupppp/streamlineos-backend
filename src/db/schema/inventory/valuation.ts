@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations } from "../auth";
 import { invProductVariants } from "./core";
@@ -19,6 +19,7 @@ export const invValuationLayers = pgTable("inv_valuation_layers", {
   sourceId: text("source_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_inv_valuation_layers_org_id").on(table.orgId, table.id),
   index("idx_inv_val_layers_org_variant").on(table.orgId, table.productVariantId, table.createdAt),
   index("idx_inv_val_layers_remaining").on(table.orgId, table.productVariantId),
   index("idx_inv_val_layers_txn").on(table.stockTransactionId),

@@ -8,6 +8,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { payrollRuns } from "../hr/payroll-runs";
@@ -47,6 +48,7 @@ export const payrollCommandReceipts = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_cmd_receipts_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_command_receipts_org_cmd_key").on(
       table.orgId,
       table.command,

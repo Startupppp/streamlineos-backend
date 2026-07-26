@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, boolean, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
@@ -36,6 +36,7 @@ export const supportChannels = pgTable(
   (table) => [
     index("idx_support_channels_org_type").on(table.orgId, table.type),
     uniqueIndex("uniq_support_channels_org_type_name").on(table.orgId, table.type, table.name),
+    unique("uniq_support_channels_org_id").on(table.orgId, table.id),
   ],
 );
 

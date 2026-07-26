@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 
@@ -78,6 +78,7 @@ export const hrWorkflowDefinitions = pgTable("hr_workflow_definitions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  unique("uniq_hr_workflow_definitions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_wf_def_org_type_name_version").on(table.orgId, table.objectType, table.name, table.version),
   index("idx_hr_wf_def_org_type_status").on(table.orgId, table.objectType, table.status),
 ]);
@@ -114,6 +115,7 @@ export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_workflow_instances_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_inst_org_obj").on(table.orgId, table.objectType, table.objectId),
   index("idx_hr_wf_inst_org_status").on(table.orgId, table.status),
   index("idx_hr_wf_inst_org_requester").on(table.orgId, table.requestedBy),
@@ -131,6 +133,7 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   attachments: jsonb("attachments").$type<{ url: string; name: string }[]>(),
   actedAt: timestamp("acted_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
 ]);
 
@@ -146,6 +149,7 @@ export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_workflow_delegations_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_delegations_org_delegator_active").on(table.orgId, table.delegatorUserId, table.active),
 ]);
 

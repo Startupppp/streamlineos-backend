@@ -11,6 +11,7 @@ import {
   decimal,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -71,6 +72,7 @@ export const payrollEntities = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_entities_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_entities_org_legal_name").on(table.orgId, table.legalName),
     index("idx_payroll_entities_org_status").on(table.orgId, table.status),
   ],
@@ -104,6 +106,7 @@ export const payrollPeriods = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_periods_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_periods_org_entity_key").on(
       table.orgId,
       table.entityId,
@@ -184,6 +187,7 @@ export const payrollFilings = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_filings_org_id").on(table.orgId, table.id),
     index("idx_payroll_filings_org_type").on(table.orgId, table.filingType),
     index("idx_payroll_filings_org_period").on(table.orgId, table.periodId),
     uniqueIndex("uniq_payroll_filings_entity_period_type").on(
@@ -228,6 +232,7 @@ export const payrollJobs = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_jobs_org_id").on(table.orgId, table.id),
     index("idx_payroll_jobs_org_status").on(table.orgId, table.status),
     index("idx_payroll_jobs_correlation").on(table.correlationId),
     uniqueIndex("uniq_payroll_jobs_org_idem").on(table.orgId, table.idempotencyKey),
@@ -253,6 +258,7 @@ export const payrollRunAllocations = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_payroll_run_allocations_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_run_allocations_source").on(
       table.orgId,
       table.sourceType,
@@ -286,6 +292,7 @@ export const payrollTdsYtdLedger = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_payroll_tds_ytd_ledger_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_tds_ytd_user_period").on(
       table.orgId,
       table.userId,

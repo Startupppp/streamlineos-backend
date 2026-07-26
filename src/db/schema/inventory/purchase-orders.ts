@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -26,6 +26,7 @@ export const invVendors = pgTable("inv_vendors", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_vendors_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_vendors_org_id").on(table.orgId, table.id),
   index("idx_inv_vendors_org").on(table.orgId),
   index("idx_inv_vendors_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
 ]);
@@ -53,6 +54,7 @@ export const invPurchaseOrders = pgTable("inv_purchase_orders", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_po_org_number").on(table.orgId, table.poNumber),
+  unique("uniq_inv_purchase_orders_org_id").on(table.orgId, table.id),
   index("idx_inv_po_org_status").on(table.orgId, table.status),
   index("idx_inv_po_vendor").on(table.vendorId),
   index("idx_inv_po_expected_delivery").on(table.expectedDeliveryDate),
@@ -85,6 +87,7 @@ export const invGrns = pgTable("inv_grns", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_inv_grn_org_number").on(table.orgId, table.grnNumber),
+  unique("uniq_inv_grns_org_id").on(table.orgId, table.id),
   index("idx_inv_grn_po").on(table.poId),
 ]);
 

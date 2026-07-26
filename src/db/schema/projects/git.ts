@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects } from "./core";
@@ -22,6 +22,7 @@ export const gitConnections = pgTable("git_connections", {
 }, (table) => [
   index("idx_git_connections_org").on(table.orgId),
   index("idx_git_connections_project").on(table.projectId),
+  unique("uniq_git_connections_org_id").on(table.orgId, table.id),
 ]);
 
 export const gitTicketLinks = pgTable("git_ticket_links", {
@@ -40,6 +41,7 @@ export const gitTicketLinks = pgTable("git_ticket_links", {
 }, (table) => [
   index("idx_git_ticket_links_ticket").on(table.ticketId),
   uniqueIndex("uniq_git_ticket_links_ref").on(table.ticketId, table.refType, table.externalId),
+  unique("uniq_git_ticket_links_org_id").on(table.orgId, table.id),
 ]);
 
 export const gitConnectionsRelations = relations(gitConnections, ({ one, many }) => ({

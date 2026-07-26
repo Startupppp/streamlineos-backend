@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
@@ -51,6 +51,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_runs_org_id").on(table.orgId, table.id),
   // One run per (org, month, runType, entity). NULL entity → COALESCE 0 (org-level bucket).
   // Migration 0298 replaces uniq_payroll_runs_org_month_type.
   uniqueIndex("uniq_payroll_runs_org_month_type_entity").on(
@@ -91,6 +92,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_run_employees_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_run_employees_run_user").on(table.runId, table.userId),
   index("idx_payroll_run_employees_org_run").on(table.orgId, table.runId),
 ]);
@@ -111,6 +113,7 @@ export const payrollLineItems = pgTable("payroll_line_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_payroll_line_items_org_id").on(table.orgId, table.id),
   index("idx_payroll_line_items_run_employee").on(table.runEmployeeId),
   index("idx_payroll_line_items_org_run").on(table.orgId, table.runId),
 ]);
@@ -132,6 +135,7 @@ export const payrollExceptions = pgTable("payroll_exceptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_exceptions_org_id").on(table.orgId, table.id),
   index("idx_payroll_exceptions_org_run_status").on(table.orgId, table.runId, table.status),
 ]);
 
@@ -149,6 +153,7 @@ export const payrollApprovals = pgTable("payroll_approvals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_payroll_approvals_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_approvals_run_stage").on(table.runId, table.stage),
   index("idx_payroll_approvals_org_run").on(table.orgId, table.runId),
 ]);

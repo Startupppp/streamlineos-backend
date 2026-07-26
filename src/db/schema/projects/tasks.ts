@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, foreignKey, index, uniqueIndex, jsonb, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, foreignKey, index, unique, uniqueIndex, jsonb, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   ticketTypeEnum,
@@ -65,6 +65,7 @@ export const tickets = pgTable("tickets", {
   index("idx_tickets_parent").on(t.parentTicketId),
   index("idx_tickets_recurrence_next").on(t.recurrenceNextRunAt).where(sql`is_recurring = true`),
   index("idx_tickets_customer").on(t.customerId),
+  unique("uniq_tickets_org_id").on(t.orgId, t.id),
 ]);
 
 export const ticketAssignees = pgTable("ticket_assignees", {
@@ -91,6 +92,7 @@ export const ticketComments = pgTable("ticket_comments", {
 }, (table) => [
   foreignKey({ columns: [table.parentCommentId], foreignColumns: [table.id] }).onDelete("cascade"),
   index("idx_ticket_comments_ticket").on(table.ticketId),
+  unique("uniq_ticket_comments_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketAttachments = pgTable("ticket_attachments", {
@@ -106,6 +108,7 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_ticket_attachments_ticket").on(table.ticketId),
+  unique("uniq_ticket_attachments_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketLabels = pgTable("ticket_labels", {
@@ -116,6 +119,7 @@ export const ticketLabels = pgTable("ticket_labels", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_ticket_labels_org_name").on(table.orgId, table.name),
+  unique("uniq_ticket_labels_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketLabelMappings = pgTable("ticket_label_mappings", {
@@ -158,6 +162,7 @@ export const ticketChecklists = pgTable("ticket_checklists", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_ticket_checklists_ticket").on(table.ticketId),
+  unique("uniq_ticket_checklists_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketChecklistItems = pgTable("ticket_checklist_items", {
@@ -186,6 +191,7 @@ export const projectCustomFields = pgTable("project_custom_fields", {
 }, (table) => [
   index("idx_project_custom_fields_project").on(table.projectId),
   uniqueIndex("uniq_project_custom_fields_name").on(table.projectId, table.name),
+  unique("uniq_project_custom_fields_org_id").on(table.orgId, table.id),
 ]);
 
 export const ticketCustomFieldValues = pgTable("ticket_custom_field_values", {
@@ -215,6 +221,7 @@ export const projectReleases = pgTable("project_releases", {
 }, (table) => [
   index("idx_project_releases_project").on(table.projectId),
   index("idx_project_releases_org_status").on(table.orgId, table.status),
+  unique("uniq_project_releases_org_id").on(table.orgId, table.id),
 ]);
 
 export const releaseTickets = pgTable("release_tickets", {
@@ -240,6 +247,7 @@ export const projectWebhooks = pgTable("project_webhooks", {
 }, (t) => [
   index("idx_project_webhooks_project_id").on(t.projectId),
   index("idx_project_webhooks_org_id").on(t.orgId),
+  unique("uniq_project_webhooks_org_id").on(t.orgId, t.id),
 ]);
 
 export const webhookDeliveries = pgTable("webhook_deliveries", {
@@ -269,6 +277,7 @@ export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
 }, (t) => [
   uniqueIndex("uq_comment_reaction_user_emoji").on(t.commentId, t.userId, t.emoji),
   index("idx_comment_reactions_comment_id").on(t.commentId),
+  unique("uniq_ticket_comment_reactions_org_id").on(t.orgId, t.id),
 ]);
 
 export const ticketRelatedLinks = pgTable("ticket_related_links", {
@@ -304,4 +313,5 @@ export const projectAutomations = pgTable("project_automations", {
 }, (t) => [
   index("idx_project_automations_project_id").on(t.projectId),
   index("idx_project_automations_org_id").on(t.orgId),
+  unique("uniq_project_automations_org_id").on(t.orgId, t.id),
 ]);

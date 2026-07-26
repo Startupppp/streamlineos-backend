@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, integer, index, uniqueIndex, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, integer, index, unique, uniqueIndex, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects, sprints } from "./core";
@@ -25,6 +25,7 @@ export const testSuites = pgTable("test_suites", {
 }, (table) => [
   index("idx_test_suites_org_project").on(table.orgId, table.projectId),
   index("idx_test_suites_parent").on(table.parentId),
+  unique("uniq_test_suites_org_id").on(table.orgId, table.id),
 ]);
 
 export const testCases = pgTable("test_cases", {
@@ -48,6 +49,7 @@ export const testCases = pgTable("test_cases", {
 }, (table) => [
   index("idx_test_cases_org_project_suite").on(table.orgId, table.projectId, table.suiteId),
   uniqueIndex("uq_test_cases_project_number").on(table.projectId, table.caseNumber),
+  unique("uniq_test_cases_org_id").on(table.orgId, table.id),
 ]);
 
 export const testRuns = pgTable("test_runs", {
@@ -73,6 +75,7 @@ export const testRuns = pgTable("test_runs", {
   index("idx_test_runs_sprint").on(table.sprintId),
   index("idx_test_runs_release").on(table.releaseId),
   uniqueIndex("uq_test_runs_project_number").on(table.projectId, table.runNumber),
+  unique("uniq_test_runs_org_id").on(table.orgId, table.id),
 ]);
 
 export const testRunResults = pgTable("test_run_results", {
@@ -91,4 +94,5 @@ export const testRunResults = pgTable("test_run_results", {
 }, (table) => [
   uniqueIndex("uq_test_run_results_run_case").on(table.runId, table.testCaseId),
   index("idx_test_run_results_org_project").on(table.orgId, table.projectId),
+  unique("uniq_test_run_results_org_id").on(table.orgId, table.id),
 ]);

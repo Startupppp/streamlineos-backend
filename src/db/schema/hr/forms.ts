@@ -9,6 +9,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -79,6 +80,7 @@ export const hrForms = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_forms_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_forms_org_name").on(table.orgId, table.name),
     uniqueIndex("uniq_hr_forms_org_slug").on(table.orgId, table.slug),
     index("idx_hr_forms_org_status").on(table.orgId, table.status),
@@ -105,6 +107,7 @@ export const hrFormSubmissions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_form_submissions_org_id").on(table.orgId, table.id),
     index("idx_hr_form_subs_org_form_created").on(table.orgId, table.formId, table.createdAt),
     index("idx_hr_form_subs_org_status").on(table.orgId, table.status),
   ],

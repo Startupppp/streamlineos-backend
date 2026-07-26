@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invSoStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -31,6 +31,7 @@ export const invSalesOrders = pgTable("inv_sales_orders", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_so_org_number").on(table.orgId, table.soNumber),
+  unique("uniq_inv_sales_orders_org_id").on(table.orgId, table.id),
   index("idx_inv_so_org_status").on(table.orgId, table.status),
   index("idx_inv_so_client").on(table.clientId),
   index("idx_inv_so_warehouse").on(table.warehouseId),

@@ -7,6 +7,7 @@ import {
   decimal,
   date,
   index,
+  unique,
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -64,6 +65,7 @@ export const hrLeaveLedger = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_leave_ledger_org_id").on(table.orgId, table.id),
     index("idx_hr_leave_ledger_user_type_date").on(
       table.orgId,
       table.userId,

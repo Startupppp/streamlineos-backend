@@ -9,6 +9,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
   date,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -86,6 +87,7 @@ export const hrWorkAuthorizations = pgTable("hr_work_authorizations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  unique("uniq_hr_work_authorizations_org_id").on(table.orgId, table.id),
   index("idx_hr_work_auths_org_emp").on(table.orgId, table.employmentId),
   index("idx_hr_work_auths_org_valid_until").on(table.orgId, table.validUntil),
   index("idx_hr_work_auths_org_status").on(table.orgId, table.status),
@@ -106,6 +108,7 @@ export const hrComplianceRequirements = pgTable("hr_compliance_requirements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_compliance_requirements_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_compliance_req_org_name").on(table.orgId, table.name),
   index("idx_hr_compliance_req_org_country").on(table.orgId, table.countryCode),
   index("idx_hr_compliance_req_org_active").on(table.orgId, table.active),
@@ -123,6 +126,7 @@ export const hrComplianceEvents = pgTable("hr_compliance_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_compliance_events_org_id").on(table.orgId, table.id),
   index("idx_hr_compliance_events_org_due").on(table.orgId, table.dueDate),
   index("idx_hr_compliance_events_org_status").on(table.orgId, table.status),
   index("idx_hr_compliance_events_req").on(table.requirementId),
@@ -146,6 +150,7 @@ export const hrContracts = pgTable("hr_contracts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  unique("uniq_hr_contracts_org_id").on(table.orgId, table.id),
   index("idx_hr_contracts_org_end_date").on(table.orgId, table.endDate),
   index("idx_hr_contracts_org_status").on(table.orgId, table.status),
   index("idx_hr_contracts_org_emp").on(table.orgId, table.employmentId),

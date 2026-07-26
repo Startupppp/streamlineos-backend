@@ -8,6 +8,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -23,6 +24,7 @@ export const hrJobRoles = pgTable("hr_job_roles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_job_roles_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_roles_org_name").on(table.orgId, table.name),
   index("idx_hr_job_roles_org").on(table.orgId),
 ]);
@@ -39,6 +41,7 @@ export const hrJobLevels = pgTable("hr_job_levels", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_job_levels_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_levels_org_name").on(table.orgId, table.name),
   index("idx_hr_job_levels_org").on(table.orgId),
 ]);
@@ -56,6 +59,7 @@ export const hrTeams = pgTable("hr_teams", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_teams_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_teams_org_name").on(table.orgId, table.name),
   index("idx_hr_teams_org").on(table.orgId),
 ]);
@@ -80,6 +84,7 @@ export const hrLocations = pgTable("hr_locations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_locations_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_locations_org_name").on(table.orgId, table.name),
   index("idx_hr_locations_org").on(table.orgId),
 ]);
@@ -121,6 +126,7 @@ export const hrCustomFieldDefinitions = pgTable("hr_custom_field_definitions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_custom_field_definitions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_cfd_org_entity_key").on(table.orgId, table.entityType, table.key),
   index("idx_hr_cfd_org_entity").on(table.orgId, table.entityType),
 ]);
@@ -135,6 +141,7 @@ export const hrCustomFieldValues = pgTable("hr_custom_field_values", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_custom_field_values_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_cfv_field_entity").on(table.fieldDefinitionId, table.entityType, table.entityId),
   index("idx_hr_cfv_org_entity").on(table.orgId, table.entityType, table.entityId),
 ]);

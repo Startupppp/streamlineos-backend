@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 
@@ -9,6 +9,7 @@ export const departments = pgTable("departments", {
   managerId: text("manager_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_departments_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_departments_org_name").on(table.orgId, table.name),
 ]);
 

@@ -10,6 +10,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -86,6 +87,7 @@ export const payrollJournalBatches = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_payroll_journal_batches_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_journal_batches_org_period_version").on(
       table.orgId,
       table.periodKey,
@@ -117,6 +119,7 @@ export const payrollJournalBatchLines = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_payroll_jrnl_batch_lines_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_journal_batch_lines_batch_line").on(table.batchId, table.lineNo),
     index("idx_payroll_journal_batch_lines_org_batch").on(table.orgId, table.batchId),
   ],

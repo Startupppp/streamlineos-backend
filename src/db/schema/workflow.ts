@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, uuid, timestamp, jsonb, integer, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, uuid, timestamp, jsonb, integer, index, boolean, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "./auth";
 
@@ -21,6 +21,7 @@ export const workflows = pgTable("workflows", {
 }, (table) => [
   index("idx_workflows_org").on(table.orgId),
   index("idx_workflows_org_status").on(table.orgId, table.status),
+  unique("uniq_workflows_org_id").on(table.orgId, table.id),
 ]);
 
 export const workflowVersions = pgTable("workflow_versions", {
@@ -78,6 +79,7 @@ export const workflowExecutions = pgTable("workflow_executions", {
   index("idx_workflow_executions_org_status").on(table.orgId, table.status),
   index("idx_workflow_executions_workflow").on(table.workflowId),
   index("idx_workflow_executions_org_created").on(table.orgId, table.createdAt),
+  unique("uniq_workflow_executions_org_id").on(table.orgId, table.id),
 ]);
 
 export const workflowExecutionSteps = pgTable("workflow_execution_steps", {
@@ -129,6 +131,7 @@ export const workflowSchedules = pgTable("workflow_schedules", {
   index("idx_workflow_schedules_workflow").on(table.workflowId),
   index("idx_workflow_schedules_org_enabled").on(table.orgId, table.isEnabled),
   index("idx_workflow_schedules_next_run").on(table.nextRunAt),
+  unique("uniq_workflow_schedules_org_id").on(table.orgId, table.id),
 ]);
 
 export const workflowVariables = pgTable("workflow_variables", {
@@ -153,6 +156,7 @@ export const workflowSecrets = pgTable("workflow_secrets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_workflow_secrets_org").on(table.orgId),
+  unique("uniq_workflow_secrets_org_id").on(table.orgId, table.id),
 ]);
 
 export const workflowAuditLogs = pgTable("workflow_audit_logs", {
@@ -168,6 +172,7 @@ export const workflowAuditLogs = pgTable("workflow_audit_logs", {
   index("idx_workflow_audit_logs_org").on(table.orgId),
   index("idx_workflow_audit_logs_workflow").on(table.workflowId),
   index("idx_workflow_audit_logs_org_created").on(table.orgId, table.createdAt),
+  unique("uniq_workflow_audit_logs_org_id").on(table.orgId, table.id),
 ]);
 
 export const workflowsRelations = relations(workflows, ({ one, many }) => ({

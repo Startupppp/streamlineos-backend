@@ -22,6 +22,7 @@ export const surveyLiveSessions = pgTable("survey_live_sessions", {
 }, (table) => [
   unique("uq_survey_live_sessions_code").on(table.sessionCode),
   index("idx_survey_live_sessions_survey").on(table.surveyId),
+  unique("uniq_survey_live_sessions_org_id").on(table.orgId, table.id),
 ]);
 
 export const surveyLiveSessionsRelations = relations(surveyLiveSessions, ({ one }) => ({

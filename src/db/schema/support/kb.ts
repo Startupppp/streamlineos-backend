@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   foreignKey,
   customType,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -45,6 +46,7 @@ export const kbCategories = pgTable(
       foreignColumns: [table.id],
       name: "fk_kb_categories_parent",
     }).onDelete("set null"),
+    unique("uniq_kb_categories_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -88,6 +90,7 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),
     index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
     index("idx_kb_articles_fts").using("gin", table.fts),
+    unique("uniq_kb_articles_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -105,6 +108,7 @@ export const kbArticleFeedback = pgTable(
   (table) => [
     index("idx_kb_article_feedback_article").on(table.articleId),
     uniqueIndex("uniq_kb_article_feedback_org_article_visitor").on(table.orgId, table.articleId, table.visitorId),
+    unique("uniq_kb_article_feedback_org_id").on(table.orgId, table.id),
   ],
 );
 

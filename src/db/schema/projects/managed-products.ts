@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { managedProductStatusEnum } from "../enums";
@@ -34,5 +35,6 @@ export const managedProducts = pgTable(
   (table) => [
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
     index("idx_managed_products_org_status").on(table.orgId, table.status),
+    unique("uniq_managed_products_org_pk").on(table.orgId, table.managedProductId),
   ],
 );

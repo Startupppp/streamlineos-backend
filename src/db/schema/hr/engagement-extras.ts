@@ -9,6 +9,7 @@ import {
   integer,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -47,6 +48,7 @@ export const hrMoodCheckins = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_mood_checkins_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_mood_org_user_date").on(t.orgId, t.userId, t.date),
     index("idx_mood_checkins_org_date").on(t.orgId, t.date),
   ],
@@ -66,6 +68,7 @@ export const hrBadges = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+    unique("uniq_hr_badges_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_badge_org_name").on(t.orgId, t.name),
     index("idx_badges_org").on(t.orgId),
   ],
@@ -87,6 +90,7 @@ export const hrBadgeAwards = pgTable("hr_badge_awards", {
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
+  unique("uniq_hr_badge_awards_org_id").on(t.orgId, t.id),
   index("idx_badge_awards_org_user").on(t.orgId, t.userId),
   index("idx_badge_awards_badge").on(t.badgeId),
 ]);
@@ -105,6 +109,7 @@ export const hrRewardPointsLedger = pgTable("hr_reward_points_ledger", {
   note: text("note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
+  unique("uniq_hr_reward_points_ledger_org_id").on(t.orgId, t.id),
   index("idx_reward_ledger_org_user").on(t.orgId, t.userId),
   index("idx_reward_ledger_org_created").on(t.orgId, t.createdAt),
 ]);
@@ -125,7 +130,10 @@ export const hrPolls = pgTable(
     closesAt: timestamp("closes_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [index("idx_hr_polls_org_status").on(t.orgId, t.status)],
+  (t) => [
+    unique("uniq_hr_polls_org_id").on(t.orgId, t.id),
+    index("idx_hr_polls_org_status").on(t.orgId, t.status),
+  ],
 );
 
 export const hrPollVotes = pgTable(
@@ -165,6 +173,7 @@ export const hrCommunities = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
+    unique("uniq_hr_communities_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_community_org_name").on(t.orgId, t.name),
     index("idx_communities_org").on(t.orgId),
   ],
@@ -208,7 +217,10 @@ export const hrCampaigns = pgTable("hr_campaigns", {
     .defaultNow()
     .notNull()
     .$onUpdate(() => new Date()),
-}, (t) => [index("idx_campaigns_org_status").on(t.orgId, t.status)]);
+}, (t) => [
+  unique("uniq_hr_campaigns_org_id").on(t.orgId, t.id),
+  index("idx_campaigns_org_status").on(t.orgId, t.status),
+]);
 
 export const hrMoodCheckinsRelations = relations(hrMoodCheckins, ({ one }) => ({
   user: one(users, { fields: [hrMoodCheckins.userId], references: [users.id] }),

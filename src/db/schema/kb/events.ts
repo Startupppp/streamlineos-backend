@@ -6,6 +6,7 @@ import {
   jsonb,
   timestamp,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -40,6 +41,7 @@ export const kbEvents = pgTable(
     index("idx_kb_events_org_time").on(table.orgId, table.occurredAt),
     index("idx_kb_events_org_type").on(table.orgId, table.eventType),
     index("idx_kb_events_org_type_time").on(table.orgId, table.eventType, table.occurredAt),
+    unique("uniq_kb_events_org_id").on(table.orgId, table.id),
   ],
 );
 

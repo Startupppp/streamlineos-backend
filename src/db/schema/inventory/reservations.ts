@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invReservationStatusEnum } from "../enums";
 import { organizations } from "../auth";
@@ -22,6 +22,7 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_stock_reservations_org_id").on(table.orgId, table.id),
   index("idx_inv_res_org_source").on(table.orgId, table.sourceType, table.sourceId),
   index("idx_inv_res_org_variant_status").on(table.orgId, table.productVariantId, table.status),
   index("idx_inv_res_org_status").on(table.orgId, table.status),

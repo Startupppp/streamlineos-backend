@@ -6,6 +6,7 @@ import {
   timestamp,
   index,
   vector,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
@@ -55,6 +56,7 @@ export const kbArticleChunks = pgTable(
       "hnsw",
       table.embedding.op("vector_cosine_ops"),
     ),
+    unique("uniq_kb_article_chunks_org_id").on(table.orgId, table.id),
   ],
 );
 

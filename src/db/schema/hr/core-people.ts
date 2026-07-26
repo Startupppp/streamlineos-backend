@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
   date,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -106,6 +107,7 @@ export const hrPeople = pgTable("hr_people", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_people_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_people_org_work_email").on(table.orgId, table.workEmail),
   index("idx_hr_people_org").on(table.orgId),
   index("idx_hr_people_user").on(table.userId),
@@ -137,6 +139,7 @@ export const hrEmployments = pgTable("hr_employments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_employments_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_employments_org_emp_num").on(table.orgId, table.employeeNumber),
   index("idx_hr_employments_org").on(table.orgId),
   index("idx_hr_employments_person").on(table.personId),
@@ -172,6 +175,7 @@ export const hrEmployeeProfiles = pgTable("hr_employee_profiles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_employee_profiles_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_emp_profiles_employment").on(table.employmentId),
   index("idx_hr_emp_profiles_org").on(table.orgId),
 ]);
@@ -211,6 +215,7 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_employee_sensitive_fields_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_sensitive_employment").on(table.employmentId),
   index("idx_hr_sensitive_org").on(table.orgId),
 ]);
@@ -227,6 +232,7 @@ export const hrEmploymentHistory = pgTable("hr_employment_history", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_employment_history_org_id").on(table.orgId, table.id),
   index("idx_hr_emp_history_org_employment").on(table.orgId, table.employmentId),
   index("idx_hr_emp_history_created_at").on(table.createdAt),
 ]);
@@ -249,6 +255,7 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_effective_dated_changes_org_id").on(table.orgId, table.id),
   index("idx_hr_eff_changes_org_employment").on(table.orgId, table.employmentId),
   index("idx_hr_eff_changes_org_status").on(table.orgId, table.status),
   index("idx_hr_eff_changes_effective_from").on(table.effectiveFrom),
@@ -266,6 +273,7 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_reporting_lines_org_id").on(table.orgId, table.id),
   index("idx_hr_reporting_lines_org_emp").on(table.orgId, table.employmentId),
   index("idx_hr_reporting_lines_manager").on(table.managerEmploymentId),
   index("idx_hr_reporting_lines_org_type").on(table.orgId, table.lineType),

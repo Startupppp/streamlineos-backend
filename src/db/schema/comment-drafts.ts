@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
 import { tickets } from "./projects/tasks";
 
@@ -14,4 +14,5 @@ export const commentDrafts = pgTable("comment_drafts", {
   uniqueIndex("uniq_comment_drafts_owner_ticket").on(table.orgId, table.userId, table.ticketId),
   index("idx_comment_drafts_org_user").on(table.orgId, table.userId),
   index("idx_comment_drafts_ticket").on(table.ticketId),
+  unique("uniq_comment_drafts_org_id").on(table.orgId, table.id),
 ]);

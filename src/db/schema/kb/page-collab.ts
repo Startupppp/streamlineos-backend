@@ -8,6 +8,7 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -30,6 +31,7 @@ export const kbPageVersions = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_page_versions_page_version").on(table.pageId, table.versionNumber),
     index("idx_kb_page_versions_org_page").on(table.orgId, table.pageId),
+    unique("uniq_kb_page_versions_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -54,6 +56,7 @@ export const kbPageComments = pgTable(
       foreignColumns: [table.id],
       name: "fk_kb_page_comments_parent",
     }).onDelete("cascade"),
+    unique("uniq_kb_page_comments_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -72,6 +75,7 @@ export const kbPageTemplates = pgTable(
   },
   (table) => [
     index("idx_kb_page_templates_org").on(table.orgId),
+    unique("uniq_kb_page_templates_org_id").on(table.orgId, table.id),
   ],
 );
 

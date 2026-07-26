@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
@@ -19,6 +19,7 @@ export const accTaxCodes = pgTable("acc_tax_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_acc_tax_codes_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_tax_codes_org_code").on(table.orgId, table.code),
   index("idx_acc_tax_codes_org_type").on(table.orgId, table.taxType),
 ]);
@@ -37,6 +38,7 @@ export const accTaxPayments = pgTable("acc_tax_payments", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_acc_tax_payments_org_id").on(table.orgId, table.id),
   index("idx_acc_tax_payments_org_type").on(table.orgId, table.taxType),
   index("idx_acc_tax_payments_org_period").on(table.orgId, table.periodStart, table.periodEnd),
   index("uniq_acc_tax_payments_org_type_ref").on(table.orgId, table.taxType, table.reference),

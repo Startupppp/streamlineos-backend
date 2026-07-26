@@ -8,6 +8,7 @@ import {
   index,
   uniqueIndex,
   varchar,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -47,6 +48,7 @@ export const supportKnowledgeGaps = pgTable(
     uniqueIndex("uniq_support_knowledge_gaps_org_cluster").on(table.orgId, table.clusterKey),
     index("idx_support_knowledge_gaps_org_status_created").on(table.orgId, table.status, table.createdAt),
     index("idx_support_knowledge_gaps_org").on(table.orgId),
+    unique("uniq_support_knowledge_gaps_org_id").on(table.orgId, table.id),
   ],
 );
 

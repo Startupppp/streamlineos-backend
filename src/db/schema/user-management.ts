@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { users, organizations } from "./auth";
 
@@ -22,6 +22,7 @@ export const userMemberships = pgTable("user_memberships", {
   index("idx_user_memberships_branch").on(table.branchId),
   index("idx_user_memberships_team").on(table.teamId),
   index("idx_user_memberships_bu").on(table.businessUnitId),
+  unique("uniq_user_memberships_org_id").on(table.orgId, table.id),
 ]);
 
 export const userPreferences = pgTable("user_preferences", {

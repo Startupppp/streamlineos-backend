@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 
 export const feedbackCycles = pgTable("feedback_cycles", {
@@ -14,6 +14,7 @@ export const feedbackCycles = pgTable("feedback_cycles", {
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_feedback_cycles_org_id").on(table.orgId, table.id),
   index("idx_feedback_cycles_org_status").on(table.orgId, table.status),
 ]);
 

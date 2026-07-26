@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -17,6 +17,7 @@ export const invUom = pgTable("inv_uom", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_uom_org_name").on(table.orgId, table.name),
+  unique("uniq_inv_uom_org_id").on(table.orgId, table.id),
   index("idx_inv_uom_org").on(table.orgId),
 ]);
 
@@ -31,6 +32,7 @@ export const invCategories = pgTable("inv_categories", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_categories_org_name").on(table.orgId, table.name),
+  unique("uniq_inv_categories_org_id").on(table.orgId, table.id),
   index("idx_inv_categories_org").on(table.orgId),
   index("idx_inv_categories_parent").on(table.parentCategoryId),
 ]);
@@ -66,6 +68,7 @@ export const invProducts = pgTable("inv_products", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_products_org_sku").on(table.orgId, table.sku),
+  unique("uniq_inv_products_org_id").on(table.orgId, table.id),
   index("idx_inv_products_org_status").on(table.orgId, table.status),
   index("idx_inv_products_category").on(table.categoryId),
   index("idx_inv_products_barcode").on(table.barcode),
@@ -88,6 +91,7 @@ export const invProductVariants = pgTable("inv_product_variants", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_variants_org_sku").on(table.orgId, table.sku),
+  unique("uniq_inv_product_variants_org_id").on(table.orgId, table.id),
   index("idx_inv_variants_product").on(table.productId),
   index("idx_inv_variants_barcode").on(table.barcode),
   index("idx_inv_variants_sku_trgm").using("gin", table.sku.op("gin_trgm_ops")),

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "./auth";
 import { users } from "./auth";
 
@@ -16,4 +16,5 @@ export const agentTokens = pgTable("agent_tokens", {
 }, (table) => [
   uniqueIndex("uniq_agent_tokens_hash").on(table.tokenHash),
   index("idx_agent_tokens_org_user").on(table.orgId, table.userId),
+  unique("uniq_agent_tokens_org_id").on(table.orgId, table.id),
 ]);

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 
@@ -103,6 +103,7 @@ export const automationRules = pgTable("automation_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_automation_rules_org_trigger_enabled").on(table.orgId, table.triggerEvent, table.isEnabled),
+  unique("uniq_automation_rules_org_id").on(table.orgId, table.id),
 ]);
 
 export const automationRuns = pgTable("automation_runs", {
@@ -117,6 +118,7 @@ export const automationRuns = pgTable("automation_runs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_automation_runs_rule").on(table.ruleId),
+  unique("uniq_automation_runs_org_id").on(table.orgId, table.id),
 ]);
 
 export const automationRulesRelations = relations(automationRules, ({ one, many }) => ({

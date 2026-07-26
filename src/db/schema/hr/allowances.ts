@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../auth";
 
 export const allowanceTypes = pgTable("allowance_types", {
@@ -13,6 +13,7 @@ export const allowanceTypes = pgTable("allowance_types", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_allowance_types_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_allowance_types_org_name").on(table.orgId, table.name),
   index("idx_allowance_types_org_category").on(table.orgId, table.category),
 ]);

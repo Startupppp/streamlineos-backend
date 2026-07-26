@@ -6,6 +6,7 @@ import {
   timestamp,
   integer,
   index,
+  unique,
   uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
@@ -117,6 +118,7 @@ export const hrTemplates = pgTable("hr_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_hr_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_templates_org_kind_name_ver").on(table.orgId, table.kind, table.name, table.version),
   index("idx_hr_templates_org_kind").on(table.orgId, table.kind),
   index("idx_hr_templates_org_status").on(table.orgId, table.status),
@@ -133,6 +135,7 @@ export const hrTemplateRenders = pgTable("hr_template_renders", {
   outputHtml: text("output_html").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_hr_template_renders_org_id").on(table.orgId, table.id),
   index("idx_hr_template_renders_org_template").on(table.orgId, table.templateId, table.createdAt),
 ]);
 

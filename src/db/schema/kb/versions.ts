@@ -6,6 +6,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -28,6 +29,7 @@ export const kbArticleVersions = pgTable(
   (table) => [
     uniqueIndex("uniq_kb_article_versions").on(table.articleId, table.versionNumber),
     index("idx_kb_article_versions_org_article").on(table.orgId, table.articleId),
+    unique("uniq_kb_article_versions_org_id").on(table.orgId, table.id),
   ],
 );
 

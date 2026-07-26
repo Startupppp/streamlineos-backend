@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invQualityInspectionStatusEnum, invQualityHoldStatusEnum,
@@ -24,6 +24,7 @@ export const invQualityInspections = pgTable("inv_quality_inspections", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_qi_org_number").on(table.orgId, table.inspectionNumber),
+  unique("uniq_inv_quality_inspections_org_id").on(table.orgId, table.id),
   index("idx_inv_qi_org_status").on(table.orgId, table.status),
   index("idx_inv_qi_source").on(table.orgId, table.sourceType, table.sourceId),
 ]);
@@ -59,6 +60,7 @@ export const invQualityHolds = pgTable("inv_quality_holds", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_inv_quality_holds_org_id").on(table.orgId, table.id),
   index("idx_inv_qh_org_status").on(table.orgId, table.status),
   index("idx_inv_qh_variant").on(table.orgId, table.productVariantId),
 ]);
@@ -76,6 +78,7 @@ export const invRecallEvents = pgTable("inv_recall_events", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_recall_org_number").on(table.orgId, table.recallNumber),
+  unique("uniq_inv_recall_events_org_id").on(table.orgId, table.id),
   index("idx_inv_recall_org_status").on(table.orgId, table.status),
 ]);
 

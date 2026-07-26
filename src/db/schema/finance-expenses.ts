@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { journalEntries } from "./accounting";
@@ -22,6 +22,7 @@ export const finReimbursementBatches = pgTable("fin_reimbursement_batches", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_reimbursement_batches_org_id").on(table.orgId, table.id),
   index("idx_fin_reimbursement_batches_org_status").on(table.orgId, table.status),
 ]);
 
@@ -37,6 +38,7 @@ export const finExpensePolicies = pgTable("fin_expense_policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_fin_expense_policies_org_id").on(table.orgId, table.id),
   index("idx_fin_expense_policies_org").on(table.orgId),
 ]);
 

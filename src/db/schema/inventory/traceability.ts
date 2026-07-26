@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, jsonb, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invLotStatusEnum, invSerialStatusEnum } from "../enums";
 import { organizations } from "../auth";
@@ -20,6 +20,7 @@ export const invLots = pgTable("inv_lots", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_lots_org_variant_number").on(table.orgId, table.productVariantId, table.lotNumber),
+  unique("uniq_inv_lots_org_id").on(table.orgId, table.id),
   index("idx_inv_lots_org").on(table.orgId),
   index("idx_inv_lots_variant").on(table.productVariantId),
   index("idx_inv_lots_expiry").on(table.expiryDate),
@@ -40,6 +41,7 @@ export const invSerialNumbers = pgTable("inv_serial_numbers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uniq_inv_serials_org_variant_number").on(table.orgId, table.productVariantId, table.serialNumber),
+  unique("uniq_inv_serial_numbers_org_id").on(table.orgId, table.id),
   index("idx_inv_serials_org").on(table.orgId),
   index("idx_inv_serials_variant").on(table.productVariantId),
   index("idx_inv_serials_status").on(table.orgId, table.status),

@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
@@ -22,6 +22,7 @@ export const accAssetCategories = pgTable("acc_asset_categories", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_acc_asset_categories_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_asset_categories_org_name").on(table.orgId, table.name),
   index("idx_acc_asset_categories_org").on(table.orgId),
 ]);
@@ -47,6 +48,7 @@ export const accFixedAssets = pgTable("acc_fixed_assets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  unique("uniq_acc_fixed_assets_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_fixed_assets_org_number").on(table.orgId, table.assetNumber),
   index("idx_acc_fixed_assets_org_status").on(table.orgId, table.status),
   index("idx_acc_fixed_assets_org_category").on(table.orgId, table.categoryId),
@@ -63,6 +65,7 @@ export const accDepreciationRuns = pgTable("acc_depreciation_runs", {
   postedAt: timestamp("posted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  unique("uniq_acc_depreciation_runs_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_depreciation_runs_org_period").on(table.orgId, table.periodKey),
   index("idx_acc_depreciation_runs_org_status").on(table.orgId, table.status),
 ]);
@@ -77,6 +80,7 @@ export const accDepreciationSchedules = pgTable("acc_depreciation_schedules", {
   journalEntryId: integer("journal_entry_id").references(() => journalEntries.id),
   status: accDepreciationLineStatusEnum("status").default("SCHEDULED").notNull(),
 }, (table) => [
+  unique("uniq_acc_depreciation_sched_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_depreciation_schedules_asset_period").on(table.assetId, table.periodKey),
   index("idx_acc_depreciation_schedules_org_asset").on(table.orgId, table.assetId),
   index("idx_acc_depreciation_schedules_run").on(table.runId),

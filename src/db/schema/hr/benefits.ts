@@ -10,6 +10,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -92,6 +93,7 @@ export const hrBenefitPlans = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_benefit_plans_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_benefit_plans_org_name").on(table.orgId, table.name),
     index("idx_hr_benefit_plans_org_status").on(table.orgId, table.status),
     index("idx_hr_benefit_plans_org_category").on(table.orgId, table.category),
@@ -112,6 +114,7 @@ export const hrBenefitEnrollmentWindows = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_benefit_enrollment_windows_org_id").on(table.orgId, table.id),
     index("idx_hr_enroll_windows_org_status").on(table.orgId, table.status),
     index("idx_hr_enroll_windows_org_plan").on(table.orgId, table.planId),
   ],
@@ -138,6 +141,7 @@ export const hrBenefitEnrollments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_benefit_enrollments_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_benefit_enrollments_org_plan_user").on(table.orgId, table.planId, table.userId),
     index("idx_hr_benefit_enrollments_org_user").on(table.orgId, table.userId),
     index("idx_hr_benefit_enrollments_org_plan").on(table.orgId, table.planId),
@@ -162,6 +166,7 @@ export const hrDependents = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_dependents_org_id").on(table.orgId, table.id),
     index("idx_hr_dependents_org_user").on(table.orgId, table.userId),
   ],
 );
@@ -192,6 +197,7 @@ export const hrInsuranceClaims = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_insurance_claims_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_insurance_claims_org_number").on(table.orgId, table.claimNumber),
     index("idx_hr_insurance_claims_org_user").on(table.orgId, table.userId),
     index("idx_hr_insurance_claims_org_status").on(table.orgId, table.status),
@@ -216,6 +222,7 @@ export const hrLoanRepayments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    unique("uniq_hr_loan_repayments_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_loan_repayments_loan_installment").on(table.loanId, table.installmentNo),
     index("idx_hr_loan_repayments_org_status").on(table.orgId, table.status),
     index("idx_hr_loan_repayments_org_due_date").on(table.orgId, table.dueDate),
@@ -241,6 +248,7 @@ export const hrTravelVisitLogs = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    unique("uniq_hr_travel_visit_logs_org_id").on(table.orgId, table.id),
     index("idx_hr_travel_visit_logs_org_travel").on(table.orgId, table.travelRequestId),
     index("idx_hr_travel_visit_logs_org_user").on(table.orgId, table.userId),
   ],
