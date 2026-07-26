@@ -142,6 +142,8 @@ export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "P
 export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "RESERVED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);
 export const invLocationTypeEnum = pgEnum("inv_location_type", ["ZONE", "AISLE", "RACK", "BIN", "RECEIVING", "SHIPPING", "QUARANTINE", "SCRAP", "TRANSIT", "RETURNS"]);
 export const invGrnQualityEnum = pgEnum("inv_grn_quality", ["ACCEPTED", "REJECTED"]);
+export const invAdjustmentStatusEnum = pgEnum("inv_adjustment_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]);
+export const invReturnStatusEnum = pgEnum("inv_return_status", ["DRAFT", "POSTED", "CANCELLED"]);
 
 export const appInstallStatusEnum = pgEnum("app_install_status", [
   "TRIALING",

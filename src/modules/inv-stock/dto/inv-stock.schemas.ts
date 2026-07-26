@@ -83,7 +83,7 @@ export const openingStockSchema = z.object({
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 
 export const listAdjustmentsSchema = z.object({
-  status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "POSTED", "CANCELLED"]).optional(),
+  status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });

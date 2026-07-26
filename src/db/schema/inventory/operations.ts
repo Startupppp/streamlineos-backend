@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import {
   invVendorReturnReasonEnum, invCustomerReturnDispositionEnum,
   invPickListStatusEnum, invCycleCountStatusEnum,
+  invReturnStatusEnum,
 } from "../enums";
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
@@ -15,7 +16,7 @@ export const invVendorReturns = pgTable("inv_vendor_returns", {
   vendorId: integer("vendor_id").notNull(),
   poId: integer("po_id"),
   grnId: integer("grn_id"),
-  status: text("status").default("DRAFT").notNull(),
+  status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
@@ -49,7 +50,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   soId: integer("so_id"),
   shipmentId: integer("shipment_id"),
   clientId: integer("client_id"),
-  status: text("status").default("DRAFT").notNull(),
+  status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),

@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum } from "../enums";
+import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
@@ -67,7 +67,7 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
   referenceNumber: text("reference_number").notNull(),
   reason: invAdjReasonEnum("reason").notNull(),
   notes: text("notes"),
-  status: text("status").default("POSTED").notNull(),
+  status: invAdjustmentStatusEnum("status").default("POSTED").notNull(),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   postedBy: text("posted_by").references(() => users.id),
