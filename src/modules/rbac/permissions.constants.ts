@@ -3592,6 +3592,45 @@ const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECT_WORKSPACES_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:workspaces:view",
+    resource: "projects:workspaces",
+    action: "view",
+    description: "View PM workspaces",
+  },
+  {
+    name: "projects:workspaces:create",
+    resource: "projects:workspaces",
+    action: "create",
+    description: "Create PM workspaces",
+  },
+  {
+    name: "projects:workspaces:update",
+    resource: "projects:workspaces",
+    action: "update",
+    description: "Update PM workspaces",
+  },
+  {
+    name: "projects:workspaces:delete",
+    resource: "projects:workspaces",
+    action: "delete",
+    description: "Delete PM workspaces",
+  },
+  {
+    name: "projects:workspaces:members:view",
+    resource: "projects:workspaces:members",
+    action: "view",
+    description: "View PM workspace members",
+  },
+  {
+    name: "projects:workspaces:members:manage",
+    resource: "projects:workspaces:members",
+    action: "manage",
+    description: "Add and remove PM workspace members",
+  },
+];
+
 const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
   {
     name: "projects:workflow:view",
@@ -3935,7 +3974,12 @@ const PARTY_PERMISSIONS: Permission[] = [
 // Modules whose roles/permissions can be administered from a per-module Access screen
 // by that module's Admin (in addition to Organization Owner/Admin). The keys below are
 // module-prefixed, so each `*_ADMIN` role inherits them via moduleScopedPermissions().
-export const ACCESS_MANAGED_MODULES = ["hr", "crm", "inventory", "projects"] as const;
+export const ACCESS_MANAGED_MODULES = [
+  "hr",
+  "crm",
+  "inventory",
+  "projects",
+] as const;
 
 const MODULE_ACCESS_PERMISSIONS: Permission[] = ACCESS_MANAGED_MODULES.flatMap(
   (moduleKey) => [
@@ -3986,6 +4030,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_FORMS_PERMISSIONS,
   ...PROJECT_PORTFOLIO_PERMISSIONS,
   ...PROJECT_MANAGED_PRODUCTS_PERMISSIONS,
+  ...PROJECT_WORKSPACES_PERMISSIONS,
   ...PROJECT_TEAMS_PERMISSIONS,
   ...PROJECT_MEMBERS_PERMISSIONS,
   ...PROJECT_CUSTOMERS_PERMISSIONS,

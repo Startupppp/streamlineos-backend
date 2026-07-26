@@ -1,0 +1,348 @@
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, count, eq, isNull } from "drizzle-orm";
+import {
+  pmWorkspaces,
+  pmWorkspaceMemberships,
+  organizationMembers,
+} from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { AuditService } from "../../common/audit/audit.service";
+import type {
+  AddWorkspaceMemberInput,
+  CreateWorkspaceInput,
+  ListMembersQuery,
+  ListWorkspacesQuery,
+  UpdateWorkspaceInput,
+} from "./dto/pm-workspaces.schemas";
+
+const PG_UNIQUE_VIOLATION = "23505";
+
+type WorkspaceRow = typeof pmWorkspaces.$inferSelect;
+type WorkspacePatch = Partial<typeof pmWorkspaces.$inferInsert>;
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === PG_UNIQUE_VIOLATION
+  );
+}
+
+@Injectable()
+export class PmWorkspacesService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
+
+  private async loadWorkspace(
+    orgId: string,
+    pmWorkspaceId: string,
+  ): Promise<WorkspaceRow> {
+    const [row] = await this.db
+      .select()
+      .from(pmWorkspaces)
+      .where(
+        and(
+          eq(pmWorkspaces.pmWorkspaceId, pmWorkspaceId),
+          eq(pmWorkspaces.orgId, orgId),
+          isNull(pmWorkspaces.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("PM workspace not found");
+    return row;
+  }
+
+  async listWorkspaces(orgId: string, query: ListWorkspacesQuery) {
+    const { page, limit, status } = query;
+    const offset = (page - 1) * limit;
+    const conditions = and(
+      eq(pmWorkspaces.orgId, orgId),
+      isNull(pmWorkspaces.deletedAt),
+      status ? eq(pmWorkspaces.status, status) : undefined,
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select()
+        .from(pmWorkspaces)
+        .where(conditions)
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(pmWorkspaces).where(conditions),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
+    return {
+      data: rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getWorkspace(orgId: string, pmWorkspaceId: string) {
+    return this.loadWorkspace(orgId, pmWorkspaceId);
+  }
+
+  async createWorkspace(
+    orgId: string,
+    userId: string,
+    input: CreateWorkspaceInput,
+  ) {
+    const [row] = await this.db
+      .insert(pmWorkspaces)
+      .values({
+        orgId,
+        name: input.name,
+        slug: input.slug,
+        isDefault: false,
+        status: "active",
+      })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            `A PM workspace with slug "${input.slug}" already exists in this organization.`,
+          );
+        }
+        throw err;
+      });
+    if (!row) throw new NotFoundException("Failed to create PM workspace");
+    this.audit.log({
+      action: "pm_workspace.created",
+      userId,
+      orgId,
+      resourceType: "pm_workspace",
+      resourceId: row.pmWorkspaceId,
+      metadata: { pmWorkspaceId: row.pmWorkspaceId, slug: row.slug },
+    });
+    return row;
+  }
+
+  /** Idempotently ensure the org's single default PM Workspace exists (called when PM is enabled). */
+  async ensureDefaultWorkspace(orgId: string): Promise<WorkspaceRow> {
+    const [existing] = await this.db
+      .select()
+      .from(pmWorkspaces)
+      .where(
+        and(
+          eq(pmWorkspaces.orgId, orgId),
+          eq(pmWorkspaces.isDefault, true),
+          isNull(pmWorkspaces.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (existing) return existing;
+    try {
+      const [row] = await this.db
+        .insert(pmWorkspaces)
+        .values({
+          orgId,
+          name: "Default Workspace",
+          slug: "default",
+          isDefault: true,
+          status: "active",
+        })
+        .returning();
+      if (!row)
+        throw new NotFoundException("Failed to provision default PM workspace");
+      return row;
+    } catch (err: unknown) {
+      if (isUniqueViolation(err)) {
+        const [row] = await this.db
+          .select()
+          .from(pmWorkspaces)
+          .where(
+            and(
+              eq(pmWorkspaces.orgId, orgId),
+              eq(pmWorkspaces.isDefault, true),
+            ),
+          )
+          .limit(1);
+        if (row) return row;
+      }
+      throw err;
+    }
+  }
+
+  async updateWorkspace(
+    orgId: string,
+    userId: string,
+    pmWorkspaceId: string,
+    input: UpdateWorkspaceInput,
+  ) {
+    await this.loadWorkspace(orgId, pmWorkspaceId);
+    const patch: WorkspacePatch = {};
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.status !== undefined) patch.status = input.status;
+    const [updated] = await this.db
+      .update(pmWorkspaces)
+      .set(patch)
+      .where(
+        and(
+          eq(pmWorkspaces.pmWorkspaceId, pmWorkspaceId),
+          eq(pmWorkspaces.orgId, orgId),
+        ),
+      )
+      .returning();
+    if (!updated) throw new NotFoundException("PM workspace not found");
+    this.audit.log({
+      action: "pm_workspace.updated",
+      userId,
+      orgId,
+      resourceType: "pm_workspace",
+      resourceId: pmWorkspaceId,
+      metadata: { pmWorkspaceId },
+    });
+    return updated;
+  }
+
+  async deleteWorkspace(orgId: string, userId: string, pmWorkspaceId: string) {
+    const workspace = await this.loadWorkspace(orgId, pmWorkspaceId);
+    if (workspace.isDefault) {
+      throw new ForbiddenException(
+        "The default PM workspace cannot be deleted",
+      );
+    }
+    await this.db
+      .update(pmWorkspaces)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(pmWorkspaces.pmWorkspaceId, pmWorkspaceId),
+          eq(pmWorkspaces.orgId, orgId),
+        ),
+      );
+    this.audit.log({
+      action: "pm_workspace.deleted",
+      userId,
+      orgId,
+      resourceType: "pm_workspace",
+      resourceId: pmWorkspaceId,
+      metadata: { pmWorkspaceId },
+    });
+  }
+
+  async listMembers(
+    orgId: string,
+    pmWorkspaceId: string,
+    query: ListMembersQuery,
+  ) {
+    await this.loadWorkspace(orgId, pmWorkspaceId);
+    const { page, limit } = query;
+    const offset = (page - 1) * limit;
+    const conditions = and(
+      eq(pmWorkspaceMemberships.orgId, orgId),
+      eq(pmWorkspaceMemberships.pmWorkspaceId, pmWorkspaceId),
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select()
+        .from(pmWorkspaceMemberships)
+        .where(conditions)
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(pmWorkspaceMemberships)
+        .where(conditions),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
+    return {
+      data: rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async addMember(
+    orgId: string,
+    userId: string,
+    pmWorkspaceId: string,
+    input: AddWorkspaceMemberInput,
+  ) {
+    await this.loadWorkspace(orgId, pmWorkspaceId);
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.id, input.organizationMembershipId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    if (!member) {
+      throw new NotFoundException(
+        "Organization membership not found in this organization",
+      );
+    }
+    const [row] = await this.db
+      .insert(pmWorkspaceMemberships)
+      .values({
+        orgId,
+        pmWorkspaceId,
+        organizationMembershipId: input.organizationMembershipId,
+        role: input.role,
+      })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            "This member is already in the workspace.",
+          );
+        }
+        throw err;
+      });
+    if (!row) throw new NotFoundException("Failed to add workspace member");
+    this.audit.log({
+      action: "pm_workspace.member.added",
+      userId,
+      orgId,
+      resourceType: "pm_workspace_membership",
+      resourceId: row.pmWorkspaceMembershipId,
+      metadata: {
+        pmWorkspaceId,
+        organizationMembershipId: input.organizationMembershipId,
+      },
+    });
+    return row;
+  }
+
+  async removeMember(
+    orgId: string,
+    userId: string,
+    pmWorkspaceId: string,
+    pmWorkspaceMembershipId: string,
+  ): Promise<{ success: true }> {
+    await this.loadWorkspace(orgId, pmWorkspaceId);
+    const [deleted] = await this.db
+      .delete(pmWorkspaceMemberships)
+      .where(
+        and(
+          eq(
+            pmWorkspaceMemberships.pmWorkspaceMembershipId,
+            pmWorkspaceMembershipId,
+          ),
+          eq(pmWorkspaceMemberships.orgId, orgId),
+          eq(pmWorkspaceMemberships.pmWorkspaceId, pmWorkspaceId),
+        ),
+      )
+      .returning();
+    if (!deleted) throw new NotFoundException("Workspace member not found");
+    this.audit.log({
+      action: "pm_workspace.member.removed",
+      userId,
+      orgId,
+      resourceType: "pm_workspace_membership",
+      resourceId: pmWorkspaceMembershipId,
+      metadata: { pmWorkspaceId },
+    });
+    return { success: true };
+  }
+}
