@@ -118,6 +118,21 @@ export class PortalAccessService {
   }
 
   async createMembership(organizationId: string, userId: string, input: CreateMembershipInput) {
+    const [contact] = await this.db
+      .select({ partyContactId: partyContacts.partyContactId })
+      .from(partyContacts)
+      .where(
+        and(
+          eq(partyContacts.partyContactId, input.partyContactId),
+          eq(partyContacts.organizationId, organizationId),
+          isNull(partyContacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!contact) {
+      throw new NotFoundException("Party contact not found in this organization");
+    }
+
     const [row] = await this.db
       .insert(portalMemberships)
       .values({
@@ -250,14 +265,14 @@ export class PortalAccessService {
   }
 
   async createGrant(organizationId: string, userId: string, input: CreateGrantInput) {
-    await this.loadMembership(organizationId, input.portalMembershipId);
+    const membership = await this.loadMembership(organizationId, input.portalMembershipId);
 
     const [row] = await this.db
       .insert(projectClientGrants)
       .values({
         organizationId,
         portalMembershipId: input.portalMembershipId,
-        partyContactId: input.partyContactId,
+        partyContactId: membership.partyContactId,
         projectId: input.projectId,
         pmWorkspaceId: input.pmWorkspaceId ?? null,
         canViewMilestones: input.canViewMilestones ?? false,
