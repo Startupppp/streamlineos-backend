@@ -49,6 +49,7 @@ import { ProjectsMeetingsModule } from "./modules/projects-meetings/projects-mee
 import { ProjectsPortfoliosModule } from "./modules/projects-portfolios/projects-portfolios.module";
 import { ProjectsManagedProductsModule } from "./modules/projects-managed-products/managed-products.module";
 import { PmWorkspacesModule } from "./modules/projects-pm-workspaces/pm-workspaces.module";
+import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
 import { ProjectsTeamsModule } from "./modules/projects-teams/projects-teams.module";
 import { ProjectsCommentDraftsModule } from "./modules/projects-comment-drafts/projects-comment-drafts.module";
 import { ProjectsIncidentsModule } from "./modules/projects-incidents/projects-incidents.module";
@@ -211,6 +212,7 @@ import { MeService } from "./me/me.service";
     ProjectsPortfoliosModule,
     ProjectsManagedProductsModule,
     PmWorkspacesModule,
+    OfferFulfillmentModule,
     ProjectsTeamsModule,
     ProjectsCommentDraftsModule,
     ProjectsExecutionModule,

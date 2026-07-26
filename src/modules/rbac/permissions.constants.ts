@@ -1159,6 +1159,30 @@ const CRM_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and delete CRM campaigns",
   },
+  {
+    name: "crm:offer-fulfillment:view",
+    resource: "crm:offer-fulfillment",
+    action: "view",
+    description: "View CRM offer → Inventory SKU fulfillment mappings",
+  },
+  {
+    name: "crm:offer-fulfillment:create",
+    resource: "crm:offer-fulfillment",
+    action: "create",
+    description: "Create CRM offer → Inventory SKU fulfillment mappings",
+  },
+  {
+    name: "crm:offer-fulfillment:update",
+    resource: "crm:offer-fulfillment",
+    action: "update",
+    description: "Update CRM offer → Inventory SKU fulfillment mappings",
+  },
+  {
+    name: "crm:offer-fulfillment:delete",
+    resource: "crm:offer-fulfillment",
+    action: "delete",
+    description: "Delete CRM offer → Inventory SKU fulfillment mappings",
+  },
 ];
 
 const SHARED_PERMISSIONS: Permission[] = [

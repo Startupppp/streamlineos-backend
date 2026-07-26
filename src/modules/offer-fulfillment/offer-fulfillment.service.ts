@@ -1,0 +1,235 @@
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, count, eq, isNull } from "drizzle-orm";
+import {
+  offerFulfillmentComponents,
+  crmProducts,
+  invProductVariants,
+} from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { AuditService } from "../../common/audit/audit.service";
+import type {
+  CreateOfferFulfillmentInput,
+  ListOfferFulfillmentQuery,
+  UpdateOfferFulfillmentInput,
+} from "./dto/offer-fulfillment.schemas";
+
+const PG_UNIQUE_VIOLATION = "23505";
+
+type ComponentRow = typeof offerFulfillmentComponents.$inferSelect;
+type ComponentPatch = Partial<typeof offerFulfillmentComponents.$inferInsert>;
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === PG_UNIQUE_VIOLATION
+  );
+}
+
+@Injectable()
+export class OfferFulfillmentService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly audit: AuditService,
+  ) {}
+
+  private async loadComponent(
+    orgId: string,
+    offerFulfillmentComponentId: number,
+  ): Promise<ComponentRow> {
+    const [row] = await this.db
+      .select()
+      .from(offerFulfillmentComponents)
+      .where(
+        and(
+          eq(
+            offerFulfillmentComponents.offerFulfillmentComponentId,
+            offerFulfillmentComponentId,
+          ),
+          eq(offerFulfillmentComponents.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Offer fulfillment mapping not found");
+    return row;
+  }
+
+  private async assertOfferExists(orgId: string, crmOfferId: number): Promise<void> {
+    const [row] = await this.db
+      .select({ id: crmProducts.id })
+      .from(crmProducts)
+      .where(
+        and(
+          eq(crmProducts.id, crmOfferId),
+          eq(crmProducts.orgId, orgId),
+          isNull(crmProducts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("CRM offer not found in this organization");
+  }
+
+  private async assertSkuExists(orgId: string, invSkuId: number): Promise<void> {
+    const [row] = await this.db
+      .select({ id: invProductVariants.id })
+      .from(invProductVariants)
+      .where(
+        and(eq(invProductVariants.id, invSkuId), eq(invProductVariants.orgId, orgId)),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Inventory SKU not found in this organization");
+  }
+
+  async listComponents(orgId: string, query: ListOfferFulfillmentQuery) {
+    const { page, limit, crmOfferId, invSkuId, status } = query;
+    const offset = (page - 1) * limit;
+    const conditions = and(
+      eq(offerFulfillmentComponents.orgId, orgId),
+      crmOfferId ? eq(offerFulfillmentComponents.crmOfferId, crmOfferId) : undefined,
+      invSkuId ? eq(offerFulfillmentComponents.invSkuId, invSkuId) : undefined,
+      status ? eq(offerFulfillmentComponents.status, status) : undefined,
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select()
+        .from(offerFulfillmentComponents)
+        .where(conditions)
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(offerFulfillmentComponents)
+        .where(conditions),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
+    return {
+      data: rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getComponent(orgId: string, offerFulfillmentComponentId: number) {
+    return this.loadComponent(orgId, offerFulfillmentComponentId);
+  }
+
+  async createComponent(
+    orgId: string,
+    userId: string,
+    input: CreateOfferFulfillmentInput,
+  ) {
+    await Promise.all([
+      this.assertOfferExists(orgId, input.crmOfferId),
+      this.assertSkuExists(orgId, input.invSkuId),
+    ]);
+    const [row] = await this.db
+      .insert(offerFulfillmentComponents)
+      .values({
+        orgId,
+        crmOfferId: input.crmOfferId,
+        crmOfferOrgId: orgId,
+        invSkuId: input.invSkuId,
+        invSkuOrgId: orgId,
+        quantityPerUnit: input.quantityPerUnit.toString(),
+        uom: input.uom ?? null,
+        status: input.status,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveTo: input.effectiveTo ?? null,
+        notes: input.notes ?? null,
+        createdBy: userId,
+      })
+      .returning()
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) {
+          throw new ConflictException(
+            "This CRM offer is already mapped to that Inventory SKU.",
+          );
+        }
+        throw err;
+      });
+    if (!row) throw new NotFoundException("Failed to create offer fulfillment mapping");
+    this.audit.log({
+      action: "offer_fulfillment.created",
+      userId,
+      orgId,
+      resourceType: "offer_fulfillment_component",
+      resourceId: String(row.offerFulfillmentComponentId),
+      metadata: { crmOfferId: input.crmOfferId, invSkuId: input.invSkuId },
+    });
+    return row;
+  }
+
+  async updateComponent(
+    orgId: string,
+    userId: string,
+    offerFulfillmentComponentId: number,
+    input: UpdateOfferFulfillmentInput,
+  ) {
+    await this.loadComponent(orgId, offerFulfillmentComponentId);
+    const patch: ComponentPatch = {};
+    if (input.quantityPerUnit !== undefined)
+      patch.quantityPerUnit = input.quantityPerUnit.toString();
+    if (input.uom !== undefined) patch.uom = input.uom;
+    if (input.status !== undefined) patch.status = input.status;
+    if (input.effectiveFrom !== undefined) patch.effectiveFrom = input.effectiveFrom;
+    if (input.effectiveTo !== undefined) patch.effectiveTo = input.effectiveTo;
+    if (input.notes !== undefined) patch.notes = input.notes;
+    const [updated] = await this.db
+      .update(offerFulfillmentComponents)
+      .set(patch)
+      .where(
+        and(
+          eq(
+            offerFulfillmentComponents.offerFulfillmentComponentId,
+            offerFulfillmentComponentId,
+          ),
+          eq(offerFulfillmentComponents.orgId, orgId),
+        ),
+      )
+      .returning();
+    if (!updated) throw new NotFoundException("Offer fulfillment mapping not found");
+    this.audit.log({
+      action: "offer_fulfillment.updated",
+      userId,
+      orgId,
+      resourceType: "offer_fulfillment_component",
+      resourceId: String(offerFulfillmentComponentId),
+      metadata: { offerFulfillmentComponentId },
+    });
+    return updated;
+  }
+
+  async deleteComponent(
+    orgId: string,
+    userId: string,
+    offerFulfillmentComponentId: number,
+  ): Promise<{ success: true }> {
+    await this.loadComponent(orgId, offerFulfillmentComponentId);
+    await this.db
+      .delete(offerFulfillmentComponents)
+      .where(
+        and(
+          eq(
+            offerFulfillmentComponents.offerFulfillmentComponentId,
+            offerFulfillmentComponentId,
+          ),
+          eq(offerFulfillmentComponents.orgId, orgId),
+        ),
+      );
+    this.audit.log({
+      action: "offer_fulfillment.deleted",
+      userId,
+      orgId,
+      resourceType: "offer_fulfillment_component",
+      resourceId: String(offerFulfillmentComponentId),
+      metadata: { offerFulfillmentComponentId },
+    });
+    return { success: true };
+  }
+}

@@ -50,3 +50,4 @@ export * from "./directory";
 export * from "./party";
 export * from "./portal-access";
 export * from "./idempotency";
+export * from "./offer-fulfillment";
