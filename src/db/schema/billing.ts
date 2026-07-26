@@ -31,7 +31,7 @@ export const billingProfiles = pgTable(
   "billing_profiles",
   {
     id: serial("id").primaryKey(),
-    orgId: integer("org_id").notNull().unique(),
+    orgId: text("org_id").notNull().unique().references(() => organizations.id, { onDelete: "cascade" }),
     gstin: varchar("gstin", { length: 15 }),
     pan: varchar("pan", { length: 10 }),
     billingName: varchar("billing_name", { length: 255 }),
@@ -81,9 +81,9 @@ export const appInstallations = pgTable(
   "app_installations",
   {
     id: serial("id").primaryKey(),
-    orgId: integer("org_id").notNull(),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     appId: integer("app_id").notNull(),
-    installedBy: integer("installed_by").notNull(),
+    installedBy: text("installed_by").notNull().references(() => users.id, { onDelete: "cascade" }),
     status: appInstallStatusEnum("status").notNull().default("ACTIVE"),
     trialEndsAt: timestamp("trial_ends_at"),
     installedAt: timestamp("installed_at").defaultNow().notNull(),
@@ -181,8 +181,8 @@ export const affiliates = pgTable(
   "affiliates",
   {
     id: serial("id").primaryKey(),
-    userId: integer("user_id").notNull().unique(),
-    orgId: integer("org_id").notNull(),
+    userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull().unique(),
     status: affiliateStatusEnum("status").notNull().default("PENDING"),
     commissionType: varchar("commission_type", { length: 20 }).notNull().default("PERCENTAGE"),
@@ -206,7 +206,7 @@ export const affiliateCommissions = pgTable(
   {
     id: serial("id").primaryKey(),
     affiliateId: integer("affiliate_id").notNull(),
-    referredOrgId: integer("referred_org_id").notNull(),
+    referredOrgId: text("referred_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     subscriptionId: integer("subscription_id"),
     amountInPaise: integer("amount_in_paise").notNull(),
     status: commissionStatusEnum("status").notNull().default("PENDING"),
@@ -224,10 +224,10 @@ export const referrals = pgTable(
   "referrals",
   {
     id: serial("id").primaryKey(),
-    referrerOrgId: integer("referrer_org_id").notNull(),
-    referrerUserId: integer("referrer_user_id").notNull(),
+    referrerOrgId: text("referrer_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    referrerUserId: text("referrer_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     referredEmail: varchar("referred_email", { length: 255 }).notNull(),
-    referredOrgId: integer("referred_org_id"),
+    referredOrgId: text("referred_org_id").references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull(),
     status: referralStatusEnum("status").notNull().default("PENDING"),
     rewardGranted: boolean("reward_granted").default(false).notNull(),
@@ -249,7 +249,7 @@ export const revenueEvents = pgTable(
   {
     id: serial("id").primaryKey(),
     type: revenueEventTypeEnum("type").notNull(),
-    orgId: integer("org_id").notNull(),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     plan: varchar("plan", { length: 20 }),
     previousPlan: varchar("previous_plan", { length: 20 }),
     mrr: integer("mrr").notNull(),

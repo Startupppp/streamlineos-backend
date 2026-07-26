@@ -157,7 +157,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:view")
   listApps(@CurrentUser() u: CurrentUserContext) {
-    return this.marketplace.listApps(parseInt(u.orgId, 10));
+    return this.marketplace.listApps(u.orgId);
   }
 
   @Post("marketplace/:appId/install")
@@ -167,7 +167,7 @@ export class BillingController {
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.marketplace.installApp(parseInt(u.orgId, 10), parseInt(u.userId, 10), appId);
+    return this.marketplace.installApp(u.orgId, u.userId, appId);
   }
 
   @Delete("marketplace/:appId/install")
@@ -177,7 +177,7 @@ export class BillingController {
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.marketplace.uninstallApp(parseInt(u.orgId, 10), appId);
+    return this.marketplace.uninstallApp(u.orgId, appId);
   }
 
   @Post("marketplace/:appId/trial")
@@ -187,7 +187,7 @@ export class BillingController {
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.marketplace.startAppTrial(parseInt(u.orgId, 10), parseInt(u.userId, 10), appId);
+    return this.marketplace.startAppTrial(u.orgId, u.userId, appId);
   }
 
   @Get("ai-credits")
@@ -289,14 +289,14 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   registerAffiliate(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.register(parseInt(u.userId, 10), parseInt(u.orgId, 10));
+    return this.affiliate.register(u.userId, u.orgId);
   }
 
   @Get("affiliate")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.getDashboard(parseInt(u.userId, 10));
+    return this.affiliate.getDashboard(u.userId);
   }
 
   @Post("affiliate/payout-request")
@@ -314,14 +314,14 @@ export class BillingController {
     @Body(new ZodValidationPipe(createReferralSchema)) body: ReturnType<typeof createReferralSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.referral.createReferral(parseInt(u.orgId, 10), parseInt(u.userId, 10), body.email);
+    return this.referral.createReferral(u.orgId, u.userId, body.email);
   }
 
   @Get("referrals")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   listReferrals(@CurrentUser() u: CurrentUserContext) {
-    return this.referral.listReferrals(parseInt(u.orgId, 10));
+    return this.referral.listReferrals(u.orgId);
   }
 
   @Get("analytics")

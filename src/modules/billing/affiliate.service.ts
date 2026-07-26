@@ -12,7 +12,7 @@ function generateCode(): string {
 export class AffiliateService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async register(userId: number, orgId: number) {
+  async register(userId: string, orgId: string) {
     const [existing] = await this.db
       .select()
       .from(affiliates)
@@ -27,7 +27,7 @@ export class AffiliateService {
     return affiliate;
   }
 
-  async getDashboard(userId: number) {
+  async getDashboard(userId: string) {
     const [affiliate] = await this.db
       .select()
       .from(affiliates)
@@ -46,7 +46,7 @@ export class AffiliateService {
 
   async creditCommission(
     referralCode: string,
-    referredOrgId: number,
+    referredOrgId: string,
     subscriptionId: number,
     amountInPaise: number,
   ) {

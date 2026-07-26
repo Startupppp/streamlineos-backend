@@ -17,7 +17,7 @@ export class RevenueAnalyticsService {
       | "reactivation"
       | "addon_purchase"
       | "refund";
-    orgId: number;
+    orgId: string;
     plan?: string;
     previousPlan?: string;
     mrr: number;
@@ -82,7 +82,7 @@ export class RevenueAnalyticsService {
     const mrrResult = await this.db
       .select({ total: sql<number>`coalesce(sum(${revenueEvents.mrr}), 0)` })
       .from(revenueEvents)
-      .innerJoin(subscriptions, eq(revenueEvents.orgId, sql`${subscriptions.orgId}::integer`))
+      .innerJoin(subscriptions, eq(revenueEvents.orgId, subscriptions.orgId))
       .where(
         and(
           eq(subscriptions.status, "ACTIVE"),

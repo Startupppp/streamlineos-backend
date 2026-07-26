@@ -13,8 +13,8 @@ export class ReferralService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async createReferral(
-    referrerOrgId: number,
-    referrerUserId: number,
+    referrerOrgId: string,
+    referrerUserId: string,
     email: string,
   ) {
     const [existing] = await this.db
@@ -46,7 +46,7 @@ export class ReferralService {
     return referral;
   }
 
-  async listReferrals(orgId: number) {
+  async listReferrals(orgId: string) {
     return this.db
       .select()
       .from(referrals)
@@ -55,7 +55,7 @@ export class ReferralService {
       .limit(100);
   }
 
-  async processSignup(referralCode: string, newOrgId: number) {
+  async processSignup(referralCode: string, newOrgId: string) {
     const [referral] = await this.db
       .select()
       .from(referrals)
@@ -72,7 +72,7 @@ export class ReferralService {
       .where(eq(referrals.id, referral.id));
   }
 
-  async activateReferral(orgId: number) {
+  async activateReferral(orgId: string) {
     const [referral] = await this.db
       .select()
       .from(referrals)

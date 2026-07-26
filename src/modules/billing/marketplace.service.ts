@@ -16,7 +16,7 @@ import {
 export class MarketplaceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listApps(orgId: number) {
+  async listApps(orgId: string) {
     const [apps, installs] = await Promise.all([
       this.db
         .select()
@@ -37,7 +37,7 @@ export class MarketplaceService {
     }));
   }
 
-  async installApp(orgId: number, userId: number, appId: number) {
+  async installApp(orgId: string, userId: string, appId: number) {
     const [app] = await this.db
       .select()
       .from(marketplaceApps)
@@ -76,7 +76,7 @@ export class MarketplaceService {
     return installation;
   }
 
-  async uninstallApp(orgId: number, appId: number) {
+  async uninstallApp(orgId: string, appId: number) {
     const [existing] = await this.db
       .select()
       .from(appInstallations)
@@ -97,7 +97,7 @@ export class MarketplaceService {
     return updated;
   }
 
-  async startAppTrial(orgId: number, userId: number, appId: number) {
+  async startAppTrial(orgId: string, userId: string, appId: number) {
     const [app] = await this.db
       .select()
       .from(marketplaceApps)

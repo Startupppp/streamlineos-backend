@@ -386,26 +386,24 @@ export class BillingService {
   }
 
   async getBillingProfile(orgId: string) {
-    const numericOrgId = parseInt(orgId, 10);
     const [existing] = await this.db
       .select()
       .from(billingProfiles)
-      .where(eq(billingProfiles.orgId, numericOrgId));
+      .where(eq(billingProfiles.orgId, orgId));
     if (existing) return existing;
     const [profile] = await this.db
       .insert(billingProfiles)
-      .values({ orgId: numericOrgId })
+      .values({ orgId })
       .returning();
     return profile;
   }
 
   async updateBillingProfile(orgId: string, data: UpdateBillingProfileInput) {
     await this.getBillingProfile(orgId);
-    const numericOrgId = parseInt(orgId, 10);
     const [updated] = await this.db
       .update(billingProfiles)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(billingProfiles.orgId, numericOrgId))
+      .where(eq(billingProfiles.orgId, orgId))
       .returning();
     return updated;
   }
@@ -490,7 +488,7 @@ export class BillingService {
 
   async requestAffiliatePayoutRequest(orgId: string) {
     const affiliate = await this.db.query.affiliates.findFirst({
-      where: (a, { eq }) => eq(a.orgId, parseInt(orgId, 10)),
+      where: (a, { eq }) => eq(a.orgId, orgId),
     });
     if (!affiliate) throw new NotFoundException("Affiliate not found");
     if (affiliate.pendingPayout === 0) throw new BadRequestException("No pending payout available");
