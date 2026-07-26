@@ -10,7 +10,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { jwtVerify } from "jose";
 import type { JWTPayload } from "jose";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
@@ -53,6 +53,25 @@ const platformAdminCache = new Map<string, PlatformAdminEntry>();
 
 export function bustPlatformAdminCache(userId: string): void {
   platformAdminCache.delete(userId);
+}
+
+interface MembershipStatusEntry {
+  active: boolean;
+  expiresAt: number;
+}
+
+const MEMBERSHIP_STATUS_TTL_MS = 15_000;
+const membershipStatusCache = new Map<string, MembershipStatusEntry>();
+
+/** Bust the cached active-membership check so a suspend/leave takes effect immediately. */
+export function bustMembershipStatusCache(userId: string, orgId?: string): void {
+  if (orgId) {
+    membershipStatusCache.delete(`${userId}:${orgId}`);
+    return;
+  }
+  for (const key of Array.from(membershipStatusCache.keys())) {
+    if (key.startsWith(`${userId}:`)) membershipStatusCache.delete(key);
+  }
 }
 
 function extractClaims(payload: JWTPayload): BackendClaims {
@@ -206,6 +225,17 @@ export class JwtAuthGuard implements CanActivate {
         throw new ForbiddenException("Organization not found");
       }
 
+      // Re-check membership every request so a suspended/left member loses access within the
+      // cache TTL rather than only at JWT expiry (platform admins are exempt).
+      if (orgId && !isPlatformAdmin) {
+        const membershipActive = await this.isMembershipActive(claims.sub, orgId);
+        if (!membershipActive) {
+          throw new ForbiddenException(
+            "Your organization membership is suspended or no longer active",
+          );
+        }
+      }
+
       req.user = {
         userId: claims.sub,
         orgId: orgId ?? "",
@@ -228,6 +258,43 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     throw new UnauthorizedException("Unauthorized");
+  }
+
+  /**
+   * Re-validate active membership on each request (versioned JWTs are hints, not authority).
+   * Rejects ONLY an explicit SUSPENDED/LEFT membership; ACTIVE, unknown status, a missing row,
+   * or any query error all pass, so a transient failure or un-migrated column cannot lock the
+   * whole org out. Cached briefly so this is ~one query per user per window, not per request.
+   */
+  private async isMembershipActive(userId: string, orgId: string): Promise<boolean> {
+    const key = `${userId}:${orgId}`;
+    const cached = membershipStatusCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.active;
+
+    let active = true;
+    try {
+      const rows = await this.db
+        .select({ status: organizationMembers.status })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(1);
+      const status = rows[0]?.status;
+      if (status === "SUSPENDED" || status === "LEFT") active = false;
+    } catch {
+      active = true;
+    }
+
+    membershipStatusCache.set(key, {
+      active,
+      expiresAt: Date.now() + MEMBERSHIP_STATUS_TTL_MS,
+    });
+    return active;
   }
 
   private async resolveOrgContext(userId: string): Promise<OrgContext | null> {

@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -136,11 +135,5 @@ export class ApiTokensService {
       .where(and(eq(apiKeys.id, tokenId), eq(apiKeys.orgId, orgId)));
 
     return { success: true };
-  }
-
-  assertCanManage(role: string) {
-    if (!["OWNER", "ADMIN"].includes(role)) {
-      throw new ForbiddenException("Only admins and owners can manage API tokens");
-    }
   }
 }
