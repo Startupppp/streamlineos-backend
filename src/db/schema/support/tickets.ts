@@ -1,0 +1,77 @@
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../enums";
+import { organizations, users } from "../auth";
+import { clients } from "../crm/contacts";
+
+export const supportTickets = pgTable("support_tickets", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  clientId: integer("client_id").references(() => clients.id),
+  assigneeId: text("assignee_id").references(() => users.id),
+  title: text("title").notNull(),
+  category: text("category"),
+  description: text("description"),
+  requesterEmail: text("requester_email"),
+  requesterName: text("requester_name"),
+  status: supportTicketStatusEnum("status").default("OPEN").notNull(),
+  priority: supportTicketPriorityEnum("priority").default("MEDIUM").notNull(),
+  slaDeadline: timestamp("sla_deadline"),
+  firstResponseDueAt: timestamp("first_response_due_at"),
+  firstRespondedAt: timestamp("first_responded_at"),
+  slaPausedAt: timestamp("sla_paused_at"),
+  slaPausedMinutes: integer("sla_paused_minutes").default(0).notNull(),
+  slaEscalationLevel: integer("sla_escalation_level").default(0).notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  closedAt: timestamp("closed_at"),
+  queueId: integer("queue_id"),
+  mergedIntoTicketId: integer("merged_into_ticket_id").references((): AnyPgColumn => supportTickets.id, { onDelete: "set null" }),
+  snoozedUntil: timestamp("snoozed_until"),
+  snoozedBy: text("snoozed_by").references(() => users.id),
+  createdBy: text("created_by").references(() => users.id).notNull(),
+  sourceChannel: text("source_channel").default("web").notNull(),
+  sourceMessageId: text("source_message_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_support_tickets_org_status").on(table.orgId, table.status),
+  index("idx_support_tickets_assignee").on(table.assigneeId),
+  index("idx_support_tickets_client").on(table.clientId),
+  index("idx_support_tickets_priority").on(table.priority),
+  index("idx_support_tickets_sla").on(table.slaDeadline),
+  index("idx_support_tickets_queue").on(table.queueId),
+  index("idx_support_tickets_source_message").on(table.sourceMessageId),
+  index("idx_support_tickets_snoozed_until").on(table.snoozedUntil),
+  unique("uniq_support_tickets_org_id").on(table.orgId, table.id),
+]);
+
+export const supportTicketMessages = pgTable("support_ticket_messages", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+  authorId: text("author_id").references(() => users.id),
+  body: text("body").notNull(),
+  isInternal: boolean("is_internal").default(false).notNull(),
+  attachments: jsonb("attachments").$type<{ fileName: string; fileUrl: string; fileSize: number; mimeType: string }[]>().default([]),
+  sourceChannel: text("source_channel").default("web").notNull(),
+  sourceMessageId: text("source_message_id"),
+  sourceContactEmail: text("source_contact_email"),
+  sourceContactName: text("source_contact_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_support_ticket_messages_ticket").on(table.ticketId),
+  index("idx_support_ticket_messages_author").on(table.authorId),
+  index("idx_support_ticket_messages_source_message").on(table.sourceMessageId),
+]);
+
+export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
+  client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
+  assignee: one(users, { fields: [supportTickets.assigneeId], references: [users.id] }),
+  creator: one(users, { fields: [supportTickets.createdBy], references: [users.id] }),
+  messages: many(supportTicketMessages),
+}));
+
+export const supportTicketMessagesRelations = relations(supportTicketMessages, ({ one }) => ({
+  ticket: one(supportTickets, { fields: [supportTicketMessages.ticketId], references: [supportTickets.id] }),
+  author: one(users, { fields: [supportTicketMessages.authorId], references: [users.id] }),
+}));

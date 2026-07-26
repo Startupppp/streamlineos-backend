@@ -1,7 +1,7 @@
 
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum } from "./enums";
+import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
 
 import { departments } from "./hr";
 import { tickets } from "./projects";
@@ -26,6 +26,12 @@ export const organizations = pgTable("organizations", {
   ownerMembershipId: integer("owner_membership_id"),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   status: text("status").default("ACTIVE").notNull(),
+  statusV2: organizationStatusEnum("status_v2"),
+  purgeScheduledAt: timestamp("purge_scheduled_at", { withTimezone: true }),
+  purgeScheduledBy: integer("purge_scheduled_by"),
+  purgeJobId: text("purge_job_id"),
+  purgedAt: timestamp("purged_at", { withTimezone: true }),
+  purgeReason: text("purge_reason"),
   deletedAt: timestamp("deleted_at"),
   companySize: text("company_size"),
   country: text("country"),
@@ -193,10 +199,17 @@ export const invitations = pgTable("invitations", {
   invitedBy: text("invited_by").references(() => users.id).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
+  status: invitationStatusEnum("status").default("PENDING").notNull(),
+  inviterMembershipId: integer("inviter_membership_id"),
+  acceptedMembershipId: integer("accepted_membership_id"),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedBy: integer("revoked_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
   index("idx_invitations_expires").on(table.expiresAt),
+  index("idx_invitations_status").on(table.orgId, table.status),
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
 ]);
 

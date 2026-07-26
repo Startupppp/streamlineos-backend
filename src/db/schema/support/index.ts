@@ -1,3 +1,4 @@
+export * from "./tickets";
 export * from "./kb";
 export * from "./kb-attachments";
 export * from "./kb-chunks";

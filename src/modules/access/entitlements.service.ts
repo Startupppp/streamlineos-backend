@@ -4,8 +4,8 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
-import { orgModules } from "../../db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { orgModules, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -173,6 +173,32 @@ export class EntitlementsService {
           await tx.execute(
             sql`UPDATE organizations SET enabled_modules = array_remove(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId}`,
           );
+        }
+      }
+
+      if (moduleKey === "projects" && enabled) {
+        const [existing] = await tx
+          .select({ id: pmWorkspaces.pmWorkspaceId })
+          .from(pmWorkspaces)
+          .where(
+            and(
+              eq(pmWorkspaces.orgId, orgId),
+              eq(pmWorkspaces.isDefault, true),
+              isNull(pmWorkspaces.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!existing) {
+          await tx
+            .insert(pmWorkspaces)
+            .values({
+              orgId,
+              name: "Default Workspace",
+              slug: "default",
+              isDefault: true,
+              status: "active",
+            })
+            .onConflictDoNothing();
         }
       }
     });

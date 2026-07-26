@@ -41,6 +41,7 @@ export interface EmailOptions {
   replyTo?: string;
   cc?: string | string[];
   bcc?: string | string[];
+  organizationId?: string | null;
 }
 
 class EmailSendError extends Error {

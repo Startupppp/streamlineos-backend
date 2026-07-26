@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { supportTickets } from "./tickets";
 import { kbArticles } from "./kb";
 
 export const supportActivityActionEnum = pgEnum("support_activity_action", [

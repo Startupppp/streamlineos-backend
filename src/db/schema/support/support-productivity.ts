@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
-import { supportTickets, supportTicketMessages } from "../crm/billing";
+import { supportTickets, supportTicketMessages } from "./tickets";
 
 export const supportMessageMentions = pgTable(
   "support_message_mentions",

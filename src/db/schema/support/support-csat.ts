@@ -1,7 +1,7 @@
 import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { supportTickets } from "./tickets";
 
 export const supportCsatRequests = pgTable(
   "support_csat_requests",

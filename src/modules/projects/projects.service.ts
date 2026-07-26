@@ -8,8 +8,9 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
+  managedProducts,
   organizationMembers,
   projectMembers,
   projectTeamAssignments,
@@ -39,6 +40,7 @@ import { resolveProjectsScope } from "./projects-scope";
 import type {
   CreateProjectInput,
   FromDealInput,
+  LinkManagedProductInput,
   ListProjectsInput,
   UpdateProjectInput,
 } from "./dto/projects.schemas";
@@ -620,5 +622,61 @@ export class ProjectsService {
     await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
 
     return { success: true };
+  }
+
+  async linkProjectToManagedProduct(
+    u: CurrentUserContext,
+    projectId: number,
+    input: LinkManagedProductInput,
+  ) {
+    const orgId = u.orgId;
+
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!project) throw new ProjectsNotFoundException();
+
+    if (input.managedProductId !== null) {
+      const [product] = await this.db
+        .select({ managedProductId: managedProducts.managedProductId })
+        .from(managedProducts)
+        .where(
+          and(
+            eq(managedProducts.managedProductId, input.managedProductId),
+            eq(managedProducts.orgId, orgId),
+            isNull(managedProducts.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!product) {
+        throw new NotFoundException("Managed product not found");
+      }
+    }
+
+    const [updated] = await this.db
+      .update(projects)
+      .set({ managedProductId: input.managedProductId })
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)))
+      .returning({
+        id: projects.id,
+        orgId: projects.orgId,
+        name: projects.name,
+        key: projects.key,
+        managedProductId: projects.managedProductId,
+      });
+
+    this.audit.log({
+      action: "project.managed_product_linked",
+      userId: u.userId,
+      orgId,
+      targetId: String(projectId),
+      targetType: "project",
+      metadata: { projectId, managedProductId: input.managedProductId },
+    });
+
+    await this.cache.invalidatePattern(`projects:list:${orgId}:*`);
+
+    return updated;
   }
 }

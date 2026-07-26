@@ -8,6 +8,7 @@ export const emailOutbox = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
+    organizationId: text("organization_id"),
     toEmail: text("to_email").notNull(),
     subject: text("subject").notNull(),
     html: text("html").notNull(),
@@ -22,5 +23,6 @@ export const emailOutbox = pgTable(
   (t) => [
     index("email_outbox_status_next_idx").on(t.status, t.nextAttemptAt),
     index("email_outbox_email_created_idx").on(t.toEmail, t.createdAt),
+    index("email_outbox_org_idx").on(t.organizationId, t.status),
   ],
 );

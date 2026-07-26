@@ -18,7 +18,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ProjectsService } from "./projects.service";
 import {
+  linkManagedProductSchema,
   updateProjectSchema,
+  type LinkManagedProductInput,
   type UpdateProjectInput,
 } from "./dto/projects.schemas";
 
@@ -55,5 +57,16 @@ export class ProjectsByIdController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.deleteProject(u, projectId);
+  }
+
+  @Patch(":projectId/managed-product")
+  @RequirePermission("projects:managed-products:update")
+  linkManagedProduct(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body(new ZodValidationPipe(linkManagedProductSchema))
+    body: LinkManagedProductInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.projects.linkProjectToManagedProduct(u, projectId, body);
   }
 }

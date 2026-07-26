@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { supportTickets } from "./tickets";
 
 export const supportExternalEntityTypeEnum = pgEnum("support_external_entity_type", [
   "project",

@@ -646,3 +646,8 @@ export const removeRelationQuerySchema = z.object({
   relatedId: z.coerce.number().int().positive(),
 });
 export type RemoveRelationQuery = z.infer<typeof removeRelationQuerySchema>;
+
+export const linkManagedProductSchema = z.object({
+  managedProductId: z.number().int().positive().nullable(),
+});
+export type LinkManagedProductInput = z.infer<typeof linkManagedProductSchema>;

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { Reflector } from "@nestjs/core";
+import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ConfigModule } from "./config/config.module";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
 import { DrizzleModule } from "./db/drizzle.module";
@@ -332,6 +333,7 @@ import { MeService } from "./me/me.service";
     MeService,
     Reflector,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
   ],
 })
 export class AppModule {}

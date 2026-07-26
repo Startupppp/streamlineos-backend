@@ -13,7 +13,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
-import { supportTickets } from "../crm/billing";
+import { supportTickets } from "./tickets";
 
 export const SUPPORT_AI_EMBEDDING_DIMENSIONS = 1536;
 

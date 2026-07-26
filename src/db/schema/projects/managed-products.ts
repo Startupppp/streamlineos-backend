@@ -3,6 +3,8 @@ import {
   serial,
   text,
   timestamp,
+  integer,
+  jsonb,
   index,
   unique,
   uniqueIndex,
@@ -26,6 +28,16 @@ export const managedProducts = pgTable(
       onDelete: "set null",
     }),
     pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
+    vision: text("vision"),
+    missionStatement: text("mission_statement"),
+    targetCustomer: text("target_customer"),
+    differentiators: text("differentiators"),
+    currentPhase: text("current_phase"),
+    targetLaunchDate: timestamp("target_launch_date", { withTimezone: true }),
+    successMetrics: jsonb("success_metrics").$type<
+      Array<{ label: string; target?: string }>
+    >(),
+    ownerMembershipId: integer("owner_membership_id"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
