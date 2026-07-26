@@ -87,8 +87,7 @@ describe("KbRagService", () => {
       expect(result.hasContext).toBe(true);
       const [call] = mockGateway.invokeText.mock.calls;
       expect(call[0].feature).toBe("kb.public-ask");
-      expect(call[0].charge).toBeDefined();
-      expect(call[0].charge.credits).toBe(1);
+      expect(call[0].charge).toBe(true);
       expect(call[0].actor).toEqual({ orgId: ORG_ID, userId: null });
     });
 
@@ -132,7 +131,7 @@ describe("KbRagService", () => {
 
       expect(result.hasContext).toBe(true);
       const [call] = mockGateway.invokeText.mock.calls;
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
     });
 
     it("maps quota_exceeded to BadRequestException for public asks", async () => {

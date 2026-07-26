@@ -92,9 +92,7 @@ describe("InvAiExplainService - explainInsight", () => {
 
     const callArgs = (gateway.invokeStructured as jest.Mock).mock.calls[0][0];
     expect(callArgs.feature).toBe("inv.insight-explain");
-    expect(callArgs.charge).toBeDefined();
-    expect(typeof callArgs.charge.credits).toBe("number");
-    expect(callArgs.charge.credits).toBeGreaterThan(0);
+    expect(callArgs.charge).toBe(true);
   });
 
   it("returns structured narration with facts separated from suggestions", async () => {
@@ -269,9 +267,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
 
     const callArgs = (gateway.invokeStructured as jest.Mock).mock.calls[0][0];
     expect(callArgs.feature).toBe("inv.reorder-explain");
-    expect(callArgs.charge).toBeDefined();
-    expect(typeof callArgs.charge.credits).toBe("number");
-    expect(callArgs.charge.credits).toBeGreaterThan(0);
+    expect(callArgs.charge).toBe(true);
   });
 
   it("should call AiConfirmationService.propose with action inventory:create-draft-po, not generatePo", async () => {
@@ -598,9 +594,7 @@ describe("InvAiExplainService - getSupplierDelayBriefing", () => {
 
     const callArgs = (gateway.invokeText as jest.Mock).mock.calls[0][0];
     expect(callArgs.feature).toBe("inv.supplier-delay-briefing");
-    expect(callArgs.charge).toBeDefined();
-    expect(typeof callArgs.charge.credits).toBe("number");
-    expect(callArgs.charge.credits).toBeGreaterThan(0);
+    expect(callArgs.charge).toBe(true);
   });
 
   it("should throw ServiceUnavailableException when AI gateway invokeText returns not-ok", async () => {
