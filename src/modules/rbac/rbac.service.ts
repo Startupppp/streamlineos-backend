@@ -10,6 +10,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import {
+  assertPermissionsGrantable,
+  toGrantableSet,
+} from "../../common/rbac/grantability";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS, type Permission } from "./permissions.constants";
 import type { AssignRolePermissionInput, RevokeRolePermissionInput } from "./dto/rbac.schemas";
 import { AccessService } from "../access/access.service";
@@ -94,6 +98,17 @@ export class RbacService {
 
     if (!CATALOG_KEYS.has(input.permissionKey)) {
       throw new BadRequestException(`Unknown permission key: ${input.permissionKey}`);
+    }
+
+    if (!actor.isOrgOwner && !actor.isPlatformAdmin) {
+      const resolved = await this.access.resolveUserPermissions(
+        actor.orgId,
+        actor.userId,
+      );
+      assertPermissionsGrantable(
+        { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
+        [input.permissionKey],
+      );
     }
 
     await this.db.transaction(async (tx) => {

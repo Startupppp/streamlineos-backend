@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { AccessService } from "../access/access.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 type RoleRow = { id: number; name: string; slug: string };
@@ -73,8 +74,14 @@ function makeDispatch(): NotificationDispatchService {
   return { emit: jest.fn() } as unknown as NotificationDispatchService;
 }
 
+function makeAccess(): AccessService {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+  } as unknown as AccessService;
+}
+
 function makeService(db: Db): RolesService {
-  return new RolesService(db, makeCache(), makeAudit(), makeDispatch());
+  return new RolesService(db, makeCache(), makeAudit(), makeAccess(), makeDispatch());
 }
 
 describe("RolesService.getPermissionsMatrix", () => {

@@ -24,8 +24,14 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import {
+  assertKnownPermissionKeys,
+  assertPermissionsGrantable,
+  toGrantableSet,
+} from "../../common/rbac/grantability";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { AccessService } from "../access/access.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { ROLE_TEMPLATES, type RoleTemplate } from "./role-templates.constants";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
@@ -47,8 +53,29 @@ export class RolesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
+
+  /**
+   * Enforce server-owned grantability (§5): the caller may only write permissions that are
+   * a subset of their own grantable set, and may only propagate reserved admin keys when they
+   * hold organization-admin authority. Owner / Platform Admin bypass without a DB read.
+   */
+  private async assertGrantable(
+    actor: CurrentUserContext,
+    requestedKeys: readonly string[],
+  ): Promise<void> {
+    if (actor.isOrgOwner || actor.isPlatformAdmin) return;
+    const resolved = await this.access.resolveUserPermissions(
+      actor.orgId,
+      actor.userId,
+    );
+    assertPermissionsGrantable(
+      { isOrgOwner: false, isPlatformAdmin: false, grantable: toGrantableSet(resolved) },
+      requestedKeys,
+    );
+  }
 
   async listAssignableDepartments(orgId: string) {
     return this.db
@@ -80,6 +107,9 @@ export class RolesService {
   }
 
   async createRole(actor: CurrentUserContext, input: CreateRoleInput) {
+    assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
+    await this.assertGrantable(actor, input.permissions);
+
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.slug, input.slug), eq(roles.orgId, actor.orgId)),
@@ -97,10 +127,9 @@ export class RolesService {
         })
         .returning();
 
-      const validPerms = input.permissions.filter((key) => CATALOG_KEYS.has(key));
-      if (validPerms.length > 0) {
+      if (input.permissions.length > 0) {
         await tx.insert(rolePermissionGrants).values(
-          validPerms.map((permissionKey) => ({
+          input.permissions.map((permissionKey) => ({
             orgId: actor.orgId,
             roleId: row.id,
             permissionKey,
@@ -122,6 +151,11 @@ export class RolesService {
     roleId: number,
     input: UpdateRoleInput,
   ): Promise<{ success: true }> {
+    if (input.permissions !== undefined) {
+      assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
+      await this.assertGrantable(actor, input.permissions);
+    }
+
     await this.db.transaction(async (tx): Promise<void> => {
       const existing = await tx.query.roles.findFirst({
         where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
@@ -150,10 +184,9 @@ export class RolesService {
               eq(rolePermissionGrants.roleId, roleId),
             ),
           );
-        const validPerms = input.permissions.filter((key) => CATALOG_KEYS.has(key));
-        if (validPerms.length > 0) {
+        if (input.permissions.length > 0) {
           await tx.insert(rolePermissionGrants).values(
-            validPerms.map((permissionKey) => ({
+            input.permissions.map((permissionKey) => ({
               orgId: actor.orgId,
               roleId,
               permissionKey,
@@ -283,6 +316,8 @@ export class RolesService {
       }
       deduped.set(item.key, item.scope);
     }
+
+    await this.assertGrantable(actor, Array.from(deduped.keys()));
 
     await this.db.transaction(async (tx): Promise<void> => {
       await tx
@@ -729,6 +764,8 @@ export class RolesService {
     const validPermissions = template.permissions.filter((key) =>
       CATALOG_KEYS.has(key),
     );
+
+    await this.assertGrantable(actor, validPermissions);
 
     const created = await this.db.transaction(async (tx) => {
       const existing = await tx.query.roles.findFirst({
