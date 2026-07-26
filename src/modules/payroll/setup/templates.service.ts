@@ -4,16 +4,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ilike, isNull, or, SQL } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, sql, SQL } from "drizzle-orm";
 import { payrollTemplates } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAYROLL_TEMPLATE_SEEDS } from "./payroll-template-seeds";
 import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
-import type { PayrollTemplateSeed, TemplateComponentDef, PayrollToggles } from "../payroll.types";
+import type { TemplateComponentDef, PayrollToggles } from "../payroll.types";
 
 type TemplateRow = typeof payrollTemplates.$inferSelect;
 
@@ -61,6 +60,13 @@ export class PayrollTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async ensureSystemTemplatesExist(): Promise<void> {
+    // Hot path: if all system templates already exist, this GET stays read-only.
+    // Only the first-ever call (empty catalog) falls through to seeding.
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(payrollTemplates)
+      .where(and(eq(payrollTemplates.isSystem, true), isNull(payrollTemplates.orgId)));
+    if (Number(row?.count ?? 0) >= PAYROLL_TEMPLATE_SEEDS.length) return;
     await seedPayrollTemplates(this.db);
   }
 
@@ -112,8 +118,8 @@ export class PayrollTemplatesService {
       .limit(input.pageSize)
       .offset(offset);
 
-    const allItems = await this.db
-      .select({ id: payrollTemplates.id })
+    const [countRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
       .from(payrollTemplates)
       .where(where);
 
@@ -122,7 +128,7 @@ export class PayrollTemplatesService {
       isRecommended: this.computeIsRecommended(row, input.country),
     }));
 
-    return { items, total: allItems.length };
+    return { items, total: Number(countRow?.count ?? 0) };
   }
 
   async getById(orgId: string, templateId: number): Promise<TemplateRow> {
