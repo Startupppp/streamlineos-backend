@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { invStockReservations, invStockLevels, invStockTransactions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -84,43 +84,45 @@ export class ReservationService {
     return reservation!;
   }
 
-  async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
-    return this.db.transaction(async (tx) => {
-      const [reservation] = await tx.execute<{
-        id: number; location_id: number | null; product_variant_id: number;
-        lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
-      }>(sql`
-        SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty, status
-        FROM inv_stock_reservations
-        WHERE id = ${reservationId} AND org_id = ${orgId}
-        FOR UPDATE
-      `);
+  async releaseReservationInTx(tx: Tx, orgId: string, userId: string, reservationId: number): Promise<void> {
+    const [reservation] = await tx.execute<{
+      id: number; location_id: number | null; product_variant_id: number;
+      lot_id: number | null; serial_id: number | null; reserved_qty: string; status: string;
+    }>(sql`
+      SELECT id, location_id, product_variant_id, lot_id, serial_id, reserved_qty, status
+      FROM inv_stock_reservations
+      WHERE id = ${reservationId} AND org_id = ${orgId}
+      FOR UPDATE
+    `);
 
-      if (!reservation || reservation.status !== "ACTIVE") return;
+    if (!reservation || reservation.status !== "ACTIVE") return;
 
-      await tx.update(invStockReservations)
-        .set({ status: "RELEASED" })
-        .where(eq(invStockReservations.id, reservationId));
+    await tx.update(invStockReservations)
+      .set({ status: "RELEASED" })
+      .where(eq(invStockReservations.id, reservationId));
 
-      if (reservation.location_id) {
-        await tx.update(invStockLevels)
-          .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
-          .where(and(
-            eq(invStockLevels.orgId, orgId),
-            eq(invStockLevels.productVariantId, reservation.product_variant_id),
-            eq(invStockLevels.locationId, reservation.location_id),
-          ));
-      }
+    if (reservation.location_id) {
+      await tx.update(invStockLevels)
+        .set({ committed: sql`GREATEST(0, committed - ${reservation.reserved_qty}::numeric)` })
+        .where(and(
+          eq(invStockLevels.orgId, orgId),
+          eq(invStockLevels.productVariantId, reservation.product_variant_id),
+          eq(invStockLevels.locationId, reservation.location_id),
+        ));
+    }
 
-      await tx.insert(invStockTransactions).values({
-        orgId, productVariantId: reservation.product_variant_id,
-        locationId: reservation.location_id,
-        transactionType: "RESERVATION_RELEASE",
-        quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
-        reason: "reservation_release", createdBy: userId,
-        metadata: { reservationId } as Record<string, unknown>,
-      });
+    await tx.insert(invStockTransactions).values({
+      orgId, productVariantId: reservation.product_variant_id,
+      locationId: reservation.location_id,
+      transactionType: "RESERVATION_RELEASE",
+      quantityChange: "0", quantityBefore: "0", quantityAfter: "0",
+      reason: "reservation_release", createdBy: userId,
+      metadata: { reservationId } as Record<string, unknown>,
     });
+  }
+
+  async releaseReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
+    return this.db.transaction((tx) => this.releaseReservationInTx(tx, orgId, userId, reservationId));
   }
 
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
@@ -206,15 +208,38 @@ export class ReservationService {
   }
 
   async expireStale(orgId: string): Promise<number> {
-    const now = new Date();
-    const result = await this.db.update(invStockReservations)
-      .set({ status: "EXPIRED" })
-      .where(and(eq(invStockReservations.orgId, orgId), eq(invStockReservations.status, "ACTIVE"), lt(invStockReservations.expiresAt, now)));
-    const raw: unknown = result;
-    if (raw && typeof raw === "object") {
-      if ("rowCount" in raw) return Number(raw.rowCount ?? 0);
-      if ("count" in raw) return Number(raw.count ?? 0);
-    }
-    return 0;
+    return this.db.transaction(async (tx) => {
+      const stale = await tx.execute<{
+        id: number; location_id: number | null; product_variant_id: number; reserved_qty: string;
+      }>(sql`
+        SELECT id, location_id, product_variant_id, reserved_qty
+        FROM inv_stock_reservations
+        WHERE org_id = ${orgId}
+          AND status = 'ACTIVE'
+          AND expires_at IS NOT NULL
+          AND expires_at < NOW()
+        FOR UPDATE
+      `);
+
+      if (stale.length === 0) return 0;
+
+      const ids = stale.map((r) => Number(r.id));
+      await tx.update(invStockReservations)
+        .set({ status: "EXPIRED" })
+        .where(and(eq(invStockReservations.orgId, orgId), inArray(invStockReservations.id, ids)));
+
+      for (const r of stale) {
+        if (r.location_id === null) continue;
+        await tx.update(invStockLevels)
+          .set({ committed: sql`GREATEST(0, committed - ${r.reserved_qty}::numeric)` })
+          .where(and(
+            eq(invStockLevels.orgId, orgId),
+            eq(invStockLevels.productVariantId, Number(r.product_variant_id)),
+            eq(invStockLevels.locationId, r.location_id),
+          ));
+      }
+
+      return stale.length;
+    });
   }
 }

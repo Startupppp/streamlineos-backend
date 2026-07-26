@@ -5,6 +5,8 @@ export const ticketTypeEnum = pgEnum("ticket_type", ["EPIC", "STORY", "TASK", "B
 export const ticketStatusEnum = pgEnum("ticket_status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 export const ticketPriorityEnum = pgEnum("ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
 export const projectStatusEnum = pgEnum("project_status", ["ACTIVE", "COMPLETED", "ARCHIVED"]);
+export const managedProductStatusEnum = pgEnum("managed_product_status", ["active", "archived"]);
+export const workerEngagementStatusEnum = pgEnum("worker_engagement_status", ["PLANNED", "ACTIVE", "COMPLETED", "TERMINATED", "CANCELLED"]);
 export const stateGroupEnum = pgEnum("state_group", ["backlog", "unstarted", "started", "completed", "cancelled"]);
 export const cycleStatusEnum = pgEnum("cycle_status", ["draft", "active", "completed"]);
 export const moduleStatusEnum = pgEnum("module_status", ["backlog", "planned", "in-progress", "completed", "paused", "cancelled"]);
@@ -51,6 +53,8 @@ export const slaAppliesToEnum = pgEnum("sla_applies_to", ["lead", "deal", "both"
 export const slaPriorityEnum = pgEnum("sla_priority", ["low", "medium", "high", "urgent"]);
 export const orgSizeEnum = pgEnum("org_size", ["1-10", "11-50", "51-200", "201-1000", "1000+"]);
 export const branchStatusEnum = pgEnum("branch_status", ["ACTIVE", "INACTIVE"]);
+
+export const membershipStatusEnum = pgEnum("membership_status", ["INVITED", "ACTIVE", "SUSPENDED", "LEFT"]);
 
 export const crmPersonRoleEnum = pgEnum("crm_person_role", ["sales_rep", "csm"]);
 export const crmHealthEnum = pgEnum("crm_health", ["healthy", "at_risk", "critical"]);
@@ -370,4 +374,11 @@ export const invWebhookEventStatusEnum = pgEnum("inv_webhook_event_status", ["PE
 export const invReservationStrategyEnum = pgEnum("inv_reservation_strategy", ["MANUAL", "AUTO_ON_CONFIRM", "FEFO", "FIFO"]);
 export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN", "ALLOW"]);
 export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "ACKNOWLEDGED", "DISMISSED"]);
+
+export const partyTypeEnum = pgEnum("party_type", ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"]);
+
+export const portalAudienceEnum = pgEnum("portal_audience", ["CLIENT_PORTAL"]);
+export const portalMembershipStatusEnum = pgEnum("portal_membership_status", ["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"]);
+export const portalInvitationStatusEnum = pgEnum("portal_invitation_status", ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"]);
+export const portalGrantStatusEnum = pgEnum("portal_grant_status", ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"]);
 

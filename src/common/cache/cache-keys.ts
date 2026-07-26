@@ -142,6 +142,9 @@ export const CACHE_KEYS = {
     `timesheets:payroll:exports:${orgId}:${page}:${pageSize}`,
   payrollSettings: (orgId: string) => `timesheets:payroll:settings:${orgId}`,
 
+  timesheetSettings: (orgId: string) => `timesheets:settings:${orgId}`,
+  timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
+
   finOverview: (orgId: string) => `fin:overview:${orgId}`,
   finOverviewWithDates: (orgId: string, from: string, to: string) => `fin:overview:${orgId}:${from}:${to}`,
   finVendorStatement: (orgId: string, vendorId: number, from: string, to: string) =>

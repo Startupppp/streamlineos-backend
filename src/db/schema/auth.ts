@@ -1,7 +1,7 @@
 
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum } from "./enums";
+import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum } from "./enums";
 
 import { departments } from "./hr";
 import { tickets } from "./projects";
@@ -23,6 +23,7 @@ export const organizations = pgTable("organizations", {
   allowedEmailDomains: text("allowed_email_domains").array().default([]),
   maxConcurrentSessions: integer("max_concurrent_sessions"),
   enabledModules: text("enabled_modules").array(),
+  ownerMembershipId: integer("owner_membership_id"),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   status: text("status").default("ACTIVE").notNull(),
   deletedAt: timestamp("deleted_at"),
@@ -72,11 +73,18 @@ export const organizationMembers = pgTable("organization_members", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   role: text("role").default("ENGINEERING").notNull(),
   isOwner: boolean("is_owner").default(false).notNull(),
+  status: membershipStatusEnum("status").default("ACTIVE").notNull(),
+  invitedAt: timestamp("invited_at"),
+  activatedAt: timestamp("activated_at"),
+  suspendedAt: timestamp("suspended_at"),
+  leftAt: timestamp("left_at"),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
+  uniqueIndex("uniq_org_members_org_id").on(table.orgId, table.id),
   index("idx_org_members_org_role").on(table.orgId, table.role),
   index("idx_org_members_owner").on(table.orgId, table.isOwner),
+  index("idx_org_members_org_status").on(table.orgId, table.status),
 ]);
 
 export const users = pgTable("users", {

@@ -132,19 +132,25 @@ export class InputsService {
 
     const idsToDelete = toReset.map(r => r.id);
 
+    const pulledInputs: Array<{
+      userId: string;
+      pulled: NonNullable<Awaited<ReturnType<typeof pullAttendanceInputs>>>;
+    }> = [];
+    for (const row of toReset) {
+      const pulled = await pullAttendanceInputs(this.db, orgId, row.userId, month);
+      if (pulled) pulledInputs.push({ userId: row.userId, pulled });
+    }
+
     await this.db.transaction(async (tx) => {
       await tx.delete(payrollInputs).where(inArray(payrollInputs.id, idsToDelete));
 
-      for (const row of toReset) {
-        const pulled = await pullAttendanceInputs(this.db, orgId, row.userId, month);
-        if (!pulled) continue;
-
+      for (const { userId, pulled } of pulledInputs) {
         await tx
           .insert(payrollInputs)
           .values({
             orgId,
             runId,
-            userId: row.userId,
+            userId,
             source: pulled.source,
             scheduledDays: pulled.scheduledDays,
             paidDays: pulled.paidDays,

@@ -43,6 +43,15 @@ export class ReportsService {
     if (query.startDate) periodConditions.push(gte(timesheetPeriods.periodStart, query.startDate));
     if (query.endDate) periodConditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
 
+    const byProjectQuery = this.db
+      .select({
+        projectId: timesheets.projectId,
+        hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
+      })
+      .from(timesheets)
+      .where(and(...conditions, sql`${timesheets.projectId} IS NOT NULL`))
+      .groupBy(timesheets.projectId);
+
     const [aggResult, byDayRows, byProjectRows, pendingResult] = await Promise.all([
       this.db
         .select({
@@ -64,14 +73,7 @@ export class ReportsService {
         .where(and(...conditions))
         .groupBy(timesheets.date)
         .orderBy(timesheets.date),
-      this.db
-        .select({
-          projectId: timesheets.projectId,
-          hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
-        })
-        .from(timesheets)
-        .where(and(...conditions, sql`${timesheets.projectId} IS NOT NULL`))
-        .groupBy(timesheets.projectId),
+      byProjectQuery,
       this.db
         .select({ count: sql<number>`COUNT(*)::int` })
         .from(timesheetPeriods)
@@ -86,14 +88,13 @@ export class ReportsService {
       .map((r) => r.projectId)
       .filter((id): id is number => id !== null);
 
-    let projectNames = new Map<number, string>();
-    if (projectIds.length > 0) {
-      const projRows = await this.db
-        .select({ id: projects.id, name: projects.name })
-        .from(projects)
-        .where(inArray(projects.id, projectIds));
-      projectNames = new Map(projRows.map((p) => [p.id, p.name]));
-    }
+    const projRows = projectIds.length > 0
+      ? await this.db
+          .select({ id: projects.id, name: projects.name })
+          .from(projects)
+          .where(inArray(projects.id, projectIds))
+      : [];
+    const projectNames = new Map(projRows.map((p) => [p.id, p.name]));
 
     return {
       totalHours,

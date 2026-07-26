@@ -1,8 +1,8 @@
-import { ConflictException, Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invCustomerReturns, invCustomerReturnLines, invSerialNumbers,
-  invLocations,
+  invLocations, invSalesOrders, invShipments, clients,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -68,6 +68,30 @@ export class CustomerReturnsService {
   }
 
   async create(orgId: string, userId: string, data: CreateCustomerReturnInput) {
+    if (data.soId !== undefined && data.soId !== null) {
+      const so = await this.db.query.invSalesOrders.findFirst({
+        where: and(eq(invSalesOrders.id, data.soId), eq(invSalesOrders.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (!so) throw new BadRequestException("Sales order not found in this organization");
+    }
+
+    if (data.shipmentId !== undefined && data.shipmentId !== null) {
+      const shipment = await this.db.query.invShipments.findFirst({
+        where: and(eq(invShipments.id, data.shipmentId), eq(invShipments.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (!shipment) throw new BadRequestException("Shipment not found in this organization");
+    }
+
+    if (data.clientId !== undefined && data.clientId !== null) {
+      const client = await this.db.query.clients.findFirst({
+        where: and(eq(clients.id, data.clientId), eq(clients.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (!client) throw new BadRequestException("Client not found in this organization");
+    }
+
     const returnNumber = await this.numSeq.next(orgId, "CUSTOMER_RETURN");
 
     const [ret] = await this.db.insert(invCustomerReturns).values({
@@ -151,23 +175,6 @@ export class CustomerReturnsService {
       }
     }
 
-    if (engineMovements.length > 0) {
-      try {
-        await this.engine.execute(orgId, userId, {
-          idempotencyKey,
-          sourceType: "inv_customer_return",
-          sourceId: String(returnId),
-          reason: data.reason,
-          movements: engineMovements,
-        });
-      } catch (err) {
-        const isCompletedReplay =
-          err instanceof ConflictException &&
-          typeof (err as ConflictException & { idempotentResult?: unknown }).idempotentResult !== "undefined";
-        if (!isCompletedReplay) throw err;
-      }
-    }
-
     const serialLines = ret.lines.filter(
       (l): l is typeof l & { serialId: number } => l.serialId !== null
     );
@@ -184,6 +191,16 @@ export class CustomerReturnsService {
     }
 
     await this.db.transaction(async (tx) => {
+      if (engineMovements.length > 0) {
+        await this.engine.executeInTx(tx, orgId, userId, {
+          idempotencyKey,
+          sourceType: "inv_customer_return",
+          sourceId: String(returnId),
+          reason: data.reason,
+          movements: engineMovements,
+        });
+      }
+
       for (const [serialStatus, ids] of byStatus) {
         await tx.update(invSerialNumbers)
           .set({ status: serialStatus })
@@ -195,6 +212,7 @@ export class CustomerReturnsService {
         .where(and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.status, "DRAFT")));
     });
 
+    await this.engine.invalidateCaches(orgId);
     await Promise.all([
       this.cache.invalidatePattern(`inv:cret:list:${orgId}:*`),
       this.cache.del(CACHE_KEYS.invCustomerReturnDetail(orgId, returnId)),

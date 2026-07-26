@@ -17,7 +17,15 @@ export type LineItemRow = Pick<
 
 export type RunEmployeeRow = Pick<
   typeof payrollRunEmployees.$inferSelect,
-  "id" | "userId" | "workerType" | "gross" | "net" | "paidDays" | "totalDeductions" | "employerContributions" | "profileId"
+  | "id"
+  | "userId"
+  | "workerType"
+  | "gross"
+  | "net"
+  | "paidDays"
+  | "totalDeductions"
+  | "employerContributions"
+  | "profileId"
 >;
 
 export interface EnrichedLineItem {
@@ -61,6 +69,21 @@ export async function getLineItemsForRun(
   runId: number,
   filters?: LineItemFilters,
 ): Promise<EnrichedLineItem[]> {
+  const conditions = [eq(payrollLineItems.runId, runId)];
+  if (filters?.workerType)
+    conditions.push(
+      eq(
+        payrollRunEmployees.workerType,
+        filters.workerType as (typeof payrollRunEmployees.$inferSelect)["workerType"],
+      ),
+    );
+
+  if (filters?.department)
+    conditions.push(eq(departments.name, filters.department));
+
+  if (filters?.costCenter)
+    conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
+
   const rows = await db
     .select({
       lineItem: {
@@ -84,37 +107,23 @@ export async function getLineItemsForRun(
       costCenter: employeeSalaryProfiles.costCenter,
     })
     .from(payrollLineItems)
-    .innerJoin(payrollRunEmployees, eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id))
+    .innerJoin(
+      payrollRunEmployees,
+      eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id),
+    )
     .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
     .leftJoin(departments, eq(departments.id, users.departmentId))
-    .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
-    .where(
-      filters?.workerType
-        ? and(eq(payrollLineItems.runId, runId), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-        : eq(payrollLineItems.runId, runId),
-    );
+    .leftJoin(
+      employeeSalaryProfiles,
+      eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),
+    )
+    .where(and(...conditions));
 
-  const enriched: EnrichedLineItem[] = rows.map((r) => ({
+  return rows.map((r) => ({
     lineItem: r.lineItem,
     runEmployee: r.runEmployee,
     userName: r.userName,
     userDept: r.departmentName ?? null,
     costCenter: r.costCenter ?? null,
   }));
-
-  if (filters?.department && filters.costCenter) {
-    return enriched.filter(
-      (e) => e.userDept === filters.department && e.costCenter === filters.costCenter,
-    );
-  }
-
-  if (filters?.department) {
-    return enriched.filter((e) => e.userDept === filters.department);
-  }
-
-  if (filters?.costCenter) {
-    return enriched.filter((e) => e.costCenter === filters.costCenter);
-  }
-
-  return enriched;
 }

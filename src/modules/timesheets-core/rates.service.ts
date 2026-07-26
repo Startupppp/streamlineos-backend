@@ -3,6 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { timesheetRates, timesheetRateCards } from "../../db/schema";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type { CreateRateInput, UpdateRateInput } from "./dto/rates.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -11,6 +13,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 export class RatesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
     private readonly audit: TimesheetsAuditService,
   ) {}
 
@@ -40,16 +43,21 @@ export class RatesService {
       })
       .returning();
 
-    await this.audit.recordWithDb({
-      orgId: u.orgId,
-      actorUserId: u.userId,
-      entityType: "rate",
-      entityId: rate!.id.toString(),
-      action: "rate.created",
-      after: input,
-    });
+    if (!rate) throw new NotFoundException("Failed to create rate");
 
-    return rate!;
+    await Promise.all([
+      this.audit.recordWithDb({
+        orgId: u.orgId,
+        actorUserId: u.userId,
+        entityType: "rate",
+        entityId: rate.id.toString(),
+        action: "rate.created",
+        after: input,
+      }),
+      this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId)),
+    ]);
+
+    return rate;
   }
 
   async updateRate(u: CurrentUserContext, rateId: number, input: UpdateRateInput) {
@@ -71,8 +79,12 @@ export class RatesService {
     if (input.billingType !== undefined) updateData.billingType = input.billingType;
     if (input.rateCardId !== undefined) updateData.rateCardId = input.rateCardId ?? null;
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(timesheetRates).set(updateData).where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)));
+    const [updated] = await this.db.transaction(async (tx) => {
+      const [result] = await tx
+        .update(timesheetRates)
+        .set(updateData)
+        .where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)))
+        .returning();
 
       await this.audit.record(tx, {
         orgId: u.orgId,
@@ -83,15 +95,14 @@ export class RatesService {
         before: existing,
         after: updateData,
       });
+
+      return [result];
     });
 
-    const [updated] = await this.db
-      .select()
-      .from(timesheetRates)
-      .where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)))
-      .limit(1);
+    await this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId));
 
-    return updated!;
+    if (!updated) throw new NotFoundException("Rate not found after update");
+    return updated;
   }
 
   async deleteRate(u: CurrentUserContext, rateId: number) {
@@ -115,6 +126,8 @@ export class RatesService {
         before: existing,
       });
     });
+
+    await this.cache.invalidate(CACHE_KEYS.timesheetRates(u.orgId));
 
     return { success: true };
   }

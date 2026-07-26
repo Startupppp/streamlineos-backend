@@ -2,7 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { timesheetRates, projectMembers } from "../../db/schema";
+import { timesheetRates, timesheetRateCards, projectMembers, projects } from "../../db/schema";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { pickBestRate, type RateMatchQuery } from "./lib/rate-match";
 
 export type RateQuery = RateMatchQuery;
@@ -10,20 +12,21 @@ export type RateQuery = RateMatchQuery;
 export interface ResolvedRate {
   billRate: number | null;
   currency: string;
-  source: string | null;
+  source: "RATE_CARD" | "PROJECT_MEMBER" | null;
 }
 
 @Injectable()
 export class RateResolverService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
+  ) {}
 
   async resolve(orgId: string, query: RateQuery): Promise<ResolvedRate> {
-    const rates = await this.db
-      .select()
-      .from(timesheetRates)
-      .where(eq(timesheetRates.orgId, orgId));
-
-    const defaultCurrency = this.getDefaultCurrency(orgId);
+    const [rates, defaultCurrency] = await Promise.all([
+      this.getRates(orgId),
+      this.getDefaultCurrency(orgId),
+    ]);
 
     const best = pickBestRate(rates, query);
     if (!best) return this.fallbackToMember(orgId, query, defaultCurrency);
@@ -38,17 +41,15 @@ export class RateResolverService {
   async resolveMany(orgId: string, queries: RateQuery[]): Promise<ResolvedRate[]> {
     if (queries.length === 0) return [];
 
-    const rates = await this.db
-      .select()
-      .from(timesheetRates)
-      .where(eq(timesheetRates.orgId, orgId));
-
-    const defaultCurrency = this.getDefaultCurrency(orgId);
+    const [rates, defaultCurrency] = await Promise.all([
+      this.getRates(orgId),
+      this.getDefaultCurrency(orgId),
+    ]);
 
     const cardResults = queries.map((query) => {
       const best = pickBestRate(rates, query);
       return best
-        ? { billRate: parseFloat(best.billRate), currency: best.currency, source: "RATE_CARD" as string | null }
+        ? { billRate: parseFloat(best.billRate), currency: best.currency, source: "RATE_CARD" as ResolvedRate["source"] }
         : null;
     });
 
@@ -68,8 +69,10 @@ export class RateResolverService {
           hourlyRate: projectMembers.hourlyRate,
         })
         .from(projectMembers)
+        .innerJoin(projects, eq(projectMembers.projectId, projects.id))
         .where(
           and(
+            eq(projects.orgId, orgId),
             inArray(projectMembers.projectId, [...new Set(fallbackPairs.map((p) => p.projectId))]),
             inArray(projectMembers.userId, [...new Set(fallbackPairs.map((p) => p.userId))]),
           ),
@@ -95,8 +98,26 @@ export class RateResolverService {
     });
   }
 
+  private async getRates(orgId: string) {
+    return this.cache.cached(
+      CACHE_KEYS.timesheetRates(orgId),
+      () => this.db.select().from(timesheetRates).where(eq(timesheetRates.orgId, orgId)),
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  async getDefaultCurrency(orgId: string): Promise<string> {
+    const [defaultCard] = await this.db
+      .select({ currency: timesheetRateCards.currency })
+      .from(timesheetRateCards)
+      .where(and(eq(timesheetRateCards.orgId, orgId), eq(timesheetRateCards.isDefault, true)))
+      .limit(1);
+
+    return defaultCard?.currency ?? "USD";
+  }
+
   private async fallbackToMember(
-    _orgId: string,
+    orgId: string,
     query: RateQuery,
     defaultCurrency: string,
   ): Promise<ResolvedRate> {
@@ -104,8 +125,10 @@ export class RateResolverService {
       const [member] = await this.db
         .select({ hourlyRate: projectMembers.hourlyRate })
         .from(projectMembers)
+        .innerJoin(projects, eq(projectMembers.projectId, projects.id))
         .where(
           and(
+            eq(projects.orgId, orgId),
             eq(projectMembers.projectId, query.projectId),
             eq(projectMembers.userId, query.userId),
           ),
@@ -122,9 +145,5 @@ export class RateResolverService {
     }
 
     return { billRate: null, currency: defaultCurrency, source: null };
-  }
-
-  private getDefaultCurrency(_orgId: string): string {
-    return "USD";
   }
 }

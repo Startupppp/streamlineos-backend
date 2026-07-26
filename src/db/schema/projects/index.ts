@@ -1,7 +1,5 @@
 export * from "./core";
 export * from "./tasks";
-export * from "./timesheet-payroll";
-export * from "./timesheet-core";
 export * from "./members";
 export * from "./reporting";
 export * from "./relations";
@@ -20,3 +18,4 @@ export * from "./incidents";
 export * from "./forms";
 export * from "./portfolios";
 export * from "./workflow";
+export * from "./managed-products";

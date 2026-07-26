@@ -162,9 +162,6 @@ export class InspectionsService {
           .where(and(eq(invQualityInspectionLines.id, fl.lineId), eq(invQualityInspectionLines.inspectionId, id)));
       }
       await tx.update(invQualityInspections)
-        .set({ status: "FAILED" })
-        .where(and(eq(invQualityInspections.id, id), eq(invQualityInspections.orgId, orgId)));
-      await tx.update(invQualityInspections)
         .set({ status: "DISPOSITION_REQUIRED" })
         .where(and(eq(invQualityInspections.id, id), eq(invQualityInspections.orgId, orgId)));
       await this.audit.insert(tx, {

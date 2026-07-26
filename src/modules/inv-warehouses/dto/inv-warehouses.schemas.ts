@@ -85,5 +85,7 @@ export const listWarehousesSchema = z.object({
   isDefault: z.coerce.boolean().optional(),
   country: z.string().trim().max(100).optional(),
   city: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(100),
 });
 export type ListWarehousesInput = z.infer<typeof listWarehousesSchema>;

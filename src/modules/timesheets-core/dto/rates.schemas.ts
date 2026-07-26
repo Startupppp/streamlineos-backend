@@ -5,7 +5,7 @@ export const createRateSchema = z.object({
   userId: z.string().optional(),
   taskId: z.number().int().positive().optional(),
   clientId: z.number().int().positive().optional(),
-  billingType: z.string().optional(),
+  billingType: z.enum(["BILLABLE", "NON_BILLABLE", "FIXED"]).optional(),
   billRate: z.number().positive(),
   costRate: z.number().positive().optional(),
   currency: z.string().max(3).optional(),

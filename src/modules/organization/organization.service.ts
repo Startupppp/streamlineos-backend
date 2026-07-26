@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -21,6 +22,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import type {
   CreateOrganizationInput,
   ListMembersInput,
@@ -143,9 +145,24 @@ export class OrganizationService {
         slug: input.slug,
         billingEmail,
       });
-      await tx
+      const inserted = await tx
         .insert(organizationMembers)
-        .values({ userId, orgId, role: "CEO" });
+        .values({
+          userId,
+          orgId,
+          role: "OWNER",
+          isOwner: true,
+          status: "ACTIVE",
+          activatedAt: new Date(),
+        })
+        .returning({ id: organizationMembers.id });
+      const ownerMembershipId = inserted[0]?.id;
+      if (ownerMembershipId) {
+        await tx
+          .update(organizations)
+          .set({ ownerMembershipId })
+          .where(eq(organizations.id, orgId));
+      }
     });
 
     return { id: orgId, name: input.name, slug: input.slug };
@@ -337,34 +354,80 @@ export class OrganizationService {
     currentOwnerId: string,
     input: TransferOwnershipInput,
   ) {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, input.newOwnerUserId),
-      ),
-    });
-    if (!member)
-      throw new BadRequestException("New owner must be an existing org member");
+    if (input.newOwnerUserId === currentOwnerId) {
+      throw new BadRequestException("You are already the owner");
+    }
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizationMembers)
-        .set({ isOwner: false })
+    const result = await this.db.transaction(async (tx) => {
+      const [org] = await tx
+        .select({ ownerMembershipId: organizations.ownerMembershipId })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .for("update");
+      if (!org) throw new NotFoundException("Organization not found");
+
+      const members = await tx
+        .select({
+          id: organizationMembers.id,
+          userId: organizationMembers.userId,
+          isOwner: organizationMembers.isOwner,
+          status: organizationMembers.status,
+        })
+        .from(organizationMembers)
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, currentOwnerId),
+            inArray(organizationMembers.userId, [
+              currentOwnerId,
+              input.newOwnerUserId,
+            ]),
           ),
+        )
+        .for("update");
+
+      const currentMember = members.find((m) => m.userId === currentOwnerId);
+      const targetMember = members.find(
+        (m) => m.userId === input.newOwnerUserId,
+      );
+
+      if (!currentMember) {
+        throw new BadRequestException(
+          "You are not a member of this organization",
         );
+      }
+      const isCurrentOwner =
+        currentMember.isOwner ||
+        (org.ownerMembershipId != null &&
+          org.ownerMembershipId === currentMember.id);
+      if (!isCurrentOwner) {
+        throw new ForbiddenException(
+          "Only the current owner can transfer ownership",
+        );
+      }
+      if (!targetMember) {
+        throw new BadRequestException(
+          "New owner must be an existing org member",
+        );
+      }
+      if (targetMember.status !== "ACTIVE") {
+        throw new BadRequestException("New owner must be an active member");
+      }
+
       await tx
         .update(organizationMembers)
-        .set({ isOwner: true, role: "ADMIN" })
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, input.newOwnerUserId),
-          ),
-        );
+        .set({ isOwner: false, role: "ADMIN" })
+        .where(eq(organizationMembers.id, currentMember.id));
+      await tx
+        .update(organizationMembers)
+        .set({ isOwner: true, role: "OWNER", status: "ACTIVE" })
+        .where(eq(organizationMembers.id, targetMember.id));
+      await tx
+        .update(organizations)
+        .set({ ownerMembershipId: targetMember.id })
+        .where(eq(organizations.id, orgId));
+
+      await bumpPermissionsVersion(tx, orgId);
+      return { from: currentMember.userId, to: targetMember.userId };
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(currentOwnerId));
@@ -375,7 +438,7 @@ export class OrganizationService {
       orgId,
       targetId: input.newOwnerUserId,
       targetType: "user",
-      metadata: { from: currentOwnerId, to: input.newOwnerUserId },
+      metadata: { from: result.from, to: result.to },
     });
 
     return { success: true };
@@ -390,11 +453,13 @@ export class OrganizationService {
       columns: { isOwner: true },
     });
     if (!membership) {
-      throw new BadRequestException("You are not a member of this workspace");
+      throw new BadRequestException(
+        "You are not a member of this organization",
+      );
     }
     if (membership.isOwner) {
       throw new BadRequestException(
-        "Owners cannot leave. Transfer ownership to another member or delete the workspace.",
+        "Owners cannot leave. Transfer ownership to another member or delete the organization.",
       );
     }
 
@@ -442,7 +507,7 @@ export class OrganizationService {
       .from(organizations)
       .where(eq(organizations.id, orgId))
       .limit(1);
-    if (!org) throw new NotFoundException("Workspace not found");
+    if (!org) throw new NotFoundException("Organization not found");
 
     const provided = confirmation.trim().toLowerCase();
     const matches =
@@ -450,7 +515,7 @@ export class OrganizationService {
       (org.slug ? provided === org.slug.trim().toLowerCase() : false);
     if (!matches) {
       throw new BadRequestException(
-        "Confirmation text does not match the workspace name",
+        "Confirmation text does not match the organization name",
       );
     }
 

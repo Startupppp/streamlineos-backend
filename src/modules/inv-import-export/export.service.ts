@@ -64,7 +64,7 @@ export class ExportService {
       .where(and(eq(invExportJobs.id, job.id), eq(invExportJobs.orgId, orgId)))
       .returning();
 
-    await this.cache.del(CACHE_KEYS.invExportJobsList(orgId, "*"));
+    await this.cache.invalidatePattern(`inv:export-jobs:list:${orgId}:*`);
 
     const result = updated ?? job;
     return { ...result, resultUrl: undefined };
@@ -88,7 +88,17 @@ export class ExportService {
 
     if (exportType === "stock" || exportType === "valuation") {
       return this.db
-        .select()
+        .select({
+          id: invStockLevels.id,
+          orgId: invStockLevels.orgId,
+          productVariantId: invStockLevels.productVariantId,
+          locationId: invStockLevels.locationId,
+          onHand: invStockLevels.onHand,
+          committed: invStockLevels.committed,
+          onOrder: invStockLevels.onOrder,
+          blockedQty: invStockLevels.blockedQty,
+          qualityHoldQty: invStockLevels.qualityHoldQty,
+        })
         .from(invStockLevels)
         .where(eq(invStockLevels.orgId, orgId))
         .limit(10000);
@@ -96,7 +106,16 @@ export class ExportService {
 
     if (exportType === "movements") {
       return this.db
-        .select()
+        .select({
+          id: invStockTransactions.id,
+          productVariantId: invStockTransactions.productVariantId,
+          locationId: invStockTransactions.locationId,
+          transactionType: invStockTransactions.transactionType,
+          quantityChange: invStockTransactions.quantityChange,
+          quantityBefore: invStockTransactions.quantityBefore,
+          quantityAfter: invStockTransactions.quantityAfter,
+          createdAt: invStockTransactions.createdAt,
+        })
         .from(invStockTransactions)
         .where(eq(invStockTransactions.orgId, orgId))
         .orderBy(desc(invStockTransactions.createdAt))
@@ -105,7 +124,13 @@ export class ExportService {
 
     if (exportType === "lots-serials") {
       return this.db
-        .select()
+        .select({
+          id: invLots.id,
+          productVariantId: invLots.productVariantId,
+          lotNumber: invLots.lotNumber,
+          status: invLots.status,
+          expiryDate: invLots.expiryDate,
+        })
         .from(invLots)
         .where(eq(invLots.orgId, orgId))
         .limit(10000);

@@ -198,7 +198,8 @@ export class PeriodsService {
       })
       .returning({ id: timesheetPeriods.id });
 
-    return created!.id;
+    if (!created) throw new Error("Failed to create timesheet period");
+    return created.id;
   }
 
   async getCurrent(u: CurrentUserContext) {
@@ -206,16 +207,18 @@ export class PeriodsService {
     const workWeekStart = settings?.workWeekStart ?? 1;
     const periodId = await this.findOrCreateCurrentPeriod(u.orgId, u.userId, workWeekStart);
 
-    const row = await this.getPeriodWithUser(u.orgId, periodId);
-    if (!row) throw new NotFoundException("Period not found");
+    const [row, periodEntries] = await Promise.all([
+      this.getPeriodWithUser(u.orgId, periodId),
+      this.db.query.timesheets.findMany({
+        where: and(
+          eq(timesheets.timesheetPeriodId, periodId),
+          eq(timesheets.orgId, u.orgId),
+        ),
+        orderBy: [desc(timesheets.date)],
+      }),
+    ]);
 
-    const periodEntries = await this.db.query.timesheets.findMany({
-      where: and(
-        eq(timesheets.timesheetPeriodId, periodId),
-        eq(timesheets.orgId, u.orgId),
-      ),
-      orderBy: [desc(timesheets.date)],
-    });
+    if (!row) throw new NotFoundException("Period not found");
 
     return { period: this.mapPeriod(row), entries: periodEntries };
   }
@@ -311,7 +314,8 @@ export class PeriodsService {
     });
 
     const updated = await this.getPeriodWithUser(u.orgId, periodId);
-    return this.mapPeriod(updated!);
+    if (!updated) throw new NotFoundException("Period not found after submit");
+    return this.mapPeriod(updated);
   }
 
   private async resolveApproverId(orgId: string, entries: { projectId: number | null; ticketId: number | null }[]): Promise<string | null> {
@@ -367,7 +371,8 @@ export class PeriodsService {
     });
 
     const updated = await this.getPeriodWithUser(u.orgId, periodId);
-    return this.mapPeriod(updated!);
+    if (!updated) throw new NotFoundException("Period not found after recall");
+    return this.mapPeriod(updated);
   }
 
   async reopenPeriod(u: CurrentUserContext, periodId: number) {
@@ -409,7 +414,8 @@ export class PeriodsService {
     });
 
     const updated = await this.getPeriodWithUser(u.orgId, periodId);
-    return this.mapPeriod(updated!);
+    if (!updated) throw new NotFoundException("Period not found after reopen");
+    return this.mapPeriod(updated);
   }
 
   async lockPeriod(u: CurrentUserContext, periodId: number) {
@@ -442,7 +448,8 @@ export class PeriodsService {
     });
 
     const updated = await this.getPeriodWithUser(u.orgId, periodId);
-    return this.mapPeriod(updated!);
+    if (!updated) throw new NotFoundException("Period not found after lock");
+    return this.mapPeriod(updated);
   }
 
   async unlockPeriod(u: CurrentUserContext, periodId: number) {
@@ -475,6 +482,7 @@ export class PeriodsService {
     });
 
     const updated = await this.getPeriodWithUser(u.orgId, periodId);
-    return this.mapPeriod(updated!);
+    if (!updated) throw new NotFoundException("Period not found after unlock");
+    return this.mapPeriod(updated);
   }
 }

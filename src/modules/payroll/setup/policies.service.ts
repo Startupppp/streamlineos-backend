@@ -375,28 +375,30 @@ export class PayrollPoliciesService {
     if (input.startMonth !== undefined) values.startMonth = input.startMonth;
 
     if (input.fxRates !== undefined && policy.activeVersionId) {
-      const activeVersion = await this.db.query.payrollPolicyVersions.findFirst(
-        {
-          where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+      const activeVersionId = policy.activeVersionId;
+      const fxRatesInput = input.fxRates;
+      await this.db.transaction(async (tx) => {
+        const activeVersion = await tx.query.payrollPolicyVersions.findFirst({
+          where: eq(payrollPolicyVersions.id, activeVersionId),
           columns: { config: true },
-        },
-      );
-      const rawCurrentConfig = activeVersion?.config;
-      const currentConfig: PayrollPolicyConfig =
-        rawCurrentConfig && typeof rawCurrentConfig === "object"
-          ? (rawCurrentConfig as PayrollPolicyConfig)
-          : ({} as PayrollPolicyConfig);
-      const fxRates = Object.fromEntries(
-        Object.entries(input.fxRates).map(([code, rate]) => [
-          code,
-          String(rate),
-        ]),
-      );
-      const nextConfig = { ...currentConfig, fxRates };
-      await this.db
-        .update(payrollPolicyVersions)
-        .set({ config: nextConfig })
-        .where(eq(payrollPolicyVersions.id, policy.activeVersionId));
+        });
+        const rawCurrentConfig = activeVersion?.config;
+        const currentConfig: PayrollPolicyConfig =
+          rawCurrentConfig && typeof rawCurrentConfig === "object"
+            ? (rawCurrentConfig as PayrollPolicyConfig)
+            : ({} as PayrollPolicyConfig);
+        const fxRates = Object.fromEntries(
+          Object.entries(fxRatesInput).map(([code, rate]) => [
+            code,
+            String(rate),
+          ]),
+        );
+        const nextConfig = { ...currentConfig, fxRates };
+        await tx
+          .update(payrollPolicyVersions)
+          .set({ config: nextConfig })
+          .where(eq(payrollPolicyVersions.id, activeVersionId));
+      });
     }
 
     if (Object.keys(values).length === 0) return policy;

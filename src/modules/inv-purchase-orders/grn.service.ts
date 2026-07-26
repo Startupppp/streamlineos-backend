@@ -14,8 +14,6 @@ import {
   invSerialNumbers,
   invQualityInspections,
   invStockTransactions,
-  invProductVariants,
-  invProducts,
   invLocations,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -98,54 +96,70 @@ export class GrnService {
 
     const grnNumber = await this.numSeq.next(orgId, "GRN");
 
-    for (const line of data.lines) {
-      const poLine = po.lines.find((l) => l.id === line.poLineId);
-      if (!poLine)
-        throw new BadRequestException(`PO line ${line.poLineId} not found`);
-
-      const remaining =
-        parseFloat(poLine.quantity) - parseFloat(poLine.quantityReceived);
-      const maxAllowed =
-        remaining * (1 + parseFloat(settings.overReceiptTolerancePct) / 100);
-
-      if (line.quantityReceived > maxAllowed + 0.0001) {
-        throw new BadRequestException(
-          `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
-        );
-      }
-
-      const trackingMethod = poLine.productVariant.product.trackingMethod;
-
-      if (trackingMethod === "SERIAL") {
-        const serials = line.serialNumbers ?? [];
-        if (serials.length !== line.quantityReceived) {
-          throw new BadRequestException(
-            `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
-          );
-        }
-
-        const existing = await this.db.query.invSerialNumbers.findMany({
-          where: and(
-            eq(invSerialNumbers.orgId, orgId),
-            eq(invSerialNumbers.productVariantId, poLine.productVariantId),
-            inArray(invSerialNumbers.serialNumber, serials),
-          ),
-          columns: { serialNumber: true, status: true },
-        });
-        const duplicates = existing.filter((s) => s.status !== "RETURNED");
-        if (duplicates.length > 0) {
-          throw new BadRequestException({
-            code: INV_ERRORS.SERIAL_ALREADY_USED,
-            serials: duplicates.map((s) => s.serialNumber),
-          });
-        }
-      }
-    }
+    const overReceiptTolerancePct = Number(settings.overReceiptTolerancePct);
 
     const lotMap = new Map<string, number>();
     const serialMap = new Map<string, number>();
 
     const grnId = await this.db.transaction(async (tx) => {
+      for (const line of data.lines) {
+        const poLine = po.lines.find((l) => l.id === line.poLineId);
+        if (!poLine)
+          throw new BadRequestException(`PO line ${line.poLineId} not found`);
+
+        const trackingMethod = poLine.productVariant.product.trackingMethod;
+
+        const [lockedLine] = await tx.execute<{
+          quantity: string;
+          quantity_received: string;
+        }>(sql`
+          SELECT quantity, quantity_received
+          FROM inv_po_lines
+          WHERE id = ${line.poLineId}
+            AND po_id = ${poId}
+          FOR UPDATE
+        `);
+        if (!lockedLine)
+          throw new BadRequestException(`PO line ${line.poLineId} not found`);
+
+        const quantity = Number(lockedLine.quantity);
+        const quantityReceived = Number(lockedLine.quantity_received);
+        const remaining = quantity - quantityReceived;
+        const maxAllowed =
+          remaining * (1 + overReceiptTolerancePct / 100);
+
+        if (line.quantityReceived > maxAllowed + 0.0001) {
+          throw new BadRequestException(
+            `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
+          );
+        }
+
+        if (trackingMethod === "SERIAL") {
+          const serials = line.serialNumbers ?? [];
+          if (serials.length !== line.quantityReceived) {
+            throw new BadRequestException(
+              `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
+            );
+          }
+
+          const existing = await tx.query.invSerialNumbers.findMany({
+            where: and(
+              eq(invSerialNumbers.orgId, orgId),
+              eq(invSerialNumbers.productVariantId, poLine.productVariantId),
+              inArray(invSerialNumbers.serialNumber, serials),
+            ),
+            columns: { serialNumber: true, status: true },
+          });
+          const duplicates = existing.filter((s) => s.status !== "RETURNED");
+          if (duplicates.length > 0) {
+            throw new BadRequestException({
+              code: INV_ERRORS.SERIAL_ALREADY_USED,
+              serials: duplicates.map((s) => s.serialNumber),
+            });
+          }
+        }
+      }
+
       const [grn] = await tx
         .insert(invGrns)
         .values({
@@ -159,12 +173,22 @@ export class GrnService {
         })
         .returning();
 
+      const acceptedMovements: Array<{
+        transactionType: string;
+        productVariantId: number;
+        locationId: number;
+        lotId: number | undefined;
+        serialId: number | undefined;
+        quantityDelta: string;
+        unitCost: string | undefined;
+      }> = [];
+
       for (const line of data.lines) {
         const poLine = po.lines.find((l) => l.id === line.poLineId)!;
         const trackingMethod = poLine.productVariant.product.trackingMethod;
 
         let resolvedLotId: number | undefined;
-        let resolvedSerialIds: number[] = [];
+        const resolvedSerialIds: number[] = [];
 
         if (trackingMethod === "LOT" && line.lotNumber) {
           const existing = await tx.query.invLots.findFirst({
@@ -259,7 +283,45 @@ export class GrnService {
           .set({
             quantityReceived: sql`${invPoLines.quantityReceived} + ${line.quantityReceived}`,
           })
-          .where(and(eq(invPoLines.id, line.poLineId), eq(invPoLines.poId, poId)));
+          .where(
+            and(
+              eq(invPoLines.id, line.poLineId),
+              eq(invPoLines.poId, poId),
+            ),
+          );
+
+        if (line.qualityStatus === "ACCEPTED") {
+          if (trackingMethod === "SERIAL" && line.serialNumbers?.length) {
+            for (const sn of line.serialNumbers) {
+              const serialId = serialMap.get(sn);
+              acceptedMovements.push({
+                transactionType: "GRN",
+                productVariantId: poLine.productVariantId,
+                locationId,
+                lotId: undefined,
+                serialId,
+                quantityDelta: "1.0000",
+                unitCost: poLine.unitCost ?? undefined,
+              });
+            }
+          } else {
+            const lotKey =
+              trackingMethod === "LOT" && line.lotNumber
+                ? `${poLine.productVariantId}:${line.lotNumber}`
+                : undefined;
+            const lotId = lotKey ? lotMap.get(lotKey) : undefined;
+
+            acceptedMovements.push({
+              transactionType: "GRN",
+              productVariantId: poLine.productVariantId,
+              locationId,
+              lotId,
+              serialId: undefined,
+              quantityDelta: line.quantityReceived.toFixed(4),
+              unitCost: poLine.unitCost ?? undefined,
+            });
+          }
+        }
       }
 
       const allLines = await tx.query.invPoLines.findMany({
@@ -274,60 +336,31 @@ export class GrnService {
           status: allReceived ? "RECEIVED" : "PARTIAL",
           updatedAt: new Date(),
         })
-        .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)));
+        .where(
+          and(
+            eq(invPurchaseOrders.id, poId),
+            eq(invPurchaseOrders.orgId, orgId),
+          ),
+        );
+
+      if (acceptedMovements.length > 0) {
+        await this.engine.executeInTx(tx, orgId, userId, {
+          idempotencyKey,
+          sourceType: "inv_grn",
+          sourceId: String(grn.id),
+          reason: `GRN: ${grnNumber}`,
+          movements: acceptedMovements,
+        });
+      }
 
       return grn.id;
     });
 
+    await this.engine.invalidateCaches(orgId);
+
     const acceptedLines = data.lines.filter(
       (l) => l.qualityStatus === "ACCEPTED",
     );
-    if (acceptedLines.length > 0) {
-      const movements = [];
-      for (const line of acceptedLines) {
-        const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-        const trackingMethod = poLine.productVariant.product.trackingMethod;
-
-        if (trackingMethod === "SERIAL" && line.serialNumbers?.length) {
-          for (const sn of line.serialNumbers) {
-            const serialId = serialMap.get(sn);
-            movements.push({
-              transactionType: "GRN",
-              productVariantId: poLine.productVariantId,
-              locationId,
-              lotId: undefined,
-              serialId,
-              quantityDelta: "1.0000",
-              unitCost: poLine.unitCost,
-            });
-          }
-        } else {
-          const lotKey =
-            trackingMethod === "LOT" && line.lotNumber
-              ? `${poLine.productVariantId}:${line.lotNumber}`
-              : undefined;
-          const lotId = lotKey ? lotMap.get(lotKey) : undefined;
-
-          movements.push({
-            transactionType: "GRN",
-            productVariantId: poLine.productVariantId,
-            locationId,
-            lotId,
-            serialId: undefined,
-            quantityDelta: line.quantityReceived.toFixed(4),
-            unitCost: poLine.unitCost,
-          });
-        }
-      }
-
-      await this.engine.execute(orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_grn",
-        sourceId: String(grnId),
-        reason: `GRN: ${grnNumber}`,
-        movements,
-      });
-    }
 
     let totalValue = 0;
     for (const line of acceptedLines) {
@@ -489,46 +522,62 @@ export class GrnService {
     if (txns.length === 0)
       throw new BadRequestException("No stock transactions found for this GRN");
 
-    for (const txn of txns) {
-      const reverseKey = `${idempotencyKey}:rev:${txn.id}`;
-      await this.engine.reverse(orgId, userId, {
-        idempotencyKey: reverseKey,
-        stockTransactionId: txn.id,
-        reason: data.reason,
-      });
-    }
-
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(
-        eq(invPurchaseOrders.id, grn.poId),
-        eq(invPurchaseOrders.orgId, orgId),
-      ),
-      with: { lines: true },
-    });
-
-    if (po) {
-      for (const grnLine of grn.lines) {
-        await this.db
-          .update(invPoLines)
-          .set({
-            quantityReceived: sql`GREATEST(0, ${invPoLines.quantityReceived} - ${grnLine.quantityReceived})`,
-          })
-          .where(and(eq(invPoLines.id, grnLine.poLineId), eq(invPoLines.poId, po.id)));
+    await this.db.transaction(async (tx) => {
+      for (let i = 0; i < txns.length; i++) {
+        const txn = txns[i]!;
+        const reverseKey = `${idempotencyKey}:rev:${txn.id}`;
+        await this.engine.reverseInTx(tx, orgId, userId, {
+          idempotencyKey: reverseKey,
+          stockTransactionId: txn.id,
+          reason: data.reason,
+        });
       }
 
-      const updatedLines = await this.db.query.invPoLines.findMany({
-        where: eq(invPoLines.poId, po.id),
+      const po = await tx.query.invPurchaseOrders.findFirst({
+        where: and(
+          eq(invPurchaseOrders.id, grn.poId),
+          eq(invPurchaseOrders.orgId, orgId),
+        ),
+        with: { lines: true },
       });
-      const anyReceived = updatedLines.some(
-        (l) => parseFloat(l.quantityReceived) > 0,
-      );
-      const newStatus = anyReceived ? "PARTIAL" : "SENT";
 
-      await this.db
-        .update(invPurchaseOrders)
-        .set({ status: newStatus, updatedAt: new Date() })
-        .where(and(eq(invPurchaseOrders.id, po.id), eq(invPurchaseOrders.orgId, orgId)));
-    }
+      if (po) {
+        for (const grnLine of grn.lines) {
+          await tx
+            .update(invPoLines)
+            .set({
+              quantityReceived: sql`GREATEST(0, ${invPoLines.quantityReceived} - ${grnLine.quantityReceived})`,
+            })
+            .where(
+              and(
+                eq(invPoLines.id, grnLine.poLineId),
+                eq(invPoLines.poId, po.id),
+              ),
+            );
+        }
+
+        const updatedLines = await tx.query.invPoLines.findMany({
+          where: eq(invPoLines.poId, po.id),
+        });
+        const anyReceived = updatedLines.some(
+          (l) => parseFloat(l.quantityReceived) > 0,
+        );
+        const newStatus = anyReceived ? "PARTIAL" : "SENT";
+
+        await tx
+          .update(invPurchaseOrders)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(
+            and(
+              eq(invPurchaseOrders.id, po.id),
+              eq(invPurchaseOrders.orgId, orgId),
+            ),
+          );
+      }
+
+    });
+
+    await this.engine.invalidateCaches(orgId);
 
     await this.cache.del(CACHE_KEYS.invPoDetail(orgId, grn.poId));
     await this.cache.invalidatePattern(`inv:po:list:${orgId}:*`);

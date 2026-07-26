@@ -73,7 +73,8 @@ export class BudgetsService {
       .from(timesheetBudgets)
       .leftJoin(projects, eq(timesheetBudgets.projectId, projects.id))
       .where(eq(timesheetBudgets.orgId, orgId))
-      .orderBy(desc(timesheetBudgets.createdAt));
+      .orderBy(desc(timesheetBudgets.createdAt))
+      .limit(100);
 
     if (rows.length === 0) return [];
 

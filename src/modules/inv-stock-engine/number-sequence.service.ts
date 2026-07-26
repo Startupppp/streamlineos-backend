@@ -22,6 +22,7 @@ const DOC_PREFIXES: Record<string, string> = {
   LOAD: "LOAD",
   RECALL: "RCL",
   INSPECTION: "QI",
+  INVOICE: "INV",
 };
 
 @Injectable()

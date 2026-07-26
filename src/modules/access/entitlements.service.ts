@@ -5,7 +5,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
-import { organizations, orgModules } from "../../db/schema";
+import { orgModules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -184,20 +184,15 @@ export class EntitlementsService {
   }
 
   async listModules(orgId: string): Promise<ModuleStatus[]> {
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-      columns: { enabledModules: true },
-    });
-    const orgArray = org?.enabledModules ?? null;
+    const map = await this.getModuleMap(orgId);
+    const hasConfig = Object.keys(map).length > 0;
     return MODULE_CATALOG.map((moduleKey): ModuleStatus => {
-      const orgName = MODULE_KEY_TO_ORG_MODULE[moduleKey];
-      if (!orgName) {
+      if (CORE_MODULE_KEYS.has(moduleKey))
         return { moduleKey, enabled: true, core: true };
-      }
-      if (orgArray === null) {
-        return { moduleKey, enabled: true };
-      }
-      return { moduleKey, enabled: orgArray.includes(orgName) };
+
+      if (!hasConfig) return { moduleKey, enabled: true };
+
+      return { moduleKey, enabled: map[moduleKey] ?? true };
     });
   }
 }

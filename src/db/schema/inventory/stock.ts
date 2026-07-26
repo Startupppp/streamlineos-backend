@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, decimal, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
@@ -27,7 +27,7 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   index("idx_inv_stock_location").on(table.locationId),
   index("idx_inv_stock_lot").on(table.lotId),
   index("idx_inv_stock_serial").on(table.serialId),
-  index("idx_inv_stock_levels_org_variant_loc").on(table.orgId, table.productVariantId, table.locationId),
+  uniqueIndex("uniq_inv_stock_levels_natural_key").on(table.orgId, table.productVariantId, table.locationId, sql`coalesce(${table.lotId}, 0)`, sql`coalesce(${table.serialId}, 0)`),
 ]);
 
 export const invStockTransactions = pgTable("inv_stock_transactions", {

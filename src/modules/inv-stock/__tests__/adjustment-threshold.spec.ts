@@ -9,6 +9,7 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
   const transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => {
     const tx = {
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }) }),
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
     };
     return fn(tx);
   });
@@ -25,6 +26,8 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
 function makeEngine() {
   return {
     execute: jest.fn().mockResolvedValue({ transactionIds: [1], levels: [] }),
+    executeInTx: jest.fn().mockResolvedValue({ transactionIds: [1], levels: [] }),
+    invalidateCaches: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -74,7 +77,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
     it("auto-posts when threshold is null", async () => {
       const { svc, engine } = buildService(null);
       await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-1");
-      expect(engine.execute).toHaveBeenCalledTimes(1);
+      expect(engine.executeInTx).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -82,13 +85,13 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
     it("auto-posts when totalAbsQty <= threshold", async () => {
       const { svc, engine } = buildService("100");
       await svc.createAdjustment("org1", "u1", { reason: "RECOUNT", lines: baseLines }, "idem-2");
-      expect(engine.execute).toHaveBeenCalledTimes(1);
+      expect(engine.executeInTx).toHaveBeenCalledTimes(1);
     });
 
     it("sets status to POSTED via engine after immediate post", async () => {
       const { svc, engine } = buildService("100");
       await svc.createAdjustment("org1", "u1", { reason: "RECOUNT", lines: baseLines }, "idem-3");
-      expect(engine.execute).toHaveBeenCalledWith("org1", "u1", expect.objectContaining({
+      expect(engine.executeInTx).toHaveBeenCalledWith(expect.anything(), "org1", "u1", expect.objectContaining({
         sourceType: "inv_adjustment",
       }));
     });
@@ -98,7 +101,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
     it("does NOT call engine when totalAbsQty > threshold", async () => {
       const { svc, engine } = buildService("5");
       await svc.createAdjustment("org1", "u1", { reason: "DAMAGE", lines: baseLines }, "idem-4");
-      expect(engine.execute).not.toHaveBeenCalled();
+      expect(engine.executeInTx).not.toHaveBeenCalled();
     });
 
     it("creates adjustment with PENDING_APPROVAL status when above threshold", async () => {

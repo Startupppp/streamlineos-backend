@@ -2,7 +2,6 @@ import { Controller, Get, Patch, Param, ParseIntPipe, Query, Body, UseGuards } f
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -10,7 +9,6 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { InvTraceabilityService } from "./inv-traceability.service";
 import { TraceabilityChainService } from "./traceability-chain.service";
-import { resolveTraceabilityScope } from "./traceability-scope";
 import {
   listLotsSchema,
   listSerialsSchema,
@@ -31,7 +29,6 @@ export class InvTraceabilityController {
   constructor(
     private readonly traceability: InvTraceabilityService,
     private readonly chain: TraceabilityChainService,
-    private readonly access: AccessService,
   ) {}
 
   @Get("lots")
@@ -41,7 +38,6 @@ export class InvTraceabilityController {
     @Query(new ZodValidationPipe(listLotsSchema)) filters: ListLotsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await resolveTraceabilityScope(this.access, u);
     return this.traceability.listLots(u.orgId, filters);
   }
 
@@ -73,7 +69,6 @@ export class InvTraceabilityController {
     @Query(new ZodValidationPipe(listSerialsSchema)) filters: ListSerialsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await resolveTraceabilityScope(this.access, u);
     return this.traceability.listSerials(u.orgId, filters);
   }
 

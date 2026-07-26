@@ -1,0 +1,58 @@
+import {
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { organizations, organizationMembers } from "../auth";
+import { portalAudienceEnum, portalInvitationStatusEnum } from "../enums";
+import { portalMemberships } from "./portal-memberships";
+
+export const portalInvitations = pgTable(
+  "portal_invitations",
+  {
+    portalInvitationId: text("portal_invitation_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    partyContactId: text("party_contact_id").notNull(),
+    audience: portalAudienceEnum("audience").notNull().default("CLIENT_PORTAL"),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    status: portalInvitationStatusEnum("status").notNull().default("PENDING"),
+    inviterMembershipId: integer("inviter_membership_id").references(
+      () => organizationMembers.id,
+      { onDelete: "set null" },
+    ),
+    acceptedPortalMembershipId: text("accepted_portal_membership_id").references(
+      () => portalMemberships.portalMembershipId,
+      { onDelete: "set null" },
+    ),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("uniq_portal_invitations_org_invitation").on(
+      table.organizationId,
+      table.portalInvitationId,
+    ),
+    uniqueIndex("uniq_portal_invitations_org_email_audience_pending")
+      .on(table.organizationId, table.email, table.audience)
+      .where(sql`status = 'PENDING'`),
+    index("idx_portal_invitations_org_status").on(
+      table.organizationId,
+      table.status,
+    ),
+  ],
+);

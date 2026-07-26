@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -17,8 +19,9 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 
+@RequireModule("projects")
 @Controller("timesheets/periods")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PeriodsController {
   constructor(private readonly periods: PeriodsService) {}
 

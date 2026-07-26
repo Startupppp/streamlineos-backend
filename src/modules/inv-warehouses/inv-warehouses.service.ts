@@ -11,6 +11,8 @@ function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, (c) => `\\${c}`);
 }
 
+const MAX_PAGE_LIMIT = 100;
+
 @Injectable()
 export class InvWarehousesService {
   constructor(
@@ -29,7 +31,7 @@ export class InvWarehousesService {
     return this._queryWarehouses(orgId, filters ?? {});
   }
 
-  private async _queryWarehouses(orgId: string, filters: ListWarehousesInput) {
+  private async _queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>) {
     const conds = [eq(invWarehouses.orgId, orgId)];
 
     if (filters.q) {
@@ -50,6 +52,10 @@ export class InvWarehousesService {
     if (filters.isDefault !== undefined) conds.push(eq(invWarehouses.isDefault, filters.isDefault));
     if (filters.country) conds.push(ilike(invWarehouses.country, filters.country));
     if (filters.city) conds.push(ilike(invWarehouses.city, filters.city));
+
+    const page = filters.page ?? 1;
+    const limit = Math.min(filters.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
+    const offset = (page - 1) * limit;
 
     const warehouses = await this.db
       .select({
@@ -73,7 +79,8 @@ export class InvWarehousesService {
       .from(invWarehouses)
       .where(and(...conds))
       .orderBy(asc(invWarehouses.name))
-      .limit(200);
+      .limit(limit)
+      .offset(offset);
 
     return warehouses.map((wh) => ({
       ...wh,
@@ -114,61 +121,76 @@ export class InvWarehousesService {
     const [wh] = await this.db.insert(invWarehouses).values({ orgId, createdBy: userId, ...data }).returning();
 
     await this.db.insert(invLocations).values([
-      { orgId, warehouseId: wh.id, name: "Main", code: "MAIN", locationType: "ZONE" },
-      { orgId, warehouseId: wh.id, name: "Receiving", code: "RECEIVING", locationType: "RECEIVING", isReceivable: true, isPickable: false },
-      { orgId, warehouseId: wh.id, name: "Shipping", code: "SHIPPING", locationType: "SHIPPING", isReceivable: false, isPickable: true },
-      { orgId, warehouseId: wh.id, name: "Quarantine", code: "QUARANTINE", locationType: "QUARANTINE", isReceivable: false, isPickable: false },
-      { orgId, warehouseId: wh.id, name: "Scrap", code: "SCRAP", locationType: "SCRAP", isReceivable: false, isPickable: false },
+      { orgId, warehouseId: wh!.id, name: "Main", code: "MAIN", locationType: "ZONE" },
+      { orgId, warehouseId: wh!.id, name: "Receiving", code: "RECEIVING", locationType: "RECEIVING", isReceivable: true, isPickable: false },
+      { orgId, warehouseId: wh!.id, name: "Shipping", code: "SHIPPING", locationType: "SHIPPING", isReceivable: false, isPickable: true },
+      { orgId, warehouseId: wh!.id, name: "Quarantine", code: "QUARANTINE", locationType: "QUARANTINE", isReceivable: false, isPickable: false },
+      { orgId, warehouseId: wh!.id, name: "Scrap", code: "SCRAP", locationType: "SCRAP", isReceivable: false, isPickable: false },
     ]);
 
     await this.cache.del(CACHE_KEYS.invWarehousesList(orgId));
-    return wh;
+    return wh!;
   }
 
+  // B1-01 BOLA: pre-deactivation stock check now includes eq(invLocations.orgId, orgId).
+  // B1-12: stock check + isDefault reset + update wrapped in one transaction.
   async updateWarehouse(orgId: string, warehouseId: number, data: UpdateWarehouseInput) {
-    if (data.isActive === false) {
-      const locations = await this.db
-        .select({ id: invLocations.id })
-        .from(invLocations)
-        .where(eq(invLocations.warehouseId, warehouseId));
-
-      if (locations.length > 0) {
-        const locationIds = locations.map(l => l.id);
-        const [stockRow] = await this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(invStockLevels)
+    const updated = await this.db.transaction(async (tx) => {
+      if (data.isActive === false) {
+        const locations = await tx
+          .select({ id: invLocations.id })
+          .from(invLocations)
           .where(and(
-            inArray(invStockLevels.locationId, locationIds),
-            gt(invStockLevels.onHand, "0")
+            eq(invLocations.warehouseId, warehouseId),
+            eq(invLocations.orgId, orgId),
           ));
-        if ((stockRow?.count ?? 0) > 0) {
-          throw new ConflictException("Cannot deactivate warehouse with existing stock");
+
+        if (locations.length > 0) {
+          const locationIds = locations.map((l) => l.id);
+          const [stockRow] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invStockLevels)
+            .where(and(
+              inArray(invStockLevels.locationId, locationIds),
+              gt(invStockLevels.onHand, "0"),
+            ));
+          if ((stockRow?.count ?? 0) > 0) {
+            throw new ConflictException("Cannot deactivate warehouse with existing stock");
+          }
         }
       }
-    }
 
-    if (data.isDefault) {
-      await this.db.update(invWarehouses)
-        .set({ isDefault: false })
-        .where(eq(invWarehouses.orgId, orgId));
-    }
+      if (data.isDefault) {
+        await tx.update(invWarehouses)
+          .set({ isDefault: false })
+          .where(eq(invWarehouses.orgId, orgId));
+      }
 
-    const [updated] = await this.db.update(invWarehouses)
-      .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Warehouse not found");
+      const [row] = await tx.update(invWarehouses)
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)))
+        .returning();
+      if (!row) throw new NotFoundException("Warehouse not found");
+      return row;
+    });
 
-    await this.cache.del(CACHE_KEYS.invWarehousesList(orgId));
-    await this.cache.del(CACHE_KEYS.invWarehouseDetail(orgId, warehouseId));
+    await Promise.all([
+      this.cache.del(CACHE_KEYS.invWarehousesList(orgId)),
+      this.cache.del(CACHE_KEYS.invWarehouseDetail(orgId, warehouseId)),
+    ]);
     return updated;
   }
 
-  async listLocations(orgId: string, warehouseId: number) {
+  // B1-13: Bounded to MAX_PAGE_LIMIT. Accepts optional {page, limit}.
+  // Return shape preserved (array) — full {data, pagination} envelope is a follow-up.
+  async listLocations(orgId: string, warehouseId: number, page = 1, limit = MAX_PAGE_LIMIT) {
+    const boundedLimit = Math.min(limit, MAX_PAGE_LIMIT);
+    const offset = (page - 1) * boundedLimit;
     return this.db.query.invLocations.findMany({
       where: and(eq(invLocations.warehouseId, warehouseId), eq(invLocations.orgId, orgId)),
       orderBy: (t, { asc: a }) => [a(t.code)],
-      limit: 200,
+      limit: boundedLimit,
+      offset,
     });
   }
 
@@ -186,7 +208,7 @@ export class InvWarehousesService {
     if (existing) throw new ConflictException("A location with this code already exists in this warehouse");
 
     const [loc] = await this.db.insert(invLocations).values({ orgId, warehouseId, ...data }).returning();
-    return loc;
+    return loc!;
   }
 
   async updateLocation(orgId: string, locationId: number, data: UpdateLocationInput) {

@@ -3565,6 +3565,33 @@ const PROJECT_PORTFOLIO_PERMISSIONS: Permission[] = [
   },
 ];
 
+const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
+  {
+    name: "projects:managed-products:view",
+    resource: "projects:managed-products",
+    action: "view",
+    description: "View managed products",
+  },
+  {
+    name: "projects:managed-products:create",
+    resource: "projects:managed-products",
+    action: "create",
+    description: "Create managed products",
+  },
+  {
+    name: "projects:managed-products:update",
+    resource: "projects:managed-products",
+    action: "update",
+    description: "Update managed products",
+  },
+  {
+    name: "projects:managed-products:delete",
+    resource: "projects:managed-products",
+    action: "delete",
+    description: "Delete managed products",
+  },
+];
+
 const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
   {
     name: "projects:workflow:view",
@@ -3821,6 +3848,90 @@ const SIGN_PERMISSIONS: Permission[] = [
   },
 ];
 
+const DIRECTORY_PERMISSIONS: Permission[] = [
+  {
+    name: "directory:people:view",
+    resource: "directory:people",
+    action: "view",
+    description: "View the org people directory",
+  },
+  {
+    name: "directory:people:create",
+    resource: "directory:people",
+    action: "create",
+    description: "Add people to the org directory",
+  },
+  {
+    name: "directory:people:update",
+    resource: "directory:people",
+    action: "update",
+    description: "Update people records in the org directory",
+  },
+  {
+    name: "directory:people:delete",
+    resource: "directory:people",
+    action: "delete",
+    description: "Soft-delete people from the org directory",
+  },
+  {
+    name: "workforce:workers:view",
+    resource: "workforce:workers",
+    action: "view",
+    description: "View workforce worker records",
+  },
+  {
+    name: "workforce:workers:manage",
+    resource: "workforce:workers",
+    action: "manage",
+    description: "Create and update workforce worker records",
+  },
+  {
+    name: "workforce:workers:terminate",
+    resource: "workforce:workers",
+    action: "terminate",
+    description: "Terminate workforce workers",
+  },
+];
+
+const PARTY_PERMISSIONS: Permission[] = [
+  {
+    name: "party:parties:view",
+    resource: "party:parties",
+    action: "view",
+    description: "View business parties (customers, vendors, partners)",
+  },
+  {
+    name: "party:parties:create",
+    resource: "party:parties",
+    action: "create",
+    description: "Create business parties",
+  },
+  {
+    name: "party:parties:update",
+    resource: "party:parties",
+    action: "update",
+    description: "Update business parties",
+  },
+  {
+    name: "party:parties:delete",
+    resource: "party:parties",
+    action: "delete",
+    description: "Soft-delete business parties",
+  },
+  {
+    name: "party:contacts:view",
+    resource: "party:contacts",
+    action: "view",
+    description: "View contacts linked to a business party",
+  },
+  {
+    name: "party:contacts:manage",
+    resource: "party:contacts",
+    action: "manage",
+    description: "Create, update, and delete contacts for a business party",
+  },
+];
+
 export const PERMISSIONS: Permission[] = [
   ...SIGN_PERMISSIONS,
   ...NOTIFICATIONS_PERMISSIONS,
@@ -3851,6 +3962,7 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_INCIDENTS_PERMISSIONS,
   ...PROJECT_FORMS_PERMISSIONS,
   ...PROJECT_PORTFOLIO_PERMISSIONS,
+  ...PROJECT_MANAGED_PRODUCTS_PERMISSIONS,
   ...PROJECT_TEAMS_PERMISSIONS,
   ...PROJECT_MEMBERS_PERMISSIONS,
   ...PROJECT_CUSTOMERS_PERMISSIONS,
@@ -3858,6 +3970,8 @@ export const PERMISSIONS: Permission[] = [
   ...FEEDBUCKET_PERMISSIONS,
   ...AI_SUMMARIES_PERMISSIONS,
   ...EXECUTIVE_BRIEF_PERMISSIONS,
+  ...DIRECTORY_PERMISSIONS,
+  ...PARTY_PERMISSIONS,
   {
     name: "mail:inbox:view",
     resource: "mail:inbox",
@@ -3936,12 +4050,31 @@ const EMPLOYEE_SELF_SERVICE = [
 
 const ALL_PERMISSIONS = PERMISSIONS.map((p) => p.name);
 
+const moduleScopedPermissions = (moduleKey: string): string[] =>
+  ALL_PERMISSIONS.filter((name) => name.split(":")[0] === moduleKey);
+
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   OWNER: ALL_PERMISSIONS,
 
   CEO: ALL_PERMISSIONS,
 
   ADMIN: ALL_PERMISSIONS,
+
+  MEMBER: [...EMPLOYEE_SELF_SERVICE],
+
+  HR_ADMIN: [
+    ...moduleScopedPermissions("hr"),
+    "directory:people:view",
+    "directory:people:create",
+    "directory:people:update",
+    "directory:people:delete",
+    "workforce:workers:view",
+    "workforce:workers:manage",
+    "workforce:workers:terminate",
+  ],
+  CRM_ADMIN: moduleScopedPermissions("crm"),
+  INVENTORY_ADMIN: moduleScopedPermissions("inventory"),
+  PRODUCT_MANAGEMENT_ADMIN: moduleScopedPermissions("projects"),
 
   HR: [
     ...EMPLOYEE_SELF_SERVICE,

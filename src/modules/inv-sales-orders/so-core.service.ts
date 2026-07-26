@@ -17,20 +17,21 @@ import { InventorySettingsService } from "../inv-stock-engine/inventory-settings
 import { ReservationService } from "../inv-stock-engine/reservation.service";
 import { JournalPostingService } from "../accounting/journal-posting.service";
 import { PlanLimitsService } from "../billing/plan-limits.service";
+import { addDec, mulDec } from "../inv-stock-engine/stock-engine.service";
 import type { ListSoInput, CreateSoInput, UpdateSoInput, CancelSoInput } from "./dto/inv-sales-orders.schemas";
 
 function computeSoTotals(lines: Array<{ quantity: number; unitPrice: string; taxRate: string }>) {
-  let subtotal = 0;
-  let taxAmount = 0;
+  let subtotal = "0";
+  let taxAmount = "0";
   for (const l of lines) {
-    const lineAmt = l.quantity * parseFloat(l.unitPrice);
-    subtotal += lineAmt;
-    taxAmount += lineAmt * (parseFloat(l.taxRate) / 100);
+    const lineAmt = mulDec(l.quantity.toFixed(4), l.unitPrice);
+    subtotal = addDec(subtotal, lineAmt);
+    taxAmount = addDec(taxAmount, mulDec(lineAmt, (parseFloat(l.taxRate) / 100).toFixed(10)));
   }
   return {
-    subtotal: subtotal.toFixed(4),
-    taxAmount: taxAmount.toFixed(4),
-    total: (subtotal + taxAmount).toFixed(4),
+    subtotal,
+    taxAmount,
+    total: addDec(subtotal, taxAmount),
   };
 }
 
@@ -111,23 +112,6 @@ export class SoCoreService {
     const soNumber = await this.numSeq.next(orgId, "SO");
     const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
 
-    const [so] = await this.db.insert(invSalesOrders).values({
-      orgId,
-      clientId: data.clientId,
-      soNumber,
-      orderDate: data.orderDate,
-      requiredDate: data.requiredDate,
-      shippingAddress: data.shippingAddress,
-      warehouseId: data.warehouseId,
-      subtotal,
-      taxAmount,
-      discount: "0",
-      total,
-      currency: data.currency,
-      notes: data.notes,
-      createdBy: userId,
-    }).returning();
-
     const variantIds = data.lines.map((l) => l.productVariantId);
     const variants = await this.db.query.invProductVariants.findMany({
       where: inArray(invProductVariants.id, variantIds),
@@ -135,18 +119,39 @@ export class SoCoreService {
     });
     const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
 
-    await this.db.insert(invSoLines).values(
-      data.lines.map((line) => ({
-        soId: so.id,
-        productVariantId: line.productVariantId,
-        quantity: line.quantity.toString(),
-        unitPrice: line.unitPrice,
-        taxRate: line.taxRate,
-        amount: (line.quantity * parseFloat(line.unitPrice)).toFixed(4),
-        costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-        lineOrder: line.lineOrder,
-      }))
-    );
+    const so = await this.db.transaction(async (tx) => {
+      const [header] = await (tx as Db).insert(invSalesOrders).values({
+        orgId,
+        clientId: data.clientId,
+        soNumber,
+        orderDate: data.orderDate,
+        requiredDate: data.requiredDate,
+        shippingAddress: data.shippingAddress,
+        warehouseId: data.warehouseId,
+        subtotal,
+        taxAmount,
+        discount: "0",
+        total,
+        currency: data.currency,
+        notes: data.notes,
+        createdBy: userId,
+      }).returning();
+
+      await (tx as Db).insert(invSoLines).values(
+        data.lines.map((line) => ({
+          soId: header.id,
+          productVariantId: line.productVariantId,
+          quantity: line.quantity.toString(),
+          unitPrice: line.unitPrice,
+          taxRate: line.taxRate,
+          amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
+          costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
+          lineOrder: line.lineOrder,
+        }))
+      );
+
+      return header;
+    });
 
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
     return so;
@@ -168,40 +173,45 @@ export class SoCoreService {
     if (data.currency !== undefined) patch.currency = data.currency;
     if (data.notes !== undefined) patch.notes = data.notes;
 
+    let variantCostMap = new Map<number, string>();
     if (data.lines) {
       const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
       patch.subtotal = subtotal;
       patch.taxAmount = taxAmount;
       patch.total = total;
 
-      await this.db.delete(invSoLines).where(eq(invSoLines.soId, soId));
-
       const variantIds = data.lines.map((l) => l.productVariantId);
       const variants = await this.db.query.invProductVariants.findMany({
         where: inArray(invProductVariants.id, variantIds),
         columns: { id: true, costPrice: true },
       });
-      const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
-
-      await this.db.insert(invSoLines).values(
-        data.lines.map((line) => ({
-          soId,
-          productVariantId: line.productVariantId,
-          quantity: line.quantity.toString(),
-          unitPrice: line.unitPrice,
-          taxRate: line.taxRate,
-          amount: (line.quantity * parseFloat(line.unitPrice)).toFixed(4),
-          costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-          lineOrder: line.lineOrder,
-        }))
-      );
+      variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
     }
 
-    if (Object.keys(patch).length > 0) {
-      await this.db.update(invSalesOrders)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
-    }
+    await this.db.transaction(async (tx) => {
+      if (data.lines) {
+        await (tx as Db).delete(invSoLines).where(eq(invSoLines.soId, soId));
+
+        await (tx as Db).insert(invSoLines).values(
+          (data.lines ?? []).map((line) => ({
+            soId,
+            productVariantId: line.productVariantId,
+            quantity: line.quantity.toString(),
+            unitPrice: line.unitPrice,
+            taxRate: line.taxRate,
+            amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
+            costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
+            lineOrder: line.lineOrder,
+          }))
+        );
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await (tx as Db).update(invSalesOrders)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+      }
+    });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -332,7 +342,7 @@ export class SoCoreService {
     return { locationId: anyMatch.locationId, lotId: anyMatch.lotId ?? undefined };
   }
 
-  async cancelSo(orgId: string, soId: number, userId: string, data: CancelSoInput) {
+  async cancelSo(orgId: string, soId: number, userId: string, _data: CancelSoInput) {
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
     });
@@ -352,13 +362,15 @@ export class SoCoreService {
       columns: { id: true },
     });
 
-    for (const res of reservations) {
-      await this.reservationService.releaseReservation(orgId, userId, res.id);
-    }
+    await this.db.transaction(async (tx) => {
+      for (const res of reservations) {
+        await this.reservationService.releaseReservationInTx(tx, orgId, userId, res.id);
+      }
 
-    await this.db.update(invSalesOrders)
-      .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+      await (tx as Db).update(invSalesOrders)
+        .set({ status: "CANCELLED", updatedAt: new Date() })
+        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+    });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidatePattern(`inv:so:list:${orgId}:*`);
@@ -381,7 +393,7 @@ export class SoCoreService {
 
     await this.planLimits.assertWithinLimit(orgId, "acctInvoices");
 
-    const invoiceNumber = await this.numSeq.next(orgId, "SO");
+    const invoiceNumber = await this.numSeq.next(orgId, "INVOICE");
     const lineItems = so.lines.map((l) => ({
       description: l.productVariant.product.name,
       quantity: parseFloat(l.quantity),

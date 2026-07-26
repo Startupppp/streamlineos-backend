@@ -19,7 +19,6 @@ import {
   ticketLabelMappings,
   ticketWatchers,
   workItemRelations,
-  timesheets,
   ticketChecklists,
   ticketChecklistItems,
   projectCustomFields,
@@ -136,11 +135,6 @@ export const ticketWatchersRelations = relations(ticketWatchers, ({ one }) => ({
 export const workItemRelationsRelations = relations(workItemRelations, ({ one }) => ({
   workItem: one(tickets, { fields: [workItemRelations.workItemId], references: [tickets.id] }),
   relatedWorkItem: one(tickets, { fields: [workItemRelations.relatedWorkItemId], references: [tickets.id] }),
-}));
-
-export const timesheetsRelations = relations(timesheets, ({ one }) => ({
-  ticket: one(tickets, { fields: [timesheets.ticketId], references: [tickets.id] }),
-  user: one(users, { fields: [timesheets.userId], references: [users.id] }),
 }));
 
 export const projectStatusesRelations = relations(projectStatuses, ({ one }) => ({

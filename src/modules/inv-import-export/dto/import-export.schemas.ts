@@ -13,7 +13,7 @@ export type PreviewImportInput = z.infer<typeof previewImportSchema>;
 
 export const createImportJobSchema = z.object({
   importType: z.enum(IMPORT_TYPES),
-  rows: z.array(z.record(z.string(), z.string())).min(1),
+  rows: z.array(z.record(z.string(), z.string())).min(1).max(10000),
 });
 export type CreateImportJobInput = z.infer<typeof createImportJobSchema>;
 

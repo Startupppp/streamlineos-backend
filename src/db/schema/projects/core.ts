@@ -19,6 +19,7 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { deals } from "../crm/deals";
+import { managedProducts } from "./managed-products";
 
 export const projects = pgTable(
   "projects",
@@ -39,6 +40,10 @@ export const projects = pgTable(
     dealId: integer("deal_id").references(() => deals.id, {
       onDelete: "set null",
     }),
+    managedProductId: integer("managed_product_id").references(
+      () => managedProducts.managedProductId,
+      { onDelete: "set null" },
+    ),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     settings: jsonb("settings").$type<{
       modules: {
@@ -62,6 +67,7 @@ export const projects = pgTable(
     index("idx_projects_org_status").on(table.orgId, table.status),
     index("idx_projects_manager").on(table.managerId),
     index("idx_projects_deal").on(table.dealId),
+    index("idx_projects_managed_product").on(table.managedProductId),
   ],
 );
 

@@ -14,6 +14,8 @@ import { NumberSequenceService } from "../inv-stock-engine/number-sequence.servi
 import { InventorySettingsService } from "../inv-stock-engine/inventory-settings.service";
 import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stock.schemas";
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 @Injectable()
 export class InvStockAdjustmentsService {
   constructor(
@@ -93,7 +95,7 @@ export class InvStockAdjustmentsService {
 
       await tx.insert(invStockAdjustmentLines).values(
         data.lines.map((line) => ({
-          adjustmentId: adj.id,
+          adjustmentId: adj!.id,
           productVariantId: line.productVariantId,
           locationId: line.locationId,
           quantityChange: line.quantityChange.toString(),
@@ -167,30 +169,37 @@ export class InvStockAdjustmentsService {
     ]);
   }
 
+  // B1-05/B1-11: engine.executeInTx + status transition to POSTED in one transaction.
+  // A crash can no longer leave stock moved with the record still at PENDING_POST.
+  // Both cache invalidations run in parallel after the tx commits (B1-11).
   private async _postAdjustment(
     orgId: string,
     userId: string,
     adj: { id: number; referenceNumber: string; reason: string; notes: string | null; lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }> },
     idempotencyKey: string,
   ) {
-    await this.engine.execute(orgId, userId, {
-      idempotencyKey,
-      sourceType: "inv_adjustment",
-      sourceId: adj.id.toString(),
-      reason: adj.reason,
-      movements: adj.lines.map((line) => ({
-        transactionType: parseFloat(line.quantityChange) > 0 ? "ADJUSTMENT_IN" : "ADJUSTMENT_OUT",
-        productVariantId: line.productVariantId,
-        locationId: line.locationId,
-        quantityDelta: line.quantityChange,
-      })),
+    await this.db.transaction(async (tx: Tx) => {
+      await this.engine.executeInTx(tx, orgId, userId, {
+        idempotencyKey,
+        sourceType: "inv_adjustment",
+        sourceId: adj.id.toString(),
+        reason: adj.reason,
+        movements: adj.lines.map((line) => ({
+          transactionType: parseFloat(line.quantityChange) > 0 ? "ADJUSTMENT_IN" as const : "ADJUSTMENT_OUT" as const,
+          productVariantId: line.productVariantId,
+          locationId: line.locationId,
+          quantityDelta: line.quantityChange,
+        })),
+      });
+
+      await tx.update(invStockAdjustments)
+        .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
+        .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
     });
 
-    await this.db.update(invStockAdjustments)
-      .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })
-      .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
-
-    await this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId));
-    await this.cache.invalidatePattern(CACHE_KEYS.invStockLevelPattern(orgId));
+    await Promise.all([
+      this.engine.invalidateCaches(orgId),
+      this.cache.invalidatePattern(CACHE_KEYS.invAdjustmentsListPattern(orgId)),
+    ]);
   }
 }

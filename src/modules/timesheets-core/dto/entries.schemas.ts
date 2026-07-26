@@ -24,7 +24,7 @@ export const createEntrySchema = z.object({
   isBillable: z.boolean().optional(),
   billingType: z.enum(["BILLABLE", "NON_BILLABLE", "FIXED"]).optional(),
   workLink: z.string().url().max(500).optional(),
-  source: z.string().optional(),
+  source: z.enum(["MANUAL", "TIMER", "API", "IMPORT"]).optional(),
 });
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 

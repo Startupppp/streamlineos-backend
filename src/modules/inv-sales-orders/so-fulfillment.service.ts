@@ -17,8 +17,6 @@ import { JournalPostingService } from "../accounting/journal-posting.service";
 import { SoCoreService } from "./so-core.service";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
 @Injectable()
 export class SoFulfillmentService {
   constructor(
@@ -284,6 +282,7 @@ export class SoFulfillmentService {
     const movements: Array<{
       transactionType: string;
       productVariantId: number;
+      soLineId: number;
       locationId: number;
       lotId?: number;
       serialId?: number;
@@ -297,9 +296,13 @@ export class SoFulfillmentService {
           if (locId === null || locId === undefined) {
             throw new BadRequestException(`Pick list line ${line.id} is missing a location`);
           }
+          if (line.soLineId === null) {
+            throw new BadRequestException(`Pick list line ${line.id} is missing a sales order line`);
+          }
           movements.push({
             transactionType: "SALE",
             productVariantId: line.productVariantId,
+            soLineId: line.soLineId,
             locationId: locId,
             lotId: line.lotId ?? undefined,
             serialId: line.serialId ?? undefined,
@@ -316,6 +319,7 @@ export class SoFulfillmentService {
         movements.push({
           transactionType: "SALE",
           productVariantId: line.productVariantId,
+          soLineId: line.id,
           locationId,
           lotId: reservation?.lotId ?? undefined,
           serialId: reservation?.serialId ?? undefined,
@@ -332,14 +336,6 @@ export class SoFulfillmentService {
       throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK, message: "Partial shipment is not allowed" });
     }
 
-    await this.engine.execute(orgId, userId, {
-      idempotencyKey,
-      sourceType: "inv_sales_order",
-      sourceId: String(soId),
-      reason: `Shipment for SO ${so.soNumber}`,
-      movements,
-    });
-
     const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT");
 
     const newStatus = isPartial ? "PARTIALLY_SHIPPED" : "SHIPPED";
@@ -347,17 +343,20 @@ export class SoFulfillmentService {
     const serialIds = movements.flatMap((m) => m.serialId !== undefined ? [m.serialId] : []);
 
     const lineShippedQtyMap = new Map<number, number>();
-    for (const line of so.lines) {
-      const shipped = movements
-        .filter((m) => {
-          const soLine = so.lines.find((sl) => sl.productVariantId === m.productVariantId);
-          return soLine?.id === line.id;
-        })
-        .reduce((sum, m) => sum + Math.abs(parseFloat(m.quantityDelta)), 0);
-      if (shipped > 0) lineShippedQtyMap.set(line.id, shipped);
+    for (const m of movements) {
+      const qty = Math.abs(parseFloat(m.quantityDelta));
+      lineShippedQtyMap.set(m.soLineId, (lineShippedQtyMap.get(m.soLineId) ?? 0) + qty);
     }
 
     const shipment = await this.db.transaction(async (tx) => {
+      await this.engine.executeInTx(tx, orgId, userId, {
+        idempotencyKey,
+        sourceType: "inv_sales_order",
+        sourceId: String(soId),
+        reason: `Shipment for SO ${so.soNumber}`,
+        movements,
+      });
+
       await this.reservationService.consumeReservationsBatch(
         tx,
         orgId,
@@ -399,7 +398,7 @@ export class SoFulfillmentService {
       await (tx as Db).insert(invShipmentLines).values(
         movements.map((m) => ({
           shipmentId: ship.id,
-          soLineId: so.lines.find((l) => l.productVariantId === m.productVariantId)?.id,
+          soLineId: m.soLineId,
           productVariantId: m.productVariantId,
           quantity: Math.abs(parseFloat(m.quantityDelta)).toFixed(4),
           lotId: m.lotId,
@@ -414,11 +413,11 @@ export class SoFulfillmentService {
       return ship;
     });
 
+    await this.engine.invalidateCaches(orgId);
+
     const cogsTotal = so.lines.reduce((sum, l) => {
-      const shipped = movements
-        .filter((m) => m.productVariantId === l.productVariantId)
-        .reduce((s, m) => s + Math.abs(parseFloat(m.quantityDelta)), 0);
-      return sum + shipped * parseFloat(l.costAtTime);
+      const shippedQty = lineShippedQtyMap.get(l.id) ?? 0;
+      return sum + shippedQty * parseFloat(l.costAtTime);
     }, 0);
 
     if (cogsTotal > 0) {

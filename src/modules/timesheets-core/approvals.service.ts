@@ -1,11 +1,14 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { logger } from "../../common/logger/logger.service";
 import { type Db } from "../../db/drizzle.module";
 import {
   timesheetPeriods,
@@ -25,6 +28,15 @@ import type {
   RejectPeriodInput,
 } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+
+function isExpectedApprovalSkip(error: unknown): boolean {
+  return (
+    error instanceof ConflictException ||
+    error instanceof NotFoundException ||
+    error instanceof ForbiddenException ||
+    error instanceof BadRequestException
+  );
+}
 
 @Injectable()
 export class ApprovalsService {
@@ -46,6 +58,7 @@ export class ApprovalsService {
 
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
     const scope = await resolveApprovalScope(this.access, u);
+    const limit = Math.min(query.limit, 100);
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, query.status),
@@ -88,7 +101,8 @@ export class ApprovalsService {
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
       .where(and(...conditions))
-      .orderBy(desc(timesheetPeriods.submittedAt));
+      .orderBy(desc(timesheetPeriods.submittedAt))
+      .limit(limit);
 
     return rows.map((r) => ({
       ...r,
@@ -273,15 +287,25 @@ export class ApprovalsService {
 
   async bulkApprove(u: CurrentUserContext, input: BulkApproveInput) {
     let approved = 0;
+    let skipped = 0;
     for (const periodId of input.periodIds) {
       try {
         await this.approveSinglePeriod(u, periodId);
         approved++;
-      } catch {
-        // skip non-approvable periods
+      } catch (error) {
+        if (isExpectedApprovalSkip(error)) {
+          skipped++;
+          continue;
+        }
+        logger.error("bulkApprove: failed to approve period", {
+          orgId: u.orgId,
+          periodId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
       }
     }
-    return { approved };
+    return { approved, skipped };
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
@@ -305,7 +329,7 @@ export class ApprovalsService {
       await tx
         .update(timesheetPeriods)
         .set({ status: "REJECTED", rejectedAt: now, rejectionReason: input.reason, updatedAt: now })
-        .where(inArray(timesheetPeriods.id, ids));
+        .where(and(eq(timesheetPeriods.orgId, u.orgId), inArray(timesheetPeriods.id, ids)));
 
       await tx
         .update(timesheets)

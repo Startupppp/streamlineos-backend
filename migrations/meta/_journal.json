@@ -120,6 +120,13 @@
       "when": 1784993499537,
       "tag": "0016_volatile_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784993499538,
+      "tag": "0301_inv_stock_levels_natural_key",
+      "breakpoints": true
     }
   ]
 }

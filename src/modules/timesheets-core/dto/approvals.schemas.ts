@@ -7,6 +7,7 @@ export const approvalsQuerySchema = z.object({
   userId: z.string().optional(),
   startDate: dateString.optional(),
   endDate: dateString.optional(),
+  limit: z.coerce.number().int().positive().max(100).default(50),
 });
 export type ApprovalsQuery = z.infer<typeof approvalsQuerySchema>;
 

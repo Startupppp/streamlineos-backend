@@ -47,6 +47,7 @@ import { ProjectsApprovalsModule } from "./modules/projects-approvals/projects-a
 import { ProjectsGovernanceModule } from "./modules/projects-governance/projects-governance.module";
 import { ProjectsMeetingsModule } from "./modules/projects-meetings/projects-meetings.module";
 import { ProjectsPortfoliosModule } from "./modules/projects-portfolios/projects-portfolios.module";
+import { ProjectsManagedProductsModule } from "./modules/projects-managed-products/managed-products.module";
 import { ProjectsTeamsModule } from "./modules/projects-teams/projects-teams.module";
 import { ProjectsCommentDraftsModule } from "./modules/projects-comment-drafts/projects-comment-drafts.module";
 import { ProjectsIncidentsModule } from "./modules/projects-incidents/projects-incidents.module";
@@ -155,6 +156,8 @@ import { FinanceControlsModule } from "./modules/finance-controls/finance-contro
 import { AccountingAiModule } from "./modules/accounting-ai/accounting-ai.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
+import { DirectoryModule } from "./modules/directory/directory.module";
+import { PartyModule } from "./modules/party/party.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -205,6 +208,7 @@ import { MeService } from "./me/me.service";
     OrganizationModule,
     BranchesModule,
     ProjectsPortfoliosModule,
+    ProjectsManagedProductsModule,
     ProjectsTeamsModule,
     ProjectsCommentDraftsModule,
     ProjectsExecutionModule,
@@ -241,6 +245,8 @@ import { MeService } from "./me/me.service";
     HrEnterpriseCompModule,
     HrEnterpriseOpsModule,
     HrDirectoryModule,
+    DirectoryModule,
+    PartyModule,
     HrPerformanceModule,
     HrPayrollModule,
     HrLifecycleModule,

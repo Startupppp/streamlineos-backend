@@ -1,7 +1,8 @@
-import { ConflictException, Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invVendorReturns, invVendorReturnLines, invSerialNumbers, invStockLevels,
+  invVendors, invPurchaseOrders, invGrns,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -67,6 +68,34 @@ export class VendorReturnsService {
   }
 
   async create(orgId: string, userId: string, data: CreateVendorReturnInput) {
+    const vendor = await this.db.query.invVendors.findFirst({
+      where: and(eq(invVendors.id, data.vendorId), eq(invVendors.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!vendor) throw new BadRequestException("Vendor not found in this organisation");
+
+    if (data.poId != null) {
+      const po = await this.db.query.invPurchaseOrders.findFirst({
+        where: and(
+          eq(invPurchaseOrders.id, data.poId),
+          eq(invPurchaseOrders.orgId, orgId),
+        ),
+        columns: { id: true },
+      });
+      if (!po) throw new BadRequestException("Purchase order not found in this organisation");
+    }
+
+    if (data.grnId != null) {
+      const grn = await this.db.query.invGrns.findFirst({
+        where: and(
+          eq(invGrns.id, data.grnId),
+          eq(invGrns.orgId, orgId),
+        ),
+        columns: { id: true },
+      });
+      if (!grn) throw new BadRequestException("GRN not found in this organisation");
+    }
+
     const returnNumber = await this.numSeq.next(orgId, "VENDOR_RETURN");
 
     const [ret] = await this.db.insert(invVendorReturns).values({
@@ -126,26 +155,19 @@ export class VendorReturnsService {
       })
     );
 
-    try {
-      await this.engine.execute(orgId, userId, {
+    const serialLines = ret.lines.filter(
+      (l): l is typeof l & { serialId: number } => l.serialId !== null
+    );
+
+    await this.db.transaction(async (tx) => {
+      await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_vendor_return",
         sourceId: String(returnId),
         reason: data.reason,
         movements: resolvedMovements,
       });
-    } catch (err) {
-      const isCompletedReplay =
-        err instanceof ConflictException &&
-        typeof (err as ConflictException & { idempotentResult?: unknown }).idempotentResult !== "undefined";
-      if (!isCompletedReplay) throw err;
-    }
 
-    const serialLines = ret.lines.filter(
-      (l): l is typeof l & { serialId: number } => l.serialId !== null
-    );
-
-    await this.db.transaction(async (tx) => {
       if (serialLines.length > 0) {
         await tx.update(invSerialNumbers)
           .set({ status: "RETURNED" })
@@ -156,6 +178,8 @@ export class VendorReturnsService {
         .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId, updatedAt: new Date() })
         .where(and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId), eq(invVendorReturns.status, "DRAFT")));
     });
+
+    await this.engine.invalidateCaches(orgId);
 
     await Promise.all([
       this.cache.invalidatePattern(`inv:vret:list:${orgId}:*`),
@@ -170,7 +194,10 @@ export class VendorReturnsService {
   ): Promise<number> {
     if (line.serialId) {
       const serial = await this.db.query.invSerialNumbers.findFirst({
-        where: eq(invSerialNumbers.id, line.serialId),
+        where: and(
+          eq(invSerialNumbers.id, line.serialId),
+          eq(invSerialNumbers.orgId, orgId),
+        ),
         columns: { currentLocationId: true },
       });
       if (serial?.currentLocationId) return serial.currentLocationId;

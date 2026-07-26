@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { invWebhooks, invWebhookEvents } from "../../db/schema";
 import { createHmac } from "crypto";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
+import { assertSafeWebhookUrl } from "./webhooks.service";
 
 @Injectable()
 export class InventoryWebhookEmitter {
@@ -36,6 +37,16 @@ export class InventoryWebhookEmitter {
 
           if (!event) continue;
 
+          // Re-validate immediately before the outbound fetch to close the
+          // DNS-rebinding / TOCTOU window between registration and delivery.
+          const isProd = process.env["NODE_ENV"] === "production";
+          let safeToFetch = true;
+          try {
+            await assertSafeWebhookUrl(webhook.url, isProd);
+          } catch {
+            safeToFetch = false;
+          }
+
           const payloadStr = JSON.stringify({
             id: event.id,
             type: eventType,
@@ -43,25 +54,34 @@ export class InventoryWebhookEmitter {
             timestamp: event.createdAt,
           });
           const sig = createHmac("sha256", webhook.secret).update(payloadStr).digest("hex");
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 5000);
 
           let status: "DELIVERED" | "FAILED" = "FAILED";
-          try {
-            const res = await fetch(webhook.url, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Inventory-Signature": `sha256=${sig}`,
-              },
-              body: payloadStr,
-              signal: controller.signal,
-            });
-            clearTimeout(timeout);
-            status = res.ok ? "DELIVERED" : "FAILED";
-          } catch {
-            clearTimeout(timeout);
-            status = "FAILED";
+          if (safeToFetch) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10_000);
+            try {
+              const res = await fetch(webhook.url, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Inventory-Signature": `sha256=${sig}`,
+                },
+                body: payloadStr,
+                signal: controller.signal,
+                redirect: "manual",
+              });
+              clearTimeout(timeout);
+              // Treat any redirect (3xx) as a failed delivery — we do not chase
+              // redirects because the redirect target may point at an internal address.
+              if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+                status = "FAILED";
+              } else {
+                status = res.ok ? "DELIVERED" : "FAILED";
+              }
+            } catch {
+              clearTimeout(timeout);
+              status = "FAILED";
+            }
           }
 
           await this.db
@@ -77,10 +97,12 @@ export class InventoryWebhookEmitter {
             .update(invWebhooks)
             .set({ lastDeliveryAt: new Date(), lastDeliveryStatus: status })
             .where(eq(invWebhooks.id, webhook.id));
-        } catch {
+        } catch (err) {
+          void err;
         }
       }
-    } catch {
+    } catch (err) {
+      void err;
     }
   }
 }

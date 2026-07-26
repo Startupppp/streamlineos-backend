@@ -31,7 +31,7 @@ export const teamTimesheetsQuerySchema = z.object({
   userId: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
 });
 
 export const billingSummaryQuerySchema = z.object({

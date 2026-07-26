@@ -120,7 +120,7 @@ export class ImportService {
       .where(and(eq(invImportJobs.id, job.id), eq(invImportJobs.orgId, orgId)))
       .returning();
 
-    await this.cache.del(CACHE_KEYS.invImportJobsList(orgId, "*"));
+    await this.cache.invalidatePattern(`inv:import-jobs:list:${orgId}:*`);
 
     return updated;
   }

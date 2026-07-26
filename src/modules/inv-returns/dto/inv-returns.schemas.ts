@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const listReturnsSchema = z.object({
-  status: z.string().optional(),
+  status: z.enum(["DRAFT", "POSTED", "CANCELLED"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -9,7 +9,6 @@ export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 
 const vendorReturnLineSchema = z.object({
   productVariantId: z.number().int().positive(),
-  locationId: z.number().int().positive(),
   quantity: z.number().positive(),
   reason: z.enum(["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]),
   lotId: z.number().int().positive().optional(),

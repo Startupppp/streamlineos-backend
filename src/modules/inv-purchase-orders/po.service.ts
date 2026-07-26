@@ -14,20 +14,22 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { InventorySettingsService } from "../inv-stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../inv-stock-engine/number-sequence.service";
+import { addDec, mulDec } from "../inv-stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
-  let subtotal = 0;
-  let taxAmount = 0;
+  let subtotal = "0.0000";
+  let taxAmount = "0.0000";
   for (const l of lines) {
-    const lineAmt = l.quantity * parseFloat(l.unitCost);
-    subtotal += lineAmt;
-    taxAmount += lineAmt * (parseFloat(l.taxRate) / 100);
+    const lineAmt = mulDec(String(l.quantity), l.unitCost);
+    subtotal = addDec(subtotal, lineAmt);
+    const lineTax = mulDec(lineAmt, mulDec(l.taxRate, "0.01"));
+    taxAmount = addDec(taxAmount, lineTax);
   }
   return {
-    subtotal: subtotal.toFixed(4),
-    taxAmount: taxAmount.toFixed(4),
-    total: (subtotal + taxAmount).toFixed(4),
+    subtotal,
+    taxAmount,
+    total: addDec(subtotal, taxAmount),
   };
 }
 
@@ -148,7 +150,7 @@ export class PoService {
         quantity: line.quantity.toString(),
         unitCost: line.unitCost,
         taxRate: line.taxRate,
-        amount: (line.quantity * parseFloat(line.unitCost)).toFixed(4),
+        amount: mulDec(String(line.quantity), line.unitCost),
         lineOrder: line.lineOrder,
       }))
     );
@@ -186,7 +188,7 @@ export class PoService {
           quantity: line.quantity.toString(),
           unitCost: line.unitCost,
           taxRate: line.taxRate,
-          amount: (line.quantity * parseFloat(line.unitCost)).toFixed(4),
+          amount: mulDec(String(line.quantity), line.unitCost),
           lineOrder: line.lineOrder,
         }))
       );
@@ -211,10 +213,20 @@ export class PoService {
     if (!po) throw new NotFoundException("Purchase order not found");
     if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be approved");
 
-    const newStatus = settings.requirePoApproval ? "SENT" : "SENT";
+    if (!settings.requirePoApproval) {
+      throw new BadRequestException(
+        "Purchase order approval is not required for this organisation; send the PO directly",
+      );
+    }
 
     const [updated] = await this.db.update(invPurchaseOrders)
-      .set({ status: newStatus, approvedBy: userId, approvedAt: new Date(), sentAt: new Date(), updatedAt: new Date() })
+      .set({
+        status: "SENT",
+        approvedBy: userId,
+        approvedAt: new Date(),
+        sentAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
       .returning();
 
