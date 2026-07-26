@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import {
   accessVersions,
   departmentMembers,
@@ -8,6 +8,7 @@ import {
   organizationMembers,
   rolePermissionGrants,
   roles,
+  userDelegations,
   userModuleAccess,
   userPermissions,
   userRoles,
@@ -56,6 +57,16 @@ function isMissingRelationError(error: unknown): boolean {
 
 export function broadest(a: DataScope, b: DataScope): DataScope {
   return SCOPE_RANK[a] >= SCOPE_RANK[b] ? a : b;
+}
+
+export interface DelegationRow {
+  permissions: string[];
+  status: string;
+  endsAt: Date;
+}
+
+export function isActiveDelegation(row: DelegationRow, now: Date): boolean {
+  return row.status === "ACTIVE" && row.endsAt > now;
 }
 
 export function moduleOf(permissionKey: string): string {
@@ -427,6 +438,27 @@ export class AccessService {
     });
     for (const userPerm of grantedUserPerms) {
       if (userPerm.permission?.name) merge(userPerm.permission.name, "all");
+    }
+
+    const delegationRows = await this.safeAccessTableRead(
+      () =>
+        this.db
+          .select({ permissions: userDelegations.permissions })
+          .from(userDelegations)
+          .where(
+            and(
+              eq(userDelegations.orgId, orgId),
+              eq(userDelegations.delegateeId, userId),
+              eq(userDelegations.status, "ACTIVE"),
+              gt(userDelegations.endsAt, new Date()),
+            ),
+          ),
+      [] as { permissions: string[] }[],
+    );
+    for (const row of delegationRows) {
+      for (const key of row.permissions) {
+        merge(key, "all");
+      }
     }
 
     return result;
