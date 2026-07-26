@@ -21,6 +21,7 @@ import {
 import { organizations, users } from "../auth";
 import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
+import { pmWorkspaces } from "./pm-workspaces";
 
 export const projects = pgTable(
   "projects",
@@ -45,7 +46,7 @@ export const projects = pgTable(
       () => managedProducts.managedProductId,
       { onDelete: "set null" },
     ),
-    pmWorkspaceId: text("pm_workspace_id"),
+    pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     settings: jsonb("settings").$type<{
       modules: {

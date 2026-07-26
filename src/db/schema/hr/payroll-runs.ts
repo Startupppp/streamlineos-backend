@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
@@ -7,6 +7,7 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { payrollPolicyVersions } from "./payroll-policies";
+import { hrPayrollInputPeriods } from "./payroll-inputs";
 
 export const payrollRuns = pgTable("payroll_runs", {
   id: serial("id").primaryKey(),
@@ -17,9 +18,9 @@ export const payrollRuns = pgTable("payroll_runs", {
   runType: text("run_type").default("REGULAR").notNull(),
   /** Source period/run for off-cycle, correction, F&F */
   sourcePeriodKey: text("source_period_key"),
-  sourceRunId: integer("source_run_id"),
+  sourceRunId: integer("source_run_id").references((): AnyPgColumn => payrollRuns.id, { onDelete: "set null" }),
   entityId: integer("entity_id"),
-  periodId: integer("period_id"),
+  periodId: integer("period_id").references(() => hrPayrollInputPeriods.id, { onDelete: "set null" }),
   calculationVersion: text("calculation_version").default("1.0.0"),
   statutoryRuleVersion: text("statutory_rule_version"),
   inputSnapshotHash: text("input_snapshot_hash"),

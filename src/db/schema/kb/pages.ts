@@ -10,11 +10,13 @@
   uniqueIndex,
   unique,
   customType,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { projects } from "../projects";
 import { kbSpaces } from "./spaces";
+import { kbArticles } from "../support/kb";
 
 export type KbPageContent =
   | Record<string, unknown>
@@ -42,7 +44,7 @@ export const kbPages = pgTable(
     createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
     lastEditedById: text("last_edited_by_id").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    deletedById: text("deleted_by_id"),
+    deletedById: text("deleted_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
     visibility: text("visibility").notNull().default("org").$type<"private" | "org" | "public">(),
@@ -55,10 +57,15 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
-    sourceArticleId: integer("source_article_id"),
+    sourceArticleId: integer("source_article_id").references(() => kbArticles.id, { onDelete: "set null" }),
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   },
   (table) => [
+    foreignKey({
+      columns: [table.parentPageId],
+      foreignColumns: [table.id],
+      name: "fk_kb_pages_parent",
+    }).onDelete("set null"),
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
     index("idx_kb_pages_project_id").on(table.projectId),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),

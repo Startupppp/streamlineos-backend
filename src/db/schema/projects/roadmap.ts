@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, timestamp, boolean, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations, users } from "../auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
@@ -21,7 +21,7 @@ export const roadmapItems = pgTable("roadmap_items", {
   targetQuarter: text("target_quarter"),
   sortOrder: integer("sort_order").default(0).notNull(),
   votes: integer("votes").default(0).notNull(),
-  createdBy: text("created_by"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -51,7 +51,7 @@ export const feedbackPosts = pgTable("feedback_posts", {
   submittedByName: text("submitted_by_name"),
   submittedByEmail: text("submitted_by_email"),
   linkedRoadmapItemId: integer("linked_roadmap_item_id").references(() => roadmapItems.id, { onDelete: "set null" }),
-  createdBy: text("created_by"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -80,7 +80,7 @@ export const changelogEntries = pgTable("changelog_entries", {
   isPublished: boolean("is_published").default(false).notNull(),
   linkedRoadmapItemId: integer("linked_roadmap_item_id").references(() => roadmapItems.id, { onDelete: "set null" }),
   publishedAt: timestamp("published_at"),
-  createdBy: text("created_by"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

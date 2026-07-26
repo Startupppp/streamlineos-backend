@@ -48,7 +48,7 @@ export const projectWhiteboards = pgTable(
     shareToken: text("share_token"),
     linkExpiresAt: timestamp("link_expires_at"),
     allowExport: boolean("allow_export").default(true).notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -76,7 +76,7 @@ export const projectWhiteboardShares = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     role: whiteboardShareRoleEnum("role").notNull().default("viewer"),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

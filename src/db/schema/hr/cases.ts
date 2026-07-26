@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
+import { hrTemplateRenders } from "./template-engine";
 
 export const hrCaseCategoryEnum = pgEnum("hr_case_category", [
   "grievance",
@@ -108,7 +109,7 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   caseId: integer("case_id").references(() => hrCases.id, { onDelete: "set null" }),
   employeeId: text("employee_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
   actionType: hrDisciplinaryActionTypeEnum("action_type").notNull(),
-  letterRenderId: integer("letter_render_id"),
+  letterRenderId: integer("letter_render_id").references(() => hrTemplateRenders.id, { onDelete: "set null" }),
   effectiveDate: timestamp("effective_date").notNull(),
   issuedBy: text("issued_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   note: text("note"),

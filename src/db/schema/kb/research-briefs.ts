@@ -1,5 +1,6 @@
 import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
+import { kbSpaces } from "./spaces";
 
 export const KB_RESEARCH_BRIEF_STATUSES = ["queued", "running", "completed", "failed"] as const;
 export type KbResearchBriefStatus = (typeof KB_RESEARCH_BRIEF_STATUSES)[number];
@@ -11,7 +12,7 @@ export const kbResearchBriefs = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     topic: text("topic").notNull(),
-    spaceId: integer("space_id"),
+    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "set null" }),
     status: text("status").$type<KbResearchBriefStatus>().notNull().default("queued"),
     jobId: integer("job_id"),
     sourceCount: integer("source_count").notNull().default(0),

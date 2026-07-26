@@ -14,6 +14,7 @@ import {
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
+import { hrJobLevels } from "./core-org";
 
 export const hrLegalHoldStatusEnum = pgEnum("hr_legal_hold_status", ["active", "released"]);
 
@@ -199,7 +200,7 @@ export const hrPositions = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
-    jobLevelId: integer("job_level_id"),
+    jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
     status: hrPositionStatusEnum("status").notNull().default("open"),
     budgetedCostCents: integer("budgeted_cost_cents"),
     effectiveFrom: timestamp("effective_from").notNull(),

@@ -2,6 +2,7 @@ import { pgTable, text, integer, serial, timestamp, unique, uniqueIndex, index }
 import { relations } from "drizzle-orm";
 import { organizations } from "../auth";
 import { departments } from "./employees";
+import { jobRequisitions } from "./requisitions";
 
 export const hrHeadcountPlans = pgTable(
   "hr_headcount_plans",
@@ -39,7 +40,7 @@ export const hrHiringPlanItems = pgTable(
     count: integer("count").notNull().default(1),
     targetQuarter: integer("target_quarter"),
     status: text("status").notNull().default("planned"),
-    linkedRequisitionId: integer("linked_requisition_id"),
+    linkedRequisitionId: integer("linked_requisition_id").references(() => jobRequisitions.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },

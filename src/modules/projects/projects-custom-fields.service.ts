@@ -70,7 +70,7 @@ export class ProjectsCustomFieldsService {
 
     await this.db
       .insert(ticketCustomFieldValues)
-      .values(data.values.map(({ fieldId, value }) => ({ ticketId, fieldId, value: value ?? null })))
+      .values(data.values.map(({ fieldId, value }) => ({ orgId, ticketId, fieldId, value: value ?? null })))
       .onConflictDoUpdate({
         target: [ticketCustomFieldValues.ticketId, ticketCustomFieldValues.fieldId],
         set: { value: sql`excluded.value` },

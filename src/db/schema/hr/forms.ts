@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
+import { hrWorkflowInstances } from "./workflow-engine";
 
 export const hrFormStatusEnum = pgEnum("hr_form_status", ["draft", "active", "archived"]);
 export const hrFormAudienceEnum = pgEnum("hr_form_audience", ["internal", "public"]);
@@ -103,7 +104,7 @@ export const hrFormSubmissions = pgTable(
     subjectEmployeeId: integer("subject_employee_id"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
     status: hrFormSubmissionStatusEnum("status").notNull().default("submitted"),
-    workflowInstanceId: integer("workflow_instance_id"),
+    workflowInstanceId: integer("workflow_instance_id").references(() => hrWorkflowInstances.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

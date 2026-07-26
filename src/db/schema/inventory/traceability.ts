@@ -33,7 +33,7 @@ export const invSerialNumbers = pgTable("inv_serial_numbers", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   serialNumber: text("serial_number").notNull(),
-  lotId: integer("lot_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   status: invSerialStatusEnum("status").default("IN_STOCK").notNull(),
   currentLocationId: integer("current_location_id").references(() => invLocations.id, { onDelete: "set null" }),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),

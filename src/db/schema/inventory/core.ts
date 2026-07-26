@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -35,6 +35,7 @@ export const invCategories = pgTable("inv_categories", {
   unique("uniq_inv_categories_org_id").on(table.orgId, table.id),
   index("idx_inv_categories_org").on(table.orgId),
   index("idx_inv_categories_parent").on(table.parentCategoryId),
+  foreignKey({ columns: [table.parentCategoryId], foreignColumns: [table.id], name: "fk_inv_categories_parent" }).onDelete("set null"),
 ]);
 
 export const invProducts = pgTable("inv_products", {

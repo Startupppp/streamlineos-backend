@@ -4,6 +4,7 @@ import { invReservationStatusEnum } from "../enums";
 import { organizations } from "../auth";
 import { invProductVariants } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
+import { invLots, invSerialNumbers } from "./traceability";
 
 export const invStockReservations = pgTable("inv_stock_reservations", {
   id: serial("id").primaryKey(),
@@ -14,8 +15,8 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "set null" }),
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   reservedQty: decimal("reserved_qty", { precision: 18, scale: 4 }).notNull(),
   status: invReservationStatusEnum("status").default("ACTIVE").notNull(),
   expiresAt: timestamp("expires_at"),

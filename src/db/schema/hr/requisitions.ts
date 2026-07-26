@@ -1,5 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
+import { jobPostings } from "./hiring";
 
 export const jobRequisitions = pgTable("job_requisitions", {
   id: serial("id").primaryKey(),
@@ -20,7 +21,7 @@ export const jobRequisitions = pgTable("job_requisitions", {
   rejectionReason: text("rejection_reason"),
   justification: text("justification"),
   targetDate: text("target_date"),
-  linkedJobId: integer("linked_job_id"),
+  linkedJobId: integer("linked_job_id").references(() => jobPostings.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

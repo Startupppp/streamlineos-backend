@@ -70,6 +70,7 @@ export const tickets = pgTable("tickets", {
 
 export const ticketAssignees = pgTable("ticket_assignees", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
@@ -124,6 +125,7 @@ export const ticketLabels = pgTable("ticket_labels", {
 
 export const ticketLabelMappings = pgTable("ticket_label_mappings", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   labelId: integer("label_id").references(() => ticketLabels.id, { onDelete: "cascade" }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -133,6 +135,7 @@ export const ticketLabelMappings = pgTable("ticket_label_mappings", {
 
 export const ticketWatchers = pgTable("ticket_watchers", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -143,6 +146,7 @@ export const ticketWatchers = pgTable("ticket_watchers", {
 
 export const workItemRelations = pgTable("work_item_relations", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   workItemId: integer("work_item_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   relatedWorkItemId: integer("related_work_item_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   relationType: workItemRelationTypeEnum("relation_type").notNull(),
@@ -167,6 +171,7 @@ export const ticketChecklists = pgTable("ticket_checklists", {
 
 export const ticketChecklistItems = pgTable("ticket_checklist_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   checklistId: integer("checklist_id").references(() => ticketChecklists.id, { onDelete: "cascade" }).notNull(),
   text: text("text").notNull(),
   isCompleted: boolean("is_completed").default(false).notNull(),
@@ -196,6 +201,7 @@ export const projectCustomFields = pgTable("project_custom_fields", {
 
 export const ticketCustomFieldValues = pgTable("ticket_custom_field_values", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   fieldId: integer("field_id").references(() => projectCustomFields.id, { onDelete: "cascade" }).notNull(),
   value: text("value"),
@@ -226,6 +232,7 @@ export const projectReleases = pgTable("project_releases", {
 
 export const releaseTickets = pgTable("release_tickets", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   releaseId: integer("release_id").references(() => projectReleases.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   addedAt: timestamp("added_at").defaultNow().notNull(),
@@ -252,6 +259,7 @@ export const projectWebhooks = pgTable("project_webhooks", {
 
 export const webhookDeliveries = pgTable("webhook_deliveries", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   webhookId: integer("webhook_id").notNull().references(() => projectWebhooks.id, { onDelete: "cascade" }),
   event: varchar("event", { length: 100 }).notNull(),
   payload: jsonb("payload"),
@@ -270,7 +278,7 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
 export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
   id: serial("id").primaryKey(),
   commentId: integer("comment_id").notNull().references(() => ticketComments.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   emoji: varchar("emoji", { length: 20 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -282,6 +290,7 @@ export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
 
 export const ticketRelatedLinks = pgTable("ticket_related_links", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
   url: text("url").notNull(),
   label: text("label"),
@@ -307,7 +316,7 @@ export const projectAutomations = pgTable("project_automations", {
     type: "set_status" | "set_assignee" | "set_priority" | "add_label" | "add_comment";
     value: string;
   }>>().notNull().default([]),
-  createdBy: text("created_by"),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

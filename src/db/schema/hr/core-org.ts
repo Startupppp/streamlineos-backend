@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
   unique,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -53,7 +54,7 @@ export const hrTeams = pgTable("hr_teams", {
   code: text("code"),
   description: text("description"),
   leadUserId: text("lead_user_id").references(() => users.id, { onDelete: "set null" }),
-  parentTeamId: integer("parent_team_id"),
+  parentTeamId: integer("parent_team_id").references((): AnyPgColumn => hrTeams.id, { onDelete: "set null" }),
   isActive: boolean("is_active").default(true).notNull(),
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

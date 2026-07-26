@@ -127,6 +127,7 @@ export const crmOrganizations = pgTable("crm_organizations", {
   index("idx_crm_organizations_org").on(table.orgId),
   index("idx_crm_organizations_parent").on(table.orgId, table.parentId),
   foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
   unique("uniq_crm_organizations_org_id").on(table.orgId, table.id),
 ]);
 
@@ -156,6 +157,7 @@ export const contacts = pgTable("contacts", {
   index("idx_contacts_organization").on(table.organizationId),
   index("idx_contacts_name_email").on(table.orgId, table.name, table.email),
   unique("uniq_contacts_org_id").on(table.orgId, table.id),
+  foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
 ]);
 
 export const clientOpportunities = pgTable("client_opportunities", {

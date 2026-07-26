@@ -38,7 +38,7 @@ export const supportQueues = pgTable(
     filter: jsonb("filter").$type<Record<string, unknown>>().default({}).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     isDefault: boolean("is_default").default(false).notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
@@ -119,7 +119,7 @@ export const supportTicketLinks = pgTable(
     ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
     linkedTicketId: integer("linked_ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
     relation: supportTicketLinkRelationEnum("relation").notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

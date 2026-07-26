@@ -10,7 +10,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations } from "../auth";
+import { organizations, users } from "../auth";
 
 export interface RoutingRuleCondition {
   field: string;
@@ -36,7 +36,7 @@ export const supportMacros = pgTable(
     visibility: text("visibility").default("org").notNull(),
     actions: jsonb("actions").$type<MacroActions>().default({}).notNull(),
     usageCount: integer("usage_count").default(0).notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
@@ -53,14 +53,14 @@ export const supportRoutingRules = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
     conditions: jsonb("conditions").$type<RoutingRuleCondition[]>().default([]).notNull(),
-    assigneeId: text("assignee_id"),
+    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     setPriority: text("set_priority"),
     assignmentMode: text("assignment_mode").default("static").notNull(),
     candidateAgentIds: jsonb("candidate_agent_ids").$type<string[]>().default([]).notNull(),
     requiredSkills: jsonb("required_skills").$type<string[]>().default([]).notNull(),
     isEnabled: boolean("is_enabled").default(true).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },

@@ -10,6 +10,7 @@ import {
   unique,
   uniqueIndex,
   pgEnum,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -63,7 +64,7 @@ export const hrPolicies = pgTable(
     description: text("description"),
     status: hrPolicyStatusEnum("status").default("draft").notNull(),
     version: integer("version").default(1).notNull(),
-    parentPolicyId: integer("parent_policy_id"),
+    parentPolicyId: integer("parent_policy_id").references((): AnyPgColumn => hrPolicies.id, { onDelete: "set null" }),
     effectiveFrom: date("effective_from").notNull(),
     effectiveTo: date("effective_to"),
     rules: jsonb("rules").$type<Record<string, unknown>>().notNull(),

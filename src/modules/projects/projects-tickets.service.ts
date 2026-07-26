@@ -148,6 +148,7 @@ export class ProjectsTicketsService {
       if (allAssigneeIds.size > 0) {
         await tx.insert(ticketAssignees).values(
           Array.from(allAssigneeIds).map((userId) => ({
+            orgId: u.orgId,
             ticketId: created.id,
             userId,
             assignedBy: u.userId,
@@ -159,6 +160,7 @@ export class ProjectsTicketsService {
       allAssigneeIds.forEach((id) => watcherIds.add(id));
       await tx.insert(ticketWatchers).values(
         Array.from(watcherIds).map((userId) => ({
+          orgId: u.orgId,
           ticketId: created.id,
           userId,
         })),
@@ -280,7 +282,7 @@ export class ProjectsTicketsService {
 
       await tx
         .insert(ticketWatchers)
-        .values({ ticketId: created.id, userId: actingUserId });
+        .values({ orgId, ticketId: created.id, userId: actingUserId });
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,
@@ -463,7 +465,7 @@ export class ProjectsTicketsService {
       .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
 
     await Promise.all([
-      this.syncAssignees(ticketId, actingUserId, input),
+      this.syncAssignees(orgId, ticketId, actingUserId, input),
       this.activity
         .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
           title: input.title,
@@ -530,6 +532,7 @@ export class ProjectsTicketsService {
   }
 
   private async syncAssignees(
+    orgId: string,
     ticketId: number,
     actingUserId: string,
     input: UpdateTicketInput,
@@ -544,6 +547,7 @@ export class ProjectsTicketsService {
       if (allIds.size > 0) {
         await this.db.insert(ticketAssignees).values(
           Array.from(allIds).map((userId) => ({
+            orgId,
             ticketId,
             userId,
             assignedBy: actingUserId,
@@ -560,6 +564,7 @@ export class ProjectsTicketsService {
       const newAssigneeId = resolveAssigneeId(input.assigneeId);
       if (newAssigneeId) {
         await this.db.insert(ticketAssignees).values({
+          orgId,
           ticketId,
           userId: newAssigneeId,
           assignedBy: actingUserId,

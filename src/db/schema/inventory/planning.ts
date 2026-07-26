@@ -4,6 +4,7 @@ import { invAiInsightStatusEnum } from "../enums";
 import { organizations } from "../auth";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
+import { invVendors } from "./purchase-orders";
 
 export const invReorderRules = pgTable("inv_reorder_rules", {
   id: serial("id").primaryKey(),
@@ -13,7 +14,7 @@ export const invReorderRules = pgTable("inv_reorder_rules", {
   minQty: decimal("min_qty", { precision: 18, scale: 4 }).notNull(),
   maxQty: decimal("max_qty", { precision: 18, scale: 4 }),
   reorderQty: decimal("reorder_qty", { precision: 18, scale: 4 }),
-  vendorId: integer("vendor_id"),
+  vendorId: integer("vendor_id").references(() => invVendors.id, { onDelete: "set null" }),
   leadTimeDays: integer("lead_time_days"),
   safetyStock: decimal("safety_stock", { precision: 18, scale: 4 }).default("0"),
   isActive: boolean("is_active").default(true).notNull(),

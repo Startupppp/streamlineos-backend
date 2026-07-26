@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
 import { departments } from "./employees";
+import { hrLocations } from "./core-org";
 
 // ─── Pack 1: Time Clock Devices ─────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export const hrTimeDevices = pgTable(
     name: text("name").notNull(),
     serialNumber: text("serial_number").notNull(),
     type: hrTimeDeviceTypeEnum("type").notNull(),
-    locationId: integer("location_id"),
+    locationId: integer("location_id").references(() => hrLocations.id, { onDelete: "set null" }),
     status: hrTimeDeviceStatusEnum("status").default("active").notNull(),
     lastSyncAt: timestamp("last_sync_at"),
     effectiveFrom: date("effective_from"),

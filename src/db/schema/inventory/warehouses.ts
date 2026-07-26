@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invLocationTypeEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -48,6 +48,7 @@ export const invLocations = pgTable("inv_locations", {
   index("idx_inv_locations_org").on(table.orgId),
   index("idx_inv_locations_warehouse").on(table.warehouseId),
   index("idx_inv_locations_parent").on(table.parentLocationId),
+  foreignKey({ columns: [table.parentLocationId], foreignColumns: [table.id], name: "fk_inv_locations_parent" }).onDelete("set null"),
 ]);
 
 export const invWarehousesRelations = relations(invWarehouses, ({ one, many }) => ({

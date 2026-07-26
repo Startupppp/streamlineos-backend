@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   pgEnum,
   unique,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -64,7 +65,7 @@ export const hrAutomationRuns = pgTable(
     actionResults: jsonb("action_results").$type<HrActionResult[]>(),
     error: text("error"),
     durationMs: integer("duration_ms"),
-    triggeredByRunId: integer("triggered_by_run_id"),
+    triggeredByRunId: integer("triggered_by_run_id").references((): AnyPgColumn => hrAutomationRuns.id, { onDelete: "set null" }),
     depth: integer("depth").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

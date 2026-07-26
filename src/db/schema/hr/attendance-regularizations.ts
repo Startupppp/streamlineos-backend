@@ -1,5 +1,6 @@
 import { pgTable, text, serial, timestamp, date, integer, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../auth";
+import { attendance } from "./attendance";
 
 export const hrAttendanceRegularizations = pgTable("hr_attendance_regularizations", {
   id: serial("id").primaryKey(),
@@ -16,7 +17,7 @@ export const hrAttendanceRegularizations = pgTable("hr_attendance_regularization
   rejectedBy: text("rejected_by").references(() => users.id),
   rejectedAt: timestamp("rejected_at"),
   rejectionReason: text("rejection_reason"),
-  attendanceId: integer("attendance_id"),
+  attendanceId: integer("attendance_id").references(() => attendance.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

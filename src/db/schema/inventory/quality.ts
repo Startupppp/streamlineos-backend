@@ -7,6 +7,7 @@ import {
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
 import { invLocations } from "./warehouses";
+import { invLots, invSerialNumbers } from "./traceability";
 
 export const invQualityInspections = pgTable("inv_quality_inspections", {
   id: serial("id").primaryKey(),
@@ -33,8 +34,8 @@ export const invQualityInspectionLines = pgTable("inv_quality_inspection_lines",
   id: serial("id").primaryKey(),
   inspectionId: integer("inspection_id").references(() => invQualityInspections.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   result: text("result"),
   notes: text("notes"),
@@ -49,8 +50,8 @@ export const invQualityHolds = pgTable("inv_quality_holds", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   locationId: integer("location_id").references(() => invLocations.id),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   reason: text("reason").notNull(),
   status: invQualityHoldStatusEnum("status").default("ACTIVE").notNull(),
@@ -86,8 +87,8 @@ export const invRecallLines = pgTable("inv_recall_lines", {
   id: serial("id").primaryKey(),
   recallId: integer("recall_id").references(() => invRecallEvents.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   status: text("status").default("OPEN").notNull(),
 }, (table) => [
   index("idx_inv_recall_lines_recall").on(table.recallId),

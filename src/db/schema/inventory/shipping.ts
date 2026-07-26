@@ -4,6 +4,9 @@ import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "
 import { organizations, users } from "../auth";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
+import { invSalesOrders, invSoLines } from "./sales-orders";
+import { invLots, invSerialNumbers } from "./traceability";
+import { invStockTransfers } from "./stock";
 
 export const invCarriers = pgTable("inv_carriers", {
   id: serial("id").primaryKey(),
@@ -24,7 +27,7 @@ export const invShipments = pgTable("inv_shipments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   shipmentNumber: text("shipment_number").notNull(),
-  soId: integer("so_id"),
+  soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "set null" }),
   carrierId: integer("carrier_id").references(() => invCarriers.id, { onDelete: "set null" }),
   trackingNumber: text("tracking_number"),
@@ -44,11 +47,11 @@ export const invShipments = pgTable("inv_shipments", {
 export const invShipmentLines = pgTable("inv_shipment_lines", {
   id: serial("id").primaryKey(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "cascade" }).notNull(),
-  soLineId: integer("so_line_id"),
+  soLineId: integer("so_line_id").references(() => invSoLines.id, { onDelete: "set null" }),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_inv_ship_lines_ship").on(table.shipmentId),
   index("idx_inv_shipment_lines_variant").on(table.productVariantId),
@@ -77,8 +80,8 @@ export const invPackageLines = pgTable("inv_package_lines", {
   id: serial("id").primaryKey(),
   packageId: integer("package_id").references(() => invPackages.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
-  lotId: integer("lot_id"),
-  serialId: integer("serial_id"),
+  lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
+  serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
 }, (table) => [
   index("idx_inv_pkg_lines_pkg").on(table.packageId),
@@ -110,7 +113,7 @@ export const invLoadLines = pgTable("inv_load_lines", {
   id: serial("id").primaryKey(),
   loadId: integer("load_id").references(() => invLoads.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
-  transferId: integer("transfer_id"),
+  transferId: integer("transfer_id").references(() => invStockTransfers.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_inv_load_lines_load").on(table.loadId),
 ]);

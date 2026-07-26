@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../enums";
 import { organizations, users } from "../auth";
@@ -15,7 +15,7 @@ export const payrollPolicies = pgTable("payroll_policies", {
   payDay: integer("pay_day").default(28).notNull(),
   employeeCount: integer("employee_count"),
   startMonth: text("start_month").notNull(),
-  activeVersionId: integer("active_version_id"),
+  activeVersionId: integer("active_version_id").references((): AnyPgColumn => payrollPolicyVersions.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

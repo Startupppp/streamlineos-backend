@@ -22,6 +22,7 @@ interface ActiveEndpoint {
   id: number;
   url: string;
   secret: string;
+  orgId: string;
 }
 
 @Injectable()
@@ -43,6 +44,7 @@ export class ProjectsWebhooksDispatchService {
         id: projectWebhooks.id,
         url: projectWebhooks.url,
         secret: projectWebhooks.secret,
+        orgId: projectWebhooks.orgId,
         events: projectWebhooks.events,
       })
       .from(projectWebhooks)
@@ -63,7 +65,7 @@ export class ProjectsWebhooksDispatchService {
     await Promise.allSettled(
       active.map((row) =>
         this.deliverWithRetry(
-          { id: row.id, url: row.url, secret: row.secret ?? "" },
+          { id: row.id, url: row.url, secret: row.secret ?? "", orgId: row.orgId },
           eventName,
           payload,
         ),
@@ -128,6 +130,7 @@ export class ProjectsWebhooksDispatchService {
 
     try {
       await this.db.insert(webhookDeliveries).values({
+        orgId: endpoint.orgId,
         webhookId: endpoint.id,
         event: eventName,
         payload,
@@ -213,6 +216,7 @@ export class ProjectsWebhooksDispatchService {
     }
 
     await this.db.insert(webhookDeliveries).values({
+      orgId,
       webhookId,
       event: "webhook.test",
       payload: testPayload,

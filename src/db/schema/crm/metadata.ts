@@ -76,7 +76,7 @@ export const crmValidationRules = pgTable("crm_validation_rules", {
   field: text("field").notNull(),
   ruleType: text("rule_type").notNull(),
   config: jsonb("config").$type<Record<string, unknown>>(),
-  pipelineId: text("pipeline_id"),
+  pipelineId: text("pipeline_id").references(() => crmPipelines.id, { onDelete: "set null" }),
   stageKey: text("stage_key"),
   sourceKey: text("source_key"),
   errorMessage: text("error_message"),

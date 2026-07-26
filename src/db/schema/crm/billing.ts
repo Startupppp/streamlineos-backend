@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invoiceStatusEnum, supportTicketStatusEnum, supportTicketPriorityEnum, quoteStatusEnum,
@@ -7,6 +7,7 @@ import { organizations, users } from "../auth";
 import { projects } from "../projects";
 import { clients, clientAccounts } from "./contacts";
 import { deals } from "./deals";
+import { crmPricebooks, crmQuoteTemplates } from "./pricebooks";
 
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -178,7 +179,7 @@ export const supportTickets = pgTable("support_tickets", {
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
   queueId: integer("queue_id"),
-  mergedIntoTicketId: integer("merged_into_ticket_id"),
+  mergedIntoTicketId: integer("merged_into_ticket_id").references((): AnyPgColumn => supportTickets.id, { onDelete: "set null" }),
   snoozedUntil: timestamp("snoozed_until"),
   snoozedBy: text("snoozed_by").references(() => users.id),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -240,8 +241,8 @@ export const quotes = pgTable("quotes", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-  pricebookId: text("pricebook_id"),
-  templateId: text("template_id"),
+  pricebookId: text("pricebook_id").references(() => crmPricebooks.id, { onDelete: "set null" }),
+  templateId: text("template_id").references(() => crmQuoteTemplates.id, { onDelete: "set null" }),
   approvalStatus: text("approval_status").$type<"pending" | "approved" | "rejected">(),
   approvedById: text("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),

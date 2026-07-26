@@ -51,7 +51,7 @@ export const supportSlaPolicies = pgTable(
     name: text("name").notNull(),
     priority: supportTicketPriorityEnum("priority"),
     category: text("category"),
-    businessHoursId: integer("business_hours_id"),
+    businessHoursId: integer("business_hours_id").references(() => supportBusinessHours.id, { onDelete: "set null" }),
     firstResponseTargetMins: integer("first_response_target_mins").notNull(),
     resolutionTargetMins: integer("resolution_target_mins").notNull(),
     pauseStatuses: jsonb("pause_statuses").$type<string[]>().default(["WAITING"]).notNull(),

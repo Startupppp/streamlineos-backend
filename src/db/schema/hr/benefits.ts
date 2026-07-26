@@ -14,6 +14,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
+import { salaryLoans } from "./payroll";
+import { travelRequests } from "./travel";
 
 export const hrBenefitCategoryEnum = pgEnum("hr_benefit_category", [
   "health",
@@ -212,7 +214,7 @@ export const hrLoanRepayments = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    loanId: integer("loan_id").notNull(),
+    loanId: integer("loan_id").notNull().references(() => salaryLoans.id, { onDelete: "cascade" }),
     installmentNo: integer("installment_no").notNull(),
     dueDate: date("due_date").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -236,7 +238,7 @@ export const hrTravelVisitLogs = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    travelRequestId: integer("travel_request_id").notNull(),
+    travelRequestId: integer("travel_request_id").notNull().references(() => travelRequests.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),

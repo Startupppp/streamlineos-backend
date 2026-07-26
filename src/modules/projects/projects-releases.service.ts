@@ -79,7 +79,7 @@ export class ProjectsReleasesService {
     });
     if (!release) throw new NotFoundException("Release not found");
 
-    await this.db.insert(releaseTickets).values({ releaseId, ticketId }).onConflictDoNothing();
+    await this.db.insert(releaseTickets).values({ orgId, releaseId, ticketId }).onConflictDoNothing();
     return { success: true };
   }
 

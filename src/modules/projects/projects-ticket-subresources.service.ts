@@ -226,7 +226,7 @@ export class ProjectsTicketSubresourcesService {
 
     const [created] = await this.db
       .insert(workItemRelations)
-      .values({ workItemId: ticketId, relatedWorkItemId: body.relatedTicketId, relationType: body.relationType })
+      .values({ orgId: u.orgId, workItemId: ticketId, relatedWorkItemId: body.relatedTicketId, relationType: body.relationType })
       .onConflictDoNothing()
       .returning();
 
@@ -266,7 +266,7 @@ export class ProjectsTicketSubresourcesService {
   async addWatcher(u: CurrentUserContext, ticketId: number, body: AddWatcherInput) {
     await this.requireTicket(u.orgId, ticketId);
     const userId = body.userId ?? u.userId;
-    await this.db.insert(ticketWatchers).values({ ticketId, userId }).onConflictDoNothing();
+    await this.db.insert(ticketWatchers).values({ orgId: u.orgId, ticketId, userId }).onConflictDoNothing();
     return { success: true };
   }
 
@@ -281,7 +281,7 @@ export class ProjectsTicketSubresourcesService {
     await this.requireTicket(orgId, ticketId);
     const [mapping] = await this.db
       .insert(ticketLabelMappings)
-      .values({ ticketId, labelId: body.labelId })
+      .values({ orgId, ticketId, labelId: body.labelId })
       .onConflictDoNothing()
       .returning({ id: ticketLabelMappings.id });
     if (mapping) await this.logLabelChange(orgId, ticketId, userId);
@@ -378,6 +378,7 @@ export class ProjectsTicketSubresourcesService {
     if (!checklist) throw new NotFoundException("Checklist not found");
 
     const [item] = await this.db.insert(ticketChecklistItems).values({
+      orgId,
       checklistId,
       text: data.text,
       assigneeId: data.assigneeId,
@@ -473,7 +474,7 @@ export class ProjectsTicketSubresourcesService {
     if (existing.length >= 20) throw new BadRequestException("A ticket can have at most 20 related links");
     const [created] = await this.db
       .insert(ticketRelatedLinks)
-      .values({ ticketId, url: body.url, label: body.label ?? null, createdBy: u.userId })
+      .values({ orgId: u.orgId, ticketId, url: body.url, label: body.label ?? null, createdBy: u.userId })
       .returning();
     return created;
   }

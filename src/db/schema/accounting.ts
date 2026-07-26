@@ -2,6 +2,9 @@ import { boolean, date, decimal, foreignKey, index, integer, jsonb, pgEnum, pgTa
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { accountTypeEnum, journalEntryStatusEnum } from "./enums";
+import { clients } from "./crm/contacts";
+import { departments } from "./hr/employees";
+import { projects } from "./projects";
 
 export const accNormalBalanceEnum = pgEnum("acc_normal_balance", ["DEBIT", "CREDIT"]);
 
@@ -75,10 +78,10 @@ export const journalLines = pgTable("journal_lines", {
   exchangeRate: decimal("exchange_rate", { precision: 18, scale: 8 }),
   baseDebit: decimal("base_debit", { precision: 18, scale: 4 }),
   baseCredit: decimal("base_credit", { precision: 18, scale: 4 }),
-  clientId: integer("client_id"),
-  vendorId: integer("vendor_id"),
-  projectId: integer("project_id"),
-  departmentId: integer("department_id"),
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  vendorId: integer("vendor_id").references(() => clients.id, { onDelete: "set null" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
   employeeId: integer("employee_id"),
   taxCodeId: integer("tax_code_id"),
   dimensionValues: jsonb("dimension_values"),

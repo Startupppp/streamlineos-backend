@@ -1,5 +1,5 @@
 import { pgTable, pgEnum, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { organizations } from "../auth";
+import { organizations, users } from "../auth";
 import { supportTickets } from "../crm/billing";
 
 export const supportExternalEntityTypeEnum = pgEnum("support_external_entity_type", [
@@ -18,7 +18,7 @@ export const supportTicketExternalLinks = pgTable(
     entityType: supportExternalEntityTypeEnum("entity_type").notNull(),
     entityId: integer("entity_id").notNull(),
     label: text("label").notNull(),
-    createdBy: text("created_by"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

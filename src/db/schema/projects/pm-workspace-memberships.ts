@@ -26,9 +26,7 @@ export const pmWorkspaceMemberships = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     pmWorkspaceId: text("pm_workspace_id").notNull(),
-    organizationMembershipId: integer("organization_membership_id")
-      .references(() => organizationMembers.id, { onDelete: "cascade" })
-      .notNull(),
+    organizationMembershipId: integer("organization_membership_id").notNull(),
     role: text("role")
       .$type<"member" | "admin">()
       .default("member")
@@ -47,6 +45,11 @@ export const pmWorkspaceMemberships = pgTable(
       columns: [t.orgId, t.pmWorkspaceId],
       foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
       name: "fk_pm_ws_members_org_workspace",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.orgId, t.organizationMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_pm_ws_members_org_membership",
     }).onDelete("cascade"),
   ],
 );

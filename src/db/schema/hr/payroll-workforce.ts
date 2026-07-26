@@ -8,6 +8,7 @@ import {
 import { organizations, users } from "../auth";
 import { salaryLoans } from "./payroll";
 import { payrollRuns } from "./payroll-runs";
+import { payrollPolicyVersions } from "./payroll-policies";
 
 export const salaryComponents = pgTable("salary_components", {
   id: serial("id").primaryKey(),
@@ -51,7 +52,7 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   status: salaryProfileStatusEnum("status").default("ACTIVE").notNull(),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
-  policyVersionId: integer("policy_version_id"),
+  policyVersionId: integer("policy_version_id").references(() => payrollPolicyVersions.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

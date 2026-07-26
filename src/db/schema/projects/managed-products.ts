@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { managedProductStatusEnum } from "../enums";
 import { organizations, users } from "../auth";
+import { pmWorkspaces } from "./pm-workspaces";
 
 export const managedProducts = pgTable(
   "managed_products",
@@ -24,7 +25,7 @@ export const managedProducts = pgTable(
     ownerId: text("owner_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    pmWorkspaceId: text("pm_workspace_id"),
+    pmWorkspaceId: text("pm_workspace_id").references(() => pmWorkspaces.pmWorkspaceId, { onDelete: "set null" }),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

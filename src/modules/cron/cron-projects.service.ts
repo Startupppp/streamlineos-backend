@@ -101,7 +101,7 @@ export class CronProjectsService {
           if (template.assigneeId) {
             await tx
               .insert(ticketWatchers)
-              .values({ ticketId: child.id, userId: template.assigneeId })
+              .values({ orgId: template.orgId, ticketId: child.id, userId: template.assigneeId })
               .onConflictDoNothing();
           }
 

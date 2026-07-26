@@ -7,6 +7,7 @@ import {
   timestamp,
   index,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
@@ -35,7 +36,7 @@ export const supportTicketActivity = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     supportTicketId: integer("support_ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id"),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     action: supportActivityActionEnum("action").notNull(),
     fromValue: text("from_value"),
     toValue: text("to_value"),
@@ -63,6 +64,11 @@ export const kbArticleComments = pgTable(
   (table) => [
     index("idx_kb_article_comments_article").on(table.articleId),
     index("idx_kb_comments_org_article").on(table.orgId, table.articleId),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "fk_kb_article_comments_parent",
+    }).onDelete("cascade"),
     unique("uniq_kb_article_comments_org_id").on(table.orgId, table.id),
   ],
 );

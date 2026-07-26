@@ -9,6 +9,7 @@ import { payrolls } from "../hr";
 import { leads } from "./leads";
 import { clients, branches, clientAccounts, contacts, crmOrganizations } from "./contacts";
 import { crmPipelines } from "./metadata";
+import { crmSla } from "./analytics";
 
 export const deals = pgTable("deals", {
   id: serial("id").primaryKey(),
@@ -404,8 +405,8 @@ export const territories = pgTable("territories", {
 export const crmSlaBreachLog = pgTable("crm_sla_breach_log", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull(),
-  leadId: integer("lead_id").notNull(),
-  policyId: integer("policy_id"),
+  leadId: integer("lead_id").notNull().references(() => leads.id, { onDelete: "cascade" }),
+  policyId: integer("policy_id").references(() => crmSla.id, { onDelete: "set null" }),
   breachedAt: timestamp("breached_at", { withTimezone: true }).defaultNow().notNull(),
   taskCreated: boolean("task_created").default(false).notNull(),
   notified: boolean("notified").default(false).notNull(),
