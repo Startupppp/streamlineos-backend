@@ -160,6 +160,7 @@ import { PartyModule } from "./modules/party/party.module";
 import { PortalAccessModule } from "./modules/portal-access/portal-access.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
+import { OutboxModule } from "./common/outbox/outbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -254,6 +255,7 @@ import { MeService } from "./me/me.service";
     PortalAccessModule,
     ModuleAccessModule,
     IdempotencyModule,
+    OutboxModule,
     HrPerformanceModule,
     HrPayrollModule,
     HrLifecycleModule,

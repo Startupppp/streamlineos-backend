@@ -1,7 +1,9 @@
 import {
   buildOutboxEvent,
   nextRetryDelayMs,
+  shouldDeadLetter,
   shouldSuppressForLifecycle,
+  OUTBOX_MAX_RETRIES,
   OUTBOX_RETRY_BASE_MS,
   OUTBOX_RETRY_MAX_MS,
 } from "./outbox-envelope";
@@ -91,6 +93,18 @@ describe("nextRetryDelayMs", () => {
 
   it("treats a negative retry count as the base delay", () => {
     expect(nextRetryDelayMs(-5)).toBe(OUTBOX_RETRY_BASE_MS);
+  });
+});
+
+describe("shouldDeadLetter", () => {
+  it("does not dead-letter before the retry ceiling", () => {
+    expect(shouldDeadLetter(0)).toBe(false);
+    expect(shouldDeadLetter(OUTBOX_MAX_RETRIES - 1)).toBe(false);
+  });
+
+  it("dead-letters at and beyond the retry ceiling", () => {
+    expect(shouldDeadLetter(OUTBOX_MAX_RETRIES)).toBe(true);
+    expect(shouldDeadLetter(OUTBOX_MAX_RETRIES + 50)).toBe(true);
   });
 });
 
