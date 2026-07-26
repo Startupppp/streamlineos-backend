@@ -37,6 +37,7 @@ import {
   deleteOrgSchema,
   inviteMemberSchema,
   listMembersSchema,
+  schedulePurgeSchema,
   securitySettingsSchema,
   switchOrgSchema,
   transferOwnershipSchema,
@@ -50,6 +51,7 @@ import {
   type DeleteOrgInput,
   type InviteMemberInput,
   type ListMembersInput,
+  type SchedulePurgeInput,
   type SecuritySettingsInput,
   type SwitchOrgInput,
   type TransferOwnershipInput,
@@ -352,5 +354,30 @@ export class OrganizationController {
   ) {
     if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
     return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
+  }
+
+  @Post(":orgId/purge/schedule")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
+  schedulePurge(
+    @Param("orgId") orgId: string,
+    @Body(new ZodValidationPipe(schedulePurgeSchema)) body: SchedulePurgeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.schedulePurge(orgId, u.userId, body.scheduledForDays, body.reason);
+  }
+
+  @Delete(":orgId/purge")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
+  cancelPurge(
+    @Param("orgId") orgId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    if (!u.isOrgOwner && !u.isPlatformAdmin) throw new ForbiddenException("Forbidden");
+    return this.organization.cancelPurge(orgId, u.userId);
   }
 }

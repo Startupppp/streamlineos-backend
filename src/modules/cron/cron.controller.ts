@@ -28,6 +28,7 @@ import { CronSupportService } from "./cron-support.service";
 import { CrmSequencesRunnerService } from "../crm-automation-studio/crm-sequences-runner.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronOrganizationService } from "./cron-organization.service";
 import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
 import { SupportKbGapService } from "../support-kb-gap/support-kb-gap.service";
 
@@ -55,6 +56,7 @@ export class CronController {
     private readonly crmTasks: CronCrmTasksService,
     private readonly aiJobsWorker: AiJobsWorkerService,
     private readonly supportKbGap: SupportKbGapService,
+    private readonly cronOrganization: CronOrganizationService,
   ) {}
 
   @Get("trial-expiry")
@@ -810,6 +812,58 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Support KB gap detect cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("invitation-expiry")
+  getInvitationExpiry(@Headers("authorization") authorization?: string) {
+    return this.runInvitationExpiry(authorization);
+  }
+
+  @Post("invitation-expiry")
+  @HttpCode(200)
+  postInvitationExpiry(@Headers("authorization") authorization?: string) {
+    return this.runInvitationExpiry(authorization);
+  }
+
+  private async runInvitationExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.cronOrganization.expireStaleInvitations();
+      return {
+        success: true,
+        message: `Expired ${result.expired} stale invitations`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Invitation expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("org-purge-worker")
+  getOrgPurgeWorker(@Headers("authorization") authorization?: string) {
+    return this.runOrgPurgeWorker(authorization);
+  }
+
+  @Post("org-purge-worker")
+  @HttpCode(200)
+  postOrgPurgeWorker(@Headers("authorization") authorization?: string) {
+    return this.runOrgPurgeWorker(authorization);
+  }
+
+  private async runOrgPurgeWorker(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.cronOrganization.runPurgeWorker();
+      return {
+        success: true,
+        message: `Org purge worker: processed ${result.processed}, skipped ${result.skipped}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Org purge worker cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

@@ -672,4 +672,88 @@ export class OrganizationService {
     });
     return { success: true };
   }
+
+  async schedulePurge(
+    orgId: string,
+    actorUserId: string,
+    scheduledForDays: number,
+    reason: string,
+  ): Promise<{ success: true; purgeJobId: string; purgeScheduledAt: Date }> {
+    const [org] = await this.db
+      .select({ id: organizations.id, statusV2: organizations.statusV2 })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    if (!org) throw new NotFoundException("Organization not found");
+    if (org.statusV2 === "PURGED") {
+      throw new BadRequestException("Organization is already purged");
+    }
+
+    const actorMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, actorUserId),
+      ),
+      columns: { id: true },
+    });
+
+    const purgeJobId = randomUUID();
+    const purgeScheduledAt = new Date(Date.now() + scheduledForDays * 24 * 60 * 60 * 1000);
+
+    await this.db
+      .update(organizations)
+      .set({
+        statusV2: "PURGE_SCHEDULED",
+        purgeScheduledAt,
+        purgeScheduledBy: actorMembership?.id ?? null,
+        purgeReason: reason,
+        purgeJobId,
+      })
+      .where(eq(organizations.id, orgId));
+
+    this.audit.log({
+      action: "org.purge_scheduled",
+      userId: actorUserId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+      metadata: { purgeJobId, purgeScheduledAt, reason },
+    });
+
+    return { success: true, purgeJobId, purgeScheduledAt };
+  }
+
+  async cancelPurge(orgId: string, actorUserId: string): Promise<{ success: true }> {
+    const [org] = await this.db
+      .select({ id: organizations.id, statusV2: organizations.statusV2 })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    if (!org) throw new NotFoundException("Organization not found");
+    if (org.statusV2 !== "PURGE_SCHEDULED") {
+      throw new BadRequestException("No purge is scheduled for this organization");
+    }
+
+    await this.db
+      .update(organizations)
+      .set({
+        statusV2: "ACTIVE",
+        purgeScheduledAt: null,
+        purgeScheduledBy: null,
+        purgeReason: null,
+        purgeJobId: null,
+      })
+      .where(eq(organizations.id, orgId));
+
+    this.audit.log({
+      action: "org.purge_cancelled",
+      userId: actorUserId,
+      orgId,
+      targetId: orgId,
+      targetType: "organization",
+    });
+
+    return { success: true };
+  }
+
 }

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { and, count, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { addDays, addMinutes } from "date-fns";
 import { hashToken } from "../../common/security/token.util";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -213,6 +213,7 @@ export class InvitationsService {
       .where(
         and(
           eq(invitations.orgId, orgId),
+          eq(invitations.status, "PENDING"),
           isNull(invitations.acceptedAt),
           gt(invitations.expiresAt, new Date()),
         ),
@@ -230,6 +231,7 @@ export class InvitationsService {
 
     const conditions = [eq(invitations.orgId, orgId)];
     if (!params?.includeAccepted) {
+      conditions.push(eq(invitations.status, "PENDING"));
       conditions.push(isNull(invitations.acceptedAt));
     }
 
@@ -319,17 +321,23 @@ export class InvitationsService {
         throw new ConflictException("You are already a member of this organization");
 
       await this.db.transaction(async (tx) => {
-        await tx
+        const inserted = await tx
           .insert(organizationMembers)
           .values({ userId: existingUser.id, orgId: invitation.orgId, role: invitation.role })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id });
+        const membershipId = inserted[0]?.id ?? null;
         await tx
           .update(users)
           .set({ lastActiveOrgId: invitation.orgId })
           .where(eq(users.id, existingUser.id));
         await tx
           .update(invitations)
-          .set({ acceptedAt: new Date() })
+          .set({
+            acceptedAt: new Date(),
+            status: "ACCEPTED",
+            ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
+          })
           .where(eq(invitations.id, invitation.id));
       });
 
@@ -364,13 +372,19 @@ export class InvitationsService {
         hasDashboardAccess: true,
         lastActiveOrgId: invitation.orgId,
       });
-      await tx
+      const inserted = await tx
         .insert(organizationMembers)
         .values({ userId, orgId: invitation.orgId, role: invitation.role })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: organizationMembers.id });
+      const membershipId = inserted[0]?.id ?? null;
       await tx
         .update(invitations)
-        .set({ acceptedAt: new Date() })
+        .set({
+          acceptedAt: new Date(),
+          status: "ACCEPTED",
+          ...(membershipId !== null ? { acceptedMembershipId: membershipId } : {}),
+        })
         .where(eq(invitations.id, invitation.id));
     });
 
@@ -454,12 +468,28 @@ export class InvitationsService {
       where: and(
         eq(invitations.id, invitationId),
         eq(invitations.orgId, orgId),
+        eq(invitations.status, "PENDING"),
         isNull(invitations.acceptedAt),
       ),
     });
     if (!invitation) throw new NotFoundException("Invitation not found or already accepted");
 
-    await this.db.delete(invitations).where(eq(invitations.id, invitationId));
+    const actorMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, actorUserId),
+      ),
+      columns: { id: true },
+    });
+
+    await this.db
+      .update(invitations)
+      .set({
+        status: "REVOKED",
+        revokedAt: new Date(),
+        revokedBy: actorMembership?.id ?? null,
+      })
+      .where(eq(invitations.id, invitationId));
 
     this.audit.log({
       action: "user.invitation.cancelled",
@@ -471,5 +501,20 @@ export class InvitationsService {
     });
 
     return { success: true };
+  }
+
+  async expireStaleInvitations(): Promise<{ expired: number }> {
+    const now = new Date();
+    const result = await this.db
+      .update(invitations)
+      .set({ status: "EXPIRED" })
+      .where(
+        and(
+          eq(invitations.status, "PENDING"),
+          lt(invitations.expiresAt, now),
+        ),
+      )
+      .returning({ id: invitations.id });
+    return { expired: result.length };
   }
 }

@@ -128,6 +128,11 @@ export const createHolidaySchema = z.object({
   recurring: z.boolean().optional().default(false),
 });
 
+export const schedulePurgeSchema = z.object({
+  scheduledForDays: z.number().int().min(1).max(365).default(30),
+  reason: z.string().min(1).max(500),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 export type ListMembersInput = z.infer<typeof listMembersSchema>;
 export type CancelInvitationInput = z.infer<typeof cancelInvitationSchema>;
@@ -141,3 +146,4 @@ export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;
 export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
 export type AddCustomDomainInput = z.infer<typeof addCustomDomainSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type SchedulePurgeInput = z.infer<typeof schedulePurgeSchema>;
