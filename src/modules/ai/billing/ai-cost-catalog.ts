@@ -79,6 +79,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "timesheets.describe-entry": 1,
   "timesheets.billing-narrative": 1,
   "timesheets.reports-narrative": 1,
+  "timesheets.rejection-draft": 1,
   "sign.summarize-document": 2,
   "kb.page-summarize": 1,
   "kb.page-ask": 1,

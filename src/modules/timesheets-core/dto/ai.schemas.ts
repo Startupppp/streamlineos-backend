@@ -17,3 +17,8 @@ export const billingNarrativeSchema = z.object({
   endDate: dateString,
 });
 export type BillingNarrativeInput = z.infer<typeof billingNarrativeSchema>;
+
+export const rejectionDraftSchema = z.object({
+  note: z.string().max(1000).optional(),
+});
+export type RejectionDraftInput = z.infer<typeof rejectionDraftSchema>;

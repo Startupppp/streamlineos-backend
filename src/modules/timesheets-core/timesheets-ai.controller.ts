@@ -14,6 +14,8 @@ import {
   type DescribeEntryInput,
   billingNarrativeSchema,
   type BillingNarrativeInput,
+  rejectionDraftSchema,
+  type RejectionDraftInput,
 } from "./dto/ai.schemas";
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
 
@@ -32,6 +34,18 @@ export class TimesheetsAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.summarizePeriod(u, periodId);
+  }
+
+  @Post("periods/:periodId/ai/rejection-reason")
+  @HttpCode(200)
+  @RequirePermission("timesheets:approvals:manage")
+  @UseRateLimit("ai:invoke")
+  draftRejectionReason(
+    @Param("periodId", ParseIntPipe) periodId: number,
+    @Body(new ZodValidationPipe(rejectionDraftSchema)) body: RejectionDraftInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.ai.draftRejectionReason(u, periodId, body);
   }
 
   @Post("ai/describe-entry")

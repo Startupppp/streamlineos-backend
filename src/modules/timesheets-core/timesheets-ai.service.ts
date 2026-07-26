@@ -6,12 +6,37 @@ import { ReportsService } from "./reports.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../ai/gateway/ai-gateway.types";
 import { throwOnAiFailure } from "../ai/services/gateway-result.util";
-import type { DescribeEntryInput, BillingNarrativeInput } from "./dto/ai.schemas";
+import type { DescribeEntryInput, BillingNarrativeInput, RejectionDraftInput } from "./dto/ai.schemas";
 import type { OverviewQuery } from "./dto/reports.schemas";
 
 const DESCRIBE_FEATURE_KEY = "timesheets.describe-entry" as const;
 const NARRATIVE_FEATURE_KEY = "timesheets.billing-narrative" as const;
 const REPORTS_FEATURE_KEY = "timesheets.reports-narrative" as const;
+const REJECTION_FEATURE_KEY = "timesheets.rejection-draft" as const;
+
+function buildRejectionSystemPrompt(): string {
+  return [
+    "You are a team manager writing a brief, constructive rejection note for a submitted timesheet, addressed directly to the employee.",
+    "RULES:",
+    "1. Ground the feedback ONLY in the evidence — reference specific issues (days with no entries, unusually high hours on a day, a low billable ratio, or missing detail). Never invent problems that the evidence does not support.",
+    "2. If the reviewer provided a note, honour its intent and expand it professionally.",
+    "3. Be clear and actionable: tell the employee exactly what to correct before resubmitting. Keep a respectful, professional tone.",
+    "4. Output 1-3 sentences of plain prose. No preamble, no greeting, no sign-off.",
+  ].join("\n");
+}
+
+function buildRejectionUserPrompt(evidence: unknown, note?: string): string {
+  return [
+    "Timesheet evidence (pre-computed, do not modify):",
+    JSON.stringify(evidence, null, 2),
+    "",
+    note
+      ? `Reviewer's note to incorporate: ${note}`
+      : "The reviewer did not provide a note; infer the most likely issue(s) from the evidence.",
+    "",
+    "Write the constructive rejection note following the rules.",
+  ].join("\n");
+}
 
 function buildReportsSystemPrompt(): string {
   return [
@@ -241,6 +266,35 @@ export class TimesheetsAiService {
         system: buildDescribeSystemPrompt(),
         user: buildDescribeUserPrompt(input),
         promptKey: DESCRIBE_FEATURE_KEY,
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) return throwOnAiFailure(result);
+    return { text: result.data, aiUsage: result.aiUsage };
+  }
+
+  async draftRejectionReason(
+    u: CurrentUserContext,
+    periodId: number,
+    input: RejectionDraftInput,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const detail = await this.periods.getPeriod(u, periodId);
+    if (!detail) throw new NotFoundException("Period not found");
+
+    const result = await this.gateway.invokeTextWithUsage({
+      actor: { orgId: u.orgId, userId: u.userId },
+      feature: REJECTION_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 220,
+      charge: true,
+      prompt: {
+        system: buildRejectionSystemPrompt(),
+        user: buildRejectionUserPrompt(
+          buildEvidence(detail.period, detail.entries),
+          input.note,
+        ),
+        promptKey: REJECTION_FEATURE_KEY,
         promptVersion: 1,
       },
     });
