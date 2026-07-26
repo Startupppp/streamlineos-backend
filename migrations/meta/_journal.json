@@ -148,6 +148,48 @@
       "when": 1784993499541,
       "tag": "0304_inv_status_enums",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784993499542,
+      "tag": "0007_search_trgm_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784993499543,
+      "tag": "0008_user_module_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784993499544,
+      "tag": "0300_kb_chunk_content_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784993499545,
+      "tag": "0305_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784993499546,
+      "tag": "0306_chat_org_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784993499547,
+      "tag": "0307_wave_1_4_6_7_9_reconciliation",
+      "breakpoints": true
     }
   ]
 }
