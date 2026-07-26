@@ -111,7 +111,6 @@ import { InvSettingsModule } from "./modules/inv-settings/inv-settings.module";
 import { EmailModule } from "./modules/email/email.module";
 import { AiModule } from "./modules/ai/ai.module";
 import { AiSummariesModule } from "./modules/ai-summaries/ai-summaries.module";
-import { WorkspaceSearchModule } from "./modules/workspace-search/workspace-search.module";
 import { SupportKbGapModule } from "./modules/support-kb-gap";
 import { StorageModule } from "./modules/storage/storage.module";
 import { BillingModule } from "./modules/billing/billing.module";
@@ -125,9 +124,7 @@ import { AiJobsModule } from "./modules/ai-jobs/ai-jobs.module";
 import { AiConfirmationModule } from "./modules/ai-confirmation";
 import { OrgHierarchyModule } from "./modules/org-hierarchy/org-hierarchy.module";
 import { ApiTokensModule } from "./modules/api-tokens/api-tokens.module";
-import { ServiceAccountsModule } from "./modules/service-accounts/service-accounts.module";
 import { UserApiTokensModule } from "./modules/user-api-tokens/user-api-tokens.module";
-import { TemporaryAccessModule } from "./modules/temporary-access/temporary-access.module";
 import { DelegationsModule } from "./modules/delegations/delegations.module";
 import { UsersModule } from "./modules/users/users.module";
 import { WorkspaceOnboardingModule } from "./modules/workspace-onboarding/workspace-onboarding.module";
@@ -284,7 +281,6 @@ import { MeService } from "./me/me.service";
     EmailModule,
     AiModule,
     AiSummariesModule,
-    WorkspaceSearchModule,
     SupportKbGapModule,
     StorageModule,
     BillingModule,
@@ -298,9 +294,7 @@ import { MeService } from "./me/me.service";
     AiConfirmationModule,
     OrgHierarchyModule,
     ApiTokensModule,
-    ServiceAccountsModule,
     UserApiTokensModule,
-    TemporaryAccessModule,
     DelegationsModule,
     UsersModule,
     WorkspaceOnboardingModule,

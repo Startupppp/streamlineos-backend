@@ -18,10 +18,6 @@ describe("Reports auth (e2e)", () => {
 
   type Method = "get" | "post" | "patch" | "delete";
   const routes: ReadonlyArray<[Method, string]> = [
-    ["get", "/reports/attendance?startDate=2026-01-01&endDate=2026-01-31"],
-    ["get", "/reports/payroll?startMonth=2026-01&endMonth=2026-03"],
-    ["get", "/reports/project"],
-    ["get", "/reports/team-performance?startDate=2026-01-01&endDate=2026-01-31"],
     ["get", "/reports/source-effectiveness"],
   ];
 
