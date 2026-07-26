@@ -180,8 +180,7 @@ describe("SupportAiService", () => {
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeText.mock.calls;
       expect(call[0].feature).toBe("support.reply");
-      expect(call[0].charge).toBeDefined();
-      expect(call[0].charge.credits).toBeGreaterThan(0);
+      expect(call[0].charge).toBe(true);
       expect(mockDb.values).toHaveBeenCalledWith(
         expect.objectContaining({ type: "reply", payload: expect.objectContaining({ body: "Thanks for reaching out — try resetting your password." }) }),
       );
@@ -263,7 +262,7 @@ describe("SupportAiService", () => {
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
       expect(call[0].feature).toBe("support.macro");
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
       expect(mockDb.values).toHaveBeenCalledWith(
         expect.objectContaining({ type: "macro", payload: { macroId: 7, reason: "matches password reset" } }),
       );
@@ -338,7 +337,7 @@ describe("SupportAiService", () => {
       expect(result).toMatchObject({ translatedText: "Mi inicio de sesión está roto" });
       const [call] = mockGateway.invokeStructured.mock.calls;
       expect(call[0].feature).toBe("support.translate");
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
 
@@ -375,7 +374,7 @@ describe("SupportAiService", () => {
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
       expect(call[0].feature).toBe("support.handoff");
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
       expect(mockDb.values).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "handoff_summary",
@@ -414,7 +413,7 @@ describe("SupportAiService", () => {
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
       expect(call[0].feature).toBe("support.root-cause");
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
       expect(mockDb.values).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "root_cause_cluster",
@@ -466,7 +465,7 @@ describe("SupportAiService", () => {
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
       expect(call[0].feature).toBe("support.reply");
-      expect(call[0].charge).toBeDefined();
+      expect(call[0].charge).toBe(true);
       expect(result?.improved).toBe("Thank you for reaching out. Please try resetting your password.");
       expect(result?.changes).toHaveLength(2);
     });

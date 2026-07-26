@@ -192,7 +192,12 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_org_project_date").on(table.orgId, table.projectId, table.date),
   index("idx_timesheets_org_invoicing").on(table.orgId, table.invoicingStatus),
   index("idx_timesheets_period").on(table.timesheetPeriodId),
-  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userId, table.date).where(sql`ticket_id IS NULL`),
+  uniqueIndex("uniq_timesheets_day_project")
+    .on(table.orgId, table.userId, table.date, table.projectId)
+    .where(sql`ticket_id IS NULL AND project_id IS NOT NULL AND voided_at IS NULL`),
+  uniqueIndex("uniq_timesheets_day_blank")
+    .on(table.orgId, table.userId, table.date)
+    .where(sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`),
 ]);
 
 export const ticketChecklists = pgTable("ticket_checklists", {

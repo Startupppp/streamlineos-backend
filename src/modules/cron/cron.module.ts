@@ -22,6 +22,7 @@ import { FinanceTaxModule } from "../finance-tax/finance-tax.module";
 import { FinanceAssetsModule } from "../finance-assets/finance-assets.module";
 import { AiJobsModule } from "../ai-jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support-kb-gap";
+import { TimesheetsCoreModule } from "../timesheets-core/timesheets-core.module";
 import { CronController } from "./cron.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronAttendanceService } from "./cron-attendance.service";
@@ -41,7 +42,7 @@ import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 
 @Module({
-  imports: [AutomationModule, AiModule, AiJobsModule, SupportKbGapModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule],
+  imports: [AutomationModule, AiModule, AiJobsModule, SupportKbGapModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule, TimesheetsCoreModule],
   controllers: [CronController],
   providers: [
     CronAttendanceService,

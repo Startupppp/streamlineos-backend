@@ -42,6 +42,11 @@ export const exportsListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
 
+export const ackExportSchema = z.object({
+  status: z.enum(["RECEIVED", "ACCEPTED", "REJECTED", "FAILED"]),
+  note: z.string().max(1000).optional(),
+});
+
 const VALID_COLUMN_KEYS = new Set([
   "employeeName",
   "employeeEmail",
@@ -87,6 +92,7 @@ export const updateSettingsSchema = z.object({
 export type PeriodSummaryQuery = z.infer<typeof periodSummaryQuerySchema>;
 export type ExportPayrollInput = z.infer<typeof exportPayrollSchema>;
 export type ExportsListQuery = z.infer<typeof exportsListQuerySchema>;
+export type AckExportInput = z.infer<typeof ackExportSchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 export type PayrollMapping = z.infer<typeof payrollMappingSchema>;
 
@@ -141,6 +147,8 @@ export interface TimesheetExportDto {
   entryCount: number;
   totalHours: number;
   note: string | null;
+  ackStatus: string | null;
+  ackAt: string | null;
   createdBy: string | null;
   createdByName: string | null;
   createdAt: string;

@@ -3004,6 +3004,19 @@ const TIMESHEETS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage project budgets",
   },
+  {
+    name: "timesheets:exceptions:view",
+    resource: "timesheets:exceptions",
+    action: "view",
+    description: "View timesheet exceptions and data-quality issues",
+    scopable: true,
+  },
+  {
+    name: "timesheets:exceptions:manage",
+    resource: "timesheets:exceptions",
+    action: "manage",
+    description: "Resolve, dismiss, and run timesheet exception detection",
+  },
 ];
 
 const BILLING_PERMISSIONS: Permission[] = [
@@ -4082,6 +4095,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "timesheets:budgets:view",
     "timesheets:budgets:manage",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
     "sign:documents:upload",
     "sign:documents:view",
     "sign:envelope:create",
@@ -4588,6 +4603,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "timesheets:budgets:view",
     "timesheets:budgets:manage",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
     "projects:qa:view",
     "projects:bugs:view",
     "projects:ai:use",
@@ -4732,6 +4749,8 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "timesheets:audit:view",
     "timesheets:budgets:view",
     "timesheets:budgets:manage",
+    "timesheets:exceptions:view",
+    "timesheets:exceptions:manage",
     "projects:qa:view",
     "projects:bugs:view",
   ],

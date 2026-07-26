@@ -8,8 +8,10 @@ import {
   date,
   integer,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, users } from "../auth";
 
 export const timesheetExports = pgTable("timesheet_exports", {
@@ -26,6 +28,11 @@ export const timesheetExports = pgTable("timesheet_exports", {
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }).notNull().default("0"),
   fileUrl: text("file_url"),
   note: text("note"),
+  idempotencyKey: text("idempotency_key"),
+  ackStatus: text("ack_status"),
+  ackNote: text("ack_note"),
+  ackAt: timestamp("ack_at"),
+  ackBy: text("ack_by").references(() => users.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -34,6 +41,9 @@ export const timesheetExports = pgTable("timesheet_exports", {
     table.exportType,
     table.createdAt,
   ),
+  uniqueIndex("uniq_timesheet_exports_idem")
+    .on(table.orgId, table.idempotencyKey)
+    .where(sql`idempotency_key IS NOT NULL`),
 ]);
 
 export const timesheetSettings = pgTable("timesheet_settings", {
@@ -51,6 +61,10 @@ export const timesheetSettings = pgTable("timesheet_settings", {
   lockAfterApproval: boolean("lock_after_approval").notNull().default(true),
   lockAfterInvoice: boolean("lock_after_invoice").notNull().default(true),
   reminderRules: jsonb("reminder_rules"),
+  allowFutureEntries: boolean("allow_future_entries").notNull().default(false),
+  expectedDailyHours: decimal("expected_daily_hours", { precision: 4, scale: 2 }),
+  expectedWeeklyHours: decimal("expected_weekly_hours", { precision: 5, scale: 2 }),
+  submissionGraceDays: integer("submission_grace_days"),
   payPeriod: text("pay_period").notNull().default("MONTHLY"),
   overtimeDailyHours: decimal("overtime_daily_hours", { precision: 4, scale: 2 }).notNull().default("8"),
   overtimeWeeklyHours: decimal("overtime_weekly_hours", { precision: 5, scale: 2 }).notNull().default("40"),

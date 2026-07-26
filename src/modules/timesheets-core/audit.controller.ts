@@ -11,11 +11,21 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { timesheetAuditEvents, users } from "../../db/schema";
 import { auditQuerySchema, type AuditQuery } from "./dto/audit.schemas";
+import { TimesheetsAuditService } from "./timesheets-audit.service";
 
 @Controller("timesheets/audit")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class AuditController {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly auditService: TimesheetsAuditService,
+  ) {}
+
+  @Get("verify")
+  @RequirePermission("timesheets:audit:view")
+  verify(@CurrentUser() u: CurrentUserContext) {
+    return this.auditService.verifyChain(u.orgId);
+  }
 
   @Get()
   @RequirePermission("timesheets:audit:view")

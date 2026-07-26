@@ -11,10 +11,14 @@ import { SupportKnowledgeGapStatus } from "../../db/schema/support/support-kb-ga
 const makeGatewayOk = <T>(data: T) => ({
   ok: true as const,
   data,
-  model: "claude-3-5-haiku",
-  latencyMs: 10,
-  correlationId: "corr-1",
-  usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+  aiUsage: {
+    model: "claude-3-5-haiku",
+    promptTokens: 10,
+    completionTokens: 5,
+    totalTokens: 15,
+    credits: 1,
+    costUsd: 0.001,
+  },
 });
 
 const makeGatewayFail = (
@@ -63,7 +67,7 @@ const makeDb = () => ({
   ]),
 });
 
-const mockGateway = { invokeStructured: jest.fn() };
+const mockGateway = { invokeStructuredWithUsage: jest.fn() };
 const mockKbArticles = { create: jest.fn() };
 const mockKbEvents = { record: jest.fn().mockResolvedValue(undefined) };
 const mockNotifications = { emit: jest.fn().mockResolvedValue({ notified: 1 }) };
@@ -271,7 +275,7 @@ describe("SupportKbGapService", () => {
         { ...baseGap, status: SupportKnowledgeGapStatus.ROUTED, proposedArticleId: 99, draftedBy: "user1" },
       ]);
 
-      mockGateway.invokeStructured.mockResolvedValue(
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(
         makeGatewayOk({ title: "How to reset your password", body: "## Steps\n1. Click forgot password" }),
       );
       mockKbArticles.create.mockResolvedValue({ id: 99, title: "How to reset your password" });
@@ -306,7 +310,7 @@ describe("SupportKbGapService", () => {
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
       db.limit.mockResolvedValueOnce([]);
       db.returning.mockResolvedValue([{ ...baseGap, status: SupportKnowledgeGapStatus.ROUTED }]);
-      mockGateway.invokeStructured.mockResolvedValue(
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(
         makeGatewayOk({ title: "T", body: "B" }),
       );
       mockKbArticles.create.mockResolvedValue({ id: 50, title: "T" });
@@ -325,7 +329,7 @@ describe("SupportKbGapService", () => {
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 3 });
       db.limit.mockResolvedValueOnce([]);
       db.returning.mockResolvedValue([{ ...baseGap, status: SupportKnowledgeGapStatus.ROUTED }]);
-      mockGateway.invokeStructured.mockResolvedValue(makeGatewayOk({ title: "T", body: "B" }));
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(makeGatewayOk({ title: "T", body: "B" }));
       mockKbArticles.create.mockResolvedValue({ id: 77, title: "T" });
 
       const service = await makeService(db);
@@ -357,7 +361,7 @@ describe("SupportKbGapService", () => {
       db.returning.mockResolvedValue([
         { ...baseGap, status: SupportKnowledgeGapStatus.ROUTED, proposedArticleId: 99 },
       ]);
-      mockGateway.invokeStructured.mockResolvedValue(
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(
         makeGatewayOk({ title: "T", body: "B" }),
       );
       mockKbArticles.create.mockResolvedValue({ id: 99, title: "T" });
@@ -380,7 +384,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(baseGap);
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
       db.limit.mockResolvedValueOnce([]);
-      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("quota_exceeded", "Out of credits"));
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(makeGatewayFail("quota_exceeded", "Out of credits"));
 
       const service = await makeService(db);
       await expect(service.proposeDraft("org1", 1, "user1")).rejects.toThrow(BadRequestException);
@@ -391,7 +395,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(baseGap);
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
       db.limit.mockResolvedValueOnce([]);
-      mockGateway.invokeStructured.mockResolvedValue(makeGatewayFail("provider_unavailable", "Service down"));
+      mockGateway.invokeStructuredWithUsage.mockResolvedValue(makeGatewayFail("provider_unavailable", "Service down"));
 
       const service = await makeService(db);
       await expect(service.proposeDraft("org1", 1, "user1")).rejects.toThrow(BadRequestException);

@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { AiNodeExecutorService } from "./ai-node-executor.service";
 import { WorkflowAiNodeHandler } from "./ai-job-handlers/workflow-ai-node.handler";
@@ -228,7 +228,7 @@ describe("AiNodeExecutorService", () => {
 
   // quota_exceeded propagation
   describe("quota_exceeded from gateway", () => {
-    it("propagates as ok=false or throws BadRequestException — never silently discards the failure", async () => {
+    it("propagates as ok=false or throws HttpException 402 — never silently discards the failure", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeFailure("quota_exceeded"));
 
       let result: Awaited<ReturnType<typeof executor.executeNode>> | undefined;
@@ -246,7 +246,8 @@ describe("AiNodeExecutorService", () => {
       }
 
       if (thrown !== undefined) {
-        expect(thrown).toBeInstanceOf(BadRequestException);
+        expect(thrown).toBeInstanceOf(HttpException);
+        expect((thrown as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
       } else {
         expect(result?.ok).toBe(false);
       }

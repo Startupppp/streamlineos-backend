@@ -68,6 +68,8 @@ export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   before: jsonb("before"),
   after: jsonb("after"),
   reason: text("reason"),
+  prevHash: text("prev_hash"),
+  rowHash: text("row_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_timesheet_audit_entity").on(t.orgId, t.entityType, t.entityId, t.createdAt),
@@ -100,11 +102,49 @@ export const timesheetRates = pgTable("timesheet_rates", {
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
   currency: text("currency").notNull().default("USD"),
   priority: integer("priority").notNull().default(0),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
   index("idx_timesheet_rates_org_priority").on(t.orgId, t.priority),
   index("idx_timesheet_rates_org_project").on(t.orgId, t.projectId),
+]);
+
+export const timesheetExceptions = pgTable("timesheet_exceptions", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  periodId: integer("period_id").references(() => timesheetPeriods.id, { onDelete: "cascade" }),
+  entryId: integer("entry_id"),
+  rule: text("rule").notNull(),
+  severity: text("severity").notNull().default("WARNING"),
+  status: text("status").notNull().default("OPEN"),
+  message: text("message").notNull(),
+  details: jsonb("details"),
+  ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  dueDate: date("due_date"),
+  resolutionReason: text("resolution_reason"),
+  resolvedBy: text("resolved_by").references(() => users.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (t) => [
+  index("idx_ts_exceptions_org_status").on(t.orgId, t.status, t.severity),
+  index("idx_ts_exceptions_user").on(t.orgId, t.userId),
+  index("idx_ts_exceptions_period").on(t.periodId),
+]);
+
+export const timesheetSettingsHistory = pgTable("timesheet_settings_history", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  settings: jsonb("settings").notNull(),
+  changedBy: text("changed_by").references(() => users.id, { onDelete: "set null" }),
+  changeReason: text("change_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uniq_ts_settings_history_version").on(t.orgId, t.version),
 ]);
 
 export const timesheetBudgets = pgTable("timesheet_budgets", {

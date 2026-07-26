@@ -37,6 +37,8 @@ export class RatesService {
         currency: input.currency ?? "USD",
         priority: input.priority ?? 0,
         rateCardId: input.rateCardId ?? null,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveTo: input.effectiveTo ?? null,
       })
       .returning();
 
@@ -70,6 +72,8 @@ export class RatesService {
     if (input.userId !== undefined) updateData.userId = input.userId ?? null;
     if (input.billingType !== undefined) updateData.billingType = input.billingType;
     if (input.rateCardId !== undefined) updateData.rateCardId = input.rateCardId ?? null;
+    if (input.effectiveFrom !== undefined) updateData.effectiveFrom = input.effectiveFrom;
+    if (input.effectiveTo !== undefined) updateData.effectiveTo = input.effectiveTo;
 
     await this.db.transaction(async (tx) => {
       await tx.update(timesheetRates).set(updateData).where(and(eq(timesheetRates.id, rateId), eq(timesheetRates.orgId, u.orgId)));

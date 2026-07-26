@@ -30,6 +30,7 @@ import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { AiJobsWorkerService } from "../ai-jobs/ai-jobs-worker.service";
 import { SupportKbGapService } from "../support-kb-gap/support-kb-gap.service";
+import { ExceptionsDetectorService } from "../timesheets-core/exceptions-detector.service";
 
 @Public()
 @Controller("cron")
@@ -55,6 +56,7 @@ export class CronController {
     private readonly crmTasks: CronCrmTasksService,
     private readonly aiJobsWorker: AiJobsWorkerService,
     private readonly supportKbGap: SupportKbGapService,
+    private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
   ) {}
 
   @Get("trial-expiry")
@@ -810,6 +812,32 @@ export class CronController {
       };
     } catch (error) {
       logger.error("Support KB gap detect cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("timesheets-exception-detection")
+  getTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  @Post("timesheets-exception-detection")
+  @HttpCode(200)
+  postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  private async runTimesheetsExceptionDetection(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const result = await this.timesheetExceptionsDetector.detectAllOrgs();
+      return {
+        success: true,
+        message: `Timesheet exception detection: scanned ${result.orgsScanned} orgs, created ${result.created} exceptions`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Timesheet exception detection cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

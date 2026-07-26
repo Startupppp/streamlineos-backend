@@ -24,10 +24,12 @@ import {
   periodSummaryQuerySchema,
   exportPayrollSchema,
   exportsListQuerySchema,
+  ackExportSchema,
   updateSettingsSchema,
   type PeriodSummaryQuery,
   type ExportPayrollInput,
   type ExportsListQuery,
+  type AckExportInput,
   type UpdateSettingsInput,
 } from "./dto/payroll.schemas";
 
@@ -67,6 +69,16 @@ export class PayrollController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exportSvc.listExports(u.orgId, query);
+  }
+
+  @Patch("exports/:exportId/ack")
+  @RequirePermission("timesheets:payroll:export")
+  ackExport(
+    @Param("exportId", ParseIntPipe) exportId: number,
+    @Body(new ZodValidationPipe(ackExportSchema)) body: AckExportInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exportSvc.ackExport(u.orgId, u.userId, exportId, body);
   }
 
   @Get("exports/:exportId/rows")

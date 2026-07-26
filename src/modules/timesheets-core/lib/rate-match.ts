@@ -5,6 +5,8 @@ export interface RateCandidate {
   clientId: number | null;
   priority: number;
   id: number;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
 }
 
 export interface RateMatchQuery {
@@ -13,6 +15,8 @@ export interface RateMatchQuery {
   ticketId?: number | null;
   taskId?: number | null;
   clientId?: number | null;
+  /** Entry date (YYYY-MM-DD). When set, only rates effective on this date match. */
+  date?: string | null;
 }
 
 export function pickBestRate<T extends RateCandidate>(rates: T[], query: RateMatchQuery): T | null {
@@ -21,6 +25,10 @@ export function pickBestRate<T extends RateCandidate>(rates: T[], query: RateMat
     if (r.userId !== null && r.userId !== query.userId) return false;
     if (r.taskId !== null && r.taskId !== (query.taskId ?? query.ticketId)) return false;
     if (r.clientId !== null && r.clientId !== query.clientId) return false;
+    if (query.date) {
+      if (r.effectiveFrom && query.date < r.effectiveFrom) return false;
+      if (r.effectiveTo && query.date > r.effectiveTo) return false;
+    }
     return true;
   });
 

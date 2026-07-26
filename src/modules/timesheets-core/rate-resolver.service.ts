@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { timesheetRates, projectMembers } from "../../db/schema";
+import { timesheetRates, projectMembers, organizations } from "../../db/schema";
 import { pickBestRate, type RateMatchQuery } from "./lib/rate-match";
 
 export type RateQuery = RateMatchQuery;
@@ -13,9 +13,13 @@ export interface ResolvedRate {
   source: string | null;
 }
 
+const ORG_CURRENCY_TTL_MS = 60_000;
+
 @Injectable()
 export class RateResolverService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private readonly orgCurrencyCache = new Map<string, { value: string; expiresAt: number }>();
 
   async resolve(orgId: string, query: RateQuery): Promise<ResolvedRate> {
     const rates = await this.db
@@ -23,7 +27,7 @@ export class RateResolverService {
       .from(timesheetRates)
       .where(eq(timesheetRates.orgId, orgId));
 
-    const defaultCurrency = this.getDefaultCurrency(orgId);
+    const defaultCurrency = await this.getDefaultCurrency(orgId);
 
     const best = pickBestRate(rates, query);
     if (!best) return this.fallbackToMember(orgId, query, defaultCurrency);
@@ -43,7 +47,7 @@ export class RateResolverService {
       .from(timesheetRates)
       .where(eq(timesheetRates.orgId, orgId));
 
-    const defaultCurrency = this.getDefaultCurrency(orgId);
+    const defaultCurrency = await this.getDefaultCurrency(orgId);
 
     const cardResults = queries.map((query) => {
       const best = pickBestRate(rates, query);
@@ -124,7 +128,18 @@ export class RateResolverService {
     return { billRate: null, currency: defaultCurrency, source: null };
   }
 
-  private getDefaultCurrency(_orgId: string): string {
-    return "USD";
+  async getDefaultCurrency(orgId: string): Promise<string> {
+    const cached = this.orgCurrencyCache.get(orgId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const [org] = await this.db
+      .select({ currency: organizations.currency })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const value = org?.currency || "USD";
+    this.orgCurrencyCache.set(orgId, { value, expiresAt: Date.now() + ORG_CURRENCY_TTL_MS });
+    return value;
   }
 }

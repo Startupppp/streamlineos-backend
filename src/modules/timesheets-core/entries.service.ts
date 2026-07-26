@@ -334,6 +334,10 @@ export class EntriesService {
     const hours = roundHours(input.hours, settings?.roundingRule);
 
     const today = formatDateOnly(new Date());
+    const allowFuture = settings?.allowFutureEntries ?? false;
+    if (!allowFuture && input.date > today) {
+      throw new BadRequestException("Future-dated entries are not allowed");
+    }
     if (!allowBackdated && input.date < today) {
       throw new BadRequestException("Backdated entries are not allowed");
     }
@@ -384,26 +388,39 @@ export class EntriesService {
     const periodId = await this.getOrCreatePeriod(u.orgId, u.userId, input.date, workWeekStart);
 
     const entry = await this.db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(timesheets)
-        .values({
-          orgId: u.orgId,
-          userId: u.userId,
-          ticketId: input.ticketId ?? null,
-          projectId: input.projectId ?? null,
-          date: input.date,
-          hours: hours.toString(),
-          description: input.description ?? null,
-          isBillable,
-          billingType,
-          workLink: input.workLink ?? null,
-          source: input.source ?? "MANUAL",
-          timesheetPeriodId: periodId,
-          status: "PENDING",
-          invoicingStatus: "UNINVOICED",
-          payrollStatus: "UNPROCESSED",
-        })
-        .returning();
+      let inserted;
+      try {
+        [inserted] = await tx
+          .insert(timesheets)
+          .values({
+            orgId: u.orgId,
+            userId: u.userId,
+            ticketId: input.ticketId ?? null,
+            projectId: input.projectId ?? null,
+            date: input.date,
+            hours: hours.toString(),
+            description: input.description ?? null,
+            isBillable,
+            billingType,
+            workLink: input.workLink ?? null,
+            source: input.source ?? "MANUAL",
+            timesheetPeriodId: periodId,
+            status: "PENDING",
+            invoicingStatus: "UNINVOICED",
+            payrollStatus: "UNPROCESSED",
+          })
+          .returning();
+      } catch (err) {
+        const pgCode =
+          (err as { code?: string })?.code ??
+          ((err as { cause?: { code?: string } })?.cause?.code);
+        if (pgCode === "23505") {
+          throw new ConflictException(
+            "An entry for this project and day already exists — edit the existing entry instead",
+          );
+        }
+        throw err;
+      }
 
       if (input.ticketId) {
         const [ticketHours] = await tx

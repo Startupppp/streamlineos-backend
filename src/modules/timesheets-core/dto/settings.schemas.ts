@@ -13,5 +13,10 @@ export const updateCoreSettingsSchema = z.object({
   lockAfterApproval: z.boolean().optional(),
   lockAfterInvoice: z.boolean().optional(),
   reminderRules: z.unknown().optional(),
+  allowFutureEntries: z.boolean().optional(),
+  expectedDailyHours: z.number().positive().max(24).optional().nullable(),
+  expectedWeeklyHours: z.number().positive().max(168).optional().nullable(),
+  submissionGraceDays: z.number().int().min(0).max(30).optional().nullable(),
+  changeReason: z.string().max(500).optional(),
 });
 export type UpdateCoreSettingsInput = z.infer<typeof updateCoreSettingsSchema>;

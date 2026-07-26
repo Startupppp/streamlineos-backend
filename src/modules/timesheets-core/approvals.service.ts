@@ -4,13 +4,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lte } from "drizzle-orm";
+import { ForbiddenException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   timesheetPeriods,
   timesheets,
   timesheetSettings,
+  userDelegations,
   users,
 } from "../../db/schema";
 import { AccessService } from "../access/access.service";
@@ -18,6 +20,7 @@ import { applyScope } from "../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
+import { canActOnPeriod } from "./lib/approval-guard";
 import type {
   ApprovalsQuery,
   BulkApproveInput,
@@ -42,6 +45,58 @@ export class ApprovalsService {
       .where(eq(timesheetSettings.orgId, orgId))
       .limit(1);
     return s;
+  }
+
+  /** True when `approverId` has an active, unexpired delegation to the actor. */
+  private async hasActiveDelegation(
+    orgId: string,
+    approverId: string,
+    actorUserId: string,
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: userDelegations.id })
+      .from(userDelegations)
+      .where(
+        and(
+          eq(userDelegations.orgId, orgId),
+          eq(userDelegations.delegatorId, approverId),
+          eq(userDelegations.delegateeId, actorUserId),
+          eq(userDelegations.status, "ACTIVE"),
+          lte(userDelegations.startsAt, new Date()),
+          gt(userDelegations.endsAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  private async assertCanActOnPeriod(
+    u: CurrentUserContext,
+    period: { userId: string; currentApproverId: string | null },
+  ): Promise<void> {
+    const actor = {
+      userId: u.userId,
+      isOrgOwner: !!u.isOrgOwner,
+      isPlatformAdmin: !!u.isPlatformAdmin,
+    };
+
+    let delegateeOfApprover = false;
+    if (
+      period.currentApproverId &&
+      period.currentApproverId !== u.userId &&
+      period.userId !== u.userId
+    ) {
+      delegateeOfApprover = await this.hasActiveDelegation(
+        u.orgId,
+        period.currentApproverId,
+        u.userId,
+      );
+    }
+
+    const decision = canActOnPeriod(actor, period, { delegateeOfApprover });
+    if (!decision.allowed) {
+      throw new ForbiddenException(decision.reason);
+    }
   }
 
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
@@ -107,6 +162,7 @@ export class ApprovalsService {
     if (period.status !== "SUBMITTED") {
       throw new ConflictException(`Period ${periodId} is not in SUBMITTED state`);
     }
+    await this.assertCanActOnPeriod(u, period);
 
     const settings = await this.getSettings(u.orgId);
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
@@ -161,6 +217,7 @@ export class ApprovalsService {
           projectId: entry.projectId,
           userId: entry.userId,
           ticketId: entry.ticketId,
+          date: entry.date,
         })),
       );
 
@@ -233,6 +290,7 @@ export class ApprovalsService {
 
     if (!period) throw new NotFoundException("Period not found");
     if (period.status !== "SUBMITTED") throw new ConflictException("Only submitted periods can be rejected");
+    await this.assertCanActOnPeriod(u, period);
 
     const now = new Date();
     await this.db.transaction(async (tx) => {
@@ -285,8 +343,13 @@ export class ApprovalsService {
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
-    const periods = await this.db
-      .select({ id: timesheetPeriods.id, status: timesheetPeriods.status })
+    const candidates = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        status: timesheetPeriods.status,
+        userId: timesheetPeriods.userId,
+        currentApproverId: timesheetPeriods.currentApproverId,
+      })
       .from(timesheetPeriods)
       .where(
         and(
@@ -295,6 +358,16 @@ export class ApprovalsService {
           eq(timesheetPeriods.status, "SUBMITTED"),
         ),
       );
+
+    const periods = [];
+    for (const p of candidates) {
+      try {
+        await this.assertCanActOnPeriod(u, p);
+        periods.push(p);
+      } catch {
+        // skip periods this actor is not allowed to act on
+      }
+    }
 
     if (periods.length === 0) return { rejected: 0 };
 
