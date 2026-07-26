@@ -156,6 +156,7 @@ import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { PortalAccessModule } from "./modules/portal-access/portal-access.module";
+import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -247,6 +248,7 @@ import { MeService } from "./me/me.service";
     DirectoryModule,
     PartyModule,
     PortalAccessModule,
+    ModuleAccessModule,
     IdempotencyModule,
     HrPerformanceModule,
     HrPayrollModule,

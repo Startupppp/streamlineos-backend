@@ -3932,7 +3932,30 @@ const PARTY_PERMISSIONS: Permission[] = [
   },
 ];
 
+// Modules whose roles/permissions can be administered from a per-module Access screen
+// by that module's Admin (in addition to Organization Owner/Admin). The keys below are
+// module-prefixed, so each `*_ADMIN` role inherits them via moduleScopedPermissions().
+export const ACCESS_MANAGED_MODULES = ["hr", "crm", "inventory", "projects"] as const;
+
+const MODULE_ACCESS_PERMISSIONS: Permission[] = ACCESS_MANAGED_MODULES.flatMap(
+  (moduleKey) => [
+    {
+      name: `${moduleKey}:access:view`,
+      resource: `${moduleKey}:access`,
+      action: "view",
+      description: `View roles, permissions and assignments for the ${moduleKey} module`,
+    },
+    {
+      name: `${moduleKey}:access:manage`,
+      resource: `${moduleKey}:access`,
+      action: "manage",
+      description: `Manage roles, permissions and assignments for the ${moduleKey} module`,
+    },
+  ],
+);
+
 export const PERMISSIONS: Permission[] = [
+  ...MODULE_ACCESS_PERMISSIONS,
   ...SIGN_PERMISSIONS,
   ...NOTIFICATIONS_PERMISSIONS,
   ...HR_PERMISSIONS,
