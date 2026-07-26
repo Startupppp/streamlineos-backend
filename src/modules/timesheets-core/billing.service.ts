@@ -1,5 +1,5 @@
 import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -50,36 +50,31 @@ export class BillingService {
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.projectId) conditions.push(eq(timesheets.projectId, query.projectId));
 
-    const entries = await this.db
+    const aggRows = await this.db
+      .select({
+        projectId: timesheets.projectId,
+        totalHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
+        ratedAmount: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.billRate} IS NOT NULL THEN ${timesheets.hours}::numeric * ${timesheets.billRate}::numeric ELSE 0 END), 0)::text`,
+        entryCount: sql<number>`COUNT(*)::int`,
+        unratedCount: sql<number>`COUNT(CASE WHEN ${timesheets.billRate} IS NULL THEN 1 END)::int`,
+        currency: sql<string | null>`MAX(${timesheets.currency})`,
+      })
+      .from(timesheets)
+      .where(and(...conditions))
+      .groupBy(timesheets.projectId);
+
+    const unratedEntries = await this.db
       .select({
         id: timesheets.id,
         userId: timesheets.userId,
         projectId: timesheets.projectId,
         ticketId: timesheets.ticketId,
         hours: timesheets.hours,
-        billRate: timesheets.billRate,
-        currency: timesheets.currency,
-        invoicingStatus: timesheets.invoicingStatus,
       })
       .from(timesheets)
-      .where(and(...conditions));
+      .where(and(...conditions, isNull(timesheets.billRate)))
+      .limit(500);
 
-    const projectIds = [...new Set(entries.map((e) => e.projectId).filter((id): id is number => id !== null))];
-    const projectRows = projectIds.length > 0
-      ? await this.db
-          .select({ id: projects.id, name: projects.name })
-          .from(projects)
-          .where(inArray(projects.id, projectIds))
-      : [];
-
-    const projectMap = new Map(projectRows.map((p) => [p.id, p.name]));
-
-    const byProject = new Map<
-      number,
-      { hours: number; amount: number; currency: string; count: number; missingRate: boolean }
-    >();
-
-    const unratedEntries = entries.filter((entry) => entry.billRate === null);
     const resolvedRates = await this.rateResolver.resolveMany(
       u.orgId,
       unratedEntries.map((entry) => ({
@@ -88,51 +83,46 @@ export class BillingService {
         ticketId: entry.ticketId,
       })),
     );
-    const resolvedByEntryId = new Map(unratedEntries.map((entry, i) => [entry.id, resolvedRates[i]]));
 
-    for (const entry of entries) {
-      const pid = entry.projectId ?? 0;
-      const hours = parseFloat(entry.hours);
-      let amount = 0;
-      let missingRate = false;
-
-      if (entry.billRate !== null) {
-        amount = round2(hours * parseFloat(entry.billRate));
-      } else {
-        const resolved = resolvedByEntryId.get(entry.id);
-        if (resolved && resolved.billRate !== null) {
-          amount = round2(hours * resolved.billRate);
-        } else {
-          missingRate = true;
-        }
+    const extraAmountByProject = new Map<number, number>();
+    const resolvedUnratedByProject = new Map<number, number>();
+    unratedEntries.forEach((entry, i) => {
+      const resolved = resolvedRates[i];
+      if (resolved && resolved.billRate !== null) {
+        const pid = entry.projectId ?? 0;
+        extraAmountByProject.set(
+          pid,
+          (extraAmountByProject.get(pid) ?? 0) + parseFloat(entry.hours) * resolved.billRate,
+        );
+        resolvedUnratedByProject.set(pid, (resolvedUnratedByProject.get(pid) ?? 0) + 1);
       }
+    });
 
-      const existing = byProject.get(pid);
-      if (existing) {
-        existing.hours = round2(existing.hours + hours);
-        existing.amount = round2(existing.amount + amount);
-        existing.count++;
-        if (missingRate) existing.missingRate = true;
-      } else {
-        byProject.set(pid, {
-          hours,
-          amount,
-          currency: entry.currency ?? "USD",
-          count: 1,
-          missingRate,
-        });
-      }
-    }
+    const projectIds = aggRows
+      .map((r) => r.projectId)
+      .filter((id): id is number => id !== null);
+    const projectRows = projectIds.length > 0
+      ? await this.db
+          .select({ id: projects.id, name: projects.name })
+          .from(projects)
+          .where(inArray(projects.id, projectIds))
+      : [];
+    const projectMap = new Map(projectRows.map((p) => [p.id, p.name]));
 
-    const groups = [...byProject.entries()].map(([projectId, data]) => ({
-      projectId,
-      projectName: projectMap.get(projectId) ?? "Unknown Project",
-      totalHours: data.hours,
-      billableAmount: data.amount,
-      currency: data.currency,
-      entryCount: data.count,
-      missingRate: data.missingRate,
-    }));
+    const groups = aggRows.map((r) => {
+      const pid = r.projectId ?? 0;
+      const extraAmount = extraAmountByProject.get(pid) ?? 0;
+      const stillUnrated = r.unratedCount - (resolvedUnratedByProject.get(pid) ?? 0);
+      return {
+        projectId: pid,
+        projectName: projectMap.get(pid) ?? "Unknown Project",
+        totalHours: round2(parseFloat(r.totalHours)),
+        billableAmount: round2(parseFloat(r.ratedAmount) + extraAmount),
+        currency: r.currency ?? "USD",
+        entryCount: r.entryCount,
+        missingRate: stillUnrated > 0,
+      };
+    });
 
     const totals = groups.reduce(
       (acc, g) => ({
