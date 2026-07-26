@@ -51,3 +51,4 @@ export * from "./party";
 export * from "./portal-access";
 export * from "./idempotency";
 export * from "./offer-fulfillment";
+export * from "./outbox";
