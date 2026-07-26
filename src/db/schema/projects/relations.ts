@@ -1,6 +1,5 @@
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../auth";
-import { crmOrganizations } from "../crm/contacts";
 import {
   projects,
   sprints,
@@ -92,7 +91,6 @@ export const ticketsRelations = relations(tickets, ({ one, many }) => ({
   state: one(customStates, { fields: [tickets.stateId], references: [customStates.id] }),
   module: one(modules, { fields: [tickets.moduleId], references: [modules.id] }),
   cycle: one(cycles, { fields: [tickets.cycleId], references: [cycles.id] }),
-  customer: one(crmOrganizations, { fields: [tickets.customerId], references: [crmOrganizations.id] }),
   comments: many(ticketComments),
   attachments: many(ticketAttachments),
   labels: many(ticketLabelMappings),

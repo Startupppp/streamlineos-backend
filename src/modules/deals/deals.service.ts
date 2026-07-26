@@ -1,10 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { deals, dealActivities, dealApprovals, organizationMembers, chatChannels, chatChannelMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
@@ -230,6 +232,7 @@ export class DealsService {
     const updateData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
     let stageChanged = false;
     let previousStage: string | null = null;
+    let wonStageDetected = false;
 
     if (input.stage !== undefined) {
       const existing = await this.db.query.deals.findFirst({
@@ -276,6 +279,7 @@ export class DealsService {
       if (stageInfo?.stageType === "won") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 100;
+        wonStageDetected = true;
       } else if (stageInfo?.stageType === "lost") {
         updateData.actualCloseDate = new Date().toISOString().split("T")[0];
         updateData.probability = 0;
@@ -322,11 +326,36 @@ export class DealsService {
     if (input.lostReason !== undefined) updateData.lostReason = input.lostReason;
     if (input.notes !== undefined) updateData.notes = input.notes;
 
-    const [updated] = await this.db
-      .update(deals)
-      .set(updateData)
-      .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await (tx as Db)
+        .update(deals)
+        .set(updateData)
+        .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId)))
+        .returning();
+      if (!row) return undefined;
+
+      if (wonStageDetected && stageChanged) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "deal",
+          aggregateId: String(dealId),
+          aggregateVersion: row.updatedAt ? new Date(row.updatedAt).getTime() : Date.now(),
+          eventType: "deal.closed",
+          payload: {
+            dealId,
+            orgId,
+            dealName: row.name,
+            dealValue: row.value ?? "0",
+            closedAt: row.actualCloseDate ?? new Date().toISOString().split("T")[0],
+            actorUserId: userId,
+          },
+          occurredAt: new Date(),
+        });
+      }
+
+      return row;
+    });
 
     if (!updated) return { ok: false, reason: "not_found" };
 

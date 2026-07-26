@@ -7,7 +7,6 @@ import {
 } from "../enums";
 import { organizations, users } from "../auth";
 import { projects, sprints, customStates, modules, cycles } from "./core";
-import { crmOrganizations } from "../crm/contacts";
 
 export const tickets = pgTable("tickets", {
   id: serial("id").primaryKey(),
@@ -48,7 +47,7 @@ export const tickets = pgTable("tickets", {
   }>(),
   recurrenceParentId: integer("recurrence_parent_id"),
   recurrenceNextRunAt: timestamp("recurrence_next_run_at", { withTimezone: true }),
-  customerId: integer("customer_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+  customerId: integer("customer_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
