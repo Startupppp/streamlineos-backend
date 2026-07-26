@@ -252,9 +252,14 @@ describe("EntitlementsService", () => {
       expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
     });
 
-    it("derives enabled from the organizations.enabledModules array", async () => {
+    it("derives enabled from the org_modules rows", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.orgFindFirst.mockResolvedValue({ enabledModules: ["HR", "PROJECTS"] });
+      mocks.findMany.mockResolvedValue([
+        { moduleKey: "hr", enabled: true },
+        { moduleKey: "projects", enabled: true },
+        { moduleKey: "crm", enabled: false },
+        { moduleKey: "payroll", enabled: false },
+      ]);
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).listModules("org-1");
@@ -268,9 +273,9 @@ describe("EntitlementsService", () => {
       expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
     });
 
-    it("marks kb as core: true regardless of enabledModules", async () => {
+    it("marks kb as core: true regardless of org_modules config", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.orgFindFirst.mockResolvedValue({ enabledModules: [] });
+      mocks.findMany.mockResolvedValue([{ moduleKey: "hr", enabled: false }]);
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).listModules("org-1");
@@ -281,9 +286,9 @@ describe("EntitlementsService", () => {
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(false);
     });
 
-    it("re-throws non-missing-table errors from the org query", async () => {
+    it("re-throws non-missing-table errors from the org_modules query", async () => {
       const { db, mocks } = buildMockDb();
-      mocks.orgFindFirst.mockRejectedValue(new Error("query error"));
+      mocks.findMany.mockRejectedValue(new Error("query error"));
       const { cache } = buildMockCache();
 
       await expect(
