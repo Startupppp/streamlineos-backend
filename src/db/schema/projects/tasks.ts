@@ -263,7 +263,7 @@ export const ticketCommentReactions = pgTable("ticket_comment_reactions", {
   id: serial("id").primaryKey(),
   commentId: integer("comment_id").notNull().references(() => ticketComments.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull(),
-  orgId: text("org_id").notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   emoji: varchar("emoji", { length: 20 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -284,7 +284,7 @@ export const ticketRelatedLinks = pgTable("ticket_related_links", {
 
 export const projectAutomations = pgTable("project_automations", {
   id: serial("id").primaryKey(),
-  orgId: text("org_id").notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 200 }).notNull(),
   isActive: boolean("is_active").notNull().default(true),
