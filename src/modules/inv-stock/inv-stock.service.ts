@@ -25,45 +25,58 @@ export class InvStockService {
 
     return this.cache.cached(CACHE_KEYS.invStockLevels(orgId, hash), async () => {
 
-      const rows = await this.db.execute<{
-        id: number; org_id: string; product_variant_id: number; location_id: number;
-        lot_id: number | null; serial_id: number | null;
-        on_hand: string; committed: string; on_order: string;
-        blocked_qty: string | null; quality_hold_qty: string | null;
-        outgoing_qty: string | null; average_cost: string | null; updated_at: string;
-      }>(sql`
-        SELECT sl.*,
-          (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
-        FROM inv_stock_levels sl
-        WHERE sl.org_id = ${orgId}
-          ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
-          ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
-          ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
-          ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
-          ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
-          ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
-          ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-          ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
-          ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
-        ORDER BY sl.updated_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `);
+      // [B1-08] Run data + count queries in parallel.
+      // [B1-10] Explicit column projection instead of SELECT sl.*.
+      // [B1-23] No typed generic on db.execute; fields read via Number()/String() converters below.
+      const [rows, countRows] = await Promise.all([
+        this.db.execute(sql`
+          SELECT
+            sl.id,
+            sl.org_id,
+            sl.product_variant_id,
+            sl.location_id,
+            sl.lot_id,
+            sl.serial_id,
+            sl.on_hand,
+            sl.committed,
+            sl.on_order,
+            sl.blocked_qty,
+            sl.quality_hold_qty,
+            sl.outgoing_qty,
+            sl.average_cost,
+            sl.updated_at,
+            (sl.on_hand::numeric - sl.committed::numeric - COALESCE(sl.blocked_qty, 0)::numeric - COALESCE(sl.quality_hold_qty, 0)::numeric) AS available
+          FROM inv_stock_levels sl
+          WHERE sl.org_id = ${orgId}
+            ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
+            ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
+            ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
+            ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
+            ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
+            ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
+            ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
+            ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+            ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
+          ORDER BY sl.updated_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `),
+        this.db.execute(sql`
+          SELECT count(*)::int AS count FROM inv_stock_levels sl
+          WHERE sl.org_id = ${orgId}
+            ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
+            ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
+            ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
+            ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
+            ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
+            ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
+            ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
+            ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
+            ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
+        `),
+      ]);
 
-      const [countResult] = await this.db.execute<{ count: number }>(sql`
-        SELECT count(*)::int AS count FROM inv_stock_levels sl
-        WHERE sl.org_id = ${orgId}
-          ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
-          ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
-          ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
-          ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
-          ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
-          ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
-          ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-          ${search ? sql`AND sl.product_variant_id IN (SELECT v.id FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE p.org_id = ${orgId} AND (p.name ILIKE ${"%" + search + "%"} OR p.sku ILIKE ${"%" + search + "%"} OR v.sku ILIKE ${"%" + search + "%"}))` : sql``}
-          ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
-      `);
-
-      const total = countResult?.count ?? 0;
+      const countRow = countRows[0];
+      const total = Number(countRow?.["count"] ?? 0);
       return { items: rows, total, page, totalPages: Math.ceil(total / limit) };
     }, CACHE_TTL.SHORT);
   }
@@ -111,53 +124,57 @@ export class InvStockService {
   async getAvailability(orgId: string, filters: AvailabilityQueryInput) {
     const { variantId, warehouseId } = filters;
 
-    const [stockRow] = await this.db.execute<{
-      on_hand: string; committed: string; blocked_qty: string; quality_hold_qty: string;
-    }>(sql`
-      SELECT
-        COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
-        COALESCE(SUM(committed::numeric), 0)::text AS committed,
-        COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
-        COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
-      FROM inv_stock_levels sl
-      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
-      ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
-    `);
+    // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
+    // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
+    const [stockRows, incomingRows, outgoingRows] = await Promise.all([
+      this.db.execute(sql`
+        SELECT
+          COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
+          COALESCE(SUM(committed::numeric), 0)::text AS committed,
+          COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
+          COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty
+        FROM inv_stock_levels sl
+        WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
+        ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
+      `),
+      this.db.execute(sql`
+        SELECT COALESCE(SUM((pl.quantity::numeric - pl.quantity_received::numeric)), 0)::text AS incoming
+        FROM inv_po_lines pl
+        JOIN inv_purchase_orders po ON po.id = pl.po_id
+        WHERE po.org_id = ${orgId}
+          AND pl.product_variant_id = ${variantId}
+          AND po.status IN ('SENT', 'PARTIAL')
+          ${warehouseId ? sql`AND po.warehouse_id = ${warehouseId}` : sql``}
+      `),
+      this.db.execute(sql`
+        SELECT COALESCE(SUM((sl.quantity::numeric - sl.quantity_shipped::numeric)), 0)::text AS outgoing
+        FROM inv_so_lines sl
+        JOIN inv_sales_orders so ON so.id = sl.so_id
+        WHERE so.org_id = ${orgId}
+          AND sl.product_variant_id = ${variantId}
+          AND so.status IN ('CONFIRMED', 'SHIPPED')
+          ${warehouseId ? sql`AND so.warehouse_id = ${warehouseId}` : sql``}
+      `),
+    ]);
 
-    const [incomingRow] = await this.db.execute<{ incoming: string }>(sql`
-      SELECT COALESCE(SUM((pl.quantity::numeric - pl.quantity_received::numeric)), 0)::text AS incoming
-      FROM inv_po_lines pl
-      JOIN inv_purchase_orders po ON po.id = pl.po_id
-      WHERE po.org_id = ${orgId}
-        AND pl.product_variant_id = ${variantId}
-        AND po.status IN ('SENT', 'PARTIAL')
-        ${warehouseId ? sql`AND po.warehouse_id = ${warehouseId}` : sql``}
-    `);
+    const stockRow = stockRows[0];
+    const incomingRow = incomingRows[0];
+    const outgoingRow = outgoingRows[0];
 
-    const [outgoingRow] = await this.db.execute<{ outgoing: string }>(sql`
-      SELECT COALESCE(SUM((sl.quantity::numeric - sl.quantity_shipped::numeric)), 0)::text AS outgoing
-      FROM inv_so_lines sl
-      JOIN inv_sales_orders so ON so.id = sl.so_id
-      WHERE so.org_id = ${orgId}
-        AND sl.product_variant_id = ${variantId}
-        AND so.status IN ('CONFIRMED', 'SHIPPED')
-        ${warehouseId ? sql`AND so.warehouse_id = ${warehouseId}` : sql``}
-    `);
-
-    const onHand = parseFloat(stockRow?.on_hand ?? "0");
-    const committed = parseFloat(stockRow?.committed ?? "0");
-    const blocked = parseFloat(stockRow?.blocked_qty ?? "0");
-    const qualityHold = parseFloat(stockRow?.quality_hold_qty ?? "0");
-    const incoming = parseFloat(incomingRow?.incoming ?? "0");
-    const outgoing = parseFloat(outgoingRow?.outgoing ?? "0");
+    const onHand = parseFloat(String(stockRow?.["on_hand"] ?? "0"));
+    const committed = parseFloat(String(stockRow?.["committed"] ?? "0"));
+    const blocked = parseFloat(String(stockRow?.["blocked_qty"] ?? "0"));
+    const qualityHold = parseFloat(String(stockRow?.["quality_hold_qty"] ?? "0"));
+    const incoming = parseFloat(String(incomingRow?.["incoming"] ?? "0"));
+    const outgoing = parseFloat(String(outgoingRow?.["outgoing"] ?? "0"));
 
     const available = onHand - committed - blocked - qualityHold;
     const forecasted = onHand + incoming - outgoing;
 
-    const warehouseBreakdown = await this.db.execute<{
-      warehouse_id: number; warehouse_name: string;
-      on_hand: string; committed: string; available: string;
-    }>(sql`
+    // warehouseBreakdown depends only on orgId/variantId/warehouseId (same as stockRow query inputs),
+    // so it is also independent of the three parallel queries above and can start immediately after.
+    // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
+    const warehouseBreakdown = await this.db.execute(sql`
       SELECT
         w.id AS warehouse_id,
         w.name AS warehouse_name,

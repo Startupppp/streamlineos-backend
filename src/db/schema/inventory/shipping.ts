@@ -49,6 +49,7 @@ export const invShipmentLines = pgTable("inv_shipment_lines", {
   serialId: integer("serial_id"),
 }, (table) => [
   index("idx_inv_ship_lines_ship").on(table.shipmentId),
+  index("idx_inv_shipment_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPackages = pgTable("inv_packages", {
@@ -78,6 +79,7 @@ export const invPackageLines = pgTable("inv_package_lines", {
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
 }, (table) => [
   index("idx_inv_pkg_lines_pkg").on(table.packageId),
+  index("idx_inv_package_lines_variant").on(table.productVariantId),
 ]);
 
 export const invLoads = pgTable("inv_loads", {

@@ -18,6 +18,7 @@ export const invChannels = pgTable("inv_channels", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_inv_channels_org_status").on(table.orgId, table.status),
+  uniqueIndex("uniq_inv_channels_org_name").on(table.orgId, table.name),
 ]);
 
 export const invChannelStockPublications = pgTable("inv_channel_stock_publications", {

@@ -58,6 +58,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
   index("idx_inv_txn_created").on(table.createdAt),
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
+  index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
 ]);
 
 export const invStockAdjustments = pgTable("inv_stock_adjustments", {
@@ -88,6 +89,7 @@ export const invStockAdjustmentLines = pgTable("inv_stock_adjustment_lines", {
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_adj_lines_adj").on(table.adjustmentId),
+  index("idx_inv_stock_adjustment_lines_variant").on(table.productVariantId),
 ]);
 
 export const invStockTransfers = pgTable("inv_stock_transfers", {
@@ -122,6 +124,7 @@ export const invStockTransferLines = pgTable("inv_stock_transfer_lines", {
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_transfer_lines_transfer").on(table.transferId),
+  index("idx_inv_stock_transfer_lines_variant").on(table.productVariantId),
 ]);
 
 export const invStockLevelsRelations = relations(invStockLevels, ({ one }) => ({

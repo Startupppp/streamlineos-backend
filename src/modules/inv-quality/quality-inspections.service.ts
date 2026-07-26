@@ -129,8 +129,10 @@ export class InspectionsService {
       throw new ConflictException("Invalid state");
     }
     const movements: StockMovement[] = [];
+    const stockLevelMap = await this.batchFetchStockLevels(orgId, inspection.lines);
     for (const line of inspection.lines) {
-      const level = await this.findStockLevel(orgId, line.productVariantId, line.lotId, line.serialId);
+      const levelKey = this.stockLevelKey(line.productVariantId, line.lotId, line.serialId);
+      const level = stockLevelMap.get(levelKey);
       if (level && parseFloat(level.qualityHoldQty ?? "0") > 0) {
         movements.push(
           { transactionType: "QUARANTINE_OUT", productVariantId: line.productVariantId, locationId: level.locationId, lotId: line.lotId ?? undefined, serialId: line.serialId ?? undefined, quantityDelta: "-" + line.quantity, qualityBucket: "QUALITY_HOLD" },
@@ -183,10 +185,14 @@ export class InspectionsService {
     type RtvEntry = { vendorId: number; lineId: number; productVariantId: number; lotId: number | null; serialId: number | null; quantity: string };
     const rtvEntries: RtvEntry[] = [];
 
+    const stockLevelMap = await this.batchFetchStockLevels(orgId, inspection.lines);
+
     for (const dl of input.lines) {
       const line = inspection.lines.find(l => l.id === dl.lineId);
       if (!line) throw new BadRequestException(`Line ${dl.lineId} not found`);
-      const locId = dl.locationId ?? (await this.findStockLevel(orgId, line.productVariantId, line.lotId, line.serialId))?.locationId;
+      const levelKey = this.stockLevelKey(line.productVariantId, line.lotId, line.serialId);
+      const cachedLevel = stockLevelMap.get(levelKey);
+      const locId = dl.locationId ?? cachedLevel?.locationId;
       if (!locId && dl.disposition !== "RETURN_TO_VENDOR") throw new BadRequestException(`No location found for line ${dl.lineId}`);
       const base = { productVariantId: line.productVariantId, locationId: locId ?? 0, lotId: line.lotId ?? undefined, serialId: line.serialId ?? undefined };
       if (dl.disposition === "QUARANTINE") {
@@ -194,8 +200,7 @@ export class InspectionsService {
       } else if (dl.disposition === "SCRAP") {
         scrapMoves.push({ transactionType: "SCRAP", ...base, quantityDelta: "-" + line.quantity });
       } else if (dl.disposition === "RELEASE_TO_AVAILABLE") {
-        const level = await this.findStockLevel(orgId, line.productVariantId, line.lotId, line.serialId);
-        if (level && parseFloat(level.qualityHoldQty ?? "0") > 0) {
+        if (cachedLevel && parseFloat(cachedLevel.qualityHoldQty ?? "0") > 0) {
           releaseMoves.push(
             { transactionType: "QUARANTINE_OUT", ...base, quantityDelta: "-" + line.quantity, qualityBucket: "QUALITY_HOLD" },
             { transactionType: "ADJUSTMENT_IN", ...base, quantityDelta: line.quantity, qualityBucket: "ON_HAND" },
@@ -273,11 +278,31 @@ export class InspectionsService {
     return this.findOne(orgId, id);
   }
 
-  private async findStockLevel(orgId: string, productVariantId: number, lotId: number | null | undefined, serialId: number | null | undefined) {
-    const conditions = [eq(invStockLevels.orgId, orgId), eq(invStockLevels.productVariantId, productVariantId)];
-    if (lotId) conditions.push(eq(invStockLevels.lotId, lotId));
-    if (serialId) conditions.push(eq(invStockLevels.serialId, serialId));
-    const [level] = await this.db.select().from(invStockLevels).where(and(...conditions)).limit(1);
-    return level;
+  private stockLevelKey(productVariantId: number, lotId: number | null | undefined, serialId: number | null | undefined): string {
+    return `${productVariantId}:${lotId ?? "null"}:${serialId ?? "null"}`;
+  }
+
+  private async batchFetchStockLevels(
+    orgId: string,
+    lines: Array<{ productVariantId: number; lotId: number | null | undefined; serialId: number | null | undefined }>,
+  ): Promise<Map<string, typeof invStockLevels.$inferSelect>> {
+    if (lines.length === 0) return new Map();
+
+    const productVariantIds = [...new Set(lines.map(l => l.productVariantId))];
+
+    const rows = await this.db
+      .select()
+      .from(invStockLevels)
+      .where(and(
+        eq(invStockLevels.orgId, orgId),
+        inArray(invStockLevels.productVariantId, productVariantIds),
+      ));
+
+    const map = new Map<string, typeof invStockLevels.$inferSelect>();
+    for (const row of rows) {
+      const key = this.stockLevelKey(row.productVariantId, row.lotId, row.serialId);
+      map.set(key, row);
+    }
+    return map;
   }
 }

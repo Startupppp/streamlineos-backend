@@ -39,6 +39,7 @@ export const invVendorReturnLines = pgTable("inv_vendor_return_lines", {
   unitCost: decimal("unit_cost", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_vret_lines_return").on(table.returnId),
+  index("idx_inv_vendor_return_lines_variant").on(table.productVariantId),
 ]);
 
 export const invCustomerReturns = pgTable("inv_customer_returns", {
@@ -72,6 +73,7 @@ export const invCustomerReturnLines = pgTable("inv_customer_return_lines", {
   notes: text("notes"),
 }, (table) => [
   index("idx_inv_cret_lines_return").on(table.returnId),
+  index("idx_inv_customer_return_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPickLists = pgTable("inv_pick_lists", {
@@ -102,6 +104,7 @@ export const invPickListLines = pgTable("inv_pick_list_lines", {
   quantityPicked: decimal("quantity_picked", { precision: 18, scale: 4 }).default("0").notNull(),
 }, (table) => [
   index("idx_inv_pick_lines_pick").on(table.pickListId),
+  index("idx_inv_pick_list_lines_variant").on(table.productVariantId),
 ]);
 
 export const invCycleCounts = pgTable("inv_cycle_counts", {
@@ -134,6 +137,7 @@ export const invCycleCountLines = pgTable("inv_cycle_count_lines", {
   varianceQty: decimal("variance_qty", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_cc_lines_count").on(table.cycleCountId),
+  index("idx_inv_cycle_count_lines_variant").on(table.productVariantId),
 ]);
 
 export const invPhysicalAudits = pgTable("inv_physical_audits", {
@@ -164,6 +168,7 @@ export const invPhysicalAuditLines = pgTable("inv_physical_audit_lines", {
   varianceQty: decimal("variance_qty", { precision: 18, scale: 4 }),
 }, (table) => [
   index("idx_inv_pa_lines_audit").on(table.auditId),
+  index("idx_inv_physical_audit_lines_variant").on(table.productVariantId),
 ]);
 
 export const invVendorReturnsRelations = relations(invVendorReturns, ({ one, many }) => ({

@@ -27,7 +27,7 @@ export const invVendors = pgTable("inv_vendors", {
 }, (table) => [
   uniqueIndex("uniq_inv_vendors_org_code").on(table.orgId, table.code),
   index("idx_inv_vendors_org").on(table.orgId),
-  index("idx_inv_vendors_name_trgm").on(table.name),
+  index("idx_inv_vendors_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
 ]);
 
 export const invPurchaseOrders = pgTable("inv_purchase_orders", {
@@ -70,6 +70,7 @@ export const invPoLines = pgTable("inv_po_lines", {
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
   index("idx_inv_po_lines_po").on(table.poId),
+  index("idx_inv_po_lines_variant").on(table.productVariantId),
 ]);
 
 export const invGrns = pgTable("inv_grns", {

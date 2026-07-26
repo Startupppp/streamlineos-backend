@@ -387,50 +387,47 @@ export class InvProductsService {
     if (variants.length > 0) {
       const variantIds = variants.map((v) => v.id);
 
-      const [stockResult] = await this.db
-        .select({
-          total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
-        })
-        .from(invStockLevels)
-        .where(inArray(invStockLevels.productVariantId, variantIds));
+      const [stockRows, openPoLines, openSoLines] = await Promise.all([
+        this.db
+          .select({
+            total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
+          })
+          .from(invStockLevels)
+          .where(inArray(invStockLevels.productVariantId, variantIds)),
+        this.db
+          .select({ id: invPoLines.id })
+          .from(invPoLines)
+          .innerJoin(
+            invPurchaseOrders,
+            eq(invPoLines.poId, invPurchaseOrders.id),
+          )
+          .where(
+            and(
+              inArray(invPoLines.productVariantId, variantIds),
+              inArray(invPurchaseOrders.status, ["DRAFT", "SENT", "PARTIAL"]),
+            ),
+          )
+          .limit(1),
+        this.db
+          .select({ id: invSoLines.id })
+          .from(invSoLines)
+          .innerJoin(invSalesOrders, eq(invSoLines.soId, invSalesOrders.id))
+          .where(
+            and(
+              inArray(invSoLines.productVariantId, variantIds),
+              inArray(invSalesOrders.status, ["DRAFT", "CONFIRMED"]),
+            ),
+          )
+          .limit(1),
+      ]);
 
-      if (parseFloat(stockResult?.total ?? "0") > 0) {
+      if (parseFloat(stockRows[0]?.total ?? "0") > 0) {
         throw new ConflictException(
           "Cannot delete product with existing stock. Archive it instead.",
         );
       }
 
-      const openPoLines = await this.db
-        .select({ id: invPoLines.id })
-        .from(invPoLines)
-        .innerJoin(invPurchaseOrders, eq(invPoLines.poId, invPurchaseOrders.id))
-        .where(
-          and(
-            inArray(invPoLines.productVariantId, variantIds),
-            inArray(invPurchaseOrders.status, ["DRAFT", "SENT", "PARTIAL"]),
-          ),
-        )
-        .limit(1);
-
-      if (openPoLines.length > 0) {
-        throw new ConflictException(
-          "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
-        );
-      }
-
-      const openSoLines = await this.db
-        .select({ id: invSoLines.id })
-        .from(invSoLines)
-        .innerJoin(invSalesOrders, eq(invSoLines.soId, invSalesOrders.id))
-        .where(
-          and(
-            inArray(invSoLines.productVariantId, variantIds),
-            inArray(invSalesOrders.status, ["DRAFT", "CONFIRMED"]),
-          ),
-        )
-        .limit(1);
-
-      if (openSoLines.length > 0) {
+      if (openPoLines.length > 0 || openSoLines.length > 0) {
         throw new ConflictException(
           "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
         );
@@ -447,6 +444,7 @@ export class InvProductsService {
   async archiveProduct(orgId: string, productId: number, userId: string) {
     const existing = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      columns: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
 
@@ -474,6 +472,7 @@ export class InvProductsService {
   async restoreProduct(orgId: string, productId: number, userId: string) {
     const existing = await this.db.query.invProducts.findFirst({
       where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      columns: { id: true, status: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
 
@@ -509,24 +508,21 @@ export class InvProductsService {
     });
     if (!product) throw new NotFoundException("Product not found");
 
-    const existing = await this.db.query.invProductVariants.findFirst({
-      where: and(
-        eq(invProductVariants.orgId, orgId),
-        eq(invProductVariants.sku, data.sku),
-      ),
-      columns: { id: true },
-    });
-    if (existing)
-      throw new ConflictException("A variant with this SKU already exists");
-
     if (data.barcode) await this.assertNoBarcodeConflict(orgId, data.barcode);
 
-    const [variant] = await this.db
-      .insert(invProductVariants)
-      .values({ orgId, productId, ...data })
-      .returning();
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    return variant;
+    try {
+      const [variant] = await this.db
+        .insert(invProductVariants)
+        .values({ orgId, productId, ...data })
+        .returning();
+      await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
+      return variant;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException("A variant with this SKU already exists");
+      }
+      throw err;
+    }
   }
 
   async updateVariant(
@@ -596,12 +592,19 @@ export class InvProductsService {
   }
 
   async createCategory(orgId: string, data: CreateCategoryInput) {
-    const [cat] = await this.db
-      .insert(invCategories)
-      .values({ orgId, ...data })
-      .returning();
-    await this.cache.del(`inv:products:categories:${orgId}`);
-    return cat;
+    try {
+      const [cat] = await this.db
+        .insert(invCategories)
+        .values({ orgId, ...data })
+        .returning();
+      await this.cache.del(`inv:products:categories:${orgId}`);
+      return cat;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException("A category with this name already exists");
+      }
+      throw err;
+    }
   }
 
   listUom(orgId: string) {
@@ -617,22 +620,25 @@ export class InvProductsService {
   }
 
   async createUom(orgId: string, data: CreateUomInput) {
-    if (data.isBase && data.category) {
-      await this.db
-        .update(invUom)
-        .set({ isBase: false })
-        .where(
-          and(
-            eq(invUom.orgId, orgId),
-            eq(invUom.category, data.category),
-            eq(invUom.isBase, true),
-          ),
-        );
-    }
-    const [uom] = await this.db
-      .insert(invUom)
-      .values({ orgId, ...data })
-      .returning();
+    const uom = await this.db.transaction(async (tx) => {
+      if (data.isBase && data.category) {
+        await tx
+          .update(invUom)
+          .set({ isBase: false })
+          .where(
+            and(
+              eq(invUom.orgId, orgId),
+              eq(invUom.category, data.category),
+              eq(invUom.isBase, true),
+            ),
+          );
+      }
+      const [inserted] = await tx
+        .insert(invUom)
+        .values({ orgId, ...data })
+        .returning();
+      return inserted;
+    });
     await this.cache.del(`inv:products:uom:${orgId}`);
     return uom;
   }
@@ -642,47 +648,57 @@ export class InvProductsService {
     categoryId: number,
     data: UpdateCategoryInput,
   ) {
-    const [updated] = await this.db
-      .update(invCategories)
-      .set({ ...data })
-      .where(
-        and(eq(invCategories.id, categoryId), eq(invCategories.orgId, orgId)),
-      )
-      .returning();
-    if (!updated) throw new NotFoundException("Category not found");
-    await this.cache.del(`inv:products:categories:${orgId}`);
-    return updated;
+    try {
+      const [updated] = await this.db
+        .update(invCategories)
+        .set({ ...data })
+        .where(
+          and(eq(invCategories.id, categoryId), eq(invCategories.orgId, orgId)),
+        )
+        .returning();
+      if (!updated) throw new NotFoundException("Category not found");
+      await this.cache.del(`inv:products:categories:${orgId}`);
+      return updated;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException("A category with this name already exists");
+      }
+      throw err;
+    }
   }
 
   async updateUom(orgId: string, uomId: number, data: UpdateUomInput) {
-    if (data.isBase) {
-      const existingUom = await this.db.query.invUom.findFirst({
-        where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
-        columns: { category: true },
-      });
-      if (!existingUom) throw new NotFoundException("UOM not found");
-      const effectiveCategory = data.category ?? existingUom.category;
-      if (effectiveCategory) {
-        await this.db
-          .update(invUom)
-          .set({ isBase: false })
-          .where(
-            and(
-              eq(invUom.orgId, orgId),
-              eq(invUom.category, effectiveCategory),
-              eq(invUom.isBase, true),
-              ne(invUom.id, uomId),
-            ),
-          );
+    const updated = await this.db.transaction(async (tx) => {
+      if (data.isBase) {
+        const existingUom = await tx.query.invUom.findFirst({
+          where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
+          columns: { category: true },
+        });
+        if (!existingUom) throw new NotFoundException("UOM not found");
+        const effectiveCategory = data.category ?? existingUom.category;
+        if (effectiveCategory) {
+          await tx
+            .update(invUom)
+            .set({ isBase: false })
+            .where(
+              and(
+                eq(invUom.orgId, orgId),
+                eq(invUom.category, effectiveCategory),
+                eq(invUom.isBase, true),
+                ne(invUom.id, uomId),
+              ),
+            );
+        }
       }
-    }
 
-    const [updated] = await this.db
-      .update(invUom)
-      .set({ ...data })
-      .where(and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("UOM not found");
+      const [result] = await tx
+        .update(invUom)
+        .set({ ...data })
+        .where(and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)))
+        .returning();
+      if (!result) throw new NotFoundException("UOM not found");
+      return result;
+    });
     await this.cache.del(`inv:products:uom:${orgId}`);
     return updated;
   }

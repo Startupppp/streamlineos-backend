@@ -16,14 +16,17 @@ export class TplService {
     private readonly audit: InventoryAuditService,
   ) {}
 
-  listConnections(orgId: string) {
+  listConnections(orgId: string, page = 1, limit = 100) {
+    const safeLimit = Math.min(limit, 100);
+    const offset = (page - 1) * safeLimit;
     return this.cache.cached(
       CACHE_KEYS.inv3plList(orgId),
       () =>
         this.db.query.inv3plConnections.findMany({
           where: eq(inv3plConnections.orgId, orgId),
           orderBy: (t, { asc }) => [asc(t.name)],
-          limit: 200,
+          limit: safeLimit,
+          offset,
         }),
       CACHE_TTL.MEDIUM,
     );

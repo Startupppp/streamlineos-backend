@@ -122,11 +122,15 @@ export class RecallsService {
       .map(l => l.lotId)
       .filter((lotId): lotId is number => lotId !== null && lotId !== undefined);
 
-    for (const lotId of lotIds) {
-      const stockLevels = await this.db.select().from(invStockLevels)
-        .where(and(eq(invStockLevels.orgId, orgId), eq(invStockLevels.lotId, lotId)));
-      for (const level of stockLevels) {
-        if (parseFloat(level.onHand) <= 0) continue;
+    if (lotIds.length > 0) {
+      const allStockLevels = await this.db.select().from(invStockLevels)
+        .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, lotIds)));
+
+      const eligibleLevels = allStockLevels.filter(level => parseFloat(level.onHand) > 0);
+
+      for (const level of eligibleLevels) {
+        const lotId = level.lotId;
+        if (lotId === null || lotId === undefined) continue;
         const iKey = `recall:${recall.id}:lot:${lotId}:loc:${level.locationId}`;
         await this.engine.execute(orgId, userId, {
           idempotencyKey: iKey,
@@ -137,15 +141,20 @@ export class RecallsService {
             { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" },
           ],
         });
-        await this.db.insert(invQualityHolds).values({
-          orgId,
-          productVariantId: level.productVariantId,
-          locationId: level.locationId,
-          lotId,
-          quantity: level.onHand,
-          reason: `Recall ${recall.recallNumber}`,
-          createdBy: userId,
-        });
+      }
+
+      if (eligibleLevels.length > 0) {
+        await this.db.insert(invQualityHolds).values(
+          eligibleLevels.map(level => ({
+            orgId,
+            productVariantId: level.productVariantId,
+            locationId: level.locationId,
+            lotId: level.lotId,
+            quantity: level.onHand,
+            reason: `Recall ${recall.recallNumber}`,
+            createdBy: userId,
+          })),
+        );
       }
     }
 

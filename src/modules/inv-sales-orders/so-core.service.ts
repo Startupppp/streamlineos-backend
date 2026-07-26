@@ -254,8 +254,22 @@ export class SoCoreService {
     const settings = await this.settingsService.get(orgId);
     let allReserved = true;
 
-    for (const line of lines) {
-      const available = await this.findAvailableLotForLine(orgId, line.productVariantId, warehouseId, parseFloat(line.quantity), settings.reservationStrategy, settings.expiryReservationPolicy);
+    const availabilities = await Promise.all(
+      lines.map((line) =>
+        this.findAvailableLotForLine(
+          orgId,
+          line.productVariantId,
+          warehouseId,
+          parseFloat(line.quantity),
+          settings.reservationStrategy,
+          settings.expiryReservationPolicy,
+        ),
+      ),
+    );
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const available = availabilities[i];
       if (!available) { allReserved = false; continue; }
 
       try {

@@ -98,6 +98,19 @@ export class InvReportsService {
         const [items, countResult] = await Promise.all([
           this.db.query.invStockLevels.findMany({
             where: eq(invStockLevels.orgId, orgId),
+            columns: {
+              id: true,
+              orgId: true,
+              productVariantId: true,
+              locationId: true,
+              onHand: true,
+              committed: true,
+              onOrder: true,
+              blockedQty: true,
+              qualityHoldQty: true,
+              averageCost: true,
+              updatedAt: true,
+            },
             with: {
               productVariant: {
                 with: {

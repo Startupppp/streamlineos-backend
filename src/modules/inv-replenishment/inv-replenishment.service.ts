@@ -146,6 +146,7 @@ export class InvReplenishmentService {
               productVariant: { with: { product: { columns: { id: true, name: true, sku: true, defaultVendorId: true } } } },
               warehouse: { columns: { id: true, name: true } },
             },
+            limit: 500,
           }),
           this.db
             .select({
@@ -214,6 +215,80 @@ export class InvReplenishmentService {
       },
       CACHE_TTL.SHORT,
     );
+  }
+
+  async getSuggestionForVariant(orgId: string, variantId: number, warehouseId?: number) {
+    const ruleWhere = warehouseId != null
+      ? and(
+          eq(invReorderRules.orgId, orgId),
+          eq(invReorderRules.isActive, true),
+          eq(invReorderRules.productVariantId, variantId),
+          eq(invReorderRules.warehouseId, warehouseId),
+        )
+      : and(
+          eq(invReorderRules.orgId, orgId),
+          eq(invReorderRules.isActive, true),
+          eq(invReorderRules.productVariantId, variantId),
+        );
+
+    const [rules, stockRows] = await Promise.all([
+      this.db.query.invReorderRules.findMany({
+        where: ruleWhere,
+        with: {
+          productVariant: { with: { product: { columns: { id: true, name: true, sku: true, defaultVendorId: true } } } },
+          warehouse: { columns: { id: true, name: true } },
+        },
+        limit: 10,
+      }),
+      this.db
+        .select({
+          variantId: invStockLevels.productVariantId,
+          onHand: sql<string>`SUM(${invStockLevels.onHand}::numeric)::text`,
+          onOrder: sql<string>`SUM(${invStockLevels.onOrder}::numeric)::text`,
+          outgoing: sql<string>`SUM(${invStockLevels.outgoingQty}::numeric)::text`,
+        })
+        .from(invStockLevels)
+        .where(and(eq(invStockLevels.orgId, orgId), eq(invStockLevels.productVariantId, variantId)))
+        .groupBy(invStockLevels.productVariantId),
+    ]);
+
+    const stockRow = stockRows[0];
+    const onHand = stockRow ? parseFloat(stockRow.onHand) : 0;
+    const incoming = stockRow ? parseFloat(stockRow.onOrder) : 0;
+    const outgoing = stockRow ? parseFloat(stockRow.outgoing) : 0;
+    const today = new Date();
+
+    for (const rule of rules) {
+      const forecasted = onHand + incoming - outgoing;
+      const minQty = parseFloat(rule.minQty);
+      if (forecasted >= minQty) continue;
+
+      const maxQty = rule.maxQty ? parseFloat(rule.maxQty) : null;
+      const reorderQty = rule.reorderQty ? parseFloat(rule.reorderQty) : null;
+      const qty = maxQty != null ? Math.max(0, maxQty - forecasted) : (reorderQty ?? minQty - forecasted);
+      const vendorId = rule.vendorId ?? rule.productVariant.product.defaultVendorId ?? null;
+      const expectedDate = new Date(today);
+      expectedDate.setDate(expectedDate.getDate() + (rule.leadTimeDays ?? 7));
+
+      return {
+        productVariantId: rule.productVariantId,
+        variantSku: rule.productVariant.sku,
+        variantName: rule.productVariant.name,
+        productName: rule.productVariant.product.name,
+        ruleId: rule.id,
+        warehouseId: rule.warehouseId ?? null,
+        warehouseName: rule.warehouse?.name ?? null,
+        currentOnHand: onHand,
+        forecasted: Math.round(forecasted * 10000) / 10000,
+        suggestedQty: Math.round(qty * 10000) / 10000,
+        vendorId,
+        leadTimeDays: rule.leadTimeDays ?? 7,
+        expectedDate: expectedDate.toISOString().slice(0, 10),
+        reason: `Forecasted qty (${Math.round(forecasted * 100) / 100}) below min (${minQty})`,
+      };
+    }
+
+    return null;
   }
 
   async generatePo(orgId: string, userId: string, body: GeneratePoInput) {

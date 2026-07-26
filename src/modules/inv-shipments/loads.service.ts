@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, inArray, sql } from "drizzle-orm";
 import {
   invLoads,
   invLoadLines,
@@ -96,16 +96,35 @@ export class LoadsService {
 
     const lines = await this.db.select().from(invLoadLines).where(eq(invLoadLines.loadId, loadId));
 
+    const shipmentIds = lines.map((l) => l.shipmentId).filter((id): id is number => id != null);
+    const transferIds = lines.map((l) => l.transferId).filter((id): id is number => id != null);
+
+    const [shipmentsResult, transfersResult] = await Promise.all([
+      shipmentIds.length > 0
+        ? this.db.select({ id: invShipments.id, status: invShipments.status })
+            .from(invShipments)
+            .where(and(eq(invShipments.orgId, orgId), inArray(invShipments.id, shipmentIds)))
+        : Promise.resolve([] as Array<{ id: number; status: string }>),
+      transferIds.length > 0
+        ? this.db.select({ id: invStockTransfers.id, status: invStockTransfers.status })
+            .from(invStockTransfers)
+            .where(and(eq(invStockTransfers.orgId, orgId), inArray(invStockTransfers.id, transferIds)))
+        : Promise.resolve([] as Array<{ id: number; status: string }>),
+    ]);
+
+    const shipmentStatusMap = new Map(shipmentsResult.map((s) => [s.id, s.status]));
+    const transferStatusMap = new Map(transfersResult.map((t) => [t.id, t.status]));
+
     for (const line of lines) {
       if (line.shipmentId != null) {
-        const [shipment] = await this.db.select().from(invShipments).where(eq(invShipments.id, line.shipmentId)).limit(1);
-        if (shipment && shipment.status !== "SHIPPED") {
+        const status = shipmentStatusMap.get(line.shipmentId);
+        if (status !== undefined && status !== "SHIPPED") {
           throw new BadRequestException("All shipments must be SHIPPED before dispatching");
         }
       }
       if (line.transferId != null) {
-        const [transfer] = await this.db.select().from(invStockTransfers).where(eq(invStockTransfers.id, line.transferId)).limit(1);
-        if (transfer && transfer.status !== "IN_TRANSIT") {
+        const status = transferStatusMap.get(line.transferId);
+        if (status !== undefined && status !== "IN_TRANSIT") {
           throw new BadRequestException("All transfers must be IN_TRANSIT before dispatching");
         }
       }

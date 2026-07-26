@@ -204,11 +204,29 @@ export class InvTraceabilityService {
     return { serial, movements };
   }
 
-  async getExpiryReport(orgId: string, withinDays: number) {
+  async getExpiryReport(
+    orgId: string,
+    withinDays: number,
+    page = 1,
+    limit = 100,
+  ) {
+    const safeLimit = Math.min(limit, 100);
+    const offset = (page - 1) * safeLimit;
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() + withinDays);
     const cutoff = cutoffDate.toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
+
+    const baseWhere = and(
+      eq(invLots.orgId, orgId),
+      or(lte(invLots.expiryDate, cutoff), lte(invLots.expiryDate, today)),
+      sql`(
+        SELECT COALESCE(SUM(sl.on_hand::numeric), 0)
+        FROM inv_stock_levels sl
+        WHERE sl.lot_id = ${invLots.id} AND sl.org_id = ${orgId}
+      ) > 0`,
+    );
 
     const items = await this.db
       .select({
@@ -231,18 +249,10 @@ export class InvTraceabilityService {
       .from(invLots)
       .innerJoin(invProductVariants, eq(invLots.productVariantId, invProductVariants.id))
       .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-      .where(
-        and(
-          eq(invLots.orgId, orgId),
-          or(lte(invLots.expiryDate, cutoff), lte(invLots.expiryDate, today)),
-          sql`(
-            SELECT COALESCE(SUM(sl.on_hand::numeric), 0)
-            FROM inv_stock_levels sl
-            WHERE sl.lot_id = ${invLots.id} AND sl.org_id = ${orgId}
-          ) > 0`,
-        ),
-      )
-      .orderBy(invLots.expiryDate);
+      .where(baseWhere)
+      .orderBy(invLots.expiryDate)
+      .limit(safeLimit)
+      .offset(offset);
 
     return items;
   }

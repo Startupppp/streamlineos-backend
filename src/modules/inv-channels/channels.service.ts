@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from "@nestjs/common";
+import { Injectable, Inject, NotFoundException, ConflictException } from "@nestjs/common";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -18,6 +18,15 @@ import type {
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
 
+function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as Record<string, unknown>)["code"] === "23505"
+  );
+}
+
 @Injectable()
 export class ChannelsService {
   constructor(
@@ -26,14 +35,17 @@ export class ChannelsService {
     private readonly audit: InventoryAuditService,
   ) {}
 
-  list(orgId: string) {
+  list(orgId: string, page = 1, limit = 100) {
+    const safeLimit = Math.min(limit, 100);
+    const offset = (page - 1) * safeLimit;
     return this.cache.cached(
       CACHE_KEYS.invChannelsList(orgId),
       () =>
         this.db.query.invChannels.findMany({
           where: eq(invChannels.orgId, orgId),
           orderBy: (t, { asc }) => [asc(t.name)],
-          limit: 200,
+          limit: safeLimit,
+          offset,
         }),
       CACHE_TTL.MEDIUM,
     );
@@ -54,10 +66,19 @@ export class ChannelsService {
   }
 
   async create(orgId: string, userId: string, input: CreateChannelInput) {
-    const [channel] = await this.db
-      .insert(invChannels)
-      .values({ orgId, ...input })
-      .returning();
+    let channel: typeof invChannels.$inferSelect;
+    try {
+      const [created] = await this.db
+        .insert(invChannels)
+        .values({ orgId, ...input })
+        .returning();
+      channel = created;
+    } catch (e) {
+      if (isUniqueViolation(e)) {
+        throw new ConflictException("A channel with this name already exists");
+      }
+      throw e;
+    }
 
     await this.audit.insert(this.db, {
       orgId,
@@ -78,11 +99,20 @@ export class ChannelsService {
     });
     if (!existing) throw new NotFoundException("Channel not found");
 
-    const [updated] = await this.db
-      .update(invChannels)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(invChannels.id, channelId), eq(invChannels.orgId, orgId)))
-      .returning();
+    let updated: typeof invChannels.$inferSelect;
+    try {
+      const [result] = await this.db
+        .update(invChannels)
+        .set({ ...input, updatedAt: new Date() })
+        .where(and(eq(invChannels.id, channelId), eq(invChannels.orgId, orgId)))
+        .returning();
+      updated = result;
+    } catch (e) {
+      if (isUniqueViolation(e)) {
+        throw new ConflictException("A channel with this name already exists");
+      }
+      throw e;
+    }
 
     await this.audit.insert(this.db, {
       orgId,

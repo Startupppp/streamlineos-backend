@@ -252,18 +252,11 @@ export class InvAiExplainService {
     variantId: number,
     warehouseId?: number,
   ): Promise<ReorderProposalResult> {
-    const { items } = await this.replenishment.getSuggestions(orgId, { page: 1, limit: 100 });
-    const filtered = items.filter(
-      (s) =>
-        s.productVariantId === variantId &&
-        (warehouseId == null || s.warehouseId === warehouseId),
-    );
+    const suggestion = await this.replenishment.getSuggestionForVariant(orgId, variantId, warehouseId);
 
-    if (filtered.length === 0) {
+    if (!suggestion) {
       throw new NotFoundException("No reorder suggestion found for this variant — it may not be below the reorder threshold");
     }
-
-    const suggestion = filtered[0];
 
     const evidence: Record<string, unknown> = {
       productVariantId: suggestion.productVariantId,

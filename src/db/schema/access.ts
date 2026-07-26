@@ -66,7 +66,7 @@ export const orgModules = pgTable(
   "org_modules",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    orgId: varchar("org_id", { length: 36 }).notNull(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     moduleKey: varchar("module_key", { length: 64 }).notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     enabledAt: timestamp("enabled_at").defaultNow().notNull(),

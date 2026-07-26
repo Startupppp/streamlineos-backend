@@ -118,7 +118,7 @@ export class SettingsService {
       .catch(() => 0);
 
     const [
-      levels,
+      stockCountRows,
       txnCountRows,
       expiredReservations,
       failedImportRows,
@@ -126,7 +126,10 @@ export class SettingsService {
       failedWebhookRows,
       failedPublicationRows,
     ] = await Promise.all([
-      this.db.select().from(invStockLevels).where(eq(invStockLevels.orgId, orgId)).limit(50),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(invStockLevels)
+        .where(eq(invStockLevels.orgId, orgId)),
       this.db
         .select({ total: sql<number>`count(*)::int` })
         .from(invStockTransactions)
@@ -154,7 +157,7 @@ export class SettingsService {
 
     return {
       ledgerReconciliation: {
-        sampleSize: levels.length,
+        sampleSize: Number(stockCountRows[0]?.count ?? 0),
         transactionCount: txnCountRows[0]?.total ?? 0,
         status: "ok",
       },

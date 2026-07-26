@@ -16,10 +16,20 @@ export class CarriersService {
     private readonly audit: InventoryAuditService,
   ) {}
 
-  list(orgId: string) {
+  list(orgId: string, page = 1, limit = 100) {
+    const cappedLimit = Math.min(limit, 100);
+    const offset = (page - 1) * cappedLimit;
+    const cacheKey = `${CACHE_KEYS.invCarriersList(orgId)}:${cappedLimit}:${offset}`;
     return this.cache.cached(
-      CACHE_KEYS.invCarriersList(orgId),
-      () => this.db.select().from(invCarriers).where(eq(invCarriers.orgId, orgId)).orderBy(invCarriers.name),
+      cacheKey,
+      () =>
+        this.db
+          .select()
+          .from(invCarriers)
+          .where(eq(invCarriers.orgId, orgId))
+          .orderBy(invCarriers.name)
+          .limit(cappedLimit)
+          .offset(offset),
       CACHE_TTL.MEDIUM,
     );
   }
@@ -36,7 +46,7 @@ export class CarriersService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invCarriersList(orgId));
+    await this.cache.invalidatePattern(`${CACHE_KEYS.invCarriersList(orgId)}*`);
     return carrier;
   }
 
@@ -65,7 +75,7 @@ export class CarriersService {
       });
       return rows;
     });
-    await this.cache.invalidate(CACHE_KEYS.invCarriersList(orgId));
+    await this.cache.invalidatePattern(`${CACHE_KEYS.invCarriersList(orgId)}*`);
     return updated;
   }
 }

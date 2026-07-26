@@ -158,6 +158,7 @@ import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
+import { PortalAccessModule } from "./modules/portal-access/portal-access.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
@@ -247,6 +248,7 @@ import { MeService } from "./me/me.service";
     HrDirectoryModule,
     DirectoryModule,
     PartyModule,
+    PortalAccessModule,
     HrPerformanceModule,
     HrPayrollModule,
     HrLifecycleModule,

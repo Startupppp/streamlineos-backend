@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   auditLogs,
   candidateOffers,
@@ -139,30 +139,29 @@ export class OrganizationService {
     }
 
     await this.db.transaction(async (tx) => {
+      const seqRows = await tx.execute(
+        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+      );
+      const ownerMembershipId = Number(seqRows[0]?.id);
+      if (!Number.isInteger(ownerMembershipId)) {
+        throw new Error("Failed to allocate owner membership id");
+      }
       await tx.insert(organizations).values({
         id: orgId,
         name: input.name,
         slug: input.slug,
         billingEmail,
+        ownerMembershipId,
       });
-      const inserted = await tx
-        .insert(organizationMembers)
-        .values({
-          userId,
-          orgId,
-          role: "OWNER",
-          isOwner: true,
-          status: "ACTIVE",
-          activatedAt: new Date(),
-        })
-        .returning({ id: organizationMembers.id });
-      const ownerMembershipId = inserted[0]?.id;
-      if (ownerMembershipId) {
-        await tx
-          .update(organizations)
-          .set({ ownerMembershipId })
-          .where(eq(organizations.id, orgId));
-      }
+      await tx.insert(organizationMembers).values({
+        id: ownerMembershipId,
+        userId,
+        orgId,
+        role: "OWNER",
+        isOwner: true,
+        status: "ACTIVE",
+        activatedAt: new Date(),
+      });
     });
 
     return { id: orgId, name: input.name, slug: input.slug };

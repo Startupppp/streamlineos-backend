@@ -49,6 +49,7 @@ export const invSoLines = pgTable("inv_so_lines", {
   lineOrder: integer("line_order").default(0).notNull(),
 }, (table) => [
   index("idx_inv_so_lines_so").on(table.soId),
+  index("idx_inv_so_lines_variant").on(table.productVariantId),
 ]);
 
 export const invSalesOrdersRelations = relations(invSalesOrders, ({ one, many }) => ({

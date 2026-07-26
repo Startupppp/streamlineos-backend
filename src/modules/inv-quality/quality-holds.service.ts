@@ -35,10 +35,24 @@ export class HoldsService {
             orderBy: [desc(invQualityHolds.createdAt)],
             limit,
             offset,
+            with: {
+              productVariant: {
+                columns: { name: true, sku: true },
+                with: {
+                  product: { columns: { name: true } },
+                },
+              },
+            },
           }),
           this.db.select({ count: sql<number>`count(*)::int` }).from(invQualityHolds).where(where),
         ]);
-        return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+        const enriched = items.map(({ productVariant, ...hold }) => ({
+          ...hold,
+          variantName: productVariant?.name ?? undefined,
+          variantSku: productVariant?.sku ?? undefined,
+          productName: productVariant?.product?.name ?? undefined,
+        }));
+        return { items: enriched, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
       },
       CACHE_TTL.SHORT,
     );

@@ -225,7 +225,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -246,7 +246,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -261,7 +261,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -281,7 +281,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     const generatePo = jest.fn();
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
       generatePo,
     };
 
@@ -300,7 +300,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -314,7 +314,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     const gateway = { invokeStructured: jest.fn() };
     const confirmation = { propose: jest.fn() };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, totalPages: 0 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(null),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -333,7 +333,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn() };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);
@@ -356,7 +356,7 @@ describe("InvAiExplainService - getReorderProposal", () => {
     };
     const confirmation = { propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL) };
     const replenishment = {
-      getSuggestions: jest.fn().mockResolvedValue({ items: [MOCK_SUGGESTION], total: 1, page: 1, totalPages: 1 }),
+      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
     };
 
     const service = buildService(buildReorderDb(), gateway, confirmation, replenishment);

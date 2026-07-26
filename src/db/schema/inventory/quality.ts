@@ -40,6 +40,7 @@ export const invQualityInspectionLines = pgTable("inv_quality_inspection_lines",
   disposition: invQualityDispositionEnum("disposition"),
 }, (table) => [
   index("idx_inv_qi_lines_insp").on(table.inspectionId),
+  index("idx_inv_quality_inspection_lines_variant").on(table.productVariantId),
 ]);
 
 export const invQualityHolds = pgTable("inv_quality_holds", {
@@ -87,6 +88,7 @@ export const invRecallLines = pgTable("inv_recall_lines", {
   status: text("status").default("OPEN").notNull(),
 }, (table) => [
   index("idx_inv_recall_lines_recall").on(table.recallId),
+  index("idx_inv_recall_lines_variant").on(table.productVariantId),
 ]);
 
 export const invQualityInspectionsRelations = relations(invQualityInspections, ({ one, many }) => ({

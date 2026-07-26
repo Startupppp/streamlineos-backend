@@ -30,6 +30,7 @@ export const invCategories = pgTable("inv_categories", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  uniqueIndex("uniq_inv_categories_org_name").on(table.orgId, table.name),
   index("idx_inv_categories_org").on(table.orgId),
   index("idx_inv_categories_parent").on(table.parentCategoryId),
 ]);
@@ -68,8 +69,8 @@ export const invProducts = pgTable("inv_products", {
   index("idx_inv_products_org_status").on(table.orgId, table.status),
   index("idx_inv_products_category").on(table.categoryId),
   index("idx_inv_products_barcode").on(table.barcode),
-  index("idx_inv_products_name_trgm").on(table.name),
-  index("idx_inv_products_sku_trgm").on(table.sku),
+  index("idx_inv_products_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
+  index("idx_inv_products_sku_trgm").using("gin", table.sku.op("gin_trgm_ops")),
 ]);
 
 export const invProductVariants = pgTable("inv_product_variants", {
@@ -89,7 +90,7 @@ export const invProductVariants = pgTable("inv_product_variants", {
   uniqueIndex("uniq_inv_variants_org_sku").on(table.orgId, table.sku),
   index("idx_inv_variants_product").on(table.productId),
   index("idx_inv_variants_barcode").on(table.barcode),
-  index("idx_inv_variants_sku_trgm").on(table.sku),
+  index("idx_inv_variants_sku_trgm").using("gin", table.sku.op("gin_trgm_ops")),
 ]);
 
 export const invUomRelations = relations(invUom, ({ one }) => ({
