@@ -11,10 +11,14 @@ import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   auditLogs,
   candidateOffers,
+  departmentMembers,
+  departments,
   leaveBlackoutDates,
   onboardingTasks,
   organizationMembers,
   organizations,
+  userPermissions,
+  userRoles,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -23,6 +27,8 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { bustMembershipStatusCache } from "../../common/auth/jwt-auth.guard";
+import { SessionsService } from "../sessions/sessions.service";
 import type {
   CreateOrganizationInput,
   ListMembersInput,
@@ -35,7 +41,19 @@ export class OrganizationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly sessions: SessionsService,
   ) {}
+
+  /**
+   * Revoke every derived access path for a member so a suspend/remove takes effect immediately
+   * across all layers: bump the org access version (invalidates cached resolved permissions),
+   * drop the cached session + guard membership-status caches, and kill live sessions.
+   */
+  private async revokeMemberAccess(orgId: string, memberUserId: string): Promise<void> {
+    await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
+    bustMembershipStatusCache(memberUserId, orgId);
+    await this.sessions.revokeAllForUser(memberUserId);
+  }
 
   async listUserOrganizations(userId: string) {
     const memberships = await this.db
@@ -265,17 +283,122 @@ export class OrganizationService {
   }
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
-    await this.db
-      .delete(organizationMembers)
-      .where(
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, memberUserId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        );
+
+      // Purge derived grants so a re-invited member cannot silently resurrect old access.
+      await tx
+        .delete(userRoles)
+        .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, memberUserId)));
+      await tx
+        .delete(userPermissions)
+        .where(and(eq(userPermissions.orgId, orgId), eq(userPermissions.userId, memberUserId)));
+      await tx.delete(departmentMembers).where(
         and(
-          eq(organizationMembers.userId, memberUserId),
-          eq(organizationMembers.orgId, orgId),
+          eq(departmentMembers.userId, memberUserId),
+          inArray(
+            departmentMembers.departmentId,
+            tx.select({ id: departments.id }).from(departments).where(eq(departments.orgId, orgId)),
+          ),
         ),
       );
 
+      await bumpPermissionsVersion(tx, orgId);
+    });
+
+    await this.revokeMemberAccess(orgId, memberUserId);
+
     this.audit.log({
       action: "org.member_removed",
+      userId: actorUserId,
+      orgId,
+      targetId: memberUserId,
+      targetType: "user",
+    });
+
+    return { success: true };
+  }
+
+  async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, memberUserId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { isOwner: true, status: true },
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    if (member.isOwner) {
+      throw new BadRequestException("Cannot suspend the organization owner");
+    }
+    if (member.status === "SUSPENDED") {
+      throw new ConflictException("Member is already suspended");
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(organizationMembers)
+        .set({ status: "SUSPENDED", suspendedAt: new Date() })
+        .where(
+          and(
+            eq(organizationMembers.userId, memberUserId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        );
+      await bumpPermissionsVersion(tx, orgId);
+    });
+
+    await this.revokeMemberAccess(orgId, memberUserId);
+
+    this.audit.log({
+      action: "org.member_suspended",
+      userId: actorUserId,
+      orgId,
+      targetId: memberUserId,
+      targetType: "user",
+    });
+
+    return { success: true };
+  }
+
+  async reactivateMember(orgId: string, actorUserId: string, memberUserId: string) {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, memberUserId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { status: true },
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    if (member.status !== "SUSPENDED") {
+      throw new ConflictException("Member is not suspended");
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(organizationMembers)
+        .set({ status: "ACTIVE", activatedAt: new Date(), suspendedAt: null })
+        .where(
+          and(
+            eq(organizationMembers.userId, memberUserId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        );
+      await bumpPermissionsVersion(tx, orgId);
+    });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(memberUserId));
+    bustMembershipStatusCache(memberUserId, orgId);
+
+    this.audit.log({
+      action: "org.member_reactivated",
       userId: actorUserId,
       orgId,
       targetId: memberUserId,

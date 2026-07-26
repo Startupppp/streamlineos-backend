@@ -1,4 +1,4 @@
-import { broadest, isInternalModule, moduleOf } from "./access.service";
+import { broadest, evaluateMembershipGate, isInternalModule, moduleOf } from "./access.service";
 import type { DataScope } from "./access.types";
 
 describe("broadest", () => {
@@ -40,5 +40,47 @@ describe("isInternalModule", () => {
   it("treats feature modules as non-internal", () => {
     expect(isInternalModule("hr")).toBe(false);
     expect(isInternalModule("crm")).toBe(false);
+  });
+});
+
+describe("evaluateMembershipGate", () => {
+  it("denies when there is no membership row", () => {
+    expect(evaluateMembershipGate(null)).toEqual({ active: false, isOwner: false });
+    expect(evaluateMembershipGate(undefined)).toEqual({ active: false, isOwner: false });
+  });
+
+  it("denies a suspended member even if the owner flag is set", () => {
+    expect(evaluateMembershipGate({ status: "SUSPENDED", isOwner: true })).toEqual({
+      active: false,
+      isOwner: false,
+    });
+  });
+
+  it("denies a member who has left", () => {
+    expect(evaluateMembershipGate({ status: "LEFT", isOwner: false })).toEqual({
+      active: false,
+      isOwner: false,
+    });
+  });
+
+  it("denies an invited-but-not-active member", () => {
+    expect(evaluateMembershipGate({ status: "INVITED", isOwner: false })).toEqual({
+      active: false,
+      isOwner: false,
+    });
+  });
+
+  it("allows an active member without owner rights", () => {
+    expect(evaluateMembershipGate({ status: "ACTIVE", isOwner: false })).toEqual({
+      active: true,
+      isOwner: false,
+    });
+  });
+
+  it("allows and flags an active owner", () => {
+    expect(evaluateMembershipGate({ status: "ACTIVE", isOwner: true })).toEqual({
+      active: true,
+      isOwner: true,
+    });
   });
 });

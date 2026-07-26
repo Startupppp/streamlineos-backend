@@ -169,6 +169,25 @@ export class OrganizationController {
     await this.organization.removeMember(u.orgId, u.userId, memberId);
   }
 
+  @Patch("members/:memberId/suspend")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
+  suspendMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
+    if (memberId === u.userId) {
+      throw new BadRequestException("You cannot suspend yourself");
+    }
+    return this.organization.suspendMember(u.orgId, u.userId, memberId);
+  }
+
+  @Patch("members/:memberId/reactivate")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("settings:manage")
+  reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.organization.reactivateMember(u.orgId, u.userId, memberId);
+  }
+
   @Get("invitations")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")

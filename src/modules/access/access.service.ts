@@ -67,6 +67,18 @@ export function isInternalModule(module: string): boolean {
   return module === "settings" || module === "self";
 }
 
+export interface MembershipGateResult {
+  active: boolean;
+  isOwner: boolean;
+}
+
+export function evaluateMembershipGate(
+  member: { status: string; isOwner: boolean } | null | undefined,
+): MembershipGateResult {
+  if (!member || member.status !== "ACTIVE") return { active: false, isOwner: false };
+  return { active: true, isOwner: member.isOwner };
+}
+
 const CATALOG_MODULES = Array.from(new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))));
 
 function allCatalogScopes(): Record<string, DataScope> {
@@ -284,11 +296,13 @@ export class AccessService {
     orgId: string,
     userId: string,
   ): Promise<Record<string, DataScope>> {
-    const owner = await this.db.query.organizationMembers.findFirst({
+    const member = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { isOwner: true },
+      columns: { isOwner: true, status: true },
     });
-    if (owner?.isOwner) return allCatalogScopes();
+    const gate = evaluateMembershipGate(member);
+    if (!gate.active) return {};
+    if (gate.isOwner) return allCatalogScopes();
 
     const directRows = await this.safeAccessTableRead(
       () =>
