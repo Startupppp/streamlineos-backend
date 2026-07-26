@@ -16,6 +16,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PortalAccessService } from "./portal-access.service";
 import {
   listMembershipsQuerySchema,
@@ -50,6 +51,7 @@ export class PortalAccessController {
   @Post("memberships")
   @HttpCode(201)
   @RequirePermission("projects:clientvisibility:manage")
+  @Idempotent("portal.createMembership")
   createMembership(
     @Body(new ZodValidationPipe(createMembershipSchema)) body: CreateMembershipInput,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +81,7 @@ export class PortalAccessController {
   @Post("grants")
   @HttpCode(201)
   @RequirePermission("projects:clientvisibility:manage")
+  @Idempotent("portal.createGrant")
   createGrant(
     @Body(new ZodValidationPipe(createGrantSchema)) body: CreateGrantInput,
     @CurrentUser() u: CurrentUserContext,

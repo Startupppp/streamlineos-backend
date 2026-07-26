@@ -383,4 +383,5 @@ export const portalAudienceEnum = pgEnum("portal_audience", ["CLIENT_PORTAL"]);
 export const portalMembershipStatusEnum = pgEnum("portal_membership_status", ["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"]);
 export const portalInvitationStatusEnum = pgEnum("portal_invitation_status", ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"]);
 export const portalGrantStatusEnum = pgEnum("portal_grant_status", ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"]);
+export const commandFenceStatusEnum = pgEnum("command_fence_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
 

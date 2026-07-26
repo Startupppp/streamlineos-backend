@@ -24,6 +24,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { OrganizationService } from "./organization.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
@@ -102,6 +103,7 @@ export class OrganizationController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("organization.create")
   createOrganization(
     @Body(new ZodValidationPipe(createOrganizationSchema)) body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
@@ -306,6 +308,7 @@ export class OrganizationController {
   @Post("transfer-ownership")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
+  @Idempotent("organization.transferOwnership")
   transferOwnership(
     @Body(new ZodValidationPipe(transferOwnershipSchema)) body: TransferOwnershipInput,
     @CurrentUser() u: CurrentUserContext,
