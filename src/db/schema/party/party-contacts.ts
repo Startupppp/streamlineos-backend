@@ -4,7 +4,8 @@ import {
   boolean,
   timestamp,
   index,
-  uniqueIndex,
+  unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../auth";
@@ -19,9 +20,7 @@ export const partyContacts = pgTable(
     organizationId: text("organization_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    partyId: text("party_id")
-      .references(() => businessParties.partyId, { onDelete: "cascade" })
-      .notNull(),
+    partyId: text("party_id").notNull(),
     firstName: text("first_name").notNull(),
     lastName: text("last_name"),
     email: text("email"),
@@ -36,7 +35,7 @@ export const partyContacts = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_party_contacts_org_contact").on(
+    unique("uniq_party_contacts_org_contact").on(
       table.organizationId,
       table.partyContactId,
     ),
@@ -44,5 +43,10 @@ export const partyContacts = pgTable(
       table.organizationId,
       table.partyId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.partyId],
+      foreignColumns: [businessParties.organizationId, businessParties.partyId],
+      name: "fk_party_contacts_org_party",
+    }).onDelete("cascade"),
   ],
 );

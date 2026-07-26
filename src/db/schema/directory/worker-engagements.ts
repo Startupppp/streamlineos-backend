@@ -7,6 +7,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -23,9 +24,7 @@ export const workerEngagements = pgTable(
     organizationId: text("organization_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    workerId: text("worker_id")
-      .references(() => workers.workerId, { onDelete: "cascade" })
-      .notNull(),
+    workerId: text("worker_id").notNull(),
     startsOn: date("starts_on").notNull(),
     endsOn: date("ends_on"),
     workerType: text("worker_type")
@@ -84,5 +83,10 @@ export const workerEngagements = pgTable(
       table.startsOn,
     ),
     index("idx_worker_engagements_manager").on(table.managerEngagementId),
+    foreignKey({
+      columns: [table.organizationId, table.workerId],
+      foreignColumns: [workers.organizationId, workers.workerId],
+      name: "fk_worker_engagements_org_worker",
+    }).onDelete("cascade"),
   ],
 );

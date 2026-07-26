@@ -3,7 +3,7 @@ import {
   text,
   timestamp,
   index,
-  uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../auth";
@@ -36,7 +36,7 @@ export const businessParties = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_business_parties_org_party").on(
+    unique("uniq_business_parties_org_party").on(
       table.organizationId,
       table.partyId,
     ),

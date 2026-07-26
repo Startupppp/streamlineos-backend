@@ -4,6 +4,7 @@ import {
   boolean,
   timestamp,
   index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../auth";
@@ -18,9 +19,7 @@ export const partyAddresses = pgTable(
     organizationId: text("organization_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    partyId: text("party_id")
-      .references(() => businessParties.partyId, { onDelete: "cascade" })
-      .notNull(),
+    partyId: text("party_id").notNull(),
     addressType: text("address_type")
       .$type<"billing" | "shipping" | "other">()
       .notNull(),
@@ -42,5 +41,10 @@ export const partyAddresses = pgTable(
       table.organizationId,
       table.partyId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.partyId],
+      foreignColumns: [businessParties.organizationId, businessParties.partyId],
+      name: "fk_party_addresses_org_party",
+    }).onDelete("cascade"),
   ],
 );

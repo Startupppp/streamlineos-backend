@@ -4,11 +4,14 @@ import {
   integer,
   timestamp,
   index,
+  unique,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizations, users } from "../auth";
+import { partyContacts } from "../party/party-contacts";
 import {
   portalAudienceEnum,
   portalMembershipStatusEnum,
@@ -36,9 +39,14 @@ export const portalMemberships = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_portal_memberships_org_membership").on(
+    unique("uniq_portal_memberships_org_membership").on(
       table.organizationId,
       table.portalMembershipId,
+    ),
+    unique("uniq_portal_memberships_org_membership_contact").on(
+      table.organizationId,
+      table.portalMembershipId,
+      table.partyContactId,
     ),
     uniqueIndex("uniq_portal_memberships_org_contact_audience")
       .on(table.organizationId, table.partyContactId, table.audience)
@@ -48,5 +56,13 @@ export const portalMemberships = pgTable(
       table.status,
     ),
     index("idx_portal_memberships_user").on(table.userId),
+    foreignKey({
+      columns: [table.organizationId, table.partyContactId],
+      foreignColumns: [
+        partyContacts.organizationId,
+        partyContacts.partyContactId,
+      ],
+      name: "fk_portal_memberships_org_contact",
+    }).onDelete("restrict"),
   ],
 );

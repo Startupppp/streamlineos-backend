@@ -5,10 +5,12 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { organizations, organizationMembers } from "../auth";
+import { partyContacts } from "../party/party-contacts";
 import { portalAudienceEnum, portalInvitationStatusEnum } from "../enums";
 import { portalMemberships } from "./portal-memberships";
 
@@ -30,10 +32,7 @@ export const portalInvitations = pgTable(
       () => organizationMembers.id,
       { onDelete: "set null" },
     ),
-    acceptedPortalMembershipId: text("accepted_portal_membership_id").references(
-      () => portalMemberships.portalMembershipId,
-      { onDelete: "set null" },
-    ),
+    acceptedPortalMembershipId: text("accepted_portal_membership_id"),
     expiresAt: timestamp("expires_at").notNull(),
     revokedAt: timestamp("revoked_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -54,5 +53,21 @@ export const portalInvitations = pgTable(
       table.organizationId,
       table.status,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.partyContactId],
+      foreignColumns: [
+        partyContacts.organizationId,
+        partyContacts.partyContactId,
+      ],
+      name: "fk_portal_invitations_org_contact",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.acceptedPortalMembershipId],
+      foreignColumns: [
+        portalMemberships.organizationId,
+        portalMemberships.portalMembershipId,
+      ],
+      name: "fk_portal_invitations_org_accepted_membership",
+    }).onDelete("no action"),
   ],
 );

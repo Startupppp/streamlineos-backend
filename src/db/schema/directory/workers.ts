@@ -4,7 +4,9 @@ import {
   boolean,
   timestamp,
   index,
+  unique,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -20,11 +22,7 @@ export const workers = pgTable(
     organizationId: text("organization_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    organizationPersonId: text("organization_person_id")
-      .references(() => organizationPeople.organizationPersonId, {
-        onDelete: "restrict",
-      })
-      .notNull(),
+    organizationPersonId: text("organization_person_id").notNull(),
     workerNumber: text("worker_number"),
     status: text("status")
       .$type<"ACTIVE" | "INACTIVE" | "EXITED">()
@@ -39,10 +37,7 @@ export const workers = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_workers_org_worker").on(
-      table.organizationId,
-      table.workerId,
-    ),
+    unique("uniq_workers_org_worker").on(table.organizationId, table.workerId),
     uniqueIndex("uniq_workers_org_person").on(
       table.organizationId,
       table.organizationPersonId,
@@ -53,5 +48,13 @@ export const workers = pgTable(
     index("idx_workers_org").on(table.organizationId),
     index("idx_workers_person").on(table.organizationPersonId),
     index("idx_workers_org_status").on(table.organizationId, table.status),
+    foreignKey({
+      columns: [table.organizationId, table.organizationPersonId],
+      foreignColumns: [
+        organizationPeople.organizationId,
+        organizationPeople.organizationPersonId,
+      ],
+      name: "fk_workers_org_person",
+    }).onDelete("restrict"),
   ],
 );

@@ -6,9 +6,11 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../auth";
+import { partyContacts } from "../party/party-contacts";
 import { portalGrantStatusEnum } from "../enums";
 import { portalMemberships } from "./portal-memberships";
 import { projects } from "../projects";
@@ -22,11 +24,7 @@ export const projectClientGrants = pgTable(
     organizationId: text("organization_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    portalMembershipId: text("portal_membership_id")
-      .references(() => portalMemberships.portalMembershipId, {
-        onDelete: "cascade",
-      })
-      .notNull(),
+    portalMembershipId: text("portal_membership_id").notNull(),
     partyContactId: text("party_contact_id").notNull(),
     projectId: integer("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
@@ -58,5 +56,26 @@ export const projectClientGrants = pgTable(
       table.organizationId,
       table.projectId,
     ),
+    foreignKey({
+      columns: [
+        table.organizationId,
+        table.portalMembershipId,
+        table.partyContactId,
+      ],
+      foreignColumns: [
+        portalMemberships.organizationId,
+        portalMemberships.portalMembershipId,
+        portalMemberships.partyContactId,
+      ],
+      name: "fk_project_client_grants_org_membership_contact",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.partyContactId],
+      foreignColumns: [
+        partyContacts.organizationId,
+        partyContacts.partyContactId,
+      ],
+      name: "fk_project_client_grants_org_contact",
+    }).onDelete("restrict"),
   ],
 );

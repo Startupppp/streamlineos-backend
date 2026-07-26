@@ -6,6 +6,7 @@ import {
   date,
   jsonb,
   index,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -65,7 +66,7 @@ export const organizationPeople = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_org_people_org_person").on(
+    unique("uniq_org_people_org_person").on(
       table.organizationId,
       table.organizationPersonId,
     ),
