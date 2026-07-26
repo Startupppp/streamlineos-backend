@@ -174,8 +174,24 @@ describe("PortalAccessService", () => {
 
   // ─── createMembership ────────────────────────────────────────────────────
 
-  describe("createMembership — status PENDING + unique-violation → 409", () => {
+  describe("createMembership — validates contact + status PENDING + 409", () => {
+    function mockContactExists() {
+      const contactChain = makeSelectChain([{ partyContactId: CONTACT_ID }]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(contactChain.selectChain);
+    }
+
+    it("throws 404 when the party contact is not in the caller's org", async () => {
+      const { selectChain } = makeSelectChain([]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(
+        svc.createMembership(ORG_ID, USER_ID, { partyContactId: CONTACT_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect((mockDb as { insert: jest.Mock }).insert).not.toHaveBeenCalled();
+    });
+
     it("maps a Postgres unique violation (23505) to ConflictException", async () => {
+      mockContactExists();
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockReturnValue({
@@ -191,6 +207,7 @@ describe("PortalAccessService", () => {
     });
 
     it("inserts with PENDING status and audit-logs on success", async () => {
+      mockContactExists();
       const row = makeMembership({ status: "PENDING" });
       const catchFn = jest.fn().mockResolvedValue([row]);
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
@@ -358,7 +375,6 @@ describe("PortalAccessService", () => {
       await expect(
         svc.createGrant(OTHER_ORG, USER_ID, {
           portalMembershipId: MEMBERSHIP_ID,
-          partyContactId: CONTACT_ID,
           projectId: PROJECT_ID,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -386,7 +402,6 @@ describe("PortalAccessService", () => {
       await expect(
         svc.createGrant(ORG_ID, USER_ID, {
           portalMembershipId: MEMBERSHIP_ID,
-          partyContactId: CONTACT_ID,
           projectId: PROJECT_ID,
         }),
       ).rejects.toBeInstanceOf(ConflictException);
@@ -413,7 +428,6 @@ describe("PortalAccessService", () => {
 
       const result = await svc.createGrant(ORG_ID, USER_ID, {
         portalMembershipId: MEMBERSHIP_ID,
-        partyContactId: CONTACT_ID,
         projectId: PROJECT_ID,
       });
 
