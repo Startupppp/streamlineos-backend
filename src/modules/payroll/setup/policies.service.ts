@@ -862,6 +862,7 @@ export class PayrollPoliciesService {
         eq(payrollPolicyVersions.orgId, orgId),
       ),
       orderBy: (t, { desc }) => [desc(t.version)],
+      limit: 100,
     });
   }
 

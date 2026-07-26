@@ -36,7 +36,8 @@ export class PayrollEntitiesService {
       .select()
       .from(payrollEntities)
       .where(eq(payrollEntities.orgId, orgId))
-      .orderBy(desc(payrollEntities.createdAt));
+      .orderBy(desc(payrollEntities.createdAt))
+      .limit(100);
   }
 
   async create(

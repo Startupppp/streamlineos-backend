@@ -354,6 +354,7 @@ export class ProfilesService {
       .select()
       .from(employeeSalaryProfiles)
       .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
-      .orderBy(desc(employeeSalaryProfiles.effectiveFrom));
+      .orderBy(desc(employeeSalaryProfiles.effectiveFrom))
+      .limit(100);
   }
 }
