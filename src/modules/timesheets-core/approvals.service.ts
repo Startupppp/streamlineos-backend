@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { logger } from "../../common/logger/logger.service";
 import { type Db } from "../../db/drizzle.module";
@@ -59,6 +59,7 @@ export class ApprovalsService {
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
     const scope = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
+    const offset = (query.page - 1) * limit;
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, query.status),
@@ -75,39 +76,51 @@ export class ApprovalsService {
       conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
     }
 
-    const rows = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        orgId: timesheetPeriods.orgId,
-        userId: timesheetPeriods.userId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-        status: timesheetPeriods.status,
-        totalHours: timesheetPeriods.totalHours,
-        billableHours: timesheetPeriods.billableHours,
-        nonBillableHours: timesheetPeriods.nonBillableHours,
-        submittedAt: timesheetPeriods.submittedAt,
-        approvedAt: timesheetPeriods.approvedAt,
-        rejectedAt: timesheetPeriods.rejectedAt,
-        lockedAt: timesheetPeriods.lockedAt,
-        currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
-        rejectionReason: timesheetPeriods.rejectionReason,
-        createdAt: timesheetPeriods.createdAt,
-        updatedAt: timesheetPeriods.updatedAt,
-        userEmail: users.email,
-        userName: users.name,
-      })
-      .from(timesheetPeriods)
-      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheetPeriods.submittedAt))
-      .limit(limit);
+    const [rows, totalResult] = await Promise.all([
+      this.db
+        .select({
+          id: timesheetPeriods.id,
+          orgId: timesheetPeriods.orgId,
+          userId: timesheetPeriods.userId,
+          periodStart: timesheetPeriods.periodStart,
+          periodEnd: timesheetPeriods.periodEnd,
+          status: timesheetPeriods.status,
+          totalHours: timesheetPeriods.totalHours,
+          billableHours: timesheetPeriods.billableHours,
+          nonBillableHours: timesheetPeriods.nonBillableHours,
+          submittedAt: timesheetPeriods.submittedAt,
+          approvedAt: timesheetPeriods.approvedAt,
+          rejectedAt: timesheetPeriods.rejectedAt,
+          lockedAt: timesheetPeriods.lockedAt,
+          currentApproverId: timesheetPeriods.currentApproverId,
+          approvedBy: timesheetPeriods.approvedBy,
+          rejectionReason: timesheetPeriods.rejectionReason,
+          createdAt: timesheetPeriods.createdAt,
+          updatedAt: timesheetPeriods.updatedAt,
+          userEmail: users.email,
+          userName: users.name,
+        })
+        .from(timesheetPeriods)
+        .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(timesheetPeriods.submittedAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(timesheetPeriods)
+        .where(and(...conditions)),
+    ]);
 
-    return rows.map((r) => ({
+    const data = rows.map((r) => ({
       ...r,
       user: { id: r.userId, name: r.userName ?? r.userEmail, email: r.userEmail },
     }));
+
+    return {
+      data,
+      pagination: { page: query.page, limit, total: totalResult[0]?.total ?? 0 },
+    };
   }
 
   private async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
