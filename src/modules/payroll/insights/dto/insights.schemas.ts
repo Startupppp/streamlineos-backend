@@ -129,3 +129,30 @@ export const periodReconQuerySchema = z.object({
   periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
 });
 export type PeriodReconQuery = z.infer<typeof periodReconQuerySchema>;
+
+export const managerRejectSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+export type ManagerReject = z.infer<typeof managerRejectSchema>;
+
+export const rejectDeclarationSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+export type RejectDeclarationInput = z.infer<typeof rejectDeclarationSchema>;
+
+export const taxDeclarationsQuerySchema = z.object({
+  financialYear: z.string().trim().max(20).optional(),
+  status: z.string().trim().max(30).optional(),
+});
+export type TaxDeclarationsQuery = z.infer<typeof taxDeclarationsQuerySchema>;
+
+export const reportsQuerySchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  format: z.enum(["json", "csv"]).optional(),
+  department: z.string().trim().max(100).optional(),
+  costCenter: z.string().trim().max(100).optional(),
+  workerType: z.string().trim().max(50).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export type ReportsQuery = z.infer<typeof reportsQuerySchema>;

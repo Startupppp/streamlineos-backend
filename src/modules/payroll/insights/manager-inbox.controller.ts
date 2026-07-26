@@ -8,7 +8,6 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -17,10 +16,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
-
-const rejectSchema = z.object({
-  reason: z.string().max(500).optional(),
-});
+import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
 
 @Controller("payroll/manager")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -72,7 +68,7 @@ export class ManagerInboxController {
   rejectReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("id", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(rejectSchema)) body: z.infer<typeof rejectSchema>,
+    @Body(new ZodValidationPipe(managerRejectSchema)) body: ManagerReject,
   ) {
     return this.inbox.rejectReimbursement(u.orgId, u.userId, id, body.reason);
   }

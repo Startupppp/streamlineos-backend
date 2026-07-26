@@ -14,8 +14,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
 import { buildCsv } from "./lib/csv";
+import { reportsQuerySchema, type ReportsQuery } from "./dto/insights.schemas";
 
 function defaultMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -26,11 +28,8 @@ function setCsvHeaders(res: Response, name: string): void {
   res.setHeader("Content-Disposition", `attachment; filename="${name}.csv"`);
 }
 
-function parsePagination(limit: string | undefined, offset: string | undefined) {
-  return {
-    limit: limit !== undefined ? Math.min(parseInt(limit, 10) || 100, 100) : 100,
-    offset: offset !== undefined ? parseInt(offset, 10) || 0 : 0,
-  };
+function pagination(q: ReportsQuery): { limit: number; offset: number } {
+  return { limit: q.limit ?? 100, offset: q.offset ?? 0 };
 }
 
 @Controller("payroll/reports")
@@ -49,13 +48,13 @@ export class ReportsController {
 
   @Get("summary")
   async getSummary(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
+    const month = q.month ?? defaultMonth();
     const result = await this.reports.getSummary(u.orgId, month);
-    if (format === "csv") {
+    if (q.format === "csv") {
       await this.assertExport(u);
       const run = result.run;
       const headers = ["month", "status", "employeeCount", "grossTotal", "deductionTotal", "netTotal", "employerCostTotal", "exceptionCount"];
@@ -70,18 +69,13 @@ export class ReportsController {
 
   @Get("register")
   async getRegister(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getRegister(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getRegister(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", "paidDays", "gross", "totalDeductions", "net", ...result.columns];
       const rows = result.rows.map((r) => [
@@ -96,17 +90,13 @@ export class ReportsController {
 
   @Get("department-cost")
   async getDepartmentCost(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getDepartmentCost(u.orgId, month, { department, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getDepartmentCost(u.orgId, month, { department: q.department, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["department", "employeeCount", "grossTotal", "netTotal", "employerCostTotal"];
       const rows = result.rows.map((r) => [r.department, r.employeeCount, r.grossTotal, r.netTotal, r.employerCostTotal]);
@@ -118,17 +108,13 @@ export class ReportsController {
 
   @Get("cost-center")
   async getCostCenter(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getCostCenter(u.orgId, month, { costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getCostCenter(u.orgId, month, { costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["costCenter", "employeeCount", "grossTotal", "netTotal"];
       const rows = result.rows.map((r) => [r.costCenter, r.employeeCount, r.grossTotal, r.netTotal]);
@@ -140,18 +126,13 @@ export class ReportsController {
 
   @Get("earnings")
   async getEarnings(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getEarnings(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getEarnings(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
@@ -163,18 +144,13 @@ export class ReportsController {
 
   @Get("deductions")
   async getDeductions(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getDeductions(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getDeductions(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
@@ -186,18 +162,13 @@ export class ReportsController {
 
   @Get("reimbursements")
   async getReimbursements(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getReimbursements(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getReimbursements(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
@@ -209,18 +180,13 @@ export class ReportsController {
 
   @Get("tax")
   async getTax(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("department") department: string | undefined,
-    @Query("costCenter") costCenter: string | undefined,
-    @Query("workerType") workerType: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getTax(u.orgId, month, { department, costCenter, workerType }, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getTax(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
@@ -232,15 +198,13 @@ export class ReportsController {
 
   @Get("bank-payout")
   async getBankPayout(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getBankPayout(u.orgId, month, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getBankPayout(u.orgId, month, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["batchNumber", "format", "totalAmount", "itemCount", "status", "generatedAt", "userName", "accountMasked", "ifsc", "amount", "itemStatus"];
       const rows = result.batches.flatMap((b) =>
@@ -256,15 +220,13 @@ export class ReportsController {
 
   @Get("variance")
   async getVariance(
-    @Query("month") month: string = defaultMonth(),
-    @Query("format") format: string = "json",
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query(new ZodValidationPipe(reportsQuerySchema)) q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.reports.getVariance(u.orgId, month, parsePagination(limit, offset));
-    if (format === "csv") {
+    const month = q.month ?? defaultMonth();
+    const result = await this.reports.getVariance(u.orgId, month, pagination(q));
+    if (q.format === "csv") {
       await this.assertExport(u);
       const headers = ["userId", "name", "prevGross", "currGross", "grossDelta", "prevNet", "currNet", "netDelta"];
       const rows = result.perEmployee.map((r) => [r.userId, r.name, r.prevGross, r.currGross, r.grossDelta, r.prevNet, r.currNet, r.netDelta]);

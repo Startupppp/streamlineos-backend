@@ -94,7 +94,7 @@ export class PayrollAiExplainService {
         taxable: payrollLineItems.taxable,
       })
       .from(payrollLineItems)
-      .where(eq(payrollLineItems.runEmployeeId, pub.runEmployeeId));
+      .where(and(eq(payrollLineItems.orgId, orgId), eq(payrollLineItems.runEmployeeId, pub.runEmployeeId)));
 
     const earnings = lineItems.filter((l) => l.category === "EARNING");
     const deductions = lineItems.filter((l) => l.category === "DEDUCTION");

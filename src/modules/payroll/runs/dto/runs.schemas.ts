@@ -140,3 +140,9 @@ export const inputsQuerySchema = z.object({
   userId: z.string().optional(),
 });
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
+
+export const exceptionFilterSchema = z.object({
+  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
+  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
+});
+export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

@@ -20,15 +20,11 @@ import { ExceptionsService } from "./exceptions.service";
 import {
   resolveExceptionSchema,
   overrideExceptionSchema,
+  exceptionFilterSchema,
   type ResolveExceptionInput,
   type OverrideExceptionInput,
+  type ExceptionFilterInput,
 } from "./dto/runs.schemas";
-import { z } from "zod";
-
-const exceptionFilterSchema = z.object({
-  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
-  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
-});
 
 @Controller("payroll/runs/:runId/exceptions")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -39,7 +35,7 @@ export class ExceptionsController {
   @RequirePermission("payroll:runs:view")
   async list(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: z.infer<typeof exceptionFilterSchema>,
+    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: ExceptionFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.exceptionsService.listExceptions(u.orgId, runId, query.severity, query.status);

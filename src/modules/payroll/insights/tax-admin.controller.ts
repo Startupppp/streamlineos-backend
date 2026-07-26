@@ -2,8 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Inject,
-  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
@@ -11,190 +9,64 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
 import type { Response } from "express";
-import { z } from "zod";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { taxDeclarations, users } from "../../../db/schema";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { buildCsv } from "./lib/csv";
-
-const rejectDeclarationSchema = z.object({
-  note: z.string().max(500).optional(),
-});
-type RejectDeclarationInput = z.infer<typeof rejectDeclarationSchema>;
+import { TaxAdminService } from "./tax-admin.service";
+import {
+  rejectDeclarationSchema,
+  type RejectDeclarationInput,
+  taxDeclarationsQuerySchema,
+  type TaxDeclarationsQuery,
+} from "./dto/insights.schemas";
 
 @Controller("payroll/tax")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class TaxAdminController {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(private readonly service: TaxAdminService) {}
 
   @Get("declarations")
-  @UseGuards(PermissionGuard)
   @RequirePermission("payroll:tax:view")
   listDeclarations(
     @CurrentUser() u: CurrentUserContext,
-    @Query("financialYear") fy?: string,
-    @Query("status") status?: string,
+    @Query(new ZodValidationPipe(taxDeclarationsQuerySchema)) query: TaxDeclarationsQuery,
   ) {
-    const base = eq(taxDeclarations.orgId, u.orgId);
-    const whereClause =
-      fy || status
-        ? and(
-            base,
-            fy ? eq(taxDeclarations.financialYear, fy) : undefined,
-            status ? eq(taxDeclarations.status, status) : undefined,
-          )
-        : base;
-
-    return this.db
-      .select({
-        id: taxDeclarations.id,
-        orgId: taxDeclarations.orgId,
-        userId: taxDeclarations.userId,
-        financialYear: taxDeclarations.financialYear,
-        regime: taxDeclarations.regime,
-        hra: taxDeclarations.hra,
-        lta: taxDeclarations.lta,
-        section80c: taxDeclarations.section80c,
-        section80d: taxDeclarations.section80d,
-        section80g: taxDeclarations.section80g,
-        homeLoanInterest: taxDeclarations.homeLoanInterest,
-        previousEmploymentIncome: taxDeclarations.previousEmploymentIncome,
-        previousEmployerTds: taxDeclarations.previousEmployerTds,
-        status: taxDeclarations.status,
-        verifiedBy: taxDeclarations.verifiedBy,
-        verifiedAt: taxDeclarations.verifiedAt,
-        reviewNote: taxDeclarations.reviewNote,
-        createdAt: taxDeclarations.createdAt,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(taxDeclarations)
-      .leftJoin(users, eq(taxDeclarations.userId, users.id))
-      .where(whereClause)
-      .limit(100);
+    return this.service.listDeclarations(u.orgId, query);
   }
 
   @Patch("declarations/:declarationId/approve")
-  @UseGuards(PermissionGuard)
   @RequirePermission("payroll:tax:manage")
-  async approve(
+  approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
   ) {
-    const [updated] = await this.db
-      .update(taxDeclarations)
-      .set({ status: "VERIFIED", verifiedBy: u.userId, verifiedAt: new Date() })
-      .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, u.orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Tax declaration not found");
-    return updated;
+    return this.service.approve(u.orgId, u.userId, declarationId);
   }
 
   @Patch("declarations/:declarationId/reject")
-  @UseGuards(PermissionGuard)
   @RequirePermission("payroll:tax:manage")
-  async reject(
+  reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
     @Body(new ZodValidationPipe(rejectDeclarationSchema)) body: RejectDeclarationInput,
   ) {
-    const [updated] = await this.db
-      .update(taxDeclarations)
-      .set({ status: "DRAFT", reviewNote: body.note?.trim() || null })
-      .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, u.orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Tax declaration not found");
-    return updated;
+    return this.service.reject(u.orgId, declarationId, body.note);
   }
 
   @Get("export")
-  @UseGuards(PermissionGuard)
   @RequirePermission("payroll:reports:export")
   async export(
     @CurrentUser() u: CurrentUserContext,
-    @Query("financialYear") fy?: string,
-    @Res({ passthrough: true }) res?: Response,
+    @Query(new ZodValidationPipe(taxDeclarationsQuerySchema)) query: TaxDeclarationsQuery,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const base = eq(taxDeclarations.orgId, u.orgId);
-    const whereClause = fy ? and(base, eq(taxDeclarations.financialYear, fy)) : base;
-
-    const rows = await this.db
-      .select({
-        id: taxDeclarations.id,
-        financialYear: taxDeclarations.financialYear,
-        regime: taxDeclarations.regime,
-        hra: taxDeclarations.hra,
-        lta: taxDeclarations.lta,
-        section80c: taxDeclarations.section80c,
-        section80d: taxDeclarations.section80d,
-        section80g: taxDeclarations.section80g,
-        homeLoanInterest: taxDeclarations.homeLoanInterest,
-        previousEmploymentIncome: taxDeclarations.previousEmploymentIncome,
-        previousEmployerTds: taxDeclarations.previousEmployerTds,
-        status: taxDeclarations.status,
-        createdAt: taxDeclarations.createdAt,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(taxDeclarations)
-      .leftJoin(users, eq(taxDeclarations.userId, users.id))
-      .where(whereClause)
-      .limit(100);
-
-    const headers = [
-      "ID",
-      "Employee Name",
-      "Email",
-      "Financial Year",
-      "Regime",
-      "HRA",
-      "LTA",
-      "Section 80C",
-      "Section 80D",
-      "Section 80G",
-      "Home Loan Interest",
-      "Previous Employment Income",
-      "Previous Employer TDS",
-      "Status",
-      "Created At",
-    ];
-
-    const csvRows = rows.map((r) => [
-      r.id,
-      r.userName,
-      r.userEmail,
-      r.financialYear,
-      r.regime,
-      r.hra,
-      r.lta,
-      r.section80c,
-      r.section80d,
-      r.section80g,
-      r.homeLoanInterest,
-      r.previousEmploymentIncome,
-      r.previousEmployerTds,
-      r.status,
-      r.createdAt?.toISOString() ?? "",
-    ]);
-
-    const csv = buildCsv(headers, csvRows);
-
-    res?.setHeader("Content-Type", "text/csv");
-    res?.setHeader(
-      "Content-Disposition",
-      `attachment; filename="tax-declarations-${fy ?? "all"}.csv"`,
-    );
-
-    return csv;
+    const file = await this.service.exportCsv(u.orgId, query.financialYear);
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+    return file.body;
   }
 }

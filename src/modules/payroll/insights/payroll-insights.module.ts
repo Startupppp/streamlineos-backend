@@ -20,6 +20,7 @@ import { CalendarService } from "./calendar.service";
 import { TaxWindowsController } from "./tax-windows.controller";
 import { TaxWindowsService } from "./tax-windows.service";
 import { TaxAdminController } from "./tax-admin.controller";
+import { TaxAdminService } from "./tax-admin.service";
 import { FnfController } from "./fnf.controller";
 import { FnfInsightsService } from "./fnf.service";
 import { EssController } from "./ess.controller";
@@ -54,6 +55,7 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
     AccountingMappingsService,
     CalendarService,
     TaxWindowsService,
+    TaxAdminService,
     FnfInsightsService,
     EssService,
     PayrollNotificationsService,
