@@ -128,6 +128,15 @@ export class PublishingService {
       ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawTemplateConfig as Partial<PayslipTemplateConfig>) }
       : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
 
+    // Pre-fetch existing publications once to avoid an N+1 findFirst per employee.
+    const existingPubs = await this.db.query.payslipPublications.findMany({
+      where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
+      columns: { runEmployeeId: true, attemptCount: true },
+    });
+    const attemptCountByRunEmployee = new Map(
+      existingPubs.map((p) => [p.runEmployeeId, p.attemptCount] as const),
+    );
+
     for (const emp of employees) {
       if (!emp.calculationSnapshot) continue;
       const snapshot = emp.calculationSnapshot as CalculationSnapshot;
@@ -183,14 +192,7 @@ export class PublishingService {
       const pubStatus = failureReason ? "FAILED" : "PUBLISHED";
       const now = new Date();
 
-      const existingPub = await this.db.query.payslipPublications.findFirst({
-        where: and(
-          eq(payslipPublications.runEmployeeId, emp.id),
-          eq(payslipPublications.orgId, orgId),
-        ),
-        columns: { id: true, attemptCount: true },
-      });
-      const nextAttempt = (existingPub?.attemptCount ?? 0) + 1;
+      const nextAttempt = (attemptCountByRunEmployee.get(emp.id) ?? 0) + 1;
 
       const [upsertedPub] = await this.db
         .insert(payslipPublications)
