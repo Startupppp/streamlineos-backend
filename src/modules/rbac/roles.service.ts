@@ -311,10 +311,12 @@ export class RolesService {
 
     const deduped = new Map<string, DataScope>();
     for (const item of input.items) {
-      if (!CATALOG_KEYS.has(item.key)) {
-        throw new BadRequestException(`Unknown permission key: ${item.key}`);
+      if (!CATALOG_KEYS.has(item.permissionKey)) {
+        throw new BadRequestException(
+          `Unknown permission key: ${item.permissionKey}`,
+        );
       }
-      deduped.set(item.key, item.scope);
+      deduped.set(item.permissionKey, item.scope);
     }
 
     await this.assertGrantable(actor, Array.from(deduped.keys()));

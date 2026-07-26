@@ -23,7 +23,7 @@ export const createRoleSchema = z.object({
     .string()
     .min(1)
     .max(50)
-    .regex(/^[A-Z_]+$/),
+    .regex(/^[A-Z0-9_]+$/),
   permissions: z.array(z.string().min(1).max(120)).max(300).default([]),
 });
 
@@ -39,7 +39,7 @@ export const cloneTemplateSchema = z.object({
     .string()
     .min(1)
     .max(50)
-    .regex(/^[A-Z_]+$/)
+    .regex(/^[A-Z0-9_]+$/)
     .optional(),
 });
 
@@ -47,7 +47,7 @@ export const setRolePermissionsSchema = z.object({
   items: z
     .array(
       z.object({
-        key: z.string().min(1).max(120),
+        permissionKey: z.string().min(1).max(120),
         scope: dataScopeSchema.default("all"),
       }),
     )

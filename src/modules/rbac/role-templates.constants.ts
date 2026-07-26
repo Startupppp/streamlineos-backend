@@ -1,3 +1,5 @@
+import { ROLE_DEFAULT_PERMISSIONS } from "./permissions.constants";
+
 export interface RoleTemplate {
   id: string;
   name: string;
@@ -519,6 +521,24 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "self:expenses",
       "self:payslips",
     ],
+  },
+  {
+    id: "crm_admin",
+    name: "CRM Administrator",
+    slug: "CRM_ADMIN",
+    permissions: ROLE_DEFAULT_PERMISSIONS.CRM_ADMIN ?? [],
+  },
+  {
+    id: "inventory_admin",
+    name: "Inventory Administrator",
+    slug: "INVENTORY_ADMIN",
+    permissions: ROLE_DEFAULT_PERMISSIONS.INVENTORY_ADMIN ?? [],
+  },
+  {
+    id: "product_management_admin",
+    name: "Product Management Administrator",
+    slug: "PRODUCT_MANAGEMENT_ADMIN",
+    permissions: ROLE_DEFAULT_PERMISSIONS.PRODUCT_MANAGEMENT_ADMIN ?? [],
   },
   {
     id: "viewer",
