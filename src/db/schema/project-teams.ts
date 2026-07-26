@@ -22,6 +22,7 @@ export const projectTeams = pgTable(
     icon: text("icon"),
     color: text("color"),
     isPrivate: boolean("is_private").notNull().default(false),
+    pmWorkspaceId: text("pm_workspace_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -69,6 +70,7 @@ export const projectWorkspaceMembers = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     role: text("role").notNull().default("member"),
+    pmWorkspaceId: text("pm_workspace_id"),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (t) => [

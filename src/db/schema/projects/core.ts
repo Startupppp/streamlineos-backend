@@ -44,6 +44,7 @@ export const projects = pgTable(
       () => managedProducts.managedProductId,
       { onDelete: "set null" },
     ),
+    pmWorkspaceId: text("pm_workspace_id"),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     settings: jsonb("settings").$type<{
       modules: {

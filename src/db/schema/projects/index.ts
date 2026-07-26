@@ -19,3 +19,5 @@ export * from "./forms";
 export * from "./portfolios";
 export * from "./workflow";
 export * from "./managed-products";
+export * from "./pm-workspaces";
+export * from "./pm-workspace-memberships";
