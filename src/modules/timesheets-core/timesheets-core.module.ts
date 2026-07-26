@@ -20,6 +20,8 @@ import { RatesController } from "./rates.controller";
 import { BudgetsService } from "./budgets.service";
 import { BudgetsController } from "./budgets.controller";
 import { AuditController } from "./audit.controller";
+import { TeamController } from "./team.controller";
+import { TeamService } from "./team.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import { AiModule } from "../ai/ai.module";
@@ -37,6 +39,7 @@ import { AiModule } from "../ai/ai.module";
     RatesController,
     BudgetsController,
     AuditController,
+    TeamController,
     TimesheetsAiController,
   ],
   providers: [
@@ -51,6 +54,7 @@ import { AiModule } from "../ai/ai.module";
     SettingsService,
     RatesService,
     BudgetsService,
+    TeamService,
     TimesheetsAiService,
   ],
   exports: [EntriesService, SettingsService],
