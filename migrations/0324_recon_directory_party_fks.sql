@@ -26,35 +26,48 @@ SET statement_timeout = 0;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- §A. Promote parent candidate keys: UNIQUE INDEX -> UNIQUE CONSTRAINT (FK targets)
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Promote via ADD CONSTRAINT ... USING INDEX (never DROP): on a cold db:migrate the
+-- catalog phase-d FKs already target these unique indexes, so DROP INDEX is blocked.
+-- USING INDEX attaches a constraint to the existing index in place, keeping dependents valid.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_org_people_org_person') THEN
-    DROP INDEX IF EXISTS uniq_org_people_org_person;
-    ALTER TABLE organization_people
-      ADD CONSTRAINT uniq_org_people_org_person UNIQUE (organization_id, organization_person_id);
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_org_people_org_person' AND relkind = 'i') THEN
+      ALTER TABLE organization_people ADD CONSTRAINT uniq_org_people_org_person UNIQUE USING INDEX uniq_org_people_org_person;
+    ELSE
+      ALTER TABLE organization_people ADD CONSTRAINT uniq_org_people_org_person UNIQUE (organization_id, organization_person_id);
+    END IF;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_workers_org_worker') THEN
-    DROP INDEX IF EXISTS uniq_workers_org_worker;
-    ALTER TABLE workers
-      ADD CONSTRAINT uniq_workers_org_worker UNIQUE (organization_id, worker_id);
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_workers_org_worker' AND relkind = 'i') THEN
+      ALTER TABLE workers ADD CONSTRAINT uniq_workers_org_worker UNIQUE USING INDEX uniq_workers_org_worker;
+    ELSE
+      ALTER TABLE workers ADD CONSTRAINT uniq_workers_org_worker UNIQUE (organization_id, worker_id);
+    END IF;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_business_parties_org_party') THEN
-    DROP INDEX IF EXISTS uniq_business_parties_org_party;
-    ALTER TABLE business_parties
-      ADD CONSTRAINT uniq_business_parties_org_party UNIQUE (organization_id, party_id);
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_business_parties_org_party' AND relkind = 'i') THEN
+      ALTER TABLE business_parties ADD CONSTRAINT uniq_business_parties_org_party UNIQUE USING INDEX uniq_business_parties_org_party;
+    ELSE
+      ALTER TABLE business_parties ADD CONSTRAINT uniq_business_parties_org_party UNIQUE (organization_id, party_id);
+    END IF;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_party_contacts_org_contact') THEN
-    DROP INDEX IF EXISTS uniq_party_contacts_org_contact;
-    ALTER TABLE party_contacts
-      ADD CONSTRAINT uniq_party_contacts_org_contact UNIQUE (organization_id, party_contact_id);
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_party_contacts_org_contact' AND relkind = 'i') THEN
+      ALTER TABLE party_contacts ADD CONSTRAINT uniq_party_contacts_org_contact UNIQUE USING INDEX uniq_party_contacts_org_contact;
+    ELSE
+      ALTER TABLE party_contacts ADD CONSTRAINT uniq_party_contacts_org_contact UNIQUE (organization_id, party_contact_id);
+    END IF;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uniq_portal_memberships_org_membership') THEN
-    DROP INDEX IF EXISTS uniq_portal_memberships_org_membership;
-    ALTER TABLE portal_memberships
-      ADD CONSTRAINT uniq_portal_memberships_org_membership UNIQUE (organization_id, portal_membership_id);
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uniq_portal_memberships_org_membership' AND relkind = 'i') THEN
+      ALTER TABLE portal_memberships ADD CONSTRAINT uniq_portal_memberships_org_membership UNIQUE USING INDEX uniq_portal_memberships_org_membership;
+    ELSE
+      ALTER TABLE portal_memberships ADD CONSTRAINT uniq_portal_memberships_org_membership UNIQUE (organization_id, portal_membership_id);
+    END IF;
   END IF;
 
   -- NEW 3-col candidate key: proves a client grant's party_contact matches its membership's bound contact.
