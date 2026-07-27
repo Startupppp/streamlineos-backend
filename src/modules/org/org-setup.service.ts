@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import {
   roles,
   users,
@@ -114,12 +114,21 @@ export class OrgSetupService {
     const orgName = input.companyName?.trim() || "My Organization";
 
     await this.db.transaction(async (tx) => {
+      const seqRows = await tx.execute(
+        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+      );
+      const ownerMembershipId = Number(seqRows[0]?.id);
+      if (!Number.isInteger(ownerMembershipId)) {
+        throw new Error("Failed to allocate owner membership id");
+      }
       await tx.insert(organizations).values({
         id: orgId,
         name: orgName,
         slug: this.slugify(orgName),
+        ownerMembershipId,
       });
       await tx.insert(organizationMembers).values({
+        id: ownerMembershipId,
         orgId,
         userId: u.userId,
         role: "owner",

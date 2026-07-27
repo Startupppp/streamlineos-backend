@@ -70,10 +70,19 @@ export class AuthService {
     const orgId = randomUUID();
 
     await this.db.transaction(async (tx) => {
+      const seqRows = await tx.execute(
+        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+      );
+      const ownerMembershipId = Number(seqRows[0]?.id);
+      if (!Number.isInteger(ownerMembershipId)) {
+        throw new Error("Failed to allocate owner membership id");
+      }
+
       await tx.insert(organizations).values({
         id: orgId,
         name: input.companyName,
         slug: slugify(input.companyName),
+        ownerMembershipId,
       });
 
       await tx.insert(users).values({
@@ -90,6 +99,7 @@ export class AuthService {
       });
 
       await tx.insert(organizationMembers).values({
+        id: ownerMembershipId,
         orgId,
         userId,
         role: "owner",

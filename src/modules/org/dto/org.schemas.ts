@@ -1,9 +1,12 @@
 import { z } from "zod";
 
-// Uppercase org-module vocabulary stored in organizations.enabled_modules (see EntitlementsService MODULE_KEY_TO_ORG_MODULE).
+// Uppercase org-module vocabulary accepted from clients. Both BUILD and the legacy PROJECTS are
+// allowed: the module was renamed to Build, older clients still send PROJECTS, and both resolve to
+// the canonical lowercase key `build` via moduleKeysFromOrgModuleValues in common/rbac/module-vocabulary.
 export const ORG_MODULE_KEYS = [
   "HR",
   "CRM",
+  "BUILD",
   "PROJECTS",
   "FINANCE",
   "INVENTORY",
