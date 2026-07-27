@@ -41,4 +41,36 @@ describe("ModuleGuard", () => {
     reflector.getAllAndOverride.mockReturnValue("crm");
     expect(() => guard.canActivate(ctx({ enabledModules: ["hr"] }))).toThrow(ModuleDisabledException);
   });
+
+  it("allows org owners regardless of enabled modules", () => {
+    reflector.getAllAndOverride.mockReturnValue("crm");
+    expect(guard.canActivate(ctx({ enabledModules: [], isOrgOwner: true }))).toBe(true);
+  });
+
+  it("accepts the legacy PROJECTS projection for the build module", () => {
+    reflector.getAllAndOverride.mockReturnValue("build");
+    expect(guard.canActivate(ctx({ enabledModules: ["PROJECTS"] }))).toBe(true);
+  });
+
+  it("accepts the migrated BUILD projection for the build module", () => {
+    reflector.getAllAndOverride.mockReturnValue("build");
+    expect(guard.canActivate(ctx({ enabledModules: ["BUILD"] }))).toBe(true);
+  });
+
+  it("accepts the HELPDESK projection for the support module", () => {
+    reflector.getAllAndOverride.mockReturnValue("support");
+    expect(guard.canActivate(ctx({ enabledModules: ["HELPDESK"] }))).toBe(true);
+  });
+
+  it("accepts the FINANCE projection for the accounting module", () => {
+    reflector.getAllAndOverride.mockReturnValue("accounting");
+    expect(guard.canActivate(ctx({ enabledModules: ["FINANCE"] }))).toBe(true);
+  });
+
+  it("does not widen across modules via aliases", () => {
+    reflector.getAllAndOverride.mockReturnValue("build");
+    expect(() => guard.canActivate(ctx({ enabledModules: ["HELPDESK", "FINANCE"] }))).toThrow(
+      ModuleDisabledException,
+    );
+  });
 });

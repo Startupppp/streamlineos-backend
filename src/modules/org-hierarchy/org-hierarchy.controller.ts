@@ -48,7 +48,7 @@ import {
   type ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
 
-@RequireModule("HR")
+@RequireModule("hr")
 @Controller("org-hierarchy")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class OrgHierarchyController {

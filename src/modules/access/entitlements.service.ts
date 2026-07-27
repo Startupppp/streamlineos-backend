@@ -13,35 +13,14 @@ import { PLAN_LOCKED_MODULES } from "../billing/plan-entitlements.constants";
 import { PlanLimitsService } from "../billing/plan-limits.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
+import {
+  CORE_MODULE_KEYS,
+  MODULE_CATALOG,
+  MODULE_KEY_TO_ORG_MODULE,
+  orgModuleAliasesFor,
+} from "../../common/rbac/module-vocabulary";
 
-export const MODULE_CATALOG = [
-  "hr",
-  "crm",
-  "build",
-  "accounting",
-  "inventory",
-  "kb",
-  "support",
-  "surveys",
-  "payroll",
-  "sign",
-] as const;
-
-const MODULE_KEY_TO_ORG_MODULE: Readonly<Record<string, string>> = {
-  hr: "HR",
-  crm: "CRM",
-  build: "PROJECTS",
-  inventory: "INVENTORY",
-  accounting: "FINANCE",
-  support: "HELPDESK",
-  surveys: "SURVEYS",
-  payroll: "PAYROLL",
-  sign: "SIGN",
-};
-
-const CORE_MODULE_KEYS: ReadonlySet<string> = new Set(
-  MODULE_CATALOG.filter((k) => !MODULE_KEY_TO_ORG_MODULE[k]),
-);
+export { MODULE_CATALOG };
 
 export interface ModuleStatus {
   moduleKey: string;
@@ -165,13 +144,14 @@ export class EntitlementsService {
         });
 
       if (orgModuleName) {
+        for (const alias of orgModuleAliasesFor(moduleKey)) {
+          await tx.execute(
+            sql`UPDATE organizations SET enabled_modules = array_remove(COALESCE(enabled_modules, '{}'), ${alias}) WHERE id = ${orgId}`,
+          );
+        }
         if (enabled) {
           await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_append(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId} AND NOT (${orgModuleName} = ANY(COALESCE(enabled_modules, '{}')))`,
-          );
-        } else {
-          await tx.execute(
-            sql`UPDATE organizations SET enabled_modules = array_remove(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId}`,
+            sql`UPDATE organizations SET enabled_modules = array_append(COALESCE(enabled_modules, '{}'), ${orgModuleName}) WHERE id = ${orgId}`,
           );
         }
       }

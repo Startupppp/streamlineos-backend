@@ -3,6 +3,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
+import { orgModuleAliasesFor } from "./module-vocabulary";
 import type { CurrentUserContext } from "../auth/backend-claims";
 
 @Injectable()
@@ -18,7 +19,11 @@ export class ModuleGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest<Request & { user: CurrentUserContext }>();
     const user = req.user;
-    if (!user.isPlatformAdmin && !user.isOrgOwner && !user.enabledModules.some(m => m.toUpperCase() === required.toUpperCase())) {
+    if (user.isPlatformAdmin || user.isOrgOwner) return true;
+
+    const accepted = orgModuleAliasesFor(required);
+    const enabled = user.enabledModules.map((m) => m.toUpperCase());
+    if (!accepted.some((alias) => enabled.includes(alias))) {
       throw new ModuleDisabledException(required);
     }
     return true;
