@@ -15,6 +15,10 @@ type Database = PostgresJsDatabase<typeof schema>;
 
 const BATCH_SIZE = 200;
 
+const LEGACY_ROLE_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  FINANCE: "ACCOUNTANT",
+};
+
 function normalizeDatabaseUrl(url: string): string {
   if (!/\.neon\.tech/i.test(url)) return url;
   try {
@@ -98,7 +102,10 @@ async function backfillOrg(
         summary.rowsSkipped++;
         continue;
       }
-      const roleId = roleIdBySlug.get(user.role);
+      const legacySlug = user.role === null ? null : user.role.toUpperCase();
+      const canonicalSlug =
+        legacySlug === null ? null : (LEGACY_ROLE_SLUG_ALIASES[legacySlug] ?? legacySlug);
+      const roleId = canonicalSlug === null ? undefined : roleIdBySlug.get(canonicalSlug);
       if (roleId === undefined) {
         summary.rowsSkipped++;
         continue;
