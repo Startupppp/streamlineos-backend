@@ -22,3 +22,4 @@ export * from "./managed-products";
 export * from "./pm-workspaces";
 export * from "./pm-workspace-memberships";
 export * from "./teams";
+export * from "./feedback";
