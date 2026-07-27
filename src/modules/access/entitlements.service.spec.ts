@@ -73,12 +73,22 @@ describe("EntitlementsService", () => {
       );
     });
 
-    it("returns true when no row found for the module key (defaults to allowed)", async () => {
+    it("returns false when no row found for a GATED module key (deny-on-absent)", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockResolvedValue([]);
       const { cache } = buildMockCache();
 
       const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
+
+      expect(result).toBe(false);
+    });
+
+    it("returns true for a CORE module key even with no rows (always-on)", async () => {
+      const { db, mocks } = buildMockDb();
+      mocks.findMany.mockResolvedValue([]);
+      const { cache } = buildMockCache();
+
+      const result = await buildService(db, cache).isModuleEnabled("org-1", "kb");
 
       expect(result).toBe(true);
     });
@@ -189,13 +199,13 @@ describe("EntitlementsService", () => {
       );
     });
 
-    it("executes exactly one raw SQL call when enabling a mapped module", async () => {
+    it("executes two raw SQL calls when enabling a mapped module (array_remove then array_append)", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      expect(mocks.execute).toHaveBeenCalledTimes(2);
     });
 
     it("executes exactly one raw SQL call when disabling a mapped module", async () => {
@@ -256,7 +266,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockResolvedValue([
         { moduleKey: "hr", enabled: true },
-        { moduleKey: "projects", enabled: true },
+        { moduleKey: "build", enabled: true },
         { moduleKey: "crm", enabled: false },
         { moduleKey: "payroll", enabled: false },
       ]);
@@ -267,7 +277,7 @@ describe("EntitlementsService", () => {
       expect(result).toHaveLength(10);
       expect(result.find((r) => r.moduleKey === "hr")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "crm")?.enabled).toBe(false);
-      expect(result.find((r) => r.moduleKey === "projects")?.enabled).toBe(true);
+      expect(result.find((r) => r.moduleKey === "build")?.enabled).toBe(true);
       expect(result.find((r) => r.moduleKey === "payroll")?.enabled).toBe(false);
       expect(result.find((r) => r.moduleKey === "kb")).toMatchObject({ enabled: true, core: true });
       expect(result.find((r) => r.moduleKey === "blog")).toBeUndefined();
