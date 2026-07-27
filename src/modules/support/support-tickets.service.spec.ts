@@ -30,7 +30,12 @@ const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   groupBy: jest.fn().mockResolvedValue([]),
+  transaction: jest.fn(),
 };
+
+mockDb.transaction.mockImplementation((cb: unknown) =>
+  (cb as (tx: unknown) => Promise<unknown>)(mockDb),
+);
 
 const mockCache = {
   cached: jest.fn((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
@@ -178,9 +183,12 @@ describe("SupportTicketsService", () => {
 
     it("does not fail ticket creation if the activity insert throws", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      mockDb.values.mockImplementationOnce(() => mockDb).mockImplementationOnce(() => {
-        throw new Error("activity insert failed");
-      });
+      mockDb.values
+        .mockImplementationOnce(() => mockDb)
+        .mockImplementationOnce(() => mockDb)
+        .mockImplementationOnce(() => {
+          throw new Error("activity insert failed");
+        });
 
       await expect(
         service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never),

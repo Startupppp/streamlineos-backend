@@ -257,7 +257,9 @@ export class SupportTicketsService {
     });
 
     await this.invalidateTicketCaches(orgId);
-    await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
+    await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title).catch(
+      () => undefined,
+    );
     await this.customFields.setFieldValues(orgId, ticket.id, input.customFields ?? [], true);
 
     void this.automations

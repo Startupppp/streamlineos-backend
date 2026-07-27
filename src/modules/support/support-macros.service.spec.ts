@@ -28,7 +28,12 @@ const mockDb = {
   onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
   onConflictDoUpdate: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([]),
+  transaction: jest.fn(),
 };
+
+mockDb.transaction.mockImplementation((cb: unknown) =>
+  (cb as (tx: unknown) => Promise<unknown>)(mockDb),
+);
 
 describe("SupportMacrosService — applyRoutingRules assignment modes", () => {
   let service: SupportMacrosService;
