@@ -4961,6 +4961,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "build:bugs:view",
     "timesheets:exceptions:view",
     "timesheets:exceptions:manage",
+    "directory:people:view",
+    "directory:people:create",
+    "directory:people:update",
+    "directory:people:delete",
+    "workforce:workers:view",
+    "workforce:workers:manage",
+    "workforce:workers:terminate",
   ],
 
   INVENTORY_MANAGER: [

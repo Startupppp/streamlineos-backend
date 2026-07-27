@@ -18,6 +18,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @RequireModule("build")
 @Controller("timesheets/periods")
@@ -52,6 +53,7 @@ export class PeriodsController {
   @Post(":periodId/submit")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
+  @Idempotent("timesheets.period.submit")
   submit(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

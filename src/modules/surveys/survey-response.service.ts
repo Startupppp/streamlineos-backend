@@ -1,5 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   surveyVersions,
   surveyForms,
@@ -149,11 +151,32 @@ export class SurveyResponseService {
       passed = attempt?.passed ?? null;
     }
 
-    const [updated] = await this.db
-      .update(surveyResponseSessions)
-      .set({ status: "submitted", submittedAt: new Date(), durationSeconds, score: totalScore, passed })
-      .where(eq(surveyResponseSessions.id, session.id))
-      .returning();
+    const [updated] = await this.db.transaction(async (tx) => {
+      const rows = await (tx as Db)
+        .update(surveyResponseSessions)
+        .set({ status: "submitted", submittedAt: new Date(), durationSeconds, score: totalScore, passed })
+        .where(eq(surveyResponseSessions.id, session.id))
+        .returning();
+      if (rows[0]) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: session.orgId,
+          aggregateType: "survey_response",
+          aggregateId: String(session.id),
+          aggregateVersion: Date.now(),
+          eventType: "survey.response.submitted",
+          payload: {
+            sessionId: session.id,
+            surveyId: session.surveyId,
+            orgId: session.orgId,
+            score: totalScore,
+            passed,
+          },
+          occurredAt: new Date(),
+        });
+      }
+      return rows;
+    });
 
     if (session.collectorId) await this.collectors.incrementCounter(session.collectorId, "completions");
     if (session.participantId) await this.participants.markStatus(session.participantId, "completed", "completedAt");

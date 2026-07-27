@@ -23,6 +23,7 @@ import {
   type CreateTemplateInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @RequireModule("build")
 @Controller("build")
@@ -59,6 +60,7 @@ export class ProjectsTemplatesController {
   @Post("templates/:templateId/apply")
   @HttpCode(201)
   @RequirePermission("build:manage")
+  @Idempotent("build.template.apply")
   applyTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body(new ZodValidationPipe(applyTemplateSchema)) body: ApplyTemplateInput,

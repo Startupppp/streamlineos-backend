@@ -22,6 +22,8 @@ import type {
   UpdateWorkspaceInput,
 } from "./dto/pm-workspaces.schemas";
 
+type MembershipRow = typeof pmWorkspaceMemberships.$inferSelect;
+
 const PG_UNIQUE_VIOLATION = "23505";
 
 type WorkspaceRow = typeof pmWorkspaces.$inferSelect;
@@ -169,6 +171,127 @@ export class PmWorkspacesService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Resolve the default PM workspace ID for an org, provisioning it if absent.
+   * Call this from Build creation services when the caller does not supply a
+   * pmWorkspaceId, so the NOT NULL constraint introduced by migration 0333
+   * is always satisfied.
+   *
+   * CALL SITES OUTSIDE THIS MODULE (not modifiable here — report to maintainer):
+   *   src/modules/build/projects-provision.service.ts  createProject / createFromDeal
+   *     → resolve pmWorkspaceId before the tx.insert(projects) and pass it in.
+   *   src/modules/build-managed-products/managed-products.service.ts  createManagedProduct
+   *     → same pattern.
+   *   src/modules/build/projects-workspace-members.service.ts  addMember
+   *     → supply pmWorkspaceId from the project's own pmWorkspaceId.
+   */
+  async resolveDefaultWorkspaceId(orgId: string): Promise<string> {
+    const workspace = await this.ensureDefaultWorkspace(orgId);
+    return workspace.pmWorkspaceId;
+  }
+
+  /**
+   * Transactional idempotent provisioning of the default PM workspace + owner
+   * membership. Call this from the module-enable path when the Build module is
+   * toggled on for an org.
+   *
+   * CALL SITE NEEDED (outside this module's scope):
+   *   src/modules/organization/organization-settings.service.ts  updateSettings
+   *   After the `enabled_modules` update, when 'BUILD' enters the new set:
+   *     await this.pmWorkspacesService.provisionOnModuleEnable(orgId);
+   *
+   * The method is safe to call even if provisioning already occurred — both
+   * the workspace insert and the membership insert are no-ops when the rows
+   * already exist.
+   */
+  async provisionOnModuleEnable(
+    orgId: string,
+  ): Promise<{ workspace: WorkspaceRow; membershipId: string | null }> {
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(pmWorkspaces)
+        .where(
+          and(
+            eq(pmWorkspaces.orgId, orgId),
+            eq(pmWorkspaces.isDefault, true),
+            isNull(pmWorkspaces.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      let workspace: WorkspaceRow;
+      if (existing) {
+        workspace = existing;
+      } else {
+        const inserted = await tx
+          .insert(pmWorkspaces)
+          .values({
+            orgId,
+            name: "Default Workspace",
+            slug: "default",
+            isDefault: true,
+            status: "active",
+          })
+          .onConflictDoNothing()
+          .returning();
+        const row = inserted[0];
+        if (!row) {
+          const [recovered] = await tx
+            .select()
+            .from(pmWorkspaces)
+            .where(
+              and(
+                eq(pmWorkspaces.orgId, orgId),
+                eq(pmWorkspaces.isDefault, true),
+              ),
+            )
+            .limit(1);
+          if (!recovered)
+            throw new NotFoundException(
+              "Failed to provision default PM workspace",
+            );
+          workspace = recovered;
+        } else {
+          workspace = row;
+        }
+      }
+
+      const [ownerMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.isOwner, true),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .limit(1);
+
+      if (!ownerMember) {
+        return { workspace, membershipId: null };
+      }
+
+      const membershipInserted = await tx
+        .insert(pmWorkspaceMemberships)
+        .values({
+          orgId,
+          pmWorkspaceId: workspace.pmWorkspaceId,
+          organizationMembershipId: ownerMember.id,
+          role: "admin",
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      const membership: MembershipRow | undefined = membershipInserted[0];
+      return {
+        workspace,
+        membershipId: membership?.pmWorkspaceMembershipId ?? null,
+      };
+    });
   }
 
   async updateWorkspace(

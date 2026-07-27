@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   Inject,
   Injectable,
@@ -30,6 +31,7 @@ import type {
   ListGrnInput,
   ReverseGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { PoService } from "./po.service";
 
 @Injectable()
@@ -352,6 +354,24 @@ export class GrnService {
           movements: acceptedMovements,
         });
       }
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "inv_purchase_order",
+        aggregateId: String(poId),
+        aggregateVersion: Date.now(),
+        eventType: "inventory.purchase_order.received",
+        payload: {
+          poId,
+          poNumber: po.poNumber,
+          grnId: grn.id,
+          grnNumber,
+          lineCount: data.lines.length,
+          actorUserId: userId,
+        },
+        occurredAt: new Date(),
+      });
 
       return grn.id;
     });

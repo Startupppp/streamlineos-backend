@@ -6,6 +6,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { TaxPaymentsService } from "./tax-payments.service";
 import {
   createTaxPaymentSchema,
@@ -34,6 +35,7 @@ export class TaxPaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:pay")
   @HttpCode(201)
+  @Idempotent("accounting.tax-payment.create")
   create(
     @Body(new ZodValidationPipe(createTaxPaymentSchema)) body: CreateTaxPaymentInput,
     @CurrentUser() u: CurrentUserContext,

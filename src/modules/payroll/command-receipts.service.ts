@@ -14,6 +14,9 @@ export type PayrollCommandName =
   | "run.close"
   | "run.mark_paid"
   | "run.publish_payslips"
+  | "run.submit_approval"
+  | "run.approve_stage"
+  | "run.reject_stage"
   | "payout.create_batch"
   | "payout.mark_sent"
   | "payout.mark_paid";

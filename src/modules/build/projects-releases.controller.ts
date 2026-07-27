@@ -15,6 +15,7 @@ import {
   type AddReleaseTicketInput,
 } from "./dto/releases.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @RequireModule("build")
 @Controller("build")
@@ -34,6 +35,7 @@ export class ProjectsReleasesController {
   @Post(":projectId/releases")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Idempotent("build.release.create")
   createRelease(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createReleaseSchema)) body: CreateReleaseInput,

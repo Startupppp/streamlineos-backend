@@ -5,6 +5,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SurveyAssessmentService } from "./survey-assessment.service";
 import {
   createAttemptSchema,
@@ -30,6 +31,7 @@ export class SurveyAssessmentController {
 
   @Post("assessment/attempts")
   @HttpCode(201)
+  @Idempotent("surveys:assessment.attempt")
   @RequirePermission("surveys:assessments:manage")
   createAttempt(
     @Param("surveyId", ParseIntPipe) surveyId: number,

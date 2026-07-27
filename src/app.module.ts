@@ -159,6 +159,8 @@ import { MailModule } from "./modules/mail/mail.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { PortalAccessModule } from "./modules/portal-access/portal-access.module";
+import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
+import { PortalClientModule } from "./modules/portal-client/portal-client.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
 import { OutboxModule } from "./common/outbox/outbox.module";
@@ -254,6 +256,8 @@ import { MeService } from "./me/me.service";
     DirectoryModule,
     PartyModule,
     PortalAccessModule,
+    PortalAuthModule,
+    PortalClientModule,
     ModuleAccessModule,
     IdempotencyModule,
     OutboxModule,

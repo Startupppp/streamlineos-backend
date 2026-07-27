@@ -18,6 +18,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmSequencesService } from "./crm-sequences.service";
 import {
   createSequenceSchema,
@@ -140,6 +141,7 @@ export class CrmAutomationStudioController {
   @Post(":sequenceId/enrollments")
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
+  @Idempotent("crm.sequence.enroll")
   enroll(
     @Param("sequenceId") sequenceId: string,
     @Body(new ZodValidationPipe(enrollInSequenceSchema)) body: EnrollInSequenceInput,

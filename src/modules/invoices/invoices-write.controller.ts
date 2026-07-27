@@ -14,6 +14,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { InvoicesWriteService } from "./invoices-write.service";
 import {
   createInvoiceSchema,
@@ -39,6 +40,7 @@ export class InvoicesWriteController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
+  @Idempotent("accounting.invoice.create")
   async create(
     @Body(new ZodValidationPipe(createInvoiceSchema)) body: CreateInvoiceInput,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +60,7 @@ export class InvoicesWriteController {
   @Patch(":invoiceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
+  @Idempotent("accounting.invoice.update")
   async updateInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(updateInvoiceSchema)) body: UpdateInvoiceInput,
@@ -71,6 +74,7 @@ export class InvoicesWriteController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
+  @Idempotent("accounting.invoice.payment.record")
   recordPayment(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @Body(new ZodValidationPipe(recordPaymentSchema)) body: RecordPaymentInput,
@@ -83,6 +87,7 @@ export class InvoicesWriteController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:manage")
+  @Idempotent("accounting.invoice.void")
   voidInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,

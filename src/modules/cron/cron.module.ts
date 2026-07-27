@@ -41,6 +41,7 @@ import { CronSupportService } from "./cron-support.service";
 import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronOrganizationService } from "./cron-organization.service";
+import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 
 @Module({
   imports: [AutomationModule, AiModule, AiJobsModule, SupportKbGapModule, EmailModule, ChatModule, KbModule, SupportModule, NotificationsModule, HrAutomationsModule, HrTimeModule, HrWorkflowsModule, HrCoreModule, HrLifecycleModule, HrGlobalModule, AccountingGlModule, InvoicesModule, FinanceArModule, FinanceApModule, FinanceTaxModule, FinanceAssetsModule, CrmAutomationStudioModule, BillingModule, TimesheetsCoreModule],
@@ -63,6 +64,7 @@ import { CronOrganizationService } from "./cron-organization.service";
     CronFinanceService,
     CronCrmTasksService,
     CronOrganizationService,
+    CronOrgPurgeWorkerService,
   ],
 })
 export class CronModule {}

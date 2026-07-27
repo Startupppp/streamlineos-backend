@@ -19,6 +19,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmOrganizationsService } from "./crm-organizations.service";
 import { CrmOrgMergeService } from "./crm-org-merge.service";
 import {
@@ -58,6 +59,7 @@ export class CrmOrganizationsController {
   @Post()
   @RequirePermission("crm:organizations:manage")
   @HttpCode(201)
+  @Idempotent("crm.org.create")
   create(
     @Body(new ZodValidationPipe(organizationCreateSchema)) body: OrganizationCreateInput,
     @CurrentUser() u: CurrentUserContext,

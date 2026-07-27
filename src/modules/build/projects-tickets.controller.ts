@@ -70,6 +70,7 @@ import {
   type UpdateChecklistItemInput,
 } from "./dto/checklist.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @RequireModule("build")
 @Controller("build")
@@ -116,6 +117,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets/import")
   @RequirePermission("build:tickets:create")
   @HttpCode(200)
+  @Idempotent("build.ticket.import")
   importTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(importTicketsSchema)) body: ImportTicketsInput,
@@ -137,6 +139,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets")
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
+  @Idempotent("build.ticket.create")
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createTicketSchema)) body: CreateTicketInput,

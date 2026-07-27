@@ -9,6 +9,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { DepreciationRunsService } from "./depreciation-runs.service";
 import {
   createRunSchema, listRunsQuerySchema,
@@ -35,6 +36,7 @@ export class DepreciationRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(201)
+  @Idempotent("accounting.depreciation-run.execute")
   create(
     @Body(new ZodValidationPipe(createRunSchema)) body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,

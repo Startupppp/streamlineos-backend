@@ -8,8 +8,9 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { jwtVerify } from "jose";
+import { jwtVerify, decodeJwt } from "jose";
 import type { JWTPayload } from "jose";
+import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
 import { and, desc, eq } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
@@ -153,6 +154,19 @@ export class JwtAuthGuard implements CanActivate {
     }
     const token = header.slice("Bearer ".length).trim();
     if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
+
+    try {
+      const raw = decodeJwt(token);
+      const rawAud = raw.aud;
+      if (
+        rawAud === PORTAL_AUDIENCE ||
+        (Array.isArray(rawAud) && rawAud.includes(PORTAL_AUDIENCE))
+      ) {
+        throw new UnauthorizedException("Unauthorized");
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+    }
 
     let claims: BackendClaims | null = null;
     try {

@@ -25,6 +25,12 @@ const schema = z
         44,
         "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
       ),
+    PORTAL_JWT_SECRET: z
+      .string()
+      .min(
+        44,
+        "PORTAL_JWT_SECRET must be at least 44 characters (256-bit base64)",
+      ),
     CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
     APP_URL: z.string().url("APP_URL must be a valid URL"),
     CRON_SECRET: deploymentSecret,

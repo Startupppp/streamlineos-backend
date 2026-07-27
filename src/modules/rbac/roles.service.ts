@@ -12,6 +12,7 @@ import {
   departmentMembers,
   departments,
   groupRoles,
+  membershipRoleAssignments,
   organizationMembers,
   rolePermissionGrants,
   roles,
@@ -494,6 +495,15 @@ export class RolesService {
             assignedBy: actor.userId,
           })
           .onConflictDoNothing();
+        await tx
+          .insert(membershipRoleAssignments)
+          .values({
+            organizationId: actor.orgId,
+            organizationMembershipId: member.id,
+            roleId,
+            assignedBy: actor.userId,
+          })
+          .onConflictDoNothing();
         await bumpPermissionsVersion(tx, actor.orgId);
       });
     } else {
@@ -570,6 +580,16 @@ export class RolesService {
       }
     }
 
+    const membershipForRemoval = input.principalType === "user"
+      ? await this.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, actor.orgId),
+            eq(organizationMembers.userId, input.principalId),
+          ),
+          columns: { id: true },
+        })
+      : undefined;
+
     await this.db.transaction(async (tx): Promise<void> => {
       if (input.principalType === "user") {
         await tx
@@ -581,6 +601,17 @@ export class RolesService {
               eq(userRoles.userId, input.principalId),
             ),
           );
+        if (membershipForRemoval !== undefined) {
+          await tx
+            .delete(membershipRoleAssignments)
+            .where(
+              and(
+                eq(membershipRoleAssignments.organizationId, actor.orgId),
+                eq(membershipRoleAssignments.organizationMembershipId, membershipForRemoval.id),
+                eq(membershipRoleAssignments.roleId, roleId),
+              ),
+            );
+        }
       } else {
         await tx
           .delete(groupRoles)

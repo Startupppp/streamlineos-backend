@@ -20,6 +20,7 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { LeadsService, isAssigneeNotMember } from "./leads.service";
 import { resolveLeadsViewScope } from "./leads-scope";
 import {
@@ -59,6 +60,7 @@ export class LeadsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:leads:create")
+  @Idempotent("crm.lead.create")
   async create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,

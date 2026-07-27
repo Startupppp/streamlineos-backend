@@ -5,6 +5,7 @@ import {
   departmentMembers,
   departments,
   groupRoles,
+  membershipRoleAssignments,
   organizationMembers,
   rolePermissionGrants,
   roles,
@@ -309,21 +310,46 @@ export class AccessService {
   ): Promise<Record<string, DataScope>> {
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { isOwner: true, status: true },
+      columns: { isOwner: true, status: true, id: true },
     });
     const gate = evaluateMembershipGate(member);
     if (!gate.active) return {};
     if (gate.isOwner) return allCatalogScopes();
 
-    const directRows = await this.safeAccessTableRead(
+    const membershipId = member?.id ?? 0;
+
+    const membershipRows = await this.safeAccessTableRead(
       () =>
         this.db
-          .select({ roleId: userRoles.roleId })
-          .from(userRoles)
-          .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, userId))),
-      [],
+          .select({ roleId: membershipRoleAssignments.roleId })
+          .from(membershipRoleAssignments)
+          .where(
+            and(
+              eq(membershipRoleAssignments.organizationId, orgId),
+              eq(membershipRoleAssignments.organizationMembershipId, membershipId),
+            ),
+          ),
+      [] as { roleId: number }[],
     );
-    const hasDirectRoles = directRows.length > 0;
+
+    let directRows: { roleId: number }[];
+    let hasDirectRoles: boolean;
+
+    if (membershipRows.length > 0) {
+      directRows = membershipRows;
+      hasDirectRoles = true;
+    } else {
+      const userRoleRows = await this.safeAccessTableRead(
+        () =>
+          this.db
+            .select({ roleId: userRoles.roleId })
+            .from(userRoles)
+            .where(and(eq(userRoles.orgId, orgId), eq(userRoles.userId, userId))),
+        [] as { roleId: number }[],
+      );
+      directRows = userRoleRows;
+      hasDirectRoles = directRows.length > 0;
+    }
 
     const roleIds = new Set<number>(directRows.map((row) => row.roleId));
 

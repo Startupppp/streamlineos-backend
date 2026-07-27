@@ -27,6 +27,7 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../common/rbac/module.guard";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @RequireModule("support")
 @Controller("support/portal")
@@ -51,6 +52,7 @@ export class SupportPortalController {
   }
 
   @Post("tickets")
+  @Idempotent("support:portal_ticket.create")
   @RequirePermission("support:portal:tickets:create")
   @HttpCode(201)
   async createTicket(
@@ -74,6 +76,7 @@ export class SupportPortalController {
   }
 
   @Post("tickets/:ticketId/messages")
+  @Idempotent("support:portal_ticket.reply")
   @RequirePermission("support:portal:tickets:reply")
   @HttpCode(201)
   addMessage(

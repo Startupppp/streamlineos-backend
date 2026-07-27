@@ -6,9 +6,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   finPaymentRuns,
   finPaymentRunItems,
@@ -340,6 +342,27 @@ export class PaymentRunsService {
               },
               tx,
             );
+
+            if (newStatus === "PAID") {
+              await OutboxWriter.emit(tx, {
+                eventId: randomUUID(),
+                organizationId: orgId,
+                aggregateType: "purchase_bill",
+                aggregateId: String(item.billId),
+                aggregateVersion: Date.now(),
+                eventType: "accounting.bill.paid",
+                payload: {
+                  organization_id: orgId,
+                  bill_id: item.billId,
+                  bill_number: billRow.billNumber,
+                  payment_id: payment.id,
+                  amount_cents: Math.round(Number(item.amount) * 100),
+                  run_id: runId,
+                  actor_user_id: userId,
+                },
+                occurredAt: new Date(),
+              });
+            }
 
             if (billRow.currency !== baseCurrency) {
               fxCapture = {

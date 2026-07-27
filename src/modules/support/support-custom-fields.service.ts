@@ -38,7 +38,13 @@ export class SupportCustomFieldsService {
         sortOrder: input.sortOrder,
         isActive: input.isActive,
       })
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505") {
+          throw new ConflictException(`A custom field with key "${input.key}" already exists`);
+        }
+        throw e;
+      });
     return field;
   }
 

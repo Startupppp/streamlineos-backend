@@ -330,6 +330,55 @@
       "when": 1784993499568,
       "tag": "0327_recon_decouple_projects_crm",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784993499569,
+      "tag": "0300_timesheets_launch_grade",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784993499570,
+      "tag": "0328_membership_role_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784993499571,
+      "tag": "0329_owner_exactly_one",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784993499572,
+      "tag": "0330_worker_engagement_overlap",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1784993499573,
+      "tag": "0331_pm_workspace_id_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1784993499574,
+      "tag": "0332_pm_workspace_id_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784993499575,
+      "tag": "0333_pm_workspace_id_not_null",
+      "breakpoints": true
     }
   ]
 }

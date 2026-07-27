@@ -6,7 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {

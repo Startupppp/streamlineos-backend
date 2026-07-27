@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   createApprovalSchema,
   decideApprovalSchema,
@@ -72,6 +73,7 @@ export class ApprovalsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:approvals:request")
+  @Idempotent("build.approval.create")
   createApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createApprovalSchema)) body: CreateApprovalInput,
@@ -82,6 +84,7 @@ export class ApprovalsController {
 
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
+  @Idempotent("build.approval.decide")
   decideApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

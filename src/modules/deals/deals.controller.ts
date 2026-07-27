@@ -21,6 +21,7 @@ import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { DealsService } from "./deals.service";
 import { resolveDealsReadScope } from "./deals-scope";
 import {
@@ -63,6 +64,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
+  @Idempotent("crm.deal.create")
   createDeal(
     @Body(new ZodValidationPipe(createDealSchema)) body: CreateDealInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +76,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
+  @Idempotent("crm.deals.bulkImport")
   bulkImport(
     @Body(new ZodValidationPipe(bulkImportDealsSchema)) body: BulkImportDealsInput,
     @CurrentUser() u: CurrentUserContext,

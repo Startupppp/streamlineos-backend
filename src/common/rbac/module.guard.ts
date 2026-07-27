@@ -3,14 +3,17 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
-import { orgModuleAliasesFor } from "./module-vocabulary";
 import type { CurrentUserContext } from "../auth/backend-claims";
+import { EntitlementsService } from "../../modules/access/entitlements.service";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_MODULE, [
       context.getHandler(),
       context.getClass(),
@@ -21,9 +24,9 @@ export class ModuleGuard implements CanActivate {
     const user = req.user;
     if (user.isPlatformAdmin || user.isOrgOwner) return true;
 
-    const accepted = orgModuleAliasesFor(required);
-    const enabled = user.enabledModules.map((m) => m.toUpperCase());
-    if (!accepted.some((alias) => enabled.includes(alias))) {
+    const moduleKey = required.toLowerCase();
+    const enabled = await this.entitlements.isModuleEnabled(user.orgId, moduleKey);
+    if (!enabled) {
       throw new ModuleDisabledException(required);
     }
     return true;

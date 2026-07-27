@@ -17,6 +17,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmPricebooksService } from "./crm-pricebooks.service";
 import {
   createPricebookSchema,
@@ -59,6 +60,7 @@ export class CrmPricebooksController {
   @Post("pricebooks")
   @HttpCode(201)
   @RequirePermission("crm:pricebooks:manage")
+  @Idempotent("crm.pricebook.create")
   createPricebook(
     @Body(new ZodValidationPipe(createPricebookSchema)) body: CreatePricebookInput,
     @CurrentUser() u: CurrentUserContext,

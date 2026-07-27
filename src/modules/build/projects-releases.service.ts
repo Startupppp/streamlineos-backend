@@ -1,7 +1,9 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   projectReleases,
   releaseTickets,
@@ -56,10 +58,34 @@ export class ProjectsReleasesService {
   }
 
   async updateRelease(orgId: string, releaseId: number, data: UpdateReleaseInput) {
-    const [updated] = await this.db.update(projectReleases)
-      .set(data)
-      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
-      .returning();
+    const rows = await this.db.transaction(async (tx) => {
+      const result = await tx
+        .update(projectReleases)
+        .set(data)
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId)))
+        .returning();
+      const row = result[0];
+      if (row && data.status === "released") {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "release",
+          aggregateId: String(releaseId),
+          aggregateVersion: Date.now(),
+          eventType: "build.release.published",
+          payload: {
+            releaseId,
+            projectId: row.projectId,
+            orgId,
+            name: row.name,
+            version: row.version ?? null,
+          },
+          occurredAt: new Date(),
+        });
+      }
+      return result;
+    });
+    const updated = rows[0];
     if (!updated) throw new NotFoundException("Release not found");
     return updated;
   }

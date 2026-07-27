@@ -17,6 +17,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PaymentRunsService } from "./payment-runs.service";
 import {
   createPaymentRunSchema,
@@ -57,6 +58,7 @@ export class PaymentRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(201)
+  @Idempotent("accounting.payment-run.create")
   create(
     @Body(new ZodValidationPipe(createPaymentRunSchema)) body: CreatePaymentRunInput,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +70,7 @@ export class PaymentRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:approve")
   @HttpCode(200)
+  @Idempotent("accounting.payment-run.approve")
   approve(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +82,7 @@ export class PaymentRunsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)
+  @Idempotent("accounting.payment-run.execute")
   execute(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

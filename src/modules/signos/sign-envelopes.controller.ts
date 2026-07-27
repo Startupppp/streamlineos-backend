@@ -8,6 +8,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import {
   createEnvelopeSchema,
@@ -84,12 +85,14 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/send")
+  @Idempotent("sign:envelope.send")
   @RequirePermission("sign:envelope:send")
   send(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.send(u.orgId, envelopeId, actorFrom(u, req));
   }
 
   @Post(":envelopeId/void")
+  @Idempotent("sign:envelope.void")
   @RequirePermission("sign:envelope:void")
   voidEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -112,12 +115,14 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/resend")
+  @Idempotent("sign:envelope.resend")
   @RequirePermission("sign:envelope:send")
   resend(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.resend(u.orgId, envelopeId, actorFrom(u, req));
   }
 
   @Post(":envelopeId/send-reminder")
+  @Idempotent("sign:envelope.send_reminder")
   @RequirePermission("sign:envelope:send")
   sendReminder(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.sendManualReminder(u.orgId, envelopeId, actorFrom(u, req));

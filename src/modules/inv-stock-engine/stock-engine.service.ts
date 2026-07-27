@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invStockLevels, invStockTransactions, invValuationLayers,
-  invIdempotencyKeys, invProductVariants,
+  invIdempotencyKeys, invProductVariants, invProducts,
 } from "../../db/schema";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -62,6 +64,7 @@ export class StockEngineService {
     const settings = await this.settingsService.get(orgId);
     const txnIds: number[] = [];
     const levels: StockEngineResult["levels"] = [];
+    const decreasedVariantIds = new Set<number>();
 
     for (const movement of cmd.movements) {
       await tx.insert(invStockLevels).values({
@@ -148,6 +151,10 @@ export class StockEngineService {
         averageCost: newAvgCost,
       }).where(eq(invStockLevels.id, level.id));
 
+      if (!isPositive && bucket === "ON_HAND") {
+        decreasedVariantIds.add(movement.productVariantId);
+      }
+
       levels.push({ productVariantId: movement.productVariantId, locationId: movement.locationId, onHand: newOnHand });
     }
 
@@ -156,6 +163,48 @@ export class StockEngineService {
       resourceType: cmd.sourceType, resourceId: cmd.sourceId,
       after: { transactionIds: txnIds },
     });
+
+    if (decreasedVariantIds.size > 0) {
+      const variantIds = Array.from(decreasedVariantIds);
+      const variants = await tx.select({
+        id: invProductVariants.id,
+        reorderPoint: invProducts.reorderPoint,
+      })
+        .from(invProductVariants)
+        .innerJoin(invProducts, eq(invProducts.id, invProductVariants.productId))
+        .where(inArray(invProductVariants.id, variantIds));
+
+      const onHandByVariant = new Map<number, string>();
+      for (const level of levels) {
+        if (decreasedVariantIds.has(level.productVariantId)) {
+          onHandByVariant.set(level.productVariantId, level.onHand);
+        }
+      }
+
+      for (const variant of variants) {
+        const reorderPoint = parseFloat(variant.reorderPoint ?? "0");
+        if (reorderPoint <= 0) continue;
+        const onHand = parseFloat(onHandByVariant.get(variant.id) ?? "0");
+        if (onHand <= reorderPoint) {
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "inv_product_variant",
+            aggregateId: String(variant.id),
+            aggregateVersion: Date.now(),
+            eventType: "inventory.stock.low",
+            payload: {
+              productVariantId: variant.id,
+              onHand: onHandByVariant.get(variant.id) ?? "0",
+              reorderPoint: variant.reorderPoint,
+              sourceType: cmd.sourceType,
+              sourceId: cmd.sourceId,
+            },
+            occurredAt: new Date(),
+          });
+        }
+      }
+    }
 
     const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
     const responsePayload: Record<string, unknown> = { ...engineResult };

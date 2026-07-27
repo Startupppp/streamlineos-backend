@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { supportCsatRequests, supportTickets, csatSurveys, csatResponses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -38,8 +38,15 @@ export class SupportCsatService {
     const [updated] = await this.db
       .update(supportCsatRequests)
       .set({ score: input.score, comment: input.comment ?? null, respondedAt: new Date() })
-      .where(and(eq(supportCsatRequests.id, request.id), eq(supportCsatRequests.orgId, request.orgId)))
+      .where(
+        and(
+          eq(supportCsatRequests.id, request.id),
+          eq(supportCsatRequests.orgId, request.orgId),
+          isNull(supportCsatRequests.respondedAt),
+        ),
+      )
       .returning();
+    if (!updated) throw new ConflictException("This survey has already been submitted");
     return { success: true, score: updated.score };
   }
 

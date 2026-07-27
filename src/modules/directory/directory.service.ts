@@ -16,6 +16,7 @@ import type {
 } from "./dto/directory.schemas";
 
 const PG_UNIQUE_VIOLATION = "23505";
+const PG_EXCLUSION_VIOLATION = "23P01";
 
 type PersonRow = typeof organizationPeople.$inferSelect;
 type PersonPatch = Partial<typeof organizationPeople.$inferInsert>;
@@ -395,12 +396,19 @@ export class DirectoryService {
         if (
           typeof err === "object" &&
           err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
+          "code" in err
         ) {
-          throw new ConflictException(
-            "This worker already has an active primary engagement.",
-          );
+          const code = (err as { code: string }).code;
+          if (code === PG_UNIQUE_VIOLATION) {
+            throw new ConflictException(
+              "This worker already has an active primary engagement.",
+            );
+          }
+          if (code === PG_EXCLUSION_VIOLATION) {
+            throw new ConflictException(
+              "Engagement dates overlap with an existing active engagement for this worker.",
+            );
+          }
         }
         throw err;
       });
@@ -460,12 +468,19 @@ export class DirectoryService {
         if (
           typeof err === "object" &&
           err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
+          "code" in err
         ) {
-          throw new ConflictException(
-            "This worker already has an active primary engagement.",
-          );
+          const code = (err as { code: string }).code;
+          if (code === PG_UNIQUE_VIOLATION) {
+            throw new ConflictException(
+              "This worker already has an active primary engagement.",
+            );
+          }
+          if (code === PG_EXCLUSION_VIOLATION) {
+            throw new ConflictException(
+              "Engagement dates overlap with an existing active engagement for this worker.",
+            );
+          }
         }
         throw err;
       });

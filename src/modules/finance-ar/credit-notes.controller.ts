@@ -6,6 +6,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CreditNotesService } from "./credit-notes.service";
 import {
   createCreditNoteSchema,
@@ -34,6 +35,7 @@ export class CreditNotesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:credit-notes:create")
+  @Idempotent("accounting.credit-note.create")
   create(
     @Body(new ZodValidationPipe(createCreditNoteSchema)) body: CreateCreditNoteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +55,7 @@ export class CreditNotesController {
   @Post(":creditNoteId/post")
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
+  @Idempotent("accounting.credit-note.post")
   postNote(
     @Param("creditNoteId", ParseIntPipe) creditNoteId: number,
     @CurrentUser() u: CurrentUserContext,

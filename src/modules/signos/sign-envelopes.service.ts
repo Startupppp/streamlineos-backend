@@ -8,6 +8,7 @@ import {
 import { and, eq, inArray, isNull, lte, notInArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   signDocuments,
   signEnvelopes,
@@ -407,11 +408,26 @@ export class SignEnvelopesService {
       }
     }
 
-    const [updated] = await this.db
-      .update(signEnvelopes)
-      .set({ status: "sent", sentAt: new Date(), expiresAt, finalizationKey })
-      .where(eq(signEnvelopes.id, envelopeId))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await (tx as Db)
+        .update(signEnvelopes)
+        .set({ status: "sent", sentAt: new Date(), expiresAt, finalizationKey })
+        .where(eq(signEnvelopes.id, envelopeId))
+        .returning();
+      if (row) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "sign_envelope",
+          aggregateId: String(envelopeId),
+          aggregateVersion: Date.now(),
+          eventType: "sign.envelope.sent",
+          payload: { envelopeId, orgId, invitedCount, actorUserId: actor.userId },
+          occurredAt: new Date(),
+        });
+      }
+      return row;
+    });
 
     await this.audit.record({
       orgId,
@@ -442,27 +458,43 @@ export class SignEnvelopesService {
       );
     }
 
-    await this.db
-      .update(signRecipients)
-      .set({ tokenRevokedAt: new Date() })
-      .where(
-        and(
-          eq(signRecipients.orgId, orgId),
-          eq(signRecipients.envelopeId, envelopeId),
-          isNull(signRecipients.completedAt),
-        ),
-      );
+    const updated = await this.db.transaction(async (tx) => {
+      await (tx as Db)
+        .update(signRecipients)
+        .set({ tokenRevokedAt: new Date() })
+        .where(
+          and(
+            eq(signRecipients.orgId, orgId),
+            eq(signRecipients.envelopeId, envelopeId),
+            isNull(signRecipients.completedAt),
+          ),
+        );
 
-    const [updated] = await this.db
-      .update(signEnvelopes)
-      .set({
-        status: "voided",
-        voidedAt: new Date(),
-        voidedBy: actor.userId,
-        voidReason: input.reason,
-      })
-      .where(eq(signEnvelopes.id, envelopeId))
-      .returning();
+      const [row] = await (tx as Db)
+        .update(signEnvelopes)
+        .set({
+          status: "voided",
+          voidedAt: new Date(),
+          voidedBy: actor.userId,
+          voidReason: input.reason,
+        })
+        .where(eq(signEnvelopes.id, envelopeId))
+        .returning();
+
+      if (row) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "sign_envelope",
+          aggregateId: String(envelopeId),
+          aggregateVersion: Date.now(),
+          eventType: "sign.envelope.voided",
+          payload: { envelopeId, orgId, reason: input.reason, actorUserId: actor.userId },
+          occurredAt: new Date(),
+        });
+      }
+      return row;
+    });
 
     const recipientRows = await this.recipients.listForEnvelope(
       orgId,
@@ -670,10 +702,25 @@ export class SignEnvelopesService {
       };
       if (newStatus === "completed") patch.completedAt = new Date();
       if (newStatus === "declined") patch.declinedAt = new Date();
-      await this.db
-        .update(signEnvelopes)
-        .set(patch)
-        .where(eq(signEnvelopes.id, envelopeId));
+
+      await this.db.transaction(async (tx) => {
+        await (tx as Db)
+          .update(signEnvelopes)
+          .set(patch)
+          .where(eq(signEnvelopes.id, envelopeId));
+        if (newStatus === "completed") {
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "sign_envelope",
+            aggregateId: String(envelopeId),
+            aggregateVersion: patch.completedAt?.getTime() ?? Date.now(),
+            eventType: "sign.envelope.completed",
+            payload: { envelopeId, orgId },
+            occurredAt: new Date(),
+          });
+        }
+      });
 
       await this.audit.record({
         orgId,

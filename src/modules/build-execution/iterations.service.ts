@@ -1,6 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { cycles, modules, sprints, tickets } from "../../db/schema";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -111,16 +113,37 @@ export class SprintsService {
       columns: { id: true, name: true, status: true, projectId: true },
     });
 
-    await this.db
-      .update(sprints)
-      .set({
-        ...(input.name && { name: input.name }),
-        ...(input.startDate && { startDate: new Date(input.startDate) }),
-        ...(input.endDate && { endDate: new Date(input.endDate) }),
-        ...(input.goal !== undefined && { goal: input.goal }),
-        ...(input.status && { status: input.status }),
-      })
-      .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(sprints)
+        .set({
+          ...(input.name && { name: input.name }),
+          ...(input.startDate && { startDate: new Date(input.startDate) }),
+          ...(input.endDate && { endDate: new Date(input.endDate) }),
+          ...(input.goal !== undefined && { goal: input.goal }),
+          ...(input.status && { status: input.status }),
+        })
+        .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+
+      if (before && input.status === "COMPLETED" && before.status !== "COMPLETED") {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "sprint",
+          aggregateId: String(sprintId),
+          aggregateVersion: Date.now(),
+          eventType: "build.sprint.completed",
+          payload: {
+            sprintId,
+            projectId: before.projectId,
+            orgId,
+            name: input.name ?? before.name,
+            actorUserId: actorId ?? null,
+          },
+          occurredAt: new Date(),
+        });
+      }
+    });
 
     if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
       const eventName =

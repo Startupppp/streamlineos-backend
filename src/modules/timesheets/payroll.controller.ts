@@ -18,6 +18,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PayrollSummaryService } from "./payroll-summary.service";
 import { PayrollExportService } from "./payroll-export.service";
 import { PayrollSettingsService } from "./payroll-settings.service";
@@ -56,6 +57,7 @@ export class PayrollController {
   @Post("export")
   @HttpCode(201)
   @RequirePermission("timesheets:payroll:export")
+  @Idempotent("timesheets.payroll.export")
   runExport(
     @Body(new ZodValidationPipe(exportPayrollSchema)) body: ExportPayrollInput,
     @CurrentUser() u: CurrentUserContext,

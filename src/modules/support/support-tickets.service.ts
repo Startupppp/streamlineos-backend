@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SupportTicketStaleException } from "../../common/http/api-exceptions";
+import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   supportTickets,
   supportTicketMessages,
@@ -214,25 +216,45 @@ export class SupportTicketsService {
     const resolvedPolicy = await this.sla.resolvePolicy(orgId, finalPriority, input.category ?? null);
     const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
 
-    const [ticket] = await this.db
-      .insert(supportTickets)
-      .values({
-        orgId,
-        title: input.title,
-        category: input.category ?? null,
-        description: input.description ?? null,
-        clientId: input.clientId ?? null,
-        priority: finalPriority,
-        assigneeId: finalAssigneeId ?? null,
-        slaDeadline: resolutionDueAt,
-        firstResponseDueAt,
-        createdBy: userId,
-        sourceChannel: source?.channel ?? "web",
-        sourceMessageId: source?.messageId ?? null,
-        requesterEmail: source?.requesterEmail ?? null,
-        requesterName: source?.requesterName ?? null,
-      })
-      .returning();
+    const ticket = await this.db.transaction(async (tx) => {
+      const [row] = await (tx as Db)
+        .insert(supportTickets)
+        .values({
+          orgId,
+          title: input.title,
+          category: input.category ?? null,
+          description: input.description ?? null,
+          clientId: input.clientId ?? null,
+          priority: finalPriority,
+          assigneeId: finalAssigneeId ?? null,
+          slaDeadline: resolutionDueAt,
+          firstResponseDueAt,
+          createdBy: userId,
+          sourceChannel: source?.channel ?? "web",
+          sourceMessageId: source?.messageId ?? null,
+          requesterEmail: source?.requesterEmail ?? null,
+          requesterName: source?.requesterName ?? null,
+        })
+        .returning();
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "support_ticket",
+        aggregateId: String(row.id),
+        aggregateVersion: 1,
+        eventType: "support.ticket.created",
+        payload: {
+          ticketId: row.id,
+          orgId,
+          title: row.title,
+          priority: row.priority,
+          assigneeId: row.assigneeId ?? null,
+          actorUserId: userId,
+        },
+        occurredAt: new Date(),
+      });
+      return row;
+    });
 
     await this.invalidateTicketCaches(orgId);
     await this.recordActivity(orgId, ticket.id, userId, "created", null, input.title);
@@ -317,10 +339,24 @@ export class SupportTicketsService {
     if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
     if (input.queueId !== undefined) updateData.queueId = input.queueId;
 
-    await this.db
-      .update(supportTickets)
-      .set(updateData)
-      .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+    await this.db.transaction(async (tx) => {
+      await (tx as Db)
+        .update(supportTickets)
+        .set(updateData)
+        .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
+      if (updateData.status === "RESOLVED") {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "support_ticket",
+          aggregateId: String(ticketId),
+          aggregateVersion: ticketUpdatedAt.getTime(),
+          eventType: "support.ticket.resolved",
+          payload: { ticketId, orgId, actorUserId: userId },
+          occurredAt: ticketUpdatedAt,
+        });
+      }
+    });
 
     await this.logTicketActivity(orgId, ticketId, userId, ticket, input);
     if (input.customFields) {

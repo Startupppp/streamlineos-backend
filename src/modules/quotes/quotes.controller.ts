@@ -21,6 +21,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { QuotesService, isSendNotDraft } from "./quotes.service";
 import {
   createSchema,
@@ -56,6 +57,7 @@ export class QuotesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:quotes:create")
+  @Idempotent("crm.quote.create")
   create(
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -115,6 +117,7 @@ export class QuotesController {
 
   @Post(":quoteId/send")
   @RequirePermission("crm:quotes:update")
+  @Idempotent("crm.quote.send")
   async send(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +149,7 @@ export class QuotesController {
 
   @Post(":quoteId/convert-to-invoice")
   @RequirePermission("crm:quotes:create")
+  @Idempotent("crm.quote.convertToInvoice")
   async convertToInvoice(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

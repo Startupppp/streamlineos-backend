@@ -1,6 +1,6 @@
-import { pgTable, text, serial, integer, timestamp, index, uniqueIndex, pgEnum, uuid, varchar, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index, uniqueIndex, pgEnum, uuid, varchar, boolean, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, roles, permissions } from "./auth";
+import { organizationMembers, organizations, users, roles, permissions } from "./auth";
 
 export const dataScopeEnum = pgEnum("data_scope", ["all", "team", "own", "none"]);
 export const principalGroupTypeEnum = pgEnum("principal_group_type", ["department", "team", "custom"]);
@@ -130,6 +130,41 @@ export const accessVersionsRelations = relations(accessVersions, ({ one }) => ({
   }),
 }));
 
+export const membershipRoleAssignments = pgTable("membership_role_assignments", {
+  id: serial("id").primaryKey(),
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  organizationMembershipId: integer("organization_membership_id").notNull(),
+  roleId: integer("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+  assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_mra_org_membership_role").on(table.organizationId, table.organizationMembershipId, table.roleId),
+  index("idx_mra_org_membership").on(table.organizationId, table.organizationMembershipId),
+  foreignKey({
+    columns: [table.organizationId, table.organizationMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
+]);
+
+export const membershipRoleAssignmentsRelations = relations(membershipRoleAssignments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [membershipRoleAssignments.organizationId],
+    references: [organizations.id],
+  }),
+  membership: one(organizationMembers, {
+    fields: [membershipRoleAssignments.organizationMembershipId],
+    references: [organizationMembers.id],
+  }),
+  role: one(roles, {
+    fields: [membershipRoleAssignments.roleId],
+    references: [roles.id],
+  }),
+  assigner: one(users, {
+    fields: [membershipRoleAssignments.assignedBy],
+    references: [users.id],
+  }),
+}));
+
 export const resourceGrants = pgTable(
   "resource_grants",
   {
@@ -165,3 +200,4 @@ export type GroupRole = typeof groupRoles.$inferSelect;
 export type AccessVersion = typeof accessVersions.$inferSelect;
 export type ResourceGrant = typeof resourceGrants.$inferSelect;
 export type OrgModule = typeof orgModules.$inferSelect;
+export type MembershipRoleAssignment = typeof membershipRoleAssignments.$inferSelect;

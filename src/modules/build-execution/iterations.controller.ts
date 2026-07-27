@@ -19,6 +19,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CyclesService, EpicsService, ModulesService, SprintsService } from "./iterations.service";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   createCycleSchema,
   createEpicSchema,
@@ -58,6 +59,7 @@ export class SprintsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:sprints:manage")
+  @Idempotent("build.sprint.create")
   createSprint(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createSprintSchema)) body: CreateSprintInput,
@@ -116,6 +118,7 @@ export class CyclesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspace:manage")
+  @Idempotent("build.cycle.create")
   createCycle(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createCycleSchema)) body: CreateCycleInput,

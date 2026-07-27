@@ -6,7 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, or, sql } from "drizzle-orm";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   projects,
   ticketActivityLog,
@@ -171,6 +173,26 @@ export class ProjectsTicketsService {
         ticketId: created.id,
         userId: u.userId,
         action: "created",
+      });
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: u.orgId,
+        aggregateType: "ticket",
+        aggregateId: String(created.id),
+        aggregateVersion: 1,
+        eventType: "build.ticket.created",
+        payload: {
+          ticketId: created.id,
+          projectId,
+          orgId: u.orgId,
+          title: created.title,
+          type: created.type,
+          status: created.status,
+          assigneeId: created.assigneeId ?? null,
+          createdBy: u.userId,
+        },
+        occurredAt: new Date(),
       });
 
       return [created];
@@ -459,10 +481,32 @@ export class ProjectsTicketsService {
       }
     }
 
-    await this.db
-      .update(tickets)
-      .set(updateData)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(tickets)
+        .set(updateData)
+        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)));
+
+      if (input.status && input.status !== before.status) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "ticket",
+          aggregateId: String(ticketId),
+          aggregateVersion: now.getTime(),
+          eventType: "build.ticket.status_changed",
+          payload: {
+            ticketId,
+            projectId: before.projectId,
+            orgId,
+            previousStatus: before.status,
+            newStatus: input.status,
+            actorUserId: actingUserId,
+          },
+          occurredAt: now,
+        });
+      }
+    });
 
     await Promise.all([
       this.syncAssignees(orgId, ticketId, actingUserId, input),

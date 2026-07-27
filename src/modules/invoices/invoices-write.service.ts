@@ -1,9 +1,11 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { invoices, invoiceItems, payments, organizations, indianStates, finPaymentAllocations, organizationMembers, accountingSettings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -212,6 +214,23 @@ export class InvoicesWriteService {
           },
           tx,
         );
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "invoice",
+          aggregateId: String(inserted.id),
+          aggregateVersion: inserted.createdAt ? new Date(inserted.createdAt).getTime() : Date.now(),
+          eventType: "accounting.invoice.issued",
+          payload: {
+            organization_id: orgId,
+            invoice_id: inserted.id,
+            invoice_number: inserted.invoiceNumber,
+            total_cents: Math.round(total * 100),
+            client_id: inserted.clientId ?? null,
+            actor_user_id: userId,
+          },
+          occurredAt: new Date(),
+        });
       }
 
       return inserted;
@@ -282,6 +301,23 @@ export class InvoicesWriteService {
             },
             tx,
           );
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "invoice",
+            aggregateId: String(invoiceId),
+            aggregateVersion: Date.now(),
+            eventType: "accounting.invoice.issued",
+            payload: {
+              organization_id: orgId,
+              invoice_id: invoiceId,
+              invoice_number: existing.invoiceNumber,
+              total_cents: Math.round(total * 100),
+              client_id: existing.clientId ?? null,
+              actor_user_id: userId,
+            },
+            occurredAt: new Date(),
+          });
         }
       });
 
@@ -439,6 +475,25 @@ export class InvoicesWriteService {
         },
         tx,
       );
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "payment",
+        aggregateId: String(payment.id),
+        aggregateVersion: Date.now(),
+        eventType: "accounting.payment.received",
+        payload: {
+          organization_id: orgId,
+          payment_id: payment.id,
+          invoice_id: invoiceId,
+          invoice_number: invoice.invoiceNumber,
+          amount_cents: Math.round(input.amount * 100),
+          payment_date: input.paymentDate,
+          payment_method: input.paymentMethod,
+          actor_user_id: userId,
+        },
+        occurredAt: new Date(),
+      });
 
       return payment;
     });

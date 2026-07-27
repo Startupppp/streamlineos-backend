@@ -7,6 +7,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
 import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/signos.schemas";
 
@@ -18,6 +19,7 @@ export class SignBulkSendController {
 
   @Post("jobs")
   @HttpCode(201)
+  @Idempotent("sign:bulk_send.create")
   @RequirePermission("sign:bulk_send:run")
   create(@Body(new ZodValidationPipe(createBulkSendJobSchema)) body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.createJob(u.orgId, u.userId, body);

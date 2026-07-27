@@ -178,19 +178,21 @@ export class InvCycleCountsService {
         };
       });
 
-    if (movements.length > 0) {
-      await this.engine.execute(orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_cycle_count",
-        sourceId: countId.toString(),
-        reason: `Cycle count ${cc.countNumber}`,
-        movements,
-      });
-    }
+    await this.db.transaction(async (tx) => {
+      if (movements.length > 0) {
+        await this.engine.executeInTx(tx, orgId, userId, {
+          idempotencyKey,
+          sourceType: "inv_cycle_count",
+          sourceId: countId.toString(),
+          reason: `Cycle count ${cc.countNumber}`,
+          movements,
+        });
+      }
 
-    await this.db.update(invCycleCounts)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
-      .where(and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)));
+      await tx.update(invCycleCounts)
+        .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
+        .where(and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)));
+    });
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
     await this.cache.invalidatePattern(CACHE_KEYS.invCycleCountsList(orgId, "*") + "");

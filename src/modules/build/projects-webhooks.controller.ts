@@ -6,6 +6,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
@@ -31,6 +32,7 @@ export class ProjectsWebhooksController {
   @Post(":projectId/webhooks")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Idempotent("build.webhook.register")
   createWebhook(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body(new ZodValidationPipe(createWebhookSchema)) body: CreateWebhookInput,

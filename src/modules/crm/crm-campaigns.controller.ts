@@ -18,6 +18,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { CrmCampaignsService } from "./crm-campaigns.service";
 import { CrmAttributionReportService } from "./crm-attribution-report.service";
 import {
@@ -50,6 +51,7 @@ export class CrmCampaignsController {
   @Post()
   @RequirePermission("crm:campaigns:manage")
   @HttpCode(201)
+  @Idempotent("crm.campaign.create")
   create(
     @Body(new ZodValidationPipe(campaignCreateSchema)) body: CampaignCreateInput,
     @CurrentUser() u: CurrentUserContext,

@@ -5,9 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   purchaseBills,
   finApprovalRequests,
@@ -185,6 +187,22 @@ export class BillsWorkflowService {
         },
         tx,
       );
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "purchase_bill",
+        aggregateId: String(billId),
+        aggregateVersion: Date.now(),
+        eventType: "accounting.bill.approved",
+        payload: {
+          organization_id: orgId,
+          bill_id: billId,
+          bill_number: bill.billNumber,
+          total_cents: Math.round(total * 100),
+          actor_user_id: userId,
+        },
+        occurredAt: new Date(),
+      });
     });
 
     this.audit.log({

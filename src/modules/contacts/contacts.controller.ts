@@ -36,6 +36,7 @@ import {
   type UpdateInput,
 } from "./dto/contact.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 
 @RequireModule("crm")
 @Controller("contacts")
@@ -52,6 +53,7 @@ export class ContactsController {
     return this.contacts.list(u.orgId, filters);
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/party/parties/:partyId/contacts" })
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
@@ -100,6 +102,7 @@ export class ContactsController {
     return contact;
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
   async update(
@@ -112,6 +115,7 @@ export class ContactsController {
     return updated;
   }
 
+  @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Delete(":contactId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")

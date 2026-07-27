@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -64,6 +65,7 @@ export class ProjectsController {
   @Post()
   @RequirePermission("build:create")
   @HttpCode(201)
+  @Idempotent("build.project.create")
   createProject(
     @Body(new ZodValidationPipe(createProjectSchema)) body: CreateProjectInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +76,7 @@ export class ProjectsController {
   @Post("from-deal")
   @RequirePermission("build:create")
   @HttpCode(201)
+  @Idempotent("build.project.create_from_deal")
   createFromDeal(
     @Body(new ZodValidationPipe(fromDealSchema)) body: FromDealInput,
     @CurrentUser() u: CurrentUserContext,

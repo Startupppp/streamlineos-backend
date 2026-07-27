@@ -16,6 +16,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ReimbursementsService } from "./reimbursements.service";
 import {
   batchListSchema,
@@ -44,6 +45,7 @@ export class ReimbursementsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
+  @Idempotent("accounting.reimbursement-batch.create")
   async create(
     @Body(new ZodValidationPipe(createBatchSchema)) body: CreateBatchInput,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +75,7 @@ export class ReimbursementsController {
   @Post(":batchId/pay")
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:manage")
+  @Idempotent("accounting.reimbursement-batch.pay")
   async pay(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body(new ZodValidationPipe(payBatchSchema)) body: PayBatchInput,

@@ -67,7 +67,13 @@ export class SupportKbService {
         sortOrder: input.sortOrder ?? 0,
         isPublished: input.isPublished ?? false,
       })
-      .returning();
+      .returning()
+      .catch((e: { code?: string }) => {
+        if (e.code === "23505") {
+          throw new ConflictException("A category with this name already exists");
+        }
+        throw e;
+      });
     return category;
   }
 
