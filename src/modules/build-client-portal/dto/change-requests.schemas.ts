@@ -18,7 +18,6 @@ export const createChangeRequestSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
-  requestedById: z.string().optional(),
 });
 
 export const updateChangeRequestSchema = z.object({

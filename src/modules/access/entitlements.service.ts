@@ -52,6 +52,7 @@ const MODULE_MAP_LOCAL_TTL_MS = 15_000;
 @Injectable()
 export class EntitlementsService {
   private missingTableLogged = false;
+  private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
 
   constructor(
@@ -65,6 +66,7 @@ export class EntitlementsService {
       return await read();
     } catch (error: unknown) {
       if (!isMissingRelationError(error)) throw error;
+      this.moduleTableUnavailable = true;
       if (!this.missingTableLogged) {
         this.missingTableLogged = true;
         logger.warn(
@@ -107,9 +109,11 @@ export class EntitlementsService {
   }
 
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
+    if (CORE_MODULE_KEYS.has(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
-    if (!(moduleKey in map)) return true;
-    return map[moduleKey] ?? true;
+    const enabled = map[moduleKey];
+    if (enabled === undefined) return this.moduleTableUnavailable;
+    return enabled;
   }
 
   async setModuleEnabled(

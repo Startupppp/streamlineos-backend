@@ -71,7 +71,7 @@ export class ChangeRequestsService {
           budgetImpactCents: input.budgetImpactCents,
           timelineImpactDays: input.timelineImpactDays,
           status: "submitted",
-          requestedById: input.requestedById ?? userId,
+          requestedById: userId,
           createdBy: userId,
         })
         .returning();
