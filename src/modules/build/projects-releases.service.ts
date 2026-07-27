@@ -8,6 +8,7 @@ import {
   projectReleases,
   releaseTickets,
   projects,
+  tickets,
 } from "../../db/schema";
 import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
 
@@ -104,6 +105,12 @@ export class ProjectsReleasesService {
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
+
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
 
     await this.db.insert(releaseTickets).values({ orgId, releaseId, ticketId }).onConflictDoNothing();
     return { success: true };

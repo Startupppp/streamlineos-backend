@@ -148,6 +148,22 @@ export class ProjectsTicketSubresourcesService {
     if (!member) throw new ForbiddenException("Not a project member.");
   }
 
+  private async requireProjectTicket(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+  ): Promise<void> {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.orgId, orgId),
+        eq(tickets.projectId, projectId),
+      ),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+  }
+
   private async requireTicket(orgId: string, ticketId: number): Promise<void> {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId)),
@@ -158,6 +174,7 @@ export class ProjectsTicketSubresourcesService {
 
   async listRelations(u: CurrentUserContext, projectId: number, ticketId: number) {
     await this.requireMember(projectId, u.userId);
+    await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     const relatedTicketSelect = {
       columns: {
@@ -189,9 +206,12 @@ export class ProjectsTicketSubresourcesService {
     } as const;
 
     const relations = await this.db.query.workItemRelations.findMany({
-      where: or(
-        eq(workItemRelations.workItemId, ticketId),
-        eq(workItemRelations.relatedWorkItemId, ticketId),
+      where: and(
+        eq(workItemRelations.orgId, u.orgId),
+        or(
+          eq(workItemRelations.workItemId, ticketId),
+          eq(workItemRelations.relatedWorkItemId, ticketId),
+        ),
       ),
       with: {
         workItem: relatedTicketSelect,
@@ -213,6 +233,7 @@ export class ProjectsTicketSubresourcesService {
 
   async addRelation(u: CurrentUserContext, projectId: number, ticketId: number, body: AddRelationInput) {
     await this.requireMember(projectId, u.userId);
+    await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     if (body.relatedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot relate to itself.");
@@ -237,13 +258,17 @@ export class ProjectsTicketSubresourcesService {
 
   async removeRelation(u: CurrentUserContext, projectId: number, ticketId: number, relatedId: number) {
     await this.requireMember(projectId, u.userId);
+    await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     if (!relatedId) throw new BadRequestException("relatedId query param required.");
 
     await this.db.delete(workItemRelations).where(
-      or(
-        and(eq(workItemRelations.workItemId, ticketId), eq(workItemRelations.relatedWorkItemId, relatedId)),
-        and(eq(workItemRelations.workItemId, relatedId), eq(workItemRelations.relatedWorkItemId, ticketId)),
+      and(
+        eq(workItemRelations.orgId, u.orgId),
+        or(
+          and(eq(workItemRelations.workItemId, ticketId), eq(workItemRelations.relatedWorkItemId, relatedId)),
+          and(eq(workItemRelations.workItemId, relatedId), eq(workItemRelations.relatedWorkItemId, ticketId)),
+        ),
       ),
     );
 
